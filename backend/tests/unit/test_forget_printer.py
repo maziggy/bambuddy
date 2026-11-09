@@ -29,6 +29,7 @@ NOT_FORGOTTEN = {
     "_ams_assignment_locks": "a lock carries nothing over; popping one a task holds would let a second be made",
     "_fallback_recovery_locks": "a lock carries nothing over (see its comment on popping)",
     "_HMS_FAILURE_REASONS": "constant",
+    "_HMS_MODULE_NAMES": "constant",
     "_ACTIVE_PRINT_STATES": "constant",
     "_SENSOR_TARGET_KEYS": "constant",
     "PUBLIC_API_ROUTES": "constant",

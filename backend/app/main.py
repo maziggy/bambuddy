@@ -2037,6 +2037,30 @@ def _hms_errors_to_notify(errors: list, new_error_codes: set[str]) -> list:
     return [e for e in errors if _hms_notify_key(e) in new_error_codes and _hms_fault_counts(e)]
 
 
+# What each HMS module byte is about, read off Bambu's own texts for its codes
+# (hms_catalog.json). The table used to call 0x05 "Nozzle/Extruder", 0x0C
+# "Motion Controller" and 0x12 "Chamber", which titled USB and MQTT errors as
+# nozzle faults and an A1 mini's AMS Lite runouts as chamber errors (#3486).
+_HMS_MODULE_NAMES = {
+    0x03: "Print/Task",  # bed, nozzle temperatures, motors, the print itself
+    0x05: "System",  # USB/SD, network, firmware, files, AMS communication
+    0x07: "AMS/Filament",
+    0x08: "Toolhead",
+    0x0C: "Camera",  # cameras, lidar, first-layer and AI inspection
+    0x12: "AMS Lite",
+    0x18: "AMS-HT",
+    0x1A: "Tool Changer",
+    0x29: "Air Filter",
+    0x2A: "AMS 3H",
+}
+
+
+def _hms_error_title(module: int) -> str:
+    """The notification title for a fault of *module*."""
+    name = _HMS_MODULE_NAMES.get(module)
+    return f"{name} Error" if name else "Printer Error"
+
+
 def _take_new_hms_faults(printer_id: int, errors: list, print_state: str | None = None) -> list:
     """The faults on this printer not notified yet, and record them as notified.
 
@@ -2078,6 +2102,47 @@ def _take_new_hms_faults(printer_id: int, errors: list, print_state: str | None 
     if not forget_when_gone:
         _hms_forget_when_gone.pop(printer_id, None)
     return _hms_errors_to_notify(errors, new)
+
+
+async def _take_new_hms_faults_and_save(printer_id: int, errors: list, print_state: str | None = None) -> list:
+    """``_take_new_hms_faults``, and store the notified set when it changed (#3486).
+
+    The set lives in memory, so without this every restart sent each fault the
+    printer still lists once more. A failed write only costs that protection
+    for the next restart, so it is logged and the notification goes ahead.
+    """
+    before = set(_notified_hms_errors.get(printer_id, ()))
+    new = _take_new_hms_faults(printer_id, errors, print_state)
+    if set(_notified_hms_errors.get(printer_id, ())) != before:
+        from backend.app.services.hms_notified import save_notified_hms_faults
+
+        try:
+            await save_notified_hms_faults(printer_id, lambda: _notified_hms_errors.get(printer_id, {}).keys())
+        except Exception as e:
+            logging.getLogger(__name__).warning(
+                "Could not store the notified HMS faults of printer %s: %s", printer_id, e
+            )
+    return new
+
+
+async def _load_notified_hms_faults() -> None:
+    """Restore the faults notified before the restart (#3486).
+
+    Each counts as seen now: one still listed is not sent again, and one that
+    is gone is forgotten after the usual grace period.
+    """
+    from backend.app.services.hms_notified import load_notified_hms_faults
+
+    try:
+        loaded = await load_notified_hms_faults()
+    except Exception as e:
+        logging.getLogger(__name__).warning("Could not load the notified HMS faults: %s", e)
+        return
+    now = time.time()
+    for printer_id, keys in loaded.items():
+        seen = _notified_hms_errors.setdefault(printer_id, {})
+        for key in keys:
+            seen.setdefault(key, now)
 
 
 # `stg_cur` values that mean the printer is not in a preparation stage: 0 is
@@ -2540,7 +2605,7 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
     # Check for new HMS errors and send notifications
     current_hms_errors = getattr(state, "hms_errors", []) or []
     if current_hms_errors:
-        new_errors = _take_new_hms_faults(printer_id, current_hms_errors, state.state)
+        new_errors = await _take_new_hms_faults_and_save(printer_id, current_hms_errors, state.state)
 
         if new_errors:
             try:
@@ -2554,16 +2619,6 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
 
                 printer_name = printer.name if printer else f"Printer {printer_id}"
 
-                # Format error details for notification
-                # Module 0x07 = AMS/Filament, 0x05 = Nozzle, 0x0C = Motion Controller, etc.
-                module_names = {
-                    0x03: "Print/Task",
-                    0x05: "Nozzle/Extruder",
-                    0x07: "AMS/Filament",
-                    0x0C: "Motion Controller",
-                    0x12: "Chamber",
-                }
-
                 # Capture camera snapshot once for all error notifications (no DB held).
                 error_image_data = await _capture_snapshot_for_notification(
                     printer_id, printer, logging.getLogger(__name__)
@@ -2573,7 +2628,6 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
                 async with async_session() as db:
                     sent_count = 0
                     for error in new_errors:
-                        module_name = module_names.get(error.module, f"Module 0x{error.module:02X}")
                         # Build short code like "0700_8010"
                         # Mask to 16 bits to handle printers that send larger values
                         error_code_int = int(error.code.replace("0x", ""), 16) if error.code else 0
@@ -2588,7 +2642,7 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
                         if not description or short_code in _HMS_NOTIFICATION_SUPPRESS:
                             continue
 
-                        error_type = f"{module_name} Error"
+                        error_type = _hms_error_title(error.module)
                         error_detail = description
 
                         await notification_service.on_printer_error(
@@ -2625,7 +2679,7 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
         # No HMS errors: nothing to send, but faults gone long enough (or gone
         # across a print state change) are forgotten. Some codes, e.g. chamber
         # temperature regulation during PETG prints, toggle every few seconds.
-        _take_new_hms_faults(printer_id, [], state.state)
+        await _take_new_hms_faults_and_save(printer_id, [], state.state)
 
     await ws_manager.send_printer_status(
         printer_id,
@@ -12083,6 +12137,9 @@ async def lifespan(app: FastAPI):
 
     # Rehydrate persisted awaiting-plate-clear gate (#961) so prompts survive restarts
     await printer_manager.load_awaiting_plate_clear_from_db()
+    # Before any printer connects, or its first report re-sends every fault
+    # still listed (#3486).
+    await _load_notified_hms_faults()
 
     # WLED is entirely optional. Seed its in-memory per-printer configuration
     # before MQTT connections begin emitting status callbacks.

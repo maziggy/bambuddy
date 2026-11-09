@@ -93,6 +93,9 @@ APPLIED: frozenset[tuple[str, str]] = frozenset(
         ("slicer_pipelines", "target_printer_id"),
         # A deleted printer's spools would stay "assigned" to it (SA-1).
         ("spool_assignment", "printer_id"),
+        # A printer given a deleted one's id would never be told about the
+        # faults that printer was notified about (#3486).
+        ("hms_notified_faults", "printer_id"),
         # A profile default's K profile would select a calibration slot on
         # the next printer given the id (#1326).
         ("filament_profile_default_k_profile", "printer_id"),

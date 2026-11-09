@@ -17,6 +17,9 @@ interface VariantCandidatesProps {
   /** file id -> chosen plate, for the multi-plate candidates only. */
   plateByFile: Record<number, number | null>;
   onPlateChange: (fileId: number, plateId: number | null) => void;
+  /** Told whether every file's plate list has answered and every multi-plate
+   *  file has a plate chosen; until then a submit would send no plate. */
+  onPlatesReadyChange?: (ready: boolean) => void;
   /** Show the set without offering to change it — the edit-queue-item case,
    *  where reordering would need a variant-level API that doesn't exist. */
   readOnly?: boolean;
@@ -56,6 +59,7 @@ export function VariantCandidates({
   onReorder,
   plateByFile,
   onPlateChange,
+  onPlatesReadyChange,
   readOnly = false,
   readOnlyNote,
   title,
@@ -96,6 +100,17 @@ export function VariantCandidates({
       if (plateByFile[id] == null && plates.length > 0) onPlateChange(id, plates[0].index);
     }
   }, [platesByFile, plateByFile, onPlateChange, readOnly]);
+
+  // A list still loading has no plate to send yet (#3471 review): a quick
+  // Print would queue the file with plate_id null, the whole file's time and
+  // cost, and plate 1 printing. A list that failed to load counts as answered:
+  // there is no plate to offer, and the file goes without one, as before.
+  const platesPending = plateQueries.some((q) => q.isPending);
+  const platesChosen = Object.keys(platesByFile).every((fileId) => plateByFile[Number(fileId)] != null);
+  const platesReady = !readOnly && !platesPending && platesChosen;
+  useEffect(() => {
+    onPlatesReadyChange?.(platesReady);
+  }, [platesReady, onPlatesReadyChange]);
 
   const defaultHelp = help ?? t('printModal.variants.help');
   const helpText = readOnly ? (readOnlyNote ?? defaultHelp) : defaultHelp;

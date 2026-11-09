@@ -47,6 +47,7 @@ describe('queueSeparateJobs', () => {
     ]);
     expect(result).toEqual({
       itemsCreated: 4,
+      asapInserted: 0,
       queuedFileIds: [11, 12],
       queuedPairs: ['11:1', '11:2', '12:1', '12:2'],
       failure: null,
@@ -151,6 +152,28 @@ describe('queueSeparateJobs', () => {
       expect('insert_at_top' in c).toBe(false);
       expect('insert_position' in c).toBe(false);
     }
+  });
+
+  it('continues the ASAP positions of an earlier submit and reports the new count', async () => {
+    // Two items went in at 1 and 2 before a refusal; the rest must follow
+    // them, not jump ahead at 1.
+    const { calls, addToQueue } = setup();
+    const result = await queueSeparateJobs({
+      files: [file(13)], plateByFile: {}, printerIds: [1], quantity: 1, asap: true,
+      asapInsertedBefore: 2,
+      buildItem, addToQueue,
+    });
+    expect(calls[0].insert_position).toBe(3);
+    expect(result.asapInserted).toBe(3);
+  });
+
+  it('reports the ASAP count reached before a refusal', async () => {
+    const { addToQueue } = setup(12);
+    const result = await queueSeparateJobs({
+      files: [file(11), file(12)], plateByFile: {}, printerIds: [1], quantity: 2, asap: true,
+      buildItem, addToQueue,
+    });
+    expect(result.asapInserted).toBe(2);
   });
 
   it('stops at the first refusal and reports it', async () => {

@@ -1344,6 +1344,55 @@ describe('FileManagerPage', () => {
       expect(within(group).getByRole('radio', { name: /Separate jobs/ })).toBeInTheDocument();
     });
 
+    // #3471 review: a run closed after a refusal must not queue the files that
+    // went through a second time when Print is pressed again.
+    it('drops the queued files from the selection when a partly queued run is closed', async () => {
+      const posted: Array<Record<string, unknown>> = [];
+      server.use(
+        http.get('/api/v1/library/files/:id/plates', ({ params }) =>
+          HttpResponse.json({ file_id: Number(params.id), filename: 'x', plates: [], is_multi_plate: false })
+        ),
+        http.post('/api/v1/queue/', async ({ request }) => {
+          const body = (await request.json()) as Record<string, unknown>;
+          posted.push(body);
+          return posted.length === 2
+            ? HttpResponse.json({ detail: 'refused' }, { status: 400 })
+            : HttpResponse.json({ id: posted.length, status: 'pending' });
+        })
+      );
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+      await waitFor(() => expect(screen.getByText('Benchy')).toBeInTheDocument());
+
+      await user.click(screen.getByText('Benchy').closest('div[class*="cursor-pointer"]') as HTMLElement);
+      await user.click(screen.getByText('Cube').closest('div[class*="cursor-pointer"]') as HTMLElement);
+      await user.click(await screen.findByRole('button', { name: 'Print (2 files)' }));
+      await user.click(await screen.findByRole('radio', { name: /Separate jobs/ }));
+      await user.click(await screen.findByText('Test Printer'));
+      // The dialog's Print; with one file selected the toolbar has one too.
+      const print = () => screen.getAllByRole('button', { name: /^Print$/ }).at(-1) as HTMLElement;
+      await waitFor(() => expect(print()).toBeEnabled());
+      await user.click(print());
+      await screen.findByText(/Not queued: cube\.gcode\.3mf/);
+      expect(posted.map((b) => b.library_file_id)).toEqual([1, 3]);
+
+      await user.click(screen.getByRole('button', { name: 'Cancel' }));
+      await waitFor(() =>
+        expect(screen.queryByRole('radiogroup', { name: 'What the selected files become' })).not.toBeInTheDocument()
+      );
+
+      // Only cube is still selected, and its dialog is the rest of that run.
+      const toolbar = () => screen.getByText(/\d selected/).closest('div') as HTMLElement;
+      expect(within(toolbar()).getByText('1 selected')).toBeInTheDocument();
+      await user.click(within(toolbar()).getByRole('button', { name: /^Print$/ }));
+      await user.click(await screen.findByText('Test Printer'));
+      await waitFor(() => expect(print()).toBeEnabled());
+      await user.click(print());
+
+      await waitFor(() => expect(posted).toHaveLength(3));
+      expect(posted[2]).toMatchObject({ library_file_id: 3, printer_id: 1 });
+    });
+
     it('shows a version group as alternatives only, without the choice (#3462)', async () => {
       const user = userEvent.setup();
       server.use(

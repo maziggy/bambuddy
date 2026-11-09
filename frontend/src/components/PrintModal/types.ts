@@ -1,5 +1,6 @@
 import type { PrintQueueItem, Printer, CalibrationMode } from '../../api/client';
 import type { VariantCandidate } from './VariantCandidates';
+import type { SeparateJobsProgress, SeparateJobsResume } from './separateJobs';
 
 export type { CalibrationMode };
 export type { VariantCandidate };
@@ -73,6 +74,16 @@ export interface PrintModalProps {
    * Without it the modal offers the alternatives alone, as before.
    */
   separateJobsAllowed?: boolean;
+  /**
+   * The rest of a partly queued separate-jobs run, closed after a refusal and
+   * opened again on the files still to queue (#3471 review). Its pairs are
+   * skipped and its ASAP positions continued; the mode is not offered again,
+   * and a single remaining file still opens as that run's rest.
+   */
+  resumeSeparateJobs?: SeparateJobsResume;
+  /** Called after each refusal in separate jobs with what is in the queue so
+   *  far, so the opener can resume the run if the dialog is closed. */
+  onSeparateJobsProgress?: (progress: SeparateJobsProgress) => void;
 }
 
 /**

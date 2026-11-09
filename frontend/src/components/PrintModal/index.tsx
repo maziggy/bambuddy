@@ -109,6 +109,8 @@ export function PrintModal({
   cleanupLibraryAfterDispatch,
   variantFiles,
   separateJobsAllowed,
+  resumeSeparateJobs,
+  onSeparateJobsProgress,
 }: PrintModalProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -122,16 +124,20 @@ export function PrintModal({
   const isLibraryFile = !!libraryFileId && !archiveId;
   const isEditing = mode === 'edit-queue-item';
 
+  // The rest of a separate-jobs run closed after a refusal (#3471 review).
+  const resumed = mode === 'create' && !!separateJobsAllowed && !!resumeSeparateJobs && (variantFiles?.length ?? 0) > 0;
   // Several sliced files at once. One file is not a choice, so a single-entry
-  // list behaves exactly like an ordinary print.
-  const isMultiFile = mode === 'create' && (variantFiles?.length ?? 0) > 1;
+  // list behaves exactly like an ordinary print, unless it is the last file of
+  // a resumed run: one printer may already have it, and only the separate-jobs
+  // path knows to skip that pair.
+  const isMultiFile = mode === 'create' && ((variantFiles?.length ?? 0) > 1 || resumed);
   // What those files become (#3462): one job with a candidate per file (#671),
   // or one queue item per file. Only a selection made in the File Manager may
   // be split into separate jobs; a version group is the same job sliced for
   // different printers, so without `separateJobsAllowed` it stays alternatives
   // and the dialog behaves exactly as before.
   const [multiFileMode, setMultiFileMode] = useState<MultiFileMode>(() =>
-    separateJobsAllowed && isMultiFile ? defaultMultiFileMode(variantFiles!) : 'alternatives',
+    resumed ? 'separate' : separateJobsAllowed && isMultiFile ? defaultMultiFileMode(variantFiles!) : 'alternatives',
   );
   // Cross-model alternatives (#671).
   const isCrossModel = isMultiFile && multiFileMode === 'alternatives';
@@ -140,11 +146,17 @@ export function PrintModal({
   // The rest is the remainder of those jobs, so the mode is no longer offered:
   // as alternatives it could be a job of one candidate, or one whose filament
   // panel describes a file that has already been queued and left the list.
-  const [partlyQueued, setPartlyQueued] = useState(false);
+  const [partlyQueued, setPartlyQueued] = useState(resumed);
   // File and printer pairs earlier submits of a partly queued run got into the
   // queue. The next submit skips them, so a file one printer took and another
   // refused is not queued on the first printer again.
-  const [queuedPairs, setQueuedPairs] = useState<ReadonlySet<string>>(() => new Set());
+  const [queuedPairs, setQueuedPairs] = useState<ReadonlySet<string>>(
+    () => new Set(resumed ? resumeSeparateJobs!.queuedPairs : []),
+  );
+  // ASAP positions the run has taken so far. The backend moves everything at
+  // or below an inserted position down, so a second submit that restarted at 1
+  // would put the rest ahead of what is already queued.
+  const [asapPositionsTaken, setAsapPositionsTaken] = useState(resumed ? resumeSeparateJobs!.asapInserted : 0);
   const showModeToggle = isMultiFile && !!separateJobsAllowed && !partlyQueued;
   // Editing an already-queued cross-model item. The candidates are shown so the
   // dialog doesn't misrepresent the job as a plain "Any H2D" — which is what it
@@ -163,6 +175,10 @@ export function PrintModal({
   const hasEditingVariants = editingVariants.length > 0;
   const [candidates, setCandidates] = useState<VariantCandidate[]>(variantFiles ?? []);
   const [candidatePlates, setCandidatePlates] = useState<Record<number, number | null>>({});
+  // Whether every listed file's plates are known and chosen (#3471 review).
+  // Before that a quick Print would send plate_id null: the whole file's time
+  // and cost, and plate 1 printing.
+  const [candidatePlatesReady, setCandidatePlatesReady] = useState(false);
 
   type FilamentWarningItem = {
     printerId: number;
@@ -1515,6 +1531,7 @@ export function PrintModal({
           plateByFile: candidatePlates,
           printerIds,
           alreadyQueued: queuedPairs,
+          asapInsertedBefore: asapPositionsTaken,
           quantity: effectiveQuantity,
           asap: scheduleOptions.scheduleType === 'asap',
           buildItem: (file, plateId, printerId, printerIndex) => {
@@ -1549,6 +1566,7 @@ export function PrintModal({
           onProgress: (current, total) => setSubmitProgress({ current, total }),
         });
 
+        setAsapPositionsTaken(outcome.asapInserted);
         if (outcome.failure) {
           const allQueued = new Set([...queuedPairs, ...outcome.queuedPairs]);
           setQueuedPairs(allQueued);
@@ -1571,15 +1589,30 @@ export function PrintModal({
           );
           // Only files queued on every printer leave the list; the refused one
           // stays, even if a printer before the refusal took it.
-          setCandidates((prev) => prev.filter((c) => !outcome.queuedFileIds.includes(c.id)));
+          const remaining = candidates.filter((c) => !outcome.queuedFileIds.includes(c.id));
+          setCandidates(remaining);
           // Any item in the queue makes this run partly queued, also one of
           // the refused file on an earlier printer.
           if (outcome.itemsCreated > 0) setPartlyQueued(true);
+          // The opener keeps this if the dialog is closed now: without it the
+          // same selection would open empty-handed and queue them again.
+          if (allQueued.size > 0) {
+            const remainingIds = remaining.map((c) => c.id);
+            onSeparateJobsProgress?.({
+              queuedPairs: [...allQueued],
+              asapInserted: outcome.asapInserted,
+              queuedFileIds: (variantFiles ?? []).map((f) => f.id).filter((id) => !remainingIds.includes(id)),
+              remainingFileIds: remainingIds,
+            });
+          }
           queryClient.invalidateQueries({ queryKey: ['queue'] });
           return;
         }
 
-        await showQueuedToast(outcome.itemsCreated);
+        // Nothing posted means every remaining pair was already queued (a
+        // refusing printer deselected since): a success, but "0 items queued"
+        // would say otherwise.
+        if (outcome.itemsCreated > 0) await showQueuedToast(outcome.itemsCreated);
         queryClient.invalidateQueries({ queryKey: ['queue'] });
         onSuccess?.();
         onClose();
@@ -1884,6 +1917,8 @@ export function PrintModal({
     // Cross-model mismatch cannot be queued (#2578); separate jobs per file.
     if (!isMultiFile && assignmentMode === 'model' && !isGcodeCompatible(slicedForModel, targetModel)) return false;
     if (separateJobsIncompatible.length > 0) return false;
+    // Each listed file's plate comes from the list, in either mode.
+    if (isMultiFile && !candidatePlatesReady) return false;
 
     // For multi-plate files, need at least one plate selected. Separate jobs
     // take each file's plate from the candidate list, not from this selection.
@@ -1914,6 +1949,7 @@ export function PrintModal({
     isMultiFile,
     isSeparateJobs,
     separateJobsIncompatible,
+    candidatePlatesReady,
     billingEnabled,
     loadingCostCenters,
     selectedCostCenter,
@@ -2159,6 +2195,7 @@ export function PrintModal({
                 onPlateChange={(fileId, plateId) =>
                   setCandidatePlates((prev) => ({ ...prev, [fileId]: plateId }))
                 }
+                onPlatesReadyChange={setCandidatePlatesReady}
                 title={isSeparateJobs ? t('printModal.multiFile.orderTitle') : undefined}
                 help={showModeToggle ? '' : isSeparateJobs ? t('printModal.multiFile.separateHint') : undefined}
               />

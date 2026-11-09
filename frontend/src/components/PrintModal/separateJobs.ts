@@ -5,12 +5,33 @@ import type { VariantCandidate } from './VariantCandidates';
 export interface SeparateJobsResult {
   /** Successful POSTs. */
   itemsCreated: number;
+  /** ASAP items inserted so far, counting `asapInsertedBefore`. */
+  asapInserted: number;
   /** Files now queued on every printer, counting pairs from `alreadyQueued`. */
   queuedFileIds: number[];
   /** `queuedPairKey`s of this call's successful POSTs. */
   queuedPairs: string[];
   /** The refused file and the server's message, null when everything went through. */
   failure: { file: VariantCandidate; message: string } | null;
+}
+
+/**
+ * What a partly queued run leaves for the next dialog on the same files
+ * (#3471 review): closing the dialog must not forget what went in.
+ */
+export interface SeparateJobsResume {
+  /** `queuedPairKey`s already in the queue. */
+  queuedPairs: string[];
+  /** ASAP positions taken so far, so the rest goes in behind them. */
+  asapInserted: number;
+}
+
+/** Reported after a refusal: the resume state, and which files are done. */
+export interface SeparateJobsProgress extends SeparateJobsResume {
+  /** Files queued on every printer; they leave the selection. */
+  queuedFileIds: number[];
+  /** Files still listed, in list order. */
+  remainingFileIds: number[];
 }
 
 /** One queue item: a file on a printer (`null` = any printer of the model). */
@@ -44,6 +65,8 @@ export async function queueSeparateJobs(args: {
   printerIds: (number | null)[];
   /** `queuedPairKey`s queued by earlier submits of this dialog. */
   alreadyQueued?: ReadonlySet<string>;
+  /** ASAP items earlier submits inserted; this call's positions follow them. */
+  asapInsertedBefore?: number;
   quantity: number;
   asap: boolean;
   buildItem: (
@@ -66,8 +89,10 @@ export async function queueSeparateJobs(args: {
   const queuedPairs: string[] = [];
   let itemsCreated = 0;
   // Same single counter as applyAsapInsertion in index.tsx: position = items
-  // inserted so far + 1, then advance by this call's quantity.
-  let asapInserted = 0;
+  // inserted so far + 1, then advance by this call's quantity. It starts at
+  // what earlier submits inserted: the backend moves everything at or below a
+  // position down, so restarting at 1 would put the rest ahead of them.
+  let asapInserted = args.asapInsertedBefore ?? 0;
 
   for (const file of files) {
     const plateId = plateByFile[file.id] ?? null;
@@ -85,6 +110,7 @@ export async function queueSeparateJobs(args: {
       } catch (error) {
         return {
           itemsCreated,
+          asapInserted,
           queuedFileIds,
           queuedPairs,
           failure: { file, message: error instanceof Error ? error.message : String(error) },
@@ -97,5 +123,5 @@ export async function queueSeparateJobs(args: {
     }
     queuedFileIds.push(file.id);
   }
-  return { itemsCreated, queuedFileIds, queuedPairs, failure: null };
+  return { itemsCreated, asapInserted, queuedFileIds, queuedPairs, failure: null };
 }

@@ -9,6 +9,7 @@
  * options applying to every item.
  */
 
+import type { ComponentProps } from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -21,7 +22,9 @@ import type { VariantCandidate } from '../../components/PrintModal/VariantCandid
 const PART_A: VariantCandidate = { id: 11, filename: 'part-a.gcode.3mf', sliced_for_model: 'A1' };
 const PART_B: VariantCandidate = { id: 12, filename: 'part-b.gcode.3mf', sliced_for_model: 'A1' };
 const PART_C: VariantCandidate = { id: 13, filename: 'part-c.gcode.3mf', sliced_for_model: 'P1S' };
-const BY_ID: Record<number, VariantCandidate> = { 11: PART_A, 12: PART_B, 13: PART_C };
+// No sliced-for model, so the printer picker lists every printer.
+const PART_D: VariantCandidate = { id: 14, filename: 'part-d.gcode.3mf', sliced_for_model: null };
+const BY_ID: Record<number, VariantCandidate> = { 11: PART_A, 12: PART_B, 13: PART_C, 14: PART_D };
 
 type Body = Record<string, unknown>;
 
@@ -68,14 +71,20 @@ function mockBackend(printers: Array<Record<string, unknown>> = [
   );
 }
 
-function renderModal(files: VariantCandidate[], props: { separateJobsAllowed?: boolean; onClose?: () => void } = {}) {
+function renderModal(
+  files: VariantCandidate[],
+  props: Pick<
+    ComponentProps<typeof PrintModal>,
+    'separateJobsAllowed' | 'onClose' | 'onSuccess' | 'resumeSeparateJobs' | 'onSeparateJobsProgress'
+  > = {},
+) {
   render(
     <PrintModal
       mode="create"
       libraryFileId={files[0].id}
       variantFiles={files}
-      separateJobsAllowed={props.separateJobsAllowed}
       archiveName="parts"
+      {...props}
       onClose={props.onClose ?? (() => {})}
     />,
   );
@@ -473,5 +482,195 @@ describe('PrintModal with several selected files (#3462)', () => {
 
     await waitFor(() => expect(posted).toHaveLength(3));
     expect(posted[2]).toMatchObject({ library_file_id: 13, target_model: 'P1S', printer_id: null });
+  });
+
+  it('keeps Alternatives blocked for two files of one model, also on a click', async () => {
+    renderModal([PART_A, PART_B], { separateJobsAllowed: true });
+
+    const alternatives = await screen.findByRole('radio', { name: 'Alternatives' });
+    fireEvent.click(alternatives);
+
+    expect(screen.getByRole('radio', { name: 'Separate jobs' })).toHaveAttribute('aria-checked', 'true');
+    expect(alternatives).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByText('Queue order')).toBeInTheDocument();
+    expect(screen.queryByText('Printer alternatives')).not.toBeInTheDocument();
+  });
+
+  it('queues the rest of an ASAP run after the items already inserted (#3471 review)', async () => {
+    // part-a goes in at 1, part-b is refused. The second Print must put
+    // part-b at 2, behind part-a, not ahead of it at 1.
+    respond = (_body, index) =>
+      index === 1
+        ? HttpResponse.json({ detail: 'refused' }, { status: 400 })
+        : HttpResponse.json({ id: index + 1, status: 'pending' });
+    const user = userEvent.setup();
+    renderModal([PART_A, PART_B], { separateJobsAllowed: true });
+
+    await pickPrinterAndWait(user, 'A1 Test');
+    await user.click(screen.getByRole('button', { name: /^ASAP$/i }));
+    await user.click(printButton());
+    await screen.findByText(/Not queued: part-b\.gcode\.3mf/);
+    expect(posted[0]).toMatchObject({ library_file_id: 11, insert_at_top: true, insert_position: 1 });
+
+    await waitFor(() => expect(printButton()).toBeEnabled());
+    await user.click(printButton());
+    await waitFor(() => expect(posted).toHaveLength(3));
+    expect(posted[2]).toMatchObject({ library_file_id: 12, insert_at_top: true, insert_position: 2 });
+  });
+
+  it('closes without a "0 items queued" message when nothing is left to send (#3471 review)', async () => {
+    // Everything goes through except part-c on the P1S. With the P1S
+    // deselected, part-c on the A1 is already queued: nothing to post.
+    respond = (_body, index) =>
+      index === 3
+        ? HttpResponse.json({ detail: 'refused' }, { status: 400 })
+        : HttpResponse.json({ id: index + 1, status: 'pending' });
+    const onClose = vi.fn();
+    const onSuccess = vi.fn();
+    const user = userEvent.setup();
+    renderModal([PART_A, PART_C], { separateJobsAllowed: true, onClose, onSuccess });
+
+    await user.click(await screen.findByRole('radio', { name: 'Separate jobs' }));
+    await user.click(await screen.findByText('A1 Test'));
+    await pickPrinterAndWait(user, 'P1S Test');
+    await user.click(printButton());
+    await screen.findByText(/Not queued: part-c\.gcode\.3mf/);
+    expect(posted).toHaveLength(4);
+
+    await user.click(screen.getByText('P1S Test'));
+    await waitFor(() => expect(printButton()).toBeEnabled());
+    await user.click(printButton());
+
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(onSuccess).toHaveBeenCalled();
+    expect(posted).toHaveLength(4);
+    expect(screen.queryByText(/0 items queued/)).not.toBeInTheDocument();
+  });
+
+  describe('while a file\'s plate list is still loading (#3471 review)', () => {
+    let releasePlates: () => void;
+    beforeEach(() => {
+      const platesLoaded = new Promise<void>((resolve) => {
+        releasePlates = resolve;
+      });
+      server.use(
+        http.get('/api/v1/library/files/:id/plates', async ({ params }) => {
+          if (Number(params.id) !== 12) {
+            return HttpResponse.json({ file_id: Number(params.id), filename: 'x', plates: [], is_multi_plate: false });
+          }
+          await platesLoaded;
+          return HttpResponse.json({
+            file_id: 12,
+            filename: 'part-b.gcode.3mf',
+            is_multi_plate: true,
+            plates: [1, 2].map((index) => ({
+              index,
+              name: `Plate ${index}`,
+              objects: ['part'],
+              filaments: [{ slot_id: 1, type: 'PLA', color: '#FFFFFF' }],
+              has_thumbnail: false,
+              thumbnail_url: null,
+              bed_type: null,
+              print_time_seconds: 600,
+            })),
+          });
+        }),
+      );
+    });
+
+    it('holds Print for separate jobs until the plate is chosen', async () => {
+      const user = userEvent.setup();
+      renderModal([PART_A, PART_B], { separateJobsAllowed: true });
+
+      await user.click(await screen.findByText('A1 Test'));
+      // Long enough for the printer status; only the plate list is missing.
+      await delay(300);
+      expect(printButton()).toBeDisabled();
+
+      releasePlates();
+      await screen.findByLabelText('Plate for part-b.gcode.3mf');
+      await waitFor(() => expect(printButton()).toBeEnabled());
+      await user.click(printButton());
+
+      await waitFor(() => expect(posted).toHaveLength(2));
+      expect(posted[1]).toMatchObject({ library_file_id: 12, plate_id: 1 });
+    });
+
+    it('holds Print for alternatives the same way', async () => {
+      const user = userEvent.setup();
+      renderModal([PART_C, PART_B]);
+
+      await screen.findByText('part-b.gcode.3mf');
+      await delay(300);
+      expect(printButton()).toBeDisabled();
+
+      releasePlates();
+      await screen.findByLabelText('Plate for part-b.gcode.3mf');
+      await waitFor(() => expect(printButton()).toBeEnabled());
+      await user.click(printButton());
+
+      await waitFor(() => expect(posted).toHaveLength(1));
+      expect(posted[0].variants).toEqual(
+        expect.arrayContaining([expect.objectContaining({ library_file_id: 12, plate_id: 1 })]),
+      );
+    });
+  });
+
+  describe('carried over from an earlier dialog (#3471 review)', () => {
+    it('reports what a refused run got into the queue', async () => {
+      respond = (_body, index) =>
+        index === 1
+          ? HttpResponse.json({ detail: 'refused' }, { status: 400 })
+          : HttpResponse.json({ id: index + 1, status: 'pending' });
+      const onSeparateJobsProgress = vi.fn();
+      const user = userEvent.setup();
+      renderModal([PART_A, PART_B], { separateJobsAllowed: true, onSeparateJobsProgress });
+
+      await pickPrinterAndWait(user, 'A1 Test');
+      await user.click(screen.getByRole('button', { name: /^ASAP$/i }));
+      await user.click(printButton());
+      await screen.findByText(/Not queued: part-b\.gcode\.3mf/);
+
+      expect(onSeparateJobsProgress).toHaveBeenLastCalledWith({
+        queuedPairs: ['11:1'],
+        asapInserted: 1,
+        queuedFileIds: [11],
+        remainingFileIds: [12],
+      });
+    });
+
+    it('skips the pairs and continues the ASAP positions of the earlier dialog', async () => {
+      const user = userEvent.setup();
+      renderModal([PART_A, PART_B], {
+        separateJobsAllowed: true,
+        resumeSeparateJobs: { queuedPairs: ['11:1'], asapInserted: 1 },
+      });
+
+      // The rest of a partly queued run: no new choice of mode.
+      await screen.findByText('part-b.gcode.3mf');
+      expect(screen.queryByRole('radiogroup', { name: 'What the selected files become' })).not.toBeInTheDocument();
+
+      await pickPrinterAndWait(user, 'A1 Test');
+      await user.click(screen.getByRole('button', { name: /^ASAP$/i }));
+      await user.click(printButton());
+
+      await waitFor(() => expect(posted).toHaveLength(1));
+      expect(posted[0]).toMatchObject({ library_file_id: 12, printer_id: 1, insert_position: 2 });
+    });
+
+    it('continues a single file that one printer already took', async () => {
+      const user = userEvent.setup();
+      renderModal([PART_D], {
+        separateJobsAllowed: true,
+        resumeSeparateJobs: { queuedPairs: ['14:1'], asapInserted: 0 },
+      });
+
+      await user.click(await screen.findByText('A1 Test'));
+      await pickPrinterAndWait(user, 'P1S Test');
+      await user.click(printButton());
+
+      await waitFor(() => expect(posted).toHaveLength(1));
+      expect(posted.map((b) => [b.library_file_id, b.printer_id])).toEqual([[14, 2]]);
+    });
   });
 });

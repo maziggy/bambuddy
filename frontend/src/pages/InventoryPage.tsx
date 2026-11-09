@@ -32,7 +32,7 @@ import { useColorCatalogVersion } from '../hooks/useColorCatalogVersion';
 import { getCurrencySymbol } from '../utils/currency';
 import { shownCostPerKg } from '../utils/spoolCost';
 import { formatDateInput, parseUTCDate, type DateFormat } from '../utils/date';
-import { formatSlotLabel } from '../utils/amsHelpers';
+import { formatAssignmentSlotLabel } from '../utils/amsHelpers';
 import { filterSpoolsByQuery } from '../utils/inventorySearch';
 import {
   inventoryLocationsQueryKey,
@@ -214,6 +214,7 @@ type LocationDisplay = {
   ams_id: number;
   tray_id: number;
   ams_label: string | null;
+  printer_model?: string | null;  // for formatAssignmentSlotLabel
 };
 
 type CellCtx = {
@@ -327,9 +328,7 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
     const assignment = assignmentMap[spool.id];
     if (!assignment) return <span className="text-sm text-bambu-gray">-</span>;
     const printerLabel = assignment.printer_name || `Printer ${assignment.printer_id}`;
-    const isExternal = assignment.ams_id === 254 || assignment.ams_id === 255;
-    const isHt = !isExternal && assignment.ams_id >= 128;
-    const slotLabel = formatSlotLabel(assignment.ams_id, assignment.tray_id, isHt, isExternal);
+    const slotLabel = formatAssignmentSlotLabel(assignment);
     return (
       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400">
         {printerLabel} {slotLabel}{assignment.ams_label ? ` (${assignment.ams_label})` : ''}
@@ -576,10 +575,8 @@ const columnSortValues: Record<
   location: (s, am) => {
     const a = am[s.id];
     if (!a) return '';
-    const isExt = a.ams_id === 254 || a.ams_id === 255;
-    const isHt = !isExt && a.ams_id >= 128;
     const label = a.ams_label ? ` (${a.ams_label})` : '';
-    return `${a.printer_name || ''} ${formatSlotLabel(a.ams_id, a.tray_id, isHt, isExt)}${label}`;
+    return `${a.printer_name || ''} ${formatAssignmentSlotLabel(a)}${label}`;
   },
   storage_location: (s) => (s.storage_location || '').toLowerCase(),
   label_weight: (s) => s.label_weight,
@@ -1235,6 +1232,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
         ams_id: a.ams_id,
         tray_id: a.tray_id,
         ams_label: a.ams_label ?? null,
+        printer_model: a.printer_model ?? null,
       };
     }
     for (const a of spoolmanSlotAssignments) {
@@ -1255,6 +1253,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
           ams_id: a.ams_id,
           tray_id: a.tray_id,
           ams_label: a.ams_label ?? null,
+          printer_model: a.printer_model ?? null,
         };
       }
     }

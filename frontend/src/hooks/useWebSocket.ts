@@ -437,6 +437,13 @@ export function useWebSocket() {
         debouncedInvalidate('archiveStats');
         break;
 
+      case 'library_files_changed':
+        // A virtual printer stored an upload in the File Manager.
+        debouncedInvalidate('library-files');
+        debouncedInvalidate('library-folders');
+        debouncedInvalidate('library-stats');
+        break;
+
       case 'archive_updated':
         debouncedInvalidate('archives');
         debouncedInvalidate('archive');

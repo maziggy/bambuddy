@@ -55,7 +55,13 @@ from backend.app.models.supplier import SpoolmanSpoolSupplier, Supplier
 from backend.app.models.user import User
 from backend.app.schemas.spool import SpoolFilamentPresetBase, SpoolKProfileBase, naive_utc
 from backend.app.schemas.spool_usage import SpoolUsageHistoryResponse
-from backend.app.schemas.spoolman import SlotAmsId, SlotTrayId, SpoolmanFilamentPatch, SpoolmanSlotAssignmentEnriched
+from backend.app.schemas.spoolman import (
+    SlotAmsId,
+    SlotTrayId,
+    SpoolmanFilamentPatch,
+    SpoolmanSlotAssignmentEnriched,
+    check_slot_tray_id,
+)
 from backend.app.schemas.supplier import SpoolSupplierLinkInput
 from backend.app.services import filament_profile_default as profile_defaults, slot_unlink_grace, spool_swaps
 from backend.app.services.ams_assignment_lock import get_spool_move_lock
@@ -86,6 +92,7 @@ from backend.app.utils.filament_ids import (
     normalize_slicer_filament,
 )
 from backend.app.utils.filament_types import nozzle_temp_range, printer_filament_type
+from backend.app.utils.tray_ids import external_tray_id
 
 logger = logging.getLogger(__name__)
 
@@ -505,6 +512,11 @@ class SpoolSlotAssignmentRequest(BaseModel):
     # The spool also leaves any other slot it is assigned to, in the same
     # transaction (#1574): a scanned spool is the one in the user's hand.
     move: bool = False
+
+    @model_validator(mode="after")
+    def a_real_slot(self) -> SpoolSlotAssignmentRequest:
+        check_slot_tray_id(self.ams_id, self.tray_id)
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -1720,6 +1732,7 @@ async def get_all_spoolman_slot_assignments(
                 tray_id=s.tray_id,
                 spoolman_spool_id=s.spoolman_spool_id,
                 ams_label=_ams_label_for(s.printer_id, s.ams_id),
+                printer_model=s.printer.model if s.printer else None,
             )
         )
     return enriched
@@ -1883,7 +1896,7 @@ def _live_slot_tray(state, ams_id: int, tray_id: int) -> dict:
     if ams_id == 255:
         vt_trays = raw.get("vt_tray") or []
         for vt in [vt_trays] if isinstance(vt_trays, dict) else vt_trays:
-            if isinstance(vt, dict) and str(vt.get("id", 254)) == str(254 + tray_id):
+            if isinstance(vt, dict) and str(vt.get("id", 254)) == str(external_tray_id(tray_id)):
                 return vt
         return {}
     units = raw.get("ams") or []

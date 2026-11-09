@@ -8,7 +8,8 @@ import { MaterialMismatchConfirm } from './MaterialMismatchConfirm';
 import { QrSpoolScanner } from './QrSpoolScanner';
 import { useToast } from '../contexts/ToastContext';
 import { useUiSettings } from '../hooks/useUiSettings';
-import { formatSlotLabel, getEmptySlotKind } from '../utils/amsHelpers';
+import { formatSlotLabel, getEmptySlotKind, rackExternalLabel } from '../utils/amsHelpers';
+import { externalSlotIndex, externalTrayId, trayLayoutOf } from '../utils/trayIds';
 import { findMaterialMismatch, type MaterialMismatch } from '../utils/assignMismatch';
 import { getSwatchStyle } from '../utils/colors';
 import { inventoryLocationsQueryKey, invalidateInventoryLocations } from '../utils/inventoryQueries';
@@ -70,8 +71,10 @@ function targetLocationLabel(target: AssignTarget): string {
     : target.locationName;
 }
 
-function externalLabel(t: (k: string) => string, vtCount: number, trayId: number): string {
-  // Match PrintersPage: Ext-L / Ext-R when two external slots, "External" otherwise.
+function externalLabel(t: (k: string) => string, vtCount: number, trayId: number, rack = false): string {
+  // Match PrintersPage: Ext-n on a rack printer, Ext-L / Ext-R when two
+  // external slots, "External" otherwise.
+  if (rack) return rackExternalLabel(externalTrayId(trayId));
   if (vtCount > 1) return t(trayId === 0 ? 'printers.extL' : 'printers.extR');
   return t('printers.external');
 }
@@ -156,17 +159,18 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false }: Q
           trayId: tray.id,
           isHt: ams.is_ams_ht,
           isExternal: false,
-          label: formatSlotLabel(ams.id, tray.id, ams.is_ams_ht, false),
+          label: formatSlotLabel(ams.id, tray.id, ams.is_ams_ht, false, ams.ams_type),
           tray,
         });
       }
     }
     // External (vt_tray) slots: backend keys them under ams_id 255 with
-    // tray_id = id - 254 (mirrors PrintersPage).
+    // tray_id = id - 254 (mirrors PrintersPage; utils/trayIds externalSlotIndex).
     const externals = status.vt_tray ?? [];
+    const rack = trayLayoutOf(status.ams, externals).rack;
     for (const vt of externals) {
-      const trayId = (vt.id ?? 254) - 254;
-      out.push({ amsId: 255, trayId, isHt: false, isExternal: true, label: externalLabel(t, externals.length, trayId), tray: vt });
+      const trayId = externalSlotIndex(vt.id ?? 254);
+      out.push({ amsId: 255, trayId, isHt: false, isExternal: true, label: externalLabel(t, externals.length, trayId, rack), tray: vt });
     }
     return out;
   }, [status, t]);

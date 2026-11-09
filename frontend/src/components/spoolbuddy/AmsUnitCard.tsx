@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import type { AMSUnit, AMSTray } from '../../api/client';
-import { getEmptySlotKind, getFillBarColor } from '../../utils/amsHelpers';
+import { amsUnitSlotCount, getEmptySlotKind, getFillBarColor, isAms3hUnit, spoolBuddyAmsName } from '../../utils/amsHelpers';
 
 function trayColorToCSS(color: string | null): string {
   if (!color) return '#808080';
@@ -9,12 +9,6 @@ function trayColorToCSS(color: string | null): string {
 
 function isTrayEmpty(tray: AMSTray): boolean {
   return !tray.tray_type || tray.tray_type === '';
-}
-
-function getAmsName(id: number): string {
-  if (id <= 3) return `AMS ${String.fromCharCode(65 + id)}`;
-  if (id >= 128 && id <= 135) return `AMS HT ${String.fromCharCode(65 + id - 128)}`;
-  return `AMS ${id}`;
 }
 
 // --- SVG Icons (matching PrintersPage Bambu Lab style) ---
@@ -249,8 +243,9 @@ export function AmsUnitCard({ unit, activeSlot, onConfigureSlot, isDualNozzle, n
   const { t } = useTranslation();
   const trays = unit.tray || [];
   const isHt = unit.is_ams_ht;
-  const slotCount = isHt ? 1 : 4;
-  const amsName = getAmsName(unit.id);
+  const isAms3h = isAms3hUnit(unit);
+  const slotCount = isHt ? 1 : amsUnitSlotCount(unit);
+  const amsName = spoolBuddyAmsName(unit.id, unit.ams_type);
 
   return (
     <div className="bg-bambu-dark-secondary rounded-xl border border-[var(--border-color)] p-3 shadow-sm">
@@ -281,7 +276,7 @@ export function AmsUnitCard({ unit, activeSlot, onConfigureSlot, isDualNozzle, n
       </div>
 
       {/* Slots grid */}
-      <div className={`grid ${isHt ? 'grid-cols-1 max-w-[100px] mx-auto' : 'grid-cols-4'} gap-2`}>
+      <div className={`grid ${isHt ? 'grid-cols-1 max-w-[100px] mx-auto' : isAms3h ? 'grid-cols-5 md:grid-cols-9' : 'grid-cols-4'} gap-2`}>
         {Array.from({ length: slotCount }).map((_, i) => {
           const tray = trays[i] || {
             id: i,

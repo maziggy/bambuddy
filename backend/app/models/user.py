@@ -45,6 +45,14 @@ class User(Base):
     # whoever is given the name next.
     password_changed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=utcnow_naive)
 
+    # Personal access code for a virtual printer (#1430): entered in the user's
+    # slicer instead of the virtual printer's own code, it tells the virtual
+    # printer whose upload it is. Kept readable (as printers' and virtual
+    # printers' codes are), since the user has to read it back to type it in.
+    # NULL until the user first opens it. A credential: never logged, never in
+    # an API response other than the user's own.
+    slicer_access_code: Mapped[str | None] = mapped_column(String(8), nullable=True, unique=True, index=True)
+
     # Per-user Bambu Cloud credentials (when auth is enabled, each user has their own)
     cloud_token: Mapped[str | None] = mapped_column(String(500), nullable=True, default=None)
     cloud_email: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)

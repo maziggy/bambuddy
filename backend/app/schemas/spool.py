@@ -356,6 +356,7 @@ class SpoolAssignmentResponse(BaseModel):
     configured: bool = False
     pending_config: bool = False  # True when slot was empty at assign time; will configure on insert
     ams_label: str | None = None  # User-defined friendly name for the AMS unit
+    printer_model: str | None = None  # e.g. "H3C": labels its AMS 3H slots "3H-n" and its external inputs "Ext-n"
 
     class Config:
         from_attributes = True

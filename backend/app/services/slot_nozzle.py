@@ -47,6 +47,7 @@ from dataclasses import dataclass
 
 from backend.app.utils.fts_routing import slot_extruder
 from backend.app.utils.printer_models import is_dual_nozzle_model
+from backend.app.utils.tray_ids import TrayLayout
 
 logger = logging.getLogger(__name__)
 
@@ -129,8 +130,9 @@ def reports_two_nozzles(state) -> bool:
     return bool(
         (len(nozzles) > 1 and getattr(nozzles[1], "nozzle_diameter", ""))
         or raw_data.get("ams_extruder_map")
-        # isinstance, because a dict here would count its keys as trays.
-        or (isinstance(vt_trays, list) and len(vt_trays) > 1)
+        # isinstance, because a dict here would count its keys as trays. An
+        # H3C's one input per hotend is not a second extruder.
+        or (isinstance(vt_trays, list) and len(vt_trays) > 1 and not TrayLayout.from_units(None, vt_trays).rack)
     )
 
 

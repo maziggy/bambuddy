@@ -76,6 +76,7 @@ from backend.app.utils.printer_models import (
     normalize_printer_model_id,
 )
 from backend.app.utils.slicer_strings import first_slicer_string, slicer_strings
+from backend.app.utils.tray_ids import external_slot_index, is_ams_ht_id
 
 logger = logging.getLogger(__name__)
 
@@ -902,7 +903,7 @@ async def list_loaded_spools(
                 for t in raw_trays
             ]
             # Same rule as the printer status: an AMS-HT is a unit id 128-135.
-            units.append(LoadedSpoolUnit(id=ams_id, is_ams_ht=128 <= ams_id <= 135, trays=trays))
+            units.append(LoadedSpoolUnit(id=ams_id, is_ams_ht=is_ams_ht_id(ams_id), trays=trays))
 
         external: list[LoadedSpoolTray] = []
         holders = [vt for vt in raw_data.get("vt_tray") or [] if isinstance(vt, dict)]
@@ -911,7 +912,7 @@ async def list_loaded_spools(
                 continue
             # The holders are trays 254 / 255; slot presets key them as AMS 255,
             # tray 0 / 1, the way the printer card saves them.
-            tray_id = int(vt.get("id", 254)) - 254
+            tray_id = external_slot_index(int(vt.get("id", 254)))
             external.append(_loaded_spool_tray(vt, 255, tray_id, saved.get((printer.id, 255, tray_id))))
 
         out.append(

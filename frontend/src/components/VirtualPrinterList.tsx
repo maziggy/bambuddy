@@ -10,6 +10,13 @@ import { useToast } from '../contexts/ToastContext';
 import { copyTextToClipboard, downloadTextFile } from '../utils/clipboard';
 import { VirtualPrinterCard } from './VirtualPrinterCard';
 import { VirtualPrinterAddDialog } from './VirtualPrinterAddDialog';
+import { SlicerAccessCodeCard } from './SlicerAccessCodeCard';
+
+// Operating system names, the same in every language.
+const INSTALLER_PLATFORMS = [
+  ['windows', 'Windows'],
+  ['unix', 'Linux / macOS'],
+] as const;
 
 export function VirtualPrinterList() {
   const { t } = useTranslation();
@@ -68,6 +75,19 @@ export function VirtualPrinterList() {
     downloadTextFile(caCert.pem, 'bambuddy-virtual-printer-ca.crt', 'application/x-pem-file');
   };
 
+  const [installerPending, setInstallerPending] = useState<'windows' | 'unix' | null>(null);
+  const handleDownloadInstaller = async (platform: 'windows' | 'unix') => {
+    setInstallerPending(platform);
+    try {
+      const installer = await multiVirtualPrinterApi.getCaCertificateInstaller(platform);
+      downloadTextFile(installer.content, installer.filename, 'application/octet-stream');
+    } catch (error) {
+      showToast((error as Error).message || t('virtualPrinter.caCert.installerFailed'), 'error');
+    } finally {
+      setInstallerPending(null);
+    }
+  };
+
   if (isLoading) {
     return (
       <Card>
@@ -80,6 +100,7 @@ export function VirtualPrinterList() {
 
   const printers = data?.printers || [];
   const models = data?.models || {};
+  const modelSerialPrefixes = data?.model_serial_prefixes || {};
 
   return (
     <div className="space-y-4">
@@ -123,6 +144,9 @@ export function VirtualPrinterList() {
         </Card>
       </div>
 
+      {/* The signed-in user's own access code (#1430); nothing while auth is off. */}
+      <SlicerAccessCodeCard />
+
       {/* Global VP behavior settings — two side-by-side cards, not full width */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
         {/* Slicer CA certificate — shared by every VP, imported into the
@@ -159,6 +183,25 @@ export function VirtualPrinterList() {
                 </div>
                 <p className="text-xs text-bambu-gray mt-1">
                   {t('virtualPrinter.caCert.description')}
+                </p>
+                <div className="flex flex-wrap items-center gap-2 mt-2">
+                  <span className="text-xs text-white">{t('virtualPrinter.caCert.installerTitle')}</span>
+                  {INSTALLER_PLATFORMS.map(([platform, label]) => (
+                    <button
+                      key={platform}
+                      onClick={() => handleDownloadInstaller(platform)}
+                      disabled={installerPending !== null}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded bg-bambu-dark-secondary border border-bambu-dark-tertiary text-white hover:border-bambu-gray disabled:opacity-50 transition-colors"
+                    >
+                      {installerPending === platform
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        : <Download className="w-3.5 h-3.5" />}
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-bambu-gray mt-1">
+                  {t('virtualPrinter.caCert.installerHint')}
                 </p>
                 {caCert && (
                   <p
@@ -234,7 +277,7 @@ export function VirtualPrinterList() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
           {printers.map((printer) => (
-            <VirtualPrinterCard key={printer.id} printer={printer} models={models} />
+            <VirtualPrinterCard key={printer.id} printer={printer} models={models} modelSerialPrefixes={modelSerialPrefixes} />
           ))}
         </div>
       )}

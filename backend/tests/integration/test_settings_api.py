@@ -45,6 +45,20 @@ class TestSettingsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_require_plate_clear_updates_wled_mapping(self, async_client: AsyncClient, monkeypatch):
+        from backend.app.services.wled import wled_manager
+
+        monkeypatch.setattr(wled_manager, "require_plate_clear", False)
+        enabled = await async_client.patch("/api/v1/settings/", json={"require_plate_clear": True})
+        assert enabled.status_code == 200
+        assert wled_manager.require_plate_clear is True
+
+        reset = await async_client.post("/api/v1/settings/reset")
+        assert reset.status_code == 200
+        assert wled_manager.require_plate_clear is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_unset_temp_alarm_reads_back_as_null(self, async_client: AsyncClient, db_session):
         """#2905: ams_temp_alarm is nullable, and settings storage stringifies
         None to the literal "None".

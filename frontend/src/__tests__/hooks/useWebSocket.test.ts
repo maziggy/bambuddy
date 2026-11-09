@@ -381,6 +381,35 @@ describe('useWebSocket hook', () => {
       vi.unstubAllGlobals();
     });
 
+    it('refetches the File Manager on library_files_changed (a virtual printer upload)', async () => {
+      vi.useFakeTimers();
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+      renderHook(() => useWebSocket(), {
+        wrapper: createWrapper(queryClient),
+      });
+
+      const ws = await waitForWs();
+      act(() => {
+        ws.open();
+      });
+      act(() => {
+        ws.simulateMessage({ type: 'library_files_changed', data: {} });
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(5000);
+      });
+
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['library-files'] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['library-folders'] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['library-stats'] });
+
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    });
+
     it('invalidates archives on archive_updated message', async () => {
       vi.useFakeTimers();
       const { useWebSocket } = await import('../../hooks/useWebSocket');

@@ -66,6 +66,12 @@ APPLIED: frozenset[tuple[str, str]] = frozenset(
         ("print_batches", "library_file_id"),
         ("print_queue", "library_file_id"),
         ("print_queue_variants", "library_file_id"),
+        # library_folders: a virtual printer's uploads would go into the next
+        # folder given the id, maybe someone's private one.
+        ("virtual_printers", "library_folder_id"),
+        # virtual_printers: an approved upload would go to the folder of the
+        # next virtual printer given the id.
+        ("pending_uploads", "virtual_printer_id"),
         # print_queue
         ("pipeline_jobs", "queue_entry_id"),
         ("print_log_entries", "queue_item_id"),
@@ -93,6 +99,9 @@ APPLIED: frozenset[tuple[str, str]] = frozenset(
         ("slicer_pipelines", "target_printer_id"),
         # A deleted printer's spools would stay "assigned" to it (SA-1).
         ("spool_assignment", "printer_id"),
+        # A printer given a deleted one's id would never be told about the
+        # faults that printer was notified about (#3486).
+        ("hms_notified_faults", "printer_id"),
         # A profile default's K profile would select a calibration slot on
         # the next printer given the id (#1326).
         ("filament_profile_default_k_profile", "printer_id"),
@@ -120,6 +129,7 @@ APPLIED: frozenset[tuple[str, str]] = frozenset(
         ("library_files", "created_by_id"),
         ("library_folders", "created_by_id"),
         ("long_lived_tokens", "user_id"),
+        ("pending_uploads", "uploaded_by_id"),
         ("pipeline_runs", "created_by"),
         ("print_archives", "created_by_id"),
         ("print_batches", "created_by_id"),

@@ -7,10 +7,10 @@ import { Card, CardContent } from './Card';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 
-type Mode = 'archive' | 'review' | 'queue' | 'proxy';
+type Mode = 'library' | 'review' | 'queue' | 'proxy';
 
 const MODE_LABELS: Record<string, string> = {
-  archive: 'archive',
+  library: 'library',
   review: 'review',
   queue: 'queue',
   proxy: 'proxy',
@@ -26,7 +26,7 @@ export function VirtualPrinterAddDialog({ onClose }: VirtualPrinterAddDialogProp
   const { showToast } = useToast();
 
   const [name, setName] = useState('');
-  const [mode, setMode] = useState<Mode>('archive');
+  const [mode, setMode] = useState<Mode>('library');
   const [targetPrinterId, setTargetPrinterId] = useState<number | null>(null);
 
   const { data: printers } = useQuery({
@@ -80,7 +80,7 @@ export function VirtualPrinterAddDialog({ onClose }: VirtualPrinterAddDialogProp
           <div>
             <label className="text-sm text-white font-medium block mb-1">{t('virtualPrinter.mode.title')}</label>
             <div className="grid grid-cols-2 gap-2">
-              {(['archive', 'review', 'queue', 'proxy'] as const).map((m) => (
+              {(['library', 'review', 'queue', 'proxy'] as const).map((m) => (
                 <button
                   key={m}
                   onClick={() => setMode(m)}

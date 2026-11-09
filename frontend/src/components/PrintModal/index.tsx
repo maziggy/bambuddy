@@ -23,7 +23,7 @@ import { getCurrencySymbol } from '../../utils/currency';
 import { getBedTypeInfo } from '../../utils/bedType';
 import { toDateTimeLocalValue, parseUTCDate } from '../../utils/date';
 import { isPlaceholderDate, effectivePreferLowest, filamentTypesCompatible } from '../../utils/amsHelpers';
-import { resolveArchiveSlicerAmsMapping } from './archiveAmsMapping';
+import { resolveSlicerAmsMapping } from './archiveAmsMapping';
 import { FilamentMapping } from './FilamentMapping';
 import { FilamentOverride } from './FilamentOverride';
 import { PlateSelector } from './PlateSelector';
@@ -534,12 +534,18 @@ export function PrintModal({
   // archives that predate the feature / had it off at print time, and
   // deliberately undefined unless the selected printer is the one the mapping
   // was resolved against. See `resolveArchiveSlicerAmsMapping`.
+  // While editing a virtual printer's queue job, the pick the job keeps (it
+  // has no archive until it prints). See `resolveSlicerAmsMapping`.
+  const editedQueueItem = isEditing ? queueItem : undefined;
   const archiveSlicerAmsMapping = useMemo(
     () =>
-      isLibraryFile
-        ? undefined
-        : resolveArchiveSlicerAmsMapping(archiveDetails?.extra_data, effectivePrinterId),
-    [isLibraryFile, archiveDetails?.extra_data, effectivePrinterId],
+      resolveSlicerAmsMapping({
+        queueItem: editedQueueItem,
+        isLibraryFile,
+        archiveExtraData: archiveDetails?.extra_data,
+        printerId: effectivePrinterId,
+      }),
+    [editedQueueItem, isLibraryFile, archiveDetails?.extra_data, effectivePrinterId],
   );
 
   // Fetch plates for archives

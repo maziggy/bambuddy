@@ -31,6 +31,7 @@ from backend.app.services.email_service import add_required_headers
 from backend.app.services.notify_client import NotifyClient, NotifyError, notify_credentials, notify_supports_photos
 from backend.app.services.print_confirmation import one_tap_url
 from backend.app.utils.notification_photos import save_notification_photo
+from backend.app.utils.tray_ids import EXTERNAL_AMS_ID, is_ams_ht_id, unit_label
 
 logger = logging.getLogger(__name__)
 
@@ -1929,10 +1930,10 @@ class NotificationService:
                     tray_id = u.get("tray_id", 0)
                     material = u.get("material", "Unknown") or "Unknown"
                     used = u.get("weight_used", 0)
-                    if ams_id >= 128:
+                    if ams_id == EXTERNAL_AMS_ID or is_ams_ht_id(ams_id):
                         slot_label = "Ext"
                     else:
-                        slot_label = f"AMS-{chr(65 + ams_id)} T{tray_id + 1}"
+                        slot_label = f"{unit_label(ams_id)} T{tray_id + 1}"
                     parts.append(f"{slot_label} {material}: {used:.1f}g")
                 variables["filament_details"] = " | ".join(parts)
             elif archive_data.get("filament_slots"):
@@ -2428,8 +2429,14 @@ class NotificationService:
         threshold: float,
         cycles: int,
         db: AsyncSession,
+        *,
+        never_heated: bool = False,
     ):
         """Handle automatic drying giving up on one AMS unit (#2770).
+
+        ``never_heated`` sends the message for a unit whose printer accepted
+        the drying commands but never heated (#3478). Same provider switch:
+        either way Bambuddy has stopped drying that unit.
 
         Worth sending immediately (as every notification is; a daily digest only
         repeats it): it reports that
@@ -2448,7 +2455,8 @@ class NotificationService:
             "cycles": str(cycles),
         }
 
-        title, message = await self._build_message_from_template(db, "ams_drying_suspended", variables)
+        template = "ams_drying_not_heating" if never_heated else "ams_drying_suspended"
+        title, message = await self._build_message_from_template(db, template, variables)
         await self._send_to_providers(
             providers,
             title,

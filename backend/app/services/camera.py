@@ -188,7 +188,7 @@ def rtsp_socket_timeout_flag() -> str:
 def supports_rtsp(model: str | None) -> bool:
     """Check if printer model supports RTSP camera streaming.
 
-    RTSP supported: X1, X1C, X1E, X2D, H2C, H2D, H2DPRO, H2S, P2S
+    RTSP supported: X1, X1C, X1E, X2D, H2C, H2D, H2DPRO, H2S, H3C, P2S
     Chamber image only: A1, A1MINI, P1P, P1S
 
     Note: Model can be either display name (e.g., "P2S") or internal code (e.g., "N7").
@@ -201,14 +201,15 @@ def supports_rtsp(model: str | None) -> bool:
       - O1S: H2S
       - O1E, O2D: H2D Pro
       - N7: P2S
+      - N10: H3C
     """
     if model:
         model_upper = model.upper()
-        # Display names: X1, X1C, X1E, X2D, H2C, H2D, H2DPRO, H2S, P2S
-        if model_upper.startswith(("X1", "X2", "H2", "P2")):
+        # Display names: X1, X1C, X1E, X2D, H2C, H2D, H2DPRO, H2S, H3C, P2S
+        if model_upper.startswith(("X1", "X2", "H2", "H3", "P2")):
             return True
         # Internal codes for RTSP models
-        if model_upper in ("BL-P001", "C13", "N6", "O1D", "O1C", "O1C2", "O1S", "O1E", "O2D", "N7"):
+        if model_upper in ("BL-P001", "C13", "N6", "O1D", "O1C", "O1C2", "O1S", "O1E", "O2D", "N7", "N10"):
             return True
     # A1/P1 and unknown models use chamber image protocol
     return False
@@ -217,7 +218,7 @@ def supports_rtsp(model: str | None) -> bool:
 def get_camera_port(model: str | None) -> int:
     """Get the camera port based on printer model.
 
-    X1/X2/H2/P2 series use RTSP on port 322.
+    X1/X2/H2/H3/P2 series use RTSP on port 322.
     A1/P1 series use chamber image protocol on port 6000.
     """
     if supports_rtsp(model):

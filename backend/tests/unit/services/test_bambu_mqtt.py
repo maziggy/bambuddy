@@ -5586,6 +5586,53 @@ class TestHMSUserActionFiltering:
 
         assert len(mqtt_client.state.hms_errors) == 1
 
+    def test_a_print_error_that_returns_to_zero_is_removed(self, mqtt_client):
+        """#3487: the A1 mini sets print_error for the filament-load prompt and
+        back to 0 once it is answered on the printer, without an hms[] key.
+        The entry stayed until "Clear errors"."""
+        mqtt_client._update_state({"print_error": 0x07FF_C010})
+        assert [e.full_code for e in mqtt_client.state.hms_errors] == ["07FFC010"]
+
+        mqtt_client._update_state({"print_error": 0})
+
+        assert mqtt_client.state.hms_errors == []
+
+    def test_a_new_print_error_replaces_the_previous_one(self, mqtt_client):
+        mqtt_client._update_state({"print_error": 0x07FF_C010})
+        mqtt_client._update_state({"print_error": 0x0500_8061})
+
+        assert [e.full_code for e in mqtt_client.state.hms_errors] == ["05008061"]
+
+    def test_the_same_print_error_again_keeps_its_entry(self, mqtt_client):
+        """A repeat keeps the entry and the job_id it was frozen with."""
+        mqtt_client.state.subtask_id = "job-1"
+        mqtt_client._update_state({"print_error": 0x0500_8061})
+        entry = mqtt_client.state.hms_errors[0]
+        mqtt_client.state.subtask_id = "job-2"
+
+        mqtt_client._update_state({"print_error": 0x0500_8061})
+
+        assert mqtt_client.state.hms_errors == [entry]
+        assert entry.job_id == "job-1"
+
+    def test_an_hms_list_without_print_error_keeps_the_print_error_fault(self, mqtt_client):
+        """print_error comes only when it changes, so an hms[] update between
+        must not drop a fault that is still active."""
+        mqtt_client._update_state({"print_error": 0x07FF_C010})
+
+        mqtt_client._update_state({"hms": []})
+        assert [e.full_code for e in mqtt_client.state.hms_errors] == ["07FFC010"]
+
+        mqtt_client._update_state({"hms": [{"attr": 0x03000100, "code": 0x00018004}]})
+        assert sorted(e.full_code for e in mqtt_client.state.hms_errors) == ["0300010000018004", "07FFC010"]
+
+    def test_an_hms_list_that_now_carries_the_print_error_fault_lists_it_once(self, mqtt_client):
+        mqtt_client._update_state({"print_error": 0x0500_8061})
+
+        mqtt_client._update_state({"hms": [{"attr": 0x05000100, "code": 0x00018061}]})
+
+        assert [e.full_code for e in mqtt_client.state.hms_errors] == ["0500010000018061"]
+
 
 class TestHMSFullCode:
     """full_code is the firmware-matching key for HMS-related commands.

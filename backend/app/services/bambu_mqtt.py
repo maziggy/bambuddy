@@ -3990,8 +3990,13 @@ class BambuMQTTClient:
                             # heuristic for HT units — a genuine HT spool removal still
                             # clears via the explicit tray_type=="" case above and the
                             # tray_exist_bits cleanup below.
+                            #
+                            # A rack AMS (the H3C's AMS 3H) reports a loaded slot
+                            # as state=27, so it is skipped the same way.
                             try:
-                                _is_ht_unit = int(ams_id) >= 128
+                                _is_ht_unit = int(ams_id) >= 128 or is_rack_ams(
+                                    unit_ams_type(int(ams_id), ams_unit.get("info") or existing_unit.get("info"))
+                                )
                             except (TypeError, ValueError):
                                 _is_ht_unit = False
                             tray_state = new_tray.get("state")

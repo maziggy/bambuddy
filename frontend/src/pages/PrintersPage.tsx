@@ -2299,6 +2299,7 @@ function PrinterCard({
     extruderId?: number;
     caliIdx?: number | null;
     savedPresetId?: string;
+    label?: string;
   } | null>(null);
   const [showFirmwareModal, setShowFirmwareModal] = useState(false);
   const [plateCheckResult, setPlateCheckResult] = useState<{
@@ -6413,10 +6414,18 @@ function PrinterCard({
                       })}
                       {/* External spool(s) - grouped in one card like regular AMS. A
                           rack printer's nine per-hotend inputs: only loaded ones get a
-                          tile, the empty ones one line. */}
+                          tile, the empty ones one line. An empty input with a spool
+                          assigned keeps its tile, so the assignment stays visible and
+                          can be undone. */}
                       {status.vt_tray.length > 0 && showExternalSpool && (() => {
+                        const rackExternalAssigned = (vt: AMSTray) => {
+                          const slot = externalSlotIndex(vt.id ?? 254);
+                          return spoolmanEnabled
+                            ? !!spoolmanSlotAssignments?.some(a => a.printer_id === printer.id && a.ams_id === 255 && a.tray_id === slot)
+                            : !!onGetAssignment?.(printer.id, 255, slot);
+                        };
                         const shownExternals = trayLayout.rack
-                          ? [...status.vt_tray].filter((vt) => vt.tray_type).sort((a, b) => (b.id ?? 254) - (a.id ?? 254))
+                          ? [...status.vt_tray].filter((vt) => vt.tray_type || rackExternalAssigned(vt)).sort((a, b) => (b.id ?? 254) - (a.id ?? 254))
                           : [...status.vt_tray].sort((a, b) => (a.id ?? 254) - (b.id ?? 254));
                         return (
                         <div style={getAmsCardStyle(Math.max(1, shownExternals.length))} className="min-w-0 p-2 bg-bambu-dark rounded-[10px] space-y-1">
@@ -6642,6 +6651,7 @@ function PrinterCard({
                                           extruderId: isDualNozzle ? (extTrayId === 254 ? 1 : 0) : undefined,
                                           caliIdx: extTray.cali_idx,
                                           savedPresetId: slotPresetDescribesTray(extSlotPreset?.preset_id, extTray.tray_info_idx, extSlotPreset?.tray_info_idx) ? extSlotPreset?.preset_id : undefined,
+                                          label: trayLayout.rack ? extLabel : undefined,
                                         }),
                                       }}
                                     >
@@ -6658,6 +6668,7 @@ function PrinterCard({
                                           amsId: 255,
                                           trayId: slotTrayId,
                                           extruderId: isDualNozzle ? (extTrayId === 254 ? 1 : 0) : undefined,
+                                          label: trayLayout.rack ? extLabel : undefined,
                                         }),
                                       }}
                                       onAssignSpool={() => setAssignSpoolModal({

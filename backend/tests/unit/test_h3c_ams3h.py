@@ -314,6 +314,17 @@ class TestIngest:
         client._process_message({"print": {"ams": {"tray_now": "2"}}})
         assert client.state.tray_now == 30
 
+    def test_a_partial_state_27_push_keeps_the_slots_spool(self):
+        # The AMS 3H reports a loaded slot as state 27. The "state != 11 is not
+        # loaded" rule for partial {id, state} pushes (#784) must not empty it,
+        # as it must not for an AMS-HT (#2594).
+        client = _wired(_ingested())
+        client._process_message(
+            {"print": {"command": "push_status", "ams": {"ams": [{"id": "32", "tray": [{"id": "3", "state": 27}]}]}}}
+        )
+        assert _trays_by_id(_unit(client))[3]["tray_type"] == "PLA"
+        assert client.ams_load_filament(31)
+
     def test_every_full_push_is_globalised_not_just_the_first(self):
         # The H3C sends the unit list with every push. The push's units plus the
         # ones already known used to list unit 32 twice, which read as two rack

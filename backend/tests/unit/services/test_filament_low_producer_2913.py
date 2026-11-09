@@ -27,6 +27,7 @@ from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 from backend.app.services.print_scheduler import PrintScheduler, _ams_slot_label, _remaining_percent
 from backend.app.services.spoolman import SpoolmanUnavailableError
+from backend.app.utils.tray_ids import TrayLayout
 
 
 async def _printer(db, name: str = "X2D") -> Printer:
@@ -95,6 +96,21 @@ def test_slot_labels_are_the_ones_the_notification_side_already_uses():
     assert _ams_slot_label(6, 0) == "Lite-1"
 
 
+def test_slot_label_names_an_h3c_external_input_ext_n():
+    """An H3C's external inputs are one per hotend, "Ext-n" like Bambu Studio.
+
+    Without the printer's layout, 247-253 read as "HT-" plus a Latin-1 character.
+    """
+    h3c = TrayLayout.ams3h()
+    assert _ams_slot_label(255, 0, h3c) == "Ext-2"
+    assert _ams_slot_label(255, 1, h3c) == "Ext-1"
+    assert _ams_slot_label(255, 2, h3c) == "Ext-9"
+    assert _ams_slot_label(255, 8, h3c) == "Ext-3"
+    assert _ams_slot_label(32, 4, h3c) == "3H-5"
+    # 247-253 are only ever such inputs, so they read so without a layout too.
+    assert _ams_slot_label(255, 4) == "Ext-7"
+
+
 # -- the producer -----------------------------------------------------------
 
 
@@ -143,6 +159,23 @@ async def test_fires_when_an_assigned_spool_is_below_the_threshold(db_session, s
     assert args[1] == "X2D"
     assert args[2] == "A1"
     assert args[3] == 15
+
+
+@pytest.mark.asyncio
+async def test_an_h3c_external_input_alert_names_the_hotends_input(db_session, scheduler, notify):
+    """The alert names the slot with the printer's own layout: an H3C's input (255, 1) is "Ext-1", not "Ext-R"."""
+    printer = await _printer(db_session)
+    await _assigned_spool(db_session, printer, weight_used=850.0, ams=255, tray=1)
+    await db_session.commit()
+
+    with patch(
+        "backend.app.services.print_scheduler.printer_tray_layout",
+        return_value=TrayLayout.ams3h(),
+    ):
+        await _pass(scheduler, db_session)
+
+    notify.on_filament_low.assert_awaited_once()
+    assert notify.on_filament_low.await_args.args[2] == "Ext-1"
 
 
 @pytest.mark.asyncio

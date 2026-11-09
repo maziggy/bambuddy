@@ -103,7 +103,7 @@ from backend.app.utils.tray_ids import (
 logger = logging.getLogger(__name__)
 
 
-def _ams_slot_label(ams_id: int, tray_id: int) -> str:
+def _ams_slot_label(ams_id: int, tray_id: int, layout: TrayLayout | None = None) -> str:
     """Human slot name for an assignment tuple, in the spelling already in use.
 
     Composed from the notification side's own pair rather than spelled out again
@@ -117,8 +117,11 @@ def _ams_slot_label(ams_id: int, tray_id: int) -> str:
     Naming the same slot two ways is its own defect once an alert and the
     Inventory page are meant to be talking about the same tray, so this defers
     rather than adding a fifth spelling.
+
+    ``layout`` is the printer's (``printer_tray_layout``): an H3C names its
+    per-hotend external inputs "Ext-n".
     """
-    return _slot_label_from_global_tray(_global_tray_from_assignment(ams_id, tray_id))
+    return _slot_label_from_global_tray(_global_tray_from_assignment(ams_id, tray_id, layout), layout)
 
 
 # Minimum seconds between low-filament checks. Matches the scheduler's idle
@@ -5790,7 +5793,7 @@ class PrintScheduler:
                     continue
                 printers[printer_id] = printer
             printer = printers[printer_id]
-            slot = _ams_slot_label(ams_id, tray_id)
+            slot = _ams_slot_label(ams_id, tray_id, printer_tray_layout(printer_id, printer_manager))
             if send_notification:
                 try:
                     await notification_service.on_filament_low(

@@ -97,3 +97,12 @@ async def test_it_runs_once(test_engine):
     await _run(test_engine)
 
     assert (await _mappings(test_engine))[("q", ids["h3c"])] == [129]
+
+
+def test_runs_at_startup():
+    """The rewrite only helps if startup runs it."""
+    import inspect
+
+    from backend.app.core.database import _run_migrations
+
+    assert "await _migrate_h3c_queue_tray_ids(conn)" in inspect.getsource(_run_migrations)

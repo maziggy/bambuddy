@@ -6346,6 +6346,8 @@ export default {
     model: {
       title: 'Druckermodell',
       description: 'Wähle welches Druckermodell emuliert werden soll.',
+      optionSerial: '{{name}} ({{code}}, Seriennummer {{prefix}}…)',
+      sameNameHint: 'Mehrere Codes tragen diesen Namen: Wähle den, dessen Seriennummer so beginnt wie die deines Druckers (zu sehen unter {{menu}} im Menü der Druckerkarte).',
     },
     accessCode: {
       title: 'Zugangscode',

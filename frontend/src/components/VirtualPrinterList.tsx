@@ -100,6 +100,7 @@ export function VirtualPrinterList() {
 
   const printers = data?.printers || [];
   const models = data?.models || {};
+  const modelSerialPrefixes = data?.model_serial_prefixes || {};
 
   return (
     <div className="space-y-4">
@@ -276,7 +277,7 @@ export function VirtualPrinterList() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
           {printers.map((printer) => (
-            <VirtualPrinterCard key={printer.id} printer={printer} models={models} />
+            <VirtualPrinterCard key={printer.id} printer={printer} models={models} modelSerialPrefixes={modelSerialPrefixes} />
           ))}
         </div>
       )}

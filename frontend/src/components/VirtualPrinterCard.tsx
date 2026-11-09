@@ -48,11 +48,20 @@ function uploadFolderOptions(tree: LibraryFolderTree[] | undefined, depth = 0): 
 interface VirtualPrinterCardProps {
   printer: VirtualPrinterConfig;
   models: Record<string, string>;
+  // Serial family per model code, shown for codes that share a display name (H2C: O1C / O1C2).
+  modelSerialPrefixes?: Record<string, string>;
   // Collapsed by default: with several virtual printers the page stays a list.
   defaultExpanded?: boolean;
 }
 
-export function VirtualPrinterCard({ printer, models, defaultExpanded = false }: VirtualPrinterCardProps) {
+/** Whether the codes called ``name`` are told apart by their serial (H2C: O1C 094, O1C2 31B). */
+function serialTellsApart(models: Record<string, string>, prefixes: Record<string, string>, name: string | undefined): boolean {
+  if (!name) return false;
+  const families = new Set<string | undefined>(Object.entries(models).filter(([, n]) => n === name).map(([code]) => prefixes[code]));
+  return families.size > 1 && !families.has(undefined);
+}
+
+export function VirtualPrinterCard({ printer, models, modelSerialPrefixes = {}, defaultExpanded = false }: VirtualPrinterCardProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -678,11 +687,20 @@ export function VirtualPrinterCard({ printer, models, defaultExpanded = false }:
                     className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-md px-3 py-1.5 text-white text-sm appearance-none cursor-pointer disabled:opacity-50 pr-10"
                   >
                     {Object.entries(models).map(([code, name]) => (
-                      <option key={code} value={code}>{name} ({code})</option>
+                      <option key={code} value={code}>
+                        {serialTellsApart(models, modelSerialPrefixes, name)
+                          ? t('virtualPrinter.model.optionSerial', { name, code, prefix: modelSerialPrefixes[code] })
+                          : `${name} (${code})`}
+                      </option>
                     ))}
                   </select>
                   <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
                 </div>
+                {serialTellsApart(models, modelSerialPrefixes, models[localModel]) && (
+                  <p className="text-xs text-bambu-gray mt-1" data-testid="vp-model-same-name-hint">
+                    {t('virtualPrinter.model.sameNameHint', { menu: t('printers.printerInformation') })}
+                  </p>
+                )}
               </div>
             )}
 

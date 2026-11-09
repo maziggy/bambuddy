@@ -6399,6 +6399,8 @@ export default {
     model: {
       title: 'Printer Model',
       description: 'Select which printer model to emulate.',
+      optionSerial: '{{name}} ({{code}}, serial {{prefix}}…)',
+      sameNameHint: 'Several codes share this name: pick the one whose serial starts like your printer\'s (shown under {{menu}} in the printer card\'s menu).',
     },
     accessCode: {
       title: 'Access Code',

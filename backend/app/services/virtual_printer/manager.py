@@ -99,13 +99,41 @@ MODEL_SERIAL_PREFIXES = {
     "O1D": "09400A",  # H2D
     "O1E": "09400A",  # H2D Pro (same prefix family as H2D)
     "O2D": "09400A",  # H2D Pro
-    "O1C": "09400A",  # H2C
-    "O1C2": "09400A",  # H2C (dual nozzle variant)
+    "O1C": "09400A",  # H2C, older units: they share the H2D's 094 prefix
+    # H2C from 2026: real serials start 31B8B (31B model, 8B revision, then the
+    # revision letter), e.g. 31B8BP... A virtual one in the H2D's 094 family
+    # also got the H2D's HMS texts in the slicer.
+    "O1C2": "31B8BP",
     "O1S": "09400A",  # H2S
 }
 
 # Reverse mapping: display name → SSDP model code (for auto-inheriting from printer model)
 DISPLAY_NAME_TO_MODEL_CODE = {v: k for k, v in VIRTUAL_PRINTER_MODELS.items()}
+
+# Models whose display name covers more than one code, told apart by the
+# printer's serial: (first characters, code). The first match wins; no match
+# keeps the code the name maps to.
+_CODES_BY_SERIAL: dict[str, tuple[tuple[str, str], ...]] = {
+    "H2C": (("31B", "O1C2"), ("094", "O1C")),
+}
+
+
+def model_code_for_printer(printer_model: str | None, serial: str | None = None) -> str | None:
+    """The VP model code for a printer's model (display name or SSDP code) and serial.
+
+    An H2C is an O1C or an O1C2, which only its serial tells: a slicer syncs
+    with the virtual printer only when it reports the printer's own code.
+    """
+    if not printer_model:
+        return None
+    code = printer_model if printer_model in VIRTUAL_PRINTER_MODELS else DISPLAY_NAME_TO_MODEL_CODE.get(printer_model)
+    name = VIRTUAL_PRINTER_MODELS.get(code or "")
+    if name and serial:
+        for prefix, by_serial in _CODES_BY_SERIAL.get(name, ()):
+            if serial.upper().startswith(prefix):
+                return by_serial
+    return code
+
 
 # Default model
 DEFAULT_VIRTUAL_PRINTER_MODEL = "BL-P001"  # X1C

@@ -9299,6 +9299,8 @@ export interface VirtualPrinterConfig {
 export interface VirtualPrinterListResponse {
   printers: VirtualPrinterConfig[];
   models: Record<string, string>;
+  // Serial family (first 3 characters) per model code: tells apart codes of one name (H2C: O1C 094, O1C2 31B).
+  model_serial_prefixes?: Record<string, string>;
 }
 
 export const multiVirtualPrinterApi = {

@@ -76,21 +76,16 @@ class VirtualPrinterUpdate(IgnoresNullForRequiredColumns):
     tailscale_disabled: bool | None = None
 
 
-def _resolve_printer_model(printer_model: str | None) -> str | None:
+def _resolve_printer_model(printer_model: str | None, serial: str | None = None) -> str | None:
     """Map a printer's model (display name or SSDP code) to a valid VP SSDP model code.
 
-    Printers store display names like 'X1C' while VPs need SSDP codes like 'BL-P001'.
+    Printers store display names like 'X1C' while VPs need SSDP codes like
+    'BL-P001'. ``serial`` tells apart the codes one name covers (H2C: O1C or
+    O1C2); see ``manager.model_code_for_printer``.
     """
-    if not printer_model:
-        return None
-    from backend.app.services.virtual_printer import VIRTUAL_PRINTER_MODELS
-    from backend.app.services.virtual_printer.manager import DISPLAY_NAME_TO_MODEL_CODE
+    from backend.app.services.virtual_printer.manager import model_code_for_printer
 
-    # Already a valid SSDP model code
-    if printer_model in VIRTUAL_PRINTER_MODELS:
-        return printer_model
-    # Map display name to SSDP code
-    return DISPLAY_NAME_TO_MODEL_CODE.get(printer_model)
+    return model_code_for_printer(printer_model, serial)
 
 
 async def _check_upload_folder(db: AsyncSession, folder_id: int, user) -> JSONResponse | None:
@@ -187,9 +182,14 @@ async def list_virtual_printers(
         status = instance.get_status() if instance else {"running": False, "pending_files": 0}
         printers.append(await _vp_to_dict(vp, db, status))
 
+    from backend.app.services.virtual_printer.manager import MODEL_SERIAL_PREFIXES
+
     return {
         "printers": printers,
         "models": VIRTUAL_PRINTER_MODELS,
+        # The serial family each model's VP gets (Bambu's first 3 characters),
+        # which tells apart models of one name (H2C: O1C 094, O1C2 31B).
+        "model_serial_prefixes": {code: prefix[:3] for code, prefix in MODEL_SERIAL_PREFIXES.items()},
     }
 
 
@@ -296,7 +296,10 @@ async def create_virtual_printer(
         enabled=body.enabled,
         mode=body.mode,
         model=body.model
-        or _resolve_printer_model(target_printer.model if target_printer and body.mode == "proxy" else None)
+        or _resolve_printer_model(
+            target_printer.model if target_printer and body.mode == "proxy" else None,
+            target_printer.serial_number if target_printer else None,
+        )
         or DEFAULT_VIRTUAL_PRINTER_MODEL,
         access_code=effective_access_code,
         target_printer_id=body.target_printer_id,
@@ -550,7 +553,9 @@ async def update_virtual_printer(
         vp.target_printer_id = body.target_printer_id
         # Auto-inherit model from target printer in proxy mode (unless user explicitly set model)
         if body.model is None and vp.mode == "proxy" and target_printer.model:
-            vp.model = _resolve_printer_model(target_printer.model) or target_printer.model
+            vp.model = (
+                _resolve_printer_model(target_printer.model, target_printer.serial_number) or target_printer.model
+            )
     if "library_folder_id" in body.model_fields_set and body.library_folder_id is None:
         vp.library_folder_id = None  # back to the shared "Virtual Printer" folder
     elif body.library_folder_id is not None:
@@ -581,7 +586,9 @@ async def update_virtual_printer(
         result = await db.execute(select(PrinterModel).where(PrinterModel.id == vp.target_printer_id))
         existing_target = result.scalar_one_or_none()
         if existing_target and existing_target.model:
-            vp.model = _resolve_printer_model(existing_target.model) or existing_target.model
+            vp.model = (
+                _resolve_printer_model(existing_target.model, existing_target.serial_number) or existing_target.model
+            )
 
     # Force-inherit the access code from the target printer for non-proxy VPs.
     # See create_virtual_printer for the rationale: the bridge forwards slicer

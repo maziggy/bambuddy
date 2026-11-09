@@ -6347,6 +6347,8 @@ export default {
     model: {
       title: 'プリンターモデル',
       description: 'エミュレートするプリンターモデルを選択。',
+      optionSerial: '{{name}}({{code}}、シリアル {{prefix}}…)',
+      sameNameHint: 'この名前のコードが複数あります。シリアル番号の先頭がプリンターと同じものを選んでください(プリンターカードのメニューの「{{menu}}」に表示されます)。',
     },
     accessCode: {
       title: 'アクセスコード',

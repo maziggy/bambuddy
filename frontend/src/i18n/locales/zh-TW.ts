@@ -6333,6 +6333,8 @@ export default {
     model: {
       title: '印表機型號',
       description: '選擇要模擬的印表機型號。',
+      optionSerial: '{{name}}({{code}},序號 {{prefix}}…)',
+      sameNameHint: '多個代碼使用此名稱:請選擇序號開頭與你的印表機相同的那個(在印表機卡片選單的「{{menu}}」中可以看到)。',
     },
     accessCode: {
       title: '存取碼',

@@ -6083,6 +6083,8 @@ export default {
     model: {
       title: '프린터 모델',
       description: '에뮬레이션할 프린터 모델을 선택하세요.',
+      optionSerial: '{{name}} ({{code}}, 시리얼 {{prefix}}…)',
+      sameNameHint: '이 이름의 코드가 여러 개 있습니다. 시리얼 번호가 프린터와 같이 시작하는 것을 선택하세요(프린터 카드 메뉴의 {{menu}}에 표시됩니다).',
     },
     accessCode: {
       title: '액세스 코드',

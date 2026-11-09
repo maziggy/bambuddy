@@ -6333,6 +6333,8 @@ export default {
     model: {
       title: 'Modello stampante',
       description: 'Seleziona il modello stampante da emulare.',
+      optionSerial: '{{name}} ({{code}}, seriale {{prefix}}…)',
+      sameNameHint: 'Più codici hanno questo nome: scegli quello il cui seriale inizia come quello della tua stampante (si trova in {{menu}} nel menu della scheda della stampante).',
     },
     accessCode: {
       title: 'Codice accesso',

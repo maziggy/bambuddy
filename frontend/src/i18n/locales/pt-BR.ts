@@ -6333,6 +6333,8 @@ export default {
     model: {
       title: 'Modelo da Impressora',
       description: 'Selecione qual modelo de impressora emular.',
+      optionSerial: '{{name}} ({{code}}, número de série {{prefix}}…)',
+      sameNameHint: 'Vários códigos têm este nome: escolha aquele cujo número de série começa como o da sua impressora (aparece em {{menu}}, no menu do cartão da impressora).',
     },
     accessCode: {
       title: 'Código de acesso',

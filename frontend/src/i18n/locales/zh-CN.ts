@@ -6333,6 +6333,8 @@ export default {
     model: {
       title: '打印机型号',
       description: '选择要模拟的打印机型号。',
+      optionSerial: '{{name}}({{code}},序列号 {{prefix}}…)',
+      sameNameHint: '多个代码使用此名称:请选择序列号开头与你的打印机相同的那个(在打印机卡片菜单的“{{menu}}”中可以看到)。',
     },
     accessCode: {
       title: '访问码',

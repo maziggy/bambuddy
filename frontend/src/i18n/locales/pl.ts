@@ -6399,6 +6399,8 @@ export default {
     model: {
       title: 'Model drukarki',
       description: 'Wybierz model drukarki do emulacji.',
+      optionSerial: '{{name}} ({{code}}, numer seryjny {{prefix}}…)',
+      sameNameHint: 'Kilka kodów ma tę nazwę: wybierz ten, którego numer seryjny zaczyna się tak jak numer twojej drukarki (widać go w {{menu}} w menu karty drukarki).',
     },
     accessCode: {
       title: 'Kod dostępu',

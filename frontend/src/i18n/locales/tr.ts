@@ -6310,6 +6310,8 @@ export default {
     model: {
       title: 'Yazıcı Modeli',
       description: 'Öykünülecek yazıcı modelini seçin.',
+      optionSerial: '{{name}} ({{code}}, seri no {{prefix}}…)',
+      sameNameHint: 'Bu adı birden fazla kod taşıyor: seri numarası yazıcınızınki gibi başlayanı seçin (yazıcı kartının menüsündeki {{menu}} bölümünde görünür).',
     },
     accessCode: {
       title: 'Erişim Kodu',

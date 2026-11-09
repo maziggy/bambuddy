@@ -6428,6 +6428,8 @@ errors: {
     model: {
       title: 'Skrivarmodell',
       description: 'Välj vilken skrivarmodell som ska emuleras.',
+      optionSerial: '{{name}} ({{code}}, serienummer {{prefix}}…)',
+      sameNameHint: 'Flera koder har det här namnet: välj den vars serienummer börjar som din skrivares (visas under {{menu}} i skrivarkortets meny).',
     },
     accessCode: {
       title: 'Åtkomstkod',

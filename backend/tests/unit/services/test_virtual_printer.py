@@ -4840,6 +4840,41 @@ class TestResolveModelCodes:
         assert _resolve_printer_model("UnknownModel") is None
 
 
+class TestH2cCodeBySerial:
+    """An H2C is an O1C (serial 094..., older units) or an O1C2 (31B8B..., from 2026).
+
+    A slicer syncs with a virtual H2C only when it reports the printer's own
+    code, and the serial is the only thing that tells them apart.
+    """
+
+    @pytest.mark.parametrize(
+        ("model", "serial", "code"),
+        [
+            ("H2C", "31B8BP610600650", "O1C2"),
+            ("H2C", "0948BB540200427", "O1C"),
+            ("O1C", "31b8bp610600650", "O1C2"),  # a stored code follows the serial too
+            ("O1C2", "0948BB540200427", "O1C"),
+            ("H2D", "31B8BP610600650", "O1D"),  # other models ignore the serial
+        ],
+    )
+    def test_the_serial_picks_the_code(self, model, serial, code):
+        from backend.app.api.routes.virtual_printers import _resolve_printer_model
+
+        assert _resolve_printer_model(model, serial) == code
+
+    def test_without_a_serial_the_name_decides_as_before(self):
+        from backend.app.api.routes.virtual_printers import _resolve_printer_model
+
+        assert _resolve_printer_model("H2C") == "O1C2"
+        assert _resolve_printer_model("O1C") == "O1C"
+
+    def test_a_virtual_o1c2_has_a_real_o1c2_serial(self):
+        from backend.app.services.virtual_printer.manager import _get_serial_for_model
+
+        assert _get_serial_for_model("O1C2", "391800001").startswith("31B8B")
+        assert _get_serial_for_model("O1C", "391800001").startswith("094")
+
+
 class TestMqttIpRewrite:
     """Tests for TLSProxy._rewrite_mqtt_ip() MQTT packet IP rewriting."""
 

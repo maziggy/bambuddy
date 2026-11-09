@@ -721,3 +721,41 @@ describe('VirtualPrinterCard - collapsed by default', () => {
     expect(screen.getByRole('button', { name: 'Collapse' }).getAttribute('aria-expanded')).toBe('true');
   });
 });
+
+describe('VirtualPrinterCard - model codes of one name', () => {
+  // An H2C is an O1C (serial 094...) or an O1C2 (31B...); the H2D Pro's two codes share 094.
+  const h2Models: Record<string, string> = { O1C: 'H2C', O1C2: 'H2C', O1E: 'H2D Pro', O2D: 'H2D Pro', 'BL-P001': 'X1C' };
+  const families: Record<string, string> = { O1C: '094', O1C2: '31B', O1E: '094', O2D: '094', 'BL-P001': '00M' };
+
+  it('labels the H2C codes with their serial family and says how to pick', async () => {
+    render(
+      <VirtualPrinterCard
+        defaultExpanded
+        printer={createMockPrinter({ model: 'O1C', model_name: 'H2C' })}
+        models={h2Models}
+        modelSerialPrefixes={families}
+      />,
+    );
+
+    expect(await screen.findByRole('option', { name: /O1C2.*31B/ })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /\(O1C,.*094/ })).toBeInTheDocument();
+    // Codes the serial doesn't tell apart, and unique names, keep the plain label.
+    expect(screen.getByRole('option', { name: 'H2D Pro (O1E)' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'X1C (BL-P001)' })).toBeInTheDocument();
+    expect(screen.getByTestId('vp-model-same-name-hint')).toBeInTheDocument();
+  });
+
+  it('gives no hint for a model whose codes the serial does not tell apart', async () => {
+    render(
+      <VirtualPrinterCard
+        defaultExpanded
+        printer={createMockPrinter({ model: 'O1E', model_name: 'H2D Pro' })}
+        models={h2Models}
+        modelSerialPrefixes={families}
+      />,
+    );
+
+    expect(await screen.findByRole('option', { name: 'H2D Pro (O1E)' })).toBeInTheDocument();
+    expect(screen.queryByTestId('vp-model-same-name-hint')).not.toBeInTheDocument();
+  });
+});

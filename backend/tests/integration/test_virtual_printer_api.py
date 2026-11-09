@@ -709,6 +709,31 @@ class TestVirtualPrinterSerialSurface:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    @pytest.mark.parametrize(("serial", "code"), [("31B8BP610600650", "O1C2"), ("0948BB540200427", "O1C")])
+    async def test_a_proxy_for_an_h2c_reports_its_code_by_serial(
+        self, async_client: AsyncClient, printer_factory, serial, code
+    ):
+        """An H2C is an O1C or an O1C2; the slicer only syncs when the VP reports the right one."""
+        target = await printer_factory(name="Real H2C", model="H2C", serial_number=serial)
+
+        create_resp = await async_client.post(
+            "/api/v1/virtual-printers",
+            json={"name": "ProxyH2C", "mode": "proxy", "target_printer_id": target.id},
+        )
+
+        assert create_resp.status_code == 200
+        assert create_resp.json()["model"] == code
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_the_list_names_each_models_serial_family(self, async_client: AsyncClient):
+        families = (await async_client.get("/api/v1/virtual-printers")).json()["model_serial_prefixes"]
+
+        assert families["O1C2"] == "31B"
+        assert families["O1C"] == "094"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_non_proxy_vp_keeps_self_generated_serial(self, async_client: AsyncClient, printer_factory):
         # Even with a target printer set (#1429 access-code inheritance flow),
         # archive / queue / review VPs are NOT bridging the target's identity

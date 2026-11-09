@@ -6397,6 +6397,8 @@ export default {
     model: {
       title: 'Printermodel',
       description: 'Selecteer welk printermodel moet worden geëmuleerd.',
+      optionSerial: '{{name}} ({{code}}, serienummer {{prefix}}…)',
+      sameNameHint: 'Meerdere codes hebben deze naam: kies de code waarvan het serienummer begint zoals dat van je printer (te zien onder {{menu}} in het menu van de printerkaart).',
     },
     accessCode: {
       title: 'Toegangscode',

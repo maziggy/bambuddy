@@ -6334,6 +6334,8 @@ export default {
     model: {
       title: 'Modèle d\'imprimante',
       description: 'Choisissez le modèle à émuler.',
+      optionSerial: '{{name}} ({{code}}, numéro de série {{prefix}}…)',
+      sameNameHint: 'Plusieurs codes portent ce nom : choisissez celui dont le numéro de série commence comme celui de votre imprimante (visible sous {{menu}} dans le menu de la carte de l\'imprimante).',
     },
     accessCode: {
       title: 'Code d\'accès',

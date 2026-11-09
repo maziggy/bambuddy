@@ -4637,7 +4637,7 @@ async def _decide_outcome_for_external_print(db, printer_id: int, observed_name:
 
     expected = await _queue_item_dispatched_name(db, dispatched_here)
     observed = (observed_name or "").strip()
-    if not expected or not observed or _subtask_names_match(expected, observed):
+    if not expected or not observed or _dispatched_name_matches_echo(expected, observed):
         logger.info(
             "[CALLBACK] Not asking for the outcome on printer %s: queue item %s is still printing, so "
             "Bambuddy dispatched this run and the item's own ask-for-outcome flag decides.",
@@ -8949,6 +8949,21 @@ def _subtask_names_match(expected: str, observed: str) -> bool:
     return False
 
 
+def _dispatched_name_matches_echo(expected: str, observed: str) -> bool:
+    """Whether the printer's subtask echo is the name a print was dispatched as.
+
+    A dispatched print is echoed under its bare name at start, but a printer
+    that picks a print back up -- Bambuddy reconnecting to a print already
+    running, or an A1 mini resuming after power-loss recovery -- can report the
+    file name with its extension instead (#3485). The echo is tried both as it
+    came and with the extensions stripped; the raw form still has to count, so
+    a model named ``Foo.3mf`` (file ``Foo.3mf.gcode.3mf``) keeps matching.
+    """
+    return _subtask_names_match(expected, observed) or _subtask_names_match(
+        expected, _subtask_name_from_filename(observed)
+    )
+
+
 async def _queue_item_dispatched_name(db, item) -> str:
     """The subtask name *item* was dispatched under, or "" when unknowable.
 
@@ -8993,7 +9008,7 @@ async def _completion_belongs_to_queue_item(db, item, data: dict) -> bool:
         return True
 
     expected = _subtask_name_from_filename(archive.filename)
-    if not expected or _subtask_names_match(expected, observed):
+    if not expected or _dispatched_name_matches_echo(expected, observed):
         return True
 
     logging.getLogger(__name__).warning(

@@ -22,6 +22,12 @@ from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 logger = logging.getLogger(__name__)
 
+# How far back a new certificate's validity starts. A certificate valid from
+# the second it was made is refused, as not valid yet, by a client whose clock
+# is behind; the slicer then reports only "-1" when binding. The printer
+# certificate is made anew at every start, so this hit right after a restart.
+CLOCK_SKEW_ALLOWANCE = timedelta(days=1)
+
 # Default serial number for virtual printer (matches SSDP/MQTT config)
 DEFAULT_SERIAL = "00M09A391800001"
 
@@ -191,7 +197,7 @@ class CertificateService:
             .issuer_name(ca_name)
             .public_key(ca_key.public_key())
             .serial_number(x509.random_serial_number())
-            .not_valid_before(now)
+            .not_valid_before(now - CLOCK_SKEW_ALLOWANCE)
             .not_valid_after(now + timedelta(days=7300))  # 20 years
             .add_extension(
                 x509.BasicConstraints(ca=True, path_length=0),
@@ -299,7 +305,8 @@ class CertificateService:
             .issuer_name(issuer)
             .public_key(printer_key.public_key())
             .serial_number(x509.random_serial_number())
-            .not_valid_before(now)
+            # Never before its CA's own start: a fresh CA is backdated as much.
+            .not_valid_before(max(now - CLOCK_SKEW_ALLOWANCE, ca_cert.not_valid_before_utc))
             .not_valid_after(now + timedelta(days=3650))  # 10 years
             .add_extension(
                 x509.BasicConstraints(ca=False, path_length=None),

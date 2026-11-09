@@ -3799,6 +3799,32 @@ class TestCertificateService:
         leaf_akid = leaf.extensions.get_extension_for_class(x509.AuthorityKeyIdentifier).value
         assert leaf_akid.key_identifier == ca_skid.digest
 
+    def test_certificates_tolerate_a_client_clock_that_is_behind(self, cert_service):
+        """Both certificates start a day back: one valid from the second it was
+        made was refused by a slicer whose clock was a minute behind ("-1")."""
+        from datetime import datetime, timedelta, timezone
+
+        from cryptography import x509
+
+        cert_path, _ = cert_service.generate_certificates()
+        now = datetime.now(timezone.utc)
+        ca = x509.load_pem_x509_certificate(cert_service.ca_cert_path.read_bytes())
+        leaf = x509.load_pem_x509_certificate(cert_path.read_bytes())
+        for cert in (ca, leaf):
+            assert cert.not_valid_before_utc <= now - timedelta(hours=23)
+        assert leaf.not_valid_before_utc >= ca.not_valid_before_utc
+
+    def test_printer_certificate_never_starts_before_an_existing_ca(self, tmp_path):
+        """A CA made less than a day ago, without the backdating, still bounds its leaf."""
+        from cryptography import x509
+
+        planted = self._plant_legacy_ca(tmp_path)
+        service = self._install(tmp_path, "TEST123")
+        cert_path, _ = service.generate_certificates()
+
+        leaf = x509.load_pem_x509_certificate(cert_path.read_bytes())
+        assert leaf.not_valid_before_utc == planted.not_valid_before_utc
+
     def test_existing_ca_is_reused_and_its_certificate_shape_is_unchanged(self, tmp_path):
         """An install that already has a CA keeps it — nothing to re-import.
 

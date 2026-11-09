@@ -7393,7 +7393,7 @@ export default {
     renewConfirm: 'Your current code stops working. Bind the virtual printer in your slicer again with the new code.',
     renewed: 'New access code ready',
     hintChecked: 'Every sign-in checks that you may send to that virtual printer and its printer.',
-    hintCamera: 'With this code the slicer\'s own camera view of the printer does not work; Bambuddy\'s camera does.',
+    hintCamera: 'The slicer\'s camera view works with this code too, if you may watch that printer\'s camera.',
     hintSecret: 'It works like a password: don\'t share it.',
   },
   pendingUploads: {

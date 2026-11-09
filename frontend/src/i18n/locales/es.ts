@@ -7348,7 +7348,7 @@ export default {
     renewConfirm: 'Tu código actual dejará de funcionar. Vuelve a vincular la impresora virtual en el laminador con el nuevo código.',
     renewed: 'Nuevo código de acceso listo',
     hintChecked: 'Cada inicio de sesión comprueba que puedes enviar a esa impresora virtual y a su impresora.',
-    hintCamera: 'Con este código la vista de cámara del laminador no funciona; la cámara de Bambuddy sí.',
+    hintCamera: 'La vista de cámara del laminador también funciona con este código, si puedes ver la cámara de esa impresora.',
     hintSecret: 'Funciona como una contraseña: no lo compartas.',
   },
   pendingUploads: {

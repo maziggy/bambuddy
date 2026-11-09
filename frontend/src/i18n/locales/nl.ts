@@ -7391,7 +7391,7 @@ export default {
     renewConfirm: 'Je huidige code werkt dan niet meer. Koppel de virtuele printer in de slicer opnieuw met de nieuwe code.',
     renewed: 'Nieuwe toegangscode klaar',
     hintChecked: 'Bij elke aanmelding wordt gecontroleerd of je naar die virtuele printer en zijn printer mag sturen.',
-    hintCamera: 'Met deze code werkt het camerabeeld van de slicer niet; de camera van Bambuddy wel.',
+    hintCamera: 'Het camerabeeld van de slicer werkt ook met deze code, als je de camera van die printer mag bekijken.',
     hintSecret: 'Hij werkt als een wachtwoord: deel hem niet.',
   },
   pendingUploads: {

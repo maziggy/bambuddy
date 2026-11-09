@@ -4287,7 +4287,7 @@ class TestVirtualPrinterCameraPassthrough:
     def _patch_start_server(monkeypatch):
         """Patch every non-camera constructor start_server touches so the
         test only exercises the camera-port branch. Returns the list that
-        ``TCPProxy`` calls get captured into."""
+        ``CameraBridge`` calls get captured into."""
         from backend.app.services.virtual_printer import manager as vp_manager
 
         tcp_calls: list[dict] = []
@@ -4303,8 +4303,8 @@ class TestVirtualPrinterCameraPassthrough:
             async def stop(self):
                 return None
 
-        # Camera pass-through is the only TCPProxy start_server constructs.
-        monkeypatch.setattr(vp_manager, "TCPProxy", FakeTCPProxy)
+        # The camera bridge is the only camera listener start_server constructs (#1430).
+        monkeypatch.setattr(vp_manager, "CameraBridge", FakeTCPProxy)
 
         # No-op every other service constructor + resolve_cert_and_advertise.
         # start_server() awaits `.ready.wait()` on FTP/MQTT/Bind/SSDP after
@@ -4410,6 +4410,68 @@ class TestVirtualPrinterCameraPassthrough:
     async def test_rtsp_model_x1c_opens_port_322(self, tmp_path, monkeypatch):
         calls = await self._run_start_server(tmp_path, monkeypatch, target_model="X1C")
         assert any(c["listen_port"] == 322 and c["target_port"] == 322 for c in calls)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(("target_model", "protocol"), [("H2C", "rtsp"), ("P1S", "chamber")])
+    async def test_the_camera_signs_the_slicer_in_for_the_printer(self, tmp_path, monkeypatch, target_model, protocol):
+        """#1430: the camera bridge, not a plain pass-through, so a personal code gets the stream too."""
+        calls = await self._run_start_server(tmp_path, monkeypatch, target_model=target_model)
+        (call,) = calls
+        assert call["protocol"] == protocol
+        assert call["cert_path"] == Path("/tmp/cert.pem")  # nosec B108
+        assert callable(call["codes"]) and callable(call["printer_code"])
+
+
+class TestCameraCodes:
+    """What the camera through a non-proxy VP accepts (#1430)."""
+
+    @staticmethod
+    def _instance(tmp_path, printer_code="12345678", session_factory=None):
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        instance = VirtualPrinterInstance(
+            vp_id=98,
+            name="Cam",
+            mode="library",
+            model="O1C",
+            access_code="87654321",
+            serial_suffix="391800098",
+            target_printer_id=7,
+            base_dir=tmp_path,
+            session_factory=session_factory,
+        )
+        client = MagicMock()
+        client.access_code = printer_code
+        printer_manager = MagicMock()
+        printer_manager.get_client.return_value = client
+        instance._printer_manager = printer_manager
+        return instance
+
+    @pytest.mark.asyncio
+    async def test_the_vp_and_printer_codes_without_a_database(self, tmp_path):
+        from backend.app.services.virtual_printer.camera_bridge import AcceptedCode
+
+        instance = self._instance(tmp_path)
+        assert instance._target_access_code() == "12345678"
+        assert await instance.camera_codes() == [AcceptedCode("87654321"), AcceptedCode("12345678")]
+
+    @pytest.mark.asyncio
+    async def test_personal_codes_of_users_who_may_watch(self, tmp_path):
+        from backend.app.services.virtual_printer.camera_bridge import AcceptedCode
+
+        session = MagicMock()
+        session.__aenter__ = AsyncMock(return_value=MagicMock())
+        session.__aexit__ = AsyncMock(return_value=False)
+        instance = self._instance(tmp_path, printer_code="87654321", session_factory=MagicMock(return_value=session))
+        with patch(
+            "backend.app.services.virtual_printer.user_codes.camera_codes",
+            AsyncMock(return_value=[("11112222", 5)]),
+        ) as lookup:
+            codes = await instance.camera_codes()
+        lookup.assert_awaited_once()
+        assert lookup.await_args.args[1] == 7
+        # The printer's code equals the VP's here, so it is listed once.
+        assert codes == [AcceptedCode("87654321"), AcceptedCode("11112222", 5)]
 
 
 class TestVirtualPrinterInstanceProxyMode:

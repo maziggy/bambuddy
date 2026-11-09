@@ -125,3 +125,35 @@ async def may_control_printer(db: AsyncSession, user_id: int, printer_id: int) -
     if user is None or not user.is_active or not user.has_permission(Permission.PRINTERS_CONTROL.value):
         return False
     return (await resolve_user_printer_scope(db, user)).allows(printer_id)
+
+
+async def camera_codes(db: AsyncSession, printer_id: int) -> list[tuple[str, int]]:
+    """``(code, user id)`` of every user who may watch printer ``printer_id``'s camera now.
+
+    For the slicer's camera view through a virtual printer: the account must be
+    active, hold camera:view and be allowed the printer (#1727). Empty while
+    auth is off, as personal codes then don't sign in anywhere.
+    """
+    from backend.app.core.auth import is_auth_enabled
+    from backend.app.core.printer_scope import resolve_user_printer_scope
+
+    if not await is_auth_enabled(db):
+        return []
+    users = (
+        (
+            await db.execute(
+                select(User)
+                .where(User.slicer_access_code.is_not(None), User.is_active.is_(True))
+                .options(selectinload(User.groups))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    allowed: list[tuple[str, int]] = []
+    for user in users:
+        if not user.slicer_access_code or not user.has_permission(Permission.CAMERA_VIEW.value):
+            continue
+        if (await resolve_user_printer_scope(db, user)).allows(printer_id):
+            allowed.append((user.slicer_access_code, user.id))
+    return allowed

@@ -8,7 +8,7 @@ from backend.app.models.group import Group, group_printers
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
 from backend.app.models.virtual_printer import VirtualPrinter
-from backend.app.services.virtual_printer.user_codes import code_for, new_code, user_for_code
+from backend.app.services.virtual_printer.user_codes import camera_codes, code_for, new_code, user_for_code
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
@@ -205,3 +205,33 @@ async def test_commands_to_the_printer_need_printers_control_on_it(
     user = await _user(db_session, permissions, active=active, restrict_to=[mine.id])
 
     assert await may_control_printer(db_session, user.id, mine.id if in_scope else other.id) is allowed
+
+
+async def test_camera_codes_are_those_of_users_who_may_watch_the_printer(db_session, printer_factory):
+    """The slicer's camera through a VP: camera:view, an active account and the printer in scope."""
+    await _auth(db_session)
+    mine = await printer_factory(name="Mine")
+    other = await printer_factory(name="Other")
+    viewer = await _user(db_session, ["camera:view"], code="11110001", name="viewer")
+    scoped = await _user(db_session, ["camera:view"], code="11110002", name="scoped", restrict_to=[mine.id])
+    await _user(db_session, ["library:upload"], code="11110003", name="no-camera")
+    await _user(db_session, ["camera:view"], code="11110004", name="disabled", active=False)
+    db_session.add(
+        User(
+            username="no-code",
+            password_hash=get_password_hash("Pass1word!"),
+            groups=[(await db_session.execute(select(Group).where(Group.name == "g-viewer"))).scalar_one()],
+        )
+    )
+    await db_session.commit()
+
+    assert sorted(await camera_codes(db_session, mine.id)) == [("11110001", viewer.id), ("11110002", scoped.id)]
+    assert await camera_codes(db_session, other.id) == [("11110001", viewer.id)]
+
+
+async def test_no_camera_codes_while_auth_is_off(db_session, printer_factory):
+    await _auth(db_session, on=False)
+    printer = await printer_factory(name="Mine")
+    await _user(db_session, ["camera:view"])
+
+    assert await camera_codes(db_session, printer.id) == []

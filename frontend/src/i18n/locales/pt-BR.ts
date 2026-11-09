@@ -7327,7 +7327,7 @@ export default {
     renewConfirm: 'Seu código atual deixará de funcionar. Vincule a impressora virtual no fatiador de novo com o novo código.',
     renewed: 'Novo código de acesso pronto',
     hintChecked: 'Cada login verifica se você pode enviar para essa impressora virtual e a impressora dela.',
-    hintCamera: 'Com este código a visualização de câmera do fatiador não funciona; a câmera do Bambuddy funciona.',
+    hintCamera: 'A visualização de câmera do fatiador também funciona com este código, se você puder ver a câmera dessa impressora.',
     hintSecret: 'Funciona como uma senha: não compartilhe.',
   },
   pendingUploads: {

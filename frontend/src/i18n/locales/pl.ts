@@ -7393,7 +7393,7 @@ export default {
     renewConfirm: 'Obecny kod przestanie działać. Połącz ponownie wirtualną drukarkę w slicerze, używając nowego kodu.',
     renewed: 'Nowy kod dostępu gotowy',
     hintChecked: 'Przy każdym logowaniu sprawdzane jest, czy możesz wysyłać do tej wirtualnej drukarki i jej drukarki.',
-    hintCamera: 'Z tym kodem podgląd kamery w slicerze nie działa; kamera w Bambuddy działa.',
+    hintCamera: 'Podgląd kamery w slicerze też działa z tym kodem, jeśli możesz oglądać kamerę tej drukarki.',
     hintSecret: 'Działa jak hasło: nie udostępniaj go.',
   },
   pendingUploads: {

@@ -7328,7 +7328,7 @@ export default {
     renewConfirm: 'Votre code actuel ne fonctionnera plus. Reliez à nouveau l\'imprimante virtuelle dans le trancheur avec le nouveau code.',
     renewed: 'Nouveau code d\'accès prêt',
     hintChecked: 'Chaque connexion vérifie que vous pouvez envoyer à cette imprimante virtuelle et à son imprimante.',
-    hintCamera: 'Avec ce code, la vue caméra du trancheur ne fonctionne pas ; celle de Bambuddy, si.',
+    hintCamera: 'La vue caméra du trancheur fonctionne aussi avec ce code, si vous avez le droit de voir la caméra de cette imprimante.',
     hintSecret: 'Il agit comme un mot de passe : ne le partagez pas.',
   },
   pendingUploads: {

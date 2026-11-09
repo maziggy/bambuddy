@@ -7327,7 +7327,7 @@ export default {
     renewConfirm: 'Il codice attuale smetterà di funzionare. Collega di nuovo la stampante virtuale nello slicer con il nuovo codice.',
     renewed: 'Nuovo codice di accesso pronto',
     hintChecked: 'A ogni accesso si controlla che tu possa inviare a quella stampante virtuale e alla sua stampante.',
-    hintCamera: 'Con questo codice la vista della fotocamera nello slicer non funziona; quella di Bambuddy sì.',
+    hintCamera: 'La vista della fotocamera nello slicer funziona anche con questo codice, se puoi vedere la fotocamera di quella stampante.',
     hintSecret: 'Funziona come una password: non condividerlo.',
   },
   pendingUploads: {

@@ -7325,7 +7325,7 @@ export default {
     renewConfirm: '当前访问码将失效。请在切片软件中用新访问码重新绑定虚拟打印机。',
     renewed: '新访问码已就绪',
     hintChecked: '每次登录都会检查你是否可以发送到该虚拟打印机及其打印机。',
-    hintCamera: '使用此访问码时,切片软件的摄像头画面无法使用;Bambuddy 的摄像头可以。',
+    hintCamera: '使用此访问码时,切片软件的摄像头画面也可以使用(前提是你有权查看该打印机的摄像头)。',
     hintSecret: '它相当于密码:请勿分享。',
   },
   pendingUploads: {

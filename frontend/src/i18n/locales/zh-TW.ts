@@ -7325,7 +7325,7 @@ export default {
     renewConfirm: '目前的存取碼將失效。請在切片軟體中用新存取碼重新綁定虛擬印表機。',
     renewed: '新存取碼已就緒',
     hintChecked: '每次登入都會檢查你是否可以傳送到該虛擬印表機及其印表機。',
-    hintCamera: '使用此存取碼時,切片軟體的攝影機畫面無法使用;Bambuddy 的攝影機可以。',
+    hintCamera: '使用此存取碼時,切片軟體的攝影機畫面也可以使用(前提是你有權查看該印表機的攝影機)。',
     hintSecret: '它相當於密碼:請勿分享。',
   },
   pendingUploads: {

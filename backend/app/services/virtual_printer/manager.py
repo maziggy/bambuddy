@@ -24,12 +24,13 @@ from backend.app.models.virtual_printer import (
 from backend.app.services import slicer_ams_pick
 from backend.app.services.bambu_mqtt import resolve_external_spools_in_mapping
 from backend.app.services.virtual_printer.bind_server import BindServer
+from backend.app.services.virtual_printer.camera_bridge import CHAMBER, RTSP, AcceptedCode, CameraBridge
 from backend.app.services.virtual_printer.certificate import CertificateService
 from backend.app.services.virtual_printer.ftp_server import VirtualPrinterFTPServer, compute_passive_port_slice
 from backend.app.services.virtual_printer.mqtt_bridge import MQTTBridge
 from backend.app.services.virtual_printer.mqtt_server import SimpleMQTTServer
 from backend.app.services.virtual_printer.ssdp_server import SSDPProxy, VirtualPrinterSSDPServer
-from backend.app.services.virtual_printer.tcp_proxy import SlicerProxyManager, TCPProxy
+from backend.app.services.virtual_printer.tcp_proxy import SlicerProxyManager
 from backend.app.utils.printer_models import has_ams3h, is_nozzle_rack_model
 from backend.app.utils.tray_ids import TrayLayout
 
@@ -340,7 +341,7 @@ class VirtualPrinterInstance:
         self._ftp: VirtualPrinterFTPServer | None = None
         self._mqtt: SimpleMQTTServer | None = None
         self._mqtt_bridge: MQTTBridge | None = None
-        self._rtsp_proxy: TCPProxy | None = None
+        self._rtsp_proxy: CameraBridge | None = None
         self._bind: BindServer | None = None
         self._ssdp: VirtualPrinterSSDPServer | None = None
         self._ssdp_proxy: SSDPProxy | None = None
@@ -419,6 +420,37 @@ class VirtualPrinterInstance:
         except Exception as e:  # noqa: BLE001 -- a lookup error refuses the command
             logger.error("[VP %s] Printer control check failed: %s", self.name, e)
             return False
+
+    def _target_access_code(self) -> str | None:
+        """The target printer's own access code, which its camera checks."""
+        if self._printer_manager is None or self.target_printer_id is None:
+            return None
+        client = self._printer_manager.get_client(self.target_printer_id)
+        code = getattr(client, "access_code", None) if client is not None else None
+        return code if isinstance(code, str) and code else None
+
+    async def camera_codes(self) -> list[AcceptedCode]:
+        """Codes the slicer's camera view through this VP accepts (#1430).
+
+        The VP's own, the target printer's own, and the personal codes of
+        users who may watch the target printer now. Asked at each camera
+        connection.
+        """
+        accepted = [AcceptedCode(self.access_code)]
+        printer_code = self._target_access_code()
+        if printer_code and printer_code != self.access_code:
+            accepted.append(AcceptedCode(printer_code))
+        if self._session_factory is None or self.target_printer_id is None:
+            return accepted
+        from backend.app.services.virtual_printer.user_codes import camera_codes
+
+        try:
+            async with self._session_factory() as db:
+                personal = await camera_codes(db, self.target_printer_id)
+        except Exception as e:  # noqa: BLE001 -- a lookup error leaves only the shared codes
+            logger.error("[VP %s] Personal camera code lookup failed: %s", self.name, e)
+            return accepted
+        return accepted + [AcceptedCode(code, user_id) for code, user_id in personal]
 
     async def on_file_received(self, file_path: Path, source_ip: str, user_id: int | None = None) -> None:
         """Handle file upload completion from FTP.
@@ -1577,12 +1609,19 @@ class VirtualPrinterInstance:
                 from backend.app.services.camera import get_camera_port
 
                 camera_port = get_camera_port(target_model)
-                self._rtsp_proxy = TCPProxy(
-                    name=f"Camera-{camera_port}",
+                # Signs the slicer in with the printer's own code, so the camera
+                # also works with a personal access code (#1430).
+                self._rtsp_proxy = CameraBridge(
+                    name=f"[VP {self.name}] Camera-{camera_port}",
+                    protocol=RTSP if camera_port == 322 else CHAMBER,
                     listen_port=camera_port,
+                    bind_address=bind_addr,
                     target_host=target_ip,
                     target_port=camera_port,
-                    bind_address=bind_addr,
+                    cert_path=cert_path,
+                    key_path=key_path,
+                    codes=self.camera_codes,
+                    printer_code=self._target_access_code,
                 )
                 self._tasks.append(
                     asyncio.create_task(

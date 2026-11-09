@@ -7340,7 +7340,7 @@ export default {
     renewConfirm: 'Dein bisheriger Code funktioniert dann nicht mehr. Verbinde den virtuellen Drucker im Slicer mit dem neuen Code neu.',
     renewed: 'Neuer Zugangscode bereit',
     hintChecked: 'Bei jeder Anmeldung wird geprüft, ob du an diesen virtuellen Drucker und seinen Drucker senden darfst.',
-    hintCamera: 'Mit diesem Code funktioniert die Kameraansicht des Slicers nicht; die Kamera in Bambuddy schon.',
+    hintCamera: 'Die Kameraansicht des Slicers funktioniert mit diesem Code auch, wenn du die Kamera dieses Druckers sehen darfst.',
     hintSecret: 'Er wirkt wie ein Passwort: gib ihn nicht weiter.',
   },
   pendingUploads: {

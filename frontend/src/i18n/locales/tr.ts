@@ -7284,7 +7284,7 @@ export default {
     renewConfirm: 'Mevcut kodunuz artık çalışmaz. Dilimleyicide sanal yazıcıyı yeni kodla yeniden bağlayın.',
     renewed: 'Yeni erişim kodu hazır',
     hintChecked: 'Her girişte o sanal yazıcıya ve yazıcısına gönderme izniniz olup olmadığı kontrol edilir.',
-    hintCamera: 'Bu kodla dilimleyicinin kamera görünümü çalışmaz; Bambuddy\'nin kamerası çalışır.',
+    hintCamera: 'Dilimleyicinin kamera görünümü de bu kodla çalışır, o yazıcının kamerasını izleme izniniz varsa.',
     hintSecret: 'Bir parola gibidir: paylaşmayın.',
   },
   pendingUploads: {

@@ -7422,7 +7422,7 @@ errors: {
     renewConfirm: 'Din nuvarande kod slutar fungera. Koppla den virtuella skrivaren i slicern igen med den nya koden.',
     renewed: 'Ny åtkomstkod klar',
     hintChecked: 'Varje inloggning kontrollerar att du får skicka till den virtuella skrivaren och dess skrivare.',
-    hintCamera: 'Med den här koden fungerar inte slicerns kameravy; Bambuddys kamera gör det.',
+    hintCamera: 'Slicerns kameravy fungerar också med den här koden, om du får se den skrivarens kamera.',
     hintSecret: 'Den fungerar som ett lösenord: dela den inte.',
   },
   pendingUploads: {

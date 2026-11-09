@@ -11,6 +11,7 @@ from backend.app.services.notification_service import notification_service
 from backend.app.services.printer_manager import printer_manager, printer_tray_layout
 from backend.app.utils.tray_ids import (
     EXTERNAL_DEPUTY_ID,
+    RACK_EXTERNAL_IDS,
     AmsType,
     TrayLayout,
     decode_wire_slot,
@@ -29,8 +30,11 @@ def _global_tray_from_assignment(ams_id: int, tray_id: int, layout: TrayLayout |
 def _slot_label_from_global_tray(global_tray_id: int, layout: TrayLayout | None = None) -> str:
     """Return a human-readable slot label from a global tray ID."""
     layout = layout or TrayLayout()
-    if layout.rack and layout.is_external(global_tray_id):
+    if (layout.rack and layout.is_external(global_tray_id)) or (
+        RACK_EXTERNAL_IDS.start <= global_tray_id < EXTERNAL_DEPUTY_ID
+    ):
         # One external input per hotend, numbered like Bambu Studio's "Ext-n".
+        # 247-253 are only ever such inputs, so they read so without a layout.
         return f"Ext-{external_hotend(global_tray_id) + 1}"
     if global_tray_id == 254:
         return "Ext-L"

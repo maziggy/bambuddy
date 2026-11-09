@@ -152,4 +152,42 @@ describe('PrintersPage - H3C AMS 3H', () => {
     expect(slots[8]).toHaveTextContent('6');
     expect(slots[8]).toHaveTextContent('PETG');
   });
+
+  it('names an external input Ext-n in its Configure dialog', async () => {
+    const inputs = emptyInputs.map((vt) => (vt.id === 250 ? { ...tray(250, 'FF0000FF'), tray_type: 'PETG' } : vt));
+    server.use(http.get('/api/v1/printers/:id/status', () => HttpResponse.json({ ...h3cStatus, vt_tray: inputs })));
+    const user = userEvent.setup();
+
+    render(<PrintersPage />);
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('filament-slot')).toHaveLength(9);
+    });
+    fireEvent.mouseEnter(screen.getAllByTestId('filament-slot')[8]);
+    await user.click(await screen.findByRole('button', { name: 'Configure' }));
+
+    // Input 250 is stored as (255, 5); the generic label read "External Slot 6".
+    await waitFor(() => {
+      expect(screen.getAllByText('Ext-6').length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByText(/External Slot/)).not.toBeInTheDocument();
+  });
+
+  it('keeps a tile for an empty external input with a spool assigned', async () => {
+    server.use(
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json(h3cStatus)),
+      http.get('/api/v1/inventory/assignments', () => HttpResponse.json([{
+        id: 1, spool_id: 42, printer_id: 2, ams_id: 255, tray_id: 5, printer_name: 'Workshop H3C', ams_label: null,
+        spool: { id: 42, material: 'PLA', brand: 'Generic', color_name: 'Red', label_weight: 1000, weight_used: 0, rgba: 'FF0000FF' },
+      }])),
+    );
+
+    render(<PrintersPage />);
+
+    // AMS 3H slot 8 and the assigned input 250 (stored as (255, 5)).
+    await waitFor(() => {
+      expect(screen.getAllByTestId('empty-slot')).toHaveLength(2);
+    });
+    expect(screen.queryByTestId('rack-externals-empty')).not.toBeInTheDocument();
+  });
 });

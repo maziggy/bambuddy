@@ -248,6 +248,7 @@ export function SpoolBuddyAmsPage() {
     extruderId?: number;
     caliIdx?: number | null;
     savedPresetId?: string;
+    label?: string;
   } | null>(null);
 
   // Slot action picker: shown before opening configure or assign modal
@@ -425,8 +426,9 @@ export function SpoolBuddyAmsPage() {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { tray, location, ...configData } = slotActionPicker;
     setSlotActionPicker(null);
-    setConfigureSlotModal(configData);
-  }, [slotActionPicker]);
+    // An H3C's per-hotend external input keeps its "Ext-n" name in the dialog.
+    setConfigureSlotModal({ ...configData, label: configData.amsId === 255 && trayLayout.rack ? location : undefined });
+  }, [slotActionPicker, trayLayout.rack]);
 
   const openAssignFromPicker = useCallback(() => {
     if (!slotActionPicker || !selectedPrinterId) return;

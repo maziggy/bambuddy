@@ -88,6 +88,15 @@ describe('ConfigureAmsSlotModal reset wiring', () => {
     await waitFor(() => expect(onSuccess).toHaveBeenCalled());
   });
 
+  it.each([false, true])('shows the caller\'s slot label (fullScreen %s)', async (fullScreen) => {
+    // An H3C's per-hotend external input, stored as (255, 5): "Ext-6", not "External Slot 6".
+    const base = props(255, 5);
+    render(<ConfigureAmsSlotModal {...base} fullScreen={fullScreen} slotInfo={{ ...base.slotInfo, label: 'Ext-6' }} />);
+
+    expect(await screen.findByText('Ext-6')).toBeInTheDocument();
+    expect(screen.queryByText(/External Slot/)).not.toBeInTheDocument();
+  });
+
   it('Cancel closes without resetting or configuring', async () => {
     const user = userEvent.setup();
     render(<ConfigureAmsSlotModal {...props(1, 1)} />);

@@ -105,7 +105,7 @@ class TestVariablesAreDeclared:
     def test_outcome_events_declare_costs_maintenance_and_location(self, event):
         names = set(EVENT_VARIABLES[event])
 
-        assert {"location", "filament_cost", "energy_cost", "wear_cost", "total_cost"} <= names
+        assert {"location", "filament_cost", "energy_cost", "wear_cost", "total_cost", "currency"} <= names
         assert {"maintenance_due_in", "maintenance_overdue", "maintenance_summary"} <= names
 
     def test_print_start_has_location_but_no_maintenance(self):
@@ -279,6 +279,46 @@ class TestCosts:
         )
 
         assert variables["total_cost"] == "N/A"
+
+    @pytest.mark.asyncio
+    async def test_the_currency_is_the_one_set_in_settings(self, db_session, printer_factory, archive_factory):
+        from backend.app.models.settings import Settings
+
+        db_session.add(Settings(key="currency", value="EUR"))
+        await db_session.commit()
+        printer, archive, entry = await self._printed(db_session, printer_factory, archive_factory, cost=1.0)
+
+        variables = await self._complete(db_session, printer, archive, entry)
+
+        assert variables["currency"] == "EUR"
+
+    @pytest.mark.asyncio
+    async def test_the_currency_defaults_to_the_apps_default(self, db_session, printer_factory, archive_factory):
+        printer, archive, entry = await self._printed(db_session, printer_factory, archive_factory, cost=1.0)
+
+        variables = await self._complete(db_session, printer, archive, entry)
+
+        assert variables["currency"] == "USD"
+
+    @pytest.mark.asyncio
+    async def test_the_currency_is_there_when_the_print_has_no_log_entry(self, db_session, printer_factory):
+        from backend.app.models.settings import Settings
+
+        db_session.add(Settings(key="currency", value="GBP"))
+        await db_session.commit()
+        printer = await printer_factory()
+
+        variables = await _send(
+            NotificationService(),
+            db_session,
+            "on_print_complete",
+            printer.id,
+            printer.name,
+            "completed",
+            {"filename": "a"},
+        )
+
+        assert (variables["total_cost"], variables["currency"]) == ("N/A", "GBP")
 
     @pytest.mark.asyncio
     async def test_print_start_has_no_costs(self, db_session, printer_factory):

@@ -342,11 +342,13 @@ class NotificationService:
 
         Read from the print's own log entry, as the Print Log shows them: that is
         this run's cost, where the archive's is the first run's. Plain numbers
-        with two decimals, in the currency set in Settings; "N/A" where the cost
+        with two decimals, in the currency set in Settings (``currency`` is its code); "N/A" where the cost
         is not tracked (no smart plug for energy, no hourly wear cost) or the
         print has no log entry (a print from outside Bambuddy).
         """
         not_tracked = {"filament_cost": "N/A", "energy_cost": "N/A", "wear_cost": "N/A", "total_cost": "N/A"}
+        currency = await self._configured_currency(db)
+        not_tracked["currency"] = currency
         archive_id = (archive_data or {}).get("archive_id")
         run_id = (archive_data or {}).get("run_id")
         if archive_id is None or run_id is None:
@@ -365,7 +367,18 @@ class NotificationService:
         variables = {key: f"{value:.2f}" if value is not None else "N/A" for key, value in parts.items()}
         known = [value for value in parts.values() if value is not None]
         variables["total_cost"] = f"{sum(known):.2f}" if known else "N/A"
+        variables["currency"] = currency
         return variables
+
+    async def _configured_currency(self, db: AsyncSession) -> str:
+        """The currency code set in Settings (e.g. "EUR"), as every cost in Bambuddy is shown in."""
+        from backend.app.services.finance_balance import resolve_configured_currency
+
+        try:
+            return await resolve_configured_currency(db)
+        except Exception as e:
+            logger.debug("Could not read the currency setting: %s", e)
+            return ""
 
     async def _maintenance_variables(self, db: AsyncSession, printer_id: int) -> dict[str, str]:
         """How near the printer is to its next service (#2776), from the Maintenance page's figures."""

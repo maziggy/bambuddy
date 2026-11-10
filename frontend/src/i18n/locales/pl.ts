@@ -4279,8 +4279,8 @@ export default {
       groupAction: 'Grupuj jako wersje',
       groupTooltip: 'Oznacz te pliki jako to samo zadanie pocięte dla różnych drukarek',
       grouped: 'Zgrupowano pliki jako wersje: {{count}}',
-      printAlternatives: 'Drukuj (alternatywy: {{count}})',
     },
+    printFiles: 'Drukuj (pliki: {{count}})',
     title: 'Menedżer plików',
     subtitle: 'Organizuj pliki do druku i zarządzaj nimi',
     uploadFiles: 'Prześlij pliki',
@@ -5726,6 +5726,18 @@ export default {
 
   // Print modal
   printModal: {
+    multiFile: {
+      groupLabel: 'Czym stają się wybrane pliki',
+      alternatives: 'Alternatywy',
+      separate: 'Osobne zadania',
+      alternativesHint: 'Jedno zadanie. Pierwsza pasująca drukarka, która się zwolni, drukuje swój plik.',
+      separateHint: 'Jedna pozycja kolejki na plik, dodawana w kolejności poniżej. Opcje dotyczą każdej pozycji.',
+      alternativesBlocked: 'Więcej niż jeden plik jest pocięty dla {{model}}. Alternatywy wymagają innego modelu drukarki dla każdego pliku.',
+      orderTitle: 'Kolejność w kolejce',
+      incompatible: 'Nie można wysłać do drukarek {{model}}: {{files}}',
+      notSlicedFor: 'Nie pocięto dla {{model}}: {{files}}',
+      failed: 'Nie dodano do kolejki: {{filename}} ({{message}}). Dodano wcześniej: {{queued}}.',
+    },
     variants: {
       editNote: 'Te alternatywy ustawiono podczas dodawania zadania do kolejki. Aby je zmienić, anuluj zadanie i dodaj je ponownie.',
       title: 'Alternatywne drukarki',

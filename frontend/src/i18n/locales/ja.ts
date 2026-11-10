@@ -4247,8 +4247,8 @@ export default {
       groupAction: 'バージョンとしてグループ化',
       groupTooltip: 'これらのファイルを、異なるプリンター向けにスライスした同一ジョブとして扱います',
       grouped: '{{count}}個のファイルをバージョンとしてグループ化しました',
-      printAlternatives: '印刷（{{count}}件の候補）',
     },
+    printFiles: '印刷（{{count}}個のファイル）',
     title: 'ファイル管理',
     subtitle: '印刷ファイルの整理と管理',
     uploadFiles: 'ファイルをアップロード',
@@ -5679,6 +5679,18 @@ export default {
 
   // Print modal
   printModal: {
+    multiFile: {
+      groupLabel: '選択したファイルの扱い',
+      alternatives: '候補',
+      separate: '個別のジョブ',
+      alternativesHint: '1つのジョブです。条件に合う最初に空いたプリンターがそのファイルを印刷します。',
+      separateHint: 'ファイルごとに1件のキュー項目を、下の順序で追加します。オプションはすべての項目に適用されます。',
+      alternativesBlocked: '{{model}} 向けにスライスされたファイルが複数あります。候補には、ファイルごとに異なるプリンターモデルが必要です。',
+      orderTitle: 'キューの順序',
+      incompatible: '{{model}} プリンターには送信できません：{{files}}',
+      notSlicedFor: '{{model}} 向けにスライスされていません：{{files}}',
+      failed: 'キューに追加されませんでした：{{filename}}（{{message}}）。これより前に追加済み：{{queued}}。',
+    },
     variants: {
       editNote: 'これらの候補はキュー追加時に決まります。変更するにはキャンセルして追加し直してください。',
       title: 'プリンターの候補',

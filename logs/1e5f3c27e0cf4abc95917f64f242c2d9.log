@@ -1,0 +1,200 @@
+2026-11-10 19:46:31,080 INFO [uvicorn.access] [-] [IP]:35760 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-11-10 19:46:31,083 INFO [uvicorn.access] [-] [IP]:35746 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-10 19:46:31,084 INFO [uvicorn.access] [-] [IP]:35732 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-11-10 19:46:31,086 INFO [uvicorn.access] [-] [IP]:39114 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-10 19:46:31,096 INFO [backend.app.api.routes.printers] [e07ecc8d] Cover: resolved plate 4 before download (subtask=standard_desiccant_core_62mm-69mm_v1.2_High_Capacity_-_Standard_Mesh)
+2026-11-10 19:46:32,330 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/20P90A391800001/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20135","version":1}}...
+2026-11-10 19:46:32,330 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-11-10 19:46:32,330 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-11-10 19:46:32,331 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/20P90A391800001/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20018","version":1}}...
+2026-11-10 19:46:32,331 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-11-10 19:46:32,331 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-11-10 19:46:32,332 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/20P90A391800001/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20031","version":1}}...
+2026-11-10 19:46:32,332 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-11-10 19:46:32,332 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-11-10 19:46:39,196 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-11-10 19:46:39,196 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:46:40,945 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 259701 bytes
+2026-11-10 19:46:40,945 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 259701 bytes
+2026-11-10 19:46:41,263 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:46:42,655 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(46, 1, 40, None), (47, 1, 41, None)]
+2026-11-10 19:46:42,657 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-10 19:46:43,021 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 263387 bytes
+2026-11-10 19:46:46,273 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:52910
+2026-11-10 19:46:46,273 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:50462
+2026-11-10 19:46:46,273 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:58394
+2026-11-10 19:47:04,323 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:47:06,086 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 272365 bytes
+2026-11-10 19:47:07,061 INFO [uvicorn.access] [-] [IP]:49634 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-11-10 19:47:07,065 INFO [uvicorn.access] [-] [IP]:49656 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-10 19:47:07,077 INFO [backend.app.api.routes.printers] [75cc7d11] Cover: resolved plate 4 before download (subtask=standard_desiccant_core_62mm-69mm_v1.2_High_Capacity_-_Standard_Mesh)
+2026-11-10 19:47:07,463 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-11-10 19:47:07,464 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:47:09,341 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 283890 bytes
+2026-11-10 19:47:09,342 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 283890 bytes
+2026-11-10 19:47:12,676 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(46, 1, 40, None), (47, 1, 41, None)]
+2026-11-10 19:47:12,679 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-10 19:47:18,417 INFO [backend.app.api.routes.cloud] [a2b2595a] get_filament_info called with 1 IDs: ['GFG03']
+2026-11-10 19:47:18,505 INFO [backend.app.api.routes.cloud] [34c6d93d] get_filament_info called with 1 IDs: ['GFG03']
+2026-11-10 19:47:18,765 INFO [uvicorn.access] [-] [IP]:53150 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-10 19:47:18,765 INFO [uvicorn.access] [-] [IP]:53158 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-10 19:47:29,399 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:47:31,358 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 270642 bytes
+2026-11-10 19:47:37,692 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-11-10 19:47:37,692 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:47:39,587 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 283445 bytes
+2026-11-10 19:47:39,588 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 283445 bytes
+2026-11-10 19:47:42,692 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(46, 1, 40, None), (47, 1, 41, None)]
+2026-11-10 19:47:42,694 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-10 19:47:46,441 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:52910
+2026-11-10 19:47:46,441 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:50462
+2026-11-10 19:47:46,441 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:58394
+2026-11-10 19:47:53,459 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:47:55,247 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 275620 bytes
+2026-11-10 19:48:07,477 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-11-10 19:48:07,478 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:48:09,317 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 274452 bytes
+2026-11-10 19:48:09,317 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 274452 bytes
+2026-11-10 19:48:12,707 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(46, 1, 40, None), (47, 1, 41, None)]
+2026-11-10 19:48:12,709 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-10 19:48:16,516 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:48:18,355 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 284490 bytes
+2026-11-10 19:48:37,689 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-11-10 19:48:37,690 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:48:39,486 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 270975 bytes
+2026-11-10 19:48:39,486 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 270975 bytes
+2026-11-10 19:48:40,575 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:48:42,360 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 287642 bytes
+2026-11-10 19:48:42,722 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(46, 1, 40, None), (47, 1, 41, None)]
+2026-11-10 19:48:42,725 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-10 19:48:46,588 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:52910
+2026-11-10 19:48:46,588 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:50462
+2026-11-10 19:48:46,588 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:58394
+2026-11-10 19:49:06,648 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:49:08,454 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 265338 bytes
+2026-11-10 19:49:08,600 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-11-10 19:49:08,600 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:49:10,522 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 273775 bytes
+2026-11-10 19:49:10,522 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 273775 bytes
+2026-11-10 19:49:12,741 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(46, 1, 40, None), (47, 1, 41, None)]
+2026-11-10 19:49:12,744 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-10 19:49:29,712 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:49:31,426 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 282747 bytes
+2026-11-10 19:49:40,050 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-11-10 19:49:40,051 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:49:42,080 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 285175 bytes
+2026-11-10 19:49:42,080 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 285175 bytes
+2026-11-10 19:49:42,758 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(46, 1, 40, None), (47, 1, 41, None)]
+2026-11-10 19:49:42,761 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-10 19:49:46,752 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:52910
+2026-11-10 19:49:46,752 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:50462
+2026-11-10 19:49:46,752 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:58394
+2026-11-10 19:49:57,778 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:49:59,625 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 265200 bytes
+2026-11-10 19:50:12,706 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-11-10 19:50:12,706 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:50:12,774 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(46, 1, 40, None), (47, 1, 41, None)]
+2026-11-10 19:50:12,777 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-10 19:50:14,423 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 264086 bytes
+2026-11-10 19:50:14,423 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 264086 bytes
+2026-11-10 19:50:14,573 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-11-10 19:50:21,836 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:50:23,575 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 267687 bytes
+2026-11-10 19:50:42,793 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(46, 1, 40, None), (47, 1, 41, None)]
+2026-11-10 19:50:42,795 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-10 19:50:45,520 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-11-10 19:50:45,521 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:50:45,522 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-11-10 19:50:46,895 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:52910
+2026-11-10 19:50:46,895 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:50462
+2026-11-10 19:50:46,895 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:58394
+2026-11-10 19:50:47,225 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 258907 bytes
+2026-11-10 19:50:47,225 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 258907 bytes
+2026-11-10 19:50:47,225 INFO [backend.app.services.camera] [-] Reusing in-flight camera capture for [IP]: 258907 bytes (no second connection opened)
+2026-11-10 19:50:47,226 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 258907 bytes
+2026-11-10 19:50:48,903 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:50:51,056 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 261922 bytes
+2026-11-10 19:51:12,808 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(46, 1, 40, None), (47, 1, 41, None)]
+2026-11-10 19:51:12,810 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-10 19:51:13,966 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:51:15,924 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 275082 bytes
+2026-11-10 19:51:19,913 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-11-10 19:51:19,914 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:51:21,656 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 275185 bytes
+2026-11-10 19:51:21,656 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 275185 bytes
+2026-11-10 19:51:33,328 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/20P90A391800001/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20032","version":1}}...
+2026-11-10 19:51:33,328 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-11-10 19:51:33,328 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-11-10 19:51:33,329 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/20P90A391800001/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20136","version":1}}...
+2026-11-10 19:51:33,329 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-11-10 19:51:33,329 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-11-10 19:51:33,330 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/20P90A391800001/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20019","version":1}}...
+2026-11-10 19:51:33,330 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-11-10 19:51:33,330 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-11-10 19:51:38,971 INFO [backend.app.api.routes.printers] [33569a34] Cover: resolved plate 4 before download (subtask=standard_desiccant_core_62mm-69mm_v1.2_High_Capacity_-_Standard_Mesh)
+2026-11-10 19:51:39,096 INFO [backend.app.api.routes.cloud] [e240d5a6] get_filament_info called with 1 IDs: ['GFG03']
+2026-11-10 19:51:39,098 INFO [uvicorn.access] [-] [IP]:50480 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-10 19:51:41,045 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:51:42,722 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 267720 bytes
+2026-11-10 19:51:42,822 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(46, 1, 40, None), (47, 1, 41, None)]
+2026-11-10 19:51:42,824 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-10 19:51:47,059 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:52910
+2026-11-10 19:51:47,059 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:50462
+2026-11-10 19:51:47,059 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:58394
+2026-11-10 19:52:04,101 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:52:05,924 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 275692 bytes
+2026-11-10 19:52:12,837 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(46, 1, 40, None), (47, 1, 41, None)]
+2026-11-10 19:52:12,840 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-10 19:52:13,570 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-11-10 19:52:13,570 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:52:15,259 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 274813 bytes
+2026-11-10 19:52:15,260 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 274813 bytes
+2026-11-10 19:52:31,165 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:52:32,961 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 284148 bytes
+2026-11-10 19:52:41,606 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-11-10 19:52:41,606 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:52:42,852 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(46, 1, 40, None), (47, 1, 41, None)]
+2026-11-10 19:52:42,854 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-10 19:52:43,532 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 275022 bytes
+2026-11-10 19:52:43,532 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 275022 bytes
+2026-11-10 19:52:47,204 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:52910
+2026-11-10 19:52:47,204 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:50462
+2026-11-10 19:52:47,204 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:58394
+2026-11-10 19:52:55,224 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:52:57,040 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 287945 bytes
+2026-11-10 19:53:12,867 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(46, 1, 40, None), (47, 1, 41, None)]
+2026-11-10 19:53:12,869 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-10 19:53:15,195 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-11-10 19:53:15,196 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:53:16,894 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 266537 bytes
+2026-11-10 19:53:16,894 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 266537 bytes
+2026-11-10 19:53:21,288 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-10 19:53:23,225 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 264042 bytes
+2026-11-10 19:53:27,166 INFO [backend.app.api.routes.support] [30c31725] Log level changed to DEBUG
+2026-11-10 19:53:27,166 INFO [backend.app.api.routes.bug_report] [30c31725] Bug report: enabled debug logging
+2026-11-10 19:53:27,166 DEBUG [backend.app.services.bambu_mqtt] [30c31725] [[SERIAL]] Requesting status update (pushall)
+2026-11-10 19:53:27,167 INFO [uvicorn.access] [-] [IP]:35686 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-11-10 19:53:28,355 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': False, 'cfg': 8088999, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-11-10 19:53:28,355 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-11-10 19:53:28,355 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 8088999 (binary: 0b11110110110110110100111)
+2026-11-10 19:53:28,355 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: /data/Metadata/plate_4.gcode, subtask_name: standard_desiccant_core_62mm-69mm_v1.2_High_Capacity_-_Standard_Mesh
+2026-11-10 19:53:28,355 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '11', 'ams_exist_bits_raw': '11', 'cali_id': 255, 'cali_stat': 0, 'cfs': [2, 5, 7], 'insert_flag': True, 'power_on_flag': True, 'tray_exist_bits': 'f', 'tray_hall_out_bits': '6', 'tray_is_bbl_bits': 'd', 'tray_now': '1', 'tray_pre': '1', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'tray_tar': '2', 'unbind_ams_stat': 0, 'version': 2071}
+2026-11-10 19:53:28,355 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 1
+2026-11-10 19:53:28,355 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 2 new units, 2 total
+2026-11-10 19:53:28,355 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x11001E03 -> FTS inlet A
+2026-11-10 19:53:28,355 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 128 info=0x10002E04 -> FTS inlet B
+2026-11-10 19:53:28,355 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1, '128': 0}
+2026-11-10 19:53:28,355 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-11-10 19:53:28,356 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-10 19:53:28,356 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] device.extruder.state=33042 (switch_state bits 12-14: 0)
+2026-11-10 19:53:28,356 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] info.temp direct: 42°C (heater OFF)
+2026-11-10 19:53:28,356 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ctc_info keys: ['temp']
+2026-11-10 19:53:28,356 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=42.0, heating=False, respect_local=False
+2026-11-10 19:53:28,356 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 42.0, target: 0.0, heating: False
+2026-11-10 19:53:28,356 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-11-10 19:53:28,356 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 7, 'liveview_preview': True, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'enable', 'tl_external_free_kb': 14848000, 'tl_external_total_kb': 60077952, 'tl_internal_free_kb': 950929, 'tl_internal_total_kb': 962560, 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-11-10 19:53:28,356 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Timelapse detected during print (from ipcam)
+2026-11-10 19:53:28,356 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -65dBm
+2026-11-10 19:53:28,356 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-11-10 19:53:28,356 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [2]
+2026-11-10 19:53:28,356 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: /data/Metadata/plate_4.gcode, subtask: standard_desiccant_core_62mm-69mm_v1.2_High_Capacity_-_Standard_Mesh

@@ -7757,6 +7757,8 @@ export default {
       testReadTag: 'Leggi tag',
     },
     writeTag: {
+      writeWith: 'Scrivi con',
+      deviceOfflineOption: '{{name}} (dispositivo offline)',
       tabExisting: 'Bobina esistente',
       tabNew: 'Nuova bobina',
       tabReplace: 'Sostituisci tag',

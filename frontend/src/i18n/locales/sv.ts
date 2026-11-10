@@ -7852,6 +7852,8 @@ errors: {
       includeBeta: 'Inkludera betaversioner',
     },
     writeTag: {
+      writeWith: 'Skriv med',
+      deviceOfflineOption: '{{name}} (enhet offline)',
       tabExisting: 'Befintlig rulle',
       tabNew: 'Ny rulle',
       tabReplace: 'Ersätt tagg',

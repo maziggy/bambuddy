@@ -7709,6 +7709,8 @@ export default {
       includeBeta: 'Beta sürümleri dahil et',
     },
     writeTag: {
+      writeWith: 'Şununla yaz',
+      deviceOfflineOption: '{{name}} (çevrimdışı)',
       tabExisting: 'Mevcut Makara',
       tabNew: 'Yeni Makara',
       tabReplace: 'Etiketi Değiştir',

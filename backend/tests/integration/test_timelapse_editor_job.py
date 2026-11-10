@@ -22,9 +22,17 @@ def _no_jobs():
 
 @pytest.fixture
 def data_dir(tmp_path):
+    import tempfile
+
     from backend.app.api.routes import archives
 
+    # The route's temp files go to the system temp dir, which all test
+    # workers share; their archives all have id 1, so a check for leftover
+    # "*_1_*" files there saw another worker's upload.
+    own_tmp = tmp_path / "tmp"
+    own_tmp.mkdir()
     with (
+        patch.object(tempfile, "tempdir", str(own_tmp)),
         patch.object(archives.settings, "base_dir", tmp_path),
         patch("backend.app.services.timelapse_processor.get_ffmpeg_path", return_value="/usr/bin/ffmpeg"),
     ):

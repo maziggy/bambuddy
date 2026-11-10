@@ -7823,6 +7823,8 @@ export default {
       includeBeta: 'Uwzględnij wersje beta',
     },
     writeTag: {
+      writeWith: 'Zapisz za pomocą',
+      deviceOfflineOption: '{{name}} (urządzenie offline)',
       tabExisting: 'Istniejąca szpula',
       tabNew: 'Nowa szpula',
       tabReplace: 'Zastąp tag',

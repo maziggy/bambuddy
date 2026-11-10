@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -57,6 +57,7 @@ import {
 import { MATERIALS } from '../../components/spool-form/constants';
 import { NumberInput } from '../../components/NumberInput';
 import { useUiSettings } from '../../hooks/useUiSettings';
+import { useKioskDevice } from '../../hooks/useKioskDevice';
 
 type Tab = 'existing' | 'new' | 'replace';
 type WriteStatus = 'idle' | 'selected' | 'writing' | 'success' | 'error';
@@ -105,16 +106,26 @@ export function SpoolBuddyWriteTagPage() {
     enabled: spoolmanModeReady,
   });
 
-  const { data: devices = [] } = useQuery({
-    queryKey: ['spoolbuddy-devices'],
-    queryFn: () => spoolbuddyApi.getDevices(),
-    refetchInterval: 5000,
-  });
+  // The write goes to this kiosk's device, not the first one registered,
+  // which may be an old reader long offline (#3504).
+  const { device, devices, chooseDevice } = useKioskDevice(5000);
 
   const { data: settings } = useUiSettings();
 
-  const device = devices[0];
+  // The layout's state follows the same device (useKioskDevice).
   const deviceOnline = sbState.deviceOnline;
+  // Only when there is a real choice: another device besides this one online.
+  const showDevicePicker = devices.length > 1 && devices.some((d) => d.online && d.device_id !== device?.device_id);
+  // Tag events from every reader reach every kiosk; only this device's count.
+  const deviceIdRef = useRef(device?.device_id);
+  useEffect(() => {
+    deviceIdRef.current = device?.device_id;
+  }, [device?.device_id]);
+  const fromOtherDevice = useCallback(
+    (detail: { device_id?: string } | null | undefined) =>
+      !!deviceIdRef.current && !!detail?.device_id && detail.device_id !== deviceIdRef.current,
+    [],
+  );
   const currencySymbol = getCurrencySymbol(settings?.currency || 'USD');
 
   // Filter spools based on tab
@@ -155,24 +166,33 @@ export function SpoolBuddyWriteTagPage() {
   // Listen for tag events
   const handleUnknownTag = useCallback((e: Event) => {
     const detail = (e as CustomEvent).detail;
+    if (fromOtherDevice(detail)) return;
     const sak = detail.sak;
     if (sak === 0x00) {
       setTagOnReader(true);
       setTagUid(detail.tag_uid ?? null);
     }
-  }, []);
+  }, [fromOtherDevice]);
+
+  // A tag seen on another device is not on this one's reader.
+  useEffect(() => {
+    setTagOnReader(false);
+    setTagUid(null);
+  }, [device?.device_id]);
 
   const handleTagMatched = useCallback((e: Event) => {
     const detail = (e as CustomEvent).detail;
+    if (fromOtherDevice(detail)) return;
     // Tag is on the reader — could be used for replace flow
     setTagOnReader(true);
     setTagUid(detail.tag_uid ?? null);
-  }, []);
+  }, [fromOtherDevice]);
 
-  const handleTagRemoved = useCallback(() => {
+  const handleTagRemoved = useCallback((e: Event) => {
+    if (fromOtherDevice((e as CustomEvent).detail)) return;
     setTagOnReader(false);
     setTagUid(null);
-  }, []);
+  }, [fromOtherDevice]);
 
   const handleTagWritten = useCallback((e: Event) => {
     const detail = (e as CustomEvent).detail;
@@ -393,6 +413,23 @@ export function SpoolBuddyWriteTagPage() {
 
         {/* Right panel — NFC status + write action */}
         <div className="w-[340px] flex flex-col items-center justify-center p-6 shrink-0">
+          {showDevicePicker && (
+            <label className="w-full mb-4 text-sm text-white/60">
+              {t('spoolbuddy.writeTag.writeWith')}
+              <select
+                value={device?.device_id ?? ''}
+                onChange={(e) => chooseDevice(e.target.value)}
+                disabled={writeStatus === 'writing'}
+                className="mt-1 w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white"
+              >
+                {devices.map((d) => (
+                  <option key={d.device_id} value={d.device_id}>
+                    {d.online ? d.hostname : t('spoolbuddy.writeTag.deviceOfflineOption', { name: d.hostname })}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <NfcStatusPanel
             writeStatus={writeStatus}
             writeMessage={writeMessage}

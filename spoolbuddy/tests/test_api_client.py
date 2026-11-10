@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
-from daemon.api_client import MAX_BUFFER_SIZE, APIClient
+from daemon.api_client import MAX_BUFFER_SIZE, WRITE_RESULT_PATH, APIClient
 
 
 @pytest.fixture
@@ -56,6 +56,17 @@ class TestPost:
         assert result is None
         assert len(api._buffer) == 1
         assert api._buffer[0] == {"path": "/test", "data": {"data": 1}}
+
+    @pytest.mark.asyncio
+    async def test_a_buffered_write_result_is_reported(self, api):
+        # #3076: main must know a tag write's result is still unsent.
+        api._client.post = AsyncMock(side_effect=httpx.ConnectError("down"))
+        assert not api.has_buffered(WRITE_RESULT_PATH)
+
+        await api.write_tag_result("dev-1", 7, "04A1", True, "ok")
+
+        assert api.has_buffered(WRITE_RESULT_PATH)
+        assert not api.has_buffered("/heartbeat")
 
     @pytest.mark.asyncio
     async def test_post_failure_logs_connection_lost_once(self, api):

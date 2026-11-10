@@ -61,9 +61,13 @@ async def _all_runs(db) -> list[PrintLogEntry]:
 
 
 async def _wipe(db) -> None:
-    """A rebuilt instance: no archives, prints or merges."""
+    """A rebuilt instance: no archives, prints or merges.
+
+    Open runs too: a plain delete of runs leaves them out (_hide_open_runs),
+    and one left behind ties with its restored copy on started_at.
+    """
     for model in (PrintLogEntry, ArchiveAlias, PrintArchive):
-        await db.execute(delete(model))
+        await db.execute(delete(model).execution_options(**{INCLUDE_OPEN_RUNS: True}))
     await db.commit()
 
 

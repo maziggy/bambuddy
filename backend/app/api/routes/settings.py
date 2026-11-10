@@ -1784,11 +1784,22 @@ async def restore_backup(
             await reinitialize_database()
             await init_db()
 
+            # 8b. A backup from a Windows install stores its paths with
+            # backslashes, which Linux and macOS read as part of a file name
+            # (#3501). After init_db, so the tables are current, and after the
+            # files are copied, so a path that exists as written is kept.
+            from backend.app.core import database as _db_mod
+            from backend.app.services.backup_paths import convert_windows_paths
+
+            try:
+                async with _db_mod.engine.begin() as conn:
+                    await convert_windows_paths(conn, base_dir)
+            except Exception as e:
+                logger.warning("Could not convert Windows file paths from the backup: %s", e, exc_info=True)
+
             # 9. Sign everyone out. The restored users and auth tokens come from
             # another point in time, possibly written by older code, so no
             # session issued before the restore should stay valid.
-            from backend.app.core import database as _db_mod
-
             async with _db_mod.engine.begin() as conn:
                 await _db_mod.invalidate_all_sessions(conn)
             # Open dashboards of signed-in users too: they are never signed in

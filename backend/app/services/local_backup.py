@@ -186,7 +186,6 @@ class LocalBackupService:
             return {"success": False, "message": "Backup already in progress"}
 
         self._running = True
-        self._last_missing_files = 0
         try:
             if settings is None:
                 settings = await self._load_settings()
@@ -208,6 +207,7 @@ class LocalBackupService:
                 self._last_backup_at = datetime.now(timezone.utc).isoformat()
                 self._last_status = "failed"
                 self._last_message = diagnosis["message"]
+                self._last_missing_files = 0
                 logger.error("Local backup failed: %s (%s)", diagnosis["message"], diagnosis["detail"])
                 return {"success": False, "message": diagnosis["message"], "diagnosis": diagnosis}
 
@@ -235,6 +235,9 @@ class LocalBackupService:
 
             self._last_status = "success"
             self._last_message = filename
+            # Set with the status, never on its own: reset at the start of a run,
+            # the last 'warning' read "(not copied: 0)" for as long as it ran.
+            self._last_missing_files = 0
             logger.info("Local backup created: %s", zip_path)
             return {"success": True, "message": "Backup created", "filename": filename}
 
@@ -242,6 +245,7 @@ class LocalBackupService:
             self._last_backup_at = datetime.now(timezone.utc).isoformat()
             self._last_status = "failed"
             self._last_message = str(e)
+            self._last_missing_files = 0
             logger.error("Local backup failed: %s", e, exc_info=True)
             return {"success": False, "message": f"Backup failed: {e}"}
         finally:

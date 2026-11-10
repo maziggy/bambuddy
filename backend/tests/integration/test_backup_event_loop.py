@@ -6,9 +6,10 @@ nightly backup: no printer status, no queue, no API.
 
 With that work in threads, what the blocked loop used to rule out by accident
 has to be ruled out on purpose: two backups at once (each stages its own copy
-of the archive), a cancelled backup deleting its staging folder while a copy
-thread still writes into it, and the list, Download, Restore or Delete reaching
-a ZIP that is still being written.
+of the archive), a restore replacing what a backup copies, a cancelled backup
+deleting its staging folder while a copy thread still writes into it, the list,
+Download, Restore or Delete reaching a ZIP that is still being written, and the
+app's own short-lived files turning a good backup into an incomplete one.
 """
 
 from __future__ import annotations
@@ -137,7 +138,7 @@ class _Gate:
 
 
 def _lose_a_file_during_the_copy(backup_env, monkeypatch):
-    """Have one archived file vanish between copytree's listing and its copy."""
+    """Have one archived file fail to copy. It stays on disk, so the backup misses it."""
     (backup_env.data / "archive" / "1" / "gone.gcode.3mf").write_bytes(b"y" * 16)
     real_copytree = shutil.copytree
 
@@ -610,7 +611,7 @@ async def test_a_download_during_a_local_backup_is_refused_with_409(async_client
         assert await asyncio.to_thread(gate.started.wait, 10)
         resp = await async_client.get("/api/v1/settings/backup")
         assert resp.status_code == 409
-        assert resp.json()["detail"] == "A backup is already running"
+        assert resp.json()["detail"] == {"code": "backup_running", "message": "A backup is already running"}
         # Refused before staging anything: the local backup's folder is the only one.
         assert len(list(backup_env.temp.iterdir())) == 1
     finally:
@@ -680,3 +681,240 @@ async def test_a_failed_backup_lets_the_next_one_run(async_client, backup_env, m
     service = LocalBackupService()
     result = await asyncio.wait_for(service.run_backup({"path": str(backup_env.out), "retention": 5}), 30)
     assert result["success"] is True
+
+
+def test_the_apps_short_lived_files_stay_out_of_the_backup(tmp_path):
+    from backend.app.api.routes import settings as settings_routes
+
+    archive = tmp_path / "archive"
+    (archive / "temp").mkdir(parents=True)
+    (archive / "temp" / "print-start.3mf").write_bytes(b"x")
+    # Only archive/temp itself: a folder called temp deeper down is data like any other.
+    (archive / "1" / "temp").mkdir(parents=True)
+    (archive / "1" / "temp" / "part.3mf").write_bytes(b"y")
+    vp = tmp_path / "virtual_printer"
+    (vp / "temp").mkdir(parents=True)
+    (vp / "temp" / "keep.3mf").write_bytes(b"z")
+
+    stage = tmp_path / "stage"
+    assert settings_routes._copy_backup_dirs([("archive", archive), ("virtual_printer", vp)], stage) == []
+
+    assert not (stage / "archive" / "temp").exists()
+    assert (stage / "archive" / "1" / "temp" / "part.3mf").read_bytes() == b"y"
+    assert (stage / "virtual_printer" / "temp" / "keep.3mf").read_bytes() == b"z"
+
+
+def test_a_file_the_app_deleted_during_the_copy_is_not_missing(monkeypatch, tmp_path):
+    from backend.app.api.routes import settings as settings_routes
+
+    archive = tmp_path / "archive"
+    (archive / "1").mkdir(parents=True)
+    (archive / "1" / "part.3mf").write_bytes(b"x")
+    (archive / "1" / "upload.3mf").write_bytes(b"y")
+    real_copytree = shutil.copytree
+
+    def copy(source, target, **kwargs):
+        if Path(source).name == "upload.3mf":
+            # Deleted by the app between copytree's listing and its copy.
+            Path(source).unlink()
+            raise FileNotFoundError(2, "No such file or directory", source)
+        return shutil.copy2(source, target, **kwargs)
+
+    def copytree(src, dst, *args, **kwargs):
+        if not args:
+            kwargs["copy_function"] = copy
+        return real_copytree(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "copytree", copytree)
+    stage = tmp_path / "stage"
+
+    # It was never part of the data, so the backup is complete.
+    assert settings_routes._copy_backup_dirs([("archive", archive)], stage) == []
+    assert (stage / "archive" / "1" / "part.3mf").exists()
+
+
+class _HeldRestore:
+    """Stands in for the restore's work and holds it until released."""
+
+    def __init__(self):
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+        self.calls = 0
+
+    async def __call__(self, _file, _db):
+        self.calls += 1
+        self.started.set()
+        await self.release.wait()
+        return {"success": True, "message": "restored"}
+
+
+def _restore_upload():
+    return {"file": ("bambuddy-backup-20260412-120000.zip", b"PK", "application/zip")}
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_restore_during_a_backup_is_refused_with_409(async_client, backup_env, monkeypatch):
+    from backend.app.api.routes import settings as settings_routes
+    from backend.app.services.local_backup import LocalBackupService
+
+    gate = _Gate()
+    monkeypatch.setattr(settings_routes, "_copy_backup_dirs", gate.wrap(settings_routes._copy_backup_dirs))
+    restore = _HeldRestore()
+    monkeypatch.setattr(settings_routes, "_restore_backup_zip", restore)
+
+    local = asyncio.create_task(LocalBackupService().run_backup({"path": str(backup_env.out), "retention": 5}))
+    try:
+        assert await asyncio.to_thread(gate.started.wait, 10)
+        resp = await async_client.post("/api/v1/settings/restore", files=_restore_upload())
+        assert resp.status_code == 409
+        assert resp.json()["detail"] == {"code": "backup_running", "message": "A backup is running"}
+        # Refused before it replaced anything.
+        assert restore.calls == 0
+    finally:
+        gate.release.set()
+
+    assert (await local)["success"] is True
+    # Once the backup is done, the restore goes through.
+    restore.release.set()
+    resp = await async_client.post("/api/v1/settings/restore", files=_restore_upload())
+    assert resp.status_code == 200
+    assert restore.calls == 1
+    assert settings_routes._backup_claims == 0
+    assert settings_routes._restore_running is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_backup_waits_for_a_running_restore(async_client, backup_env, monkeypatch):
+    from backend.app.api.routes import settings as settings_routes
+    from backend.app.services.local_backup import LocalBackupService
+
+    gate = _Gate()
+    gate.release.set()
+    monkeypatch.setattr(settings_routes, "_copy_backup_dirs", gate.wrap(settings_routes._copy_backup_dirs))
+    restore = _HeldRestore()
+    monkeypatch.setattr(settings_routes, "_restore_backup_zip", restore)
+
+    restoring = asyncio.create_task(async_client.post("/api/v1/settings/restore", files=_restore_upload()))
+    try:
+        await asyncio.wait_for(restore.started.wait(), 10)
+        local = asyncio.create_task(LocalBackupService().run_backup({"path": str(backup_env.out), "retention": 5}))
+        await asyncio.sleep(0.3)
+        # Queued behind the restore, not copying what it replaces.
+        assert not local.done()
+        assert gate.calls == 0
+
+        # The download says it is a restore that runs, not a backup.
+        resp = await async_client.get("/api/v1/settings/backup")
+        assert resp.status_code == 409
+        assert resp.json()["detail"] == {"code": "restore_running", "message": "A restore is running"}
+
+        # A second restore is refused as well.
+        resp = await async_client.post("/api/v1/settings/restore", files=_restore_upload())
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["code"] == "restore_running"
+    finally:
+        restore.release.set()
+
+    assert (await restoring).status_code == 200
+    result = await asyncio.wait_for(local, 30)
+    assert result["success"] is True
+    assert gate.calls == 1
+    assert restore.calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.parametrize("local", [False, True], ids=["download", "local"])
+async def test_a_cancel_during_the_last_clean_up_leaves_no_zip(backup_env, monkeypatch, local):
+    from backend.app.api.routes import settings as settings_routes
+
+    cleaning = threading.Event()
+    cleaned = threading.Event()
+    real_cleanup = tempfile.TemporaryDirectory.cleanup
+
+    def slow_cleanup(self):
+        cleaning.set()
+        try:
+            time.sleep(0.5)
+            return real_cleanup(self)
+        finally:
+            cleaned.set()
+
+    monkeypatch.setattr(tempfile.TemporaryDirectory, "cleanup", slow_cleanup)
+
+    tasks_before = asyncio.all_tasks()
+    backup = asyncio.create_task(settings_routes.create_backup_zip(output_path=backup_env.out if local else None))
+    assert await asyncio.to_thread(cleaning.wait, 10)
+    # Shutdown: asyncio.run cancels every task that is left.
+    for task in asyncio.all_tasks() - tasks_before:
+        task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await backup
+    assert await asyncio.to_thread(cleaned.wait, 10)
+
+    # The finished ZIP was never handed to anyone, so it is gone too.
+    assert list(backup_env.temp.iterdir()) == []
+    assert list(backup_env.out.iterdir()) == []
+    assert settings_routes._backup_claims == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.parametrize("fails_at", ["zip", "rename"])
+async def test_a_failed_backup_in_the_same_second_keeps_the_complete_one(backup_env, monkeypatch, fails_at):
+    from backend.app.api.routes import settings as settings_routes
+
+    class SameSecond(settings_routes.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 11, 10, 12, 0, 0, tzinfo=tz)
+
+    monkeypatch.setattr(settings_routes, "datetime", SameSecond)
+
+    first, *_ = await settings_routes.create_backup_zip(output_path=backup_env.out)
+    complete = first.read_bytes()
+
+    def disk_full(*_args):
+        raise OSError(28, "No space left on device")
+
+    if fails_at == "zip":
+        monkeypatch.setattr(settings_routes, "_write_backup_zip", disk_full)
+    else:
+        monkeypatch.setattr(os, "replace", disk_full)
+    with pytest.raises(OSError):
+        await settings_routes.create_backup_zip(output_path=backup_env.out)
+
+    # The second run never owned that name: the first, complete backup stays.
+    assert first.read_bytes() == complete
+    assert sorted(f.name for f in backup_env.out.iterdir()) == [first.name]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_running_backup_keeps_the_last_status_and_its_count_together(async_client, backup_env, monkeypatch):
+    from backend.app.api.routes import settings as settings_routes
+    from backend.app.services.local_backup import LocalBackupService
+
+    service = LocalBackupService()
+    settings = {"path": str(backup_env.out), "retention": 5}
+    with monkeypatch.context() as patched:
+        _lose_a_file_during_the_copy(backup_env, patched)
+        await service.run_backup(settings)
+
+    gate = _Gate()
+    monkeypatch.setattr(settings_routes, "_copy_backup_dirs", gate.wrap(settings_routes._copy_backup_dirs))
+    running = asyncio.create_task(service.run_backup(settings))
+    try:
+        assert await asyncio.to_thread(gate.started.wait, 10)
+        status = service.get_status()
+        # Still the last result, whole: not a 'warning' that missed 0 files.
+        assert status["is_running"] is True
+        assert (status["last_status"], status["last_missing_files"]) == ("warning", 1)
+    finally:
+        gate.release.set()
+
+    assert (await running)["success"] is True
+    status = service.get_status()
+    assert (status["last_status"], status["last_missing_files"]) == ("success", 0)

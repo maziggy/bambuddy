@@ -202,6 +202,40 @@ describe('GitHubBackupSettings - a backup that is running or incomplete', () => 
     expect(screen.queryByText(/Failed to create backup/)).not.toBeInTheDocument();
   });
 
+  it('says so when the download is refused because a restore runs', async () => {
+    server.use(
+      http.get('*/api/v1/settings/backup', () =>
+        HttpResponse.json({ detail: { code: 'restore_running', message: 'A restore is running' } }, { status: 409 })
+      ),
+    );
+    const user = userEvent.setup();
+    render(<GitHubBackupSettings />);
+
+    await screen.findByText('Run Now');
+    await user.click(await downloadButton());
+
+    expect(await screen.findByText('A restore is running. Try again once it has finished.')).toBeInTheDocument();
+    expect(screen.queryByText(alreadyRunning)).not.toBeInTheDocument();
+  });
+
+  it('shows a restore refused during a backup as the translated message', async () => {
+    server.use(
+      http.post('/api/v1/local-backup/backups/:name/restore', () =>
+        HttpResponse.json({ detail: { code: 'backup_running', message: 'A backup is running' } }, { status: 409 })
+      ),
+    );
+    const user = userEvent.setup();
+    render(<GitHubBackupSettings />);
+
+    await user.click(await screen.findByTitle('Restore'));
+    await user.click(await screen.findByRole('button', { name: 'Restore Backup' }));
+
+    expect(
+      (await screen.findAllByText('A backup is running. Restore once it has finished.')).length
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText('A backup is running')).not.toBeInTheDocument();
+  });
+
   it('still reports any other failed download as a failure', async () => {
     server.use(
       http.get('*/api/v1/settings/backup', () =>

@@ -253,6 +253,11 @@ export function GitHubBackupSettings() {
     },
   });
 
+  // A backup and a restore never run at the same time; the API answers 409
+  // with which one is running.
+  const busyMessage = (code: string | null | undefined) =>
+    code === 'restore_running' ? t('backup.restoreRunning') : code === 'backup_running' ? t('backup.restoreBlockedByBackup') : null;
+
   const restoreLocalBackupMutation = useMutation({
     mutationFn: async (filename: string) => {
       setRestoreConfirmFile(null);
@@ -275,9 +280,10 @@ export function GitHubBackupSettings() {
     onError: (e) => {
       setIsRestoring(false);
       setOperationStatus('');
-      const msg = e instanceof Error ? e.message : t('backup.failedToRestore');
+      const busy = e instanceof ApiError && e.status === 409 ? busyMessage(e.code) : null;
+      const msg = busy ?? (e instanceof Error ? e.message : t('backup.failedToRestore'));
       setRestoreResult({ success: false, message: msg });
-      showToast(msg, 'error');
+      showToast(msg, busy ? 'warning' : 'error');
     },
   });
 
@@ -1145,7 +1151,7 @@ export function GitHubBackupSettings() {
                     }
                   } catch (e) {
                     if (e instanceof ApiError && e.status === 409) {
-                      showToast(t('backup.backupAlreadyRunning'), 'warning');
+                      showToast(e.code === 'restore_running' ? t('backup.restoreRunning') : t('backup.backupAlreadyRunning'), 'warning');
                     } else {
                       showToast(t('backup.failedToCreateBackup', { message: e instanceof Error ? e.message : t('common.unknownError') }), 'error');
                     }
@@ -1578,9 +1584,12 @@ export function GitHubBackupSettings() {
             try {
               setOperationStatus(t('backup.uploadingFile'));
               const result = await api.importBackup(restoreFile);
-              setRestoreResult(result);
+              const busy = result.success ? null : busyMessage(result.code);
+              setRestoreResult(busy ? { success: false, message: busy } : result);
               if (result.success) {
                 showToast(t('backup.backupRestoredRestart'), 'success');
+              } else if (busy) {
+                showToast(busy, 'warning');
               } else {
                 showToast(result.message || t('backup.failedToRestore'), 'error');
               }

@@ -158,6 +158,21 @@ A2L_LITE_NORMALIZED_AMS_ID = 6
 A2L_LITE_GLOBAL_BASE = A2L_LITE_NORMALIZED_AMS_ID * 4  # 24
 
 
+def _ams_unit_order(unit: dict) -> tuple[int, str]:
+    """Sort key for AMS units by id (#3499).
+
+    Firmware sends unit ids as strings ("0"), while the A2L AMS Lite's id is
+    normalised to the int 6, so an A2L with an AMS 2 Pro and an AMS Lite held
+    both: comparing them raised, and the AMS card stayed empty. Numeric order,
+    with anything unreadable last.
+    """
+    raw = unit.get("id", 0)
+    try:
+        return (int(raw), "")
+    except (TypeError, ValueError):
+        return (1 << 30, str(raw))
+
+
 def normalize_am_unit_id(ams_id: int) -> int:
     """Map the A2L AMS-Lite's physical unit id (16) to its normalised id (6).
 
@@ -3956,8 +3971,14 @@ class BambuMQTTClient:
         # Merge AMS data instead of replacing, to handle partial updates
         # During prints, the printer may only send updates for active AMS units
         # We need deep merging at the tray level to preserve fields like tray_sub_brands
-        existing_ams = self.state.raw_data.get("ams", [])
-        existing_by_id = {ams.get("id"): ams for ams in existing_ams if ams.get("id") is not None}
+        existing_ams = self.state.raw_data.get("ams")
+        # #3499: anything but the merged unit list (once, the frame's own AMS
+        # object) would fail every later frame on its string keys.
+        if not isinstance(existing_ams, list):
+            existing_ams = []
+        existing_by_id = {
+            ams.get("id"): ams for ams in existing_ams if isinstance(ams, dict) and ams.get("id") is not None
+        }
 
         # Update existing units with new data, add new units
         for ams_unit in ams_list:
@@ -4098,7 +4119,7 @@ class BambuMQTTClient:
                     del existing_by_id[ams_id]
 
         # Convert back to list, sorted by ID for consistent ordering
-        merged_ams = sorted(existing_by_id.values(), key=lambda x: x.get("id", 0))
+        merged_ams = sorted(existing_by_id.values(), key=_ams_unit_order)
 
         # Empty-slot cleanup via tray_exist_bits (#147, #1322, #765, #1365).
         # Shared with the VP bridge cache so the slicer-facing view stays in
@@ -5920,6 +5941,10 @@ class BambuMQTTClient:
         # (e.g. _probe_developer_mode publishes an MQTT message).
         if ams_data is not None:
             self.state.raw_data["ams"] = ams_data
+        elif not isinstance(self.state.raw_data.get("ams"), list):
+            # #3499: no unit list yet (the AMS handling failed on this frame).
+            # The frame's AMS object is not one; readers iterate it as units.
+            self.state.raw_data.pop("ams", None)
         if vt_tray_data is not None:
             self.state.raw_data["vt_tray"] = vt_tray_data
         if ams_extruder_map_data is not None:

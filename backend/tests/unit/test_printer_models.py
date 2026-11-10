@@ -349,6 +349,11 @@ class TestHasRemoteStorageToggle:
     def test_p1_series_has_no_reachable_toggle(self, model: str):
         assert has_remote_storage_toggle(model) is False
 
+    @pytest.mark.parametrize("model", ["A2L", "a2l", "N9"])
+    def test_a2l_has_no_reachable_toggle(self, model: str):
+        # #3499: no option on the printer or in either slicer.
+        assert has_remote_storage_toggle(model) is False
+
     @pytest.mark.parametrize(
         "model",
         ["X1C", "X1E", "X1", "P2S", "H2D", "H2D Pro", "H2C", "H2S", "X2D", "A1", "A1 Mini"],

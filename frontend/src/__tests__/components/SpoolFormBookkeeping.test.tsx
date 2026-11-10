@@ -176,10 +176,9 @@ describe('SpoolFormModal batch ID, owner and purchase date', () => {
     fireEvent.click(screen.getByRole('button', { name: /Color & Cost/ }));
     await screen.findByLabelText('Owner');
 
-    await waitFor(() => {
-      const list = container.ownerDocument.querySelector('#spool-owner-options');
-      expect([...(list?.querySelectorAll('option') ?? [])].map((o) => o.getAttribute('value'))).toContain('dana');
-    });
+    fireEvent.focus(screen.getByLabelText('Owner'));
+    expect(await screen.findByRole('button', { name: 'dana' })).toBeTruthy();
+    expect(container.ownerDocument.querySelector('datalist#spool-owner-options')).toBeNull();
 
     // A customer is no user: typed in, it is sent as it is.
     fireEvent.change(screen.getByLabelText('Owner'), { target: { value: 'A walk-in customer' } });

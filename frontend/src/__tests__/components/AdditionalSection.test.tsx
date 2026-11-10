@@ -81,14 +81,24 @@ describe('AdditionalSection', () => {
       expect(updateField).toHaveBeenCalledWith('purchase_date', '2026-04-05');
     });
 
-    it('suggest owners already named on other spools', () => {
+    it('suggest owners in the styled list, not a native datalist', () => {
       const { container } = render(<AdditionalSection {...baseProps} availableOwners={['Alice', 'Bob']} />);
-      const list = container.querySelector('#spool-owner-options');
-      expect([...(list?.querySelectorAll('option') ?? [])].map((o) => o.getAttribute('value'))).toEqual([
-        'Alice',
-        'Bob',
-      ]);
-      expect(screen.getByLabelText('inventory.owner').getAttribute('list')).toBe('spool-owner-options');
+      expect(container.querySelector('datalist')).toBeNull();
+
+      fireEvent.focus(screen.getByLabelText('inventory.owner'));
+
+      expect(screen.getByRole('button', { name: 'Alice' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Bob' })).toBeTruthy();
+    });
+
+    it('fill the owner in when one is picked', () => {
+      const updateField = vi.fn();
+      render(<AdditionalSection {...baseProps} updateField={updateField} availableOwners={['Alice', 'Bob']} />);
+
+      fireEvent.focus(screen.getByLabelText('inventory.owner'));
+      fireEvent.click(screen.getByRole('button', { name: 'Bob' }));
+
+      expect(updateField).toHaveBeenCalledWith('owner', 'Bob');
     });
 
     it('limit the lengths to what is stored', () => {

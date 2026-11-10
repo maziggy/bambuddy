@@ -3,6 +3,7 @@ import { Scale } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useToast } from '../../contexts/ToastContext';
 import { toDateTimeLocalValue } from '../../utils/date';
+import { SuggestionInput } from './SuggestionInput';
 import type { AdditionalSectionProps } from './types';
 
 function SpoolWeightPicker({
@@ -374,21 +375,14 @@ export function AdditionalSection({
             <label className="block text-sm font-medium text-bambu-gray mb-1" htmlFor="spool-owner">
               {t('inventory.owner')}
             </label>
-            <input
+            <SuggestionInput
               id="spool-owner"
-              type="text"
-              list="spool-owner-options"
-              className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder:text-bambu-gray/50 focus:outline-none focus:border-bambu-green"
+              options={availableOwners}
               placeholder={t('inventory.ownerPlaceholder')}
               value={formData.owner}
               maxLength={100}
-              onChange={(e) => updateField('owner', e.target.value)}
+              onChange={(next) => updateField('owner', next)}
             />
-            {availableOwners.length > 0 && (
-              <datalist id="spool-owner-options">
-                {availableOwners.map((o) => <option key={o} value={o} />)}
-              </datalist>
-            )}
           </div>
 
           <div>

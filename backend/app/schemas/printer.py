@@ -350,6 +350,7 @@ class NozzleRackSlot(BaseModel):
     nozzle_type: str = ""
     nozzle_diameter: str = ""
     wear: int | None = None
+    print_time_s: int | None = None  # H2C: seconds this nozzle has printed, from "p_t" (#1908)
     stat: int | None = None  # Nozzle status (e.g. mounted/docked)
     max_temp: int = 0  # Max temperature rating °C (0 = not set)
     serial_number: str = ""  # Nozzle serial number

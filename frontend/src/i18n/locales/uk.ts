@@ -511,6 +511,7 @@ export default {
     nozzleStatus: "Статус",
     nozzleFilament: "Філамент",
     nozzleWear: "Знос",
+    nozzlePrintTime: "Час друку",
     nozzleMaxTemp: "Макс. температура",
     nozzleSerial: "Серійний номер",
     nozzleHardenedSteel: "Загартована сталь",

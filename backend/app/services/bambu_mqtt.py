@@ -1048,6 +1048,18 @@ class NozzleInfo:
     nozzle_diameter: str = ""  # e.g., "0.4"
 
 
+def nozzle_print_time_s(value: object) -> int | None:
+    """A nozzle's accumulated print time from its ``nozzle_info`` entry (#1908).
+
+    H2C firmware reports it per nozzle as ``p_t``, in seconds. Older firmware
+    and other models leave it out, which stays None so the UI hides the row
+    instead of showing "0h". A bool is an int to Python but never a duration.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+        return None
+    return int(value)
+
+
 # What await_cali_ack reports when the printer did not answer a K-profile write
 # in time. Not a refusal: firmware that predates the ack never answers.
 CALI_ACK_UNCONFIRMED = "no acknowledgement from printer"
@@ -5888,6 +5900,8 @@ class BambuMQTTClient:
                                 "type": str(n.get("type", "")),
                                 "diameter": str(n.get("diameter", "")),
                                 "wear": n.get("wear"),
+                                # H2C: seconds this nozzle has printed (#1908)
+                                "print_time_s": nozzle_print_time_s(n.get("p_t")),
                                 "stat": n.get("stat"),
                                 # H2C uses "tm", H2D uses "max_temp"
                                 "max_temp": n.get("max_temp") or n.get("tm", 0),

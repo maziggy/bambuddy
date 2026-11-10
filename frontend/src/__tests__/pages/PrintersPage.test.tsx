@@ -868,6 +868,40 @@ describe('PrintersPage', () => {
       expect(dashes.length).toBeGreaterThanOrEqual(3); // 3 empty rack positions (IDs 19,20,21)
     });
 
+    const hoverRackDiameter = async (diameter: string) => {
+      await waitFor(() => {
+        expect(screen.getAllByText('Nozzle Rack').length).toBeGreaterThan(0);
+      });
+      const chip = Array.from(document.querySelectorAll('span[data-rack-diameter]')).find(
+        s => s.textContent === diameter,
+      )!;
+      await userEvent.setup().hover(chip);
+    };
+
+    it('shows the nozzle print time from H2C firmware on the rack hover card (#1908)', async () => {
+      const withPrintTime = {
+        ...h2cStatus,
+        nozzle_rack: h2cStatus.nozzle_rack.map(n => (n.id === 17 ? { ...n, print_time_s: 90061 } : n)),
+      };
+      server.use(http.get('/api/v1/printers/:id/status', () => HttpResponse.json(withPrintTime)));
+
+      render(<PrintersPage />);
+      await hoverRackDiameter('0.6');
+
+      expect(await screen.findByText('Print time')).toBeInTheDocument();
+      expect(screen.getByText('25h 1m')).toBeInTheDocument();
+    });
+
+    it('leaves the print time row out when the firmware does not report it (#1908)', async () => {
+      server.use(http.get('/api/v1/printers/:id/status', () => HttpResponse.json(h2cStatus)));
+
+      render(<PrintersPage />);
+      await hoverRackDiameter('0.6');
+
+      expect(await screen.findByText('Wear')).toBeInTheDocument();
+      expect(screen.queryByText('Print time')).not.toBeInTheDocument();
+    });
+
     it('keeps empty slot anchored to physical position when its nozzle is mounted (#943)', async () => {
       // H2C with rack slot 16 picked up into the hotend — firmware omits ID 16
       // entirely from nozzle.info. Each rack diameter is unique so we can assert

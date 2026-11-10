@@ -508,6 +508,7 @@ export default {
     nozzleStatus: 'Status',
     nozzleFilament: 'Filament',
     nozzleWear: 'Verschleiß',
+    nozzlePrintTime: 'Druckzeit',
     nozzleMaxTemp: 'Max. Temp',
     nozzleSerial: 'Seriennr.',
     nozzleHardenedSteel: 'Gehärteter Stahl',

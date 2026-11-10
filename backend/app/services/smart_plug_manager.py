@@ -65,26 +65,22 @@ def _cooled_down(temps: dict, temp_source: str, nozzle_threshold: int, bed_thres
     """Whether a temperature-based auto-off may switch off, and what was read.
 
     ``temp_source`` picks what must be below its threshold (#3464): the
-    hottest nozzle (the H2 series has two), the bed, or both. A reading the
+    hottest nozzle (the H2 series has two) or the bed. A reading the
     printer hasn't reported counts as hot, so it keeps the plug on. Any other
     value waits for the nozzle, as temperature mode did before #3464.
     """
+    if temp_source == "bed":
+        bed_temp = temps.get("bed", 999)
+        return bed_temp < bed_threshold, f"bed={bed_temp}°C (threshold {bed_threshold}°C)"
+
     nozzle_temp = temps.get("nozzle", 999)
     nozzle_2_temp = temps.get("nozzle_2")
     if nozzle_2_temp is not None:
-        nozzle_reading = f"nozzle1={nozzle_temp}°C, nozzle2={nozzle_2_temp}°C"
+        reading = f"nozzle1={nozzle_temp}°C, nozzle2={nozzle_2_temp}°C"
         nozzle_temp = max(nozzle_temp, nozzle_2_temp)
     else:
-        nozzle_reading = f"nozzle={nozzle_temp}°C"
-    nozzle_reading += f" (threshold {nozzle_threshold}°C)"
-    bed_temp = temps.get("bed", 999)
-    bed_reading = f"bed={bed_temp}°C (threshold {bed_threshold}°C)"
-
-    if temp_source == "bed":
-        return bed_temp < bed_threshold, bed_reading
-    if temp_source == "both":
-        return nozzle_temp < nozzle_threshold and bed_temp < bed_threshold, f"{nozzle_reading}, {bed_reading}"
-    return nozzle_temp < nozzle_threshold, nozzle_reading
+        reading = f"nozzle={nozzle_temp}°C"
+    return nozzle_temp < nozzle_threshold, f"{reading} (threshold {nozzle_threshold}°C)"
 
 
 def _is_script_plug(plug) -> bool:
@@ -531,9 +527,9 @@ class SmartPlugManager:
         """Schedule an auto-off using the plug's configured off strategy.
 
         Honours the per-plug ``off_delay_mode`` — ``time`` waits
-        ``off_delay_minutes``; ``temperature`` waits until the nozzle, the bed
-        or both (``off_temp_source``, #3464) drop below ``off_temp_threshold``
-        and ``off_bed_temp_threshold`` (#1890 — the queue/scheduler auto-off
+        ``off_delay_minutes``; ``temperature`` waits until the nozzle drops
+        below ``off_temp_threshold``, or the bed below ``off_bed_temp_threshold``
+        (``off_temp_source``, #3464) (#1890 — the queue/scheduler auto-off
         paths used to hardcode 50°C / 600s and ignore these settings). Both
         branches register a cancellable task in ``_pending_off``, so a re-print
         cancels the pending off via :meth:`on_print_start`.
@@ -778,8 +774,8 @@ class SmartPlugManager:
         """Poll temperature until below threshold, then turn off.
 
         ``temp_source`` is what has to cool (#3464): the nozzle (both nozzles
-        on dual-extruder H2 printers) below ``temp_threshold``, the bed below
-        ``bed_temp_threshold``, or both.
+        on dual-extruder H2 printers) below ``temp_threshold``, or the bed
+        below ``bed_temp_threshold``.
         """
         try:
             check_interval = 10  # seconds

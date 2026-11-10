@@ -1248,10 +1248,6 @@ class TestTemperatureSource:
             # bed: the nozzle is ignored
             ("bed", {"nozzle": 40, "bed": 50}, False),
             ("bed", {"nozzle": 200, "bed": 30}, True),
-            # both: each below its own threshold
-            ("both", {"nozzle": 40, "bed": 50}, False),
-            ("both", {"nozzle": 80, "bed": 30}, False),
-            ("both", {"nozzle": 40, "bed": 30}, True),
         ],
     )
     def test_each_source_waits_for_its_own_readings(self, source, temps, expected):
@@ -1259,14 +1255,13 @@ class TestTemperatureSource:
         assert cooled is expected
 
     def test_dual_nozzle_waits_for_the_hotter_one(self):
-        cooled, reading = _cooled_down({"nozzle": 40, "nozzle_2": 90, "bed": 20}, "both", 70, 35)
+        cooled, reading = _cooled_down({"nozzle": 40, "nozzle_2": 90, "bed": 20}, "nozzle", 70, 35)
         assert cooled is False
         assert "nozzle2=90" in reading
 
-    @pytest.mark.parametrize("source", ["bed", "both"])
-    def test_missing_bed_reading_counts_as_hot(self, source):
+    def test_missing_bed_reading_counts_as_hot(self):
         """No reading yet must keep the power on, never switch it off."""
-        cooled, _ = _cooled_down({"nozzle": 30}, source, 70, 35)
+        cooled, _ = _cooled_down({"nozzle": 30}, "bed", 70, 35)
         assert cooled is False
 
     def test_unknown_source_waits_for_the_nozzle(self):
@@ -1276,8 +1271,6 @@ class TestTemperatureSource:
     def test_reading_names_what_is_watched(self):
         assert "bed" not in _cooled_down({"nozzle": 40, "bed": 90}, "nozzle", 70, 35)[1]
         assert "nozzle" not in _cooled_down({"nozzle": 40, "bed": 90}, "bed", 70, 35)[1]
-        both = _cooled_down({"nozzle": 40, "bed": 90}, "both", 70, 35)[1]
-        assert "nozzle=40" in both and "bed=90" in both
 
     # ---- _temp_based_off ---------------------------------------------------
 
@@ -1346,7 +1339,7 @@ class TestTemperatureSource:
         plug.id = 1
         plug.name = "Printer"
         plug.plug_type = "tasmota"
-        plug.off_temp_source = "both"
+        plug.off_temp_source = "bed"
         plug.off_bed_temp_threshold = 32
         with (
             patch.object(manager, "_mark_auto_off_pending", new_callable=AsyncMock),
@@ -1355,6 +1348,6 @@ class TestTemperatureSource:
             manager._schedule_temp_based_off(plug, 1, 70)
             await manager._pending_off[plug.id]
 
-            assert mock_temp.call_args.kwargs["temp_source"] == "both"
+            assert mock_temp.call_args.kwargs["temp_source"] == "bed"
             assert mock_temp.call_args.kwargs["bed_temp_threshold"] == 32
             assert mock_temp.call_args.args[7] == 70  # nozzle threshold unchanged

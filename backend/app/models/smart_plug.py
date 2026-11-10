@@ -103,7 +103,7 @@ class SmartPlug(Base):
     off_delay_mode: Mapped[str] = mapped_column(String(20), default="time")
     off_delay_minutes: Mapped[int] = mapped_column(Integer, default=5)  # For time mode
     off_temp_threshold: Mapped[int] = mapped_column(Integer, default=70)  # For temp mode (°C)
-    # What temp mode waits for (#3464): "nozzle", "bed" or "both". The bed
+    # What temp mode waits for (#3464): "nozzle" or "bed". The bed
     # holds its heat long after the nozzle has cooled, so a plug that cuts
     # power on the nozzle alone drops the printer before the bed is cool
     # enough to take the print off, and before the bed-cooled notification.

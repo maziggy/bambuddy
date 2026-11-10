@@ -2418,7 +2418,7 @@ export interface CloudDevice {
 }
 
 // Smart Plug types
-export type SmartPlugTempSource = 'nozzle' | 'bed' | 'both';
+export type SmartPlugTempSource = 'nozzle' | 'bed';
 
 export interface SmartPlug {
   id: number;

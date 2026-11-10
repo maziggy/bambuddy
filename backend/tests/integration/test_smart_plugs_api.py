@@ -208,12 +208,12 @@ class TestSmartPlugsAPI:
         plug = await smart_plug_factory(off_delay_mode="temperature")
 
         response = await async_client.patch(
-            f"/api/v1/smart-plugs/{plug.id}", json={"off_temp_source": "both", "off_bed_temp_threshold": 40}
+            f"/api/v1/smart-plugs/{plug.id}", json={"off_temp_source": "bed", "off_bed_temp_threshold": 40}
         )
 
         assert response.status_code == 200
         result = response.json()
-        assert result["off_temp_source"] == "both"
+        assert result["off_temp_source"] == "bed"
         assert result["off_bed_temp_threshold"] == 40
         assert result["off_temp_threshold"] == 70  # the nozzle's own threshold is untouched
 
@@ -221,7 +221,12 @@ class TestSmartPlugsAPI:
     @pytest.mark.integration
     @pytest.mark.parametrize(
         "payload",
-        [{"off_temp_source": "chamber"}, {"off_bed_temp_threshold": 10}, {"off_bed_temp_threshold": 130}],
+        [
+            {"off_temp_source": "chamber"},
+            {"off_temp_source": "both"},
+            {"off_bed_temp_threshold": 10},
+            {"off_bed_temp_threshold": 130},
+        ],
     )
     async def test_update_rejects_invalid_temp_source_settings(
         self, async_client: AsyncClient, smart_plug_factory, payload

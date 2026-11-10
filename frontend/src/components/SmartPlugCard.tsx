@@ -14,7 +14,6 @@ import { NumberInput } from './NumberInput';
 const TEMP_SOURCES: { value: SmartPlugTempSource; labelKey: string; descriptionKey: string }[] = [
   { value: 'nozzle', labelKey: 'smartPlugs.tempSourceNozzle', descriptionKey: 'smartPlugs.tempSourceNozzleDescription' },
   { value: 'bed', labelKey: 'smartPlugs.tempSourceBed', descriptionKey: 'smartPlugs.tempSourceBedDescription' },
-  { value: 'both', labelKey: 'smartPlugs.tempSourceBoth', descriptionKey: 'smartPlugs.tempSourceBothDescription' },
 ];
 
 interface SmartPlugCardProps {
@@ -491,7 +490,7 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
                           {t(tempSource.descriptionKey)}
                         </p>
                       </div>
-                      {tempSource.value !== 'bed' && (
+                      {tempSource.value === 'nozzle' && (
                         <div>
                           <label className="block text-xs text-bambu-gray mb-1">{t('smartPlugs.nozzleTempThreshold')}</label>
                           <NumberInput
@@ -504,7 +503,7 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
                           />
                         </div>
                       )}
-                      {tempSource.value !== 'nozzle' && (
+                      {tempSource.value === 'bed' && (
                         <div>
                           <label className="block text-xs text-bambu-gray mb-1">{t('smartPlugs.bedTempThreshold')}</label>
                           <NumberInput

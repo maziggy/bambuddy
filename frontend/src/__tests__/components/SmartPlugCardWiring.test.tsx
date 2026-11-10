@@ -186,7 +186,6 @@ describe('SmartPlugCard temperature auto-off source (#3464)', () => {
   it.each([
     ['nozzle', true, false],
     ['bed', false, true],
-    ['both', true, true],
   ] as const)('"%s" shows the thresholds it waits for', async (source, nozzle, bed) => {
     await renderTempMode({ off_temp_source: source });
     expect(screen.queryByText('Nozzle threshold (°C)') !== null).toBe(nozzle);
@@ -209,7 +208,7 @@ describe('SmartPlugCard temperature auto-off source (#3464)', () => {
   });
 
   it('the bed threshold PATCHes off_bed_temp_threshold', async () => {
-    const user = await renderTempMode({ off_temp_source: 'both' });
+    const user = await renderTempMode({ off_temp_source: 'bed' });
     const input = screen.getByText('Bed threshold (°C)').nextElementSibling as HTMLInputElement;
     await user.clear(input);
     await user.type(input, '40');

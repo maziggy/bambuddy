@@ -201,6 +201,60 @@ describe('SliceJobTrackerProvider — persistent progress toast', () => {
     expect(screen.getByText(/Sliced Done\.stl/)).toBeDefined();
   });
 
+  it('says how many files a one-file-per-plate slice made (#2818)', async () => {
+    let pollCount = 0;
+    mockApi.getSliceJob.mockImplementation(async () => {
+      pollCount += 1;
+      const base = {
+        job_id: 31,
+        kind: 'library_file' as const,
+        source_id: 102,
+        source_name: 'Multi.3mf',
+        created_at: new Date().toISOString(),
+        started_at: new Date().toISOString(),
+      };
+      if (pollCount === 1) return { ...base, status: 'running' as const, completed_at: null };
+      return {
+        ...base,
+        status: 'completed' as const,
+        completed_at: new Date().toISOString(),
+        result: {
+          library_file_id: 7,
+          name: 'Multi - plate 1.gcode.3mf',
+          print_time_seconds: 600,
+          filament_used_g: 5,
+          filament_used_mm: 1600,
+          used_embedded_settings: false,
+          library_file_ids: [7, 8, 9],
+        },
+      };
+    });
+
+    render(
+      <Wrapper>
+        <TrackTrigger id={31} name="Multi.3mf" />
+      </Wrapper>,
+    );
+    act(() => {
+      screen.getByText('track-31').click();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(1500);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(1500);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText(/Sliced Multi\.3mf into 3 files/)).toBeDefined();
+  });
+
   it('replaces the persistent toast with a transient error toast on failure', async () => {
     let pollCount = 0;
     mockApi.getSliceJob.mockImplementation(async () => {

@@ -5001,6 +5001,53 @@ async def guard_nozzle_class_reslice(
 _CALLER = object()
 
 
+def split_slice_by_plate(
+    model_bytes: bytes, model_filename: str, request: SliceRequest
+) -> list[tuple[str, SliceRequest]]:
+    """The slices a request stands for: ``(filename, request)`` for each.
+
+    Usually one, the request as it came. With ``one_file_per_plate`` on a
+    multi-plate 3MF sliced as a whole (``plate=0``) it is one per plate, each
+    named "<name> - plate N" and asking for that plate alone (#2818). A source
+    with a single plate, or that is not a 3MF, stays the one slice it was.
+    """
+    if request.plate != 0 or not request.one_file_per_plate or not model_filename.lower().endswith(".3mf"):
+        return [(model_filename, request)]
+
+    from backend.app.services.slicer_3mf_convert import count_plates_in_3mf
+
+    plate_count = count_plates_in_3mf(model_bytes)
+    if plate_count <= 1:
+        return [(model_filename, request)]
+    stem, ext = model_filename.rsplit(".", 1)
+    return [
+        (f"{stem} - plate {plate}.{ext}", request.model_copy(update={"plate": plate, "one_file_per_plate": False}))
+        for plate in range(1, plate_count + 1)
+    ]
+
+
+async def slice_each_plate(slice_one, model_bytes: bytes, model_filename: str, request: SliceRequest) -> list:
+    """Run ``slice_one(filename, request)`` for every slice the request stands for.
+
+    The plates go one after another, as the sidecar slices one thing at a time.
+    When one of several fails the error names the plate and how many before it
+    were saved, as those files stay: they are complete slices.
+    """
+    parts = split_slice_by_plate(model_bytes, model_filename, request)
+    responses = []
+    for number, (name, part_request) in enumerate(parts, start=1):
+        try:
+            responses.append(await slice_one(name, part_request))
+        except HTTPException as exc:
+            if len(parts) == 1:
+                raise
+            saved = f" {len(responses)} earlier plate(s) were saved." if responses else ""
+            raise HTTPException(
+                status_code=exc.status_code, detail=f"Plate {number} of {len(parts)} failed: {exc.detail}.{saved}"
+            ) from exc
+    return responses
+
+
 async def slice_and_persist(
     db: AsyncSession,
     *,
@@ -5469,19 +5516,27 @@ async def slice_library_file(
     async def _run(job_id: int):
         async with async_session() as task_db:
             try:
-                response = await slice_and_persist(
-                    task_db,
-                    model_bytes=model_bytes,
-                    model_filename=model_filename,
-                    folder_id=folder_id,
-                    extra_metadata={"sliced_from_library_file_id": source_lib_file_id},
-                    request=request,
-                    current_user_id=user_id,
-                    job_id=job_id,
-                    owner_id=owner_id,
+                responses = await slice_each_plate(
+                    lambda name, part: slice_and_persist(
+                        task_db,
+                        model_bytes=model_bytes,
+                        model_filename=name,
+                        folder_id=folder_id,
+                        extra_metadata={"sliced_from_library_file_id": source_lib_file_id},
+                        request=part,
+                        current_user_id=user_id,
+                        job_id=job_id,
+                        owner_id=owner_id,
+                    ),
+                    model_bytes,
+                    model_filename,
+                    request,
                 )
             except HTTPException as exc:
                 raise http_exception_to_job_error(exc) from exc
+        response = responses[0]
+        if len(responses) > 1:
+            response = response.model_copy(update={"library_file_ids": [r.library_file_id for r in responses]})
         return response.model_dump()
 
     job = await slice_dispatch.enqueue(

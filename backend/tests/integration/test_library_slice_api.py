@@ -1359,6 +1359,223 @@ class TestCrossClassSliceAllLoop:
         assert b'name="arrange"' in captured["body"], "cross-class arrange must survive an explicit auto_arrange=false"
 
 
+def _plate_in(request: httpx.Request) -> int | None:
+    """The ``plate`` field of a slice call's multipart body."""
+    body = request.content
+    marker = b'name="plate"\r\n\r\n'
+    idx = body.find(marker)
+    if idx == -1:
+        return None
+    start = idx + len(marker)
+    try:
+        return int(body[start : body.find(b"\r\n", start)].decode("utf-8"))
+    except ValueError:
+        return None
+
+
+class TestOneFilePerPlate:
+    """#2818: "Slice all plates" can save each plate as its own file.
+
+    The sidecar is asked for plate 1, 2, 3 in turn instead of ``--slice 0``,
+    and every answer is stored on its own, named after the source and the plate.
+    """
+
+    SLICED_HEADERS = {"x-print-time-seconds": "600", "x-filament-used-g": "5.0", "x-filament-used-mm": "1600.0"}
+
+    @staticmethod
+    def _source(plate_count: int) -> bytes:
+        return TestCrossClassSliceAllLoop._make_multi_plate_x1c_source(plate_count)
+
+    def _request(self, setup, **extra) -> dict:
+        return {
+            "printer_preset_id": setup["printer_id"],
+            "process_preset_id": setup["process_id"],
+            "filament_preset_id": setup["filament_id"],
+            **extra,
+        }
+
+    async def _library_source(self, db_session, setup, plate_count: int, name: str = "Multi.3mf") -> int:
+        path = setup["tmp_path"] / "library" / "files" / name
+        path.write_bytes(self._source(plate_count))
+        row = LibraryFile(
+            filename=name,
+            file_path=str(path.relative_to(setup["tmp_path"])),
+            file_type="3mf",
+            file_size=path.stat().st_size,
+        )
+        db_session.add(row)
+        await db_session.commit()
+        await db_session.refresh(row)
+        return row.id
+
+    def _sidecar(self, calls: list[int | None], fail_plate: int | None = None) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            if not _is_slice_post(request):
+                return httpx.Response(404)
+            plate = _plate_in(request)
+            calls.append(plate)
+            if plate == fail_plate:
+                return httpx.Response(500, content=b"slicer exploded")
+            return httpx.Response(
+                200,
+                content=TestCrossClassSliceAllLoop._make_single_plate_sliced_output(plate or 1),
+                headers=self.SLICED_HEADERS,
+            )
+
+        _install_mock_sidecar(handler)
+
+    async def _slice(self, async_client, file_id: int, body: dict) -> dict:
+        resp = await async_client.post(f"/api/v1/library/files/{file_id}/slice", json=body)
+        assert resp.status_code == 202, resp.text
+        return await _wait_for_job(async_client, resp.json()["job_id"], timeout=15.0)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_each_plate_becomes_its_own_file(self, async_client: AsyncClient, db_session, slice_test_setup):
+        file_id = await self._library_source(db_session, slice_test_setup, plate_count=3)
+        calls: list[int | None] = []
+        self._sidecar(calls)
+
+        final = await self._slice(
+            async_client, file_id, self._request(slice_test_setup, plate=0, one_file_per_plate=True)
+        )
+
+        assert final["status"] == "completed", final
+        assert calls == [1, 2, 3]
+        ids = final["result"]["library_file_ids"]
+        assert len(ids) == 3
+        assert final["result"]["library_file_id"] == ids[0]
+        names = []
+        for made in ids:
+            row = await db_session.get(LibraryFile, made)
+            names.append(row.filename)
+            assert row.file_type == "gcode.3mf"
+        assert names == ["Multi - plate 1.gcode.3mf", "Multi - plate 2.gcode.3mf", "Multi - plate 3.gcode.3mf"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_each_file_holds_only_its_own_plate(self, async_client: AsyncClient, db_session, slice_test_setup):
+        file_id = await self._library_source(db_session, slice_test_setup, plate_count=2)
+        self._sidecar([])
+
+        final = await self._slice(
+            async_client, file_id, self._request(slice_test_setup, plate=0, one_file_per_plate=True)
+        )
+
+        for number, made in enumerate(final["result"]["library_file_ids"], start=1):
+            row = await db_session.get(LibraryFile, made)
+            with zipfile.ZipFile(slice_test_setup["tmp_path"] / row.file_path) as zf:
+                gcodes = {n for n in zf.namelist() if n.endswith(".gcode")}
+            assert gcodes == {f"Metadata/plate_{number}.gcode"}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_without_the_flag_all_plates_stay_one_file(
+        self, async_client: AsyncClient, db_session, slice_test_setup
+    ):
+        file_id = await self._library_source(db_session, slice_test_setup, plate_count=3)
+        calls: list[int | None] = []
+        self._sidecar(calls)
+
+        final = await self._slice(async_client, file_id, self._request(slice_test_setup, plate=0))
+
+        assert final["status"] == "completed", final
+        assert calls == [0]
+        assert final["result"].get("library_file_ids") is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_one_plate_asked_for_is_still_one_file(self, async_client: AsyncClient, db_session, slice_test_setup):
+        """The flag only means something together with "all plates"."""
+        file_id = await self._library_source(db_session, slice_test_setup, plate_count=3)
+        calls: list[int | None] = []
+        self._sidecar(calls)
+
+        final = await self._slice(
+            async_client, file_id, self._request(slice_test_setup, plate=2, one_file_per_plate=True)
+        )
+
+        assert final["status"] == "completed", final
+        assert calls == [2]
+        assert final["result"].get("library_file_ids") is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_single_plate_source_is_one_file(self, async_client: AsyncClient, db_session, slice_test_setup):
+        file_id = await self._library_source(db_session, slice_test_setup, plate_count=1, name="Single.3mf")
+        calls: list[int | None] = []
+        self._sidecar(calls)
+
+        final = await self._slice(
+            async_client, file_id, self._request(slice_test_setup, plate=0, one_file_per_plate=True)
+        )
+
+        assert final["status"] == "completed", final
+        assert calls == [0]
+        assert final["result"].get("library_file_ids") is None
+        assert (await db_session.get(LibraryFile, final["result"]["library_file_id"])).filename == "Single.gcode.3mf"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_failing_plate_is_named_and_the_earlier_ones_are_kept(
+        self, async_client: AsyncClient, db_session, slice_test_setup
+    ):
+        from sqlalchemy import select
+
+        file_id = await self._library_source(db_session, slice_test_setup, plate_count=3)
+        calls: list[int | None] = []
+        self._sidecar(calls, fail_plate=2)
+
+        final = await self._slice(
+            async_client, file_id, self._request(slice_test_setup, plate=0, one_file_per_plate=True)
+        )
+
+        assert final["status"] == "failed", final
+        assert calls[:2] == [1, 2]
+        assert "Plate 2 of 3 failed" in final["error_detail"]
+        assert "1 earlier plate(s) were saved" in final["error_detail"]
+        made = (await db_session.execute(select(LibraryFile.filename).where(LibraryFile.source_type == "sliced"))).all()
+        assert [row[0] for row in made] == ["Multi - plate 1.gcode.3mf"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_an_archive_source_makes_one_archive_per_plate(
+        self, async_client: AsyncClient, db_session, slice_test_setup, printer_factory, archive_factory, monkeypatch
+    ):
+        from backend.app.models.archive import PrintArchive
+
+        tmp_path = slice_test_setup["tmp_path"]
+        monkeypatch.setattr(app_settings, "archive_dir", tmp_path / "archive")
+        src_dir = tmp_path / "archives" / "src"
+        src_dir.mkdir(parents=True, exist_ok=True)
+        src_3mf = src_dir / "multi.3mf"
+        src_3mf.write_bytes(self._source(2))
+        printer = await printer_factory()
+        source = await archive_factory(
+            printer.id, filename="multi.3mf", file_path=str(src_3mf.relative_to(tmp_path)), with_run=False
+        )
+        calls: list[int | None] = []
+        self._sidecar(calls)
+
+        resp = await async_client.post(
+            f"/api/v1/archives/{source.id}/slice",
+            json=self._request(slice_test_setup, plate=0, one_file_per_plate=True),
+        )
+        assert resp.status_code == 202, resp.text
+        # The mocked job takes a few ms. Polling it meanwhile shares the test
+        # database's one in-memory connection with the job's two saves, and the
+        # poll's rollback can undo the first before the second refreshes it.
+        await asyncio.sleep(0.5)
+        final = await _wait_for_job(async_client, resp.json()["job_id"], timeout=15.0)
+
+        assert final["status"] == "completed", final
+        assert calls == [1, 2]
+        ids = final["result"]["archive_ids"]
+        assert len(ids) == 2 and final["result"]["archive_id"] == ids[0]
+        for made in ids:
+            assert await db_session.get(PrintArchive, made) is not None
+
+
 class TestSliceArchiveResliceModel:
     """Re-slicing an archive for a different printer must stamp the new
     archive with the printer it was sliced FOR, not the source's printer."""

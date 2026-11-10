@@ -338,6 +338,9 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
   // just the slots the currently-visible plate happens to use — see
   // ``allProjectFilamentSlots`` below.
   const [sliceAllPlates, setSliceAllPlates] = useState(false);
+  // With slice-all: save each plate as its own file instead of one multi-plate
+  // 3MF (#2818).
+  const [onePerPlate, setOnePerPlate] = useState(false);
   // Build-plate override (#1337). null = inherit from the process preset
   // (the default). Set to a canonical slicer enum value to patch
   // curr_bed_type into the resolved process JSON before slicing — needed
@@ -880,6 +883,7 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
         (slot, i) => filamentColours[i] ?? slot.color ?? '',
       ),
       ...(plate != null ? { plate } : {}),
+      ...(plate === 0 && onePerPlate ? { one_file_per_plate: true } : {}),
       ...(bedType != null ? { bed_type: bedType } : {}),
       // The preset refs above are still sent (the backend validator requires
       // them) but go unused when this flag is set — the slicer falls back on
@@ -1472,19 +1476,36 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
             {t('common.cancel')}
           </button>
           {canSliceAll && (
-            <label
-              className="flex items-center gap-2 mr-auto text-sm text-bambu-gray cursor-pointer select-none"
-              title={t('slice.actionAllTitle', { count: totalPlateCount })}
-            >
-              <input
-                type="checkbox"
-                checked={sliceAllPlates}
-                onChange={(e) => setSliceAllPlates(e.target.checked)}
-                disabled={isEnqueuing}
-                className="cursor-pointer"
-              />
-              {t('slice.allPlatesToggle', { count: totalPlateCount })}
-            </label>
+            <div className="mr-auto flex flex-col gap-1">
+              <label
+                className="flex items-center gap-2 text-sm text-bambu-gray cursor-pointer select-none"
+                title={t('slice.actionAllTitle', { count: totalPlateCount })}
+              >
+                <input
+                  type="checkbox"
+                  checked={sliceAllPlates}
+                  onChange={(e) => setSliceAllPlates(e.target.checked)}
+                  disabled={isEnqueuing}
+                  className="cursor-pointer"
+                />
+                {t('slice.allPlatesToggle', { count: totalPlateCount })}
+              </label>
+              {sliceAllPlates && (
+                <label
+                  className="flex items-center gap-2 ml-6 text-sm text-bambu-gray cursor-pointer select-none"
+                  title={t('slice.onePerPlateTitle')}
+                >
+                  <input
+                    type="checkbox"
+                    checked={onePerPlate}
+                    onChange={(e) => setOnePerPlate(e.target.checked)}
+                    disabled={isEnqueuing}
+                    className="cursor-pointer"
+                  />
+                  {t('slice.onePerPlateToggle')}
+                </label>
+              )}
+            </div>
           )}
           <button
             type="button"
@@ -1505,7 +1526,7 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
                 {t('slice.enqueuing')}
               </>
             ) : sliceAllPlates ? (
-              t('slice.actionAll', { count: totalPlateCount })
+              t(onePerPlate ? 'slice.actionAllSeparate' : 'slice.actionAll', { count: totalPlateCount })
             ) : (
               t('slice.action')
             )}

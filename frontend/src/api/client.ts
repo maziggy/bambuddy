@@ -2042,6 +2042,9 @@ export interface SliceRequest {
   // preset's own default_filament_colour, then the source plate's colour).
   filament_colours?: string[];
   plate?: number;
+  // With plate 0 on a multi-plate 3MF: one file per plate instead of one
+  // multi-plate file (#2818).
+  one_file_per_plate?: boolean;
   export_3mf?: boolean;
   // Build-plate override (#1337). When omitted, the slicer uses the process
   // preset's curr_bed_type as-is. A name from BambuStudio / OrcaSlicer's
@@ -2297,6 +2300,9 @@ export interface SliceResponse {
    * slice. Surfaced to the user — a file filed somewhere they aren't looking
    * with no signal is what made #2810 invisible from the UI. */
   external_write_fallback?: string | null;
+  /** Every file the slice made, in plate order, when it made one per plate
+   * (#2818); the fields above describe the first of them. */
+  library_file_ids?: number[] | null;
 }
 
 export interface SliceArchiveResponse {
@@ -2306,6 +2312,8 @@ export interface SliceArchiveResponse {
   filament_used_g: number;
   filament_used_mm: number;
   used_embedded_settings: boolean;
+  /** As library_file_ids: every archive made, one per plate. */
+  archive_ids?: number[] | null;
 }
 
 // Background slice-job lifecycle. POST /slice returns 202 + this shape;

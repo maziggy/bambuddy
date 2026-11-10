@@ -192,8 +192,18 @@ export function SliceJobTrackerProvider({ children }: { children: ReactNode }) {
         // firing on essentially every slice (3MF inputs trigger the
         // embedded-settings fallback as a normal path) and just added
         // noise — see the trailing yellow toast complaint, removed.
+        // One file per plate (#2818): say how many files there are, since the
+        // toast's name is the source's and would read as a single result.
+        const fileCount =
+          (state.result && 'library_file_ids' in state.result ? state.result.library_file_ids?.length : undefined) ??
+          (state.result && 'archive_ids' in state.result ? state.result.archive_ids?.length : undefined);
         showToast(
-          t('slice.completedToast', 'Sliced {{name}}', { name: prettifyFilename(job.sourceName) }),
+          fileCount && fileCount > 1
+            ? t('slice.completedPlatesToast', 'Sliced {{name}} into {{count}} files', {
+                name: prettifyFilename(job.sourceName),
+                count: fileCount,
+              })
+            : t('slice.completedToast', 'Sliced {{name}}', { name: prettifyFilename(job.sourceName) }),
           'success',
         );
         // The result normally lands next to its source, including on an

@@ -77,6 +77,21 @@ describe('Layout', () => {
     );
   });
 
+  describe('pending uploads badge', () => {
+    it('counts review-mode uploads on the File Manager entry, where they wait', async () => {
+      server.use(http.get('/api/v1/pending-uploads/count', () => HttpResponse.json({ count: 3 })));
+      render(<Layout />);
+
+      const files = await waitFor(() => {
+        const link = document.querySelector('a[href="/files"]');
+        if (!link?.textContent?.includes('3')) throw new Error('badge not shown yet');
+        return link;
+      });
+      expect(files.textContent).toContain('3');
+      expect(document.querySelector('a[href="/archives"]')?.textContent).not.toContain('3');
+    });
+  });
+
   describe('rendering', () => {
     it('renders the sidebar', async () => {
       render(<Layout />);

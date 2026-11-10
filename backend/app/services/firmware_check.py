@@ -67,6 +67,7 @@ MODEL_TO_API_KEY = {
     "H2D": "h2d",
     "H2C": "h2c",
     "H2S": "h2s",
+    "H3C": "h3c",
     "P2S": "p2s",
     "X1E": "x1e",
     "X2D": "x2d",
@@ -91,6 +92,7 @@ MODEL_TO_API_KEY = {
     "N6": "x2d",
     "N7": "p2s",
     "N9": "a2l",
+    "N10": "h3c",
 }
 
 # Reverse mapping: API key to model codes
@@ -107,6 +109,7 @@ API_KEY_TO_DEV_MODEL = {
     "x2d": "N6",
     "h2d-pro": "O1E",
     "a2l": "N9",
+    "h3c": "N10",
 }
 
 # Wiki firmware release history pages (primary version source)
@@ -126,6 +129,8 @@ API_KEY_TO_WIKI_PATH = {
     # _fetch_all_versions_from_wiki silently returns [] on 404 so this is safe
     # to ship before Bambu publishes the page.
     "a2l": "/en/a2l/manual/a2l-firmware-release-history",
+    # H3C: no model prefix in the page name, like the H2D Pro.
+    "h3c": "/en/h3c/manual/firmware-release-history",
 }
 
 
@@ -383,6 +388,16 @@ class FirmwareCheckService:
                 seen.add(v)
                 versions.append((v, date))
 
+            if versions:
+                return versions
+
+            # H3C-style headings, "OTA 01.01.03.00" with id="ota-01010300":
+            # no release date on the page.
+            for a, b, c, d in re.findall(r'id="ota-(\d{2})(\d{2})(\d{2})(\d{2})"', response.text):
+                v = f"{a}.{b}.{c}.{d}"
+                if v not in seen:
+                    seen.add(v)
+                    versions.append((v, None))
             if versions:
                 return versions
 

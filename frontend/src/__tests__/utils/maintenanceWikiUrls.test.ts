@@ -123,4 +123,20 @@ describe('getMaintenanceWikiUrl', () => {
       expect(getMaintenanceWikiUrl('Lubricate Steel Rods', '')).toBeNull();
     });
   });
+
+  describe('H3C', () => {
+    it('links belt tension to the H3C guide', () => {
+      expect(getMaintenanceWikiUrl('Check Belt Tension', 'H3C')).toBe(
+        'https://wiki.bambulab.com/en/h3c/maintenance/belt_tension',
+      );
+      expect(getMaintenanceWikiUrl('Check Belt Tension', 'N10')).toBe(
+        'https://wiki.bambulab.com/en/h3c/maintenance/belt_tension',
+      );
+    });
+
+    it('does not take the H2 or carbon-rod pages', () => {
+      expect(getMaintenanceWikiUrl('Clean Carbon Rods', 'H3C')).toBeNull();
+      expect(getMaintenanceWikiUrl('Lubricate Linear Rails', 'H3C')).toBeNull();
+    });
+  });
 });

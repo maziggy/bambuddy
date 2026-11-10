@@ -1,14 +1,22 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, VideoOff, WifiOff } from 'lucide-react';
+import { AlertTriangle, Box, Flame, RectangleHorizontal, VideoOff, WifiOff } from 'lucide-react';
 import { getAuthToken, withStreamToken } from '../api/client';
-import { formatDuration } from '../utils/date';
+import { formatDuration, formatETA, type TimeFormat } from '../utils/date';
 import { useStreamImgRef } from '../hooks/useStreamImgRef';
 import { useCameraViewerId } from '../hooks/useCameraViewerId';
 import { isSideways, useSidewaysBox } from '../hooks/useSidewaysBox';
 
 export type CameraTileMode = 'live' | 'snapshot' | 'paused';
 export type CameraTileStatusMode = 'off' | 'compact' | 'full';
+
+/** The heater readings a tile shows in the full overlay (#3479). */
+export interface CameraTileTemperatures {
+  nozzle?: number;
+  nozzle_2?: number;
+  bed?: number;
+  chamber?: number;
+}
 
 interface CameraTileProps {
   printerId: number;
@@ -28,6 +36,10 @@ interface CameraTileProps {
   totalLayers?: number | null;
   printName?: string | null;
   hmsErrorCount?: number;
+  // Full overlay only (#3479): the heaters, on every connected tile, and the
+  // finish time beside the time left while printing.
+  temperatures?: CameraTileTemperatures | null;
+  timeFormat?: TimeFormat;
 }
 
 // Tiles render lighter than EmbeddedCameraViewer's full window: lower fps,
@@ -85,6 +97,8 @@ export function CameraTile({
   totalLayers = null,
   printName = null,
   hmsErrorCount = 0,
+  temperatures = null,
+  timeFormat = 'system',
 }: CameraTileProps) {
   const { t } = useTranslation();
   const [bust, setBust] = useState(0);
@@ -99,7 +113,6 @@ export function CameraTile({
   const imgRef = useRef<HTMLImageElement | null>(null);
   // On its stream and its /camera/stop: the stop ends this tile's stream only.
   const viewerId = useCameraViewerId();
-  const attachImg = useStreamImgRef(imgRef);
   // 'renewed': the current img is a renewal not yet showing a frame; 'retried':
   // it is the one retry of a renewal that failed.
   const renewalRef = useRef<'none' | 'renewed' | 'retried'>('none');
@@ -230,6 +243,8 @@ export function CameraTile({
   const snapshotUrl = withStreamToken(
     `/api/v1/printers/${printerId}/camera/snapshot?t=${bust}`,
   );
+  // The img gets its src from here, at commit, never from a prop (#3431).
+  const attachImg = useStreamImgRef(imgRef, reopening ? undefined : mode === 'live' ? liveUrl : snapshotUrl);
 
   // A kiosk wall passes no onClick — there is no pointer at a TV, and the page
   // is authenticated by a token that cannot open the single-camera view. Render
@@ -268,6 +283,11 @@ export function CameraTile({
   const progressPct = progress != null ? Math.round(progress) : null;
   const hasLayers = layerNum != null && totalLayers != null && totalLayers > 0;
   const hasRemaining = remainingMin != null && remainingMin > 0;
+  // Heaters a printer has no sensor for are absent from its status, not 0.
+  const showTemps = connected && statusMode === 'full' && temperatures != null;
+  const nozzleTemps = [temperatures?.nozzle, temperatures?.nozzle_2].filter(
+    (v): v is number => v != null,
+  );
 
   const rootClass = `group relative aspect-video w-full overflow-hidden rounded-lg border border-bambu-dark-tertiary bg-black text-left ${
     interactive ? 'focus:outline-none focus:ring-2 focus:ring-bambu-green' : 'cursor-default'
@@ -292,7 +312,6 @@ export function CameraTile({
         <img
           ref={attachImg}
           key={`${mode}-${bust}`}
-          src={reopening ? undefined : mode === 'live' ? liveUrl : snapshotUrl}
           alt={printerName}
           draggable={false}
           loading="lazy"
@@ -375,7 +394,35 @@ export function CameraTile({
                   })}
                 </span>
               )}
+              {/* A paused print has no finish time: it moves with the pause. */}
+              {hasRemaining && bucket === 'printing' && (
+                <span>
+                  {t('printers.camWall.eta', { time: formatETA(remainingMin ?? 0, timeFormat, t) })}
+                </span>
+              )}
             </div>
+          </div>
+        )}
+        {showTemps && (
+          <div className="mb-0.5 flex flex-wrap items-center gap-x-2 text-[11px] leading-tight text-bambu-gray">
+            {nozzleTemps.length > 0 && (
+              <span className="flex items-center gap-0.5" title={t('printers.temperatures.nozzle')}>
+                <Flame className="h-3 w-3" aria-label={t('printers.temperatures.nozzle')} />
+                {nozzleTemps.map((v) => `${Math.round(v)}°`).join(' / ')}
+              </span>
+            )}
+            {temperatures?.bed != null && (
+              <span className="flex items-center gap-0.5" title={t('printers.temperatures.bed')}>
+                <RectangleHorizontal className="h-3 w-3" aria-label={t('printers.temperatures.bed')} />
+                {Math.round(temperatures.bed)}°
+              </span>
+            )}
+            {temperatures?.chamber != null && (
+              <span className="flex items-center gap-0.5" title={t('printers.temperatures.chamber')}>
+                <Box className="h-3 w-3" aria-label={t('printers.temperatures.chamber')} />
+                {Math.round(temperatures.chamber)}°
+              </span>
+            )}
           </div>
         )}
         <span className="block truncate text-xs font-medium">{printerName}</span>

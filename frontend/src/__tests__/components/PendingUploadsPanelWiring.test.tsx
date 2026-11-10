@@ -1,16 +1,18 @@
 /**
- * Wiring tests for PendingUploadsPanel: pin the requests sent for archive
- * (with tags/notes/project), discard, archive-all and discard-all, and that
+ * Wiring tests for PendingUploadsPanel: pin the requests sent for approving
+ * an upload into the File Manager (with tags/notes/project), discard,
+ * approve-all and discard-all, and that
  * cancelling a destructive confirm sends nothing.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { render } from '../utils';
 import { server } from '../mocks/server';
 import { PendingUploadsPanel } from '../../components/PendingUploadsPanel';
+import { setAuthToken } from '../../api/client';
 
 const uploads = [
   {
@@ -59,7 +61,7 @@ beforeEach(() => {
     http.get('*/api/v1/projects/', () => HttpResponse.json(projects)),
     http.post('*/api/v1/pending-uploads/archive-all', ({ request }) => {
       calls.push({ method: 'POST', path: new URL(request.url).pathname });
-      return HttpResponse.json({ archived: 2, failed: 0 });
+      return HttpResponse.json({ stored: 2, failed: 0 });
     }),
     http.delete('*/api/v1/pending-uploads/discard-all', ({ request }) => {
       calls.push({ method: 'DELETE', path: new URL(request.url).pathname });
@@ -71,7 +73,7 @@ beforeEach(() => {
         path: new URL(request.url).pathname,
         body: await request.json(),
       });
-      return HttpResponse.json({ id: 100, print_name: 'First Upload', filename: 'first.gcode.3mf' });
+      return HttpResponse.json({ id: 100, filename: 'first.gcode.3mf', folder_id: 3 });
     }),
     http.delete('*/api/v1/pending-uploads/:id', ({ request }) => {
       calls.push({ method: 'DELETE', path: new URL(request.url).pathname });
@@ -90,7 +92,7 @@ async function rowFor(name: string): Promise<HTMLElement> {
 }
 
 describe('PendingUploadsPanel wiring', () => {
-  it('Archive with tags, notes and a project posts them for that upload id only', async () => {
+  it('Add to File Manager with tags, notes and a project posts them for that upload id only', async () => {
     const user = userEvent.setup();
     render(<PendingUploadsPanel />);
     const row = await rowFor('Second Upload');
@@ -98,7 +100,7 @@ describe('PendingUploadsPanel wiring', () => {
     // Expand toggle is the first (icon-only) button in the row.
     await user.click(within(row).getAllByRole('button')[0]);
     const card = row.parentElement as HTMLElement;
-    await user.type(within(card).getByPlaceholderText('e.g., functional, prototype, gift'), 'gift');
+    await user.type(within(card).getByPlaceholderText('e.g. functional, prototype, gift'), 'gift');
     await user.type(within(card).getByPlaceholderText('Add notes about this print...'), 'for bob');
     const select = within(card).getByRole('combobox');
     await waitFor(() => expect(within(select).getByRole('option', { name: 'Gadgets' })).toBeInTheDocument());
@@ -106,7 +108,7 @@ describe('PendingUploadsPanel wiring', () => {
     expect(within(select).queryByRole('option', { name: 'Archived Proj' })).toBeNull();
     await user.selectOptions(select, '5');
 
-    await user.click(within(row).getByRole('button', { name: /Archive/ }));
+    await user.click(within(row).getByRole('button', { name: /Add to File Manager/ }));
 
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]).toEqual({
@@ -116,12 +118,12 @@ describe('PendingUploadsPanel wiring', () => {
     });
   });
 
-  it('Archive without a project omits project_id', async () => {
+  it('Add to File Manager without a project omits project_id', async () => {
     const user = userEvent.setup();
     render(<PendingUploadsPanel />);
     const row = await rowFor('First Upload');
 
-    await user.click(within(row).getByRole('button', { name: /Archive/ }));
+    await user.click(within(row).getByRole('button', { name: /Add to File Manager/ }));
 
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0].path).toBe('/api/v1/pending-uploads/11/archive');
@@ -135,8 +137,9 @@ describe('PendingUploadsPanel wiring', () => {
 
     const buttons = within(row).getAllByRole('button');
     await user.click(buttons[buttons.length - 1]); // trash icon
-    expect(await screen.findByText('Discard Upload')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Discard' }));
+    const discardTitle = await screen.findByText('Discard upload');
+    const discardDialog = discardTitle.closest('div.flex-1')?.parentElement?.parentElement as HTMLElement;
+    await user.click(within(discardDialog).getByRole('button', { name: 'Discard' }));
 
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]).toEqual({ method: 'DELETE', path: '/api/v1/pending-uploads/22' });
@@ -149,51 +152,93 @@ describe('PendingUploadsPanel wiring', () => {
 
     const buttons = within(row).getAllByRole('button');
     await user.click(buttons[buttons.length - 1]);
-    await screen.findByText('Discard Upload');
+    await screen.findByText('Discard upload');
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
-    await waitFor(() => expect(screen.queryByText('Discard Upload')).toBeNull());
+    await waitFor(() => expect(screen.queryByText('Discard upload')).toBeNull());
     expect(calls).toHaveLength(0);
   });
 
-  it('Archive All -> confirm posts archive-all', async () => {
+  it('Add all -> confirm posts archive-all', async () => {
     const user = userEvent.setup();
     render(<PendingUploadsPanel />);
     await screen.findByText('First Upload');
 
-    await user.click(screen.getByRole('button', { name: 'Archive All' }));
-    const title = await screen.findByText('Archive All Uploads');
+    await user.click(screen.getByRole('button', { name: 'Add all' }));
+    const title = await screen.findByText('Add all uploads');
     const dialog = title.closest('div.flex-1')?.parentElement?.parentElement as HTMLElement;
-    await user.click(within(dialog).getByRole('button', { name: 'Archive All' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Add all' }));
 
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]).toEqual({ method: 'POST', path: '/api/v1/pending-uploads/archive-all' });
   });
 
-  it('Discard All -> confirm sends DELETE discard-all', async () => {
+  it('Discard all -> confirm sends DELETE discard-all', async () => {
     const user = userEvent.setup();
     render(<PendingUploadsPanel />);
     await screen.findByText('First Upload');
 
-    await user.click(screen.getByRole('button', { name: 'Discard All' }));
-    const title = await screen.findByText('Discard All Uploads');
+    await user.click(screen.getByRole('button', { name: 'Discard all' }));
+    const title = await screen.findByText('Discard all uploads');
     const dialog = title.closest('div.flex-1')?.parentElement?.parentElement as HTMLElement;
-    await user.click(within(dialog).getByRole('button', { name: 'Discard All' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Discard all' }));
 
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]).toEqual({ method: 'DELETE', path: '/api/v1/pending-uploads/discard-all' });
   });
 
-  it('Discard All -> cancel sends nothing', async () => {
+  it('Discard all -> cancel sends nothing', async () => {
     const user = userEvent.setup();
     render(<PendingUploadsPanel />);
     await screen.findByText('First Upload');
 
-    await user.click(screen.getByRole('button', { name: 'Discard All' }));
-    await screen.findByText('Discard All Uploads');
+    await user.click(screen.getByRole('button', { name: 'Discard all' }));
+    await screen.findByText('Discard all uploads');
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
-    await waitFor(() => expect(screen.queryByText('Discard All Uploads')).toBeNull());
+    await waitFor(() => expect(screen.queryByText('Discard all uploads')).toBeNull());
     expect(calls).toHaveLength(0);
+  });
+});
+
+
+// Approving adds a File Manager file, so it needs library:upload as well as
+// queue:create (the backend checks both); without them the buttons are off.
+describe('PendingUploadsPanel permissions', () => {
+  function signInWith(permissions: string[]) {
+    setAuthToken('test-token-1', 'session');
+    server.use(
+      http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+      http.get('*/api/v1/auth/me', () =>
+        HttpResponse.json({
+          id: 9,
+          username: 'teacher',
+          is_active: true,
+          is_admin: false,
+          groups: [],
+          permissions,
+          created_at: '2026-01-01T00:00:00Z',
+        }),
+      ),
+    );
+  }
+
+  afterEach(() => {
+    setAuthToken(null);
+  });
+
+  it.each([
+    [['queue:create'], true],
+    [['queue:create', 'library:upload'], false],
+  ])('with %j the approve buttons are disabled: %s', async (permissions, disabled) => {
+    signInWith(permissions);
+    render(<PendingUploadsPanel />);
+    const row = await rowFor('First Upload');
+
+    await waitFor(() => {
+      const button = within(row).getByRole('button', { name: /Add to File Manager/ }) as HTMLButtonElement;
+      expect(button.disabled).toBe(disabled);
+    });
+    expect((screen.getByRole('button', { name: 'Add all' }) as HTMLButtonElement).disabled).toBe(disabled);
   });
 });

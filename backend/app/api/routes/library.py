@@ -85,8 +85,10 @@ from backend.app.services.archive import ThreeMFParser, estimate_filament_cost
 from backend.app.services.design_settings import (
     DesignOverride,
     apply_design_overrides,
+    changed_process_keys,
     extract_design_process_overrides,
     overrides_from_config,
+    record_process_changes,
 )
 from backend.app.services.filament_requirements import annotate_rack_groups
 from backend.app.services.library_folder_access import (
@@ -700,7 +702,8 @@ def _without_print_name(metadata: dict | None) -> dict | None:
 async def save_3mf_bytes_to_library(
     db: AsyncSession,
     *,
-    file_bytes: bytes,
+    file_bytes: bytes | None = None,
+    source_path: Path | None = None,
     filename: str,
     folder_id: int | None = None,
     source_type: str | None = None,
@@ -722,7 +725,13 @@ async def save_3mf_bytes_to_library(
     Parses 3MF metadata + thumbnail the same way the multipart upload route
     does, via :class:`ThreeMFParser`, and renders an STL's thumbnail. Paths are stored as relative so the
     library is portable across installs.
+
+    Give the content as ``file_bytes`` or as ``source_path``, a file on disk
+    that is copied without being read into memory (a virtual printer's
+    upload, which can be hundreds of MB).
     """
+    if (file_bytes is None) == (source_path is None):
+        raise ValueError("pass exactly one of file_bytes and source_path")
     # Source-URL-based dedupe: return the existing row untouched.
     if source_url and dedupe_within is not None:
         existing = await db.execute(
@@ -767,8 +776,14 @@ async def save_3mf_bytes_to_library(
 
     file_path, is_external = _resolve_upload_destination(target_folder, filename)
     ext = file_path.suffix.lower() or ".3mf"
-    with open(file_path, "wb") as fh:
-        fh.write(file_bytes)
+    if source_path is not None:
+        await asyncio.to_thread(shutil.copyfile, source_path, file_path)
+        file_size = file_path.stat().st_size
+    else:
+        assert file_bytes is not None  # one of the two, checked above
+        with open(file_path, "wb") as fh:
+            fh.write(file_bytes)
+        file_size = len(file_bytes)
 
     file_hash = calculate_file_hash(file_path)
 
@@ -812,7 +827,7 @@ async def save_3mf_bytes_to_library(
         filename=filename,
         file_path=_stored_file_path(file_path, is_external),
         file_type=classify_file_type(filename, file_path),
-        file_size=len(file_bytes),
+        file_size=file_size,
         file_hash=file_hash,
         thumbnail_path=to_relative_path(thumbnail_path) if thumbnail_path else None,
         file_metadata=_without_print_name(metadata),
@@ -4461,6 +4476,9 @@ async def _run_slicer_with_fallback(
     # the embedded plate / model definitions remain intact.
     is_3mf = model_filename.lower().endswith(".3mf")
     primary_bytes = model_bytes
+    # The process JSON before Bambuddy layers its own settings on the picked
+    # preset, to tell which keys the output 3MF has to list as changed (#3497).
+    process_as_picked = presets["process"]
     if is_3mf:
         # Strip inherit/unset sentinels from Metadata/project_settings.config
         # so the CLI's StaticPrintConfig range validator accepts the file
@@ -4513,6 +4531,17 @@ async def _run_slicer_with_fallback(
     # config (#1881) and the designer's tweaks (#2622).
     if request.process_overrides:
         presets["process"] = apply_process_overrides(presets["process"], request.process_overrides)
+
+    # #3497: the slicer CLI leaves different_settings_to_system empty, so the
+    # keys set above are not marked as changed in the output 3MF and Bambu
+    # Studio reopens it with the stock preset's values. Only for a bundled
+    # (standard) process preset: the system preset is then the base those keys
+    # differ from. A cloud or local preset already is the user's own preset.
+    process_changes = (
+        changed_process_keys(process_as_picked, presets["process"])
+        if request.process_preset is not None and request.process_preset.source == "standard"
+        else []
+    )
 
     used_embedded_settings = False
     # "Slice as designed" (#2611): honour the file's embedded
@@ -4867,6 +4896,9 @@ async def _run_slicer_with_fallback(
     # meant to slice with a profile their sidecar image predates. Skipped on
     # the embedded-settings path, which sends no filament profiles for the
     # bundle to resolve in the first place.
+    if process_changes and request.export_3mf and not used_embedded_settings:
+        result = result._replace(content=record_process_changes(result.content, process_changes))
+
     if not used_embedded_settings:
         unresolved = unresolved_filament_slots(result.content, export_3mf=bool(request.export_3mf))
         if unresolved:

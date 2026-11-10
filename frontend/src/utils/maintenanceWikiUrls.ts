@@ -6,6 +6,8 @@
  *   - P2S, X2D       → hardened steel rods (X2D shares P2S's gantry — #988)
  *   - A1, A1 Mini    → linear rails (Y axis)
  *   - H2D, H2C, H2S  → linear rails (X-axis lubrication)
+ *   - H3C            → its own tasks carry their wiki links; only the shared
+ *                      tasks (belt tension) resolve here
  *
  * Returns null when no wiki page applies (e.g. "Clean Carbon Rods" on an H2D),
  * which the caller renders as a task with no clickable help link.
@@ -21,6 +23,7 @@ export function getMaintenanceWikiUrl(typeName: string, printerModel: string | n
   const isH2C = model.includes('H2C');
   const isH2S = model.includes('H2S');
   const isH2 = isH2D || isH2C || isH2S;
+  const isH3C = model.includes('H3C') || model === 'N10';
   const isP2S = model.includes('P2S');
   const isX2D = model.includes('X2D');
   // X2D shares the hardened steel rod hardware and belt layout with P2S,
@@ -56,6 +59,7 @@ export function getMaintenanceWikiUrl(typeName: string, printerModel: string | n
       if (isH2D) return 'https://wiki.bambulab.com/en/h2/maintenance/belt-tension';
       if (isH2C) return 'https://wiki.bambulab.com/en/h2c/maintenance/belt-tension';
       if (isH2S) return 'https://wiki.bambulab.com/en/h2s/maintenance/belt-tension';
+      if (isH3C) return 'https://wiki.bambulab.com/en/h3c/maintenance/belt_tension';
       if (isSteelRod) return 'https://wiki.bambulab.com/en/p2s/maintenance/belt-tension';
       // X1 and P1 share one page, "X1/P1 Series Belt tensioning procedure";
       // P1 has none of its own, so it must not get a branch above (#3302).

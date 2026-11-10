@@ -747,9 +747,10 @@ export function Layout() {
 
                 const { to, icon: Icon, labelKey } = navItem;
                 const showQueueBadge = id === 'queue' && pendingQueueCount > 0;
-                const showArchiveBadge = id === 'archives' && pendingUploadsCount > 0;
-                const badgeCount = showQueueBadge ? pendingQueueCount : showArchiveBadge ? pendingUploadsCount : 0;
-                const showBadge = showQueueBadge || showArchiveBadge;
+                // Review-mode uploads wait on the File Manager page.
+                const showUploadsBadge = id === 'files' && pendingUploadsCount > 0;
+                const badgeCount = showQueueBadge ? pendingQueueCount : showUploadsBadge ? pendingUploadsCount : 0;
+                const showBadge = showQueueBadge || showUploadsBadge;
                 const showClearPlateDot = id === 'printers' && needsClearPlate;
 
                 const expanded = isSidebarCompact || sidebarExpanded;
@@ -795,7 +796,7 @@ export function Layout() {
                         )}
                         {showBadge && (
                           <span className={`absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center text-[10px] font-bold rounded-full ${
-                            showArchiveBadge ? 'bg-blue-500 text-white' : 'bg-yellow-500 text-black'
+                            showUploadsBadge ? 'bg-blue-500 text-white' : 'bg-yellow-500 text-black'
                           }`}>
                             {badgeCount > 99 ? '99+' : badgeCount}
                           </span>

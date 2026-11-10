@@ -13,8 +13,9 @@ import logging
 import os
 import random
 import ssl
+import time
 import zipfile
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,50 @@ FTP_PORT = 990
 # with a legitimate file, raise here.
 MAX_UPLOAD_BYTES = 4 * 1024 * 1024 * 1024  # 4 GiB
 
+# Per-IP sign-in limit, as the MQTT server's: 5 wrong codes within 60 s and
+# that address is refused for the rest of the window. Personal access codes
+# (#1430) mean more codes that work, so more to guess at.
+AUTH_RATE_LIMIT_MAX_ATTEMPTS = 5
+AUTH_RATE_LIMIT_WINDOW_SECONDS = 60.0
+
+
+class AuthRateLimiter:
+    """Failed sign-ins per source IP within a sliding window."""
+
+    def __init__(
+        self,
+        max_attempts: int = AUTH_RATE_LIMIT_MAX_ATTEMPTS,
+        window_seconds: float = AUTH_RATE_LIMIT_WINDOW_SECONDS,
+    ):
+        self.max_attempts = max_attempts
+        self.window_seconds = window_seconds
+        self._failures: dict[str, list[float]] = {}
+
+    def is_limited(self, source_ip: str) -> bool:
+        cutoff = time.monotonic() - self.window_seconds
+        recent = [t for t in self._failures.get(source_ip, []) if t >= cutoff]
+        if recent:
+            self._failures[source_ip] = recent
+        else:
+            self._failures.pop(source_ip, None)
+        return len(recent) >= self.max_attempts
+
+    def record_failure(self, source_ip: str) -> None:
+        self._failures.setdefault(source_ip, []).append(time.monotonic())
+
+    def release(self, source_ip: str) -> None:
+        """Take back one attempt counted ahead of a sign-in that then succeeded.
+
+        Only that one: a good sign-in must not wipe the failures before it,
+        or a user with a code of their own could guess others' codes four at
+        a time between their own sign-ins.
+        """
+        attempts = self._failures.get(source_ip)
+        if attempts:
+            attempts.pop()
+            if not attempts:
+                self._failures.pop(source_ip, None)
+
 
 class FTPSession:
     """Handles a single FTP client session."""
@@ -45,11 +90,13 @@ class FTPSession:
         upload_dir: Path,
         access_code: str,
         ssl_context: ssl.SSLContext,
-        on_file_received: Callable[[Path, str], None] | None,
+        on_file_received: Callable[..., object] | None,
         passive_port_range: tuple[int, int] = (50000, 50100),
         pasv_address: str = "",
         bind_address: str = "0.0.0.0",  # nosec B104
         vp_name: str = "",
+        authenticate_user: Callable[[str], Awaitable[int | None]] | None = None,
+        rate_limiter: AuthRateLimiter | None = None,
     ):
         self.reader = reader
         self.writer = writer
@@ -62,8 +109,13 @@ class FTPSession:
         self.bind_address = bind_address
         self.vp_name = vp_name
         self._log_prefix = f"[{vp_name}] " if vp_name else ""
+        # A personal access code (#1430): returns the user's id, or None.
+        self.authenticate_user = authenticate_user
+        self.rate_limiter = rate_limiter or AuthRateLimiter()
 
         self.authenticated = False
+        # The user whose personal code signed in; None for the VP's own code.
+        self.user_id: int | None = None
         self.username: str | None = None
         self.current_dir = upload_dir
         self.transfer_type = "A"  # ASCII by default
@@ -171,19 +223,40 @@ class FTPSession:
 
     async def cmd_PASS(self, arg: str) -> None:
         """Handle PASS command."""
-        if self.username and self.username.lower() == "bblp":
-            # ``hmac.compare_digest`` is constant-time — keeps the auth check
-            # from leaking the access code via response timing under network
-            # jitter. LAN-only threat is marginal; this is the standard fix.
-            if hmac.compare_digest(arg, self.access_code):
-                self.authenticated = True
-                await self.send(230, "Login successful")
+        if not (self.username and self.username.lower() == "bblp"):
+            await self.send(503, "Login with USER first")
+            return
+        if self.authenticated:
+            # One sign-in per session: no guessing on a session already in.
+            await self.send(503, "Already logged in")
+            return
+        if self.rate_limiter.is_limited(self.remote_ip):
+            await self.send(530, "Login incorrect")
+            logger.warning("%sFTP login from %s refused: too many failed attempts", self._log_prefix, self.remote_ip)
+            return
+        # Counted before the lookup, so sign-ins in parallel can't all pass
+        # the check above first; taken back below if this one succeeds.
+        self.rate_limiter.record_failure(self.remote_ip)
+        # ``hmac.compare_digest`` is constant-time — keeps the auth check
+        # from leaking the access code via response timing under network
+        # jitter. LAN-only threat is marginal; this is the standard fix.
+        user_id = None
+        ok = hmac.compare_digest(arg, self.access_code)
+        if not ok and self.authenticate_user is not None:
+            user_id = await self.authenticate_user(arg)
+            ok = user_id is not None
+        if ok:
+            self.authenticated = True
+            self.user_id = user_id
+            self.rate_limiter.release(self.remote_ip)
+            await self.send(230, "Login successful")
+            if user_id is None:
                 logger.info("%sFTP login from %s", self._log_prefix, self.remote_ip)
             else:
-                await self.send(530, "Login incorrect")
-                logger.warning("%sFTP failed login from %s (access code mismatch)", self._log_prefix, self.remote_ip)
+                logger.info("%sFTP login from %s as user %s", self._log_prefix, self.remote_ip, user_id)
         else:
-            await self.send(503, "Login with USER first")
+            await self.send(530, "Login incorrect")
+            logger.warning("%sFTP failed login from %s (access code mismatch)", self._log_prefix, self.remote_ip)
 
     async def cmd_SYST(self, arg: str) -> None:
         """Handle SYST command."""
@@ -520,7 +593,12 @@ class FTPSession:
 
         if self.on_file_received:
             try:
-                result = self.on_file_received(file_path, self.remote_ip)
+                # With the user only when a personal code signed in, so a
+                # callback that takes just (path, ip) keeps working.
+                if self.user_id is None:
+                    result = self.on_file_received(file_path, self.remote_ip)
+                else:
+                    result = self.on_file_received(file_path, self.remote_ip, user_id=self.user_id)
                 if asyncio.iscoroutine(result):
                     await result
             except Exception as e:
@@ -641,11 +719,12 @@ class VirtualPrinterFTPServer:
         cert_path: Path,
         key_path: Path,
         port: int = FTP_PORT,
-        on_file_received: Callable[[Path, str], None] | None = None,
+        on_file_received: Callable[..., object] | None = None,
         bind_address: str = "0.0.0.0",  # nosec B104
         vp_name: str = "",
         passive_port_min: int = PASSIVE_PORT_BASE,
         passive_port_max: int = PASSIVE_PORT_BASE + PASSIVE_SLICE_SIZE - 1,
+        authenticate_user: Callable[[str], Awaitable[int | None]] | None = None,
     ):
         """Initialize the FTPS server.
 
@@ -674,6 +753,9 @@ class VirtualPrinterFTPServer:
         self.vp_name = vp_name
         self.passive_port_min = passive_port_min
         self.passive_port_max = passive_port_max
+        # Personal access codes (#1430), and failed sign-ins per IP across sessions.
+        self.authenticate_user = authenticate_user
+        self._rate_limiter = AuthRateLimiter()
         self._server: asyncio.Server | None = None
         self._running = False
         # Set after the socket is bound and the server is accepting connections,
@@ -781,6 +863,8 @@ class VirtualPrinterFTPServer:
             pasv_address=self._pasv_address,
             bind_address=self.bind_address,
             vp_name=self.vp_name,
+            authenticate_user=self.authenticate_user,
+            rate_limiter=self._rate_limiter,
         )
 
         # Track the session task so we can cancel it on stop

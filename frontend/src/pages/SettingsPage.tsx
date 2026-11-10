@@ -1,5 +1,5 @@
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Pencil, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog, QrCode, Heart, Briefcase, Workflow, UploadCloud, MonitorPlay, Info } from 'lucide-react';
+import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Pencil, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog, QrCode, Heart, Briefcase, Workflow, UploadCloud, MonitorPlay, Info, Lightbulb } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -50,6 +50,7 @@ import { VirtualPrinterList } from '../components/VirtualPrinterList';
 import { SpoolBuddySettings } from '../components/SpoolBuddySettings';
 import { GitHubBackupSettings } from '../components/GitHubBackupSettings';
 import { FailureDetectionSettings } from '../components/FailureDetectionSettings';
+import { WLEDSettings } from '../components/WLEDSettings';
 import { EmailSettings } from '../components/EmailSettings';
 import { LDAPSettings } from '../components/LDAPSettings';
 import { PrinterAccessSettings } from '../components/PrinterAccessSettings';
@@ -73,7 +74,7 @@ import { NumberInput } from '../components/NumberInput';
 import { PrinterSearchPicker } from '../components/PrinterSearchPicker';
 import { UsbCameraDevicePicker } from '../components/UsbCameraDevicePicker';
 
-const validTabs = ['general', 'plugs', 'sensors', 'notifications', 'queue', 'filament', 'camera', 'network', 'apikeys', 'virtual-printer', 'spoolbuddy', 'failure-detection', 'users', 'backup'] as const;
+const validTabs = ['general', 'plugs', 'sensors', 'notifications', 'queue', 'filament', 'camera', 'network', 'wled', 'apikeys', 'virtual-printer', 'spoolbuddy', 'failure-detection', 'users', 'backup'] as const;
 type TabType = typeof validTabs[number];
 interface SettingsTabEntry { tab: TabType; icon: LucideIcon; label: string; extra?: ReactNode }
 
@@ -319,6 +320,7 @@ export function SettingsPage() {
   // Camera tokens and the overlay builder used to live under API Keys; links
   // to them (bookmarks, the wiki, /camera-tokens) open the Camera tab instead.
   const canSeeApiKeysTab = hasPermission('api_keys:read') || hasPermission('settings:update');
+  const canManageWled = !authLoading && hasPermission('printers:update');
   const isLegacyCameraLink = tabParam === 'apikeys'
     && ['#card-camera-tokens', '#card-stream-overlay'].includes(window.location.hash);
   const activeTab: TabType = isLegacyEmailTab ? 'users'
@@ -373,8 +375,9 @@ export function SettingsPage() {
   // Waits for the session so a permission not loaded yet doesn't count as none.
   useEffect(() => {
     if (!authLoading && activeTab === 'apikeys' && !canSeeApiKeysTab) handleTabChange('camera');
+    if (!authLoading && activeTab === 'wled' && !canManageWled) handleTabChange('general');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, activeTab, canSeeApiKeysTab]);
+  }, [authLoading, activeTab, canSeeApiKeysTab, canManageWled]);
 
   // Switch the Workflow tab's sub-tab and reflect it in the URL so deep-links work.
   const handleQueueSubTabChange = (sub: 'dispatch' | 'pipelines') => {
@@ -1636,7 +1639,7 @@ export function SettingsPage() {
 
   // Cross-tab search is powered by the module-level registry in lib/settingsSearch.
   // Resolve i18n labels here so language changes take effect without re-registering.
-  const searchIndex = getSettingsSearchEntries().map(e => ({
+  const searchIndex = getSettingsSearchEntries().filter(e => e.tab !== 'wled' || canManageWled).map(e => ({
     ...e,
     label: t(e.labelKey, e.labelFallback ?? e.labelKey),
   }));
@@ -1704,6 +1707,7 @@ export function SettingsPage() {
     { tab: 'filament', icon: Cylinder, label: t('settings.tabs.filament') },
     { tab: 'camera', icon: Video, label: t('settings.tabs.camera') },
     { tab: 'network', icon: Wifi, label: t('settings.tabs.network'), extra: statusDot(!!mqttStatus?.enabled) },
+    ...(canManageWled ? [{ tab: 'wled', icon: Lightbulb, label: t('settings.tabs.wled') }] : []),
     // API Keys holds API keys, webhooks, the API browser and Connected Apps;
     // a user who may see none of them would land on an empty tab.
     ...(canSeeApiKeysTab
@@ -4367,6 +4371,8 @@ export function SettingsPage() {
           </div>
         </div>
       )}
+
+      {activeTab === 'wled' && canManageWled && <WLEDSettings />}
 
       {/* API Keys Tab */}
       {activeTab === 'camera' && (

@@ -508,6 +508,10 @@ async def update_settings(
 
     if {"camera_light_mode", "camera_light_delay"} & set(update_data.keys()):
         camera_light.invalidate_settings()
+    if "require_plate_clear" in update_data:
+        from backend.app.services.wled import wled_manager
+
+        wled_manager.require_plate_clear = update_data["require_plate_clear"]
 
     if price_source_changed:
         # Read a newly chosen price sensor now, so the saved settings show its
@@ -601,6 +605,9 @@ async def reset_settings(
 
     await db.commit()
     camera_light.invalidate_settings()
+    from backend.app.services.wled import wled_manager
+
+    wled_manager.require_plate_clear = False
 
     return DEFAULT_SETTINGS
 
@@ -1930,11 +1937,22 @@ async def restore_backup(
             await reinitialize_database()
             await init_db()
 
+            # 8b. A backup from a Windows install stores its paths with
+            # backslashes, which Linux and macOS read as part of a file name
+            # (#3501). After init_db, so the tables are current, and after the
+            # files are copied, so a path that exists as written is kept.
+            from backend.app.core import database as _db_mod
+            from backend.app.services.backup_paths import convert_windows_paths
+
+            try:
+                async with _db_mod.engine.begin() as conn:
+                    await convert_windows_paths(conn, base_dir)
+            except Exception as e:
+                logger.warning("Could not convert Windows file paths from the backup: %s", e, exc_info=True)
+
             # 9. Sign everyone out. The restored users and auth tokens come from
             # another point in time, possibly written by older code, so no
             # session issued before the restore should stay valid.
-            from backend.app.core import database as _db_mod
-
             async with _db_mod.engine.begin() as conn:
                 await _db_mod.invalidate_all_sessions(conn)
             # Open dashboards of signed-in users too: they are never signed in

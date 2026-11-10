@@ -155,6 +155,31 @@ describe('InventoryPage - LOCATION column (Spoolman mode)', () => {
     });
   });
 
+  it('labels an H3C slot 3H-n and a per-hotend external input Ext-n', async () => {
+    server.use(
+      http.get('/api/v1/settings/spoolman', () =>
+        HttpResponse.json({ spoolman_enabled: 'true', spoolman_url: 'http://localhost:7912' })
+      ),
+      http.get('/api/v1/spoolman/inventory/spools', () =>
+        HttpResponse.json([mockSpoolmanSpool, { ...mockSpoolmanSpool, id: 217, color_name: 'Blue', rgba: '0000FFFF' }])
+      ),
+      http.get('/api/v1/spoolman/inventory/slot-assignments/all', () =>
+        HttpResponse.json([
+          // AMS 3H slot 7 is stored as (32, 6); input 250 (hotend 5) as (255, 5).
+          { printer_id: 2, printer_name: 'Workshop', ams_id: 32, tray_id: 6, spoolman_spool_id: 216, ams_label: null, printer_model: 'H3C' },
+          { printer_id: 2, printer_name: 'Workshop', ams_id: 255, tray_id: 5, spoolman_spool_id: 217, ams_label: null, printer_model: 'H3C' },
+        ])
+      ),
+    );
+
+    const { container } = render(<InventoryPageRouter />);
+
+    await waitFor(() => {
+      expect(container.textContent).toContain('Workshop 3H-7');
+      expect(container.textContent).toContain('Workshop Ext-6');
+    });
+  });
+
   it('shows "-" in LOCATION column when spoolman spool has no slot assignment', async () => {
     server.use(
       http.get('/api/v1/settings/spoolman', () =>

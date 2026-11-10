@@ -59,6 +59,7 @@ from backend.app.schemas.print_queue import (
     QueueVariantCreate,
     QueueVariantSummary,
 )
+from backend.app.services import slicer_ams_pick
 from backend.app.services.filament_deficit import compute_deficit_for_queue_item
 from backend.app.services.filament_requirements import overrides_for_plate
 from backend.app.services.finance_budget import release_budget_reservation, validate_print_budget
@@ -609,6 +610,13 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
                         response.filament_used_grams = plate_meta.filament_used_grams
                     if plate_meta.bed_type:
                         response.bed_type = plate_meta.bed_type
+    # No archive yet (a virtual printer's upload is a File Manager file until
+    # it prints), but the job keeps the slicer's pick for it; shown, like the
+    # archive's above, only while the job is on the printer it was made on.
+    pick = slicer_ams_pick.unpack(item.slicer_ams_mapping)
+    if pick is not None and item.printer_id is not None and pick[1] == item.printer_id:
+        response.slicer_ams_mapping = pick[0]
+        response.archive_has_slicer_ams_mapping = True
     if item.library_file:
         response.library_file_name = (
             item.library_file.file_metadata.get("print_name") if item.library_file.file_metadata else None

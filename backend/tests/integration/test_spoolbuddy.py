@@ -1081,17 +1081,21 @@ class TestWriteTagEndpoints:
         payload = hb.json()["pending_write_payload"]
         ndef_bytes = bytes.fromhex(payload["ndef_data_hex"])
 
-        # CC bytes
-        assert ndef_bytes[:4] == bytes([0xE1, 0x10, 0x12, 0x00])
-        # TLV type
-        assert ndef_bytes[4] == 0x03
+        # The data area starts with the NDEF TLV, no CC copy (#3500)
+        assert ndef_bytes[0] == 0x03
         # NDEF record: TNF=MIME, type=application/opentag3d
-        assert ndef_bytes[6] == 0xD2
-        assert ndef_bytes[9:30] == b"application/opentag3d"
+        assert ndef_bytes[2] == 0xD2
+        assert ndef_bytes[5:26] == b"application/opentag3d"
         # Terminator
         assert ndef_bytes[-1] == 0xFE
         # Total size fits NTAG213
         assert len(ndef_bytes) <= 144
+
+        # OpenTag3D 2.004 beside it, for a tag with room for it (#3500)
+        v2 = bytes.fromhex(payload["ndef_v2_hex"])
+        assert v2[5:26] == b"application/opentag3d"
+        assert int.from_bytes(v2[26:28], "big") == 2004
+        assert v2[26 + 0x0C : 26 + 0x15] == b"Polymaker"
 
 
 # ============================================================================
@@ -2180,6 +2184,7 @@ class TestNfcWriteTagSpoolman:
         assert payload["data_origin"] == "spoolman"
         assert payload["spool_id"] == 88
         assert "ndef_data_hex" in payload
+        assert int.from_bytes(bytes.fromhex(payload["ndef_v2_hex"])[26:28], "big") == 2004
 
     @pytest.mark.asyncio
     @pytest.mark.integration

@@ -209,7 +209,7 @@ class TestPendingUploadsAPI:
 
         assert response.status_code == 200
         result = response.json()
-        assert "archived" in result
+        assert "stored" in result
         assert "failed" in result
 
     @pytest.mark.asyncio
@@ -408,6 +408,30 @@ class TestVirtualPrinterCaCertificateAPI:
         # A 200 (not 422 from int-parsing "ca-certificate") proves route ordering.
         assert response.status_code == 200
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(("platform", "filename"), [("windows", ".cmd"), ("unix", ".sh")])
+    async def test_installer_carries_this_instance_ca(self, async_client: AsyncClient, platform, filename):
+        ca = (await async_client.get("/api/v1/virtual-printers/ca-certificate")).json()
+
+        response = await async_client.get(f"/api/v1/virtual-printers/ca-certificate/installer/{platform}")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["filename"].endswith(filename)
+        body = ca["pem"].strip().splitlines()[1]
+        assert body in result["content"]
+        assert ca["fingerprint_sha256"] in result["content"]
+        assert "__BAMBUDDY_" not in result["content"]
+        assert "PRIVATE KEY" not in result["content"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_installer_for_an_unknown_platform_is_404(self, async_client: AsyncClient):
+        response = await async_client.get("/api/v1/virtual-printers/ca-certificate/installer/amiga")
+
+        assert response.status_code == 404
+
 
 class TestVirtualPrinterDiagnosticAPI:
     """Integration tests for GET /api/v1/virtual-printers/{vp_id}/diagnostic."""
@@ -586,6 +610,67 @@ class TestVirtualPrinterAccessCodeInheritance:
         assert vp.access_code == "REALCODE"
 
 
+class TestVirtualPrinterClearTarget:
+    """A null target_printer_id clears the target (queue VP: any printer of
+    its model); leaving the field out keeps it."""
+
+    @staticmethod
+    async def _queue_vp(async_client: AsyncClient, target_id: int, **extra) -> int:
+        response = await async_client.post(
+            "/api/v1/virtual-printers",
+            json={"name": "QueueVP", "mode": "queue", "target_printer_id": target_id, **extra},
+        )
+        assert response.status_code == 200
+        return response.json()["id"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_null_clears_the_target_and_keeps_the_code(self, async_client: AsyncClient, printer_factory):
+        target = await printer_factory(name="Real X1C", access_code="REALCODE")
+        vp_id = await self._queue_vp(async_client, target.id)
+
+        response = await async_client.put(f"/api/v1/virtual-printers/{vp_id}", json={"target_printer_id": None})
+
+        assert response.status_code == 200
+        assert response.json()["target_printer_id"] is None
+        assert response.json()["access_code_set"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_leaving_the_field_out_keeps_the_target(self, async_client: AsyncClient, printer_factory):
+        target = await printer_factory(name="Real X1C", access_code="REALCODE")
+        vp_id = await self._queue_vp(async_client, target.id)
+
+        response = await async_client.put(f"/api/v1/virtual-printers/{vp_id}", json={"auto_dispatch": False})
+
+        assert response.status_code == 200
+        assert response.json()["target_printer_id"] == target.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_clearing_a_proxy_target_turns_the_proxy_off(self, async_client: AsyncClient, printer_factory):
+        target = await printer_factory(name="Real X1C", access_code="REALCODE")
+        response = await async_client.post(
+            "/api/v1/virtual-printers",
+            json={
+                "name": "ProxyVP",
+                "mode": "proxy",
+                "target_printer_id": target.id,
+                "bind_ip": "192.168.1.52",
+                "enabled": True,
+            },
+        )
+        assert response.status_code == 200
+        vp_id = response.json()["id"]
+
+        with patch("backend.app.services.virtual_printer.virtual_printer_manager.sync_from_db", AsyncMock()):
+            response = await async_client.put(f"/api/v1/virtual-printers/{vp_id}", json={"target_printer_id": None})
+
+        assert response.status_code == 200
+        assert response.json()["target_printer_id"] is None
+        assert response.json()["enabled"] is False
+
+
 class TestVirtualPrinterSerialSurface:
     """Proxy-mode VPs must surface the target printer's serial in API responses.
 
@@ -621,6 +706,31 @@ class TestVirtualPrinterSerialSurface:
         assert list_resp.status_code == 200
         listed = next(p for p in list_resp.json()["printers"] if p["id"] == vp_id)
         assert listed["serial"] == "00M09A123456789"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(("serial", "code"), [("31B8BP610600650", "O1C2"), ("0948BB540200427", "O1C")])
+    async def test_a_proxy_for_an_h2c_reports_its_code_by_serial(
+        self, async_client: AsyncClient, printer_factory, serial, code
+    ):
+        """An H2C is an O1C or an O1C2; the slicer only syncs when the VP reports the right one."""
+        target = await printer_factory(name="Real H2C", model="H2C", serial_number=serial)
+
+        create_resp = await async_client.post(
+            "/api/v1/virtual-printers",
+            json={"name": "ProxyH2C", "mode": "proxy", "target_printer_id": target.id},
+        )
+
+        assert create_resp.status_code == 200
+        assert create_resp.json()["model"] == code
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_the_list_names_each_models_serial_family(self, async_client: AsyncClient):
+        families = (await async_client.get("/api/v1/virtual-printers")).json()["model_serial_prefixes"]
+
+        assert families["O1C2"] == "31B"
+        assert families["O1C"] == "094"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -665,3 +775,63 @@ class TestVirtualPrinterSerialSurface:
         body = get_resp.json()
         assert body["serial"]  # non-empty
         assert len(body["serial"]) >= 8
+
+
+class TestVirtualPrinterUploadFolder:
+    """Uploads land in a File Manager folder set per virtual printer."""
+
+    @staticmethod
+    async def _folder(db_session, **fields) -> int:
+        from backend.app.models.library import LibraryFolder
+
+        folder = LibraryFolder(**({"name": "Class 7b", "shared": True} | fields))
+        db_session.add(folder)
+        await db_session.commit()
+        return folder.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_set_on_create_and_cleared_with_null(self, async_client: AsyncClient, db_session):
+        folder_id = await self._folder(db_session)
+
+        response = await async_client.post(
+            "/api/v1/virtual-printers",
+            json={"name": "Lab", "mode": "library", "library_folder_id": folder_id, "queue_remove_after_print": True},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["library_folder_id"] == folder_id
+        assert response.json()["queue_remove_after_print"] is True
+        vp_id = response.json()["id"]
+
+        response = await async_client.put(f"/api/v1/virtual-printers/{vp_id}", json={"auto_dispatch": False})
+        assert response.json()["library_folder_id"] == folder_id
+
+        response = await async_client.put(f"/api/v1/virtual-printers/{vp_id}", json={"library_folder_id": None})
+        assert response.status_code == 200
+        assert response.json()["library_folder_id"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_an_external_folder_is_refused(self, async_client: AsyncClient, db_session, tmp_path):
+        folder_id = await self._folder(db_session, name="NAS", is_external=True, external_path=str(tmp_path))
+        vp_id = (await async_client.post("/api/v1/virtual-printers", json={"name": "Lab"})).json()["id"]
+
+        response = await async_client.put(f"/api/v1/virtual-printers/{vp_id}", json={"library_folder_id": folder_id})
+
+        assert response.status_code == 400
+        assert "external" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_an_unknown_folder_is_refused(self, async_client: AsyncClient):
+        response = await async_client.post("/api/v1/virtual-printers", json={"name": "Lab", "library_folder_id": 4242})
+
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_the_legacy_archive_mode_is_stored_as_library(self, async_client: AsyncClient):
+        response = await async_client.post("/api/v1/virtual-printers", json={"name": "Old client", "mode": "archive"})
+
+        assert response.status_code == 200
+        assert response.json()["mode"] == "library"

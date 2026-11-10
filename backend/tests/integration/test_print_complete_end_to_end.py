@@ -399,6 +399,26 @@ async def test_the_timelapse_scan_is_for_the_run_that_ended(test_engine, db_sess
     assert schedule.call_args.kwargs["run_id"] == logs[0].id
 
 
+@pytest.mark.parametrize("status", ["failed", "aborted"])
+async def test_a_stopped_prints_timelapse_is_fetched_too(test_engine, db_session, queued_print, status):
+    """#3481: the printer writes the video of a cancelled or failed run, and
+    it is the one video that shows what went wrong."""
+    with patch("backend.app.main._schedule_timelapse_scan") as schedule:
+        await _complete(test_engine, queued_print["printer"], status, extra={"timelapse_was_active": True})
+
+    _archive, _item, logs, _charges = await _rows(db_session, queued_print["archive"], queued_print["item"])
+    schedule.assert_called_once()
+    assert schedule.call_args.args[0] == queued_print["archive"]
+    assert schedule.call_args.kwargs["run_id"] == logs[0].id
+
+
+async def test_no_timelapse_scan_without_a_recording(test_engine, queued_print):
+    with patch("backend.app.main._schedule_timelapse_scan") as schedule:
+        await _complete(test_engine, queued_print["printer"], "aborted")
+
+    schedule.assert_not_called()
+
+
 async def test_the_finish_photo_is_the_ended_runs_too(test_engine, db_session, queued_print):
     from backend.app.core.tasks import spawn_background_task
 

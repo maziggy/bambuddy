@@ -2,13 +2,19 @@ import logging
 import os
 from pathlib import Path
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import RequestPrinterScope, RequirePermissionIfAuthEnabled
+from backend.app.core.auth import (
+    ApiKeyActor,
+    RequestActor,
+    RequestPrinterScope,
+    RequirePermissionIfAuthEnabled,
+    get_current_active_user,
+)
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.core.printer_scope import PrinterScope
@@ -37,10 +43,12 @@ class TailscaleStatusResponse(BaseModel):
 class VirtualPrinterCreate(BaseModel):
     name: str = "Bambuddy"
     enabled: bool = False
-    mode: str = "archive"
+    mode: str = "library"
     model: str | None = None
     access_code: str | None = None
     target_printer_id: int | None = None
+    library_folder_id: int | None = None
+    queue_remove_after_print: bool = False
     auto_dispatch: bool = True
     queue_force_color_match: bool = False
     save_ams_mapping: bool = False
@@ -57,6 +65,8 @@ class VirtualPrinterUpdate(IgnoresNullForRequiredColumns):
     model: str | None = None
     access_code: str | None = None
     target_printer_id: int | None = None
+    library_folder_id: int | None = None
+    queue_remove_after_print: bool | None = None
     auto_dispatch: bool | None = None
     queue_force_color_match: bool | None = None
     save_ams_mapping: bool | None = None
@@ -66,21 +76,34 @@ class VirtualPrinterUpdate(IgnoresNullForRequiredColumns):
     tailscale_disabled: bool | None = None
 
 
-def _resolve_printer_model(printer_model: str | None) -> str | None:
+def _resolve_printer_model(printer_model: str | None, serial: str | None = None) -> str | None:
     """Map a printer's model (display name or SSDP code) to a valid VP SSDP model code.
 
-    Printers store display names like 'X1C' while VPs need SSDP codes like 'BL-P001'.
+    Printers store display names like 'X1C' while VPs need SSDP codes like
+    'BL-P001'. ``serial`` tells apart the codes one name covers (H2C: O1C or
+    O1C2); see ``manager.model_code_for_printer``.
     """
-    if not printer_model:
-        return None
-    from backend.app.services.virtual_printer import VIRTUAL_PRINTER_MODELS
-    from backend.app.services.virtual_printer.manager import DISPLAY_NAME_TO_MODEL_CODE
+    from backend.app.services.virtual_printer.manager import model_code_for_printer
 
-    # Already a valid SSDP model code
-    if printer_model in VIRTUAL_PRINTER_MODELS:
-        return printer_model
-    # Map display name to SSDP code
-    return DISPLAY_NAME_TO_MODEL_CODE.get(printer_model)
+    return model_code_for_printer(printer_model, serial)
+
+
+async def _check_upload_folder(db: AsyncSession, folder_id: int, user) -> JSONResponse | None:
+    """None when the virtual printer may store uploads in ``folder_id``.
+
+    The user setting it must be able to add files there themselves (#3201),
+    and it must be an internal folder: an external mount refuses a second file
+    of the same name, and slicer names repeat.
+    """
+    from backend.app.services.library_folder_access import get_writable_folder
+
+    folder = await get_writable_folder(db, folder_id, user)
+    if folder.is_external:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "Virtual printer uploads can't go to an external folder"},
+        )
+    return None
 
 
 def _target_missing(target_printer_id: int) -> JSONResponse:
@@ -122,6 +145,8 @@ async def _vp_to_dict(vp, db: AsyncSession, status: dict | None = None) -> dict:
         "access_code_set": bool(vp.access_code),
         "serial": serial,
         "target_printer_id": vp.target_printer_id,
+        "library_folder_id": vp.library_folder_id,
+        "queue_remove_after_print": vp.queue_remove_after_print,
         "auto_dispatch": vp.auto_dispatch,
         "queue_force_color_match": vp.queue_force_color_match,
         "save_ams_mapping": vp.save_ams_mapping,
@@ -157,9 +182,14 @@ async def list_virtual_printers(
         status = instance.get_status() if instance else {"running": False, "pending_files": 0}
         printers.append(await _vp_to_dict(vp, db, status))
 
+    from backend.app.services.virtual_printer.manager import MODEL_SERIAL_PREFIXES
+
     return {
         "printers": printers,
         "models": VIRTUAL_PRINTER_MODELS,
+        # The serial family each model's VP gets (Bambu's first 3 characters),
+        # which tells apart models of one name (H2C: O1C 094, O1C2 31B).
+        "model_serial_prefixes": {code: prefix[:3] for code, prefix in MODEL_SERIAL_PREFIXES.items()},
     }
 
 
@@ -169,6 +199,8 @@ async def create_virtual_printer(
     db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
+    # Who the #3201 folder check runs against: an API key as its owner.
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Create a new virtual printer."""
     from backend.app.models.virtual_printer import VP_MODE_VALUES, VirtualPrinter, normalize_vp_mode
@@ -216,6 +248,11 @@ async def create_virtual_printer(
         if not target_printer or not printer_scope.allows(target_printer.id):
             return _target_missing(body.target_printer_id)
 
+    if body.library_folder_id is not None and (
+        refused := await _check_upload_folder(db, body.library_folder_id, actor)
+    ):
+        return refused
+
     # Validate bind_ip uniqueness (against all enabled VPs)
     if body.bind_ip:
         result = await db.execute(
@@ -259,10 +296,15 @@ async def create_virtual_printer(
         enabled=body.enabled,
         mode=body.mode,
         model=body.model
-        or _resolve_printer_model(target_printer.model if target_printer and body.mode == "proxy" else None)
+        or _resolve_printer_model(
+            target_printer.model if target_printer and body.mode == "proxy" else None,
+            target_printer.serial_number if target_printer else None,
+        )
         or DEFAULT_VIRTUAL_PRINTER_MODEL,
         access_code=effective_access_code,
         target_printer_id=body.target_printer_id,
+        library_folder_id=body.library_folder_id,
+        queue_remove_after_print=body.queue_remove_after_print,
         auto_dispatch=body.auto_dispatch,
         queue_force_color_match=body.queue_force_color_match,
         save_ams_mapping=body.save_ams_mapping,
@@ -327,6 +369,68 @@ async def get_ca_certificate(
         return JSONResponse(status_code=500, content={"detail": "Could not generate the CA certificate"})
 
 
+@router.get("/ca-certificate/installer/{platform}")
+async def get_ca_certificate_installer(
+    platform: str,
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+):
+    """Return a script that adds the CA to Bambu Studio and OrcaSlicer.
+
+    ``platform`` is ``windows`` (a .cmd) or ``unix`` (a .sh for Linux and
+    macOS). The CA is written into the script, which then needs no access to
+    Bambuddy. Returns ``{"filename", "content"}``.
+    """
+    from backend.app.services.virtual_printer import virtual_printer_manager
+    from backend.app.services.virtual_printer.slicer_cert_installer import (
+        INSTALLER_PLATFORMS,
+        build_slicer_cert_installer,
+    )
+
+    if platform not in INSTALLER_PLATFORMS:
+        return JSONResponse(status_code=404, content={"detail": f"Unknown platform '{platform}'"})
+    try:
+        info = virtual_printer_manager.get_ca_certificate_info()
+    except Exception as e:
+        logger.error("Failed to obtain virtual printer CA certificate: %s", e)
+        return JSONResponse(status_code=500, content={"detail": "Could not generate the CA certificate"})
+    installer = build_slicer_cert_installer(platform, info["pem"], info["fingerprint_sha256"])
+    return {"filename": installer.filename, "content": installer.content}
+
+
+@router.get("/my-access-code")
+async def get_my_access_code(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db, scope="function"),
+):
+    """The signed-in user's personal access code for virtual printers (#1430).
+
+    Entered in their slicer instead of a virtual printer's own code, it marks
+    what they send as theirs. Made on first use. Only for a signed-in user (an
+    API key has no slicer); a virtual printer checks at every sign-in whether
+    the user may send to it.
+    """
+    from backend.app.services.virtual_printer.user_codes import code_for
+
+    user = await db.get(User, current_user.id)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not signed in")
+    return {"code": await code_for(db, user)}
+
+
+@router.post("/my-access-code")
+async def renew_my_access_code(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db, scope="function"),
+):
+    """Replace the signed-in user's personal access code; the old one stops working."""
+    from backend.app.services.virtual_printer.user_codes import code_for
+
+    user = await db.get(User, current_user.id)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not signed in")
+    return {"code": await code_for(db, user, renew=True)}
+
+
 @router.get("/{vp_id}/diagnostic", response_model=VPDiagnosticResult)
 async def diagnose_virtual_printer(
     vp_id: int,
@@ -381,6 +485,8 @@ async def update_virtual_printer(
     db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
+    # Who the #3201 folder check runs against: an API key as its owner.
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Update a virtual printer."""
     from backend.app.models.virtual_printer import VirtualPrinter
@@ -431,7 +537,13 @@ async def update_virtual_printer(
         if body.access_code and len(body.access_code) != 8:
             return JSONResponse(status_code=400, content={"detail": "Access code must be exactly 8 characters"})
         vp.access_code = body.access_code
-    if body.target_printer_id is not None:
+    if "target_printer_id" in body.model_fields_set and body.target_printer_id is None:
+        # An explicit null clears the target: a queue VP then sends its jobs
+        # to any printer of its model. The access code stays what it was, so
+        # a slicer already bound keeps working. A proxy VP needs a target, so
+        # the enable checks below turn it off.
+        vp.target_printer_id = None
+    elif body.target_printer_id is not None:
         from backend.app.models.printer import Printer
 
         result = await db.execute(select(Printer).where(Printer.id == body.target_printer_id))
@@ -441,7 +553,17 @@ async def update_virtual_printer(
         vp.target_printer_id = body.target_printer_id
         # Auto-inherit model from target printer in proxy mode (unless user explicitly set model)
         if body.model is None and vp.mode == "proxy" and target_printer.model:
-            vp.model = _resolve_printer_model(target_printer.model) or target_printer.model
+            vp.model = (
+                _resolve_printer_model(target_printer.model, target_printer.serial_number) or target_printer.model
+            )
+    if "library_folder_id" in body.model_fields_set and body.library_folder_id is None:
+        vp.library_folder_id = None  # back to the shared "Virtual Printer" folder
+    elif body.library_folder_id is not None:
+        if refused := await _check_upload_folder(db, body.library_folder_id, actor):
+            return refused
+        vp.library_folder_id = body.library_folder_id
+    if body.queue_remove_after_print is not None:
+        vp.queue_remove_after_print = body.queue_remove_after_print
     if body.auto_dispatch is not None:
         vp.auto_dispatch = body.auto_dispatch
     if body.queue_force_color_match is not None:
@@ -464,7 +586,9 @@ async def update_virtual_printer(
         result = await db.execute(select(PrinterModel).where(PrinterModel.id == vp.target_printer_id))
         existing_target = result.scalar_one_or_none()
         if existing_target and existing_target.model:
-            vp.model = _resolve_printer_model(existing_target.model) or existing_target.model
+            vp.model = (
+                _resolve_printer_model(existing_target.model, existing_target.serial_number) or existing_target.model
+            )
 
     # Force-inherit the access code from the target printer for non-proxy VPs.
     # See create_virtual_printer for the rationale: the bridge forwards slicer

@@ -24,6 +24,7 @@ PRINTER_MODEL_MAP = {
     "Bambu Lab H2S": "H2S",
     "Bambu Lab X2D": "X2D",
     "Bambu Lab A2L": "A2L",
+    "Bambu Lab H3C": "H3C",
 }
 
 # Map from printer_model_id (internal codes in slice_info.config) to short names
@@ -61,6 +62,10 @@ PRINTER_MODEL_ID_MAP = {
     "O1C": "H2C",
     "O1C2": "H2C",
     "O1S": "H2S",
+    # H3 series ("Bambu Lab H3C.json" model_id). One extruder with nine
+    # nozzles in Studio's profile, so not in DUAL_NOZZLE_MODELS or
+    # NOZZLE_RACK_MODELS: the H2C's rack ids and left/right split don't fit it.
+    "N10": "H3C",
 }
 
 
@@ -107,6 +112,7 @@ LINEAR_RAIL_MODELS = frozenset(
         "H2DPRO",
         "H2C",
         "H2S",
+        "H3C",
         # Internal codes
         "N1",  # A1 Mini
         "N2S",  # A1
@@ -120,6 +126,7 @@ LINEAR_RAIL_MODELS = frozenset(
         "O1C",  # H2C
         "O1C2",  # H2C (dual nozzle variant)
         "O1S",  # H2S
+        "N10",  # H3C
     ]
 )
 
@@ -184,9 +191,13 @@ NO_REMOTE_STORAGE_TOGGLE_MODELS = frozenset(
         # Display names (uppercase, no spaces)
         "P1S",
         "P1P",
+        # A2L (#3499): neither the printer (firmware 01.01.05.00) nor Bambu
+        # Studio or OrcaSlicer offers the option, per the reporter.
+        "A2L",
         # Internal codes
         "C11",  # P1P
         "C12",  # P1S
+        "N9",  # A2L
     ]
 )
 
@@ -355,7 +366,8 @@ def has_remote_storage_toggle(model: str | None) -> bool:
 
     False for P1-series (has an SD slot, but no on-printer screen and no
     published `support_save_remote_print_file_to_storage` capability, so the
-    Bambu Studio toggle never renders). The external_storage diagnostic uses
+    Bambu Studio toggle never renders), and for the A2L, which offers the
+    option nowhere (#3499). The external_storage diagnostic uses
     this to skip rather than report an unresolvable fail (#2524). Defaults to
     True for unknown models so the check keeps working on anything not
     explicitly listed.
@@ -372,6 +384,54 @@ def is_dual_nozzle_model(model: str | None) -> bool:
         return False
     normalized = model.strip().upper().replace(" ", "").replace("-", "")
     return normalized in DUAL_NOZZLE_MODELS
+
+
+# Chamber heater runs only in the airduct's heating mode (in cooling mode the
+# H3C acks M141 and stays off; the H2 series heats in either).
+CHAMBER_HEATER_NEEDS_HEATING_MODE_MODELS = frozenset(["H3C", "N10"])
+
+# `mc_percent` counts the start sequence (an H3C is at ~20% on layer 0), so a
+# stopped print is charged by layers instead (usage_progress).
+PROGRESS_INCLUDES_START_SEQUENCE_MODELS = frozenset(["H3C", "N10"])
+
+AMS3H_MODELS = frozenset(["H3C", "N10"])
+
+
+def _model_key(model: str | None) -> str:
+    return model.strip().upper().replace(" ", "").replace("-", "") if isinstance(model, str) else ""
+
+
+def progress_includes_start_sequence(model: str | None) -> bool:
+    """True when the printer's progress percent counts its start sequence (H3C)."""
+    return _model_key(model) in PROGRESS_INCLUDES_START_SEQUENCE_MODELS
+
+
+def has_ams3h(model: str | None) -> bool:
+    """True for a model that comes with an AMS 3H (H3C)."""
+    return _model_key(model) in AMS3H_MODELS
+
+
+def usage_progress(
+    model: str | None,
+    progress: float | int | None,
+    layer_num: int | None,
+    total_layers: int | None,
+) -> float | int:
+    """How much of a stopped print was printed, in percent, for charging its filament.
+
+    The printer's own progress, except on a model whose progress counts the
+    start sequence: there the share of layers printed (0 before layer 1).
+    """
+    if not progress_includes_start_sequence(model):
+        return progress if progress is not None else 0.0
+    if layer_num and layer_num > 0 and total_layers and total_layers > 0:
+        return min(100.0, 100.0 * layer_num / total_layers)
+    return 0.0
+
+
+def chamber_heater_needs_heating_mode(model: str | None) -> bool:
+    """True when a chamber target only takes effect with the airduct in heating mode (H3C)."""
+    return _model_key(model) in CHAMBER_HEATER_NEEDS_HEATING_MODE_MODELS
 
 
 def is_nozzle_rack_model(model: str | None) -> bool:

@@ -73,7 +73,8 @@ import { getBedTypeInfo } from '../utils/bedType';
 import { getColorName } from '../utils/colors';
 import { productLineOf, useFilamentNameByIdx } from '../components/PrintModal/useFilamentLabels';
 import type { PrintQueueItem, PrintQueueBulkUpdate, Permission, CalibrationMode, PrinterStatus, SlotSpoolIdentity } from '../api/client';
-import { formatSlotLabel, getEmptySlotKind } from '../utils/amsHelpers';
+import { formatSlotLabel, getEmptySlotKind, isAmsHtUnit } from '../utils/amsHelpers';
+import { locateTray, trayLayoutOf } from '../utils/trayIds';
 import type { PlateMetadata } from '../types/plates';
 import { Card } from '../components/Card';
 import { FilamentSwatch } from '../components/FilamentSwatch';
@@ -119,16 +120,18 @@ type QueueFilamentDisplay = {
  * tray_type either, #2527), so the card only warns on a positive finding.
  */
 function emptyMappedSlotLabel(status: PrinterStatus | undefined, trayId: number): string | undefined {
-  // The external holder reports no presence signal (the status route sends
-  // vt_tray without state / exists), so its emptiness can't be confirmed.
-  if (!status?.connected || trayId >= 254) return undefined;
-  const isHt = trayId >= 128;
-  const amsId = isHt ? trayId : Math.floor(trayId / 4);
-  const slot = isHt ? 0 : trayId % 4;
+  if (!status?.connected) return undefined;
+  // null for an external input: the external holder reports no presence signal
+  // (the status route sends vt_tray without state / exists), so its emptiness
+  // can't be confirmed.
+  const located = locateTray(trayLayoutOf(status.ams, status.vt_tray), trayId);
+  if (!located) return undefined;
+  const [amsId, slot] = located;
+  const isHt = isAmsHtUnit(amsId);
   const unit = status.ams?.find((ams) => ams.id === amsId);
   const tray = isHt ? unit?.tray[0] : unit?.tray.find((candidate) => candidate.id === slot);
   if (getEmptySlotKind(tray) !== 'physical') return undefined;
-  return formatSlotLabel(amsId, slot, isHt, false);
+  return formatSlotLabel(amsId, slot, isHt, false, unit?.ams_type);
 }
 
 /**

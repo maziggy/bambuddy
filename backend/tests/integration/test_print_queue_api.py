@@ -767,6 +767,51 @@ class TestPrintQueueAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_a_vp_job_shows_the_pick_it_keeps_for_its_archive(
+        self, async_client: AsyncClient, printer_factory, db_session
+    ):
+        """A virtual printer's job prints a File Manager file and has no
+        archive until it prints, but keeps the slicer's pick for it (#2700):
+        the badge shows, and the edit dialog's Mapping button gets the pick."""
+        from backend.app.models.library import LibraryFile
+        from backend.app.models.print_queue import PrintQueueItem
+
+        printer = await printer_factory()
+        other_printer = await printer_factory()
+        kept = json.dumps({"mapping": [4, -1, 12], "printer_id": printer.id})
+        library_file = LibraryFile(
+            filename="vp.gcode.3mf",
+            file_path="library/vp.3mf",
+            file_type="3mf",
+            file_size=1,
+            source_type="virtual_printer",
+        )
+        db_session.add(library_file)
+        await db_session.flush()
+        fixed = PrintQueueItem(
+            printer_id=printer.id, library_file_id=library_file.id, status="pending", slicer_ams_mapping=kept
+        )
+        model_based = PrintQueueItem(
+            target_model="X1C", library_file_id=library_file.id, status="pending", slicer_ams_mapping=kept
+        )
+        # Moved to another printer: the trays were resolved on the first one.
+        moved = PrintQueueItem(
+            printer_id=other_printer.id, library_file_id=library_file.id, status="pending", slicer_ams_mapping=kept
+        )
+        db_session.add_all([fixed, model_based, moved])
+        await db_session.commit()
+
+        rows = {row["id"]: row for row in (await async_client.get("/api/v1/queue/")).json()}
+
+        assert rows[fixed.id]["slicer_ams_mapping"] == [4, -1, 12]
+        assert rows[fixed.id]["archive_has_slicer_ams_mapping"] is True
+        assert rows[model_based.id]["slicer_ams_mapping"] is None
+        assert rows[model_based.id]["archive_has_slicer_ams_mapping"] is False
+        assert rows[moved.id]["slicer_ams_mapping"] is None
+        assert rows[moved.id]["archive_has_slicer_ams_mapping"] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_add_to_queue_with_plate_id(
         self, async_client: AsyncClient, printer_factory, archive_factory, db_session
     ):

@@ -285,6 +285,22 @@ def reset_usage_tracker_sessions():
 
 
 @pytest.fixture(autouse=True)
+def reset_ftp_stall_gate():
+    """Drop the FTP client's per-printer stall cool-off and cleartext replies.
+
+    Class-level dicts keyed by IP, and most tests share one printer IP: a
+    listing that timed out in one test would keep the next one's timelapse
+    scan from connecting at all (#3474)."""
+    from backend.app.services.bambu_ftp import BambuFTPClient, _stalled_until
+
+    _stalled_until.clear()
+    BambuFTPClient._cleartext_reply.clear()
+    yield
+    _stalled_until.clear()
+    BambuFTPClient._cleartext_reply.clear()
+
+
+@pytest.fixture(autouse=True)
 def reset_auth_enabled_cache():
     """Drop the module-level auth-enabled cache between tests (issue #2572).
 

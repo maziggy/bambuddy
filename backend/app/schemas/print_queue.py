@@ -287,6 +287,10 @@ class PrintQueueItemResponse(BaseModel):
     # reuses that exact physical spool instead of the scheduler re-deriving one
     # from the file's static type/color.
     archive_has_slicer_ams_mapping: bool = False
+    # A virtual printer's job not printed yet: the slicer's AMS pick it keeps
+    # for the archive its print will create (#2700), when it was resolved
+    # against this row's printer. The badge above is set for it too.
+    slicer_ams_mapping: list[int] | None = None
 
     # User tracking (Issue #206)
     created_by_id: int | None = None

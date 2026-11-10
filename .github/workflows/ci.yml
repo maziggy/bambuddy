@@ -466,9 +466,14 @@ jobs:
           cache-from: type=gha,scope=backend-test
           cache-to: type=gha,scope=backend-test,mode=max
 
+      # Same as docker-compose.test.yml: some backend tests read the frontend
+      # sources and scripts/, and --init reaps the children some tests kill
+      # (with pytest as PID 1 they stay zombies that answer kill(pid, 0)).
       - name: Run backend tests in Docker (shard ${{ matrix.shard }}/4)
         run: |
-          docker run --rm \
+          docker run --rm --init \
+            -v "$PWD/frontend/src:/app/frontend/src:ro" \
+            -v "$PWD/scripts:/app/scripts:ro" \
             -e TESTING=1 \
             -e PYTHONUNBUFFERED=1 \
             bambuddy-backend-test:latest \
@@ -484,7 +489,8 @@ jobs:
     name: Docker Build
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
-    timeout-minutes: 20
+    # The integration suite alone takes well over 20 minutes on a runner.
+    timeout-minutes: 40
     needs: [backend-tests, frontend-build]
     steps:
       - uses: actions/checkout@v6
@@ -535,8 +541,17 @@ jobs:
       - name: Build integration test runner
         run: docker compose -f docker-compose.test.yml build integration-test-runner
 
+      # The compose command's -n 30 fits the local test host, not a 4-CPU
+      # runner: there it was slower and tests ran out of time. --timeout
+      # turns a hung test into a failure with its name instead of a cancel.
       - name: Run integration test suite
-        run: docker compose -f docker-compose.test.yml run --rm integration-test-runner
+        run: |
+          docker compose -f docker-compose.test.yml run --rm integration-test-runner \
+            pytest backend/tests/integration/ \
+              --tb=short \
+              --timeout=60 --timeout-method=thread \
+              -p no:cacheprovider \
+              -n auto
 
       - name: Show logs on failure
         if: failure()

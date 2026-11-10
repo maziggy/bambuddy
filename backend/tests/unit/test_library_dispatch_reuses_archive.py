@@ -13,6 +13,7 @@ always were.
 """
 
 import hashlib
+import json
 from contextlib import ExitStack
 from datetime import datetime
 from pathlib import Path
@@ -415,3 +416,19 @@ def test_the_completions_media_work_holds_the_archive():
 
     assert archive_work.is_held(41)
     spawned[0].close()
+
+
+@pytest.mark.asyncio
+async def test_a_joined_archive_takes_the_slicer_pick_of_a_vp_upload(case):
+    # A virtual printer's queue item keeps the slicer's AMS pick for the
+    # archive its print makes (#2700); joining one, it goes there.
+    existing = await case.archive(extra_data={"keep": 1})
+
+    kept = json.dumps({"mapping": [4, -1], "printer_id": case.printer_id})
+    item, archive = await _start(case, await case.item(slicer_ams_mapping=kept), AsyncMock())
+
+    assert item.archive_id == existing
+    assert archive.extra_data == {
+        "keep": 1,
+        "slicer_ams_mapping": {"mapping": [4, -1], "printer_id": case.printer_id},
+    }

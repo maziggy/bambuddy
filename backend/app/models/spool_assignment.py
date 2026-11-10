@@ -30,6 +30,11 @@ class SpoolAssignment(Base):
         """Get printer name from loaded relationship."""
         return self.printer.name if self.printer else None
 
+    @property
+    def printer_model(self) -> str | None:
+        """Printer model from the loaded relationship (lets the UI label an H3C's per-hotend external inputs)."""
+        return self.printer.model if self.printer else None
+
 
 from backend.app.models.printer import Printer  # noqa: E402, F401
 from backend.app.models.spool import Spool  # noqa: E402, F401

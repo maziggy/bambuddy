@@ -12,7 +12,7 @@ import logging
 import socket
 import ssl
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -106,9 +106,20 @@ class SimpleMQTTServer:
         model: str = "",
         bind_address: str = "0.0.0.0",  # nosec B104
         vp_name: str = "",
+        authenticate_user: Callable[[str], Awaitable[int | None]] | None = None,
+        authorize_control: Callable[[int], Awaitable[bool]] | None = None,
     ):
         self.serial = serial
         self.access_code = access_code
+        # A personal access code (#1430): returns the user's id, or None.
+        self.authenticate_user = authenticate_user
+        # Whether that user may send commands to the target printer now. The
+        # bridge forwards a slicer's commands (stop, pause, G-code, AMS) to the
+        # real printer; a personal code alone only lets someone send files.
+        self.authorize_control = authorize_control
+        # The user each connection signed in as, for those that used a
+        # personal code (keyed by the connection's writer).
+        self._connection_users: dict[asyncio.StreamWriter, int] = {}
         self.model = model
         self.cert_path = cert_path
         self.key_path = key_path
@@ -469,11 +480,13 @@ class SimpleMQTTServer:
                         writer.write(bytes([0x20, 0x02, 0x00, 0x05]))  # Not authorized
                         await writer.drain()
                         break
+                    # Counted before the lookup, so connections in parallel
+                    # can't all pass the check above first.
+                    self._record_auth_failure(source_ip)
                     authenticated, keep_alive = await self._handle_connect(payload, writer)
                     if not authenticated:
-                        self._record_auth_failure(source_ip)
                         break
-                    self._clear_auth_failures(source_ip)
+                    self._release_auth_attempt(source_ip)
                     # Drop the application-level read timeout; rely on
                     # SO_KEEPALIVE below for dead-connection detection.
                     # Real Bambu firmware does the same — accept any
@@ -560,6 +573,7 @@ class SimpleMQTTServer:
             logger.debug("MQTT client disconnected: %s", client_id)
             self._clients.pop(client_id, None)
             self._client_serials.pop(client_id, None)
+            self._connection_users.pop(writer, None)
             try:
                 writer.close()
                 await writer.wait_closed()
@@ -655,9 +669,17 @@ class SimpleMQTTServer:
         now = _time.monotonic()
         self._auth_failures.setdefault(source_ip, []).append(now)
 
-    def _clear_auth_failures(self, source_ip: str) -> None:
-        """Reset ``source_ip``'s failure history after a successful auth."""
-        self._auth_failures.pop(source_ip, None)
+    def _release_auth_attempt(self, source_ip: str) -> None:
+        """Take back the one attempt counted ahead of a sign-in that succeeded.
+
+        Not the failures before it: a good sign-in wiping them let a user with
+        a code of their own guess others' codes four at a time (#1430).
+        """
+        attempts = self._auth_failures.get(source_ip)
+        if attempts:
+            attempts.pop()
+            if not attempts:
+                self._auth_failures.pop(source_ip, None)
 
     async def _handle_connect(self, payload: bytes, writer: asyncio.StreamWriter) -> tuple[bool, int]:
         """Handle MQTT CONNECT packet.
@@ -707,7 +729,13 @@ class SimpleMQTTServer:
             # the auth check from leaking the access code via response timing
             # under network jitter — LAN-only threat is marginal, but it's
             # the standard fix and costs nothing.
-            if username == "bblp" and hmac.compare_digest(password, self.access_code):
+            authenticated = username == "bblp" and hmac.compare_digest(password, self.access_code)
+            if not authenticated and username == "bblp" and self.authenticate_user is not None:
+                user_id = await self.authenticate_user(password)
+                if user_id is not None:
+                    authenticated = True
+                    self._connection_users[writer] = user_id
+            if authenticated:
                 # Send CONNACK with success
                 writer.write(bytes([0x20, 0x02, 0x00, 0x00]))
                 await writer.drain()
@@ -1313,6 +1341,20 @@ class SimpleMQTTServer:
 
             # Forward anything the synthetic flow didn't handle to the real
             # printer. AMS load / dry / xcam / system / extrusion_cali_get etc.
+            user_id = self._connection_users.get(writer)
+            if (
+                not handled_locally
+                and self._bridge is not None
+                and self._bridge.is_active
+                and user_id is not None
+                and (self.authorize_control is None or not await self.authorize_control(user_id))
+            ):
+                logger.info(
+                    "%sMQTT command from user %s not passed to the printer: no printers:control",
+                    self._log_prefix,
+                    user_id,
+                )
+                handled_locally = True
             if not handled_locally and self._bridge is not None and self._bridge.is_active:
                 # Remember which client originated this command so the
                 # printer's response goes back only to them (not fanned

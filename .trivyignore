@@ -30,3 +30,10 @@ CVE-2026-30997
 # libopenjp2-7 is pulled in transitively by ffmpeg but Bambuddy never
 # decodes JPEG 2000 files (printer thumbnails are PNG, camera is MJPEG/H.264).
 CVE-2026-6192
+
+# zlib gz_write() heap overflow after a failed write() (HIGH). No fixed
+# zlib1g in Debian trixie yet. Not reachable: the bug is in the gz* file API
+# (gzopen/gzwrite), which nothing in the image uses for its data. Python's
+# gzip and zlib modules, Pillow and ffmpeg all go through deflate/inflate.
+# Remove this line once Debian ships the fix.
+CVE-2026-76844

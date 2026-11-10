@@ -58,6 +58,9 @@ CLONED_SETTING_COLUMNS = (
     "project_id",
     "batch_id",
     "ams_mapping",
+    # A virtual printer job's slicer pick for its archive (#2700): each copy's
+    # print makes or joins an archive too.
+    "slicer_ams_mapping",
     "filament_overrides",
     "plate_id",
     "print_time_seconds",
@@ -512,10 +515,11 @@ def _clone_queue_item(source: PrintQueueItem, *, position: int, created_by_id: i
     either fire immediately (it is in the past) or silently park the new run
     until a moment the user chose for a different print.
 
-    ``cleanup_library_after_dispatch`` is forced off. It only ever comes from
-    the Printers-page direct-print flow, where it deletes the transient library
-    row after dispatch — replaying that on a clone would delete the source file
-    out from under the rest of the order.
+    ``cleanup_library_after_dispatch`` is forced off. It comes from the
+    Printers-page direct-print flow and from a queue virtual printer's "Remove
+    from File Manager once it prints", and deletes the library row at dispatch
+    — replaying that on a clone would delete the source file out from under the
+    rest of the order.
     """
     clone = PrintQueueItem(
         status="pending",

@@ -529,20 +529,22 @@ class TestAuthRateLimit:
         assert server._is_auth_rate_limited("10.0.0.1") is True
         assert server._is_auth_rate_limited("10.0.0.2") is False
 
-    def test_successful_auth_clears_failure_history(self, server):
-        """A successful auth must wipe the IP's prior-failures stash so the
-        user isn't penalised for typos that they ultimately corrected."""
+    def test_a_successful_auth_takes_back_only_its_own_attempt(self, server):
+        """Each attempt is counted before the code is checked; a success takes
+        back just that one. Wiping the earlier failures let a user with a code
+        of their own guess other users' personal codes four at a time between
+        their own sign-ins (#1430); typos simply age out of the window."""
         from backend.app.services.virtual_printer.mqtt_server import _AUTH_RATE_LIMIT_MAX_ATTEMPTS
 
         ip = "192.168.1.50"
-        # Build up failures one short of the cap.
         for _ in range(_AUTH_RATE_LIMIT_MAX_ATTEMPTS - 1):
             server._record_auth_failure(ip)
-        # Successful auth must clear them.
-        server._clear_auth_failures(ip)
-        # Now a subsequent failure starts the count over at 1 (well under cap).
+        # A good sign-in: counted ahead, then taken back.
         server._record_auth_failure(ip)
-        assert server._is_auth_rate_limited(ip) is False
+        server._release_auth_attempt(ip)
+        # The earlier failures still count: one more and the IP is out.
+        server._record_auth_failure(ip)
+        assert server._is_auth_rate_limited(ip) is True
 
 
 class TestPendingRequestRouting:

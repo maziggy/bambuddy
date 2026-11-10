@@ -632,6 +632,7 @@ async def init_db():
         finance,
         github_backup,
         group,
+        hms_notified_fault,
         kprofile_note,
         library,
         local_preset,

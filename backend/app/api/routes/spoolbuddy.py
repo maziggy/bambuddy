@@ -1134,7 +1134,17 @@ async def nfc_write_result(
                 )
                 return {"status": "ok", "linked": False, "message": "Spool not found"}
 
-            spool.tag_uid = req.tag_uid.upper()
+            # The tag now holds this spool's data, so it moves here from any
+            # other spool that had it, as in the Spoolman branch above.
+            # Otherwise two spools share the UID and a scan finds the old one
+            # (#3505). Archived spools give it up as well, as link-tag does.
+            tag_uid = req.tag_uid.upper()
+            previous = await db.execute(select(Spool).where(func.upper(Spool.tag_uid) == tag_uid, Spool.id != spool.id))
+            for holder in previous.scalars().all():
+                holder.tag_uid = None
+                logger.info("Tag %s moved from spool %d to spool %d", tag_uid, holder.id, spool.id)
+
+            spool.tag_uid = tag_uid
             spool.tag_type = "ntag"
             spool.data_origin = "opentag3d"
             spool.encode_time = datetime.now(timezone.utc)

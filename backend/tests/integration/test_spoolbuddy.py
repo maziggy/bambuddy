@@ -960,6 +960,68 @@ class TestWriteTagEndpoints:
         assert spool_data["data_origin"] == "opentag3d"
         assert spool_data["encode_time"] is not None
 
+    async def _write_result(self, async_client: AsyncClient, device_id: str, spool_id: int, tag_uid: str):
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            resp = await async_client.post(
+                f"{API}/nfc/write-result",
+                json={"device_id": device_id, "spool_id": spool_id, "tag_uid": tag_uid, "success": True},
+            )
+        assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_written_tag_moves_from_the_spool_that_had_it(
+        self, async_client: AsyncClient, db_session: AsyncSession, device_factory, spool_factory
+    ):
+        """#3505: the tag now holds spool B's data, so spool A gives it up;
+        before, both kept the UID and a scan found A."""
+        device = await device_factory(device_id="sb-move", pending_command="write_tag")
+        spool_a = await spool_factory(tag_uid="04AABB11223344", tag_type="ntag")
+        spool_b = await spool_factory(tag_uid=None)
+
+        # The daemon reports the UID in any case; the stored one is upper case.
+        await self._write_result(async_client, device.device_id, spool_b.id, "04aabb11223344")
+
+        await db_session.refresh(spool_a)
+        await db_session.refresh(spool_b)
+        assert spool_a.tag_uid is None
+        assert spool_b.tag_uid == "04AABB11223344"
+        # A scan of the tag now finds B.
+        lookup = await async_client.get("/api/v1/inventory/spools/by-tag", params={"tag_uid": "04AABB11223344"})
+        assert lookup.status_code == 200
+        assert lookup.json()["id"] == spool_b.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_an_archived_spool_gives_up_the_written_tag(
+        self, async_client: AsyncClient, db_session: AsyncSession, device_factory, spool_factory
+    ):
+        device = await device_factory(device_id="sb-move-arch", pending_command="write_tag")
+        archived = await spool_factory(tag_uid="04AABB11223355", archived_at=datetime.now(timezone.utc))
+        spool = await spool_factory(tag_uid=None)
+
+        await self._write_result(async_client, device.device_id, spool.id, "04AABB11223355")
+
+        await db_session.refresh(archived)
+        assert archived.tag_uid is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_writing_a_spool_its_own_tag_again_keeps_it(
+        self, async_client: AsyncClient, db_session: AsyncSession, device_factory, spool_factory, caplog
+    ):
+        device = await device_factory(device_id="sb-rewrite", pending_command="write_tag")
+        spool = await spool_factory(tag_uid="04AABB11223366", tag_type="ntag")
+
+        with caplog.at_level("INFO", logger="backend.app.api.routes.spoolbuddy"):
+            await self._write_result(async_client, device.device_id, spool.id, "04AABB11223366")
+
+        await db_session.refresh(spool)
+        assert spool.tag_uid == "04AABB11223366"
+        # Nothing moved: the spool is not reported as giving the tag to itself.
+        assert "moved from spool" not in caplog.text
+
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_write_result_failure_broadcasts_error(

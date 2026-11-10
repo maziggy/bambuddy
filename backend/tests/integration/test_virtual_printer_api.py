@@ -387,6 +387,15 @@ class TestVirtualPrinterTailscaleToggleAPI:
 class TestVirtualPrinterCaCertificateAPI:
     """Integration tests for GET /api/v1/virtual-printers/ca-certificate."""
 
+    @pytest.fixture(autouse=True)
+    def _own_ca_dir(self, monkeypatch, tmp_path):
+        # The CA lives under the real data dir, which all test workers share.
+        # On a fresh one (Docker) they each created a CA at once and
+        # overwrote one another between two requests of the same test.
+        from backend.app.services.virtual_printer import virtual_printer_manager
+
+        monkeypatch.setattr(virtual_printer_manager, "_base_dir", tmp_path)
+
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_get_ca_certificate_returns_pem(self, async_client: AsyncClient):

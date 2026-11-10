@@ -1637,6 +1637,10 @@ class BambuMQTTClient:
         self._previous_gcode_state: str | None = None
         self._previous_gcode_file: str | None = None
         self._was_running: bool = False  # Track if we've seen RUNNING state for current print
+        # #3485: the first state after startup was PAUSE with a print loaded,
+        # e.g. a printer in power-loss recovery when Bambuddy came back. Its
+        # PAUSE -> RUNNING is that print resuming, not a new one.
+        self._paused_at_startup: bool = False
         self._completion_triggered: bool = False  # Prevent duplicate completion triggers
         self._timelapse_during_print: bool = False  # Track if timelapse was active during this print
         # #1721: one-shot guard so the end-of-print stage-22 detector
@@ -5998,13 +6002,20 @@ class BambuMQTTClient:
 
         # Detect print start (state changes TO RUNNING with a file)
         current_file = self.state.gcode_file or self.state.current_print
+        if self._previous_gcode_state is None and self.state.state == "PAUSE" and current_file:
+            self._paused_at_startup = True
         is_new_print = (
             self.state.state == "RUNNING"
             and self._previous_gcode_state is not None  # #1304: skip on first push after Bambuddy startup
             and self._previous_gcode_state != "RUNNING"
             and current_file
             and not self._was_running  # Prevent duplicates when resuming from PAUSE
+            # #3485: a print paused when Bambuddy started resumes like one it
+            # found running (#1304): restart recovery below, not a new print.
+            and not (self._paused_at_startup and self._previous_gcode_state == "PAUSE")
         )
+        if self.state.state != "PAUSE":
+            self._paused_at_startup = False
         # Also detect if file changed while running (new print started)
         is_file_change = (
             self.state.state == "RUNNING"

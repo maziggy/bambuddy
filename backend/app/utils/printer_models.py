@@ -191,9 +191,13 @@ NO_REMOTE_STORAGE_TOGGLE_MODELS = frozenset(
         # Display names (uppercase, no spaces)
         "P1S",
         "P1P",
+        # A2L (#3499): neither the printer (firmware 01.01.05.00) nor Bambu
+        # Studio or OrcaSlicer offers the option, per the reporter.
+        "A2L",
         # Internal codes
         "C11",  # P1P
         "C12",  # P1S
+        "N9",  # A2L
     ]
 )
 
@@ -362,7 +366,8 @@ def has_remote_storage_toggle(model: str | None) -> bool:
 
     False for P1-series (has an SD slot, but no on-printer screen and no
     published `support_save_remote_print_file_to_storage` capability, so the
-    Bambu Studio toggle never renders). The external_storage diagnostic uses
+    Bambu Studio toggle never renders), and for the A2L, which offers the
+    option nowhere (#3499). The external_storage diagnostic uses
     this to skip rather than report an unresolvable fail (#2524). Defaults to
     True for unknown models so the check keeps working on anything not
     explicitly listed.

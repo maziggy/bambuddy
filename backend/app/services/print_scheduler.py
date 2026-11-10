@@ -1503,6 +1503,9 @@ class PrintScheduler:
         # when a gate setting toggles off mid-hold — the release publishes
         # bed → 0 first).
         self._keep_warm: dict[int, _KeepWarmEntry] = {}
+        # Printers whose plate-clear gate differs from the setting (#2860):
+        # printer id -> "on" / "off". Refreshed once per queue check.
+        self._plate_clear_overrides: dict[int, str] = {}
         # Preheat rollback registry: printer_id -> subset of
         # {"bed", "chamber", "airduct"} listing which preheat commands
         # actually fired for the in-flight dispatch. `_dispatch_one` unwinds
@@ -1809,6 +1812,7 @@ class PrintScheduler:
             # blocking dispatch to FINISH-state printers forever with no UI path
             # to clear it (#1865).
             require_plate_clear = await self._get_bool_setting(db, "require_plate_clear", default=False)
+            await self._load_plate_clear_overrides(db)
 
             # Dispatch and track scheduled drying runs (#2638)
             await self._check_scheduled_dryings(db)
@@ -2245,7 +2249,9 @@ class PrintScheduler:
                         continue
 
                     # Check if printer is idle
-                    printer_idle = self._is_printer_idle(item.printer_id, require_plate_clear)
+                    printer_idle = self._is_printer_idle(
+                        item.printer_id, self._plate_gate(item.printer_id, require_plate_clear)
+                    )
                     printer_connected = printer_manager.is_connected(item.printer_id)
 
                     # If printer not connected, try to power on via smart plug
@@ -2277,7 +2283,9 @@ class PrintScheduler:
                                     except Exception as e:
                                         logger.warning("Failed to power on extra plug '%s': %s", extra_plug.name, e)
                                 printer_connected = True
-                                printer_idle = self._is_printer_idle(item.printer_id, require_plate_clear)
+                                printer_idle = self._is_printer_idle(
+                                    item.printer_id, self._plate_gate(item.printer_id, require_plate_clear)
+                                )
                             else:
                                 logger.warning("Could not power on printer %s via smart plug", item.printer_id)
                                 await hold_for_printer(
@@ -2307,7 +2315,9 @@ class PrintScheduler:
                             item.printer_id,
                             "not idle",
                             self._pinned_hold_reason(
-                                item.printer_id, printer_label(item.printer_id), require_plate_clear
+                                item.printer_id,
+                                printer_label(item.printer_id),
+                                self._plate_gate(item.printer_id, require_plate_clear),
                             ),
                         )
                         continue
@@ -3459,7 +3469,9 @@ class PrintScheduler:
                     # sibling instead of spending this pass — and every pass —
                     # on the same printer.
                     continue
-                if require_plate_clear and printer_manager.is_awaiting_plate_clear(printer.id):
+                if self._plate_gate(printer.id, require_plate_clear) and printer_manager.is_awaiting_plate_clear(
+                    printer.id
+                ):
                     # Waking this one buys nothing: it would boot into IDLE and
                     # then be held by the plate-clear gate, which is exactly
                     # what the reporter's log shows happening for 80 minutes
@@ -3616,7 +3628,11 @@ class PrintScheduler:
                 continue
 
             is_connected = printer_manager.is_connected(printer.id)
-            is_idle = self._is_printer_idle(printer.id, require_plate_clear) if is_connected else False
+            is_idle = (
+                self._is_printer_idle(printer.id, self._plate_gate(printer.id, require_plate_clear))
+                if is_connected
+                else False
+            )
 
             if not is_connected:
                 # An offline printer whose last known filament cannot run this
@@ -5387,6 +5403,26 @@ class PrintScheduler:
             return False
 
         return True
+
+    async def _load_plate_clear_overrides(self, db: AsyncSession) -> None:
+        """Read which printers override the plate-clear setting (#2860)."""
+        result = await db.execute(
+            select(Printer.id, Printer.plate_clear_override).where(Printer.plate_clear_override != "inherit")
+        )
+        self._plate_clear_overrides = dict(result.all())
+
+    def _plate_gate(self, printer_id: int, require_plate_clear: bool) -> bool:
+        """Whether this printer waits for the plate-clear confirmation (#2860).
+
+        ``require_plate_clear`` is the global setting; the printer's own
+        override wins over it, "inherit" printers follow it.
+        """
+        override = self._plate_clear_overrides.get(printer_id)
+        if override == "on":
+            return True
+        if override == "off":
+            return False
+        return require_plate_clear
 
     def _is_printer_idle(self, printer_id: int, require_plate_clear: bool = True) -> bool:
         """Check if a printer is connected and idle."""
@@ -7458,11 +7494,18 @@ class PrintScheduler:
         dispatch_set = set(dispatch_ids)
         dispatched_printers = {it.printer_id for it in items if it.id in dispatch_set and it.printer_id}
         pending_printer_ids = {it.printer_id for it in items if it.printer_id}
-        warm_candidates = (pending_printer_ids & busy_printers) - dispatched_printers
+        # Keep-warm covers the plate-clear window, so a printer that has none
+        # (override off) is not held warm, and one that has one (override on)
+        # is, whatever the setting says (#2860).
+        warm_candidates = {
+            pid
+            for pid in (pending_printer_ids & busy_printers) - dispatched_printers
+            if self._plate_gate(pid, require_plate_clear)
+        }
 
         keep_warm_enabled = await self._get_bool_setting(db, "queue_keep_bed_warm", default=False)
         preheat_on = await self._get_bool_setting(db, "preheat_enabled", default=False)
-        gate_open = keep_warm_enabled and require_plate_clear and preheat_on
+        gate_open = keep_warm_enabled and preheat_on
 
         # Release sweep first — must run even when gate_open is False so a
         # printer owned by keep-warm when a gate toggles off gets released.

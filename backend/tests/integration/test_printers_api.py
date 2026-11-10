@@ -254,6 +254,47 @@ class TestPrintersAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_plate_clear_override_defaults_to_inherit(self, async_client: AsyncClient, printer_factory):
+        """A printer follows the require_plate_clear setting until told otherwise (#2860)."""
+        printer = await printer_factory()
+
+        response = await async_client.get(f"/api/v1/printers/{printer.id}")
+
+        assert response.status_code == 200
+        assert response.json()["plate_clear_override"] == "inherit"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_plate_clear_override(self, async_client: AsyncClient, printer_factory):
+        """The override can be set, read back and set back to inherit (#2860)."""
+        printer = await printer_factory()
+
+        for value in ("off", "on", "inherit"):
+            response = await async_client.patch(f"/api/v1/printers/{printer.id}", json={"plate_clear_override": value})
+            assert response.status_code == 200
+            assert response.json()["plate_clear_override"] == value
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_plate_clear_override_tells_wled(self, async_client: AsyncClient, printer_factory):
+        """WLED follows the printer's override, so the manager is told on change (#2860)."""
+        printer = await printer_factory()
+        with patch("backend.app.api.routes.printers.wled_manager.set_plate_clear_override") as set_override:
+            response = await async_client.patch(f"/api/v1/printers/{printer.id}", json={"plate_clear_override": "off"})
+        assert response.status_code == 200
+        set_override.assert_called_once_with(printer.id, "off")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_plate_clear_override_rejects_unknown_value(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory()
+
+        response = await async_client.patch(f"/api/v1/printers/{printer.id}", json={"plate_clear_override": "maybe"})
+
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_deactivate_printer_requests_wled_offline(self, async_client: AsyncClient, printer_factory):
         printer = await printer_factory(is_active=True)
         with (

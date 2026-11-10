@@ -86,6 +86,8 @@ class WLEDManager:
         self._client = client
         self._owns_client = client is None
         self.require_plate_clear = False
+        # Printers that override require_plate_clear (#2860): id -> "on" / "off".
+        self._plate_clear_overrides: dict[int, str] = {}
         self.retry_seconds = WLED_RETRY_SECONDS
         self._configs: dict[int, WLEDConfig] = {}
         self._runtime: dict[int, _WLEDRuntime] = {}
@@ -107,8 +109,20 @@ class WLEDManager:
             self._configs[printer_id] = WLEDConfig()
             logger.warning("Ignoring invalid WLED configuration for printer %d", printer_id)
 
+    def set_plate_clear_override(self, printer_id: int, override: str | None) -> None:
+        """Record a printer's plate-clear override; "inherit" follows the setting (#2860)."""
+        if override in ("on", "off"):
+            self._plate_clear_overrides[printer_id] = override
+        else:
+            self._plate_clear_overrides.pop(printer_id, None)
+
+    def _requires_plate_clear(self, printer_id: int) -> bool:
+        override = self._plate_clear_overrides.get(printer_id)
+        return self.require_plate_clear if override is None else override == "on"
+
     def remove_printer(self, printer_id: int) -> None:
         self._configs.pop(printer_id, None)
+        self._plate_clear_overrides.pop(printer_id, None)
         self._cancel_runtime(printer_id, remove=True)
 
     def handle_status(
@@ -128,7 +142,9 @@ class WLEDManager:
             (
                 candidate
                 for candidate in _applicable_wled_statuses(
-                    state, awaiting_plate_clear=awaiting_plate_clear, require_plate_clear=self.require_plate_clear
+                    state,
+                    awaiting_plate_clear=awaiting_plate_clear,
+                    require_plate_clear=self._requires_plate_clear(printer_id),
                 )
                 if getattr(config.presets, candidate) is not None
             ),

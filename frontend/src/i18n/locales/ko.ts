@@ -619,6 +619,11 @@ export default {
       wearCostHelp: '이 프린터로 한 시간 출력할 때 드는 마모 및 부품 비용입니다. 지금부터 모든 출력의 비용에 더해지며, 이전 출력은 바뀌지 않습니다. 비워 두면 꺼집니다.',
       dispatchPriorityLabel: '모델 지정 작업 우선순위',
       dispatchPriorityHelp: '모델 지정 작업의 프린터 순서가 프린터별 우선순위일 때 사용합니다. 작은 숫자가 먼저 선택되고, 비어 있으면 마지막입니다.',
+      plateClearLabel: '플레이트 비움 확인',
+      plateClearInherit: '전역 설정 사용',
+      plateClearOn: '항상 필요',
+      plateClearOff: '필요 없음',
+      plateClearHelp: '대기열의 출력이 이 프린터의 플레이트가 비었다는 확인을 기다릴지 정합니다. 플레이트 체인저가 스스로 플레이트를 비우는 프린터는 필요 없음을 선택하세요. 전역 설정은 설정 → 워크플로 → 대기열 및 전송에 있습니다.',
       fromPrinterSettings: '프린터 설정에서',
       modelOptional: '모델 (선택사항)',
       saveChanges: '변경사항 저장'

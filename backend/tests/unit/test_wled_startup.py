@@ -15,8 +15,8 @@ async def test_startup_sets_only_inactive_printers_offline():
     inactive_config = {"enabled": True, "base_url": "http://wled.local", "presets": {"offline": 9}}
     active_config = {"enabled": True, "base_url": "http://wled.local", "presets": {"offline": 10}}
     db.execute.return_value.all.return_value = [
-        (1, inactive_config, False),
-        (2, active_config, True),
+        (1, inactive_config, False, "inherit"),
+        (2, active_config, True, "off"),
     ]
     with (
         patch("backend.app.api.routes.settings.get_setting", new=AsyncMock(return_value=False)),
@@ -27,6 +27,8 @@ async def test_startup_sets_only_inactive_printers_offline():
     manager.configure_printer.assert_any_call(1, inactive_config)
     manager.configure_printer.assert_any_call(2, active_config)
     manager.handle_offline.assert_called_once_with(1)
+    manager.set_plate_clear_override.assert_any_call(1, "inherit")
+    manager.set_plate_clear_override.assert_any_call(2, "off")
 
 
 @pytest.mark.asyncio
@@ -34,9 +36,9 @@ async def test_startup_skips_missing_disabled_and_unmapped_wled_configs():
     db = MagicMock()
     db.execute = AsyncMock(return_value=MagicMock())
     db.execute.return_value.all.return_value = [
-        (1, None, False),
-        (2, {"enabled": False, "base_url": "http://wled.local", "presets": {"offline": 9}}, False),
-        (3, {"enabled": True, "base_url": "http://wled.local", "presets": {}}, False),
+        (1, None, False, "inherit"),
+        (2, {"enabled": False, "base_url": "http://wled.local", "presets": {"offline": 9}}, False, "inherit"),
+        (3, {"enabled": True, "base_url": "http://wled.local", "presets": {}}, False, "inherit"),
     ]
     manager = WLEDManager()
     with (

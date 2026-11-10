@@ -12234,9 +12234,10 @@ async def initialize_wled_printers(db: AsyncSession) -> None:
     from backend.app.models.printer import Printer
 
     wled_manager.require_plate_clear = setting_is_true(await get_setting(db, "require_plate_clear"))
-    result = await db.execute(select(Printer.id, Printer.wled_config, Printer.is_active))
-    for printer_id, config, is_active in result.all():
+    result = await db.execute(select(Printer.id, Printer.wled_config, Printer.is_active, Printer.plate_clear_override))
+    for printer_id, config, is_active, plate_clear_override in result.all():
         wled_manager.configure_printer(printer_id, config)
+        wled_manager.set_plate_clear_override(printer_id, plate_clear_override)
         if not is_active and config:
             wled_manager.handle_offline(printer_id)
 

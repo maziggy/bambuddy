@@ -170,6 +170,34 @@ async def test_keep_warm_skips_when_require_plate_clear_off(scheduler):
 
 
 @pytest.mark.asyncio
+async def test_keep_warm_skips_a_printer_whose_plate_clear_override_is_off(scheduler):
+    """A printer that never waits for a plate confirmation has no window to keep warm (#2860)."""
+    client = _make_client()
+    scheduler._plate_clear_overrides = {PRINTER_ID: "off"}
+    with patch("backend.app.services.print_scheduler.printer_manager") as pm:
+        pm.get_status.return_value = _make_state()
+        pm.get_client.return_value = client
+        await _run(scheduler, require_plate_clear=True)
+
+    client.set_bed_temperature.assert_not_called()
+    assert PRINTER_ID not in scheduler._keep_warm
+
+
+@pytest.mark.asyncio
+async def test_keep_warm_holds_a_printer_whose_plate_clear_override_is_on(scheduler):
+    """A printer that always waits keeps warm even with the global gate off (#2860)."""
+    client = _make_client()
+    scheduler._plate_clear_overrides = {PRINTER_ID: "on"}
+    with patch("backend.app.services.print_scheduler.printer_manager") as pm:
+        pm.get_status.return_value = _make_state()
+        pm.get_client.return_value = client
+        await _run(scheduler, require_plate_clear=False)
+
+    client.set_bed_temperature.assert_called_once()
+    assert PRINTER_ID in scheduler._keep_warm
+
+
+@pytest.mark.asyncio
 async def test_keep_warm_skips_when_preheat_disabled(scheduler):
     """preheat_enabled=False → skip regardless of the toggle."""
     client = _make_client()

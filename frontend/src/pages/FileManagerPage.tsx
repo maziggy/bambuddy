@@ -2809,7 +2809,14 @@ export function FileManagerPage() {
       selectedSlicedFiles.every((f) => left.includes(f.id))
     );
   }, [separateJobsRun, selectedSlicedFiles]);
-  const resumeRun = selectionIsRunRest && !!printFile && separateJobsRun!.remainingFileIds.includes(printFile.id);
+  // With several files selected the dialog shows the selection whichever
+  // file's Print was clicked, so it is the run's rest then too; otherwise a
+  // card's Print would start it as a new run and queue again what a printer
+  // already has (#3471 review). One file left resumes only from that file.
+  const resumeRun =
+    selectionIsRunRest &&
+    !!printFile &&
+    (selectedSlicedFiles.length > 1 || separateJobsRun!.remainingFileIds.includes(printFile.id));
 
   // A run whose rest is no longer selected is over; a later selection of the
   // same files is a new print.
@@ -2824,7 +2831,13 @@ export function FileManagerPage() {
   const printVariantFiles = useMemo(() => {
     if (!printFile) return undefined;
     if (selectedSlicedFiles.length > 1 || resumeRun) {
-      return selectedSlicedFiles.map(f => ({
+      // The rest of a run keeps the order the run had in its dialog, not the
+      // order the files were ticked in.
+      const order = resumeRun ? separateJobsRun!.remainingFileIds : null;
+      const files = order
+        ? [...selectedSlicedFiles].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id))
+        : selectedSlicedFiles;
+      return files.map(f => ({
         id: f.id,
         filename: f.filename,
         sliced_for_model: f.sliced_for_model,
@@ -2838,7 +2851,7 @@ export function FileManagerPage() {
       }));
     }
     return undefined;
-  }, [resumeRun, printFile, selectedSlicedFiles, printFileGroup]);
+  }, [resumeRun, separateJobsRun, printFile, selectedSlicedFiles, printFileGroup]);
 
   // The list the arrow keys walk: the one that actually holds the focused
   // file, which may be an intermediate column rather than the selected

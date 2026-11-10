@@ -40,7 +40,7 @@ import {
   filesNotSlicedFor,
   type MultiFileMode,
 } from './multiFile';
-import { fileHasQueuedPair, queueSeparateJobs } from './separateJobs';
+import { fileHasQueuedPair, queueSeparateJobs, runAsapTail } from './separateJobs';
 import { CostCenterSelect } from './CostCenterSelect';
 import type {
   AssignmentMode,
@@ -126,6 +126,9 @@ export function PrintModal({
 
   // The rest of a separate-jobs run closed after a refusal (#3471 review).
   const resumed = mode === 'create' && !!separateJobsAllowed && !!resumeSeparateJobs && (variantFiles?.length ?? 0) > 0;
+  // What that run was submitted with: the reopened dialog starts from it, so
+  // a quick Print finishes the run the way it began (#3471 review).
+  const resumedSettings = resumed ? resumeSeparateJobs!.settings : undefined;
   // Several sliced files at once. One file is not a choice, so a single-entry
   // list behaves exactly like an ordinary print, unless it is the last file of
   // a resumed run: one printer may already have it, and only the separate-jobs
@@ -157,6 +160,10 @@ export function PrintModal({
   // or below an inserted position down, so a second submit that restarted at 1
   // would put the rest ahead of what is already queued.
   const [asapPositionsTaken, setAsapPositionsTaken] = useState(resumed ? resumeSeparateJobs!.asapInserted : 0);
+  // The run's own queue items and batches, to find where its ASAP items end
+  // in the queue as it is at the next submit.
+  const [runItemIds, setRunItemIds] = useState<number[]>(() => (resumed ? resumeSeparateJobs!.queuedItemIds ?? [] : []));
+  const [runBatchIds, setRunBatchIds] = useState<number[]>(() => (resumed ? resumeSeparateJobs!.queuedBatchIds ?? [] : []));
   const showModeToggle = isMultiFile && !!separateJobsAllowed && !partlyQueued;
   // Editing an already-queued cross-model item. The candidates are shown so the
   // dialog doesn't misrepresent the job as a plain "Any H2D" — which is what it
@@ -174,7 +181,9 @@ export function PrintModal({
       : [];
   const hasEditingVariants = editingVariants.length > 0;
   const [candidates, setCandidates] = useState<VariantCandidate[]>(variantFiles ?? []);
-  const [candidatePlates, setCandidatePlates] = useState<Record<number, number | null>>({});
+  const [candidatePlates, setCandidatePlates] = useState<Record<number, number | null>>(
+    () => resumedSettings?.plateByFile ?? {},
+  );
   // Whether every listed file's plates are known and chosen (#3471 review).
   // Before that a quick Print would send plate_id null: the whole file's time
   // and cost, and plate 1 printing.
@@ -200,6 +209,7 @@ export function PrintModal({
     if (initialSelectedPrinterIds?.length) {
       return initialSelectedPrinterIds;
     }
+    if (resumedSettings) return resumedSettings.printerIds;
     return [];
   });
 
@@ -219,7 +229,7 @@ export function PrintModal({
   const selectedPlate = selectedPlates.size === 1 ? [...selectedPlates][0] : null;
 
   // Quantity — number of copies (creates a batch if > 1)
-  const [quantity, setQuantity] = useState(1);
+  const [quantity, setQuantity] = useState(() => resumedSettings?.quantity ?? 1);
 
   // Per-plate quantities for multi-plate files (#342). Keyed by plate index;
   // a plate with no entry means one run. Only used in create mode on a
@@ -240,7 +250,7 @@ export function PrintModal({
         preheat_chamber_target_override: queueItem.preheat_chamber_target_override ?? DEFAULT_PRINT_OPTIONS.preheat_chamber_target_override,
       };
     }
-    return DEFAULT_PRINT_OPTIONS;
+    return resumedSettings?.printOptions ?? DEFAULT_PRINT_OPTIONS;
   });
 
   const [scheduleOptions, setScheduleOptions] = useState<ScheduleOptions>(() => {
@@ -269,7 +279,7 @@ export function PrintModal({
         staggerIntervalMinutes: DEFAULT_SCHEDULE_OPTIONS.staggerIntervalMinutes,
       };
     }
-    return DEFAULT_SCHEDULE_OPTIONS;
+    return resumedSettings?.scheduleOptions ?? DEFAULT_SCHEDULE_OPTIONS;
   });
 
   // Manual slot overrides: slot_id (1-indexed) -> globalTrayId (default mapping for single printer or all printers)
@@ -308,7 +318,7 @@ export function PrintModal({
     if (mode === 'edit-queue-item' && queueItem?.target_model) {
       return 'model';
     }
-    return 'printer';
+    return resumedSettings?.assignmentMode ?? 'printer';
   });
 
   // Target model for model-based assignment
@@ -316,7 +326,7 @@ export function PrintModal({
     if (mode === 'edit-queue-item' && queueItem?.target_model) {
       return queueItem.target_model;
     }
-    return null;
+    return resumedSettings?.targetModel ?? null;
   });
 
   // Target location for model-based assignment (optional filter)
@@ -324,11 +334,11 @@ export function PrintModal({
     if (mode === 'edit-queue-item' && queueItem?.target_location) {
       return queueItem.target_location;
     }
-    return null;
+    return resumedSettings?.targetLocation ?? null;
   });
 
   const [selectedCostCenterId, setSelectedCostCenterId] = useState<number | null>(() =>
-    mode === 'edit-queue-item' ? queueItem?.cost_center_id ?? null : null
+    mode === 'edit-queue-item' ? queueItem?.cost_center_id ?? null : resumedSettings?.costCenterId ?? null
   );
   const [estimatedCost, setEstimatedCost] = useState<number | null>(queueItem?.estimated_cost ?? null);
   const [estimatedCostsByPlate, setEstimatedCostsByPlate] = useState<Record<number, number | null>>({});
@@ -382,7 +392,8 @@ export function PrintModal({
   // Sync print option defaults from settings once available
   const printDefaultsApplied = useRef(false);
   useEffect(() => {
-    if (!settings || printDefaultsApplied.current || mode === 'edit-queue-item') return;
+    // A resumed run keeps the options it was submitted with.
+    if (!settings || printDefaultsApplied.current || mode === 'edit-queue-item' || resumedSettings) return;
     printDefaultsApplied.current = true;
     setPrintOptions({
       bed_levelling: settings.default_bed_levelling ?? DEFAULT_PRINT_OPTIONS.bed_levelling,
@@ -395,19 +406,19 @@ export function PrintModal({
       preheat_override: DEFAULT_PRINT_OPTIONS.preheat_override,
       preheat_chamber_target_override: DEFAULT_PRINT_OPTIONS.preheat_chamber_target_override,
     });
-  }, [settings, mode]);
+  }, [settings, mode, resumedSettings]);
 
   // Sync stagger defaults from settings once available
   const staggerDefaultsApplied = useRef(false);
   useEffect(() => {
-    if (!settings || staggerDefaultsApplied.current || mode === 'edit-queue-item') return;
+    if (!settings || staggerDefaultsApplied.current || mode === 'edit-queue-item' || resumedSettings) return;
     staggerDefaultsApplied.current = true;
     setScheduleOptions((prev) => ({
       ...prev,
       staggerGroupSize: settings.stagger_group_size ?? prev.staggerGroupSize,
       staggerIntervalMinutes: settings.stagger_interval_minutes ?? prev.staggerIntervalMinutes,
     }));
-  }, [settings, mode]);
+  }, [settings, mode, resumedSettings]);
 
   const currencySymbol = getCurrencySymbol(settings?.currency || 'USD');
   const defaultCostPerKg = settings?.default_filament_cost ?? 0;
@@ -1524,16 +1535,31 @@ export function PrintModal({
           ? new Date(scheduleOptions.scheduledTime).getTime()
           : Date.now())
         : 0;
+      const asap = scheduleOptions.scheduleType === 'asap';
       setSubmitProgress({ current: 0, total: candidates.length * printerIds.length });
       try {
+        // The rest of a partly queued run goes in right behind the run's own
+        // ASAP items as the queue stands now: since the refusal, items may have
+        // been added, moved or started, and the count of positions taken would
+        // then point somewhere else (#3471 review). The count is the fallback
+        // when the queue can't be read.
+        let asapInsertedBefore = asapPositionsTaken;
+        if (asap && (runItemIds.length > 0 || runBatchIds.length > 0)) {
+          try {
+            const pending = await api.getQueue(undefined, 'pending');
+            asapInsertedBefore = runAsapTail(pending, runItemIds, runBatchIds);
+          } catch {
+            // Keep the count.
+          }
+        }
         const outcome = await queueSeparateJobs({
           files: candidates,
           plateByFile: candidatePlates,
           printerIds,
           alreadyQueued: queuedPairs,
-          asapInsertedBefore: asapPositionsTaken,
+          asapInsertedBefore,
           quantity: effectiveQuantity,
-          asap: scheduleOptions.scheduleType === 'asap',
+          asap,
           buildItem: (file, plateId, printerId, printerIndex) => {
             const item: PrintQueueItemCreate = {
               library_file_id: file.id,
@@ -1567,6 +1593,10 @@ export function PrintModal({
         });
 
         setAsapPositionsTaken(outcome.asapInserted);
+        const allItemIds = [...runItemIds, ...outcome.queuedItemIds];
+        const allBatchIds = [...runBatchIds, ...outcome.queuedBatchIds];
+        setRunItemIds(allItemIds);
+        setRunBatchIds(allBatchIds);
         if (outcome.failure) {
           const allQueued = new Set([...queuedPairs, ...outcome.queuedPairs]);
           setQueuedPairs(allQueued);
@@ -1601,6 +1631,19 @@ export function PrintModal({
             onSeparateJobsProgress?.({
               queuedPairs: [...allQueued],
               asapInserted: outcome.asapInserted,
+              queuedItemIds: allItemIds,
+              queuedBatchIds: allBatchIds,
+              settings: {
+                plateByFile: candidatePlates,
+                assignmentMode,
+                printerIds: selectedPrinters,
+                targetModel,
+                targetLocation,
+                quantity,
+                printOptions,
+                scheduleOptions,
+                costCenterId: selectedCostCenterId,
+              },
               queuedFileIds: (variantFiles ?? []).map((f) => f.id).filter((id) => !remainingIds.includes(id)),
               remainingFileIds: remainingIds,
             });

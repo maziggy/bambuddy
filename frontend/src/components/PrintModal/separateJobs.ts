@@ -1,4 +1,5 @@
 import type { PrintQueueItemCreate } from '../../api/client';
+import type { AssignmentMode, PrintOptions, ScheduleOptions } from './types';
 import type { VariantCandidate } from './VariantCandidates';
 
 /** What `queueSeparateJobs` got into the queue, and where it stopped. */
@@ -11,6 +12,10 @@ export interface SeparateJobsResult {
   queuedFileIds: number[];
   /** `queuedPairKey`s of this call's successful POSTs. */
   queuedPairs: string[];
+  /** Ids of the items this call created (the first of each POST). */
+  queuedItemIds: number[];
+  /** Batches this call's POSTs created (quantity > 1). */
+  queuedBatchIds: number[];
   /** The refused file and the server's message, null when everything went through. */
   failure: { file: VariantCandidate; message: string } | null;
 }
@@ -22,8 +27,34 @@ export interface SeparateJobsResult {
 export interface SeparateJobsResume {
   /** `queuedPairKey`s already in the queue. */
   queuedPairs: string[];
-  /** ASAP positions taken so far, so the rest goes in behind them. */
+  /** ASAP positions taken so far, so the rest goes in behind them. Only the
+   *  fallback: the queue is read again before the rest goes in (see
+   *  `runAsapTail`), since it may have changed meanwhile. */
   asapInserted: number;
+  /** The run's own queue items and batches, to find where it ends now. */
+  queuedItemIds?: number[];
+  queuedBatchIds?: number[];
+  /** What the run was submitted with, so the rest is queued the same way. */
+  settings?: SeparateJobsSettings;
+}
+
+/**
+ * The choices a separate-jobs run was submitted with (#3471 review). A
+ * reopened dialog starts from them instead of its defaults: otherwise a quick
+ * Print would finish the run on the default printer, with each file's first
+ * plate and default options.
+ */
+export interface SeparateJobsSettings {
+  /** Each listed file's plate. */
+  plateByFile: Record<number, number | null>;
+  assignmentMode: AssignmentMode;
+  printerIds: number[];
+  targetModel: string | null;
+  targetLocation: string | null;
+  quantity: number;
+  printOptions: PrintOptions;
+  scheduleOptions: ScheduleOptions;
+  costCenterId: number | null;
 }
 
 /** Reported after a refusal: the resume state, and which files are done. */
@@ -32,6 +63,25 @@ export interface SeparateJobsProgress extends SeparateJobsResume {
   queuedFileIds: number[];
   /** Files still listed, in list order. */
   remainingFileIds: number[];
+}
+
+/**
+ * Where a run's ASAP items end in the queue as it is now: the highest position
+ * among its own pending items (or their batch copies), 0 when none is pending
+ * any more. The rest of the run goes in right behind it, even after other
+ * items were added, moved or started since the run's first submit.
+ */
+export function runAsapTail(
+  queue: ReadonlyArray<{ id: number; position: number; batch_id?: number | null }>,
+  itemIds: ReadonlyArray<number>,
+  batchIds: ReadonlyArray<number>,
+): number {
+  let tail = 0;
+  for (const item of queue) {
+    const own = itemIds.includes(item.id) || (item.batch_id != null && batchIds.includes(item.batch_id));
+    if (own && item.position > tail) tail = item.position;
+  }
+  return tail;
 }
 
 /** One queue item: a file on a printer (`null` = any printer of the model). */
@@ -87,6 +137,8 @@ export async function queueSeparateJobs(args: {
   );
   const queuedFileIds: number[] = [];
   const queuedPairs: string[] = [];
+  const queuedItemIds: number[] = [];
+  const queuedBatchIds: number[] = [];
   let itemsCreated = 0;
   // Same single counter as applyAsapInsertion in index.tsx: position = items
   // inserted so far + 1, then advance by this call's quantity. It starts at
@@ -105,23 +157,29 @@ export async function queueSeparateJobs(args: {
         data.insert_at_top = true;
         data.insert_position = asapInserted + 1;
       }
+      let created: unknown;
       try {
-        await addToQueue(data);
+        created = await addToQueue(data);
       } catch (error) {
         return {
           itemsCreated,
           asapInserted,
           queuedFileIds,
           queuedPairs,
+          queuedItemIds,
+          queuedBatchIds,
           failure: { file, message: error instanceof Error ? error.message : String(error) },
         };
       }
       if (asap) asapInserted += quantity;
+      const item = created as { id?: unknown; batch_id?: unknown } | null | undefined;
+      if (typeof item?.id === 'number') queuedItemIds.push(item.id);
+      if (typeof item?.batch_id === 'number') queuedBatchIds.push(item.batch_id);
       queuedPairs.push(queuedPairKey(file.id, printerIds[printerIndex]));
       itemsCreated++;
       onProgress?.(itemsCreated, total);
     }
     queuedFileIds.push(file.id);
   }
-  return { itemsCreated, asapInserted, queuedFileIds, queuedPairs, failure: null };
+  return { itemsCreated, asapInserted, queuedFileIds, queuedPairs, queuedItemIds, queuedBatchIds, failure: null };
 }

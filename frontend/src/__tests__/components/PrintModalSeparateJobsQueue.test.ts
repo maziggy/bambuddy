@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { fileHasQueuedPair, queueSeparateJobs } from '../../components/PrintModal/separateJobs';
+import { fileHasQueuedPair, queueSeparateJobs, runAsapTail } from '../../components/PrintModal/separateJobs';
 import type { VariantCandidate } from '../../components/PrintModal/VariantCandidates';
 import type { PrintQueueItemCreate } from '../../api/client';
 
@@ -50,6 +50,9 @@ describe('queueSeparateJobs', () => {
       asapInserted: 0,
       queuedFileIds: [11, 12],
       queuedPairs: ['11:1', '11:2', '12:1', '12:2'],
+      // The test's addToQueue returns nothing, so there are no ids to keep.
+      queuedItemIds: [],
+      queuedBatchIds: [],
       failure: null,
     });
   });
@@ -218,5 +221,46 @@ describe('fileHasQueuedPair', () => {
     expect(fileHasQueuedPair(pairs, 1)).toBe(false);
     expect(fileHasQueuedPair(pairs, 12)).toBe(false);
     expect(fileHasQueuedPair(new Set(['13:null']), 13)).toBe(true);
+  });
+});
+
+describe('runAsapTail (#3471 review)', () => {
+  const queue = [
+    { id: 1, position: 1, batch_id: null },
+    { id: 2, position: 2, batch_id: 40 },
+    { id: 3, position: 3, batch_id: 40 },
+    { id: 4, position: 4, batch_id: null },
+  ];
+
+  it("is the last position of the run's own items", () => {
+    expect(runAsapTail(queue, [1], [])).toBe(1);
+  });
+
+  it('counts the copies of a batch the run created', () => {
+    expect(runAsapTail(queue, [2], [40])).toBe(3);
+  });
+
+  it('is 0 when none of them is pending any more', () => {
+    expect(runAsapTail(queue, [99], [77])).toBe(0);
+  });
+});
+
+describe('queueSeparateJobs records what it created (#3471 review)', () => {
+  it("keeps each POST's item id and batch", async () => {
+    let next = 0;
+    const result = await queueSeparateJobs({
+      files: [file(11), file(12)],
+      plateByFile: {},
+      printerIds: [1],
+      quantity: 2,
+      asap: false,
+      buildItem,
+      addToQueue: async () => {
+        next++;
+        return { id: 100 + next, batch_id: 200 + next };
+      },
+    });
+    expect(result.queuedItemIds).toEqual([101, 102]);
+    expect(result.queuedBatchIds).toEqual([201, 202]);
   });
 });

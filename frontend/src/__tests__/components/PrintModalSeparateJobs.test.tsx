@@ -18,6 +18,7 @@ import { render } from '../utils';
 import { server } from '../mocks/server';
 import { PrintModal } from '../../components/PrintModal';
 import type { VariantCandidate } from '../../components/PrintModal/VariantCandidates';
+import { DEFAULT_PRINT_OPTIONS, DEFAULT_SCHEDULE_OPTIONS } from '../../components/PrintModal/types';
 
 const PART_A: VariantCandidate = { id: 11, filename: 'part-a.gcode.3mf', sliced_for_model: 'A1' };
 const PART_B: VariantCandidate = { id: 12, filename: 'part-b.gcode.3mf', sliced_for_model: 'A1' };
@@ -503,6 +504,8 @@ describe('PrintModal with several selected files (#3462)', () => {
       index === 1
         ? HttpResponse.json({ detail: 'refused' }, { status: 400 })
         : HttpResponse.json({ id: index + 1, status: 'pending' });
+    // The queue as the server then has it: part-a (item 1) on top.
+    server.use(http.get('/api/v1/queue/', () => HttpResponse.json([{ id: 1, position: 1, batch_id: null }])));
     const user = userEvent.setup();
     renderModal([PART_A, PART_B], { separateJobsAllowed: true });
 
@@ -634,8 +637,18 @@ describe('PrintModal with several selected files (#3462)', () => {
       expect(onSeparateJobsProgress).toHaveBeenLastCalledWith({
         queuedPairs: ['11:1'],
         asapInserted: 1,
+        queuedItemIds: [1],
+        queuedBatchIds: [],
         queuedFileIds: [11],
         remainingFileIds: [12],
+        // What the rest is queued with when the dialog is opened again.
+        settings: expect.objectContaining({
+          assignmentMode: 'printer',
+          printerIds: [1],
+          targetModel: null,
+          quantity: 1,
+          scheduleOptions: expect.objectContaining({ scheduleType: 'asap' }),
+        }),
       });
     });
 
@@ -656,6 +669,102 @@ describe('PrintModal with several selected files (#3462)', () => {
 
       await waitFor(() => expect(posted).toHaveLength(1));
       expect(posted[0]).toMatchObject({ library_file_id: 12, printer_id: 1, insert_position: 2 });
+    });
+
+    it("finishes the run with the earlier dialog's printers, plates and options", async () => {
+      server.use(
+        http.get('/api/v1/library/files/:id/plates', ({ params }) =>
+          HttpResponse.json({
+            file_id: Number(params.id),
+            filename: 'x',
+            is_multi_plate: true,
+            plates: [
+              { index: 1, name: 'One', objects: [], has_thumbnail: false, filaments: [] },
+              { index: 3, name: 'Three', objects: [], has_thumbnail: false, filaments: [] },
+            ],
+          }),
+        ),
+      );
+      const user = userEvent.setup();
+      renderModal([PART_D], {
+        separateJobsAllowed: true,
+        resumeSeparateJobs: {
+          queuedPairs: ['14:1'],
+          asapInserted: 0,
+          settings: {
+            plateByFile: { 14: 3 },
+            assignmentMode: 'printer',
+            printerIds: [1, 2],
+            targetModel: null,
+            targetLocation: null,
+            quantity: 1,
+            printOptions: {
+              ...DEFAULT_PRINT_OPTIONS,
+              timelapse: true,
+            },
+            scheduleOptions: { ...DEFAULT_SCHEDULE_OPTIONS, scheduleType: 'queue', requireManualStart: true },
+            costCenterId: null,
+          },
+        },
+      });
+
+      // Nothing picked by hand: the run's printers, plate and options are back.
+      await screen.findByLabelText('Plate for part-d.gcode.3mf');
+      await waitFor(() => expect(printButton()).toBeEnabled());
+      await user.click(printButton());
+
+      await waitFor(() => expect(posted).toHaveLength(1));
+      expect(posted[0]).toMatchObject({
+        library_file_id: 14,
+        printer_id: 2,
+        plate_id: 3,
+        timelapse: true,
+        manual_start: true,
+      });
+    });
+
+    it('puts the rest behind where the run ends in the queue now', async () => {
+      // The run's item 5 moved to position 3 since the refusal.
+      server.use(
+        http.get('/api/v1/queue/', () =>
+          HttpResponse.json([
+            { id: 9, position: 1, batch_id: null },
+            { id: 8, position: 2, batch_id: null },
+            { id: 5, position: 3, batch_id: null },
+            { id: 7, position: 4, batch_id: null },
+          ]),
+        ),
+      );
+      const user = userEvent.setup();
+      renderModal([PART_A, PART_B], {
+        separateJobsAllowed: true,
+        resumeSeparateJobs: { queuedPairs: ['11:1'], asapInserted: 1, queuedItemIds: [5] },
+      });
+
+      await screen.findByText('part-b.gcode.3mf');
+      await pickPrinterAndWait(user, 'A1 Test');
+      await user.click(screen.getByRole('button', { name: /^ASAP$/i }));
+      await user.click(printButton());
+
+      await waitFor(() => expect(posted).toHaveLength(1));
+      expect(posted[0]).toMatchObject({ library_file_id: 12, insert_position: 4 });
+    });
+
+    it('falls back to the positions taken when the queue cannot be read', async () => {
+      server.use(http.get('/api/v1/queue/', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })));
+      const user = userEvent.setup();
+      renderModal([PART_A, PART_B], {
+        separateJobsAllowed: true,
+        resumeSeparateJobs: { queuedPairs: ['11:1'], asapInserted: 1, queuedItemIds: [5] },
+      });
+
+      await screen.findByText('part-b.gcode.3mf');
+      await pickPrinterAndWait(user, 'A1 Test');
+      await user.click(screen.getByRole('button', { name: /^ASAP$/i }));
+      await user.click(printButton());
+
+      await waitFor(() => expect(posted).toHaveLength(1));
+      expect(posted[0]).toMatchObject({ library_file_id: 12, insert_position: 2 });
     });
 
     it('continues a single file that one printer already took', async () => {

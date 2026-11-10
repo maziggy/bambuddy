@@ -1393,6 +1393,73 @@ describe('FileManagerPage', () => {
       expect(posted[2]).toMatchObject({ library_file_id: 3, printer_id: 1 });
     });
 
+    // #3471 review: with the rest of a run selected, Print on another file's
+    // card shows that selection too, so it has to be the run's rest as well:
+    // a new run would queue again what a printer already has, and lose the
+    // printer, options and ASAP positions the run was submitted with.
+    it("resumes a partly queued run from another file's card Print", async () => {
+      const extra = [
+        { ...mockFiles[2], id: 5, filename: 'gear.gcode.3mf', file_path: '/library/gear.gcode.3mf', print_name: 'Gear' },
+        { ...mockFiles[2], id: 6, filename: 'nut.gcode.3mf', file_path: '/library/nut.gcode.3mf', print_name: 'Nut' },
+      ];
+      const posted: Array<Record<string, unknown>> = [];
+      server.use(
+        http.get('/api/v1/library/files', ({ request }) =>
+          HttpResponse.json(
+            new URL(request.url).searchParams.get('folder_id') ? filesForRequest(request) : [...mockFiles, ...extra]
+          )
+        ),
+        http.get('/api/v1/library/files/:id/plates', ({ params }) =>
+          HttpResponse.json({ file_id: Number(params.id), filename: 'x', plates: [], is_multi_plate: false })
+        ),
+        http.post('/api/v1/queue/', async ({ request }) => {
+          const body = (await request.json()) as Record<string, unknown>;
+          posted.push(body);
+          return posted.length === 2
+            ? HttpResponse.json({ detail: 'refused' }, { status: 400 })
+            : HttpResponse.json({ id: 100 + posted.length, status: 'pending' });
+        })
+      );
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+      await waitFor(() => expect(screen.getByText('Nut')).toBeInTheDocument());
+      const card = (name: string) => screen.getByText(name).closest('div[class*="cursor-pointer"]') as HTMLElement;
+
+      for (const name of ['Benchy', 'Cube', 'Gear']) await user.click(card(name));
+      await user.click(await screen.findByRole('button', { name: 'Print (3 files)' }));
+      await user.click(await screen.findByRole('radio', { name: /Separate jobs/ }));
+      // Gear before Cube: the queue order the run keeps.
+      await user.click((await screen.findAllByRole('button', { name: 'Move up' }))[2]);
+      await user.click(await screen.findByText('Test Printer'));
+      const print = () => screen.getAllByRole('button', { name: /^Print$/ }).at(-1) as HTMLElement;
+      await waitFor(() => expect(print()).toBeEnabled());
+      await user.click(print());
+      await screen.findByText(/Not queued: gear\.gcode\.3mf/);
+      await user.click(screen.getByRole('button', { name: 'Cancel' }));
+      await waitFor(() =>
+        expect(screen.queryByRole('radiogroup', { name: 'What the selected files become' })).not.toBeInTheDocument()
+      );
+
+      // Cube and Gear are still selected; Print from Nut's card menu.
+      const menuButtons = within(card('Nut')).getAllByRole('button');
+      await user.click(menuButtons[menuButtons.length - 1]);
+      await user.click(await screen.findByRole('button', { name: 'Print' }));
+
+      // The run's rest: no new choice of mode, and the run's printer is still
+      // picked, so Print goes straight on with the two files left.
+      await screen.findByText('gear.gcode.3mf');
+      expect(screen.queryByRole('radiogroup', { name: 'What the selected files become' })).not.toBeInTheDocument();
+      await waitFor(() => expect(print()).toBeEnabled());
+      await user.click(print());
+
+      await waitFor(() => expect(posted).toHaveLength(4));
+      // In the run's order, not the order the files were ticked in.
+      expect(posted.slice(2).map((b) => [b.library_file_id, b.printer_id])).toEqual([
+        [5, 1],
+        [3, 1],
+      ]);
+    });
+
     it('shows a version group as alternatives only, without the choice (#3462)', async () => {
       const user = userEvent.setup();
       server.use(

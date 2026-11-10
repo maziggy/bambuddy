@@ -4132,6 +4132,7 @@ async def _send_print_start_notification(
                     printer_name=printer_name,
                     filename=data.get("subtask_name") or data.get("filename", "Unknown"),
                     db=db,
+                    printer_id=printer_id,
                 )
     except Exception as e:
         logger.warning("Notification on_print_start failed: %s", e)
@@ -4145,6 +4146,7 @@ async def _dispatch_user_print_email(
     db,
     image_data: bytes | None = None,
     finish_photo_url: str | None = None,
+    printer_id: int | None = None,
 ) -> None:
     """Send a user-specific print-completion email based on print status.
 
@@ -4173,6 +4175,7 @@ async def _dispatch_user_print_email(
         db=db,
         image_data=image_data,
         finish_photo_url=finish_photo_url,
+        printer_id=printer_id,
     )
 
 
@@ -8557,6 +8560,10 @@ _PLATE_RESTORE_SETTLE_SECONDS = 12.0
 # camera_light.MAX_DELAY_SECONDS stays below it.
 _FINISH_PHOTO_PRODUCER_WAIT_SECONDS = _PLATE_RESTORE_SETTLE_SECONDS + 23.0
 
+# How long the print-outcome notification waits for the smart plug's energy
+# reading (one request to the plug) so that {energy_cost} / {total_cost} are in it.
+_ENERGY_COST_WAIT_SECONDS = 20.0
+
 
 def _completion_print_keys(printer_id: int, filename: str, subtask_name: str) -> list[tuple[int, str]]:
     """The ``_active_prints`` keys a finished print may be registered under.
@@ -10096,6 +10103,7 @@ async def _close_out_print(printer_id: int, data: dict):
                             p_name,
                             raw_filename,
                             db,
+                            printer_id=printer_id,
                         )
                     logger.info("[NOTIFY-BG] Completed (no-archive path)")
             except Exception as e:
@@ -10779,7 +10787,7 @@ async def _close_out_print(printer_id: int, data: dict):
                 except Exception as e:
                     logger.warning("[PLATE-RESTORE] printer %s: could not lower plate: %s", printer_id, e)
 
-    spawn_background_task(_background_energy_calculation(), name="background-energy-calc")
+    energy_task = spawn_background_task(_background_energy_calculation(), name="background-energy-calc")
     # Photo capture task - result will be used by notifications
     photo_task = spawn_background_task(_background_finish_photo(), name="background-finish-photo")
     log_timing("Background tasks scheduled (energy, photo)")
@@ -10926,6 +10934,7 @@ async def _close_out_print(printer_id: int, data: dict):
                         db,
                         image_data=archive_data.get("image_data"),
                         finish_photo_url=archive_data.get("finish_photo_url"),
+                        printer_id=printer_id,
                     )
 
                 logger.info("[NOTIFY-BG] Completed")
@@ -11017,6 +11026,17 @@ async def _close_out_print(printer_id: int, data: dict):
             )
         except Exception as e:
             logger.warning("[PHOTO-NOTIFY] Photo task failed: %s", e)
+        # The energy cost lands on the print's log entry when the plug has been
+        # read; {energy_cost} / {total_cost} (#1379) are only right after that.
+        # Shielded, so running out of patience does not cancel the reading.
+        try:
+            await asyncio.wait_for(asyncio.shield(energy_task), timeout=_ENERGY_COST_WAIT_SECONDS)
+        except TimeoutError:
+            logger.warning(
+                "[PHOTO-NOTIFY] Energy reading not finished after %ss, notifying without it", _ENERGY_COST_WAIT_SECONDS
+            )
+        except Exception as e:
+            logger.debug("[PHOTO-NOTIFY] Energy task failed: %s", e)
         try:
             await _background_notifications(finish_photo)
         except Exception as e:

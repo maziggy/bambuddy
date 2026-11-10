@@ -30,6 +30,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { colorSortKey, resolveSpoolColorName } from '../utils/colors';
 import { useColorCatalogVersion } from '../hooks/useColorCatalogVersion';
 import { getCurrencySymbol } from '../utils/currency';
+import { isWebUrl, spoolBuyOptions } from '../utils/productLinks';
+import { BuyButton } from '../components/BuyButton';
 import { shownCostPerKg } from '../utils/spoolCost';
 import { formatDateInput, parseUTCDate, type DateFormat } from '../utils/date';
 import { formatAssignmentSlotLabel } from '../utils/amsHelpers';
@@ -418,19 +420,31 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
     const sorted = [...links].sort((a, b) => Number(b.is_purchase_source) - Number(a.is_purchase_source));
     return (
       <div className="flex flex-wrap gap-1 max-w-[220px]">
-        {sorted.map((link) => (
-          <span
-            key={link.id}
-            title={link.supplier_article_number || undefined}
-            className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${
-              link.is_purchase_source
-                ? 'bg-bambu-green/20 text-bambu-green'
-                : 'bg-bambu-gray/10 text-bambu-gray'
-            }`}
-          >
-            {link.supplier_name}
-          </span>
-        ))}
+        {sorted.map((link) => {
+          const chipClass = `inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${
+            link.is_purchase_source
+              ? 'bg-bambu-green/20 text-bambu-green'
+              : 'bg-bambu-gray/10 text-bambu-gray'
+          }`;
+          // With a product page (#2540) the chip opens it, without opening the row.
+          return isWebUrl(link.product_url) ? (
+            <a
+              key={link.id}
+              href={link.product_url.trim()}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              title={[link.supplier_article_number, link.product_url].filter(Boolean).join(' · ')}
+              className={`${chipClass} underline decoration-dotted underline-offset-2 hover:brightness-125`}
+            >
+              {link.supplier_name}
+            </a>
+          ) : (
+            <span key={link.id} title={link.supplier_article_number || undefined} className={chipClass}>
+              {link.supplier_name}
+            </span>
+          );
+        })}
       </div>
     );
   },
@@ -2863,6 +2877,11 @@ function SpoolCard({
             <Copy className="w-3.5 h-3.5" />
           </button>
         )}
+        <BuyButton
+          options={spoolBuyOptions(spool)}
+          className="ml-1 p-1.5 bg-black/20 hover:bg-black/40 text-white rounded-full transition-colors"
+          iconClassName="w-3.5 h-3.5"
+        />
       </div>
       <div className="p-4 space-y-3">
         <div className="flex items-start justify-between gap-2">
@@ -3134,6 +3153,11 @@ function SpoolTableRow({
               <Copy className="w-4 h-4" />
             </button>
           )}
+          <BuyButton
+            options={spoolBuyOptions(spool)}
+            currencySymbol={currencySymbol}
+            className="p-1.5 text-bambu-gray hover:text-bambu-green rounded transition-colors"
+          />
           {onPrintLabel && (
             <button onClick={onPrintLabel} className="p-1.5 text-bambu-gray hover:text-white rounded transition-colors" title={t('inventory.labels.printOne')}>
               <Printer className="w-4 h-4" />

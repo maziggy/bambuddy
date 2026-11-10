@@ -20,6 +20,31 @@ def validate_supplier_name(value: str) -> str:
     return trimmed
 
 
+# Long enough for a shop's product page with its tracking and variant query.
+PRODUCT_URL_MAX = 1000
+
+
+def validate_http_url(value: object) -> object:
+    """A web address, or None for an empty one (#2540).
+
+    These addresses become links in the UI, so only http and https get
+    through: a ``javascript:`` or ``data:`` address would run in the page
+    of whoever clicks it. Trimmed first; non-strings pass through to the
+    type check.
+    """
+    from urllib.parse import urlsplit
+
+    if not isinstance(value, str):
+        return value
+    trimmed = value.strip()
+    if not trimmed:
+        return None
+    parts = urlsplit(trimmed)
+    if parts.scheme.lower() not in ("http", "https") or not parts.netloc:
+        raise ValueError("must be an http:// or https:// address")
+    return trimmed
+
+
 class SupplierBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     website: str | None = Field(default=None, max_length=500)
@@ -39,6 +64,11 @@ class SupplierCreate(SupplierBase):
     def _normalize_name(cls, value: object) -> object:
         return validate_supplier_name(value) if isinstance(value, str) else value
 
+    @field_validator("website", mode="before")
+    @classmethod
+    def _check_website(cls, value: object) -> object:
+        return validate_http_url(value)
+
 
 class SupplierUpdate(BaseModel):
     # Optional so a PATCH can leave the name alone. An explicit null is a 422
@@ -54,6 +84,11 @@ class SupplierUpdate(BaseModel):
         if value is None:
             raise ValueError("name must not be null")
         return validate_supplier_name(value) if isinstance(value, str) else value
+
+    @field_validator("website", mode="before")
+    @classmethod
+    def _check_website(cls, value: object) -> object:
+        return validate_http_url(value)
 
 
 class SupplierResponse(SupplierBase):
@@ -82,6 +117,28 @@ class SpoolSupplierLinkInput(BaseModel):
     # Marks where this concrete spool was actually bought; the other
     # assignments are alternative sources.
     is_purchase_source: bool = False
+    # The product's own page at this supplier (#2540), what the buy buttons
+    # open. Not the supplier's storefront (``Supplier.website``).
+    product_url: str | None = Field(default=None, max_length=PRODUCT_URL_MAX)
+
+    @field_validator("product_url", mode="before")
+    @classmethod
+    def _check_product_url(cls, value: object) -> object:
+        return validate_http_url(value)
+
+
+class SpoolPurchaseSource(BaseModel):
+    """Where a batch of new spools was bought (#2540): a shopping list item
+    received. Becomes their purchase-source assignment."""
+
+    supplier_id: int = Field(..., gt=0)
+    supplier_article_number: str | None = Field(default=None, max_length=100)
+    product_url: str | None = Field(default=None, max_length=PRODUCT_URL_MAX)
+
+    @field_validator("product_url", mode="before")
+    @classmethod
+    def _check_product_url(cls, value: object) -> object:
+        return validate_http_url(value)
 
 
 class SpoolSupplierResponse(BaseModel):
@@ -91,6 +148,7 @@ class SpoolSupplierResponse(BaseModel):
     supplier_article_number: str | None = None
     quoted_price_per_kg: float | None = None
     is_purchase_source: bool = False
+    product_url: str | None = None
 
     class Config:
         from_attributes = True

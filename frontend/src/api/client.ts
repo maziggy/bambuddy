@@ -4157,6 +4157,15 @@ export interface SpoolSupplierLinkInput {
   quoted_price_per_kg?: number | null;
   /** Marks where this concrete spool was actually bought. */
   is_purchase_source?: boolean;
+  /** The product's own page at this supplier (#2540), http(s) only. */
+  product_url?: string | null;
+}
+
+/** Where a batch of new spools was bought (#2540): a shopping list item received. */
+export interface SpoolPurchaseSource {
+  supplier_id: number;
+  supplier_article_number?: string | null;
+  product_url?: string | null;
 }
 
 export interface SpoolSupplierLink {
@@ -4166,6 +4175,8 @@ export interface SpoolSupplierLink {
   supplier_article_number: string | null;
   quoted_price_per_kg: number | null;
   is_purchase_source: boolean;
+  /** The product's own page at this supplier (#2540). */
+  product_url: string | null;
 }
 
 /** Per-supplier inventory aggregate (#2988), purchase-source spools only. */
@@ -4427,6 +4438,11 @@ export interface ShoppingListItem {
   status: 'pending' | 'purchased' | 'received';
   purchased_at: string | null;
   added_at: string;
+  /** Where to buy it (#2540); supplier_name is null once the supplier is gone. */
+  supplier_id: number | null;
+  supplier_name: string | null;
+  supplier_article_number: string | null;
+  product_url: string | null;
 }
 
 export interface ShoppingListItemCreate {
@@ -4436,6 +4452,9 @@ export interface ShoppingListItemCreate {
   color_name: string | null;
   quantity_spools: number;
   note?: string | null;
+  supplier_id?: number | null;
+  supplier_article_number?: string | null;
+  product_url?: string | null;
 }
 
 // Update types
@@ -7291,10 +7310,14 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  bulkCreateSpools: (data: Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles'>, quantity: number) =>
+  bulkCreateSpools: (
+    data: Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles'>,
+    quantity: number,
+    purchaseSource?: SpoolPurchaseSource | null,
+  ) =>
     request<InventorySpool[]>('/inventory/spools/bulk', {
       method: 'POST',
-      body: JSON.stringify({ spool: data, quantity }),
+      body: JSON.stringify({ spool: data, quantity, ...(purchaseSource ? { purchase_source: purchaseSource } : {}) }),
     }),
   // ── CSV import/export (#1576) ────────────────────────────────────────────
   // dry_run=true → preview (no write); omitted → real import. Both share one

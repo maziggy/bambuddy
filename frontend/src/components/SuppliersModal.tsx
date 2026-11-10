@@ -6,6 +6,7 @@ import { api, ApiError } from '../api/client';
 import type { Supplier } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { inventorySuppliersQueryKey, invalidateInventorySuppliers } from '../utils/inventoryQueries';
+import { isWebUrl } from '../utils/productLinks';
 import { ConfirmModal } from './ConfirmModal';
 
 interface SuppliersModalProps {
@@ -74,6 +75,11 @@ export function SuppliersModal({ open, onClose }: SuppliersModalProps) {
       showToast(t('inventory.suppliers.nameRequired'), 'error');
       return;
     }
+    // The backend takes only http(s) addresses (#2540); say which field.
+    if (formWebsite.trim() && !isWebUrl(formWebsite)) {
+      showToast(t('inventory.suppliers.websiteInvalid'), 'error');
+      return;
+    }
     setSaving(true);
     try {
       await api.createSupplier(formPayload());
@@ -109,6 +115,11 @@ export function SuppliersModal({ open, onClose }: SuppliersModalProps) {
   const handleUpdate = async (id: number) => {
     if (!formName.trim()) {
       showToast(t('inventory.suppliers.nameRequired'), 'error');
+      return;
+    }
+    // The backend takes only http(s) addresses (#2540); say which field.
+    if (formWebsite.trim() && !isWebUrl(formWebsite)) {
+      showToast(t('inventory.suppliers.websiteInvalid'), 'error');
       return;
     }
     setSaving(true);
@@ -318,7 +329,9 @@ export function SuppliersModal({ open, onClose }: SuppliersModalProps) {
                             <td className="px-4 py-2 text-white">
                               <div className="flex items-center gap-1.5">
                                 <span>{supplier.name}</span>
-                                {supplier.website && (
+                                {/* Only an http(s) address is a link: one saved before
+                                    the backend checked could be javascript: (#2540). */}
+                                {isWebUrl(supplier.website) && (
                                   <a
                                     href={supplier.website}
                                     target="_blank"

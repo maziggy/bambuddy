@@ -7181,6 +7181,19 @@ async def _migrate_create_supplier_tables(conn) -> None:
         conn,
         "CREATE INDEX IF NOT EXISTS ix_spoolman_spool_suppliers_supplier_id ON spoolman_spool_suppliers (supplier_id)",
     )
+    # The product's page at the supplier, per assignment (#2540).
+    await _safe_execute(conn, "ALTER TABLE spool_suppliers ADD COLUMN product_url VARCHAR(1000)")
+    await _safe_execute(conn, "ALTER TABLE spoolman_spool_suppliers ADD COLUMN product_url VARCHAR(1000)")
+    # Where a shopping list item is to be bought (#2540), handed to the spools
+    # it becomes once received. Here rather than with the shopping list's
+    # other columns: the foreign key needs the suppliers table. SET NULL so a
+    # supplier can still be deleted while a cart item names it.
+    await _safe_execute(
+        conn,
+        "ALTER TABLE filament_shopping_list ADD COLUMN supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL",
+    )
+    await _safe_execute(conn, "ALTER TABLE filament_shopping_list ADD COLUMN supplier_article_number VARCHAR(100)")
+    await _safe_execute(conn, "ALTER TABLE filament_shopping_list ADD COLUMN product_url VARCHAR(1000)")
 
 
 async def _migrate_supplier_name_key(conn) -> None:

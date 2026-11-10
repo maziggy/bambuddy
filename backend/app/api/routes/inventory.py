@@ -64,12 +64,14 @@ from backend.app.schemas.spool import (
 )
 from backend.app.schemas.spool_usage import SpoolUsageHistoryResponse
 from backend.app.schemas.supplier import (
+    PRODUCT_URL_MAX,
     SpoolSupplierLinkInput,
     SpoolSupplierResponse,
     SupplierCreate,
     SupplierResponse,
     SupplierStats,
     SupplierUpdate,
+    validate_http_url,
 )
 from backend.app.services import filament_profile_default as profile_defaults, slot_unlink_grace, spool_swaps
 from backend.app.services.ams_assignment_lock import get_ams_assignment_lock, get_spool_move_lock
@@ -1703,6 +1705,8 @@ async def bulk_create_spools(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Create multiple identical spools."""
+    if data.purchase_source is not None and await db.get(Supplier, data.purchase_source.supplier_id) is None:
+        raise HTTPException(404, f"Supplier not found: {data.purchase_source.supplier_id}")
     spools = []
     fields_set = set(data.spool.model_fields_set)
     try:
@@ -1717,8 +1721,11 @@ async def bulk_create_spools(
         db.add(spool)
         spools.append(spool)
     await db.flush()
-    # Every copy gets its own link rows, from one donor lookup (#2988).
-    await apply_supplier_inheritance_to_batch(db, spools)
+    # Every copy gets its own link rows, from one donor lookup (#2988), and
+    # where they were bought when the caller knows it (#2540).
+    await apply_supplier_inheritance_to_batch(
+        db, spools, data.purchase_source.model_dump() if data.purchase_source is not None else None
+    )
     # Every copy is the same product, so one profile default for all (#1326).
     if spools:
         first = spools[0]
@@ -3405,6 +3412,11 @@ class ShoppingListItemResponse(BaseModel):
     status: str
     purchased_at: str | None
     added_at: str
+    # Where to buy it (#2540); supplier_name is None once the supplier is gone.
+    supplier_id: int | None = None
+    supplier_name: str | None = None
+    supplier_article_number: str | None = None
+    product_url: str | None = None
 
     class Config:
         from_attributes = True
@@ -3417,22 +3429,27 @@ class ShoppingListItemCreate(BaseModel):
     color_name: str | None = None
     quantity_spools: int = 1
     note: str | None = None
+    supplier_id: int | None = Field(default=None, gt=0)
+    supplier_article_number: str | None = Field(default=None, max_length=100)
+    product_url: str | None = Field(default=None, max_length=PRODUCT_URL_MAX)
+
+    @field_validator("product_url", mode="before")
+    @classmethod
+    def _check_product_url(cls, value: object) -> object:
+        return validate_http_url(value)
 
 
 class ShoppingListItemStatusUpdate(BaseModel):
     status: str  # pending | purchased | received
 
 
-@router.get("/shopping-list", response_model=list[ShoppingListItemResponse])
-async def get_shopping_list(
-    db: AsyncSession = Depends(get_db, scope="function"),
-    _: User | None = RequireAnyPermissionIfAuthEnabled(Permission.INVENTORY_READ, Permission.INVENTORY_FORECAST_READ),
-):
-    """Get the filament shopping list."""
-    from backend.app.models.shopping_list import ShoppingListItem
-
-    result = await db.execute(select(ShoppingListItem).order_by(ShoppingListItem.added_at.desc()))
-    items = result.scalars().all()
+async def _shopping_list_responses(db: AsyncSession, items: list) -> list[ShoppingListItemResponse]:
+    """The response rows for ``items``, with their suppliers' names in one query."""
+    supplier_ids = {i.supplier_id for i in items if i.supplier_id is not None}
+    names: dict[int, str] = {}
+    if supplier_ids:
+        rows = await db.execute(select(Supplier.id, Supplier.name).where(Supplier.id.in_(supplier_ids)))
+        names = {row.id: row.name for row in rows.all()}
     return [
         ShoppingListItemResponse(
             id=i.id,
@@ -3445,9 +3462,25 @@ async def get_shopping_list(
             status=i.status or "pending",
             purchased_at=i.purchased_at.isoformat() if i.purchased_at else None,
             added_at=i.added_at.isoformat() if i.added_at else "",
+            supplier_id=i.supplier_id,
+            supplier_name=names.get(i.supplier_id) if i.supplier_id is not None else None,
+            supplier_article_number=i.supplier_article_number,
+            product_url=i.product_url,
         )
         for i in items
     ]
+
+
+@router.get("/shopping-list", response_model=list[ShoppingListItemResponse])
+async def get_shopping_list(
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequireAnyPermissionIfAuthEnabled(Permission.INVENTORY_READ, Permission.INVENTORY_FORECAST_READ),
+):
+    """Get the filament shopping list."""
+    from backend.app.models.shopping_list import ShoppingListItem
+
+    result = await db.execute(select(ShoppingListItem).order_by(ShoppingListItem.added_at.desc()))
+    return await _shopping_list_responses(db, list(result.scalars().all()))
 
 
 @router.post("/shopping-list", response_model=ShoppingListItemResponse)
@@ -3461,6 +3494,9 @@ async def add_to_shopping_list(
     """Add a filament SKU to the shopping list."""
     from backend.app.models.shopping_list import ShoppingListItem
 
+    if data.supplier_id is not None and await db.get(Supplier, data.supplier_id) is None:
+        raise HTTPException(404, f"Supplier not found: {data.supplier_id}")
+
     item = ShoppingListItem(
         material=data.material,
         subtype=data.subtype,
@@ -3468,22 +3504,14 @@ async def add_to_shopping_list(
         color_name=data.color_name,
         quantity_spools=data.quantity_spools,
         note=data.note,
+        supplier_id=data.supplier_id,
+        supplier_article_number=data.supplier_article_number,
+        product_url=data.product_url,
     )
     db.add(item)
     await db.commit()
     await db.refresh(item)
-    return ShoppingListItemResponse(
-        id=item.id,
-        material=item.material,
-        subtype=item.subtype,
-        brand=item.brand,
-        color_name=item.color_name,
-        quantity_spools=item.quantity_spools,
-        note=item.note,
-        status=item.status or "pending",
-        purchased_at=item.purchased_at.isoformat() if item.purchased_at else None,
-        added_at=item.added_at.isoformat() if item.added_at else "",
-    )
+    return (await _shopping_list_responses(db, [item]))[0]
 
 
 @router.patch("/shopping-list/{item_id}/status", response_model=ShoppingListItemResponse)
@@ -3515,18 +3543,7 @@ async def update_shopping_list_status(
 
     await db.commit()
     await db.refresh(item)
-    return ShoppingListItemResponse(
-        id=item.id,
-        material=item.material,
-        subtype=item.subtype,
-        brand=item.brand,
-        color_name=item.color_name,
-        quantity_spools=item.quantity_spools,
-        note=item.note,
-        status=item.status or "pending",
-        purchased_at=item.purchased_at.isoformat() if item.purchased_at else None,
-        added_at=item.added_at.isoformat() if item.added_at else "",
-    )
+    return (await _shopping_list_responses(db, [item]))[0]
 
 
 @router.delete("/shopping-list/{item_id}")

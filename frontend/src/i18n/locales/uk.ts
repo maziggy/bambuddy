@@ -7811,6 +7811,8 @@ export default {
       includeBeta: "Включати бета-версії",
     },
     writeTag: {
+      writeWith: 'Записати за допомогою',
+      deviceOfflineOption: '{{name}} (не в мережі)',
       tabExisting: "Наявна котушка",
       tabNew: "Нова котушка",
       tabReplace: "Замінити тег",

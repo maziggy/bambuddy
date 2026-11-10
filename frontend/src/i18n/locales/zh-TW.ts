@@ -7755,6 +7755,8 @@ export default {
       includeBeta: '包含測試版本',
     },
     writeTag: {
+      writeWith: '寫入裝置',
+      deviceOfflineOption: '{{name}}（離線）',
       tabExisting: '現有耗材',
       tabNew: '新耗材',
       tabReplace: '替換標籤',

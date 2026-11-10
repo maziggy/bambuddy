@@ -1081,13 +1081,11 @@ class TestWriteTagEndpoints:
         payload = hb.json()["pending_write_payload"]
         ndef_bytes = bytes.fromhex(payload["ndef_data_hex"])
 
-        # CC bytes
-        assert ndef_bytes[:4] == bytes([0xE1, 0x10, 0x12, 0x00])
-        # TLV type
-        assert ndef_bytes[4] == 0x03
+        # The data area starts with the NDEF TLV, no CC copy (#3500)
+        assert ndef_bytes[0] == 0x03
         # NDEF record: TNF=MIME, type=application/opentag3d
-        assert ndef_bytes[6] == 0xD2
-        assert ndef_bytes[9:30] == b"application/opentag3d"
+        assert ndef_bytes[2] == 0xD2
+        assert ndef_bytes[5:26] == b"application/opentag3d"
         # Terminator
         assert ndef_bytes[-1] == 0xFE
         # Total size fits NTAG213

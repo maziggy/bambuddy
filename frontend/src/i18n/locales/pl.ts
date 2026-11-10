@@ -6482,6 +6482,10 @@ export default {
       title: 'Automatyczne wysyłanie',
       description: 'Automatycznie uruchamiaj wydruki po dodaniu do kolejki. Gdy wyłączone, wydruki czekają na ręczne wysłanie.',
     },
+    autoDispatchFirstOnly: {
+      title: 'Tylko pierwsze zadanie startuje samo',
+      description: 'Pierwszy plik wysłany do drukarki bez zadań w kolejce i w druku startuje sam. Pliki wysłane, gdy ma ona zadanie w toku lub oczekujące, są odkładane i startują dopiero po naciśnięciu Start przy każdym z nich.',
+    },
     queueForceColorMatch: {
       title: 'Wymuś zgodność koloru',
       description: 'Odmawiaj wysłania na drukarkę, która nie ma załadowanego dokładnie tego typu i koloru filamentu. Domyślnie wyłączone — bez tej opcji kolejka dopasowuje tylko model i może wybrać drukarkę z załadowanym niewłaściwym kolorem.',

@@ -6429,6 +6429,10 @@ export default {
       title: 'Automatisch starten',
       description: 'Drucke automatisch starten, wenn sie zur Warteschlange hinzugefügt werden. Wenn deaktiviert, warten Drucke auf manuellen Start.',
     },
+    autoDispatchFirstOnly: {
+      title: 'Nur der erste Auftrag startet selbst',
+      description: 'Die erste Datei für einen Drucker ohne wartende oder laufende Aufträge startet von selbst. Dateien, die gesendet werden, während er einen Auftrag hat, werden bereitgestellt und starten erst, wenn du bei jedem auf Start drückst.',
+    },
     queueForceColorMatch: {
       title: 'Farbabgleich erzwingen',
       description: 'Druckaufträge nur an Drucker senden, bei denen der genaue Filament-Typ und die genaue Farbe geladen sind. Standardmäßig deaktiviert — ohne diese Option verwendet die Warteschlange nur den Drucker-Modell-Abgleich und wählt möglicherweise einen Drucker mit der falschen Farbe.',

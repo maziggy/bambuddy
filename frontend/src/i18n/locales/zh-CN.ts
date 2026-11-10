@@ -6416,6 +6416,10 @@ export default {
       title: '自动派发',
       description: '添加到队列时自动开始打印。关闭后，打印任务等待手动派发。',
     },
+    autoDispatchFirstOnly: {
+      title: '只有第一个任务自动开始',
+      description: '发送到没有排队或正在打印任务的打印机的第一个文件会自动开始。打印机有任务进行或等待时发送的文件会先暂存，只有对每个文件点击开始才会启动。',
+    },
     queueForceColorMatch: {
       title: '强制颜色匹配',
       description: '拒绝派发到没有完全相同耗材类型和颜色的打印机。默认关闭 — 不启用时，队列仅按型号匹配，可能选到颜色错误的打印机。',

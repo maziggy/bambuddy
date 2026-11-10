@@ -6511,6 +6511,10 @@ errors: {
       title: 'Auto-utskick',
       description: 'Starta utskrifter automatiskt när de läggs till i kön. När avstängd väntar utskrifter på manuell utskickning.',
     },
+    autoDispatchFirstOnly: {
+      title: 'Bara det första jobbet startar själv',
+      description: 'Den första filen till en skrivare utan köade eller pågående jobb startar av sig själv. Filer som skickas medan den har ett jobb igång eller väntande ställs i förväg och startar först när du trycker på Starta för var och en.',
+    },
     queueForceColorMatch: {
       title: 'Tvinga färgmatchning',
       description: 'Vägra att skicka till en skrivare som inte har exakt filamenttyp och färg laddad. Avstängd som standard — utan detta använder kön endast modellmatchning och kan välja en skrivare med fel färg laddad.',

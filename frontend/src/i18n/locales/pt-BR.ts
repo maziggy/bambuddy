@@ -6416,6 +6416,10 @@ export default {
       title: 'Envio automático',
       description: 'Iniciar impressões automaticamente quando adicionadas à fila. Quando desativado, as impressões aguardam envio manual.',
     },
+    autoDispatchFirstOnly: {
+      title: 'Só o primeiro trabalho inicia sozinho',
+      description: 'O primeiro arquivo enviado a uma impressora sem nada na fila nem imprimindo inicia por conta própria. Os enviados enquanto ela tem um trabalho em andamento ou aguardando ficam preparados e só iniciam quando você aperta Iniciar em cada um.',
+    },
     queueForceColorMatch: {
       title: 'Forçar correspondência de cor',
       description: 'Recusa enviar para uma impressora que não tenha exatamente o tipo e cor de filamento carregados. Desativado por padrão — sem isto, a fila usa apenas correspondência por modelo e pode escolher uma impressora com a cor errada carregada.',

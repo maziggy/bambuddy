@@ -3076,6 +3076,7 @@ class TestVirtualPrinterManager:
             "remote_interface_ip": "",
             "target_printer_id": None,
             "auto_dispatch": True,
+            "auto_dispatch_first_only": False,  # same reason as below: an unset MagicMock attribute is truthy
             "tailscale_disabled": True,  # Opt-in default (#1070 UX fix)
             "queue_force_color_match": False,  # default — must be explicit so MagicMock truthiness doesn't trip the change detector
             "save_ams_mapping": False,  # same reason as above

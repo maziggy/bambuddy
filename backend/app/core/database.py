@@ -4006,6 +4006,15 @@ async def _run_migrations(conn):
     # Migration: Add auto_dispatch column to virtual_printers
     await _safe_execute(conn, "ALTER TABLE virtual_printers ADD COLUMN auto_dispatch BOOLEAN DEFAULT 1")
 
+    # Migration: auto_dispatch_first_only on virtual_printers (#3299). Off by
+    # default, so every queue-mode VP keeps starting all of its jobs itself.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE virtual_printers ADD COLUMN auto_dispatch_first_only BOOLEAN DEFAULT 0")
+    else:
+        await _safe_execute(
+            conn, "ALTER TABLE virtual_printers ADD COLUMN auto_dispatch_first_only BOOLEAN DEFAULT FALSE"
+        )
+
     # Migration: Fix VP model codes — convert legacy SSDP codes and display names to correct SSDP codes
     # Legacy codes (from multi-VP refactor) and display names (from proxy auto-inherit)
     vp_model_fixes = {
@@ -6421,6 +6430,7 @@ _PG_COLUMNS_SET_FROM_MODEL = (
     ("smart_plugs", "off_delay_after_drying_minutes"),
     ("smart_plugs", "rest_energy_total_multiplier"),
     ("spool", "weight_used_baseline"),
+    ("virtual_printers", "auto_dispatch_first_only"),
     ("virtual_printers", "gcode_injection"),
     ("virtual_printers", "queue_force_color_match"),
     ("virtual_printers", "queue_remove_after_print"),

@@ -56,6 +56,7 @@ const createMockPrinter = (overrides: Partial<VirtualPrinterConfig> = {}): Virtu
   library_folder_id: null,
   queue_remove_after_print: false,
   auto_dispatch: true,
+  auto_dispatch_first_only: false,
   queue_force_color_match: false,
   bind_ip: null,
   remote_interface_ip: null,
@@ -757,5 +758,64 @@ describe('VirtualPrinterCard - model codes of one name', () => {
 
     expect(await screen.findByRole('option', { name: 'H2D Pro (O1E)' })).toBeInTheDocument();
     expect(screen.queryByTestId('vp-model-same-name-hint')).not.toBeInTheDocument();
+  });
+});
+
+describe('VirtualPrinterCard - only the first job starts itself (#3299)', () => {
+  const TITLE = 'Only the first job starts itself';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(multiVirtualPrinterApi.update).mockResolvedValue(createMockPrinter());
+  });
+
+  it('is offered in queue mode with auto-dispatch on', async () => {
+    render(<VirtualPrinterCard defaultExpanded printer={createMockPrinter({ mode: 'queue' })} models={models} />);
+
+    expect(await screen.findByText(TITLE)).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: TITLE })).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('is hidden when auto-dispatch is off, as then nothing starts itself', async () => {
+    render(
+      <VirtualPrinterCard
+        defaultExpanded
+        printer={createMockPrinter({ mode: 'queue', auto_dispatch: false })}
+        models={models}
+      />,
+    );
+
+    await screen.findByText('Auto-dispatch');
+    expect(screen.queryByText(TITLE)).not.toBeInTheDocument();
+  });
+
+  it('is hidden outside queue mode', async () => {
+    render(<VirtualPrinterCard defaultExpanded printer={createMockPrinter({ mode: 'library' })} models={models} />);
+
+    await screen.findByText('Test VP');
+    expect(screen.queryByText(TITLE)).not.toBeInTheDocument();
+  });
+
+  it('shows the saved choice', async () => {
+    render(
+      <VirtualPrinterCard
+        defaultExpanded
+        printer={createMockPrinter({ mode: 'queue', auto_dispatch_first_only: true })}
+        models={models}
+      />,
+    );
+
+    expect(await screen.findByRole('switch', { name: TITLE })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('saves the switch', async () => {
+    const user = userEvent.setup();
+    render(<VirtualPrinterCard defaultExpanded printer={createMockPrinter({ mode: 'queue' })} models={models} />);
+
+    await user.click(await screen.findByRole('switch', { name: TITLE }));
+
+    await waitFor(() =>
+      expect(multiVirtualPrinterApi.update).toHaveBeenCalledWith(1, { auto_dispatch_first_only: true }),
+    );
   });
 });

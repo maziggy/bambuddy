@@ -6416,6 +6416,10 @@ export default {
       title: '自動派發',
       description: '新增到佇列時自動開始列印。關閉後，列印任務等待手動派發。',
     },
+    autoDispatchFirstOnly: {
+      title: '只有第一個任務自動開始',
+      description: '傳送到沒有排隊或列印中任務的列印機的第一個檔案會自動開始。列印機有任務進行或等待時傳送的檔案會先暫存，只有對每個檔案按下開始才會啟動。',
+    },
     queueForceColorMatch: {
       title: '強制顏色匹配',
       description: '拒絕派發到沒有完全相同耗材類型和顏色的印表機。預設關閉 — 不啟用時，佇列僅按型號匹配，可能選到顏色錯誤的印表機。',

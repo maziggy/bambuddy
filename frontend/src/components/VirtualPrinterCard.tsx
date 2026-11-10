@@ -76,6 +76,9 @@ export function VirtualPrinterCard({ printer, models, modelSerialPrefixes = {}, 
   const [localRemoteInterfaceIp, setLocalRemoteInterfaceIp] = useState(printer.remote_interface_ip || '');
   const [localModel, setLocalModel] = useState(printer.model || '');
   const [localAutoDispatch, setLocalAutoDispatch] = useState(printer.auto_dispatch ?? true);
+  const [localAutoDispatchFirstOnly, setLocalAutoDispatchFirstOnly] = useState(
+    printer.auto_dispatch_first_only ?? false,
+  );
   const [localQueueForceColorMatch, setLocalQueueForceColorMatch] = useState(printer.queue_force_color_match ?? false);
   const [localSaveAmsMapping, setLocalSaveAmsMapping] = useState(printer.save_ams_mapping ?? false);
   const [localGcodeInjection, setLocalGcodeInjection] = useState(printer.gcode_injection ?? false);
@@ -132,6 +135,7 @@ export function VirtualPrinterCard({ printer, models, modelSerialPrefixes = {}, 
       setLocalRemoteInterfaceIp(printer.remote_interface_ip || '');
       setLocalModel(printer.model || '');
       setLocalAutoDispatch(printer.auto_dispatch ?? true);
+      setLocalAutoDispatchFirstOnly(printer.auto_dispatch_first_only ?? false);
       setLocalQueueForceColorMatch(printer.queue_force_color_match ?? false);
       setLocalSaveAmsMapping(printer.save_ams_mapping ?? false);
       setLocalGcodeInjection(printer.gcode_injection ?? false);
@@ -549,6 +553,43 @@ export function VirtualPrinterCard({ printer, models, modelSerialPrefixes = {}, 
                     <span
                       className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
                         localAutoDispatch ? 'translate-x-5' : ''
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Only the first job starts by itself - queue mode with auto-dispatch on (#3299) */}
+            {localMode === 'queue' && localAutoDispatch && (
+              <div className="pt-2 border-t border-bambu-dark-tertiary">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-white text-sm font-medium">
+                      {t('virtualPrinter.autoDispatchFirstOnly.title')}
+                    </div>
+                    <div className="text-[10px] text-bambu-gray">
+                      {t('virtualPrinter.autoDispatchFirstOnly.description')}
+                    </div>
+                  </div>
+                  <button
+                    role="switch"
+                    aria-checked={localAutoDispatchFirstOnly}
+                    aria-label={t('virtualPrinter.autoDispatchFirstOnly.title')}
+                    onClick={() => {
+                      const newVal = !localAutoDispatchFirstOnly;
+                      setLocalAutoDispatchFirstOnly(newVal);
+                      setPendingAction('autoDispatchFirstOnly');
+                      updateMutation.mutate({ auto_dispatch_first_only: newVal });
+                    }}
+                    disabled={pendingAction === 'autoDispatchFirstOnly'}
+                    className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${
+                      localAutoDispatchFirstOnly ? 'bg-bambu-green' : 'bg-bambu-dark-tertiary'
+                    } ${pendingAction === 'autoDispatchFirstOnly' ? 'opacity-50' : ''}`}
+                  >
+                    <span
+                      className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                        localAutoDispatchFirstOnly ? 'translate-x-5' : ''
                       }`}
                     />
                   </button>

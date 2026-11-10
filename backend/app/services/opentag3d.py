@@ -1,11 +1,15 @@
 """OpenTag3D NDEF encoder for NTAG tags.
 
 Encodes spool data as an OpenTag3D NDEF message ready to write to NTAG
-starting at page 4 (after the manufacturer pages).
+starting at page 4, the first page of the data area.
+
+The Capability Container is not part of it: on NTAG21x it is page 3, set at
+the factory. A copy written from page 4 lands in the data area, where a Type 2
+reader takes it for an unknown TLV, skips the NDEF message and reports an
+empty tag (#3500).
 
 NDEF structure:
-  [CC: E1 10 12 00]              - Capability Container (4 bytes, page 4)
-  [TLV: 03 len]                  - NDEF Message TLV (2 bytes)
+  [TLV: 03 len]                  - NDEF Message TLV (2 bytes, page 4)
   [NDEF record header]           - D2 15 payload_len (3 bytes: MB|ME|SR, TNF=MIME, type_len=21)
   [Type: "application/opentag3d"] - 21 bytes
   [Payload: OpenTag3D fields]    - 102 bytes
@@ -100,7 +104,7 @@ def _build_payload(spool: Spool) -> bytes:
 
 
 def _encode_ndef(payload: bytes) -> bytes:
-    """Wrap a 102-byte payload in CC + TLV + NDEF record + terminator."""
+    """Wrap a 102-byte payload in TLV + NDEF record + terminator."""
     mime_type = OPENTAG3D_MIME_TYPE
 
     # NDEF record: MB|ME|SR (0xD0) | TNF=MIME (0x02) => 0xD2
@@ -114,9 +118,8 @@ def _encode_ndef(payload: bytes) -> bytes:
     else:
         tlv = bytes([0x03, 0xFF, (ndef_len >> 8) & 0xFF, ndef_len & 0xFF])
 
-    cc = bytes([0xE1, 0x10, 0x12, 0x00])
     terminator = bytes([0xFE])
-    return cc + tlv + ndef_record + terminator
+    return tlv + ndef_record + terminator
 
 
 def encode_opentag3d(spool: Spool) -> bytes:

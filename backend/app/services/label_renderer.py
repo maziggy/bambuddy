@@ -71,6 +71,8 @@ LabelField = Literal[
     "name",
     "location",
     "material_number",
+    "owner",
+    "batch_id",
     "temps",
     "weight",
     "note",
@@ -87,6 +89,8 @@ ALL_LABEL_FIELDS: tuple[LabelField, ...] = (
     "name",
     "location",
     "material_number",
+    "owner",
+    "batch_id",
     "temps",
     "weight",
     "note",
@@ -120,6 +124,8 @@ class LabelData:
     storage_location: str | None = None
     deeplink_url: str = ""  # what the QR encodes; caller composes it
     material_number: str | None = None
+    owner: str | None = None  # whose spool it is (#1301)
+    batch_id: str | None = None  # the manufacturer's batch / lot (#2828)
     nozzle_temp_min: int | None = None
     nozzle_temp_max: int | None = None
     label_weight: int | None = None  # advertised net weight, grams
@@ -464,6 +470,8 @@ def _draw_label_roomy(
         ("name", name if name not in repeats else "", "Helvetica-Bold", 9, 1.2),
         ("location", data.storage_location or "", "Helvetica-Oblique", 6.5, 1.2),
         ("material_number", data.material_number or "", "Helvetica", 6.5, 1.2),
+        ("owner", data.owner or "", "Helvetica-Bold", 7, 1.2),
+        ("batch_id", data.batch_id or "", "Helvetica", 6.5, 1.2),
         ("temps", _temps_text(data), "Helvetica", 6.5, 1.2),
         ("weight", _weight_text(data), "Helvetica", 6.5, 1.2),
         ("note", data.note or "", "Helvetica-Oblique", 6.5, 1.2),

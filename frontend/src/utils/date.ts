@@ -64,6 +64,19 @@ export function formatDateInput(date: Date, dateFormat: DateFormat = 'system'): 
 }
 
 /**
+ * Format a calendar date sent as YYYY-MM-DD (a purchase date, say) in the
+ * chosen format, or '-' when it is not one.
+ *
+ * A day has no time zone: read as a UTC instant and shown locally it would be
+ * the day before west of Greenwich, so the parts are taken as written.
+ */
+export function formatCalendarDate(value: string | null | undefined, dateFormat: DateFormat = 'system'): string {
+  const match = value ? /^(\d{4})-(\d{2})-(\d{2})/.exec(value) : null;
+  if (!match) return '-';
+  return formatDateInput(new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])), dateFormat);
+}
+
+/**
  * Format a Date object to a time string based on format setting.
  */
 export function formatTimeInput(date: Date, timeFormat: TimeFormat = 'system'): string {

@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
@@ -67,6 +67,15 @@ class Spool(Base):
     # matching product inherit it on creation (services/material_number.py,
     # applied by the spool create routes and the RFID auto-add).
     material_number: Mapped[str | None] = mapped_column(String(64))
+
+    # The spool's own bookkeeping, set by hand: the manufacturer's batch / lot
+    # ID (#2828) to tell which spools came from one batch, who the spool
+    # belongs to (#1301, a makerspace member or a print shop's customer), and
+    # the day it was bought (#3408), which `created_at` cannot say for a spool
+    # entered later. All optional.
+    batch_id: Mapped[str | None] = mapped_column(String(64))
+    owner: Mapped[str | None] = mapped_column(String(100))
+    purchase_date: Mapped[date | None] = mapped_column(Date)
 
     # Cost tracking
     cost_per_kg: Mapped[float | None] = mapped_column(Float)  # Cost per kilogram

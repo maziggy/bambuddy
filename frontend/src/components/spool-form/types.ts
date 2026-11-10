@@ -44,6 +44,11 @@ export interface SpoolFormData {
   // Internal material / article number (#2870) — the purchasing identifier
   // shared by all spools of the same product. Free text.
   material_number: string;
+  // Batch / lot ID (#2828), owner (#1301) and purchase date as YYYY-MM-DD
+  // (#3408). Free text; empty means unset.
+  batch_id: string;
+  owner: string;
+  purchase_date: string;
   location_id: number | null;
   // Last drying (#2863), as a datetime-local value in the browser's time zone.
   // Empty means never dried. Only shown and sent when editing.
@@ -71,6 +76,9 @@ export const defaultFormData: SpoolFormData = {
   category: '',
   low_stock_threshold_pct: null,
   material_number: '',
+  batch_id: '',
+  owner: '',
+  purchase_date: '',
   location_id: null,
   last_dried_at: '',
   spoolman_filament_id: null,
@@ -218,6 +226,8 @@ export interface AdditionalSectionProps extends SectionProps {
   // Material numbers already used on other spools — same autocomplete idea
   // as availableCategories, for the internal article number (#2870).
   availableMaterialNumbers: string[];
+  // Owners already named on other spools — autocomplete for the owner field (#1301).
+  availableOwners?: string[];
   // Global low-stock threshold (%); shown as placeholder on the per-spool
   // override input so users see what they're overriding. #729
   globalLowStockThreshold: number;

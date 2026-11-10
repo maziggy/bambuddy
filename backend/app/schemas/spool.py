@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -73,6 +73,18 @@ def normalize_material_number(value: str | None) -> str | None:
     "15" and "15 " can never become two groups in the statistics aggregate or
     two entries in the inventory filter. Blank collapses to NULL rather than
     "", which keeps "has no number" a single state to query for.
+    """
+    if value is None:
+        return None
+    return value.strip() or None
+
+
+def normalize_bookkeeping_text(value: str | None) -> str | None:
+    """Trim a batch ID or owner and treat a blank one as unset (#2828, #1301).
+
+    Same reason as the material number: every write path lands here, so "Alice"
+    and "Alice " cannot become two owners in a search or a filter, and "has none"
+    stays one state (NULL) instead of two (NULL and "").
     """
     if value is None:
         return None
@@ -159,6 +171,16 @@ class SpoolBase(BaseModel):
     def _validate_material_number(cls, v):
         return normalize_material_number(v) if isinstance(v, str) else v
 
+    # Batch / lot ID (#2828), owner (#1301) and purchase date (#3408).
+    batch_id: str | None = Field(default=None, max_length=64)
+    owner: str | None = Field(default=None, max_length=100)
+    purchase_date: date | None = None
+
+    @field_validator("batch_id", "owner", mode="before")
+    @classmethod
+    def _validate_bookkeeping_text(cls, v):
+        return normalize_bookkeeping_text(v) if isinstance(v, str) else v
+
     # Free-text storage location, distinct from `location` (AMS slot
     # assignment). Column has lived on the ORM since the inventory rework
     # but was missing from this schema, so writes were silently dropped (#1291).
@@ -233,6 +255,16 @@ class SpoolUpdate(IgnoresNullForRequiredColumns):
     @classmethod
     def _validate_material_number(cls, v):
         return normalize_material_number(v) if isinstance(v, str) else v
+
+    # Batch / lot ID (#2828), owner (#1301) and purchase date (#3408).
+    batch_id: str | None = Field(default=None, max_length=64)
+    owner: str | None = Field(default=None, max_length=100)
+    purchase_date: date | None = None
+
+    @field_validator("batch_id", "owner", mode="before")
+    @classmethod
+    def _validate_bookkeeping_text(cls, v):
+        return normalize_bookkeeping_text(v) if isinstance(v, str) else v
 
     storage_location: str | None = Field(default=None, max_length=255)
     location_id: int | None = Field(default=None, gt=0)

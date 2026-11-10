@@ -43,6 +43,10 @@ export function spoolMatchesQuery(spool: InventorySpool, query: string): boolean
     (spool.slicer_filament_name?.toLowerCase().includes(q) ?? false) ||
     (spool.storage_location?.toLowerCase().includes(q) ?? false) ||
     (spool.material_number?.toLowerCase().includes(q) ?? false) ||
+    // The batch / lot ID (#2828) and whose spool it is (#1301): finding every
+    // spool of one batch, or one member's, is what they are kept for.
+    (spool.batch_id?.toLowerCase().includes(q) ?? false) ||
+    (spool.owner?.toLowerCase().includes(q) ?? false) ||
     (spool.suppliers?.some(
       (link) =>
         link.supplier_name.toLowerCase().includes(q) ||

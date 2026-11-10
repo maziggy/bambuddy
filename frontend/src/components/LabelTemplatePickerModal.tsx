@@ -115,6 +115,8 @@ const FIELD_LABELS: Record<SpoolLabelField, { i18nKey: string; fallback: string 
   name: { i18nKey: 'name', fallback: 'Colour or filament name' },
   location: { i18nKey: 'location', fallback: 'Storage location' },
   material_number: { i18nKey: 'materialNumber', fallback: 'Material number' },
+  owner: { i18nKey: 'owner', fallback: 'Owner' },
+  batch_id: { i18nKey: 'batchId', fallback: 'Batch ID' },
   temps: { i18nKey: 'temps', fallback: 'Nozzle temperature' },
   weight: { i18nKey: 'weight', fallback: 'Net weight' },
   note: { i18nKey: 'note', fallback: 'Note' },

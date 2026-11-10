@@ -94,6 +94,38 @@ def test_every_field_prints_on_a_label_with_room():
         assert present in pdf
 
 
+def test_the_owner_and_batch_print_only_when_chosen(owner="Alice Smith", batch="LOT-2411-07"):
+    """#1301 and #2828: off by default, so existing labels stay as they were."""
+    data = _data(owner=owner, batch_id=batch)
+
+    default = _text("ams_holder_75x55", data)
+    chosen = _text("ams_holder_75x55", data, frozenset({"owner", "batch_id"}))
+
+    assert owner.encode() not in default and batch.encode() not in default
+    assert owner.encode() in chosen and batch.encode() in chosen
+
+
+def test_an_owner_alone_prints_without_the_batch():
+    pdf = _text("ams_holder_75x55", _data(owner="Alice", batch_id="LOT-1"), frozenset({"owner"}))
+
+    assert b"Alice" in pdf
+    assert b"LOT-1" not in pdf
+
+
+def test_a_spool_without_an_owner_prints_no_empty_line():
+    with_owner = _text("ams_holder_75x55", _data(owner="Alice"), frozenset({"owner", "location"}))
+    without = _text("ams_holder_75x55", _data(), frozenset({"owner", "location"}))
+
+    assert b"Alice" in with_owner
+    assert b"Shelf 2" in without
+
+
+def test_the_new_fields_are_in_the_order_the_picker_lists_them():
+    assert ALL_LABEL_FIELDS.index("material_number") < ALL_LABEL_FIELDS.index("owner")
+    assert ALL_LABEL_FIELDS.index("owner") < ALL_LABEL_FIELDS.index("batch_id") < ALL_LABEL_FIELDS.index("temps")
+    assert {"owner", "batch_id"}.isdisjoint(DEFAULT_LABEL_FIELDS)
+
+
 def test_a_single_temperature_prints_alone():
     pdf = _text("ams_holder_75x55", _data(nozzle_temp_max=None), frozenset({"temps"}))
     assert b"190 " in pdf

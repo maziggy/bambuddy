@@ -843,6 +843,9 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
       category: formData.category.trim() || null,
       low_stock_threshold_pct: formData.low_stock_threshold_pct,
       material_number: formData.material_number.trim() || null,
+      batch_id: formData.batch_id.trim() || null,
+      owner: formData.owner.trim() || null,
+      purchase_date: formData.purchase_date || null,
     };
 
     setCreating(true);

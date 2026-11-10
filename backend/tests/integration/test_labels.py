@@ -393,6 +393,29 @@ class TestLabelFieldsAndFormats:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_owner_and_batch_reach_the_renderer(self, async_client: AsyncClient, spool_factory):
+        from backend.app.api.routes import labels as labels_module
+
+        spool = await spool_factory(owner="Alice", batch_id="LOT-1")
+        captured = {}
+        original = labels_module.render_labels
+
+        def _capture(template, data_list, **kwargs):
+            captured["fields"] = kwargs["fields"]
+            captured["data"] = data_list[0]
+            return original(template, data_list, **kwargs)
+
+        with patch.object(labels_module, "render_labels", side_effect=_capture):
+            resp = await async_client.post(
+                "/api/v1/inventory/labels",
+                json={"spool_ids": [spool.id], "template": "box_62x29", "fields": ["owner", "batch_id", "qr"]},
+            )
+        assert resp.status_code == 200, resp.text
+        assert captured["fields"] == {"owner", "batch_id", "qr"}
+        assert (captured["data"].owner, captured["data"].batch_id) == ("Alice", "LOT-1")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_unknown_field_rejected(self, async_client: AsyncClient, spool_factory):
         spool = await spool_factory()
         resp = await async_client.post(
@@ -502,6 +525,7 @@ class TestSpoolmanLabelParity:
         },
         "extra": {"bambu_color_name": '"Charcoal"'},
         "comment": "Dry first",
+        "lot_nr": "LOT-7",
         "registered": "2026-09-01T10:00:00Z",
         "location": "Shelf 2",
     }
@@ -541,6 +565,8 @@ class TestSpoolmanLabelParity:
         data = await self._captured(async_client, db_session, self.SPOOL)
         assert (data.material, data.subtype, data.name, data.brand) == ("PLA", "Matte", "Charcoal", "Bambu Lab")
         assert (data.material_number, data.nozzle_temp_min, data.label_weight) == ("MN-15", 220, 1000)
+        # Spoolman's lot number is the batch; it has no owner.
+        assert (data.owner, data.batch_id) == (None, "LOT-7")
         assert (data.note, data.added, data.storage_location) == ("Dry first", date(2026, 9, 1), "Shelf 2")
 
     @pytest.mark.asyncio

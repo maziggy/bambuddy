@@ -67,6 +67,12 @@ class MappedSpoolFields(TypedDict):
     # material number (#2870). Read-only in Spoolman mode — the number is
     # filament-level there and maintained in Spoolman itself.
     material_number: str | None
+    # Spoolman's own spool.lot_nr is the batch ID (#2828), shown read-only here:
+    # it is maintained in Spoolman. It has no owner or purchase date of its own
+    # (those are built-in inventory fields), so they are always unset.
+    batch_id: str | None
+    owner: None
+    purchase_date: None
     storage_location: str | None
     location_id: int | None
     k_profiles: list[Any]
@@ -562,6 +568,9 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
         # one — the filter chip builds its options from trimmed values and
         # matches exactly, so a padded number would list and match nothing.
         "material_number": ((filament.get("article_number") or "").strip() or None),
+        "batch_id": ((spool.get("lot_nr") or "").strip() or None),
+        "owner": None,
+        "purchase_date": None,
         "storage_location": spool.get("location") or None,
         "location_id": None,
         "k_profiles": [],

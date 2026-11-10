@@ -6031,6 +6031,8 @@ export default {
     backupDownloaded: 'Back-up succesvol gedownload',
     failedToCreateBackup: 'Back-up maken mislukt: {{message}}',
     backupAlreadyRunning: 'Er wordt al een back-up gemaakt. Probeer het zo meteen opnieuw.',
+    restoreBlockedByBackup: 'Er wordt een back-up gemaakt. Herstel zodra die klaar is.',
+    restoreRunning: 'Er wordt hersteld. Probeer het opnieuw zodra dat klaar is.',
     backupMissingFiles: 'Back-up voltooid, maar sommige bestanden konden niet worden gekopieerd (niet gekopieerd: {{count}}). Ze staan in het logboek.',
     restore: 'Herstellen',
     restoreReplacesAll: 'Herstellen vervangt alle gegevens.',

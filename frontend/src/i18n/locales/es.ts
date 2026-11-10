@@ -5988,6 +5988,8 @@ export default {
     backupDownloaded: 'Copia de seguridad descargada correctamente',
     failedToCreateBackup: 'Error al crear la copia de seguridad: {{message}}',
     backupAlreadyRunning: 'Ya hay una copia de seguridad en curso. Inténtalo de nuevo en un momento.',
+    restoreBlockedByBackup: 'Hay una copia de seguridad en curso. Restaura cuando haya terminado.',
+    restoreRunning: 'Hay una restauración en curso. Inténtalo de nuevo cuando haya terminado.',
     backupMissingFiles: 'Copia de seguridad terminada, pero algunos archivos no se pudieron copiar (sin copiar: {{count}}). Aparecen en el registro.',
     restore: 'Restaurar',
     restoreReplacesAll: 'La restauración reemplaza todos los datos.',

@@ -5967,6 +5967,8 @@ export default {
     backupDownloaded: 'Backup baixado com sucesso',
     failedToCreateBackup: 'Falha ao criar backup: {{message}}',
     backupAlreadyRunning: 'Já há um backup em andamento. Tente novamente em instantes.',
+    restoreBlockedByBackup: 'Há um backup em andamento. Restaure quando ele terminar.',
+    restoreRunning: 'Há uma restauração em andamento. Tente novamente quando ela terminar.',
     backupMissingFiles: 'Backup concluído, mas alguns arquivos não puderam ser copiados (não copiados: {{count}}). Eles estão listados no log.',
     restore: 'Restaurar',
     restoreReplacesAll: 'A restauração substitui todos os dados.',

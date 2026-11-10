@@ -6062,6 +6062,8 @@ errors: {
     backupDownloaded: 'Säkerhetskopia nedladdad',
     failedToCreateBackup: 'Kunde inte skapa säkerhetskopia: {{message}}',
     backupAlreadyRunning: 'En säkerhetskopiering pågår redan. Försök igen om en liten stund.',
+    restoreBlockedByBackup: 'En säkerhetskopiering pågår. Återställ när den är klar.',
+    restoreRunning: 'En återställning pågår. Försök igen när den är klar.',
     backupMissingFiles: 'Säkerhetskopian är klar, men vissa filer kunde inte kopieras (inte kopierade: {{count}}). De står i loggen.',
     restore: 'Återställ',
     restoreReplacesAll: 'Återställning ersätter all data.',

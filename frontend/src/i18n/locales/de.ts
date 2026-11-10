@@ -5981,6 +5981,8 @@ export default {
     backupDownloaded: 'Sicherung erfolgreich heruntergeladen',
     failedToCreateBackup: 'Sicherung erstellen fehlgeschlagen: {{message}}',
     backupAlreadyRunning: 'Es läuft bereits eine Sicherung. Versuchen Sie es gleich noch einmal.',
+    restoreBlockedByBackup: 'Es läuft gerade eine Sicherung. Stellen Sie wieder her, sobald sie fertig ist.',
+    restoreRunning: 'Es läuft gerade eine Wiederherstellung. Versuchen Sie es, sobald sie fertig ist.',
     backupMissingFiles: 'Sicherung abgeschlossen, aber einige Dateien konnten nicht kopiert werden (nicht kopiert: {{count}}). Sie stehen im Log.',
     restore: 'Wiederherstellen',
     restoreReplacesAll: 'Wiederherstellung ersetzt alle Daten.',

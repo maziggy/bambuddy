@@ -5967,6 +5967,8 @@ export default {
     backupDownloaded: '备份下载成功',
     failedToCreateBackup: '创建备份失败：{{message}}',
     backupAlreadyRunning: '已有备份正在运行，请稍后再试。',
+    restoreBlockedByBackup: '备份正在运行，请在完成后再恢复。',
+    restoreRunning: '恢复正在进行，请在完成后再试。',
     backupMissingFiles: '备份已完成，但部分文件无法复制（未复制：{{count}}）。详情请查看日志。',
     restore: '恢复',
     restoreReplacesAll: '恢复将替换所有数据。',

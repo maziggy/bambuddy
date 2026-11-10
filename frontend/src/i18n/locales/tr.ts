@@ -5956,6 +5956,8 @@ export default {
     backupDownloaded: 'Yedek başarıyla indirildi',
     failedToCreateBackup: 'Yedek oluşturulamadı: {{message}}',
     backupAlreadyRunning: 'Zaten bir yedekleme çalışıyor. Birazdan yeniden deneyin.',
+    restoreBlockedByBackup: 'Bir yedekleme çalışıyor. Bittikten sonra geri yükleyin.',
+    restoreRunning: 'Bir geri yükleme çalışıyor. Bittikten sonra yeniden deneyin.',
     backupMissingFiles: 'Yedekleme tamamlandı ancak bazı dosyalar kopyalanamadı (kopyalanmayan: {{count}}). Günlükte listelenirler.',
     restore: 'Geri Yükle',
     restoreReplacesAll: 'Geri yükleme tüm verilerin yerine geçer.',

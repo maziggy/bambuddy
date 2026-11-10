@@ -6033,6 +6033,8 @@ export default {
     backupDownloaded: 'Backup downloaded successfully',
     failedToCreateBackup: 'Failed to create backup: {{message}}',
     backupAlreadyRunning: 'A backup is already running. Try again in a moment.',
+    restoreBlockedByBackup: 'A backup is running. Restore once it has finished.',
+    restoreRunning: 'A restore is running. Try again once it has finished.',
     backupMissingFiles: 'Backup finished, but some files could not be copied (not copied: {{count}}). The log lists them.',
     restore: 'Restore',
     restoreReplacesAll: 'Restore replaces all data.',

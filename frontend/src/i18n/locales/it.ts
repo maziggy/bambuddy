@@ -5967,6 +5967,8 @@ export default {
     backupDownloaded: 'Backup scaricato con successo',
     failedToCreateBackup: 'Creazione del backup fallita: {{message}}',
     backupAlreadyRunning: 'Un backup è già in corso. Riprova tra un momento.',
+    restoreBlockedByBackup: 'È in corso un backup. Esegui il ripristino quando è terminato.',
+    restoreRunning: 'È in corso un ripristino. Riprova quando è terminato.',
     backupMissingFiles: 'Backup completato, ma alcuni file non sono stati copiati (non copiati: {{count}}). Sono elencati nel log.',
     restore: 'Ripristina',
     restoreReplacesAll: 'Il ripristino sostituisce tutti i dati.',

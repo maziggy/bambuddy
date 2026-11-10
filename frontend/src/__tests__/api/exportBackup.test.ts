@@ -58,6 +58,21 @@ describe('api.exportBackup', () => {
     expect((error as ApiError).message).toBe('A backup is already running');
   });
 
+  it('carries the code of a structured 409, so the caller can say which one runs', async () => {
+    server.use(
+      http.get('*/settings/backup', () =>
+        HttpResponse.json({ detail: { code: 'restore_running', message: 'A restore is running' } }, { status: 409 })
+      )
+    );
+
+    const error = await api.exportBackup().catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).status).toBe(409);
+    expect((error as ApiError).code).toBe('restore_running');
+    expect((error as ApiError).message).toBe('A restore is running');
+  });
+
   it("uses the message of the route's own 500", async () => {
     server.use(
       http.get('*/settings/backup', () =>
@@ -69,6 +84,18 @@ describe('api.exportBackup', () => {
     );
 
     await expect(api.exportBackup()).rejects.toThrow('Backup failed. Check server logs for details.');
+  });
+
+  it('returns the code of a refused restore upload', async () => {
+    server.use(
+      http.post('*/settings/restore', () =>
+        HttpResponse.json({ detail: { code: 'backup_running', message: 'A backup is running' } }, { status: 409 })
+      )
+    );
+
+    const result = await api.importBackup(new File(['PK'], 'bambuddy-backup-20260412-120000.zip'));
+
+    expect(result).toEqual({ success: false, message: 'A backup is running', code: 'backup_running' });
   });
 
   it('still reports a failure when the error body is not JSON', async () => {

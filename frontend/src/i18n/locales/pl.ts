@@ -6033,6 +6033,8 @@ export default {
     backupDownloaded: 'Kopia zapasowa została pobrana',
     failedToCreateBackup: 'Nie udało się utworzyć kopii zapasowej: {{message}}',
     backupAlreadyRunning: 'Kopia zapasowa jest już tworzona. Spróbuj ponownie za chwilę.',
+    restoreBlockedByBackup: 'Trwa tworzenie kopii zapasowej. Przywróć po jej zakończeniu.',
+    restoreRunning: 'Trwa przywracanie. Spróbuj ponownie po jego zakończeniu.',
     backupMissingFiles: 'Kopia zapasowa gotowa, ale części plików nie udało się skopiować (nieskopiowane: {{count}}). Ich lista jest w dzienniku.',
     restore: 'Przywróć',
     restoreReplacesAll: 'Przywracanie zastępuje wszystkie dane.',

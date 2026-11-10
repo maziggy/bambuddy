@@ -6549,10 +6549,14 @@ export const api = {
     // Check for errors
     if (!response.ok) {
       // {detail} from an HTTPException, {message} from the route's own 500.
+      // A 409 carries {code, message}: whether a backup or a restore is running.
       const error = await response.json().catch(() => null);
+      const detail = error?.detail;
+      const structured = detail && typeof detail === 'object' ? (detail as { code?: string; message?: string }) : null;
       throw new ApiError(
-        error?.detail || error?.message || `Backup failed with status ${response.status}`,
+        structured?.message || (typeof detail === 'string' ? detail : '') || error?.message || `Backup failed with status ${response.status}`,
         response.status,
+        structured?.code ?? null,
       );
     }
 
@@ -6586,7 +6590,7 @@ export const api = {
     const data = (await response.json().catch(() => null)) as {
       success?: boolean;
       message?: string;
-      detail?: string;
+      detail?: string | { code?: string; message?: string };
     } | null;
     // A refused restore is an HTTPException, so the body is {detail}, not
     // {success, message}. Returning it unmapped made `success` undefined and
@@ -6594,11 +6598,18 @@ export const api = {
     // which is the one case where the reason matters most (e.g. a backup this
     // version cannot import names the columns and both versions).
     if (!response.ok) {
-      return { success: false, message: data?.detail ?? data?.message ?? '' };
+      // A 409 while a backup or a restore runs is {code, message}; `code` lets
+      // the caller say it in the user's language.
+      const detail = data?.detail;
+      if (detail && typeof detail === 'object') {
+        return { success: false, message: detail.message ?? '', code: detail.code ?? null };
+      }
+      return { success: false, message: detail ?? data?.message ?? '', code: null };
     }
     return (data ?? { success: false, message: '' }) as {
       success: boolean;
       message: string;
+      code?: string | null;
     };
   },
   checkFfmpeg: () =>

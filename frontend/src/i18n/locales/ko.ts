@@ -5740,6 +5740,8 @@ export default {
     backupDownloaded: '백업이 성공적으로 다운로드되었습니다',
     failedToCreateBackup: '백업 생성 실패: {{message}}',
     backupAlreadyRunning: '백업이 이미 실행 중입니다. 잠시 후 다시 시도하세요.',
+    restoreBlockedByBackup: '백업이 실행 중입니다. 완료된 후 복원하세요.',
+    restoreRunning: '복원이 실행 중입니다. 완료된 후 다시 시도하세요.',
     backupMissingFiles: '백업이 완료되었지만 일부 파일을 복사하지 못했습니다(복사되지 않음: {{count}}). 자세한 내용은 로그를 확인하세요.',
     restore: '복원',
     restoreReplacesAll: '복원은 모든 데이터를 교체합니다.',

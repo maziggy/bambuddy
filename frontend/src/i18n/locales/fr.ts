@@ -5968,6 +5968,8 @@ export default {
     backupDownloaded: 'Sauvegarde téléchargée avec succès',
     failedToCreateBackup: 'Échec de la création de la sauvegarde : {{message}}',
     backupAlreadyRunning: "Une sauvegarde est déjà en cours. Réessayez dans un instant.",
+    restoreBlockedByBackup: "Une sauvegarde est en cours. Restaurez une fois qu'elle est terminée.",
+    restoreRunning: "Une restauration est en cours. Réessayez une fois qu'elle est terminée.",
     backupMissingFiles: "Sauvegarde terminée, mais certains fichiers n'ont pas pu être copiés (non copiés : {{count}}). Ils figurent dans le journal.",
     restore: 'Restaurer',
     restoreReplacesAll: 'La restauration remplace toutes les données.',

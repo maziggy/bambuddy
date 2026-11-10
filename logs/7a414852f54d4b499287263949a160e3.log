@@ -1,0 +1,200 @@
+2026-11-10 10:31:01,219 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:31:06,554 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:31:11,688 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:31:16,826 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:31:22,263 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:31:24,849 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 121194 bytes
+2026-11-10 10:31:27,604 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:31:32,947 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:31:36,935 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddySRV] 1Hz status push: 60 pushes/min to [IP]:51854
+2026-11-10 10:31:37,981 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:31:43,015 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:31:48,053 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:31:53,092 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:31:58,125 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:32:03,059 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:32:03,486 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 120774 bytes
+2026-11-10 10:32:08,092 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:32:13,134 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:32:18,170 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:32:23,114 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:32:28,149 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:32:33,184 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:32:37,019 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddySRV] 1Hz status push: 60 pushes/min to [IP]:51854
+2026-11-10 10:32:38,219 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:32:43,252 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:32:44,419 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 122646 bytes
+2026-11-10 10:32:48,288 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:32:51,748 INFO [backend.app.services.bambu_cloud] [7bff791c] Bambu Cloud returned 401 without the expiry signature — treating as transient, not signing the stored token out
+2026-11-10 10:32:53,227 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:32:58,265 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:33:03,306 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:33:08,343 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:33:13,278 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:33:18,413 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:33:23,354 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:33:25,310 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 126580 bytes
+2026-11-10 10:33:28,290 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:33:33,430 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:33:37,107 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddySRV] 1Hz status push: 60 pushes/min to [IP]:51854
+2026-11-10 10:33:38,566 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:33:43,601 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:33:48,632 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:33:54,169 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:33:59,202 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:33:59,221 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/09400A391800001/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20052","version":1}}...
+2026-11-10 10:33:59,221 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-11-10 10:33:59,221 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-11-10 10:34:00,501 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 122602 bytes
+2026-11-10 10:34:04,237 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:34:09,270 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:34:14,806 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:34:19,844 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:34:25,177 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:34:30,009 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:34:35,452 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:34:37,189 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddySRV] 1Hz status push: 60 pushes/min to [IP]:51854
+2026-11-10 10:34:41,090 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:34:46,123 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:34:49,156 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 118345 bytes
+2026-11-10 10:34:51,567 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:34:56,600 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:35:01,739 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:35:06,979 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:35:12,525 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:35:17,562 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:35:23,204 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:35:28,244 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:35:29,890 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 116688 bytes
+2026-11-10 10:35:33,179 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:35:37,272 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddySRV] 1Hz status push: 60 pushes/min to [IP]:51854
+2026-11-10 10:35:38,215 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:35:40,395 INFO [backend.app.main] [-] Recorded 3 AMS sensor history entries
+2026-11-10 10:35:43,251 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:35:48,290 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:35:53,227 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:35:58,265 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:36:03,303 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:36:08,338 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:36:12,553 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 128971 bytes
+2026-11-10 10:36:13,273 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:36:18,415 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:36:23,447 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:36:28,886 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:36:33,923 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:36:37,352 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddySRV] 1Hz status push: 60 pushes/min to [IP]:51854
+2026-11-10 10:36:38,861 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:36:43,897 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:36:48,929 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:36:52,246 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 115299 bytes
+2026-11-10 10:36:53,958 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:36:59,300 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:37:04,338 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:37:07,252 INFO [uvicorn.access] [-] [IP]:49743 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-11-10 10:37:07,254 INFO [uvicorn.access] [-] [IP]:49736 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-10 10:37:09,875 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:37:14,915 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:37:19,953 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:37:24,993 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:37:30,538 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:37:31,473 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 126571 bytes
+2026-11-10 10:37:35,584 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:37:37,429 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddySRV] 1Hz status push: 60 pushes/min to [IP]:51854
+2026-11-10 10:37:41,091 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:37:46,132 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:37:51,668 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:37:56,711 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:38:02,150 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:38:07,187 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:38:12,732 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:38:17,673 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:38:18,031 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 126396 bytes
+2026-11-10 10:38:22,813 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:38:28,264 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:38:33,198 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:38:37,511 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddySRV] 1Hz status push: 60 pushes/min to [IP]:51854
+2026-11-10 10:38:38,235 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:38:43,269 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:38:43,898 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 126673 bytes
+2026-11-10 10:38:48,307 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:38:53,349 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:38:58,286 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:39:00,185 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/09400A391800001/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20053","version":1}}...
+2026-11-10 10:39:00,185 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-11-10 10:39:00,185 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-11-10 10:39:03,325 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:39:08,362 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:39:12,307 INFO [backend.app.services.bambu_cloud] [494e35a5] Bambu Cloud returned 401 without the expiry signature — treating as transient, not signing the stored token out
+2026-11-10 10:39:13,399 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:39:18,428 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:39:20,048 INFO [backend.app.api.routes.printers] [b9333c93] Cover: resolved plate 2 before download (subtask=6809_-_Complete_case_Rear_Hood)
+2026-11-10 10:39:20,077 INFO [backend.app.api.routes.cloud] [a138ede1] get_filament_info called with 5 IDs: ['GFA01', 'GFG01', 'GFG00', 'GFG02', 'GFA00']
+2026-11-10 10:39:20,626 INFO [uvicorn.access] [-] [IP]:49765 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-10 10:39:23,460 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:39:28,903 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:39:33,838 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:39:37,588 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddySRV] 1Hz status push: 60 pushes/min to [IP]:51854
+2026-11-10 10:39:39,377 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:39:41,433 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 120145 bytes
+2026-11-10 10:39:44,516 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:39:49,965 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:39:55,404 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:40:00,645 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:40:05,683 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:40:10,721 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:40:15,856 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:40:20,893 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:40:21,309 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 119759 bytes
+2026-11-10 10:40:26,229 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:40:31,472 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:40:36,612 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:40:37,663 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddySRV] 1Hz status push: 60 pushes/min to [IP]:51854
+2026-11-10 10:40:40,401 INFO [backend.app.main] [-] Recorded 3 AMS sensor history entries
+2026-11-10 10:40:41,755 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:40:46,795 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:40:52,237 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:40:57,377 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:41:02,335 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 121398 bytes
+2026-11-10 10:41:02,917 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:41:08,256 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:41:13,492 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:41:18,529 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:41:23,564 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:41:29,000 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:41:34,034 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:41:37,741 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddySRV] 1Hz status push: 60 pushes/min to [IP]:51854
+2026-11-10 10:41:39,576 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:41:41,708 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 122783 bytes
+2026-11-10 10:41:44,613 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:41:49,648 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:41:55,187 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:42:00,323 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:42:05,761 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-11-10 10:42:06,494 INFO [backend.app.api.routes.support] [d4573aa3] Log level changed to DEBUG
+2026-11-10 10:42:06,494 INFO [backend.app.api.routes.bug_report] [d4573aa3] Bug report: enabled debug logging
+2026-11-10 10:42:06,494 DEBUG [backend.app.services.bambu_mqtt] [d4573aa3] [[SERIAL]] Requesting status update (pushall)
+2026-11-10 10:42:06,495 INFO [uvicorn.access] [-] [IP]:49817 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-11-10 10:42:06,500 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': False, 'cfg': 1797543, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-11-10 10:42:06,500 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-11-10 10:42:06,500 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 1797543 (binary: 0b110110110110110100111)
+2026-11-10 10:42:06,500 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: /data/Metadata/plate_2.gcode, subtask_name: 6809_-_Complete_case_Rear_Hood
+2026-11-10 10:42:06,500 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '7', 'ams_exist_bits_raw': '7', 'cali_id': 255, 'cali_stat': 0, 'cfs': [2, 3, 4, 5, 7], 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': 'ffd', 'tray_hall_out_bits': '101', 'tray_is_bbl_bits': 'ffd', 'tray_now': '0', 'tray_pre': '0', 'tray_read_done_bits': 'ffd', 'tray_reading_bits': '0', 'tray_tar': '0', 'unbind_ams_stat': 0, 'version': 103201}
+2026-11-10 10:42:06,500 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 0
+2026-11-10 10:42:06,500 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 3 new units, 3 total
+2026-11-10 10:42:06,500 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x10002003 -> extruder 0
+2026-11-10 10:42:06,500 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 1 info=0x10002003 -> extruder 0
+2026-11-10 10:42:06,500 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 2 info=0x11002103 -> extruder 1
+2026-11-10 10:42:06,500 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0, '1': 0, '2': 1}
+2026-11-10 10:42:06,500 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-11-10 10:42:06,500 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-10 10:42:06,500 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] device.extruder.state=2 (switch_state bits 12-14: 0)
+2026-11-10 10:42:06,500 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] info.temp direct: 31°C (heater OFF)
+2026-11-10 10:42:06,500 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ctc_info keys: ['temp']
+2026-11-10 10:42:06,500 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=31.0, heating=False, respect_local=False
+2026-11-10 10:42:06,500 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 31.0, target: 0.0, heating: False
+2026-11-10 10:42:06,501 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: [{'attr': 83886592, 'code': 196618}]
+2026-11-10 10:42:06,501 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 6, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'disable', 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-11-10 10:42:06,501 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -58dBm
+2026-11-10 10:42:06,501 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'off', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}, {'mode': 'off', 'node': 'chamber_light2'}]
+2026-11-10 10:42:06,501 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [65535, 0, 512]
+2026-11-10 10:42:06,501 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: /data/Metadata/plate_2.gcode, subtask: 6809_-_Complete_case_Rear_Hood

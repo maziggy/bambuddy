@@ -1091,6 +1091,12 @@ class TestWriteTagEndpoints:
         # Total size fits NTAG213
         assert len(ndef_bytes) <= 144
 
+        # OpenTag3D 2.004 beside it, for a tag with room for it (#3500)
+        v2 = bytes.fromhex(payload["ndef_v2_hex"])
+        assert v2[5:26] == b"application/opentag3d"
+        assert int.from_bytes(v2[26:28], "big") == 2004
+        assert v2[26 + 0x0C : 26 + 0x15] == b"Polymaker"
+
 
 # ============================================================================
 # Scale endpoints
@@ -2178,6 +2184,7 @@ class TestNfcWriteTagSpoolman:
         assert payload["data_origin"] == "spoolman"
         assert payload["spool_id"] == 88
         assert "ndef_data_hex" in payload
+        assert int.from_bytes(bytes.fromhex(payload["ndef_v2_hex"])[26:28], "big") == 2004
 
     @pytest.mark.asyncio
     @pytest.mark.integration

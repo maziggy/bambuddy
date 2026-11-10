@@ -138,6 +138,38 @@ class TestHeartbeatLoopCommands:
         assert "pending_write" in shared
         assert shared["pending_write"]["spool_id"] == 42
         assert shared["pending_write"]["ndef_data"] == bytes.fromhex("DEADBEEF")
+        # An older Bambuddy sends no v2 encoding: v1 only.
+        assert shared["pending_write"]["ndef_v2"] is None
+
+    @pytest.mark.asyncio
+    async def test_write_tag_command_keeps_the_v2_encoding(self):
+        # #3500: Bambuddy sends OpenTag3D v2 beside v1 for a tag with room for it.
+        config = _make_config()
+        api = _make_api()
+        sent = False
+
+        async def mock_heartbeat(*args, **kwargs):
+            nonlocal sent
+            if sent:
+                return None
+            sent = True
+            return {
+                "pending_command": "write_tag",
+                "pending_write_payload": {"spool_id": 42, "ndef_data_hex": "DEADBEEF", "ndef_v2_hex": "CAFE"},
+            }
+
+        api.heartbeat = mock_heartbeat
+        shared = {"nfc": None, "scale": None, "display": MagicMock()}
+
+        task = asyncio.create_task(heartbeat_loop(config, api, time.monotonic(), shared))
+        await asyncio.sleep(0.1)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+        assert shared["pending_write"]["ndef_v2"] == bytes.fromhex("CAFE")
 
     @pytest.mark.asyncio
     async def test_display_settings_applied_from_heartbeat(self):
@@ -402,3 +434,42 @@ class TestNfcPollLoopTagScanned:
             tag_type="mifare_classic",
             raw_blocks=raw_blocks,
         )
+
+
+class TestNfcPollLoopWrite:
+    @pytest.mark.asyncio
+    async def test_the_v2_encoding_reaches_the_write(self):
+        # #3500: the reader picks v1 or v2 by the tag's size, so it needs both.
+        from daemon.nfc_reader import NFCState
+
+        nfc = MagicMock()
+        nfc.ok = True
+        nfc.poll = lambda: ("none", None)
+        nfc.state = NFCState.TAG_PRESENT
+        nfc.current_sak = 0x00
+        nfc.current_uid = "04A1B2C3"
+        nfc.write_ntag = MagicMock(return_value=(True, "Write successful (OpenTag3D v2)"))
+        api = AsyncMock()
+        config = _make_config(nfc_poll_interval=0.0)
+        shared = {
+            "nfc": nfc,
+            "display": MagicMock(),
+            "pending_write": {"spool_id": 7, "ndef_data": b"v1", "ndef_v2": b"v2"},
+        }
+
+        async def _inline_to_thread(fn, *args, **kwargs):
+            return fn(*args, **kwargs)
+
+        with patch("daemon.main.asyncio.to_thread", _inline_to_thread):
+            task = asyncio.create_task(nfc_poll_loop(config, api, shared))
+            for _ in range(20):
+                await asyncio.sleep(0)
+                if api.write_tag_result.await_count:
+                    break
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        nfc.write_ntag.assert_called_once_with(b"v1", b"v2")

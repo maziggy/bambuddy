@@ -145,7 +145,7 @@ async def nfc_poll_loop(config: Config, api: APIClient, shared: dict):
             if pending and nfc.state == NFCState.TAG_PRESENT:
                 if nfc.current_sak in (0x00, 0x04):
                     logger.info("Executing pending tag write for spool %d", pending["spool_id"])
-                    success, msg = await asyncio.to_thread(nfc.write_ntag, pending["ndef_data"])
+                    success, msg = await asyncio.to_thread(nfc.write_ntag, pending["ndef_data"], pending.get("ndef_v2"))
                     await api.write_tag_result(
                         device_id=config.device_id,
                         spool_id=pending["spool_id"],
@@ -419,6 +419,11 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
                     shared["pending_write"] = {
                         "spool_id": write_payload["spool_id"],
                         "ndef_data": bytes.fromhex(write_payload["ndef_data_hex"]),
+                        # OpenTag3D v2 for a tag with room for it (#3500);
+                        # absent from an older Bambuddy.
+                        "ndef_v2": bytes.fromhex(write_payload["ndef_v2_hex"])
+                        if write_payload.get("ndef_v2_hex")
+                        else None,
                     }
                     logger.info("Write tag command received for spool %d", write_payload["spool_id"])
             elif cmd in ("reboot", "shutdown", "restart_daemon", "restart_browser"):

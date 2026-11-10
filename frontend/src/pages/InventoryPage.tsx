@@ -45,6 +45,7 @@ import {
   useLocationSensorColorPrefs,
   type LocationSensorAlertColor,
 } from '../utils/locationSensorDefaults';
+import { useOwnerSuggestions } from '../hooks/useOwnerSuggestions';
 import { useUiSettings } from '../hooks/useUiSettings';
 
 type ArchiveFilter = 'active' | 'archived';
@@ -777,6 +778,8 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
       spoolmanMode ? api.getSpoolmanInventorySpools(true) : api.getSpools(true),
     refetchInterval: 30000,
   });
+  // Bulk Edit's owner suggestions: owners in use and the registered users (#1301).
+  const ownerSuggestions = useOwnerSuggestions(spools, !spoolmanMode);
 
   // CSV export (#1576) — downloads the active inventory as a CSV file.
   const handleExportCsv = useCallback(async () => {
@@ -2691,7 +2694,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
         availableBrands={dedupeAndSort((spools ?? []).map((s) => s.brand))}
         availableCategories={dedupeAndSort((spools ?? []).map((s) => s.category))}
         availableMaterialNumbers={dedupeAndSort((spools ?? []).map((s) => s.material_number))}
-        availableOwners={dedupeAndSort((spools ?? []).map((s) => s.owner))}
+        availableOwners={ownerSuggestions}
         availableSlicerFilaments={dedupeAndSort((spools ?? []).map((s) => s.slicer_filament))}
         availableSlicerFilamentNames={dedupeAndSort((spools ?? []).map((s) => s.slicer_filament_name))}
         spoolmanMode={spoolmanMode}

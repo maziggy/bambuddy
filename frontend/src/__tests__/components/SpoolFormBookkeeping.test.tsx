@@ -44,6 +44,7 @@ vi.mock('../../api/client', () => ({
     saveSpoolmanFilamentPresets: vi.fn().mockResolvedValue([]),
     getSpoolmanInventoryFilaments: vi.fn().mockResolvedValue([]),
     getAssignments: vi.fn().mockResolvedValue([]),
+    getUsersSlim: vi.fn().mockResolvedValue([{ id: 1, username: 'dana' }]),
     unassignSpool: vi.fn().mockResolvedValue({}),
   },
   ApiError: class ApiError extends Error {
@@ -165,5 +166,25 @@ describe('SpoolFormModal batch ID, owner and purchase date', () => {
     expect(await screen.findByLabelText('Batch ID')).toHaveValue('LOT-1');
     expect(screen.getByLabelText('Owner')).toHaveValue('Alice');
     expect(screen.getByLabelText('Purchase date')).toHaveValue('2026-03-14');
+  });
+
+  it('suggests the registered users as owners, and still takes anyone else', async () => {
+    const { container } = render(
+      <SpoolFormModal isOpen={true} onClose={vi.fn()} spool={storedSpool} mode="edit" currencySymbol="$" />,
+    );
+    await waitFor(() => expect(screen.getAllByRole('heading').length).toBeGreaterThan(0));
+    fireEvent.click(screen.getByRole('button', { name: /Color & Cost/ }));
+    await screen.findByLabelText('Owner');
+
+    await waitFor(() => {
+      const list = container.ownerDocument.querySelector('#spool-owner-options');
+      expect([...(list?.querySelectorAll('option') ?? [])].map((o) => o.getAttribute('value'))).toContain('dana');
+    });
+
+    // A customer is no user: typed in, it is sent as it is.
+    fireEvent.change(screen.getByLabelText('Owner'), { target: { value: 'A walk-in customer' } });
+    fireEvent.click(screen.getByRole('button', { name: /save/i }));
+    await waitFor(() => expect(api.updateSpool).toHaveBeenCalled());
+    expect(vi.mocked(api.updateSpool).mock.calls[0][1]).toMatchObject({ owner: 'A walk-in customer' });
   });
 });

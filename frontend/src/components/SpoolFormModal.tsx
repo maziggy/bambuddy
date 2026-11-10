@@ -32,6 +32,7 @@ import {
   invalidateInventoryLocations,
   invalidateSpoolAndLocationQueries,
 } from '../utils/inventoryQueries';
+import { useOwnerSuggestions } from '../hooks/useOwnerSuggestions';
 import { useUiSettings } from '../hooks/useUiSettings';
 
 type TabId = 'filament' | 'appearance' | 'printers';
@@ -928,16 +929,10 @@ export function SpoolFormModal({
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   })();
-  // Owners already named on other spools (#1301): suggested while typing, so
-  // one person is not entered as "Alice" and "alice" and "Alice ".
-  const availableOwners = (() => {
-    const set = new Set<string>();
-    for (const s of allSpools ?? []) {
-      const o = s.owner?.trim();
-      if (o) set.add(o);
-    }
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  })();
+  // Owners already named on other spools, and the registered users (#1301):
+  // suggested while typing, so one person is not entered as "Alice" and
+  // "alice" and "Alice ". Anyone else can still be typed in.
+  const availableOwners = useOwnerSuggestions(allSpools, !spoolmanMode);
   const globalLowStockThreshold = settingsForForm?.low_stock_threshold ?? 20;
 
   const unassignMutation = useMutation({

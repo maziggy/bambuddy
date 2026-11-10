@@ -1,0 +1,1 @@
+function e(e){let t=(e??``).trim().toUpperCase().slice(0,2);return t===`HH`||t===`HS`?t:null}function t(e){return e?e===`HH`?`HF`:`S`:null}function n(t,n){let r=e(t),i=e(n);return!r||!i||r===i}export{t as n,e as r,n as t};

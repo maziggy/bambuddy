@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 from . import __version__, system_stats
-from .api_client import APIClient
+from .api_client import WRITE_RESULT_PATH, APIClient
 from .config import Config
 from .display_control import DisplayControl
 from .nfc_reader import NFCReader, NFCState
@@ -154,6 +154,11 @@ async def nfc_poll_loop(config: Config, api: APIClient, shared: dict):
                         message=msg,
                     )
                     shared.pop("pending_write", None)
+                    if api.has_buffered(WRITE_RESULT_PATH):
+                        # The backend keeps the write command until it has the
+                        # result, so heartbeats keep bringing it back meanwhile
+                        # (#3076). See the write_tag handling in heartbeat_loop.
+                        shared["write_result_unsent"] = pending["spool_id"]
                 else:
                     # Fail fast when a non-NTAG is presented during write mode.
                     # Without this, UI can appear stuck on "waiting for SpoolBuddy".
@@ -415,7 +420,21 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
                 continue
             elif cmd == "write_tag":
                 write_payload = result.get("pending_write_payload")
-                if write_payload:
+                unsent = shared.get("write_result_unsent")
+                if write_payload and unsent is not None and write_payload["spool_id"] == unsent:
+                    # The write was done; its result hadn't reached the backend
+                    # when this heartbeat was answered, so the command is the
+                    # same write again. Running it would write the tag on the
+                    # reader a second time, a different one if it was swapped
+                    # (#3076). Once the result is out, the backend clears the
+                    # command and a new write request arrives as usual.
+                    if not api.has_buffered(WRITE_RESULT_PATH):
+                        shared.pop("write_result_unsent", None)
+                    logger.info(
+                        "Write tag command for spool %d ignored: the result of that write is still on its way",
+                        unsent,
+                    )
+                elif write_payload:
                     shared["pending_write"] = {
                         "spool_id": write_payload["spool_id"],
                         "ndef_data": bytes.fromhex(write_payload["ndef_data_hex"]),

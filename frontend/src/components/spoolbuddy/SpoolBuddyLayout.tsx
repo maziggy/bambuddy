@@ -7,6 +7,7 @@ import { SpoolBuddyBottomNav } from './SpoolBuddyBottomNav';
 import { SpoolBuddyStatusBar } from './SpoolBuddyStatusBar';
 import { SpoolBuddyQuickMenu } from './SpoolBuddyQuickMenu';
 import { useSpoolBuddyState } from '../../hooks/useSpoolBuddyState';
+import { useKioskDevice } from '../../hooks/useKioskDevice';
 import { useColorCatalogVersion } from '../../hooks/useColorCatalogVersion';
 import { api, spoolbuddyApi, type Printer, type PrinterStatus } from '../../api/client';
 import { VirtualKeyboard } from '../VirtualKeyboard';
@@ -25,7 +26,10 @@ export function SpoolBuddyLayout() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const sbState = useSpoolBuddyState();
+  // This kiosk's device, for display settings, the online state and which
+  // events count on any page; not simply the first registered one (#3504).
+  const { device } = useKioskDevice(30000);
+  const sbState = useSpoolBuddyState(device?.device_id);
 
   // Hide the global toast viewport on the kiosk display. Restore on unmount so
   // navigating back to the main app sees its toasts again.
@@ -43,13 +47,7 @@ export function SpoolBuddyLayout() {
     }
   }, [appSettings?.language, i18n]);
 
-  // Query device data to initialize display settings on any page
-  const { data: devices = [] } = useQuery({
-    queryKey: ['spoolbuddy-devices'],
-    queryFn: () => spoolbuddyApi.getDevices(),
-    refetchInterval: 30000,
-  });
-  const device = devices[0];
+  // sbState only follows this device, so either says whether it is online.
   const effectiveDeviceOnline = sbState.deviceOnline || Boolean(device?.online);
   const sbStateForUi = useMemo(
     () => ({ ...sbState, deviceOnline: effectiveDeviceOnline }),

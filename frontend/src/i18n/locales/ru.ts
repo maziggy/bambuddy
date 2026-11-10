@@ -7343,6 +7343,8 @@ export default {
       includeBeta: "Включать бета-версии",
     },
     writeTag: {
+      writeWith: 'Записать с помощью',
+      deviceOfflineOption: '{{name}} (не в сети)',
       tabExisting: "Существующая катушка",
       tabNew: "Новая катушка",
       tabReplace: "Заменить метку",

@@ -7699,6 +7699,8 @@ export default {
       testReadTag: 'Ler tag',
     },
     writeTag: {
+      writeWith: 'Gravar com',
+      deviceOfflineOption: '{{name}} (dispositivo offline)',
       tabExisting: 'Bobina existente',
       tabNew: 'Nova bobina',
       tabReplace: 'Substituir tag',

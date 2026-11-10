@@ -459,4 +459,57 @@ describe('useSpoolBuddyState', () => {
     expect(removedEvents).toContain('spoolbuddy-online');
     expect(removedEvents).toContain('spoolbuddy-offline');
   });
+
+  describe('with the kiosk device given (#3504)', () => {
+    it("ignores another device's weight, tags and online state", () => {
+      const { result } = renderHook(() => useSpoolBuddyState('kiosk'));
+
+      act(() => {
+        dispatchCustomEvent('spoolbuddy-weight', { weight_grams: 999, stable: true, device_id: 'other' });
+        dispatchCustomEvent('spoolbuddy-unknown-tag', { tag_uid: 'AABB', device_id: 'other' });
+        dispatchCustomEvent('spoolbuddy-online', { device_id: 'other' });
+      });
+
+      expect(result.current.weight).toBeNull();
+      expect(result.current.unknownTagUid).toBeNull();
+      expect(result.current.deviceOnline).toBe(false);
+    });
+
+    it("follows its own device's events", () => {
+      const { result } = renderHook(() => useSpoolBuddyState('kiosk'));
+
+      act(() => {
+        dispatchCustomEvent('spoolbuddy-weight', { weight_grams: 250, stable: true, device_id: 'kiosk' });
+      });
+
+      expect(result.current.weight).toBe(250);
+      expect(result.current.deviceId).toBe('kiosk');
+    });
+
+    it("keeps its own reading when another device's event arrives", () => {
+      const { result } = renderHook(() => useSpoolBuddyState('kiosk'));
+
+      act(() => {
+        dispatchCustomEvent('spoolbuddy-weight', { weight_grams: 250, stable: true, device_id: 'kiosk' });
+        dispatchCustomEvent('spoolbuddy-weight', { weight_grams: 999, stable: true, device_id: 'other' });
+      });
+
+      expect(result.current.weight).toBe(250);
+      expect(result.current.deviceOnline).toBe(true);
+    });
+
+    it('drops what another device left once the kiosk device is known', () => {
+      const { result, rerender } = renderHook(({ id }) => useSpoolBuddyState(id), {
+        initialProps: { id: undefined as string | undefined },
+      });
+      act(() => {
+        dispatchCustomEvent('spoolbuddy-weight', { weight_grams: 999, stable: true, device_id: 'other' });
+      });
+      expect(result.current.weight).toBe(999);
+
+      rerender({ id: 'kiosk' });
+
+      expect(result.current.weight).toBeNull();
+    });
+  });
 });

@@ -7720,6 +7720,8 @@ export default {
       includeBeta: 'Incluir versiones beta',
     },
     writeTag: {
+      writeWith: 'Escribir con',
+      deviceOfflineOption: '{{name}} (sin conexión)',
       tabExisting: 'Bobina existente',
       tabNew: 'Bobina nueva',
       tabReplace: 'Reemplazar etiqueta',

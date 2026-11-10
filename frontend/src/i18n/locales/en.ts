@@ -7765,6 +7765,8 @@ export default {
       includeBeta: 'Include beta versions',
     },
     writeTag: {
+      writeWith: 'Write with',
+      deviceOfflineOption: '{{name}} (offline)',
       tabExisting: 'Existing Spool',
       tabNew: 'New Spool',
       tabReplace: 'Replace Tag',

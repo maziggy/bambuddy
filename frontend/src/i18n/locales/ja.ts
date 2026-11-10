@@ -7713,6 +7713,8 @@ export default {
       testReadTag: 'タグを読み取り',
     },
     writeTag: {
+      writeWith: '書き込みに使うデバイス',
+      deviceOfflineOption: '{{name}}（オフライン）',
       tabExisting: '既存のスプール',
       tabNew: '新規スプール',
       tabReplace: 'タグ交換',

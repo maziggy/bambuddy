@@ -7712,6 +7712,8 @@ export default {
       includeBeta: 'Beta-Versionen einschließen',
     },
     writeTag: {
+      writeWith: 'Schreiben mit',
+      deviceOfflineOption: '{{name}} (Gerät offline)',
       tabExisting: 'Vorhandene Spule',
       tabNew: 'Neue Spule',
       tabReplace: 'Tag ersetzen',

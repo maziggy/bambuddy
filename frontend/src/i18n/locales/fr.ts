@@ -7700,6 +7700,8 @@ export default {
       testReadTag: 'Lire un tag',
     },
     writeTag: {
+      writeWith: 'Écrire avec',
+      deviceOfflineOption: '{{name}} (hors ligne)',
       tabExisting: 'Bobine existante',
       tabNew: 'Nouvelle bobine',
       tabReplace: 'Remplacer le tag',

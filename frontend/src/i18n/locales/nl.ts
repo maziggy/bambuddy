@@ -7763,6 +7763,8 @@ export default {
       includeBeta: 'Bètaversies opnemen',
     },
     writeTag: {
+      writeWith: 'Schrijven met',
+      deviceOfflineOption: '{{name}} (apparaat offline)',
       tabExisting: 'Bestaande spoel',
       tabNew: 'Nieuwe spoel',
       tabReplace: 'Tag vervangen',

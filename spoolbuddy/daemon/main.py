@@ -68,6 +68,11 @@ def _get_ip() -> str:
 
 SSH_KEY_TAG = "bambuddy-spoolbuddy"
 
+# How long an armed tag write waits for a tag before the daemon gives up. The
+# reader has no other deadline, so a user who walks away leaves the write queued
+# (and the Write page waiting) for as long as the daemon runs (#3503).
+WRITE_ARM_TIMEOUT_SECONDS = 60.0
+
 
 def _deploy_ssh_key(public_key: str) -> None:
     """Sync Bambuddy's SSH public key into authorized_keys.
@@ -142,6 +147,28 @@ async def nfc_poll_loop(config: Config, api: APIClient, shared: dict):
 
             # Check for pending write command
             pending = shared.get("pending_write")
+            if pending:
+                armed_at = shared.get("pending_write_armed_at")
+                if armed_at is None:
+                    shared["pending_write_armed_at"] = time.monotonic()
+                elif time.monotonic() - armed_at >= WRITE_ARM_TIMEOUT_SECONDS:
+                    await api.write_tag_result(
+                        device_id=config.device_id,
+                        spool_id=pending["spool_id"],
+                        tag_uid="",
+                        success=False,
+                        message="No tag was placed on the reader in time. Write cancelled.",
+                    )
+                    logger.warning(
+                        "Write aborted for spool %d: no tag placed within %.0f s",
+                        pending["spool_id"],
+                        WRITE_ARM_TIMEOUT_SECONDS,
+                    )
+                    shared.pop("pending_write", None)
+                    shared.pop("pending_write_armed_at", None)
+                    shared.pop("pending_write_queued_at", None)
+
+            pending = shared.get("pending_write")
             if pending and nfc.state == NFCState.TAG_PRESENT:
                 if nfc.current_sak in (0x00, 0x04):
                     logger.info("Executing pending tag write for spool %d", pending["spool_id"])
@@ -154,6 +181,8 @@ async def nfc_poll_loop(config: Config, api: APIClient, shared: dict):
                         message=msg,
                     )
                     shared.pop("pending_write", None)
+                    shared.pop("pending_write_armed_at", None)
+                    shared.pop("pending_write_queued_at", None)
                 else:
                     # Fail fast when a non-NTAG is presented during write mode.
                     # Without this, UI can appear stuck on "waiting for SpoolBuddy".
@@ -171,6 +200,8 @@ async def nfc_poll_loop(config: Config, api: APIClient, shared: dict):
                         sak,
                     )
                     shared.pop("pending_write", None)
+                    shared.pop("pending_write_armed_at", None)
+                    shared.pop("pending_write_queued_at", None)
 
             await asyncio.sleep(config.nfc_poll_interval)
     finally:
@@ -305,6 +336,16 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
                 _deploy_ssh_key(ssh_key)
 
             cmd = result.get("pending_command")
+            if cmd != "write_tag" and shared.get("pending_write"):
+                # The backend answers every heartbeat with the queued command and
+                # clears it only when the write is cancelled or replaced, so the
+                # absence of write_tag is the signal that the request is gone.
+                # Without this the daemon kept its copy and wrote the next tag
+                # placed on the reader (#3503).
+                shared.pop("pending_write", None)
+                shared.pop("pending_write_armed_at", None)
+                shared.pop("pending_write_queued_at", None)
+                logger.info("Armed tag write dropped: backend no longer queues it")
             if cmd == "tare":
                 scale = shared.get("scale")
                 if scale and scale.ok:
@@ -416,10 +457,24 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
             elif cmd == "write_tag":
                 write_payload = result.get("pending_write_payload")
                 if write_payload:
-                    shared["pending_write"] = {
+                    incoming = {
                         "spool_id": write_payload["spool_id"],
                         "ndef_data": bytes.fromhex(write_payload["ndef_data_hex"]),
                     }
+                    # A cancel and re-queue can both land inside one heartbeat
+                    # interval, so the backend never stops sending write_tag.
+                    # The payload is built from the spool, so re-queueing the same
+                    # spool produces identical content; the backend's queued_at
+                    # is what tells one request from the next.
+                    queued_at = write_payload.get("queued_at")
+                    same_request = (
+                        shared.get("pending_write_queued_at") == queued_at
+                        and shared.get("pending_write") == incoming
+                    )
+                    if not same_request:
+                        shared["pending_write_armed_at"] = time.monotonic()
+                    shared["pending_write"] = incoming
+                    shared["pending_write_queued_at"] = queued_at
                     logger.info("Write tag command received for spool %d", write_payload["spool_id"])
             elif cmd in ("reboot", "shutdown", "restart_daemon", "restart_browser"):
                 logger.info("System command received: %s", cmd)

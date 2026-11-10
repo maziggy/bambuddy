@@ -1055,6 +1055,310 @@ class TestWriteTagEndpoints:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_cancelled_write_result_does_not_link_tag(
+        self, async_client: AsyncClient, device_factory, spool_factory, db_session
+    ):
+        """A late result for a cancelled write must not bind the tag to a spool (#3503).
+
+        Cancel clears pending_write_payload, so the handler fell back to the
+        local branch and set tag_uid on whichever local spool had that id --
+        even when the write was queued for a Spoolman spool of the same id.
+        """
+        device = await device_factory(device_id="sb-cancel-late")
+        spool = await spool_factory(material="PLA", tag_uid=None)
+
+        await async_client.post(
+            f"{API}/nfc/write-tag",
+            json={"device_id": device.device_id, "spool_id": spool.id},
+        )
+        await async_client.post(f"{API}/devices/{device.device_id}/cancel-write", json={})
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            resp = await async_client.post(
+                f"{API}/nfc/write-result",
+                json={
+                    "device_id": device.device_id,
+                    "spool_id": spool.id,
+                    "tag_uid": "04CCDD11223344",
+                    "success": True,
+                },
+            )
+
+        assert resp.status_code == 200
+        await db_session.refresh(spool)
+        assert spool.tag_uid is None
+        broadcast_types = [c[0][0]["type"] for c in mock_ws.broadcast.call_args_list]
+        assert "spoolbuddy_tag_written" not in broadcast_types
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_replaced_write_leaves_no_stale_payload(
+        self, async_client: AsyncClient, device_factory, spool_factory, db_session
+    ):
+        """A command replacing a queued write clears its payload too (#3503).
+
+        The four command endpoints overwrote pending_command and left the old
+        write payload behind, so a heartbeat could still carry a payload whose
+        command was gone.
+        """
+        device = await device_factory(device_id="sb-replaced")
+        spool = await spool_factory()
+
+        await async_client.post(
+            f"{API}/nfc/write-tag",
+            json={"device_id": device.device_id, "spool_id": spool.id},
+        )
+        await async_client.post(f"{API}/devices/{device.device_id}/calibration/tare", json={})
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            hb = await async_client.post(
+                f"{API}/devices/{device.device_id}/heartbeat",
+                json={"nfc_ok": True, "scale_ok": True, "uptime_s": 20},
+            )
+
+        assert hb.json()["pending_command"] == "tare"
+        assert hb.json()["pending_write_payload"] is None
+        await db_session.refresh(device)
+        assert device.pending_write_payload is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_stale_queued_write_expires(
+        self, async_client: AsyncClient, device_factory, spool_factory, db_session
+    ):
+        """A write queued past its deadline is dropped on the next heartbeat (#3503).
+
+        A write for a device that is offline, or one the user walked away from,
+        stayed queued indefinitely -- the device was told to write a tag long
+        after anyone asked for it. The daemon has its own deadline, but it is
+        not running while the device is away, so the queue has to expire here.
+        """
+        device = await device_factory(device_id="sb-stale")
+        spool = await spool_factory()
+
+        await async_client.post(
+            f"{API}/nfc/write-tag",
+            json={"device_id": device.device_id, "spool_id": spool.id},
+        )
+        await db_session.refresh(device)
+        payload = __import__("json").loads(device.pending_write_payload)
+        payload["queued_at"] = (
+            datetime.now(timezone.utc) - timedelta(seconds=spoolbuddy_routes.WRITE_QUEUE_TTL_SECONDS + 60)
+        ).isoformat()
+        device.pending_write_payload = __import__("json").dumps(payload)
+        await db_session.commit()
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            hb = await async_client.post(
+                f"{API}/devices/{device.device_id}/heartbeat",
+                json={"nfc_ok": True, "scale_ok": True, "uptime_s": 20},
+            )
+
+        assert hb.json()["pending_command"] is None
+        assert hb.json()["pending_write_payload"] is None
+        await db_session.refresh(device)
+        assert device.pending_command is None
+        assert device.pending_write_payload is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_write_inside_its_window_is_still_delivered(
+        self, async_client: AsyncClient, device_factory, spool_factory
+    ):
+        """Expiry must not swallow a write that was just queued."""
+        device = await device_factory(device_id="sb-fresh")
+        spool = await spool_factory()
+
+        await async_client.post(
+            f"{API}/nfc/write-tag",
+            json={"device_id": device.device_id, "spool_id": spool.id},
+        )
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            hb = await async_client.post(
+                f"{API}/devices/{device.device_id}/heartbeat",
+                json={"nfc_ok": True, "scale_ok": True, "uptime_s": 20},
+            )
+
+        assert hb.json()["pending_command"] == "write_tag"
+        assert hb.json()["pending_write_payload"]["spool_id"] == spool.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_result_for_a_replaced_write_keeps_the_queued_one(
+        self, async_client: AsyncClient, device_factory, spool_factory, db_session
+    ):
+        """A late result for write A must not consume the queued write B (#3503).
+
+        Both are write_tag, so the command name alone does not tell them apart.
+        Without comparing the queued spool, A's result cleared B's queue entry
+        and then linked A's tag using B's data_origin.
+        """
+        device = await device_factory(device_id="sb-req-replaced")
+        spool_a = await spool_factory(tag_uid=None)
+        spool_b = await spool_factory(tag_uid=None)
+
+        await async_client.post(
+            f"{API}/nfc/write-tag",
+            json={"device_id": device.device_id, "spool_id": spool_a.id},
+        )
+        await async_client.post(
+            f"{API}/nfc/write-tag",
+            json={"device_id": device.device_id, "spool_id": spool_b.id},
+        )
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            await async_client.post(
+                f"{API}/nfc/write-result",
+                json={
+                    "device_id": device.device_id,
+                    "spool_id": spool_a.id,
+                    "tag_uid": "04EEFF11223344",
+                    "success": True,
+                },
+            )
+
+        await db_session.refresh(device)
+        assert device.pending_command == "write_tag"
+        queued = __import__("json").loads(device.pending_write_payload)
+        assert queued["spool_id"] == spool_b.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_late_result_leaves_the_replacing_command_pending(
+        self, async_client: AsyncClient, device_factory, spool_factory, db_session
+    ):
+        """Rejecting a late result must not drop the command that replaced it (#3503).
+
+        The handler cleared pending_command before deciding the result was
+        stale, so a tare queued in the meantime was committed away and the
+        device never received it.
+        """
+        device = await device_factory(device_id="sb-late-keeps-tare")
+        spool = await spool_factory(tag_uid=None)
+
+        await async_client.post(
+            f"{API}/nfc/write-tag",
+            json={"device_id": device.device_id, "spool_id": spool.id},
+        )
+        await async_client.post(f"{API}/devices/{device.device_id}/calibration/tare", json={})
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            await async_client.post(
+                f"{API}/nfc/write-result",
+                json={
+                    "device_id": device.device_id,
+                    "spool_id": spool.id,
+                    "tag_uid": "04AABBCCDDEEFF",
+                    "success": True,
+                },
+            )
+
+        await db_session.refresh(device)
+        assert device.pending_command == "tare"
+        await db_session.refresh(spool)
+        assert spool.tag_uid is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_replaced_write_tells_the_write_page(
+        self, async_client: AsyncClient, device_factory, spool_factory
+    ):
+        """Replacing a queued write must end it on the Write page (#3503).
+
+        The page only leaves "Writing tag..." on a write result or the
+        spoolbuddy_tag_write_failed event; a replacement produced neither.
+        """
+        device = await device_factory(device_id="sb-replaced-notify")
+        spool = await spool_factory()
+
+        await async_client.post(
+            f"{API}/nfc/write-tag",
+            json={"device_id": device.device_id, "spool_id": spool.id},
+        )
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            await async_client.post(f"{API}/devices/{device.device_id}/calibration/tare", json={})
+
+        broadcasts = [c[0][0] for c in mock_ws.broadcast.call_args_list]
+        failed = [b for b in broadcasts if b["type"] == "spoolbuddy_tag_write_failed"]
+        assert len(failed) == 1
+        assert failed[0]["spool_id"] == spool.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_fresh_command_on_a_quiet_device_broadcasts_nothing(
+        self, async_client: AsyncClient, device_factory
+    ):
+        """No queued write means nothing for the Write page to be told about."""
+        device = await device_factory(device_id="sb-quiet")
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            await async_client.post(f"{API}/devices/{device.device_id}/calibration/tare", json={})
+
+        broadcasts = [c[0][0] for c in mock_ws.broadcast.call_args_list]
+        assert not [b for b in broadcasts if b["type"] == "spoolbuddy_tag_write_failed"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_second_write_tells_the_write_page_about_the_first(
+        self, async_client: AsyncClient, device_factory, spool_factory
+    ):
+        """Queueing a write over a queued write must end the first one (#3503).
+
+        Both are write_tag, so the Queueing route replaced the payload without
+        going through the command path and the first write was never reported.
+        """
+        device = await device_factory(device_id="sb-two-writes")
+        spool_a = await spool_factory(tag_uid=None)
+        spool_b = await spool_factory(tag_uid=None)
+
+        await async_client.post(
+            f"{API}/nfc/write-tag",
+            json={"device_id": device.device_id, "spool_id": spool_a.id},
+        )
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            await async_client.post(
+                f"{API}/nfc/write-tag",
+                json={"device_id": device.device_id, "spool_id": spool_b.id},
+            )
+
+        broadcasts = [c[0][0] for c in mock_ws.broadcast.call_args_list]
+        failed = [b for b in broadcasts if b["type"] == "spoolbuddy_tag_write_failed"]
+        assert len(failed) == 1
+        assert failed[0]["spool_id"] == spool_a.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_first_write_on_a_quiet_device_broadcasts_nothing(
+        self, async_client: AsyncClient, device_factory, spool_factory
+    ):
+        """Nothing was replaced, so there is nothing to end."""
+        device = await device_factory(device_id="sb-first-write")
+        spool = await spool_factory()
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            await async_client.post(
+                f"{API}/nfc/write-tag",
+                json={"device_id": device.device_id, "spool_id": spool.id},
+            )
+
+        broadcasts = [c[0][0] for c in mock_ws.broadcast.call_args_list]
+        assert not [b for b in broadcasts if b["type"] == "spoolbuddy_tag_write_failed"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_write_tag_ndef_data_is_valid(self, async_client: AsyncClient, device_factory, spool_factory):
         """Verify the NDEF data in the heartbeat is a valid OpenTag3D message."""
         device = await device_factory(device_id="sb-wt-ndef")
@@ -2611,6 +2915,37 @@ class TestNfcWriteResultInputValidation:
         )
 
         assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_failed_write_without_a_tag_accepted(
+        self, async_client: AsyncClient, device_factory, spool_factory
+    ):
+        """A give-up report carries no tag UID and must still reach the handler.
+
+        When no tag is ever placed the daemon has nothing to report as the UID.
+        Rejecting the empty value left the Write page waiting forever while the
+        daemon considered the write over (#3503).
+        """
+        device = await device_factory(device_id="sb-uid-empty", pending_command="write_tag")
+        spool = await spool_factory()
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            resp = await async_client.post(
+                f"{API}/nfc/write-result",
+                json={
+                    "device_id": device.device_id,
+                    "spool_id": spool.id,
+                    "tag_uid": "",
+                    "success": False,
+                    "message": "No tag was placed on the reader in time. Write cancelled.",
+                },
+            )
+
+        assert resp.status_code == 200
+        msg = mock_ws.broadcast.call_args[0][0]
+        assert msg["type"] == "spoolbuddy_tag_write_failed"
 
     @pytest.mark.asyncio
     @pytest.mark.integration

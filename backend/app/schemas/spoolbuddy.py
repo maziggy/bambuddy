@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # --- Device schemas ---
 
@@ -163,9 +163,17 @@ class WriteTagRequest(BaseModel):
 class WriteTagResultRequest(BaseModel):
     device_id: str = Field(..., max_length=50)
     spool_id: int = Field(..., gt=0)
-    tag_uid: str = Field(..., min_length=8, max_length=30, pattern=r"^[0-9A-Fa-f]+$")
+    # Empty only when the write failed without touching a tag — the daemon gives
+    # up on a write nobody placed a tag for, and there is no UID to report.
+    tag_uid: str = Field("", max_length=30, pattern=r"^([0-9A-Fa-f]+)?$")
     success: bool
     message: str | None = Field(None, max_length=500)
+
+    @model_validator(mode="after")
+    def _uid_required_when_written(self):
+        if self.success and len(self.tag_uid) < 8:
+            raise ValueError("tag_uid must be at least 8 hex characters for a written tag")
+        return self
 
 
 class DisplaySettingsRequest(BaseModel):

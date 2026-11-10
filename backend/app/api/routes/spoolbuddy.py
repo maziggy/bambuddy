@@ -63,6 +63,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/spoolbuddy", tags=["spoolbuddy"])
 
 OFFLINE_THRESHOLD_SECONDS = 30
+# A queued tag write waits this long for the device to pick it up. Nobody is
+# waiting on the Write page after that, and an offline device that returns much
+# later would otherwise be told to write a tag asked for long ago (#3503).
+WRITE_QUEUE_TTL_SECONDS = 300
 ONLINE_BROADCAST_INTERVAL_SECONDS = 10
 _SSRF_WARN_THROTTLE_SECONDS = 60
 _spoolbuddy_online_last_broadcast: dict[str, float] = {}
@@ -152,6 +156,58 @@ def _is_online(device: SpoolBuddyDevice) -> bool:
     return (
         datetime.now(timezone.utc) - device.last_seen.replace(tzinfo=timezone.utc)
     ).total_seconds() < OFFLINE_THRESHOLD_SECONDS
+
+
+async def _queue_command(device: SpoolBuddyDevice, command: str, payload: str | None = None) -> None:
+    """Queue a command, discarding any tag write it replaces.
+
+    A replaced write has to end on the Write page, which only leaves its waiting
+    state on a write result or this event. Left behind, the payload also made a
+    later heartbeat carry a write whose command was gone (#3503).
+    """
+    replaced_spool_id = None
+    if device.pending_command == "write_tag":
+        try:
+            replaced_spool_id = json.loads(device.pending_write_payload or "{}").get("spool_id")
+        except (json.JSONDecodeError, TypeError):
+            replaced_spool_id = None
+
+    device.pending_command = command
+    device.pending_write_payload = payload
+
+    if replaced_spool_id is not None:
+        logger.info(
+            "Discarding queued tag write for device %s spool %d: replaced by %s",
+            device.device_id,
+            replaced_spool_id,
+            command,
+        )
+        await ws_manager.broadcast(
+            {
+                "type": "spoolbuddy_tag_write_failed",
+                "device_id": device.device_id,
+                "spool_id": replaced_spool_id,
+                "message": f"Write was replaced by another command ({command})",
+            }
+        )
+
+
+def _write_expired(payload: dict | None) -> bool:
+    """True when a queued tag write has waited longer than WRITE_QUEUE_TTL_SECONDS.
+
+    Payloads stored before this field existed carry no ``queued_at``; they are
+    left alone rather than dropped, so an in-flight write survives the upgrade.
+    """
+    queued_at = (payload or {}).get("queued_at")
+    if not queued_at:
+        return False
+    try:
+        queued = datetime.fromisoformat(queued_at)
+    except (TypeError, ValueError):
+        return False
+    if queued.tzinfo is None:
+        queued = queued.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - queued).total_seconds() >= WRITE_QUEUE_TTL_SECONDS
 
 
 def _device_to_response(device: SpoolBuddyDevice) -> DeviceResponse:
@@ -342,12 +398,24 @@ async def device_heartbeat(
     pending = device.pending_command
     pending_write = None
     pending_system = None
+    expired_write = False
+    expired_spool_id: int | None = None
     if pending == "write_tag" and device.pending_write_payload:
         # Parse the stored JSON payload to include in response
         try:
             pending_write = json.loads(device.pending_write_payload)
         except (json.JSONDecodeError, TypeError):
             pending_write = None
+        if _write_expired(pending_write):
+            logger.info(
+                "Queued tag write for device %s expired before the device picked it up", device.device_id
+            )
+            expired_spool_id = (pending_write or {}).get("spool_id")
+            pending = None
+            pending_write = None
+            device.pending_command = None
+            device.pending_write_payload = None
+            expired_write = True
         # Don't clear write_tag command — it gets cleared by write-result
     elif pending == "apply_system_config" and device.pending_system_payload:
         try:
@@ -362,6 +430,16 @@ async def device_heartbeat(
         device.pending_command = None
 
     await db.commit()
+
+    if expired_write:
+        await ws_manager.broadcast(
+            {
+                "type": "spoolbuddy_tag_write_failed",
+                "device_id": device.device_id,
+                "spool_id": expired_spool_id,
+                "message": "The tag write expired before the device picked it up",
+            }
+        )
 
     # Emit online presence on offline->online transitions immediately, and
     # periodically while online so newly connected UIs can bootstrap state.
@@ -921,14 +999,18 @@ async def nfc_write_tag(
             )
 
     # Store write payload and set pending command
-    device.pending_write_payload = json.dumps(
-        {
-            "spool_id": req.spool_id,
-            "ndef_data_hex": ndef_data.hex(),
-            "data_origin": data_origin,
-        }
+    await _queue_command(
+        device,
+        "write_tag",
+        json.dumps(
+            {
+                "spool_id": req.spool_id,
+                "ndef_data_hex": ndef_data.hex(),
+                "data_origin": data_origin,
+                "queued_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ),
     )
-    device.pending_command = "write_tag"
     await db.commit()
 
     logger.info(
@@ -957,13 +1039,44 @@ async def nfc_write_result(
     if not device:
         raise HTTPException(status_code=404, detail="Device not registered")
 
-    # Capture data_origin before clearing the payload
+    # Capture data_origin before clearing the payload. A result is only acted on
+    # while it still answers the queued write: cancel-write clears
+    # pending_command, another command overwrites it, and a second write for a
+    # different spool replaces the payload. Acting on a stale result used to fall
+    # back to the local branch and bind the tag to a local spool even in Spoolman
+    # mode, where the id named a Spoolman spool (#3503).
     try:
         payload_dict = json.loads(device.pending_write_payload or "{}")
     except (json.JSONDecodeError, TypeError):
         payload_dict = {}
         logger.warning("Malformed pending_write_payload for device %s — treating as local", req.device_id)
     data_origin = payload_dict.get("data_origin", "local")
+
+    # The queued spool is missing from older payloads; a result for a write that
+    # was never replaced still matches on the command alone in that case.
+    queued_spool = payload_dict.get("spool_id")
+    answers_queued_write = device.pending_command == "write_tag" and (
+        queued_spool is None or queued_spool == req.spool_id
+    )
+
+    if not answers_queued_write:
+        # Leave pending_command alone: it may hold the command that replaced this
+        # write, which still has to reach the device.
+        await db.commit()
+        await ws_manager.broadcast(
+            {
+                "type": "spoolbuddy_tag_write_failed",
+                "device_id": req.device_id,
+                "spool_id": req.spool_id,
+                "message": "Write was cancelled or replaced before the tag was written",
+            }
+        )
+        logger.info(
+            "Ignoring tag write result for device %s spool %d: it does not answer the queued write",
+            req.device_id,
+            req.spool_id,
+        )
+        return {"status": "ok"}
 
     device.pending_command = None
     device.pending_write_payload = None
@@ -1292,7 +1405,7 @@ async def tare_scale(
     if not device:
         raise HTTPException(status_code=404, detail="Device not registered")
 
-    device.pending_command = "tare"
+    await _queue_command(device, "tare")
     await db.commit()
     return {"status": "ok", "message": "Tare command queued"}
 
@@ -1455,7 +1568,7 @@ async def queue_system_config_update(
         payload["api_key"] = req.api_key.strip()
 
     device.pending_system_payload = json.dumps(payload)
-    device.pending_command = "apply_system_config"
+    await _queue_command(device, "apply_system_config")
     await db.commit()
 
     logger.info("Queued system config update for device %s", device_id)
@@ -1494,7 +1607,7 @@ async def queue_system_command(
     if not _is_online(device):
         raise HTTPException(status_code=409, detail="Device is offline")
 
-    device.pending_command = req.command
+    await _queue_command(device, req.command)
     await db.commit()
 
     logger.info("System command queued for device %s: %s", device_id, req.command)
@@ -1566,7 +1679,7 @@ async def queue_diagnostic(
     if not device:
         raise HTTPException(status_code=404, detail="Device not registered")
 
-    device.pending_command = f"run_{diagnostic}_diag"
+    await _queue_command(device, f"run_{diagnostic}_diag")
     _diagnostic_results.pop((device_id, diagnostic), None)
     await db.commit()
 

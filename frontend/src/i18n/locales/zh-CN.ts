@@ -4234,8 +4234,8 @@ export default {
       groupAction: '归为版本组',
       groupTooltip: '将这些文件标记为针对不同打印机切片的同一任务',
       grouped: '已将 {{count}} 个文件归为版本组',
-      printAlternatives: '打印（{{count}} 个备选）',
     },
+    printFiles: '打印（{{count}} 个文件）',
     title: '文件管理器',
     subtitle: '组织和管理您的打印文件',
     uploadFiles: '上传文件',
@@ -5665,6 +5665,18 @@ export default {
 
   // Print modal
   printModal: {
+    multiFile: {
+      groupLabel: '所选文件的处理方式',
+      alternatives: '备选',
+      separate: '独立任务',
+      alternativesHint: '一个任务。第一台空闲且匹配的打印机会打印它对应的文件。',
+      separateHint: '每个文件一个队列项，按下方顺序添加。选项适用于每个队列项。',
+      alternativesBlocked: '有多个文件是为 {{model}} 切片的。备选要求每个文件对应不同的打印机型号。',
+      orderTitle: '队列顺序',
+      incompatible: '无法发送到 {{model}} 打印机：{{files}}',
+      notSlicedFor: '未为 {{model}} 切片：{{files}}',
+      failed: '未加入队列：{{filename}}（{{message}}）。此前已加入：{{queued}}。',
+    },
     variants: {
       editNote: '这些备选在任务加入队列时确定。如需更改，请取消后重新加入队列。',
       title: '打印机备选',

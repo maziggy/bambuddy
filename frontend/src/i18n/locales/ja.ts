@@ -464,6 +464,8 @@ export default {
     // Chamber light
     chamberLightOn: 'チャンバーライトをオンにしました',
     chamberLightOff: 'チャンバーライトをオフにしました',
+    printerSoundOn: 'プリンターの音をオンにする',
+    printerSoundOff: 'プリンターの音をオフにする',
     // Files
     files: 'ファイル',
     browseFiles: 'プリンターのファイルを参照',
@@ -559,6 +561,9 @@ export default {
       failedToPausePrint: '印刷の一時停止に失敗しました',
       failedToResumePrint: '印刷の再開に失敗しました',
       failedToControlChamberLight: 'チャンバーライトの制御に失敗しました',
+      printerSoundEnabled: 'プリンターの音をオンにしました',
+      printerSoundDisabled: 'プリンターの音をオフにしました',
+      failedToControlPrinterSound: 'プリンターの音を変更できませんでした',
       failedToSetSpeed: '印刷速度の設定に失敗しました',
       failedToUpdateSetting: '設定の更新に失敗しました',
       failedToSkipObjects: 'オブジェクトのスキップに失敗しました',

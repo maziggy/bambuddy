@@ -468,6 +468,8 @@ export default {
     // Chamber light
     chamberLightOn: 'Kamerverlichting inschakelen',
     chamberLightOff: 'Kamerverlichting uitschakelen',
+    printerSoundOn: 'Printergeluiden inschakelen',
+    printerSoundOff: 'Printergeluiden uitschakelen',
     // Files
     files: 'Bestanden',
     browseFiles: 'Printerbestanden bekijken',
@@ -563,6 +565,9 @@ export default {
       failedToPausePrint: 'Afdruk pauzeren mislukt',
       failedToResumePrint: 'Afdruk hervatten mislukt',
       failedToControlChamberLight: 'Kamerverlichting bedienen mislukt',
+      printerSoundEnabled: 'Printergeluiden aan',
+      printerSoundDisabled: 'Printergeluiden uit',
+      failedToControlPrinterSound: 'Printergeluiden wijzigen mislukt',
       failedToSetSpeed: 'Afdruksnelheid instellen mislukt',
       failedToUpdateSetting: 'Instelling bijwerken mislukt',
       failedToSkipObjects: 'Objecten overslaan mislukt',

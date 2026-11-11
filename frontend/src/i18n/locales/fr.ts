@@ -465,6 +465,8 @@ export default {
     // Chamber light
     chamberLightOn: 'Allumer la lumière de la chambre',
     chamberLightOff: 'Éteindre la lumière de la chambre',
+    printerSoundOn: "Activer les sons de l'imprimante",
+    printerSoundOff: "Désactiver les sons de l'imprimante",
     // Files
     files: 'Fichiers',
     browseFiles: 'Parcourir les fichiers de l\'imprimante',
@@ -560,6 +562,9 @@ export default {
       failedToPausePrint: 'Échec de la mise en pause',
       failedToResumePrint: 'Échec de la reprise',
       failedToControlChamberLight: 'Échec du contrôle de la lumière',
+      printerSoundEnabled: "Sons de l'imprimante activés",
+      printerSoundDisabled: "Sons de l'imprimante désactivés",
+      failedToControlPrinterSound: "Impossible de modifier les sons de l'imprimante",
       failedToSetSpeed: 'Échec du réglage de la vitesse',
       failedToUpdateSetting: 'Échec de mise à jour du paramètre',
       failedToSkipObjects: 'Échec du saut d\'objets',

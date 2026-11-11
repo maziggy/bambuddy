@@ -468,6 +468,8 @@ export default {
     // Chamber light
     chamberLightOn: "Увімкнути світло в камері",
     chamberLightOff: "Вимкнути світло в камері",
+    printerSoundOn: 'Увімкнути звуки принтера',
+    printerSoundOff: 'Вимкнути звуки принтера',
     // Files
     files: "Файли",
     browseFiles: "Переглянути файли принтера",
@@ -563,6 +565,9 @@ export default {
       failedToPausePrint: "Не вдалося призупинити друк",
       failedToResumePrint: "Не вдалося відновити друк",
       failedToControlChamberLight: "Не вдалося керувати світлом камери",
+      printerSoundEnabled: 'Звуки принтера увімкнено',
+      printerSoundDisabled: 'Звуки принтера вимкнено',
+      failedToControlPrinterSound: 'Не вдалося змінити звуки принтера',
       failedToSetSpeed: "Не вдалося встановити швидкість друку",
       failedToUpdateSetting: "Не вдалося оновити налаштування",
       failedToSkipObjects: "Не вдалося пропустити об’єкти",

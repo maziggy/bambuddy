@@ -468,6 +468,8 @@ export default {
     // Chamber light
     chamberLightOn: 'Sätt på kammarljus',
     chamberLightOff: 'Stäng av kammarljus',
+    printerSoundOn: 'Slå på skrivarens ljud',
+    printerSoundOff: 'Stäng av skrivarens ljud',
     // Files
     files: 'Filer',
     browseFiles: 'Bläddra bland skrivarens filer',
@@ -563,6 +565,9 @@ export default {
       failedToPausePrint: 'Kunde inte pausa utskrift',
       failedToResumePrint: 'Kunde inte återuppta utskrift',
       failedToControlChamberLight: 'Kunde inte kontrollera kammarljus',
+      printerSoundEnabled: 'Skrivarens ljud på',
+      printerSoundDisabled: 'Skrivarens ljud av',
+      failedToControlPrinterSound: 'Det gick inte att ändra skrivarens ljud',
       failedToSetSpeed: 'Kunde inte ställa in utskriftshastighet',
       failedToUpdateSetting: 'Kunde inte uppdatera inställning',
       failedToSkipObjects: 'Kunde inte hoppa över objekt',

@@ -465,6 +465,8 @@ export default {
     // Hazne ışığı
     chamberLightOn: 'Hazne ışığını aç',
     chamberLightOff: 'Hazne ışığını kapat',
+    printerSoundOn: 'Yazıcı seslerini aç',
+    printerSoundOff: 'Yazıcı seslerini kapat',
     // Dosyalar
     files: 'Dosyalar',
     browseFiles: 'Yazıcı dosyalarına göz at',
@@ -560,6 +562,9 @@ export default {
       failedToPausePrint: 'Baskı duraklatılamadı',
       failedToResumePrint: 'Baskıya devam edilemedi',
       failedToControlChamberLight: 'Hazne ışığı kontrol edilemedi',
+      printerSoundEnabled: 'Yazıcı sesleri açık',
+      printerSoundDisabled: 'Yazıcı sesleri kapalı',
+      failedToControlPrinterSound: 'Yazıcı sesleri değiştirilemedi',
       failedToSetSpeed: 'Baskı hızı ayarlanamadı',
       failedToUpdateSetting: 'Ayar güncellenemedi',
       failedToSkipObjects: 'Nesneler atlanamadı',

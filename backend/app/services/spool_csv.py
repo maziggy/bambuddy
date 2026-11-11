@@ -73,6 +73,17 @@ CSV_COLUMNS = [
     # the round-trip.
     "suppliers",
     "purchase_supplier",
+    # Tag and preset fields (#3324): the RFID tag a spool is linked to, the empty
+    # spool weight and the slicer preset. Imported so a spool that comes back in
+    # from a file (a BambuMan export, or a backup of this inventory) stays linked
+    # to its tag instead of turning up as a second, unlinked copy.
+    "tag_uid",
+    "tray_uuid",
+    "slicer_filament",
+    "slicer_filament_name",
+    "core_weight",
+    "data_origin",
+    "tag_type",
 ]
 
 # Columns of the spool table the export leaves out. `archived_at` is always
@@ -110,7 +121,7 @@ _FORMULA_INJECTION_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 # Columns whose CSV cell must be coerced to a number before SpoolCreate sees it.
 # DictReader hands us strings; SpoolCreate wants int/float. Empty cell → omit
 # the field (falls back to the schema default / None).
-_INT_COLUMNS = {"label_weight", "nozzle_temp_min", "nozzle_temp_max", "low_stock_threshold_pct"}
+_INT_COLUMNS = {"label_weight", "core_weight", "nozzle_temp_min", "nozzle_temp_max", "low_stock_threshold_pct"}
 _FLOAT_COLUMNS = {"cost_per_kg", "weight_used"}
 
 # label_weight default, pulled from the schema so the weight_used bounds check
@@ -273,6 +284,28 @@ async def _load_existing_spool_keys(db: AsyncSession) -> set[tuple[str, str, str
     return {_spool_key(m, b, c) for m, b, c in result.all()}
 
 
+def _tag_key(value: str | None) -> str | None:
+    """Identity of a tag value for the duplicate warning, or None when it has none.
+
+    Case-insensitive; an empty or all-zero value (what a tag without an id reads
+    as) identifies nothing.
+    """
+    key = (value or "").strip().lower()
+    if not key or not key.strip("0"):
+        return None
+    return key
+
+
+async def _load_existing_tag_keys(db: AsyncSession) -> set[str]:
+    """Tag UIDs and spool UUIDs of the active spools, for the duplicate warning (#3324).
+
+    A row that carries one of them is the same physical spool even when its
+    material, brand or colour name were typed differently.
+    """
+    result = await db.execute(select(Spool.tag_uid, Spool.tray_uuid).where(Spool.archived_at.is_(None)))
+    return {key for pair in result.all() for key in map(_tag_key, pair) if key}
+
+
 def _resolve_color(
     catalog: list[ColorCatalogEntry], brand: str | None, color_name: str | None, material: str | None
 ) -> tuple[str, str | None, str | None, bool] | None:
@@ -384,6 +417,7 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
     # issuing a SELECT per row.
     catalog = await _load_color_catalog(db)
     existing_keys = await _load_existing_spool_keys(db)
+    existing_tags = await _load_existing_tag_keys(db)
     supplier_map = await _load_supplier_map(db)
     unknown_suppliers: set[str] = set()
 
@@ -449,6 +483,12 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
             "storage_location",
             "category",
             "material_number",
+            "tag_uid",
+            "tray_uuid",
+            "slicer_filament",
+            "slicer_filament_name",
+            "data_origin",
+            "tag_type",
         ):
             value = cell(raw_row, field)
             if value:
@@ -594,7 +634,8 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
                 rgba=spool.rgba,
                 resolved_color=resolved_color,
                 cross_material_color=cross_material_color,
-                duplicate_of_existing=_spool_key(material, brand, color_name) in existing_keys,
+                duplicate_of_existing=_spool_key(material, brand, color_name) in existing_keys
+                or any(key in existing_tags for key in map(_tag_key, (data.get("tag_uid"), data.get("tray_uuid")))),
                 keeps_id=requested_id,
                 spool=spool_data,
                 supplier_ids=supplier_ids,

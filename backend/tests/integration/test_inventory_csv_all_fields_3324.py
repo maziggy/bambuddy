@@ -103,7 +103,7 @@ class TestImportOfAFullExport:
     async def test_the_extra_columns_are_named_as_not_imported_not_as_unknown(
         self, async_client: AsyncClient, db_session: AsyncSession
     ):
-        db_session.add(Spool(material="PLA", brand="Polymaker", color_name="Teal", tag_uid="AABB"))
+        db_session.add(Spool(material="PLA", brand="Polymaker", color_name="Teal", location_id=None))
         await db_session.commit()
         exported = (await async_client.get("/api/v1/inventory/spools/export")).content
 
@@ -117,7 +117,8 @@ class TestImportOfAFullExport:
         assert not any(w.startswith("Ignoring unknown columns") for w in warnings)
         not_imported = [w for w in warnings if w.startswith("Export-only columns not imported")]
         assert len(not_imported) == 1
-        assert "tag_uid" in not_imported[0]
+        assert "created_at" in not_imported[0]
+        assert "tag_uid" not in not_imported[0]
         assert response.json()["valid_count"] == 1
 
     async def test_a_full_export_imports_back_as_before(self, async_client: AsyncClient, db_session: AsyncSession):
@@ -144,3 +145,88 @@ class TestImportOfAFullExport:
         )
 
         assert any("Ignoring unknown columns: bogus_column" in w for w in response.json()["warnings"])
+
+
+@pytest.mark.asyncio
+class TestTagFieldsAreImported:
+    TAG = "04A1B2C3D4E5F6"
+    UUID = "0123456789ABCDEF0123456789ABCDEF"
+
+    async def test_a_row_keeps_its_tag_and_preset(self, async_client: AsyncClient, db_session: AsyncSession):
+        csv_text = (
+            "material,brand,tag_uid,tray_uuid,slicer_filament,slicer_filament_name,core_weight,data_origin,tag_type\n"
+            f"PLA,Bambu Lab,{self.TAG},{self.UUID},GFA00,Bambu PLA Basic,212,rfid_auto,bambulab\n"
+        )
+
+        response = await async_client.post(
+            "/api/v1/inventory/spools/import", files={"file": ("x.csv", csv_text.encode(), "text/csv")}
+        )
+
+        assert response.json()["created"] == 1, response.text
+        spool = (await db_session.execute(select(Spool))).scalars().one()
+        assert (spool.tag_uid, spool.tray_uuid) == (self.TAG, self.UUID)
+        assert (spool.slicer_filament, spool.slicer_filament_name) == ("GFA00", "Bambu PLA Basic")
+        assert (spool.core_weight, spool.data_origin, spool.tag_type) == (212, "rfid_auto", "bambulab")
+
+    async def test_a_bad_core_weight_is_a_row_error(self, async_client: AsyncClient):
+        response = await async_client.post(
+            "/api/v1/inventory/spools/import?dry_run=true",
+            files={"file": ("x.csv", b"material,core_weight\nPLA,heavy\n", "text/csv")},
+        )
+
+        row = response.json()["rows"][0]
+        assert row["status"] == "error"
+        assert "core_weight" in row["reason"]
+
+    async def test_a_tag_columns_file_has_no_unknown_column_warning(self, async_client: AsyncClient):
+        response = await async_client.post(
+            "/api/v1/inventory/spools/import?dry_run=true",
+            files={"file": ("x.csv", b"material,tag_uid,tray_uuid,tag_type\nPLA,AA,BB,bambulab\n", "text/csv")},
+        )
+
+        assert response.json()["warnings"] == []
+
+    async def test_a_full_export_round_trips_the_tag(self, async_client: AsyncClient, db_session: AsyncSession):
+        db_session.add(
+            Spool(material="PLA", brand="Bambu Lab", color_name="Jade", tag_uid=self.TAG, tray_uuid=self.UUID)
+        )
+        await db_session.commit()
+        exported = (await async_client.get("/api/v1/inventory/spools/export")).content
+        await db_session.execute(Spool.__table__.delete())
+        await db_session.commit()
+
+        await async_client.post("/api/v1/inventory/spools/import", files={"file": ("x.csv", exported, "text/csv")})
+
+        spool = (await db_session.execute(select(Spool))).scalars().one()
+        assert (spool.tag_uid, spool.tray_uuid) == (self.TAG, self.UUID)
+
+    @pytest.mark.parametrize("column,value", [("tray_uuid", UUID.lower()), ("tag_uid", TAG.lower())])
+    async def test_the_same_tag_is_flagged_as_a_duplicate_whatever_the_name(
+        self, async_client: AsyncClient, db_session: AsyncSession, column, value
+    ):
+        db_session.add(
+            Spool(material="PLA", brand="Bambu Lab", color_name="Jade", tag_uid=self.TAG, tray_uuid=self.UUID)
+        )
+        await db_session.commit()
+        csv_text = f"material,color_name,{column}\nPETG,Other name,{value}\n"
+
+        response = await async_client.post(
+            "/api/v1/inventory/spools/import?dry_run=true",
+            files={"file": ("x.csv", csv_text.encode(), "text/csv")},
+        )
+
+        assert response.json()["rows"][0]["duplicate_of_existing"] is True
+
+    async def test_an_empty_or_all_zero_tag_identifies_nothing(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        db_session.add(Spool(material="PLA", color_name="A", tag_uid="00000000000000"))
+        await db_session.commit()
+        csv_text = "material,color_name,tag_uid\nPETG,B,00000000000000\nABS,C,\n"
+
+        response = await async_client.post(
+            "/api/v1/inventory/spools/import?dry_run=true",
+            files={"file": ("x.csv", csv_text.encode(), "text/csv")},
+        )
+
+        assert [r["duplicate_of_existing"] for r in response.json()["rows"]] == [False, False]

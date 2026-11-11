@@ -17,7 +17,7 @@ import io
 from datetime import datetime, timezone
 
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import func, select, text
+from sqlalchemy import func, inspect as sa_inspect, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import is_sqlite
@@ -74,6 +74,28 @@ CSV_COLUMNS = [
     "suppliers",
     "purchase_supplier",
 ]
+
+# Columns of the spool table the export leaves out. `archived_at` is always
+# empty because the export only covers active spools.
+_EXPORT_SKIP = {"archived_at"}
+
+
+def export_columns() -> list[str]:
+    """Every column the export writes: the importable ones, then the rest.
+
+    CSV_COLUMNS lead, in their fixed order, so a file stays readable by anything
+    that expects that layout. After them come all the other columns of the spool
+    table in model order, read from the model itself. A column added to Spool in
+    a later release is exported without touching this module. The extra columns
+    are export-only: the importer recognises them and leaves them out.
+    """
+    extra = [
+        attr.key
+        for attr in sa_inspect(Spool).column_attrs
+        if attr.key not in CSV_COLUMNS and attr.key not in _EXPORT_SKIP
+    ]
+    return CSV_COLUMNS + extra
+
 
 # Upload ceiling for the import endpoint. A spool inventory CSV is a few KB
 # even with thousands of rows; 5 MB is a generous cap that still refuses an
@@ -339,9 +361,15 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
 
     norm_header = [_normalize_header(h) for h in header]
     known = set(CSV_COLUMNS)
-    unknown = [h for h in norm_header if h and h not in known]
+    # Columns only the export writes (every other spool field) are recognised, so
+    # a file exported from here is not reported as having unknown columns.
+    export_only = set(export_columns()) - known
+    unknown = [h for h in norm_header if h and h not in known and h not in export_only]
     if unknown:
         warnings.append(f"Ignoring unknown columns: {', '.join(unknown)}")
+    left_out = [h for h in dict.fromkeys(norm_header) if h in export_only]
+    if left_out:
+        warnings.append(f"Export-only columns not imported: {', '.join(left_out)}")
     # Map canonical field name → column index in this file (first occurrence).
     col_index: dict[str, int] = {}
     for idx, h in enumerate(norm_header):
@@ -633,7 +661,7 @@ async def _decide_ids(db: AsyncSession, rows: list[ImportRowResult], warnings: l
 
 
 def serialize(spools: list[Spool]) -> bytes:
-    """Render spools to CSV bytes using the fixed schema (export side).
+    """Render spools to CSV bytes: the importable columns, then every other spool field.
 
     rgba is written without a leading `#`, matching the import-side
     normalisation, so export → import round-trips without transformation.
@@ -642,9 +670,10 @@ def serialize(spools: list[Spool]) -> bytes:
     """
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(CSV_COLUMNS)
+    columns = export_columns()
+    writer.writerow(columns)
     for spool in spools:
-        writer.writerow([_sanitize_cell(_cell_value(spool, col)) for col in CSV_COLUMNS])
+        writer.writerow([_sanitize_cell(_cell_value(spool, col)) for col in columns])
     return output.getvalue().encode("utf-8")
 
 

@@ -407,7 +407,11 @@ function NozzleSlotHoverCard({ slot, index, activeStatus, filamentName, children
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isEmpty = !slot.nozzle_diameter && !slot.nozzle_type;
-  const isMounted = slot.stat === 1;
+  // Mounted = on an extruder: ids below 0x10, rack ids from 0x10 up, as Bambu
+  // Studio tells them apart (DevNozzleSystem). `stat` says whether the nozzle's
+  // info is reliable and normal, not where it is (#3442: an H3C hotend without
+  // RFID reports stat 1 in the rack). Empty rack placeholders have negative ids.
+  const isMounted = slot.id >= 0 && slot.id < 16;
 
   useEffect(() => {
     if (isVisible && triggerRef.current && cardRef.current) {

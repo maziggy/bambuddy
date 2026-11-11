@@ -219,6 +219,41 @@ describe('PrintersPage - H3C mounted hotend temperature (#3442)', () => {
     });
   });
 
+  it('says Mounted for the hotend on the toolhead and Docked in the rack, whatever its stat', async () => {
+    // device.nozzle.info of a real H3C frame after a swap to PrintTool 2: the
+    // toolhead's hotend is id 0 at addr_id 1 with stat 176; the hotend without
+    // RFID in rack position 8 (id 23) reports stat 1.
+    const entry = (id: number, addr_id: number, stat: number, type = 'HS01', color = 'CA2525FF') => ({
+      id, addr_id, nozzle_type: type, nozzle_diameter: '0.4', wear: 0, stat, max_temp: 350,
+      serial_number: '', filament_color: color, filament_id: type === 'HS01' ? 'GFL99' : '', filament_type: '',
+    });
+    const realRack = [
+      entry(0, 1, 176, 'HS01', 'FFFFFFFF'), entry(16, 0, 160), entry(18, 2, 160), entry(19, 3, 160),
+      entry(20, 4, 160), entry(21, 5, 160), entry(22, 6, 160), entry(23, 7, 1, 'HT01', '00000000'), entry(24, 8, 160),
+    ];
+    server.use(
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json({ ...h3cStatus, nozzle_rack: realRack })),
+    );
+    const user = userEvent.setup();
+
+    const { container } = render(<PrintersPage />);
+
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-rack-diameter]')).toHaveLength(9);
+    });
+    const chips = container.querySelectorAll('[data-rack-diameter]');
+
+    await user.hover(chips[7]);
+    expect(await screen.findByText('Docked')).toBeInTheDocument();
+    expect(screen.queryByText('Mounted')).not.toBeInTheDocument();
+    await user.unhover(chips[7]);
+    await waitFor(() => expect(screen.queryByText('Docked')).not.toBeInTheDocument());
+
+    await user.hover(chips[1]);
+    expect(await screen.findByText('Mounted')).toBeInTheDocument();
+    expect(screen.queryByText('Docked')).not.toBeInTheDocument();
+  });
+
   it('keeps Nozzle on a printer without a rack', async () => {
     server.use(
       http.get('/api/v1/printers/', () => HttpResponse.json([{ ...mockPrinter, model: 'P2S' }])),

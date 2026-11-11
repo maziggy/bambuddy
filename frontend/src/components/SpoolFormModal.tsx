@@ -21,7 +21,7 @@ import { FilamentSection } from './spool-form/FilamentSection';
 import { ColorSection } from './spool-form/ColorSection';
 import { AdditionalSection } from './spool-form/AdditionalSection';
 import { SupplierSection, type SupplierLinkDraft } from './spool-form/SupplierSection';
-import { productUrlValid } from '../utils/productLinks';
+import { normalizeWebUrl, productUrlValid } from '../utils/productLinks';
 import { SpoolmanFilamentPicker } from './spool-form/SpoolmanFilamentPicker';
 import { PrinterProfilesSection } from './spool-form/PrinterProfilesSection';
 import { ProfileDefaultOption, type ProfileDefaultScope } from './spool-form/ProfileDefaultOption';
@@ -980,7 +980,7 @@ export function SpoolFormModal({
           supplier_article_number: link.supplier_article_number.trim() || null,
           quoted_price_per_kg: link.quoted_price_per_kg,
           is_purchase_source: link.is_purchase_source,
-          product_url: link.product_url.trim() || null,
+          product_url: normalizeWebUrl(link.product_url) || null,
         })),
       );
       return true;

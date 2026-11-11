@@ -60,6 +60,11 @@ class TestAddresses:
             ("", None),
             ("   ", None),
             (None, None),
+            # No scheme: https is assumed rather than refusing the address.
+            ("3djake.de", "https://3djake.de"),
+            ("  shop.example/x?a=1 ", "https://shop.example/x?a=1"),
+            ("localhost:8080/x", "https://localhost:8080/x"),
+            ("shop.example:8080", "https://shop.example:8080"),
         ],
     )
     def test_a_web_address_is_kept(self, value, expected):
@@ -72,9 +77,19 @@ class TestAddresses:
             "JavaScript:alert(1)",
             "data:text/html,<script>alert(1)</script>",
             "ftp://shop.example/x",
-            "shop.example/x",
             "http://",
             "//shop.example/x",
+            "mailto:a@b.c",
+            # Browsers fix these up to a host, urlsplit finds none: both sides refuse them.
+            "http:example.com",
+            "https:/example.com",
+            r"https:\example.com",
+            r"https://\example.com",
+            "https:///example.com",
+            r"https://example.com\path",
+            "https://:8080/x",
+            "https://user@/x",
+            "https://exa mple.com",
         ],
     )
     def test_anything_else_is_refused(self, value):
@@ -91,6 +106,20 @@ class TestAddresses:
         assert (
             await async_client.patch(f"/api/v1/inventory/suppliers/{existing.id}", json={"website": "data:x"})
         ).status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_supplier_with_a_schemeless_website_saves_and_renames(self, async_client: AsyncClient, supplier):
+        created = await async_client.post("/api/v1/inventory/suppliers", json={"name": "Jake", "website": "3djake.de"})
+        assert created.status_code in (200, 201), created.text
+        assert created.json()["website"] == "https://3djake.de"
+        # A supplier stored as typed before this rule can be renamed: the website is fixed on the way.
+        old = await supplier(name="Old shop", website="3djake.de")
+        renamed = await async_client.patch(
+            f"/api/v1/inventory/suppliers/{old.id}", json={"name": "New shop", "website": old.website}
+        )
+        assert renamed.status_code == 200, renamed.text
+        assert (renamed.json()["name"], renamed.json()["website"]) == ("New shop", "https://3djake.de")
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -294,3 +323,27 @@ class TestShoppingList:
                 "/api/v1/inventory/shopping-list", json={**PRODUCT, "supplier_id": shop.id, "product_url": "data:x"}
             )
         ).status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_deleting_a_supplier_clears_it_from_the_cart(self, async_client: AsyncClient, db_session, supplier):
+        """SQLite runs without foreign keys: the SET NULL is applied by core/sqlite_fk."""
+        from sqlalchemy import select
+
+        from backend.app.models.shopping_list import ShoppingListItem
+
+        shop = await supplier(name="Gone")
+        added = (
+            await async_client.post("/api/v1/inventory/shopping-list", json={**PRODUCT, "supplier_id": shop.id})
+        ).json()
+
+        deleted = await async_client.delete(f"/api/v1/inventory/suppliers/{shop.id}")
+
+        assert deleted.status_code == 200, deleted.text
+        db_session.expire_all()
+        item = (
+            await db_session.execute(select(ShoppingListItem).where(ShoppingListItem.id == added["id"]))
+        ).scalar_one()
+        assert item.supplier_id is None
+        (listed,) = (await async_client.get("/api/v1/inventory/shopping-list")).json()
+        assert (listed["supplier_id"], listed["supplier_name"]) == (None, None)

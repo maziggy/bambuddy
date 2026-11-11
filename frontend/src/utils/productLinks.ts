@@ -14,17 +14,44 @@ export interface BuyOption {
   is_purchase_source: boolean;
 }
 
-/** Whether `value` is an http(s) address, the only kind rendered as a link:
- *  anything else (`javascript:`, `data:`) would run in the page on click. The
- *  backend refuses others on write; this also covers rows saved before. */
-export function isWebUrl(value: string | null | undefined): value is string {
-  if (!value) return false;
-  try {
-    const url = new URL(value.trim());
-    return (url.protocol === 'http:' || url.protocol === 'https:') && url.host !== '';
-  } catch {
-    return false;
+// One rule for every address field, mirrored by validate_http_url in the
+// backend's schemas/supplier.py (keep them in step; both are tested on the same
+// inputs). Browsers fix up "https:/x" or "https:\x" into a host that the backend's
+// urlsplit does not find, so the rule is checked on the text, not on URL() alone.
+const HTTP_PREFIX = /^https?:\/\//i;
+// Another scheme, or a malformed http one ("http:example.com"). A colon followed
+// by a port ("example.com:8080/x") is a host, not a scheme.
+const OTHER_SCHEME = /^[a-z][a-z0-9+.-]*:(?!\d+(?:[/?#]|$))/i;
+// A host right after "//", ended by a path, query, fragment or the end. A
+// backslash ends nothing.
+const HTTP_AUTHORITY = /^https?:\/\/[^\s/?#\\]+(?:[/?#]|$)/i;
+
+/** An address as the backend will store it: trimmed, `https://` added to one
+ *  without a scheme ("3djake.de"), '' for an empty one; null when it is not an
+ *  http(s) address at all. */
+export function normalizeWebUrl(value: string | null | undefined): string | null {
+  const trimmed = (value ?? '').trim();
+  if (!trimmed) return '';
+  let candidate = trimmed;
+  if (!HTTP_PREFIX.test(candidate)) {
+    if (OTHER_SCHEME.test(candidate)) return null;
+    candidate = `https://${candidate}`;
   }
+  if (!HTTP_AUTHORITY.test(candidate)) return null;
+  try {
+    return new URL(candidate).hostname ? candidate : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Whether `value` is an http(s) address with its scheme, the only kind
+ *  rendered as a link: anything else (`javascript:`, `data:`) would run in the
+ *  page on click. The backend refuses others on write; this also covers rows
+ *  saved before. */
+export function isWebUrl(value: string | null | undefined): value is string {
+  const trimmed = (value ?? '').trim();
+  return !!trimmed && HTTP_PREFIX.test(trimmed) && normalizeWebUrl(trimmed) === trimmed;
 }
 
 function toOption(link: SpoolSupplierLink): BuyOption | null {
@@ -39,9 +66,10 @@ function toOption(link: SpoolSupplierLink): BuyOption | null {
   };
 }
 
-/** Whether a product page as typed is one the backend accepts: empty, or http(s). */
+/** Whether an address as typed is one the backend accepts: empty, or http(s)
+ *  with or without its scheme. */
 export function productUrlValid(value: string): boolean {
-  return !value.trim() || isWebUrl(value);
+  return normalizeWebUrl(value) !== null;
 }
 
 /** A spool's places to buy its product again: the supplier it was bought from

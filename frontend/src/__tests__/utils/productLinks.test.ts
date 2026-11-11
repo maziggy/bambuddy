@@ -3,7 +3,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import type { InventorySpool, SpoolSupplierLink } from '../../api/client';
-import { isWebUrl, productBuyOptions, productUrlValid, spoolBuyOptions } from '../../utils/productLinks';
+import { isWebUrl, normalizeWebUrl, productBuyOptions, productUrlValid, spoolBuyOptions } from '../../utils/productLinks';
 
 const link = (supplier_id: number, over: Partial<SpoolSupplierLink> = {}): SpoolSupplierLink => ({
   id: supplier_id,
@@ -24,7 +24,7 @@ describe('isWebUrl', () => {
     expect(isWebUrl(url)).toBe(true);
   });
 
-  it.each(['javascript:alert(1)', 'data:text/html,x', 'ftp://shop.example', 'shop.example/p', '', null, undefined])(
+  it.each(['javascript:alert(1)', 'data:text/html,x', 'ftp://shop.example', 'shop.example/p', '', null, undefined, 'http:example.com', 'https:/example.com'])(
     'refuses %s',
     (url) => {
       expect(isWebUrl(url)).toBe(false);
@@ -34,6 +34,51 @@ describe('isWebUrl', () => {
   it('accepts an empty product page as typed, but not a bad one', () => {
     expect(productUrlValid('  ')).toBe(true);
     expect(productUrlValid('javascript:x')).toBe(false);
+  });
+});
+
+// The same inputs as the backend's TestAddresses (test_supplier_product_url_2540.py):
+// both sides apply one rule.
+describe('normalizeWebUrl', () => {
+  it.each([
+    ['https://shop.example/p?x=1', 'https://shop.example/p?x=1'],
+    ['  http://shop.example/x  ', 'http://shop.example/x'],
+    ['HTTPS://Shop.example/x', 'HTTPS://Shop.example/x'],
+    ['', ''],
+    ['   ', ''],
+    ['3djake.de', 'https://3djake.de'],
+    ['  shop.example/x?a=1 ', 'https://shop.example/x?a=1'],
+    ['localhost:8080/x', 'https://localhost:8080/x'],
+    ['shop.example:8080', 'https://shop.example:8080'],
+  ])('takes %j as %j', (input, expected) => {
+    expect(normalizeWebUrl(input)).toBe(expected);
+  });
+
+  it.each([
+    'javascript:alert(1)',
+    'JavaScript:alert(1)',
+    'data:text/html,<script>alert(1)</script>',
+    'ftp://shop.example/x',
+    'http://',
+    '//shop.example/x',
+    'mailto:a@b.c',
+    // The browser's URL() fixes these up to a host; the backend finds none.
+    'http:example.com',
+    'https:/example.com',
+    String.raw`https:\example.com`,
+    String.raw`https://\example.com`,
+    'https:///example.com',
+    String.raw`https://example.com\path`,
+    'https://:8080/x',
+    'https://user@/x',
+    'https://exa mple.com',
+  ])('refuses %j', (input) => {
+    expect(normalizeWebUrl(input)).toBeNull();
+    expect(productUrlValid(input)).toBe(false);
+  });
+
+  it('lets an address without a scheme through the pre-check', () => {
+    expect(productUrlValid('3djake.de')).toBe(true);
   });
 });
 

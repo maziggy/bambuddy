@@ -59,4 +59,35 @@ describe('BuyButton', () => {
     expect(items[1]).toHaveTextContent('€19.50/kg');
     expect(onRowClick).not.toHaveBeenCalled();
   });
+
+  it('renders the menu outside a clipping table, fixed under its button', async () => {
+    const user = userEvent.setup();
+    render(
+      <div data-testid="clip" style={{ overflowX: 'auto' }}>
+        <BuyButton options={[option(1), option(2)]} />
+      </div>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Buy' }));
+
+    const menu = screen.getByRole('menu');
+    expect(screen.getByTestId('clip')).not.toContainElement(menu);
+    expect(menu.parentElement).toBe(document.body);
+    expect(menu.style.position).toBe('fixed');
+  });
+
+  it('closes on an outside click, and on a click on a page', async () => {
+    const user = userEvent.setup();
+    render(
+      <div>
+        <BuyButton options={[option(1), option(2)]} />
+        <p>elsewhere</p>
+      </div>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Buy' }));
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+    await user.click(screen.getByText('elsewhere'));
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
 });

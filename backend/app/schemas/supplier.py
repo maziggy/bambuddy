@@ -1,6 +1,8 @@
 """Pydantic schemas for the supplier master list (#2988)."""
 
+import re
 from datetime import datetime
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -24,23 +26,35 @@ def validate_supplier_name(value: str) -> str:
 PRODUCT_URL_MAX = 1000
 
 
+# One rule for every address field, mirrored by normalizeWebUrl in the frontend's
+# utils/productLinks.ts (keep them in step; both have tests on the same inputs).
+_HTTP_PREFIX = re.compile(r"https?://", re.IGNORECASE)
+# Another scheme, or a malformed http one ("http:example.com", "https:/x"). A colon
+# followed by a port ("example.com:8080/x") is a host, not a scheme.
+_OTHER_SCHEME = re.compile(r"[a-z][a-z0-9+.-]*:(?!\d+(?:[/?#]|$))", re.IGNORECASE)
+# A host right after "//", ended by a path, query, fragment or the end. A backslash
+# ends nothing: browsers read it as a slash, urlsplit does not.
+_HTTP_AUTHORITY = re.compile(r"https?://[^\s/?#\\]+(?:[/?#]|$)", re.IGNORECASE)
+
+
 def validate_http_url(value: object) -> object:
     """A web address, or None for an empty one (#2540).
 
     These addresses become links in the UI, so only http and https get
     through: a ``javascript:`` or ``data:`` address would run in the page
-    of whoever clicks it. Trimmed first; non-strings pass through to the
-    type check.
+    of whoever clicks it. Trimmed first; an address without a scheme
+    ("3djake.de") gets ``https://``. Non-strings pass through to the type check.
     """
-    from urllib.parse import urlsplit
-
     if not isinstance(value, str):
         return value
     trimmed = value.strip()
     if not trimmed:
         return None
-    parts = urlsplit(trimmed)
-    if parts.scheme.lower() not in ("http", "https") or not parts.netloc:
+    if not _HTTP_PREFIX.match(trimmed):
+        if _OTHER_SCHEME.match(trimmed):
+            raise ValueError("must be an http:// or https:// address")
+        trimmed = f"https://{trimmed}"
+    if not _HTTP_AUTHORITY.match(trimmed) or not urlsplit(trimmed).hostname:
         raise ValueError("must be an http:// or https:// address")
     return trimmed
 

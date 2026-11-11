@@ -675,6 +675,7 @@ NOT_A_FETCH_TARGET = {
     ("DeviceRegisterRequest", "backend_url"),  # the device's view of Bambuddy's own address
     ("HeartbeatRequest", "backend_url"),
     ("SystemConfigRequest", "backend_url"),
+    ("ShoppingListItemCreate", "product_url"),  # only ever a link in the browser (#2540), never requested
     ("ExternalLinkCreate", "url"),  # sidebar link, rendered in the UI, never requested
     ("ExternalLinkUpdate", "url"),
     ("ExternalLinkBadgeSet", "url"),  # compared with the sidebar links' addresses, never requested

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { ShoppingBag } from 'lucide-react';
 import type { BuyOption } from '../utils/productLinks';
@@ -6,7 +7,11 @@ import type { BuyOption } from '../utils/productLinks';
 // "Buy" for a spool or a product (#2540): opens the product's page at its
 // supplier. One place: a link. Several: a menu of them, the supplier it was
 // bought from first. Nothing to open: nothing rendered. Clicks stay here, so
-// the row or card around it does not open too.
+// the row or card around it does not open too. The menu is portalled and
+// fixed-positioned: the tables it sits in scroll sideways and would cut it off.
+const MENU_WIDTH = 180;
+const EDGE = 8;
+
 export function BuyButton({
   options,
   currencySymbol,
@@ -20,15 +25,37 @@ export function BuyButton({
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top?: number; bottom?: number; left: number } | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (!open || !buttonRef.current) return;
+    const rect = buttonRef.current.getBoundingClientRect();
+    // Right edge under the button's, kept inside the window; above it when
+    // there is more room there than below.
+    const left = Math.max(EDGE, Math.min(rect.right - MENU_WIDTH, window.innerWidth - MENU_WIDTH - EDGE));
+    const above = window.innerHeight - rect.bottom < 200 && rect.top > window.innerHeight - rect.bottom;
+    setPos(above ? { bottom: window.innerHeight - rect.top + 4, left } : { top: rect.bottom + 4, left });
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
+    const close = () => setOpen(false);
     const onDocClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (buttonRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      close();
     };
     document.addEventListener('mousedown', onDocClick);
-    return () => document.removeEventListener('mousedown', onDocClick);
+    // The menu does not follow its button when something scrolls or resizes.
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
   }, [open]);
 
   if (options.length === 0) return null;
@@ -51,9 +78,10 @@ export function BuyButton({
   }
 
   return (
-    <div className="relative inline-flex" ref={ref} onClick={(e) => e.stopPropagation()}>
+    <div className="inline-flex" onClick={(e) => e.stopPropagation()}>
       <button
         type="button"
+        ref={buttonRef}
         onClick={() => setOpen((prev) => !prev)}
         className={className}
         title={t('inventory.suppliers.buy')}
@@ -63,10 +91,12 @@ export function BuyButton({
       >
         <ShoppingBag className={iconClassName} />
       </button>
-      {open && (
+      {open && pos && createPortal(
         <div
           role="menu"
-          className="absolute right-0 top-full mt-1 z-50 min-w-[180px] py-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg"
+          ref={menuRef}
+          style={{ position: 'fixed', top: pos.top, bottom: pos.bottom, left: pos.left, minWidth: MENU_WIDTH }}
+          className="z-[100] py-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg"
         >
           {options.map((option) => (
             <a
@@ -88,7 +118,8 @@ export function BuyButton({
               )}
             </a>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

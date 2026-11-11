@@ -6,7 +6,7 @@ import { api, ApiError } from '../api/client';
 import type { Supplier } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { inventorySuppliersQueryKey, invalidateInventorySuppliers } from '../utils/inventoryQueries';
-import { isWebUrl } from '../utils/productLinks';
+import { isWebUrl, normalizeWebUrl } from '../utils/productLinks';
 import { ConfirmModal } from './ConfirmModal';
 
 interface SuppliersModalProps {
@@ -65,7 +65,7 @@ export function SuppliersModal({ open, onClose }: SuppliersModalProps) {
 
   const formPayload = () => ({
     name: formName.trim(),
-    website: formWebsite.trim() || null,
+    website: normalizeWebUrl(formWebsite) || null,
     customer_number: formCustomerNumber.trim() || null,
     note: formNote.trim() || null,
   });
@@ -76,7 +76,7 @@ export function SuppliersModal({ open, onClose }: SuppliersModalProps) {
       return;
     }
     // The backend takes only http(s) addresses (#2540); say which field.
-    if (formWebsite.trim() && !isWebUrl(formWebsite)) {
+    if (normalizeWebUrl(formWebsite) === null) {
       showToast(t('inventory.suppliers.websiteInvalid'), 'error');
       return;
     }
@@ -118,7 +118,7 @@ export function SuppliersModal({ open, onClose }: SuppliersModalProps) {
       return;
     }
     // The backend takes only http(s) addresses (#2540); say which field.
-    if (formWebsite.trim() && !isWebUrl(formWebsite)) {
+    if (normalizeWebUrl(formWebsite) === null) {
       showToast(t('inventory.suppliers.websiteInvalid'), 'error');
       return;
     }

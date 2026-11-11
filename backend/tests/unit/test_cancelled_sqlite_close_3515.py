@@ -176,3 +176,54 @@ class TestTheStreamReadsRunToTheEnd:
 
         assert result is True
         assert session.closed
+
+
+class TestOlderAiosqlite:
+    def test_a_version_without_stop_is_left_alone(self, monkeypatch):
+        # Before 0.22.1 aiosqlite has no stop(), and SQLAlchemy calls none. The
+        # in-app update keeps such a version, so it must not fail the import.
+        class Connection:
+            pass
+
+        monkeypatch.setattr("aiosqlite.core.Connection", Connection)
+
+        database._make_aiosqlite_stop_idempotent()
+
+        assert not hasattr(Connection, "stop")
+
+
+class TestALeavingViewerDuringASlowReCheck:
+    async def test_the_retry_does_not_keep_the_stream(self, monkeypatch):
+        # Every database connection busy: the shielded re-check waits for one
+        # and times out. A viewer who left meanwhile must not be held through
+        # the immediate retry's own shielded wait as well.
+        from backend.app.api.routes import camera
+
+        monkeypatch.setattr(camera, "STREAM_RECHECK_SECONDS", 0.0)
+        monkeypatch.setattr(camera, "STREAM_RECHECK_RETRY_SECONDS", 0.0)
+        calls = 0
+
+        async def slow_failure(_opener, _printer_id):
+            nonlocal calls
+            calls += 1
+            with anyio.CancelScope(shield=True):
+                await asyncio.sleep(0.2)
+            raise TimeoutError("pool")
+
+        monkeypatch.setattr(camera, "stream_opener_still_allowed", slow_failure)
+
+        async def frames():
+            while True:
+                yield b"frame"
+                await asyncio.sleep(0)
+
+        async def watch():
+            async for _ in camera._while_allowed(frames(), auth.StreamOpener(auth_on=False), 1):
+                pass
+
+        async with anyio.create_task_group() as group:
+            group.start_soon(watch)
+            await asyncio.sleep(0.05)
+            group.cancel_scope.cancel()
+
+        assert calls == 1

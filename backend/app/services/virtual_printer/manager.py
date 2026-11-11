@@ -68,6 +68,8 @@ VIRTUAL_PRINTER_MODELS = {
     "O1C": "H2C",  # H2C
     "O1C2": "H2C",  # H2C (dual nozzle variant)
     "O1S": "H2S",  # H2S
+    # H3 Series
+    "N10": "H3C",  # H3C
 }
 
 # Serial number prefixes for each model (based on Bambu Lab serial number format)
@@ -105,6 +107,10 @@ MODEL_SERIAL_PREFIXES = {
     # also got the H2D's HMS texts in the slicer.
     "O1C2": "31B8BP",
     "O1S": "09400A",  # H2S
+    # H3 Series
+    # H3C: first 6 characters of a real H3C serial (#3442); Bambu Studio knows
+    # an H3C by "32X" (sn_prefix in resources/printers/N10.json).
+    "N10": "32X99B",
 }
 
 # Reverse mapping: display name → SSDP model code (for auto-inheriting from printer model)

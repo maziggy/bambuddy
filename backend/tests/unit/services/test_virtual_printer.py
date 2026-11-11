@@ -4875,6 +4875,30 @@ class TestH2cCodeBySerial:
         assert _get_serial_for_model("O1C", "391800001").startswith("094")
 
 
+class TestH3cVirtualPrinter:
+    """A virtual printer can be an H3C (#3442).
+
+    Bambu Studio knows an H3C by its serial ("32X", sn_prefix in
+    resources/printers/N10.json) and its model code N10.
+    """
+
+    @pytest.mark.parametrize("model", ["H3C", "N10"])
+    def test_the_name_and_the_code_resolve_to_n10(self, model):
+        from backend.app.api.routes.virtual_printers import _resolve_printer_model
+
+        assert _resolve_printer_model(model) == "N10"
+
+    def test_a_proxy_for_an_h3c_takes_its_code(self):
+        from backend.app.services.virtual_printer.manager import model_code_for_printer
+
+        assert model_code_for_printer("H3C", "32X99B000000001") == "N10"
+
+    def test_a_virtual_h3c_has_a_real_h3c_serial(self):
+        from backend.app.services.virtual_printer.manager import _get_serial_for_model
+
+        assert _get_serial_for_model("N10", "391800001").startswith("32X99B")
+
+
 class TestMqttIpRewrite:
     """Tests for TLSProxy._rewrite_mqtt_ip() MQTT packet IP rewriting."""
 

@@ -2,7 +2,7 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
-## [1.3.1] - Unreleased
+## [1.3.1] - 2026-11-11
 
 ### Added
 - **Bambu Lab H3C support (#3442, requested by @Mx772, contributed by @daltonclift in #3490)** — Bambuddy now supports the H3C: its nine-slot AMS 3H, the nine-PrintTool SwapTek rack and the per-PrintTool external inputs. The printer card lays out the AMS 3H like the unit, with a dryer box around the slots of its drying zone and the ambient readings in the header, shows the nine-position PrintTool rack, and names the external inputs **Ext-n**. Load and unload work from Bambuddy; an unload ends with pulling the filament back by hand, since the AMS 3H can't rewind, and the card says so. A load into a slot that reports no filament is refused. Drying targets the AMS 3H's drying zone, and chamber heating switches the airduct to heating mode first, because the H3C's chamber heater only heats in that mode. Queued prints are sent with the slot numbering Bambu Studio uses, and the slot numbering of every other printer is unchanged. A stopped print's filament usage is scaled by layers, since the H3C's progress includes its start sequence. The H3C gets its own firmware check, its 14 maintenance tasks with links to Bambu's guides (listed only when an H3C is added) and its fault texts. Queue jobs that a daily build stored for an H3C with the old slot numbers are corrected once on start. Tested on an H3C with firmware 01.01.03.00.

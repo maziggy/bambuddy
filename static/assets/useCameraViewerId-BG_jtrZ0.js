@@ -1,1 +1,0 @@
-import{i as e}from"./rolldown-runtime-aKtaBQYM.js";import{k as t}from"./client-A76-KVrT.js";var n=e(t(),1);function r(){let[e]=(0,n.useState)(()=>`v${Math.random().toString(36).slice(2,12)}`);return e}export{r as t};

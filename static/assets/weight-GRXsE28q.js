@@ -1,0 +1,1 @@
+function e(e){if(e>=1e6){let t=e/1e6;return`${t%1==0?t.toFixed(0):t.toFixed(1)}t`}if(e>=1e3){let t=e/1e3;return`${t%1==0?t.toFixed(0):t.toFixed(1)}kg`}return`${Math.round(e)}g`}export{e as t};

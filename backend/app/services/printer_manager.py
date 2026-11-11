@@ -1843,6 +1843,7 @@ def printer_state_to_dict(
                 "nozzle_type": n.get("type", ""),
                 "nozzle_diameter": n.get("diameter", ""),
                 "wear": n.get("wear"),
+                "print_time_s": n.get("print_time_s"),
                 "stat": n.get("stat"),
                 "max_temp": n.get("max_temp", 0),
                 "serial_number": n.get("serial_number", ""),

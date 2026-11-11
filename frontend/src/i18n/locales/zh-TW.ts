@@ -510,6 +510,7 @@ export default {
     nozzleStatus: '狀態',
     nozzleFilament: '耗材',
     nozzleWear: '磨損',
+    nozzlePrintTime: '列印時長',
     nozzleMaxTemp: '最高溫度',
     nozzleSerial: '序列號',
     nozzleHardenedSteel: '硬化鋼',

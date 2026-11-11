@@ -509,6 +509,7 @@ export default {
     nozzleStatus: 'ステータス',
     nozzleFilament: 'フィラメント',
     nozzleWear: '摩耗',
+    nozzlePrintTime: '印刷時間',
     nozzleMaxTemp: '最高温度',
     nozzleSerial: 'シリアル',
     nozzleHardenedSteel: '焼入れ鋼',

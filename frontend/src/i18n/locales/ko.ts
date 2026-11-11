@@ -487,6 +487,7 @@ export default {
     nozzleStatus: '상태',
     nozzleFilament: '필라멘트',
     nozzleWear: '마모',
+    nozzlePrintTime: '출력 시간',
     nozzleMaxTemp: '최대 온도',
     nozzleSerial: '일련번호',
     nozzleHardenedSteel: '경화강',

@@ -534,4 +534,89 @@ describe('SpoolBuddyWriteTagPage', () => {
 
     expect(container.querySelector('#spool-material-number')).toBeNull();
   });
+
+  describe('which device writes (#3504)', () => {
+    const spool = {
+      id: 7,
+      material: 'PLA',
+      label_weight: 1000,
+      weight_used: 0,
+      tag_uid: null,
+      tray_uuid: null,
+      archived_at: null,
+      rgba: 'FF0000FF',
+    };
+
+    beforeEach(() => {
+      localStorage.clear();
+      vi.mocked(mockedApi.getSpools).mockResolvedValue([spool as never]);
+      mockOutletContext.sbState.deviceOnline = true;
+    });
+
+    async function selectSpool() {
+      await waitFor(() => expect(screen.getByText('PLA')).toBeDefined());
+      fireEvent.click(screen.getByText('PLA'));
+      await waitFor(() => expect((screen.getByText('Write Tag') as HTMLButtonElement).disabled).toBe(false));
+    }
+
+    async function writeSelectedSpool() {
+      await selectSpool();
+      fireEvent.click(screen.getByText('Write Tag'));
+    }
+
+    it('sends the write to the online device, not an offline one listed first', async () => {
+      vi.mocked(mockedSpoolbuddyApi.getDevices).mockResolvedValue([
+        { device_id: 'old-console', hostname: 'old', online: false } as never,
+        { device_id: 'kiosk', hostname: 'kiosk', online: true } as never,
+      ]);
+      renderPage();
+
+      await writeSelectedSpool();
+
+      await waitFor(() => expect(mockedSpoolbuddyApi.writeTag).toHaveBeenCalledWith('kiosk', 7));
+      // One online device: nothing to choose.
+      expect(screen.queryByText('spoolbuddy.writeTag.writeWith')).toBeNull();
+      mockOutletContext.sbState.deviceOnline = false;
+    });
+
+    it('offers a choice with two online devices and writes with the chosen one', async () => {
+      vi.mocked(mockedSpoolbuddyApi.getDevices).mockResolvedValue([
+        { device_id: 'left', hostname: 'left', online: true } as never,
+        { device_id: 'right', hostname: 'right', online: true } as never,
+      ]);
+      renderPage();
+
+      const picker = await screen.findByRole('combobox');
+      fireEvent.change(picker, { target: { value: 'right' } });
+      await writeSelectedSpool();
+
+      await waitFor(() => expect(mockedSpoolbuddyApi.writeTag).toHaveBeenCalledWith('right', 7));
+      expect(localStorage.setItem).toHaveBeenCalledWith('spoolbuddy.kioskDeviceId', 'right');
+      mockOutletContext.sbState.deviceOnline = false;
+    });
+
+    it("ignores a tag on another device's reader", async () => {
+      vi.mocked(mockedSpoolbuddyApi.getDevices).mockResolvedValue([
+        { device_id: 'kiosk', hostname: 'kiosk', online: true } as never,
+      ]);
+      renderPage();
+      await selectSpool();
+
+      act(() => {
+        window.dispatchEvent(
+          new CustomEvent('spoolbuddy-unknown-tag', { detail: { tag_uid: '04FFEE', sak: 0, device_id: 'elsewhere' } }),
+        );
+      });
+      expect(screen.queryByText('Tag detected — ready to write')).toBeNull();
+
+      act(() => {
+        window.dispatchEvent(
+          new CustomEvent('spoolbuddy-unknown-tag', { detail: { tag_uid: '04FFEE', sak: 0, device_id: 'kiosk' } }),
+        );
+      });
+      await waitFor(() => expect(screen.getByText('Tag detected — ready to write')).toBeDefined());
+      expect(screen.getByText('04FFEE')).toBeDefined();
+      mockOutletContext.sbState.deviceOnline = false;
+    });
+  });
 });

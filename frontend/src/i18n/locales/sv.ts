@@ -316,6 +316,8 @@ export default {
     },
     temperatures: {
       nozzle: 'Munstycke',
+      // The H3C's nozzle on the toolhead, by its rack position (#3442).
+      mounted: 'Munstycke {{n}}',
       bed: 'Byggplatta',
       chamber: 'Kammare',
     },
@@ -7853,6 +7855,8 @@ errors: {
       includeBeta: 'Inkludera betaversioner',
     },
     writeTag: {
+      writeWith: 'Skriv med',
+      deviceOfflineOption: '{{name}} (enhet offline)',
       tabExisting: 'Befintlig rulle',
       tabNew: 'Ny rulle',
       tabReplace: 'Ersätt tagg',

@@ -573,8 +573,8 @@ class PN5180:
 
         NTAG WRITE command: 0xA2 + page_number + 4 bytes data.
         TX CRC on (tag requires it). Always returns True — the 4-bit ACK
-        cannot be captured by the PN5180, so verification is deferred to
-        ntag_write_pages() which reads back all written data.
+        cannot be captured by the PN5180, so NFCReader.write_ntag() reads
+        the written pages back after a fresh select (#3076).
         """
         if len(data) != 4:
             return False
@@ -604,10 +604,10 @@ class PN5180:
     def ntag_write_pages(self, start_page: int, data: bytes) -> bool:
         """Write data to consecutive NTAG pages starting at start_page.
 
-        Pads last chunk to 4 bytes. Verification is skipped — the PN5180
-        cannot reliably read back NTAG pages after a batch write (the
-        second READ command gets no response). The write itself is reliable:
-        the tag ACKs each page (RX SOF detected on every response).
+        Pads last chunk to 4 bytes. Nothing is verified here: the PN5180
+        cannot see the tag's ACK, and a READ straight after a batch write gets
+        no response. NFCReader.write_ntag() selects the tag afresh and reads
+        the pages back (#3076).
         """
         # Pad to 4-byte boundary
         padded = bytearray(data)

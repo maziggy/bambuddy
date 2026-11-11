@@ -316,6 +316,8 @@ export default {
     },
     temperatures: {
       nozzle: 'Ugello',
+      // The H3C's nozzle on the toolhead, by its rack position (#3442).
+      mounted: 'Ugello {{n}}',
       bed: 'Piatto',
       chamber: 'Camera',
     },
@@ -7758,6 +7760,8 @@ export default {
       testReadTag: 'Leggi tag',
     },
     writeTag: {
+      writeWith: 'Scrivi con',
+      deviceOfflineOption: '{{name}} (dispositivo offline)',
       tabExisting: 'Bobina esistente',
       tabNew: 'Nuova bobina',
       tabReplace: 'Sostituisci tag',

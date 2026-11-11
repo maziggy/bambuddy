@@ -316,6 +316,8 @@ export default {
     },
     temperatures: {
       nozzle: 'Bico',
+      // The H3C's nozzle on the toolhead, by its rack position (#3442).
+      mounted: 'Bico {{n}}',
       bed: 'Cama',
       chamber: 'Câmara',
     },
@@ -7758,6 +7760,8 @@ export default {
       testReadTag: 'Ler tag',
     },
     writeTag: {
+      writeWith: 'Gravar com',
+      deviceOfflineOption: '{{name}} (dispositivo offline)',
       tabExisting: 'Bobina existente',
       tabNew: 'Nova bobina',
       tabReplace: 'Substituir tag',

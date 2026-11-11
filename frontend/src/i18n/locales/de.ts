@@ -316,6 +316,8 @@ export default {
     },
     temperatures: {
       nozzle: 'Düse',
+      // The H3C's nozzle on the toolhead, by its rack position (#3442).
+      mounted: 'Düse {{n}}',
       bed: 'Druckbett',
       chamber: 'Kammer',
     },
@@ -7771,6 +7773,8 @@ export default {
       includeBeta: 'Beta-Versionen einschließen',
     },
     writeTag: {
+      writeWith: 'Schreiben mit',
+      deviceOfflineOption: '{{name}} (Gerät offline)',
       tabExisting: 'Vorhandene Spule',
       tabNew: 'Neue Spule',
       tabReplace: 'Tag ersetzen',

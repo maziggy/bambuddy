@@ -310,6 +310,8 @@ export default {
     },
     temperatures: {
       nozzle: "Сопло",
+      // The H3C's nozzle on the toolhead, by its rack position (#3442).
+      mounted: "Сопло {{n}}",
       bed: "Стол",
       chamber: "Камера",
     },
@@ -7402,6 +7404,8 @@ export default {
       includeBeta: "Включать бета-версии",
     },
     writeTag: {
+      writeWith: 'Записать с помощью',
+      deviceOfflineOption: '{{name}} (не в сети)',
       tabExisting: "Существующая катушка",
       tabNew: "Новая катушка",
       tabReplace: "Заменить метку",

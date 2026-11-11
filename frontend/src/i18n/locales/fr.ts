@@ -316,6 +316,8 @@ export default {
     },
     temperatures: {
       nozzle: 'Buse',
+      // The H3C's nozzle on the toolhead, by its rack position (#3442).
+      mounted: 'Buse {{n}}',
       bed: 'Plateau',
       chamber: 'Chambre',
     },
@@ -7759,6 +7761,8 @@ export default {
       testReadTag: 'Lire un tag',
     },
     writeTag: {
+      writeWith: 'Écrire avec',
+      deviceOfflineOption: '{{name}} (hors ligne)',
       tabExisting: 'Bobine existante',
       tabNew: 'Nouvelle bobine',
       tabReplace: 'Remplacer le tag',

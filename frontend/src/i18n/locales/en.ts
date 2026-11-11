@@ -318,6 +318,8 @@ export default {
     },
     temperatures: {
       nozzle: 'Nozzle',
+      // The H3C's nozzle on the toolhead, by its rack position (#3442).
+      mounted: 'Nozzle {{n}}',
       bed: 'Bed',
       chamber: 'Chamber',
     },
@@ -7824,6 +7826,8 @@ export default {
       includeBeta: 'Include beta versions',
     },
     writeTag: {
+      writeWith: 'Write with',
+      deviceOfflineOption: '{{name}} (offline)',
       tabExisting: 'Existing Spool',
       tabNew: 'New Spool',
       tabReplace: 'Replace Tag',

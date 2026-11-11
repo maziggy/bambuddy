@@ -316,6 +316,8 @@ export default {
     },
     temperatures: {
       nozzle: 'Nozul',
+      // The H3C's nozzle on the toolhead, by its rack position (#3442).
+      mounted: 'Nozul {{n}}',
       bed: 'Tabla',
       chamber: 'Hazne',
     },
@@ -7710,6 +7712,8 @@ export default {
       includeBeta: 'Beta sürümleri dahil et',
     },
     writeTag: {
+      writeWith: 'Şununla yaz',
+      deviceOfflineOption: '{{name}} (çevrimdışı)',
       tabExisting: 'Mevcut Makara',
       tabNew: 'Yeni Makara',
       tabReplace: 'Etiketi Değiştir',

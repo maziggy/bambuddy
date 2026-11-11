@@ -316,6 +316,8 @@ export default {
     },
     temperatures: {
       nozzle: '喷嘴',
+      // The H3C's nozzle on the toolhead, by its rack position (#3442).
+      mounted: '喷嘴 {{n}}',
       bed: '热床',
       chamber: '腔室',
     },
@@ -7756,6 +7758,8 @@ export default {
       includeBeta: '包含测试版本',
     },
     writeTag: {
+      writeWith: '写入设备',
+      deviceOfflineOption: '{{name}}（离线）',
       tabExisting: '现有耗材',
       tabNew: '新耗材',
       tabReplace: '替换标签',

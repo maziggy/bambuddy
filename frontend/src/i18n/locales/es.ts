@@ -316,6 +316,8 @@ export default {
     },
     temperatures: {
       nozzle: 'Boquilla',
+      // The H3C's nozzle on the toolhead, by its rack position (#3442).
+      mounted: 'Boquilla {{n}}',
       bed: 'Cama',
       chamber: 'Cámara',
     },
@@ -7779,6 +7781,8 @@ export default {
       includeBeta: 'Incluir versiones beta',
     },
     writeTag: {
+      writeWith: 'Escribir con',
+      deviceOfflineOption: '{{name}} (sin conexión)',
       tabExisting: 'Bobina existente',
       tabNew: 'Bobina nueva',
       tabReplace: 'Reemplazar etiqueta',

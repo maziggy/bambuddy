@@ -304,6 +304,8 @@ export default {
     },
     temperatures: {
       nozzle: '노즐',
+      // The H3C's nozzle on the toolhead, by its rack position (#3442).
+      mounted: '노즐 {{n}}',
       bed: '베드',
       chamber: '챔버'
     },
@@ -7414,6 +7416,8 @@ export default {
       includeBeta: '베타 버전 포함'
     },
     writeTag: {
+      writeWith: '쓰기 장치',
+      deviceOfflineOption: '{{name}} (오프라인)',
       tabExisting: '기존 스풀',
       tabNew: '새 스풀',
       tabReplace: '태그 교체',

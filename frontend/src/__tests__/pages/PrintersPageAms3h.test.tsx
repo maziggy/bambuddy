@@ -191,3 +191,46 @@ describe('PrintersPage - H3C AMS 3H', () => {
     expect(screen.queryByTestId('rack-externals-empty')).not.toBeInTheDocument();
   });
 });
+
+describe('PrintersPage - H3C mounted hotend temperature (#3442)', () => {
+  const rackNozzle = (id: number, addr_id: number) => ({
+    id, addr_id, nozzle_type: 'HS01', nozzle_diameter: '0.4', wear: 0, stat: 168, max_temp: 350,
+    serial_number: '', filament_color: 'DE4343FF', filament_id: 'GFL99', filament_type: 'PLA',
+  });
+  // Hotend of rack position 5 on the toolhead (id 0, addr_id 4); the others in the rack.
+  const nozzleRack = [rackNozzle(0, 4), rackNozzle(16, 0), rackNozzle(17, 1)];
+
+  beforeEach(() => {
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([mockPrinter])),
+      http.get('/api/v1/queue/', () => HttpResponse.json([])),
+    );
+  });
+
+  it('names the temperature after the hotend on the toolhead', async () => {
+    server.use(
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json({ ...h3cStatus, nozzle_rack: nozzleRack })),
+    );
+
+    render(<PrintersPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('nozzle-temp-label')).toHaveTextContent('Nozzle 5');
+    });
+  });
+
+  it('keeps Nozzle on a printer without a rack', async () => {
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([{ ...mockPrinter, model: 'P2S' }])),
+      http.get('/api/v1/printers/:id/status', () =>
+        HttpResponse.json({ ...h3cStatus, ams: [], vt_tray: [], nozzle_rack: nozzleRack }),
+      ),
+    );
+
+    render(<PrintersPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('nozzle-temp-label')).toHaveTextContent(/^Nozzle$/);
+    });
+  });
+});

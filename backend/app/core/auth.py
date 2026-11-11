@@ -1284,6 +1284,9 @@ async def stream_opener_still_allowed(opener: StreamOpener, printer_id: int) -> 
                 else:
                     return False
                 return scope.allows(printer_id)
+        # Unreachable: nothing cancels this scope itself, so it never swallows
+        # the return above. Never an answer of "allowed" if it ever did.
+        return False
     except Exception:  # SEC-AUTH-EXC: logged and re-raised, never an answer
         logger.warning("Camera stream re-check failed", exc_info=True)
         raise

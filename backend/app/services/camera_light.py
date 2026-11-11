@@ -61,6 +61,7 @@ async def _read_settings() -> tuple[str, float]:
     # Shielded (#3515): a viewer leaving cancels the stream, and a read
     # cancelled halfway costs its pooled connection. The two short reads and
     # the session's close run to the end first.
+    mode = delay = None
     with anyio.CancelScope(shield=True):
         async with database.async_session() as db:
             mode = await get_setting(db, "camera_light_mode")

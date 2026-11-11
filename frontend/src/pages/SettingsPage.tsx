@@ -19,7 +19,7 @@ import {
 import { describeHASensorReading, iconForHASensor } from '../utils/haSensorDisplay';
 import { SECRET_PLACEHOLDER, secretsToReenter, selectPlaceholderOnFocus } from '../utils/secrets';
 import { PreheatFilamentTargetsEditor } from '../components/PreheatFilamentTargetsEditor';
-import type { Printer as PrinterInfo, APIKey, AppSettings, AppSettingsUpdate, PrinterHASensor, LocationHASensor, LocationHASensorReading, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, StorageUsageResponse, CalibrationMode } from '../api/client';
+import type { Printer as PrinterInfo, APIKey, AppSettings, AppSettingsUpdate, PrinterHASensor, LocationHASensor, LocationHASensorReading, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, StorageUsageResponse, CalibrationMode, ModelDispatchOrder } from '../api/client';
 import { Card, CardContent, CardDensityProvider, CardHeader } from '../components/Card';
 import { SlicerPipelinesPanel } from '../components/SlicerPipelinesPanel';
 import { CameraTokensSection } from './CameraTokensPage';
@@ -98,6 +98,7 @@ registerSettingsSearch({ labelKey: 'settings.defaultPrintOptions', labelFallback
 registerSettingsSearch({ labelKey: 'settings.tempFanPresetsTitle', labelFallback: 'Temperature & Fan Presets', tab: 'queue', keywords: 'temperature fan presets nozzle bed chamber quick buttons popover', anchor: 'card-temp-fan-presets' });
 registerSettingsSearch({ labelKey: 'settings.staggeredStart', labelFallback: 'Staggered Start', tab: 'queue', keywords: 'staggered batch delay start queue group', anchor: 'card-staggered' });
 registerSettingsSearch({ labelKey: 'settings.plateClear', labelFallback: 'Plate-Clear Confirmation', tab: 'queue', keywords: 'plate clear confirm auto queue', anchor: 'card-plate' });
+registerSettingsSearch({ labelKey: 'settings.dispatchOrderTitle', labelFallback: 'Printer Order for Any-Model Jobs', tab: 'queue', keywords: 'printer order any model dispatch pick wear hours least recently used idle priority farm balance', anchor: 'card-dispatch-order' });
 registerSettingsSearch({ labelKey: 'settings.concurrentUploadsTitle', labelFallback: 'Concurrent Uploads', tab: 'queue', keywords: 'concurrent parallel upload transfer ftp queue slow farm simultaneous', anchor: 'card-concurrent-uploads' });
 registerSettingsSearch({ labelKey: 'settings.gcodeInjection', labelFallback: 'G-code Injection', tab: 'queue', keywords: 'gcode injection start end autoprint farmloop swapmod autoclear printflow', anchor: 'card-gcode' });
 registerSettingsSearch({ labelKey: 'settings.slicerCard', labelFallback: 'Slicer', tab: 'queue', keywords: 'slicer orcaslicer bambustudio orca bambu api sidecar url docker preferred', anchor: 'card-slicer' });
@@ -1358,6 +1359,7 @@ export function SettingsPage() {
       (baseline.stagger_interval_minutes ?? 5) !== (localSettings.stagger_interval_minutes ?? 5) ||
       (baseline.require_plate_clear ?? false) !== (localSettings.require_plate_clear ?? false) ||
       (baseline.queue_max_concurrent_uploads ?? 4) !== (localSettings.queue_max_concurrent_uploads ?? 4) ||
+      (baseline.model_dispatch_order ?? 'fewest_hours') !== (localSettings.model_dispatch_order ?? 'fewest_hours') ||
       (baseline.preheat_enabled ?? false) !== (localSettings.preheat_enabled ?? false) ||
       (baseline.preheat_filament_targets ?? '') !== (localSettings.preheat_filament_targets ?? '') ||
       (baseline.preheat_max_wait_seconds ?? 900) !== (localSettings.preheat_max_wait_seconds ?? 900) ||
@@ -1487,6 +1489,7 @@ export function SettingsPage() {
         stagger_interval_minutes: localSettings.stagger_interval_minutes,
         require_plate_clear: localSettings.require_plate_clear,
         queue_max_concurrent_uploads: localSettings.queue_max_concurrent_uploads,
+        model_dispatch_order: localSettings.model_dispatch_order,
         preheat_enabled: localSettings.preheat_enabled,
         preheat_filament_targets: localSettings.preheat_filament_targets,
         preheat_max_wait_seconds: localSettings.preheat_max_wait_seconds,
@@ -5470,6 +5473,43 @@ export function SettingsPage() {
                     {t('settings.staggerIntervalHelp', 'Delay between each group starting')}
                   </p>
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Printer order for any-model jobs (#2915) */}
+          <Card id="card-dispatch-order">
+            <CardHeader>
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <ListOrdered className="w-4 h-4 text-bambu-green" />
+                {t('settings.dispatchOrderTitle', 'Printer Order for Any-Model Jobs')}
+              </h3>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-bambu-gray">
+                {t('settings.dispatchOrderDescription', 'When a job is queued for any printer of a model, this decides which of the printers that can take it gets it. A printer that is busy, offline or short of filament is passed over, whatever the order.')}
+              </p>
+              <div className="w-full sm:w-1/2">
+                <label htmlFor="model_dispatch_order" className="block text-xs text-bambu-gray mb-1">
+                  {t('settings.dispatchOrderLabel', 'Pick the printer')}
+                </label>
+                <div className="relative">
+                  <select
+                    id="model_dispatch_order"
+                    value={localSettings.model_dispatch_order ?? 'fewest_hours'}
+                    onChange={(e) => updateSetting('model_dispatch_order', e.target.value as ModelDispatchOrder)}
+                    className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
+                  >
+                    <option value="fewest_hours">{t('settings.dispatchOrderFewestHours', 'With the fewest print hours (default)')}</option>
+                    <option value="most_hours">{t('settings.dispatchOrderMostHours', 'With the most print hours')}</option>
+                    <option value="least_recently_used">{t('settings.dispatchOrderLeastRecentlyUsed', 'Idle the longest')}</option>
+                    <option value="priority">{t('settings.dispatchOrderPriority', 'By the priority set on each printer')}</option>
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
+                </div>
+                <p className="text-xs text-bambu-gray mt-1">
+                  {t('settings.dispatchOrderHelp', "Fewest hours spreads the wear over the farm. Most hours uses up the machines near replacement first. Idle the longest goes by each printer's last finished print, and one that never printed goes first. By priority follows the Priority field in each printer's settings: the lowest number first, printers without one last.")}
+                </p>
               </div>
             </CardContent>
           </Card>

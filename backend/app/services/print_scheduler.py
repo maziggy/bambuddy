@@ -1271,6 +1271,44 @@ def _wear_order(printer: Printer) -> tuple[float, int]:
     return hours, printer.id
 
 
+def _hours_of(printer: Printer) -> float:
+    return (printer.runtime_seconds or 0) / 3600.0 + (printer.print_hours_offset or 0.0)
+
+
+def _order_printers(
+    printers: list[Printer], order: str, last_finished: dict[int, datetime] | None = None
+) -> list[Printer]:
+    """Sort the printers an "Any model" job could take into the order they are picked (#2915).
+
+    Whatever the strategy, ties fall back to the printer id, so the outcome is
+    reproducible.
+
+    * ``fewest_hours`` (the default, #3480): the least worn machine first.
+    * ``most_hours``: the most worn first, to use up the machines already near
+      replacement.
+    * ``least_recently_used``: the printer that finished a print longest ago;
+      one that never has goes first.
+    * ``priority``: the printers' own ``dispatch_priority``, lowest first; one
+      without goes last.
+    """
+    if order == "most_hours":
+        return sorted(printers, key=lambda p: (-_hours_of(p), p.id))
+    if order == "least_recently_used":
+        finished = last_finished or {}
+        never = datetime.min
+        return sorted(printers, key=lambda p: (finished.get(p.id, never), p.id))
+    if order == "priority":
+        return sorted(
+            printers,
+            key=lambda p: (
+                p.dispatch_priority is None,
+                p.dispatch_priority if p.dispatch_priority is not None else 0,
+                p.id,
+            ),
+        )
+    return sorted(printers, key=_wear_order)
+
+
 class PrintScheduler:
     """Background scheduler that processes the print queue."""
 
@@ -3290,7 +3328,8 @@ class PrintScheduler:
         only be woken onto a printer the matcher would also have considered.
         ``printer_scope`` is the job creator's (#1727).
 
-        Fewest print hours first (#3480): both take the first printer that
+        In the order of Settings > Queue > printer order (#2915), fewest print
+        hours first by default (#3480): both take the first printer that
         fits, so an "Any" job goes to the least worn machine and a farm's jobs
         spread by wear instead of all landing on the lowest id. The hours are
         the maintenance counter's (runtime plus the baseline offset), which
@@ -3308,7 +3347,30 @@ class PrintScheduler:
         if (clause := printer_scope.where_strict(Printer.id)) is not None:
             query = query.where(clause)
         result = await db.execute(query)
-        return sorted(result.scalars().all(), key=_wear_order)
+        printers = list(result.scalars().all())
+        order = await self._get_model_dispatch_order(db)
+        last_finished: dict[int, datetime] | None = None
+        if order == "least_recently_used" and printers:
+            last_finished = await self._last_finished_by_printer(db, [p.id for p in printers])
+        return _order_printers(printers, order, last_finished)
+
+    async def _get_model_dispatch_order(self, db: AsyncSession) -> str:
+        """The order setting (#2915); anything unknown reads as the default."""
+        result = await db.execute(select(Settings).where(Settings.key == "model_dispatch_order"))
+        setting = result.scalar_one_or_none()
+        value = (setting.value if setting else "") or ""
+        return value if value in ("most_hours", "least_recently_used", "priority") else "fewest_hours"
+
+    async def _last_finished_by_printer(self, db: AsyncSession, printer_ids: list[int]) -> dict[int, datetime]:
+        """When each printer last finished a print, from the Print Log; none for one that never has."""
+        from backend.app.models.print_log import PrintLogEntry
+
+        result = await db.execute(
+            select(PrintLogEntry.printer_id, func.max(PrintLogEntry.completed_at))
+            .where(PrintLogEntry.printer_id.in_(printer_ids), PrintLogEntry.completed_at.is_not(None))
+            .group_by(PrintLogEntry.printer_id)
+        )
+        return {printer_id: finished for printer_id, finished in result.all() if finished is not None}
 
     async def _wakeable_printer_ids(self, db: AsyncSession) -> set[int]:
         """Printer IDs that at least one enabled ``auto_on`` plug can power on.

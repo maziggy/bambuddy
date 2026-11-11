@@ -480,7 +480,7 @@ const NL_COGNATES = [
   'Label...', 'LAN Developer Mode', 'Live', 'Long-Lived Access Token',
   'Ludicrous (166%)', 'MakerWorld: {{designer}}', 'Metadata', 'Min',
   'Model', '{{name}} — {{stage}} ({{percent}}%) — {{elapsed}}', '{{name}} - Timelapse', 'Nozzle',
-  'Nozzle 2', '{{n}} run', '{{n}} runs', 'Offline',
+  'Nozzle 2', 'Nozzle {{n}}', '{{n}} run', '{{n}} runs', 'Offline',
   'Online', 'Open', 'Orca Cloud', 'parallel',
   'Personal Access Token', 'Pipeline', 'Pipelines', 'Platform',
   'Pressure Advance', 'Prime tower', 'Printer', 'Printer:',

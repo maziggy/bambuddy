@@ -4618,6 +4618,11 @@ function PrinterCard({
               const rightNozzleSlot = status.nozzle_rack?.find(s => s.id === 0);
               // Single-nozzle models (H2D, H2C): use the primary nozzle (id 0)
               const singleNozzleSlot = rightNozzleSlot || leftNozzleSlot;
+              // A rack printer (H3C) shows the nozzle on its toolhead, named by its
+              // rack position as in the rack card (#3442).
+              const mountedHotend = trayLayout.rack && singleNozzleSlot?.id === 0 && typeof singleNozzleSlot.addr_id === 'number'
+                ? singleNozzleSlot.addr_id + 1
+                : null;
               const canUseStatusControls = status.connected && hasPermission('printers:control');
               const statusControlTitle = canUseStatusControls ? undefined : t('printers.permission.noControl');
               const statusControlClass = `relative text-center px-2 py-1.5 bg-bambu-dark rounded-lg flex-1 flex flex-col justify-center items-center transition-colors ${
@@ -4733,7 +4738,9 @@ function PrinterCard({
                       ) : singleNozzleSlot ? (
                         <NozzleSlotHoverCard slot={singleNozzleSlot} index={0} activeStatus filamentName={singleNozzleSlot.filament_id ? filamentInfo?.[singleNozzleSlot.filament_id]?.name : undefined}>
                           <div className="cursor-default">
-                            <p className="text-[length:var(--pc-t9,9px)] text-bambu-gray">{t('printers.temperatures.nozzle')}</p>
+                            <p data-testid="nozzle-temp-label" className="text-[length:var(--pc-t9,9px)] text-bambu-gray">
+                              {mountedHotend !== null ? t('printers.temperatures.mounted', { n: mountedHotend }) : t('printers.temperatures.nozzle')}
+                            </p>
                             <p className="text-[length:var(--pc-t11,11px)] text-white">
                               {Math.round(status.temperatures.nozzle || 0)}°C
                             </p>

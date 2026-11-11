@@ -316,6 +316,8 @@ export default {
     },
     temperatures: {
       nozzle: '喷嘴',
+      // The H3C's nozzle on the toolhead, by its rack position (#3442).
+      mounted: '喷嘴 {{n}}',
       bed: '热床',
       chamber: '腔室',
     },

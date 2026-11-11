@@ -1,0 +1,200 @@
+2026-10-30 11:05:48,044 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-10-30 13:05:17,111 INFO [root] [-] Logging to file: /app/logs/bambuddy.log
+2026-10-30 13:05:17,126 INFO [root] [-] Bambuddy starting - debug=False, log_level=INFO
+2026-10-30 13:05:26,572 INFO [backend.app.services.printer_manager] [-] Loaded 1 printer(s) awaiting plate-clear acknowledgment: [1]
+2026-10-30 13:05:26,592 INFO [backend.app.services.mqtt_relay] [-] MQTT relay disabled
+2026-10-30 13:05:27,651 INFO [backend.app.services.smart_plug_manager] [-] Smart plug scheduler started
+2026-10-30 13:05:27,651 INFO [backend.app.services.smart_plug_manager] [-] Smart plug energy snapshot loop started
+2026-10-30 13:05:27,652 INFO [backend.app.services.ha_sensor_manager] [-] Home Assistant sensor poller started
+2026-10-30 13:05:27,652 INFO [backend.app.services.location_ha_sensor_manager] [-] Home Assistant location-sensor poller started
+2026-10-30 13:05:27,678 INFO [backend.app.services.print_scheduler] [-] Print scheduler started
+2026-10-30 13:05:27,700 INFO [backend.app.services.notification_service] [-] Notification digest scheduler started
+2026-10-30 13:05:27,743 INFO [backend.app.services.github_backup] [-] Starting GitHub backup scheduler
+2026-10-30 13:05:27,745 INFO [backend.app.services.local_backup] [-] Starting local backup scheduler
+2026-10-30 13:05:27,788 INFO [backend.app.services.obico_detection] [-] Starting Obico detection service
+2026-10-30 13:05:27,789 INFO [backend.app.services.library_trash] [-] Starting library trash sweeper
+2026-10-30 13:05:27,790 INFO [backend.app.services.archive_purge] [-] Starting archive auto-purge sweeper
+2026-10-30 13:05:27,791 INFO [backend.app.main] [-] AMS history recording started
+2026-10-30 13:05:27,791 INFO [backend.app.main] [-] Printer sensor history recording started
+2026-10-30 13:05:27,791 INFO [backend.app.main] [-] Printer runtime tracking started
+2026-10-30 13:05:27,792 INFO [backend.app.main] [-] SpoolBuddy watchdog started
+2026-10-30 13:05:27,793 INFO [backend.app.main] [-] Camera stream cleanup started
+2026-10-30 13:05:27,794 INFO [backend.app.main] [-] Printer connection watchdog started
+2026-10-30 13:05:28,381 INFO [backend.app.main] [-] Expected prints cleanup started
+2026-10-30 13:05:28,382 INFO [backend.app.main] [-] Auth periodic cleanup started
+2026-10-30 13:05:28,385 INFO [backend.app.services.loop_watchdog] [-] Event-loop stall watchdog started — dumps all thread stacks to stderr if the loop stalls for more than 30s
+2026-10-30 13:05:28,480 INFO [root] [-] Virtual printer manager synced from database
+2026-10-30 13:06:28,678 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-10-30 19:21:00,044 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-10-31 01:43:01,018 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-10-31 07:51:09,546 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-10-31 14:12:12,731 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-10-31 20:25:05,159 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-01 02:44:27,211 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-01 09:04:21,772 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-01 15:29:12,179 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-01 21:47:50,763 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-02 03:54:44,190 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-02 09:56:13,793 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-02 15:10:59,290 INFO [root] [-] Logging to file: /app/logs/bambuddy.log
+2026-11-02 15:10:59,298 INFO [root] [-] Bambuddy starting - debug=False, log_level=INFO
+2026-11-02 15:11:08,806 INFO [backend.app.services.printer_manager] [-] Loaded 1 printer(s) awaiting plate-clear acknowledgment: [1]
+2026-11-02 15:11:08,829 INFO [backend.app.services.mqtt_relay] [-] MQTT relay disabled
+2026-11-02 15:11:09,890 INFO [backend.app.services.smart_plug_manager] [-] Smart plug scheduler started
+2026-11-02 15:11:09,891 INFO [backend.app.services.smart_plug_manager] [-] Smart plug energy snapshot loop started
+2026-11-02 15:11:09,892 INFO [backend.app.services.ha_sensor_manager] [-] Home Assistant sensor poller started
+2026-11-02 15:11:09,893 INFO [backend.app.services.location_ha_sensor_manager] [-] Home Assistant location-sensor poller started
+2026-11-02 15:11:09,917 INFO [backend.app.services.print_scheduler] [-] Print scheduler started
+2026-11-02 15:11:09,937 INFO [backend.app.services.notification_service] [-] Notification digest scheduler started
+2026-11-02 15:11:09,996 INFO [backend.app.services.github_backup] [-] Starting GitHub backup scheduler
+2026-11-02 15:11:09,998 INFO [backend.app.services.local_backup] [-] Starting local backup scheduler
+2026-11-02 15:11:10,033 INFO [backend.app.services.obico_detection] [-] Starting Obico detection service
+2026-11-02 15:11:10,034 INFO [backend.app.services.library_trash] [-] Starting library trash sweeper
+2026-11-02 15:11:10,035 INFO [backend.app.services.archive_purge] [-] Starting archive auto-purge sweeper
+2026-11-02 15:11:10,036 INFO [backend.app.main] [-] AMS history recording started
+2026-11-02 15:11:10,036 INFO [backend.app.main] [-] Printer sensor history recording started
+2026-11-02 15:11:10,038 INFO [backend.app.main] [-] Printer runtime tracking started
+2026-11-02 15:11:10,039 INFO [backend.app.main] [-] SpoolBuddy watchdog started
+2026-11-02 15:11:10,039 INFO [backend.app.main] [-] Camera stream cleanup started
+2026-11-02 15:11:10,040 INFO [backend.app.main] [-] Printer connection watchdog started
+2026-11-02 15:11:10,570 INFO [backend.app.main] [-] Expected prints cleanup started
+2026-11-02 15:11:10,570 INFO [backend.app.main] [-] Auth periodic cleanup started
+2026-11-02 15:11:10,572 INFO [backend.app.services.loop_watchdog] [-] Event-loop stall watchdog started — dumps all thread stacks to stderr if the loop stalls for more than 30s
+2026-11-02 15:11:10,620 INFO [root] [-] Virtual printer manager synced from database
+2026-11-02 15:12:10,972 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-02 21:27:34,984 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-03 03:28:44,166 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-03 09:30:44,247 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-03 15:33:03,714 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-03 21:58:33,982 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-04 04:06:51,974 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-04 10:15:49,339 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-04 16:39:37,521 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-04 22:56:07,176 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-05 05:07:53,005 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-05 11:20:49,169 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-05 17:42:33,048 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-05 23:43:37,959 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-06 05:47:44,337 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-06 11:59:41,176 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-06 18:20:03,138 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-07 00:38:02,918 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-07 06:40:44,711 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-07 13:09:17,638 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-07 19:22:59,174 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-08 01:40:42,285 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-08 07:50:38,424 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-08 09:49:17,084 INFO [uvicorn.access] [-] [IP]:59898 - "POST /api/v1/auth/login HTTP/1.1" 200
+2026-11-08 09:49:17,620 INFO [uvicorn.access] [-] [IP]:59900 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-11-08 09:49:17,662 INFO [uvicorn.access] [-] [IP]:59898 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-08 09:49:17,697 INFO [uvicorn.access] [-] [IP]:59906 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-08 09:49:17,902 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-11-08 09:49:17,961 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-11-08 09:49:17,963 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-11-08 09:49:19,224 INFO [uvicorn.access] [-] [IP]:59904 - "POST /api/v1/sponsor-prompt/dismiss HTTP/1.1" 204
+2026-11-08 09:49:19,987 INFO [backend.app.services.firmware_check] [8a087bac] Got Bambu Lab build ID: hwWH9X0bbnc3Qxjctvh7F
+2026-11-08 09:54:06,414 INFO [root] [-] Logging to file: /app/logs/bambuddy.log
+2026-11-08 09:54:06,423 INFO [root] [-] Bambuddy starting - debug=False, log_level=INFO
+2026-11-08 09:54:11,410 INFO [uvicorn.error] [-] Started server process [18]
+2026-11-08 09:54:11,410 INFO [uvicorn.error] [-] Waiting for application startup.
+2026-11-08 09:54:11,422 INFO [backend.app.core.fd_limit] [-] Open-file limit: 1048576 (hard limit 1048576)
+2026-11-08 09:54:15,749 INFO [backend.app.core.database] [-] Filed 13 Bambu Lab catalogue colour(s) under PLA Silk+
+2026-11-08 09:54:16,693 INFO [backend.app.core.database] [-] SQLite: users now never reuses an id (next id after 1)
+2026-11-08 09:54:16,746 INFO [backend.app.core.database] [-] SQLite: api_keys now never reuses an id (next id after 0)
+2026-11-08 09:54:16,916 INFO [backend.app.core.database] [-] SQLite: printers now never reuses an id (next id after 1)
+2026-11-08 09:54:17,044 INFO [backend.app.core.database] [-] SQLite: print_archives now never reuses an id (next id after 38)
+2026-11-08 09:54:17,095 INFO [backend.app.core.database] [-] SQLite: long_lived_tokens now never reuses an id (next id after 0)
+2026-11-08 09:54:17,170 INFO [backend.app.core.database] [-] SQLite: spool now never reuses an id (next id after 14)
+2026-11-08 09:54:17,908 INFO [backend.app.core.sqlite_fk] [-] Cleared 29 spool_usage_history row(s) whose spool no longer exists
+2026-11-08 09:54:18,896 INFO [backend.app.core.database] [-] Added manyfold:view, manyfold:import to group 'Administrators' (matches its MakerWorld access)
+2026-11-08 09:54:18,897 INFO [backend.app.core.database] [-] Added manyfold:view, manyfold:import to group 'Operators' (matches its MakerWorld access)
+2026-11-08 09:54:18,897 INFO [backend.app.core.database] [-] Added manyfold:view to group 'Viewers' (matches its MakerWorld access)
+2026-11-08 09:54:18,924 INFO [backend.app.core.database] [-] Added queue:start_unreviewed to Administrators group (ALL_PERMISSIONS sync)
+2026-11-08 09:54:18,965 INFO [backend.app.core.database] [-] Added queue:start_unreviewed to group 'Operators' (#1620)
+2026-11-08 09:54:19,366 INFO [backend.app.services.printer_manager] [-] Loaded 1 printer(s) awaiting plate-clear acknowledgment: [1]
+2026-11-08 09:54:19,400 INFO [backend.app.services.mqtt_relay] [-] MQTT relay disabled
+2026-11-08 09:54:20,151 INFO [backend.app.main] [-] [ARCHIVE] Read the plate estimates of 38 archive(s)
+2026-11-08 09:54:20,467 INFO [backend.app.services.smart_plug_manager] [-] Smart plug scheduler started
+2026-11-08 09:54:20,467 INFO [backend.app.services.smart_plug_manager] [-] Smart plug energy snapshot loop started
+2026-11-08 09:54:20,468 INFO [backend.app.services.smart_plug_manager] [-] Smart plug power alert loop started
+2026-11-08 09:54:20,468 INFO [backend.app.services.smart_plug_manager] [-] Smart plug MQTT relay energy loop started
+2026-11-08 09:54:20,468 INFO [backend.app.services.ha_sensor_manager] [-] Home Assistant sensor poller started
+2026-11-08 09:54:20,468 INFO [backend.app.services.location_ha_sensor_manager] [-] Home Assistant location-sensor poller started
+2026-11-08 09:54:20,492 INFO [backend.app.services.print_scheduler] [-] Print scheduler started
+2026-11-08 09:54:20,573 INFO [backend.app.services.notification_service] [-] Notification digest scheduler started
+2026-11-08 09:54:20,632 INFO [backend.app.services.github_backup] [-] Starting GitHub backup scheduler
+2026-11-08 09:54:20,634 INFO [backend.app.services.local_backup] [-] Starting local backup scheduler
+2026-11-08 09:54:20,658 INFO [backend.app.services.obico_detection] [-] Starting Obico detection service
+2026-11-08 09:54:20,659 INFO [backend.app.services.octoeverywhere_detection] [-] Starting OctoEverywhere detection service
+2026-11-08 09:54:20,659 INFO [backend.app.services.library_trash] [-] Starting library trash sweeper
+2026-11-08 09:54:20,660 INFO [backend.app.services.archive_purge] [-] Starting archive auto-purge sweeper
+2026-11-08 09:54:20,660 INFO [backend.app.main] [-] AMS history recording started
+2026-11-08 09:54:20,661 INFO [backend.app.main] [-] Printer sensor history recording started
+2026-11-08 09:54:20,661 INFO [backend.app.main] [-] Printer runtime tracking started
+2026-11-08 09:54:20,661 INFO [backend.app.main] [-] SpoolBuddy watchdog started
+2026-11-08 09:54:20,663 INFO [backend.app.main] [-] Camera stream cleanup started
+2026-11-08 09:54:20,663 INFO [backend.app.main] [-] Printer connection watchdog started
+2026-11-08 09:54:21,148 INFO [backend.app.main] [-] Expected prints cleanup started
+2026-11-08 09:54:21,149 INFO [backend.app.main] [-] Auth periodic cleanup started
+2026-11-08 09:54:21,151 INFO [backend.app.services.loop_watchdog] [-] Event-loop stall watchdog started — dumps all thread stacks to stderr if the loop stalls for more than 30s
+2026-11-08 09:54:21,193 INFO [root] [-] Virtual printer manager synced from database
+2026-11-08 09:54:21,195 INFO [uvicorn.error] [-] Application startup complete.
+2026-11-08 09:54:21,218 INFO [uvicorn.error] [-] Uvicorn running on http://[IP]:8000 (Press CTRL+C to quit)
+2026-11-08 09:54:30,230 INFO [uvicorn.access] [-] [IP]:33498 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-11-08 09:54:30,421 INFO [uvicorn.access] [-] [IP]:33492 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-08 09:54:31,229 INFO [uvicorn.access] [-] [IP]:33492 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-08 09:54:31,528 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-11-08 09:54:31,571 INFO [uvicorn.error] [-] [IP]:33536 - "WebSocket /api/v1/ws?token=[REDACTED]" [accepted]
+2026-11-08 09:54:31,572 INFO [uvicorn.error] [-] connection open
+2026-11-08 09:54:31,786 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-11-08 09:54:31,787 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-11-08 09:55:02,352 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-11-08 09:55:21,467 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-08 16:01:43,323 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-08 22:24:16,548 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-09 04:30:53,195 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-09 10:46:19,118 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-09 16:50:21,640 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-09 23:16:33,175 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-10 05:42:31,399 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-10 11:50:06,231 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-10 18:11:12,921 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-11 00:13:36,087 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-11 06:28:52,685 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-11 09:49:14,819 INFO [uvicorn.access] [-] [IP]:51648 - "POST /api/v1/auth/login HTTP/1.1" 200
+2026-11-11 09:49:15,073 INFO [uvicorn.access] [-] [IP]:51652 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-11-11 09:49:15,136 INFO [uvicorn.access] [-] [IP]:51648 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-11 09:49:15,197 INFO [uvicorn.access] [-] [IP]:51658 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-11 09:49:15,398 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-11-11 09:49:15,442 INFO [uvicorn.error] [-] [IP]:51660 - "WebSocket /api/v1/ws?token=[REDACTED]" [accepted]
+2026-11-11 09:49:15,443 INFO [uvicorn.error] [-] connection open
+2026-11-11 09:49:15,613 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-11-11 09:49:15,616 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-11-11 09:49:17,194 INFO [backend.app.services.firmware_check] [e731cb07] Got Bambu Lab build ID: wnq9THEnnXmaULte-3TKF
+2026-11-11 09:49:40,406 INFO [uvicorn.access] [-] [IP]:51674 - "POST /api/v1/printers/1/connect HTTP/1.1" 200
+2026-11-11 09:49:43,628 INFO [backend.app.services.camera] [4ca07fc0] Found ffmpeg at: /usr/bin/ffmpeg
+2026-11-11 09:49:51,301 INFO [backend.app.api.routes.camera] [2db1107e] Using external camera (rtsp) for printer 1 at 15 fps
+2026-11-11 09:49:51,312 INFO [backend.app.api.routes.camera] [2db1107e] Camera viewer attached to printer-1-ext-c866af3ad7ab (subscribers=1)
+2026-11-11 09:49:53,974 INFO [backend.app.services.camera] [2db1107e] RTSP socket I/O timeout flag: -timeout
+2026-11-11 09:50:14,264 INFO [backend.app.api.routes.camera] [2db1107e] Camera viewer detached from printer-1-ext-c866af3ad7ab (subscribers=0)
+2026-11-11 09:50:14,265 INFO [backend.app.api.routes.camera] [2db1107e] External camera viewer left printer 1
+2026-11-11 09:50:14,293 INFO [backend.app.services.external_camera] [2db1107e] RTSP stream cancelled
+2026-11-11 09:50:14,832 INFO [backend.app.api.routes.camera] [2db1107e] External camera stream ended for printer 1
+2026-11-11 09:50:14,832 INFO [backend.app.api.routes.camera] [a678716d] Shut down camera fan-out broadcaster printer-1-ext-c866af3ad7ab
+2026-11-11 09:50:14,833 INFO [backend.app.api.routes.camera] [a678716d] Stopped 0 camera stream(s) for printer 1
+2026-11-11 09:50:14,834 INFO [uvicorn.access] [-] [IP]:51692 - "POST /api/v1/printers/1/camera/stop?viewer=vvg8lgnz5zt HTTP/1.1" 200
+2026-11-11 09:50:29,949 INFO [uvicorn.access] [-] [IP]:51708 - "POST /api/v1/printers/1/connect HTTP/1.1" 200
+2026-11-11 09:51:42,045 WARNING [backend.app.services.discovery] [79531281] Subnet [IP]/16 has 65534 hosts, limiting to /22 (1024 hosts)
+2026-11-11 09:51:42,053 INFO [backend.app.services.discovery] [79531281] Starting subnet scan of [IP]/16 (1024 hosts)
+2026-11-11 09:51:42,070 INFO [uvicorn.access] [-] [IP]:51760 - "POST /api/v1/discovery/scan HTTP/1.1" 200
+2026-11-11 09:52:03,327 INFO [backend.app.services.discovery] [79531281] Subnet scan complete. Found 0 printers.
+2026-11-11 09:52:06,307 INFO [uvicorn.access] [-] [IP]:52472 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-11-11 09:52:06,309 INFO [uvicorn.access] [-] [IP]:53824 - "POST /api/v1/discovery/scan/stop HTTP/1.1" 200
+2026-11-11 09:52:10,748 INFO [uvicorn.access] [-] [IP]:53824 - "PATCH /api/v1/printers/1 HTTP/1.1" 200
+2026-11-11 09:52:13,514 INFO [uvicorn.access] [-] [IP]:52472 - "PATCH /api/v1/printers/1 HTTP/1.1" 200
+2026-11-11 09:52:20,714 WARNING [backend.app.services.bambu_mqtt] [1d893dce] [[SERIAL]] request_status_update: not connected
+2026-11-11 09:52:20,717 INFO [uvicorn.access] [-] [IP]:52472 - "POST /api/v1/printers/1/refresh-status HTTP/1.1" 400
+2026-11-11 09:56:52,253 INFO [backend.app.api.routes.support] [2f464f48] Log level changed to DEBUG
+2026-11-11 09:56:52,255 INFO [backend.app.api.routes.bug_report] [2f464f48] Bug report: enabled debug logging
+2026-11-11 09:56:52,255 WARNING [backend.app.services.bambu_mqtt] [2f464f48] [[SERIAL]] request_status_update: not connected
+2026-11-11 09:56:52,257 INFO [uvicorn.access] [-] [IP]:53878 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200

@@ -2097,6 +2097,20 @@ async def _track_from_3mf(
             continue
 
         if slot_grams <= 0:
+            if not tray_is_guessed:
+                # The slicer weighs this slot (a 0 g one was skipped above) and
+                # its tray is known, but the print stopped before using any of
+                # it. That is the answer for this tray: left open, the remain%
+                # fallback charged it from the AMS reading at the stop, which
+                # can be a transient 0% and so the whole spool (#3511). A tray
+                # only guessed by position stays the fallback's.
+                handled_trays.add(key)
+                logger.info(
+                    "[UsageTracker] 3MF: AMS%d-T%d used nothing before the print stopped (%s), nothing charged",
+                    ams_id,
+                    tray_id,
+                    status,
+                )
             continue
 
         for share_spool_id, weight_grams in shares or [(spool_id, slot_grams)]:

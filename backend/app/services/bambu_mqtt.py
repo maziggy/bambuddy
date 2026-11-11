@@ -558,6 +558,23 @@ def apply_tray_exist_bits(
     return cleared
 
 
+def _external_slot_to_merge(pushed: object, existing: object) -> dict | None:
+    """The one cached external slot a pushed ``vt_tray`` dict updates, or None (#3513).
+
+    It updates the slot when it names no slot or the cached one's. A push that
+    empties the slot (``tray_type`` ``""``) replaces it, so a removed spool
+    keeps no preset, K value or temperatures, as does one naming another slot.
+    """
+    if not isinstance(pushed, dict) or not isinstance(existing, list) or len(existing) != 1:
+        return None
+    cached = existing[0]
+    if not isinstance(cached, dict) or pushed.get("tray_type") == "":
+        return None
+    if "id" in pushed and str(pushed["id"]) != str(cached.get("id")):
+        return None
+    return cached
+
+
 # --- H2C nozzle-rack dispatch mapping (#2800) -------------------------------
 #
 # Physical nozzle IDs the H2C reports for its six rack slots, verified on
@@ -2760,6 +2777,12 @@ class BambuMQTTClient:
                 # Don't let a single-spool vt_tray dict overwrite multi-slot vir_slot data
                 if isinstance(vt_tray, dict) and isinstance(existing, list) and len(existing) > 1:
                     pass  # Keep the vir_slot data
+                elif (cached_slot := _external_slot_to_merge(vt_tray, existing)) is not None:
+                    # A delta carries only what changed, often without the
+                    # id: a colour-only change on an A1 mini pushes just
+                    # {"tray_color": ...}. Stored as it came, it emptied the
+                    # slot until the next full push (#3513).
+                    self.state.raw_data["vt_tray"] = [{**cached_slot, **vt_tray}]
                 else:
                     if isinstance(vt_tray, dict):
                         vt_tray = [vt_tray]
@@ -2772,6 +2795,10 @@ class BambuMQTTClient:
             # stale inventory assignment on the ams_id=255 slot (#2575). Detect
             # external-spool identity changes here and fire the same callback.
             self._maybe_trigger_external_spool_change()
+            # The external slot's own read-back: its delta can come without
+            # any AMS data, which is where the check otherwise runs (#3513).
+            if "vt_tray" in print_data and self._pending_assignments:
+                self._check_assignment_verifications()
 
             # Parse ams_status directly from print data (NOT from print.ams)
             # ams_status is a combined value: lower 8 bits = sub status, bits 8-15 = main status

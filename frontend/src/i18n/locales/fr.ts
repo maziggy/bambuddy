@@ -2252,6 +2252,8 @@ export default {
     preferLowestFilament: 'Préférer le filament le plus bas',
     preferLowestFilamentDesc: 'Lorsque plusieurs bobines correspondent, utiliser celle avec le moins de filament restant',
     preferLowestFilamentBackupNote: "Ne prend effet que si AMS Filament Backup est activé sur l'imprimante — sinon, l'imprimante ne peut pas basculer vers une seconde bobine quand celle choisie est vide.",
+    hideAmsFirmwareWarning: "Masquer l'avertissement de firmware de l'AMS",
+    hideAmsFirmwareWarningDesc: "Masque l'avertissement « Le firmware de l'AMS ne correspond pas à l'imprimante », pour un BMCU ou un autre remplaçant de l'AMS qui le déclenche en permanence. Les erreurs d'impression ne sont jamais masquées.",
     trackingModeBuiltIn: 'Inventaire Intégré',
     trackingModeBuiltInDesc: 'Correspondance RFID et suivi de consommation inclus',
     trackingModeSpoolmanDesc: 'Serveur de gestion externe',

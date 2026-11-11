@@ -1538,6 +1538,7 @@ export interface AppSettings {
   time_format: 'system' | '12h' | '24h';
   // Filament tracking
   disable_filament_warnings: boolean;  // Disable filament warnings (print insufficiency and assignment mismatch)
+  hide_ams_firmware_warning: boolean;  // Hide the AMS firmware mismatch warning (HMS 05XX_0400_0001_0044), for a BMCU (#3269)
   prefer_lowest_filament: boolean;  // When multiple spools match, prefer lowest remaining filament
   spoolman_enabled: boolean;  // True when the user has switched filament tracking to Spoolman; backend includes this in the /settings/ response even though earlier consumers read it from the dedicated /settings/spoolman endpoint as a string
   auto_add_unknown_rfid: boolean;  // When false, the backend skips auto-creating inventory spools for unknown RFID tags and instead broadcasts an unknown_tag event for the confirmation modal

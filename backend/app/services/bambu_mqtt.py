@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 import paho.mqtt.client as mqtt
 
 from backend.app.services.hms_actions import HMSAction, get_actions_for_error_code
-from backend.app.services.hms_errors import alert_level_from_print_error, describe_fault
+from backend.app.services.hms_errors import alert_level_from_print_error, describe_fault, is_hidden_hms_code
 from backend.app.utils.ams_drying import ACTIVE_DRY_STATUSES, DRY_COUNTDOWN_STALL_SECONDS
 from backend.app.utils.ams_humidity import ams_humidity_percent
 from backend.app.utils.paho_teardown import discard_queued_publishes, retire_paho_client
@@ -5635,6 +5635,11 @@ class BambuMQTTClient:
                         # action table still has some short-form entries, so that
                         # lookup falls back to it.
                         full_code = f"{attr:08X}{code:08X}"
+                        # The AMS firmware mismatch, when the user has chosen to hide
+                        # it (a BMCU raises it for good, #3269). Only hms[] faults:
+                        # print_error never goes through this.
+                        if is_hidden_hms_code(full_code):
+                            continue
                         if full_code == HMS_MQTT_VERIFY_FAILED:
                             verify_failed = True
                         actions = get_actions_for_error_code(self.serial_number[:3], full_code)

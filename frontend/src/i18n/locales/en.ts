@@ -2319,6 +2319,8 @@ export default {
     preferLowestFilament: 'Prefer lowest remaining filament',
     preferLowestFilamentDesc: 'When multiple spools match, use the one with the least filament remaining',
     preferLowestFilamentBackupNote: 'Only takes effect when AMS Filament Backup is enabled on the printer — otherwise the printer cannot switch to a second spool when the picked one runs out.',
+    hideAmsFirmwareWarning: 'Hide the AMS firmware warning',
+    hideAmsFirmwareWarningDesc: 'Hides the "AMS firmware does not match the printer" warning, for a BMCU or another AMS replacement that raises it all the time. Print errors are never hidden.',
     trackingModeBuiltIn: 'Built-in Inventory',
     trackingModeBuiltInDesc: 'RFID auto-matching and usage tracking included',
     trackingModeSpoolmanDesc: 'External filament management server',

@@ -12369,6 +12369,14 @@ async def lifespan(app: FastAPI):
     async with async_session() as db:
         await initialize_wled_printers(db)
 
+    # The user's choice to hide the AMS firmware mismatch warning, before any
+    # printer reports a fault (#3269).
+    async with async_session() as db:
+        from backend.app.api.routes.settings import get_setting, setting_is_true
+        from backend.app.services.hms_errors import set_hide_ams_firmware_mismatch
+
+        set_hide_ams_firmware_mismatch(setting_is_true(await get_setting(db, "hide_ams_firmware_warning")))
+
     # Layer change callback for external camera timelapse
     async def on_layer_change(printer_id: int, layer_num: int):
         """Capture timelapse frame on layer change + first layer notification."""

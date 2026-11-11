@@ -2297,6 +2297,8 @@ export default {
     preferLowestFilament: '优先使用剩余最少的耗材',
     preferLowestFilamentDesc: '当多个料盘匹配时，使用剩余耗材最少的那个',
     preferLowestFilamentBackupNote: '仅当打印机端启用了 AMS 备用料盘时才生效——否则当选中的料盘耗尽时，打印机无法切换到备用料盘。',
+    hideAmsFirmwareWarning: '隐藏 AMS 固件警告',
+    hideAmsFirmwareWarningDesc: '为持续触发该警告的 BMCU 或其他 AMS 替代品隐藏“AMS 固件与打印机不匹配”警告。打印错误不会被隐藏。',
     trackingModeBuiltIn: '内置库存',
     trackingModeBuiltInDesc: '包含 RFID 自动匹配和用量追踪',
     trackingModeSpoolmanDesc: '外部耗材管理服务器',

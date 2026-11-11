@@ -184,6 +184,7 @@ _BOOL_SETTING_KEYS = frozenset(
         "spoolman_report_partial_usage",
         "auto_add_unknown_rfid",
         "disable_filament_warnings",
+        "hide_ams_firmware_warning",
         "prefer_lowest_filament",
         "check_updates",
         "check_printer_firmware",
@@ -506,6 +507,12 @@ async def update_settings(
 
     if {"camera_light_mode", "camera_light_delay"} & set(update_data.keys()):
         camera_light.invalidate_settings()
+    if "hide_ams_firmware_warning" in update_data:
+        from backend.app.services.hms_errors import set_hide_ams_firmware_mismatch
+        from backend.app.services.printer_manager import printer_manager
+
+        set_hide_ams_firmware_mismatch(bool(update_data["hide_ams_firmware_warning"]))
+        printer_manager.apply_hms_filter()
     if "require_plate_clear" in update_data:
         from backend.app.services.wled import wled_manager
 

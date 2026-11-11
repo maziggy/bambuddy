@@ -2198,6 +2198,8 @@ export default {
     preferLowestFilament: "Предпочитать катушку с наименьшим остатком",
     preferLowestFilamentDesc: "Если подходят несколько катушек, использовать катушку с наименьшим остатком филамента",
     preferLowestFilamentBackupNote: "Работает только при включённом AMS Filament Backup: иначе принтер не сможет переключиться на вторую катушку после окончания выбранной.",
+    hideAmsFirmwareWarning: 'Скрыть предупреждение о прошивке AMS',
+    hideAmsFirmwareWarningDesc: 'Скрывает предупреждение «Прошивка AMS не соответствует принтеру» для BMCU или другой замены AMS, которая показывает его постоянно. Ошибки печати никогда не скрываются.',
     trackingModeBuiltIn: "Встроенный инвентарь",
     trackingModeBuiltInDesc: "Автоматическое сопоставление RFID и учёт расхода",
     trackingModeSpoolmanDesc: "Внешний сервер управления филаментом",

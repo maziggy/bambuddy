@@ -2315,6 +2315,8 @@ export default {
     preferLowestFilament: "Віддавати перевагу котушці з найменшим залишком",
     preferLowestFilamentDesc: "Якщо підходять кілька котушок, використовувати котушку з найменшим залишком філаменту",
     preferLowestFilamentBackupNote: "Діє лише тоді, коли на принтері ввімкнено AMS Filament Backup. Інакше після вичерпання вибраної котушки принтер не зможе перейти на другу.",
+    hideAmsFirmwareWarning: 'Приховати попередження про прошивку AMS',
+    hideAmsFirmwareWarningDesc: 'Приховує попередження «Прошивка AMS не відповідає принтеру» для BMCU або іншої заміни AMS, яка показує його постійно. Помилки друку ніколи не приховуються.',
     trackingModeBuiltIn: "Вбудований інвентар",
     trackingModeBuiltInDesc: "Автоматичне зіставлення за RFID та облік використання",
     trackingModeSpoolmanDesc: "Зовнішній сервер керування філаментом",

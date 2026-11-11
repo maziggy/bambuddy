@@ -4534,12 +4534,18 @@ async def _run_slicer_with_fallback(
 
     # #3497: the slicer CLI leaves different_settings_to_system empty, so the
     # keys set above are not marked as changed in the output 3MF and Bambu
-    # Studio reopens it with the stock preset's values. Only for a bundled
-    # (standard) process preset: the system preset is then the base those keys
-    # differ from. A cloud or local preset already is the user's own preset.
+    # Studio reopens it with the stock preset's values. Only for a system
+    # process preset, bundled (standard) or Bambu's stock copy on Bambu Cloud,
+    # which signed-in users pick instead (#3386): the system preset is then
+    # the base those keys differ from. A private cloud, Orca Cloud or local
+    # preset already is the user's own preset.
+    from backend.app.api.routes.slicer_presets import is_stock_cloud_preset
+
+    process_ref = request.process_preset
     process_changes = (
         changed_process_keys(process_as_picked, presets["process"])
-        if request.process_preset is not None and request.process_preset.source == "standard"
+        if process_ref is not None
+        and (process_ref.source == "standard" or await is_stock_cloud_preset(db, user, process_ref, "process"))
         else []
     )
 

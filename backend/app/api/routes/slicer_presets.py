@@ -817,6 +817,18 @@ async def load_stock_aliases(db: AsyncSession, user: User | None) -> dict[str, P
     return _stock_aliases(cloud, standard)
 
 
+async def is_stock_cloud_preset(db: AsyncSession, user: User | None, ref: PresetRef, slot: str) -> bool:
+    """Whether ``ref`` is one of Bambu's stock presets on Bambu Cloud (#3497).
+
+    The cloud listing's "public" list, from the same cache as the listing; a
+    listing that can't be fetched counts as not stock.
+    """
+    if ref.source != "cloud":
+        return False
+    cloud, _status = await _fetch_cloud_presets(db, user)
+    return any(p.stock and p.id == ref.id for p in cloud.get(slot, []))
+
+
 def listed_ref(aliases: dict[str, PresetRef], ref: PresetRef) -> PresetRef:
     """The ref the listing shows for ``ref``: its cloud twin if hidden, else itself."""
     return aliases.get(f"{ref.source}:{ref.id}", ref)

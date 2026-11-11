@@ -24,6 +24,8 @@ import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import anyio
+
 logger = logging.getLogger(__name__)
 
 # Long enough to cover a viewer reconnecting and the camera wall polling each
@@ -56,9 +58,14 @@ async def _read_settings() -> tuple[str, float]:
     from backend.app.api.routes.settings import get_setting
     from backend.app.core import database
 
-    async with database.async_session() as db:
-        mode = await get_setting(db, "camera_light_mode")
-        delay = await get_setting(db, "camera_light_delay")
+    # Shielded (#3515): a viewer leaving cancels the stream, and a read
+    # cancelled halfway costs its pooled connection. The two short reads and
+    # the session's close run to the end first.
+    mode = delay = None
+    with anyio.CancelScope(shield=True):
+        async with database.async_session() as db:
+            mode = await get_setting(db, "camera_light_mode")
+            delay = await get_setting(db, "camera_light_delay")
     mode = mode if mode in _MODES else "off"
     try:
         seconds = float(delay) if delay is not None else 2.0

@@ -63,3 +63,23 @@ class TestSerialise:
         (slot,) = printer_state_to_dict(state)["nozzle_rack"]
         assert set(slot) == set(NozzleRackSlot.model_fields)
         assert NozzleRackSlot(**slot).print_time_s == 7200
+
+
+class TestRestStatus:
+    @pytest.mark.asyncio
+    async def test_the_status_route_carries_it(self, async_client, printer_factory):
+        # What the page has before the first push arrives.
+        from unittest.mock import MagicMock, patch
+
+        printer = await printer_factory()
+        state = _ingested(_nozzle(0, p_t=3600), _nozzle(16)).state
+        state.connected = True
+        state.state = "IDLE"
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_status = MagicMock(return_value=state)
+            mock_pm.is_awaiting_plate_clear = MagicMock(return_value=False)
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/status")
+
+        assert response.status_code == 200
+        assert {n["id"]: n["print_time_s"] for n in response.json()["nozzle_rack"]} == {0: 3600, 16: None}

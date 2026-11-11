@@ -44,7 +44,8 @@ async def convert_windows_paths(conn: AsyncConnection, base_dir: Path, *, window
     for table, columns in PATH_COLUMNS.items():
         # Filtered here rather than with LIKE: Postgres reads a backslash in a
         # LIKE pattern as an escape, SQLite does not.
-        rows = (await conn.execute(text(f"SELECT id, {', '.join(columns)} FROM {table}"))).all()
+        # SQL from the table and column names in PATH_COLUMNS only; values are bound.
+        rows = (await conn.execute(text(f"SELECT id, {', '.join(columns)} FROM {table}"))).all()  # nosec B608
         for row in rows:
             updates = {}
             for column, value in zip(columns, row[1:], strict=True):
@@ -56,7 +57,8 @@ async def convert_windows_paths(conn: AsyncConnection, base_dir: Path, *, window
                 updates[column] = value.replace("\\", "/")
             if updates:
                 assignments = ", ".join(f"{column} = :{column}" for column in updates)
-                await conn.execute(text(f"UPDATE {table} SET {assignments} WHERE id = :id"), {**updates, "id": row[0]})
+                # Column names from PATH_COLUMNS, values bound.
+                await conn.execute(text(f"UPDATE {table} SET {assignments} WHERE id = :id"), {**updates, "id": row[0]})  # nosec B608
                 changed += 1
     if changed:
         logger.info("Converted Windows file paths in %d restored row(s) to this platform's separator", changed)

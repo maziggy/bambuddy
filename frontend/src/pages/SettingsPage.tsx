@@ -5477,74 +5477,6 @@ export function SettingsPage() {
             </CardContent>
           </Card>
 
-          {/* Printer order for any-model jobs (#2915) */}
-          <Card id="card-dispatch-order">
-            <CardHeader>
-              <h3 className="text-base font-semibold text-white flex items-center gap-2">
-                <ListOrdered className="w-4 h-4 text-bambu-green" />
-                {t('settings.dispatchOrderTitle', 'Printer Order for Any-Model Jobs')}
-              </h3>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-xs text-bambu-gray">
-                {t('settings.dispatchOrderDescription', 'When a job is queued for any printer of a model, this decides which of the printers that can take it gets it. A printer that is busy, offline or short of filament is passed over, whatever the order.')}
-              </p>
-              <div className="w-full sm:w-1/2">
-                <label htmlFor="model_dispatch_order" className="block text-xs text-bambu-gray mb-1">
-                  {t('settings.dispatchOrderLabel', 'Pick the printer')}
-                </label>
-                <div className="relative">
-                  <select
-                    id="model_dispatch_order"
-                    value={localSettings.model_dispatch_order ?? 'fewest_hours'}
-                    onChange={(e) => updateSetting('model_dispatch_order', e.target.value as ModelDispatchOrder)}
-                    className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
-                  >
-                    <option value="fewest_hours">{t('settings.dispatchOrderFewestHours', 'With the fewest print hours (default)')}</option>
-                    <option value="most_hours">{t('settings.dispatchOrderMostHours', 'With the most print hours')}</option>
-                    <option value="least_recently_used">{t('settings.dispatchOrderLeastRecentlyUsed', 'Idle the longest')}</option>
-                    <option value="priority">{t('settings.dispatchOrderPriority', 'By the priority set on each printer')}</option>
-                  </select>
-                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
-                </div>
-                <p className="text-xs text-bambu-gray mt-1">
-                  {t('settings.dispatchOrderHelp', "Fewest hours spreads the wear over the farm. Most hours uses up the machines near replacement first. Idle the longest goes by each printer's last finished print, and one that never printed goes first. By priority follows the Priority field in each printer's settings: the lowest number first, printers without one last.")}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Concurrent queue uploads (#2555) */}
-          <Card id="card-concurrent-uploads">
-            <CardHeader>
-              <h3 className="text-base font-semibold text-white flex items-center gap-2">
-                <UploadCloud className="w-4 h-4 text-bambu-green" />
-                {t('settings.concurrentUploadsTitle', 'Concurrent Uploads')}
-              </h3>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-xs text-bambu-gray">
-                {t('settings.concurrentUploadsDescription', 'How many printers the queue may send files to at the same time. Printers receive files slowly (a large print can take several minutes), and each one waits its turn — so on a bigger fleet, raising this is what stops the last printer in a batch from waiting out every transfer before it. Lower it if your network or Bambuddy host struggles with parallel transfers.')}
-              </p>
-              <div className="w-full sm:w-1/2">
-                <label className="block text-xs text-bambu-gray mb-1">
-                  {t('settings.concurrentUploadsLabel', 'Printers uploaded to at once')}
-                </label>
-                <NumberInput
-                  min={1}
-                  max={16}
-                  value={localSettings.queue_max_concurrent_uploads ?? 4}
-                  onChange={(v) => updateSetting('queue_max_concurrent_uploads', v)}
-                  fallback={1}
-                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green"
-                />
-                <p className="text-xs text-bambu-gray mt-1">
-                  {t('settings.concurrentUploadsHelp', '1 sends to one printer at a time (the old behaviour). Default is 4.')}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
           {/* Preheat & Heat Soak (#1468) */}
           <Card id="card-preheat">
             <CardHeader>
@@ -6371,6 +6303,74 @@ export function SettingsPage() {
                   );
                 });
               })()}
+            </CardContent>
+          </Card>
+
+          {/* Printer order for any-model jobs (#2915) */}
+          <Card id="card-dispatch-order">
+            <CardHeader>
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <ListOrdered className="w-4 h-4 text-bambu-green" />
+                {t('settings.dispatchOrderTitle', 'Printer Order for Any-Model Jobs')}
+              </h3>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-bambu-gray">
+                {t('settings.dispatchOrderDescription', 'When a job is queued for any printer of a model, this decides which of the printers that can take it gets it. A printer that is busy, offline or short of filament is passed over, whatever the order.')}
+              </p>
+              <div className="w-full sm:w-1/2">
+                <label htmlFor="model_dispatch_order" className="block text-xs text-bambu-gray mb-1">
+                  {t('settings.dispatchOrderLabel', 'Pick the printer')}
+                </label>
+                <div className="relative">
+                  <select
+                    id="model_dispatch_order"
+                    value={localSettings.model_dispatch_order ?? 'fewest_hours'}
+                    onChange={(e) => updateSetting('model_dispatch_order', e.target.value as ModelDispatchOrder)}
+                    className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
+                  >
+                    <option value="fewest_hours">{t('settings.dispatchOrderFewestHours', 'With the fewest print hours (default)')}</option>
+                    <option value="most_hours">{t('settings.dispatchOrderMostHours', 'With the most print hours')}</option>
+                    <option value="least_recently_used">{t('settings.dispatchOrderLeastRecentlyUsed', 'Idle the longest')}</option>
+                    <option value="priority">{t('settings.dispatchOrderPriority', 'By the priority set on each printer')}</option>
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
+                </div>
+              </div>
+              <p className="text-xs text-bambu-gray mt-1">
+                {t('settings.dispatchOrderHelp', "Fewest hours spreads the wear over the farm. Most hours uses up the machines near replacement first. Idle the longest goes by each printer's last finished print, and one that never printed goes first. By priority follows the Priority field in each printer's settings: the lowest number first, printers without one last.")}
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Concurrent queue uploads (#2555) */}
+          <Card id="card-concurrent-uploads">
+            <CardHeader>
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <UploadCloud className="w-4 h-4 text-bambu-green" />
+                {t('settings.concurrentUploadsTitle', 'Concurrent Uploads')}
+              </h3>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-bambu-gray">
+                {t('settings.concurrentUploadsDescription', 'How many printers the queue may send files to at the same time. Printers receive files slowly (a large print can take several minutes), and each one waits its turn — so on a bigger fleet, raising this is what stops the last printer in a batch from waiting out every transfer before it. Lower it if your network or Bambuddy host struggles with parallel transfers.')}
+              </p>
+              <div className="w-full sm:w-1/2">
+                <label className="block text-xs text-bambu-gray mb-1">
+                  {t('settings.concurrentUploadsLabel', 'Printers uploaded to at once')}
+                </label>
+                <NumberInput
+                  min={1}
+                  max={16}
+                  value={localSettings.queue_max_concurrent_uploads ?? 4}
+                  onChange={(v) => updateSetting('queue_max_concurrent_uploads', v)}
+                  fallback={1}
+                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green"
+                />
+                <p className="text-xs text-bambu-gray mt-1">
+                  {t('settings.concurrentUploadsHelp', '1 sends to one printer at a time (the old behaviour). Default is 4.')}
+                </p>
+              </div>
             </CardContent>
           </Card>
           </div>

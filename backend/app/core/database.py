@@ -29,14 +29,18 @@ def _make_aiosqlite_stop_idempotent() -> None:
     Upstream: omnilib/aiosqlite#403, fix in #404. Once a release has it, this
     stays harmless (a second call returns the first call's future either way)
     and can go.
+
+    aiosqlite before 0.22.1 has no ``stop()``, and SQLAlchemy then never calls
+    one, so there is nothing to fix. requirements.txt still allows those
+    versions, and the in-app update keeps an installed one.
     """
     try:
         from aiosqlite.core import Connection
     except ImportError:  # PostgreSQL-only environment
         return
-    if getattr(Connection.stop, "_bambuddy_idempotent", False):
+    original = getattr(Connection, "stop", None)
+    if original is None or getattr(original, "_bambuddy_idempotent", False):
         return
-    original = Connection.stop
 
     @functools.wraps(original)
     def stop(self):

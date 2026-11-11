@@ -28,7 +28,8 @@ from backend.app.services.virtual_printer.mqtt_bridge import MQTTBridge
 from backend.app.services.virtual_printer.mqtt_server import SimpleMQTTServer
 from backend.app.services.virtual_printer.ssdp_server import SSDPProxy, VirtualPrinterSSDPServer
 from backend.app.services.virtual_printer.tcp_proxy import SlicerProxyManager, TCPProxy
-from backend.app.utils.printer_models import is_nozzle_rack_model
+from backend.app.utils.printer_models import has_ams3h, is_nozzle_rack_model
+from backend.app.utils.tray_ids import TrayLayout
 
 if TYPE_CHECKING:
     from backend.app.services.printer_manager import PrinterManager
@@ -157,7 +158,9 @@ def _tristate_from_slicer(data: dict, bool_field: str | None, int_field: str) ->
     return None
 
 
-def _extract_slicer_ams_mapping_json(data: dict, log_prefix: str, *, is_dual_nozzle: bool = False) -> str | None:
+def _extract_slicer_ams_mapping_json(
+    data: dict, log_prefix: str, *, is_dual_nozzle: bool = False, layout: TrayLayout | None = None
+) -> str | None:
     """Pull the slicer's own AMS-slot pick out of a captured project_file payload.
 
     BambuStudio/OrcaSlicer resolves the physical AMS tray for each filament
@@ -192,7 +195,8 @@ def _extract_slicer_ams_mapping_json(data: dict, log_prefix: str, *, is_dual_noz
     turns that back into the external-spool entry. Kept as ``-1`` it dispatched
     as unmapped and the printer stopped with 0700-8012 (#3237).
     ``is_dual_nozzle`` is the target printer's, since that decides which
-    global tray an external spool is.
+    global tray an external spool is. So is ``layout``: on a rack printer
+    (H3C) each hotend has its own external input, 247-255.
 
     Returns ``None`` when the field is absent, unparsable, or the classic
     "all -1" unresolved-race sentinel (#2589) — never worth trusting over a
@@ -218,7 +222,7 @@ def _extract_slicer_ams_mapping_json(data: dict, log_prefix: str, *, is_dual_noz
             detail = json.loads(detail)
         except json.JSONDecodeError:
             detail = None
-    raw = resolve_external_spools_in_mapping(raw, detail, is_dual_nozzle)
+    raw = resolve_external_spools_in_mapping(raw, detail, is_dual_nozzle, layout)
     if all(v < 0 for v in raw):
         # #2589 sentinel — every slot unresolved. Let the scheduler compute a
         # fresh mapping from live AMS state instead of trusting this.
@@ -456,6 +460,19 @@ class VirtualPrinterInstance:
             )
         return is_dual_nozzle_model(self.model)
 
+    def _target_tray_layout(self) -> TrayLayout:
+        """How the target printer numbers its trays, which places an H3C's
+        per-hotend external inputs in the slicer's mapping.
+
+        The target's live AMS data, else its model; without a target printer
+        ("any available" queue mode), the VP's own model.
+        """
+        if self._printer_manager is not None and self.target_printer_id is not None:
+            from backend.app.services.printer_manager import printer_tray_layout
+
+            return printer_tray_layout(self.target_printer_id, self._printer_manager)
+        return TrayLayout.ams3h() if has_ams3h(self.model) else TrayLayout()
+
     async def on_print_command(self, filename: str, data: dict) -> None:
         """Handle print command from MQTT.
 
@@ -602,7 +619,10 @@ class VirtualPrinterInstance:
         # #1766 backup gate).
         ams_mapping_json = (
             _extract_slicer_ams_mapping_json(
-                data, f"[VP {self.name}] Late MQTT", is_dual_nozzle=self._target_is_dual_nozzle()
+                data,
+                f"[VP {self.name}] Late MQTT",
+                is_dual_nozzle=self._target_is_dual_nozzle(),
+                layout=self._target_tray_layout(),
             )
             if self.target_printer_id is not None and self.save_ams_mapping
             else None
@@ -1074,7 +1094,10 @@ class VirtualPrinterInstance:
                 ams_mapping_json: str | None = None
                 if slicer_opts is not None and self.target_printer_id is not None and self.save_ams_mapping:
                     ams_mapping_json = _extract_slicer_ams_mapping_json(
-                        slicer_opts, f"[VP {self.name}]", is_dual_nozzle=self._target_is_dual_nozzle()
+                        slicer_opts,
+                        f"[VP {self.name}]",
+                        is_dual_nozzle=self._target_is_dual_nozzle(),
+                        layout=self._target_tray_layout(),
                     )
 
                 # `Force color match` is the user asking Bambuddy to do the

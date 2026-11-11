@@ -230,6 +230,7 @@ const FR_COGNATES = [
   'Photos', '{{count}} photo', '{{count}} photos',  // file details photo strip (#3077) — same word in French
   'Version 2',  // stream overlay artwork picker (#3177) — same word in French
   'Page {{page}}',  // Manyfold model list pager (#1471) — "page" is the same word in French
+  'Alternatives',  // #3462 multi-file print mode label — same word in French
 ];
 
 // Italian cognates.
@@ -479,7 +480,7 @@ const NL_COGNATES = [
   'Label...', 'LAN Developer Mode', 'Live', 'Long-Lived Access Token',
   'Ludicrous (166%)', 'MakerWorld: {{designer}}', 'Metadata', 'Min',
   'Model', '{{name}} — {{stage}} ({{percent}}%) — {{elapsed}}', '{{name}} - Timelapse', 'Nozzle',
-  'Nozzle 2', '{{n}} run', '{{n}} runs', 'Offline',
+  'Nozzle 2', 'Nozzle {{n}}', '{{n}} run', '{{n}} runs', 'Offline',
   'Online', 'Open', 'Orca Cloud', 'parallel',
   'Personal Access Token', 'Pipeline', 'Pipelines', 'Platform',
   'Pressure Advance', 'Prime tower', 'Printer', 'Printer:',

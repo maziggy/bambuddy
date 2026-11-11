@@ -304,6 +304,8 @@ export default {
     },
     temperatures: {
       nozzle: '노즐',
+      // The H3C's nozzle on the toolhead, by its rack position (#3442).
+      mounted: '노즐 {{n}}',
       bed: '베드',
       chamber: '챔버'
     },
@@ -365,10 +367,15 @@ export default {
       summary: '라이브 {{live}}개, 스냅 {{snap}}개, 총 {{total}}개',
       layer: '레이어 {{cur}}/{{total}}',
       timeLeft: '{{time}} 남음',
+      eta: '완료 예정 {{time}}',
       statusMode: {
         off: '꺼짐',
         compact: '간단',
         full: '전체'
+      },
+      controlsMode: {
+        hover: '마우스를 올렸을 때',
+        always: '항상',
       },
       settings: {
         title: '카메라 월 설정',
@@ -377,7 +384,9 @@ export default {
         snapshotInterval: '스냅샷 간격(초)',
         snapshotIntervalHint: '비라이브 타일이 새 스냅샷을 가져오는 주기.',
         statusOverlay: '상태 표시',
-        statusOverlayHint: '간단: 상태 배지만 표시. 전체: + 진행률, 레이어, 남은 시간.'
+        statusOverlayHint: '간단: 상태 배지만 표시. 전체: + 진행률, 레이어, 남은 시간, 완료 예정 시각, 온도.',
+        controls: '타일 컨트롤',
+        controlsHint: '각 타일의 일시정지, 정지, 챔버 조명: 마우스를 올렸을 때 또는 항상. 터치스크린에서는 항상 표시됩니다.',
       }
     },
     hideOffline: '오프라인 숨기기',
@@ -398,6 +407,7 @@ export default {
     },
     readyToPrint: '인쇄 준비 완료',
     external: '외부',
+    externalInputsEmpty: '외부 입력 {{count}}개가 모두 비어 있습니다',
     ext: '외부',
     extL: '외부-L',
     extR: '외부-R',
@@ -467,6 +477,7 @@ export default {
     activeNozzle: '활성: {{nozzle}} 노즐',
     amsSwitchInletTooltip: '필라멘트 트랙 스위치 IN-{{inlet}}({{side}}) — 양쪽 노즐에 공급',
     nozzleRack: '노즐 랙',
+    nozzleRackMounted: '툴헤드에 장착됨',
     nozzleDocked: '도킹됨',
     nozzleMounted: '장착됨',
     nozzleActive: '활성',
@@ -476,6 +487,7 @@ export default {
     nozzleStatus: '상태',
     nozzleFilament: '필라멘트',
     nozzleWear: '마모',
+    nozzlePrintTime: '출력 시간',
     nozzleMaxTemp: '최대 온도',
     nozzleSerial: '일련번호',
     nozzleHardenedSteel: '경화강',
@@ -536,6 +548,7 @@ export default {
       rfidRereadInitiated: 'RFID 재읽기가 시작되었습니다',
       loadInitiated: '필라멘트 로딩 중…',
       unloadInitiated: '필라멘트 언로딩 중…',
+      unloadAms3h: '슬롯 {{n}} 언로드 중입니다. 프린터가 요청하면 AMS 3H에서 필라멘트를 손으로 빼내세요.',
       failedToLoad: '필라멘트 로드 실패',
       failedToUnload: '필라멘트 언로드 실패',
       connectionFailedNotAdded: '프린터에 연결할 수 없습니다. IP, 시리얼 번호, 액세스 코드를 확인하고 LAN 전용 모드가 켜져 있는지 확인하세요. 프린터가 추가되지 않았습니다.'
@@ -731,6 +744,7 @@ export default {
       screenOnly: '이 프린터에서는 AMS 건조를 프린터 자체 화면에서만 제어할 수 있습니다 (Bambu 제한 사항)',
       stoppingDrying: '건조 정지 중...',
       rotateTray: '건조 중 스풀 회전',
+      ams3hDryerSlots: 'AMS 3H는 슬롯 {{a}}, {{b}}만 건조합니다',
       rotateUnavailableReason: '사용할 수 없음 — 이 AMS의 슬롯이 툴헤드로 로드되어 있습니다. 스풀이 공급 튜브에 의해 고정되어 회전할 수 없습니다. 먼저 필라멘트를 뺀 후 다시 시도하십시오.',
       startMode: '시작 시간',
       modeNow: '지금',
@@ -1936,6 +1950,14 @@ export default {
     noPermissionEditIntervals: '간격을 편집할 권한이 없습니다',
     configureSettings: '유지보수 유형 및 간격 설정'
   },
+  wled: {
+    connectionSection: '연결', mappingSection: '상태 매핑', testConnection: '연결 테스트', notTested: '테스트하지 않음', connected: 'WLED에 연결됨{{name}}{{version}}', notReachable: 'WLED에 연결할 수 없습니다.', testPreset: '테스트', presetTested: '프리셋이 활성화되었습니다', presetTestFailed: '프리셋을 활성화할 수 없습니다', mappingSummary: '설정된 상태: {{configured}} · 비활성 상태: {{disabled}}',
+    title: 'WLED', description: '색상, 효과 및 프리셋은 WLED에서 직접 관리합니다. Bambuddy는 프린터 상태를 기존 프리셋에 연결만 합니다.',
+    printer: '프린터', enabled: 'WLED 연동 활성화', baseUrl: 'WLED 주소', loadPresets: '프리셋 불러오기', online: '프리셋 {{count}}개를 불러왔습니다', offlineHint: 'WLED에 연결할 수 없습니다. 저장된 프리셋 ID는 유지됩니다.', noPrinters: '설정된 프린터가 없습니다.', noPreset: '비활성화 — 프리셋 없음', savedUnavailable: '저장된 프리셋 {{id}} — 현재 사용 불가', finishedTimeout: '완료 타임아웃(초)', finishedTimeoutHint: '이 시간이 지나면 완료에서 유휴 프리셋으로 전환합니다. 0은 비활성화입니다.', saved: 'WLED 설정을 저장했습니다', saveError: 'WLED 설정을 저장할 수 없습니다',
+    presetSegmentHint: 'WLED에서 프리셋을 만들 때 대상 세그먼트를 선택하고 “Checked segments only”를 활성화하세요. 실행 중에는 Bambuddy가 설정된 프리셋만 활성화합니다.',
+    status: { idle: '유휴', prepare: '준비 중', printing: '인쇄 중', paused: '일시 중지', finished: '완료', error: '실패 / 오류', queue_waiting: '플레이트 제거 대기', filament_problem: '필라멘트 문제', hms_error: 'HMS 오류', offline: '오프라인' },
+  },
+
   settings: {
     sliceEngine: '슬라이스 엔진',
     sliceEngineSidecar: '서버 사이드카',
@@ -1955,6 +1977,7 @@ export default {
       filament: '필라멘트',
       camera: '카메라',
       network: '네트워크',
+      wled: 'WLED',
       apiKeys: 'API 키',
       virtualPrinter: '가상 프린터',
       spoolbuddy: 'SpoolBuddy',
@@ -2747,7 +2770,7 @@ export default {
     tabDisplayPercentage: '진행률',
     tabDisplayTime: '남은 시간',
     autoArchivePrints: '인쇄 자동 아카이브',
-    autoArchiveDescription: '인쇄 완료 시 3MF 파일 자동 저장. 끄면 Bambuddy 외부에서 시작된 인쇄는 어떤 프린터에서도 보관되지 않습니다.',
+    autoArchiveDescription: 'Bambuddy 외부(슬라이서 또는 프린터)에서 시작된 인쇄를 보관합니다: 3MF 파일, 인쇄 기록, 통계 및 비용. 끄면 이러한 인쇄는 보관함과 통계에 나타나지 않으며, 스풀 재고는 여전히 필라멘트 사용량을 집계합니다.',
     captureFinishPhotoDescription: '인쇄 완료 시 프린터 카메라로 사진 촬영. Bambuddy는 인쇄 중 짧은 타임랩스를 기록하여 베드가 내려가기 전 순간에서 사진을 가져올 수 있도록 합니다. 이 인쇄에 대해 타임랩스를 활성화한 경우 타임랩스 파일이 보관되며, 그렇지 않으면 사진 촬영 후 자동으로 삭제됩니다.',
     finishPhotoRestorePlate: '완료 사진을 위해 베드 올리기',
     finishPhotoRestorePlateDescription: '프린터는 인쇄가 끝나면 베드를 약 100 mm 내리므로 완성된 출력물이 카메라 화각 아래에 놓입니다. Bambuddy는 베드를 마지막 인쇄 레이어 바로 위까지 다시 올려 사진을 찍은 뒤 다시 내립니다. 출력 높이를 알 수 없거나 다른 작업이 대기 중이면 건너뜁니다.',
@@ -4038,8 +4061,8 @@ export default {
       groupAction: '버전으로 그룹화',
       groupTooltip: '이 파일들을 서로 다른 프린터용으로 슬라이스한 동일 작업으로 표시합니다',
       grouped: '파일 {{count}}개를 버전으로 그룹화했습니다',
-      printAlternatives: '인쇄 (대안 {{count}}개)',
     },
+    printFiles: '인쇄 (파일 {{count}}개)',
     title: '파일 관리자',
     subtitle: '인쇄 파일 정리 및 관리',
     uploadFiles: '파일 업로드',
@@ -5105,6 +5128,13 @@ export default {
       deleteTitle: '프로필 기본값 삭제',
       deleteMessage: '{{product}}의 프로필 기본값을 삭제할까요? 이미 해당 프로필이 있는 스풀은 그대로 유지합니다.',
       deleteFailed: '프로필 기본값을 삭제하지 못했습니다',
+      search: '제품, 색상 또는 프리셋으로 검색',
+      noMatch: '일치하는 프로필 기본값이 없습니다',
+      presetsCount: '프린터 프리셋: {{count}}',
+      kProfilesCount: 'K 프로필: {{count}}',
+      applyAll: '모두 적용',
+      applyAllHelp: '모든 프로필 기본값으로 활성 스풀에 아직 없는 항목을 채웁니다. 이미 있는 항목은 변경하지 않습니다.',
+      applyAllFailed: '프로필 기본값 {{failed}}개를 적용하지 못했습니다. 스풀 {{updated}}개에 채웠습니다',
     },
     suppliers: {
       label: '공급업체',
@@ -5422,6 +5452,18 @@ export default {
     assignedNotConfigured: 'Bambuddy에서 할당됨, 프린터에는 아직 설정되지 않음. 출력이 끝나 슬롯이 비면 프린터에 설정됩니다.'
   },
   printModal: {
+    multiFile: {
+      groupLabel: '선택한 파일의 처리 방식',
+      alternatives: '대안',
+      separate: '개별 작업',
+      alternativesHint: '작업 하나입니다. 가장 먼저 비는 호환 프린터가 자기 파일을 인쇄합니다.',
+      separateHint: '파일마다 대기열 항목 하나를 아래 순서대로 추가합니다. 옵션은 모든 항목에 적용됩니다.',
+      alternativesBlocked: '{{model}}용으로 슬라이스된 파일이 둘 이상입니다. 대안에는 파일마다 서로 다른 프린터 모델이 필요합니다.',
+      orderTitle: '대기열 순서',
+      incompatible: '{{model}} 프린터로 보낼 수 없음: {{files}}',
+      notSlicedFor: '{{model}}용으로 슬라이스되지 않음: {{files}}',
+      failed: '대기열에 추가되지 않음: {{filename}} ({{message}}). 먼저 추가된 항목: {{queued}}.',
+    },
     variants: {
       editNote: '이 대안은 대기열에 추가할 때 정해집니다. 변경하려면 취소 후 다시 추가하세요.',
       title: '프린터 대안',
@@ -6638,7 +6680,7 @@ export default {
     amsTemperatureHigh: 'AMS 온도 높음',
     amsTemperatureHighDescription: '일반 AMS 온도가 임계값 초과',
     amsDryingSuspendedTitle: '자동 건조 중단',
-    amsDryingSuspendedDescription: '습도가 임계값 아래로 내려가지 않아 AMS 유닛의 자동 건조를 중단했습니다',
+    amsDryingSuspendedDescription: 'AMS 유닛의 자동 건조를 중단했습니다: 습도가 임계값 아래로 내려가지 않았거나 유닛이 가열을 시작하지 않았습니다',
     amsHtHumidityHigh: 'AMS-HT 습도 높음',
     amsHtHumidityHighDescription: 'AMS-HT 습도가 임계값 초과',
     amsHtTemperatureHigh: 'AMS-HT 온도 높음',
@@ -7316,6 +7358,8 @@ export default {
       includeBeta: '베타 버전 포함'
     },
     writeTag: {
+      writeWith: '쓰기 장치',
+      deviceOfflineOption: '{{name}} (오프라인)',
       tabExisting: '기존 스풀',
       tabNew: '새 스풀',
       tabReplace: '태그 교체',
@@ -8081,7 +8125,7 @@ export default {
         pass: '프린터가 이 옵션이 켜져 있다고 보고합니다 — 전송된 파일이 SD 카드에 저장되며 아카이브에 썸네일과 슬라이서 메타데이터가 포함됩니다.',
         fail: '프린터가 이 옵션이 꺼져 있다고 보고합니다. "전송된 파일을 외부 저장소에 저장"을 활성화하세요 — 최신 펌웨어 (P2S 01.02 / Bambu Studio 2.6 이상)에서는 프린터의 인쇄 설정에 토글이 있고, 이전 버전에서는 Bambu Studio / OrcaSlicer의 장치 탭에 있습니다. 이 옵션이 없으면 아카이브된 모든 인쇄물에 썸네일과 슬라이서 메타데이터가 없습니다.',
         skip: '확인되지 않음 — 활성 MQTT 연결이 필요합니다. 이 설정이 슬라이서에만 존재하는 이전 슬라이서에서는 프린터가 보고하지 않으므로, 옵션이 꺼져 있어도 이 검사는 통과합니다 — 설치 단계 4를 수동으로 확인하세요.',
-        skip_unsupported_model: '이 모델에는 SD 슬롯이 있지만 옵션을 켤 방법이 없습니다 — 현재 P1 시리즈 펌웨어는 Bambu Studio에 토글을 표시하지 않으며 프린터에 화면도 없습니다. 여기서 고칠 것은 없습니다. Bambu Lab이 펌웨어로 지원할 때까지 보관된 출력물에는 썸네일과 슬라이서 메타데이터가 없을 수 있습니다.',
+        skip_unsupported_model: '이 모델에서는 이 옵션을 켤 수 없습니다. 현재 펌웨어에서는 프린터와 Bambu Studio 모두 이 옵션을 제공하지 않습니다. 여기서 고칠 것은 없습니다. Bambu Lab이 추가할 때까지 보관된 출력물에는 썸네일과 슬라이서 메타데이터가 없을 수 있습니다.',
         fail_no_media: '옵션은 켜져 있지만 프린터 슬롯에 카드도 USB도 감지되지 않아 보낸 파일이 갈 곳이 없습니다. 하나 넣고 다시 출력하세요. 그전까지는 보관되는 모든 출력물에 썸네일과 슬라이서 메타데이터가 없습니다.',
         warn_internal_storage: '옵션이 켜져 있고 저장소도 있지만 마지막 출력물은 Bambuddy가 읽을 수 없는 프린터 내부 저장소에 저장되었습니다. H2 시리즈, P2S, X2D에서는 이 설정과 관계없이 Bambu Studio의 «인쇄» 버튼이 항상 그쪽으로 보냅니다. 출력물은 이름과 시간과 함께 보관되지만 썸네일과 슬라이서 메타데이터는 없습니다. 완전한 기록을 남기려면 Bambuddy에서 출력을 시작하거나, OrcaSlicer로 슬라이싱하거나, Bambu Studio에서 «보내기»로 «외부 저장소»를 고른 뒤 출력을 시작하세요.',
         warn_internal_history: '옵션은 켜져 있고 저장소도 있지만, 마지막 출력은 이미 프린터에 있던 파일에서 실행되었습니다 — 화면에서의 재출력, Handy에서의 시작, 또는 이전에 보낸 파일입니다. 그 라이브러리는 Bambuddy가 읽을 수 없는 내부 저장소에 있으며, 그 출력에서는 아무것도 전송되지 않았으므로 어떤 설정으로도 바뀌지 않습니다. 이름과 시간과 함께 보관되기는 하지만 썸네일과 슬라이서 메타데이터는 없습니다. 온전한 보관을 원하면 Bambuddy에서 출력을 시작하거나 슬라이서에서 전송하세요.',

@@ -316,6 +316,8 @@ export default {
     },
     temperatures: {
       nozzle: 'Nozzle',
+      // The H3C's nozzle on the toolhead, by its rack position (#3442).
+      mounted: 'Nozzle {{n}}',
       bed: 'Printbed',
       chamber: 'Kamer',
     },
@@ -379,10 +381,15 @@ export default {
       summary: '{{live}} live, {{snap}} momentopnamen, {{total}} totaal',
       layer: 'Laag {{cur}}/{{total}}',
       timeLeft: '{{time}} resterend',
+      eta: 'klaar {{time}}',
       statusMode: {
         off: 'Uit',
         compact: 'Compact',
         full: 'Volledig',
+      },
+      controlsMode: {
+        hover: 'Bij aanwijzen',
+        always: 'Altijd',
       },
       settings: {
         title: 'Instellingen camerawand',
@@ -391,7 +398,9 @@ export default {
         snapshotInterval: 'Interval momentopnamen (seconden)',
         snapshotIntervalHint: 'Hoe vaak niet-live tegels een nieuwe momentopname ophalen.',
         statusOverlay: 'Statusoverlay',
-        statusOverlayHint: 'Compact: alleen statusbadge. Volledig: + voortgang, laag, resterende tijd.',
+        statusOverlayHint: 'Compact: alleen statusbadge. Volledig: + voortgang, laag, resterende tijd, eindtijd, temperaturen.',
+        controls: 'Tegelbediening',
+        controlsHint: 'Pauzeren, stoppen en kamerlicht op elke tegel: bij aanwijzen of altijd. Touchscreens tonen ze altijd.',
       },
     },
     // Controls
@@ -414,6 +423,7 @@ export default {
     // Printer card
     readyToPrint: 'Klaar om af te drukken',
     external: 'Extern',
+    externalInputsEmpty: 'Alle {{count}} externe ingangen zijn leeg',
     ext: 'Extern',
     extL: 'Ext-L',
     extR: 'Ext-R',
@@ -493,6 +503,7 @@ export default {
     activeNozzle: 'Actief: {{nozzle}}-nozzle',
     amsSwitchInletTooltip: 'Filament Track Switch IN-{{inlet}} ({{side}}) — voedt beide nozzles',
     nozzleRack: 'Nozzlerek',
+    nozzleRackMounted: 'Op de printkop',
     nozzleDocked: 'Gedockt',
     nozzleMounted: 'Gemonteerd',
     nozzleActive: 'Actief',
@@ -502,6 +513,7 @@ export default {
     nozzleStatus: 'Status',
     nozzleFilament: 'Filament',
     nozzleWear: 'Slijtage',
+    nozzlePrintTime: 'Printtijd',
     nozzleMaxTemp: 'Max. temp.',
     nozzleSerial: 'Serienummer',
     nozzleHardenedSteel: 'Gehard staal',
@@ -566,6 +578,7 @@ export default {
       rfidRereadInitiated: 'Opnieuw uitlezen van RFID gestart',
       loadInitiated: 'Filament laden…',
       unloadInitiated: 'Filament ontladen…',
+      unloadAms3h: 'Sleuf {{n}} wordt ontladen. Trek het filament met de hand uit de AMS 3H terug zodra de printer daarom vraagt.',
       failedToLoad: 'Filament laden mislukt',
       failedToUnload: 'Filament ontladen mislukt',
     },
@@ -772,6 +785,7 @@ export default {
       screenOnly: 'AMS-drogen op deze printer kan alleen via het eigen scherm van de printer worden bediend (Bambu-beperking)',
       stoppingDrying: 'Drogen stoppen...',
       rotateTray: 'Spoel draaien tijdens drogen',
+      ams3hDryerSlots: 'De AMS 3H droogt alleen sleuven {{a}} en {{b}}',
       rotateUnavailableReason: 'Niet beschikbaar — een sleuf in deze AMS is naar de toolhead geladen. De spoel wordt door de toevoerbuis geblokkeerd en kan niet draaien. Trek eerst het filament terug.',
       startMode: 'Starttijd',
       modeNow: 'Nu',
@@ -2041,6 +2055,14 @@ export default {
   },
 
   // Settings page
+  wled: {
+    connectionSection: 'Verbinding', mappingSection: 'Statustoewijzing', testConnection: 'Verbinding testen', notTested: 'Niet getest', connected: 'Verbonden met WLED{{name}}{{version}}', notReachable: 'Kan geen verbinding maken met WLED.', testPreset: 'Testen', presetTested: 'Preset geactiveerd', presetTestFailed: 'Preset kon niet worden geactiveerd', mappingSummary: 'Geconfigureerde statussen: {{configured}} · Uitgeschakelde statussen: {{disabled}}',
+    title: 'WLED', description: 'Kleuren, effecten en presets worden rechtstreeks in WLED beheerd. Bambuddy koppelt alleen printerstatussen aan bestaande presets.',
+    printer: 'Printer', enabled: 'WLED-integratie inschakelen', baseUrl: 'WLED-URL', loadPresets: 'Presets laden', online: '{{count}} presets geladen', offlineHint: 'WLED is niet bereikbaar. Opgeslagen preset-ID’s blijven behouden.', noPrinters: 'Geen printers geconfigureerd.', noPreset: 'Uitgeschakeld — geen preset', savedUnavailable: 'Opgeslagen preset {{id}} — niet beschikbaar', finishedTimeout: 'Time-out na voltooiing (seconden)', finishedTimeoutHint: 'Schakel daarna van Voltooid naar de Inactief-preset. 0 schakelt dit uit.', saved: 'WLED-instellingen opgeslagen', saveError: 'WLED-instellingen konden niet worden opgeslagen',
+    presetSegmentHint: 'Selecteer het doelsegment wanneer je de preset in WLED maakt en schakel “Checked segments only” in. Tijdens gebruik activeert Bambuddy alleen de geconfigureerde preset.',
+    status: { idle: 'Inactief', prepare: 'Voorbereiden', printing: 'Afdrukken', paused: 'Gepauzeerd', finished: 'Voltooid', error: 'Mislukt / Fout', queue_waiting: 'Wachten op lege plaat', filament_problem: 'Filamentprobleem', hms_error: 'HMS-fout', offline: 'Offline' },
+  },
+
   settings: {
     sliceEngine: 'Slice-engine',
     sliceEngineSidecar: 'Server-sidecar',
@@ -2061,6 +2083,7 @@ export default {
       filament: 'Filament',
       camera: 'Camera',
       network: 'Netwerk',
+      wled: 'WLED',
       apiKeys: 'API-sleutels',
       virtualPrinter: 'Virtuele printer',
       spoolbuddy: 'SpoolBuddy',
@@ -2903,7 +2926,7 @@ export default {
     tabDisplayTime: 'Resterende tijd',
     // Archive
     autoArchivePrints: 'Afdrukken automatisch archiveren',
-    autoArchiveDescription: '3MF-bestanden automatisch opslaan wanneer afdrukken zijn voltooid. Uit: geen enkele printer archiveert afdrukken die buiten Bambuddy zijn gestart.',
+    autoArchiveDescription: 'Afdrukken archiveren die buiten Bambuddy zijn gestart (vanuit de slicer of de printer): 3MF-bestand, afdrukgeschiedenis, statistieken en kosten. Uit: die afdrukken ontbreken in het archief en de statistieken; de spoelvoorraad telt hun filament wel.',
     captureFinishPhotoDescription: 'Maak een foto met de printercamera wanneer de afdruk is voltooid. Bambuddy neemt tijdens de afdruk een korte timelapse op zodat de foto kan worden genomen van het moment voordat het bed zakt; het timelapsebestand blijft behouden als je timelapse voor deze afdruk hebt ingeschakeld, anders wordt het automatisch verwijderd nadat de foto is vastgelegd.',
     finishPhotoRestorePlate: 'Plaat herstellen voor eindfoto',
     finishPhotoRestorePlateDescription: 'De printer laat de bouwplaat ongeveer 100 mm zakken wanneer een afdruk eindigt, waardoor de voltooide afdruk onder het camerabeeld komt. Bambuddy brengt de plaat terug tot net boven de laatst geprinte laag, maakt de foto en laat hem daarna weer zakken. Wordt overgeslagen wanneer de afdrukhoogte onbekend is of er een andere taak in de wachtrij staat.',
@@ -4257,8 +4280,8 @@ export default {
       groupAction: 'Als versies groeperen',
       groupTooltip: 'Markeer deze bestanden als dezelfde taak, gesliced voor verschillende printers',
       grouped: '{{count}} bestanden als versies gegroepeerd',
-      printAlternatives: 'Afdrukken ({{count}} alternatieven)',
     },
+    printFiles: 'Afdrukken ({{count}} bestanden)',
     title: 'Bestandsbeheer',
     subtitle: 'Organiseer en beheer je afdrukbestanden',
     uploadFiles: 'Bestanden uploaden',
@@ -5360,6 +5383,13 @@ export default {
       deleteTitle: 'Profielstandaard verwijderen',
       deleteMessage: 'Profielstandaard voor {{product}} verwijderen? Spoelen die de profielen al hebben, houden ze.',
       deleteFailed: 'Profielstandaard kon niet worden verwijderd',
+      search: 'Zoeken op product, kleur of profiel',
+      noMatch: 'Geen profielstandaard komt overeen',
+      presetsCount: 'Printerprofielen: {{count}}',
+      kProfilesCount: 'K-profielen: {{count}}',
+      applyAll: 'Alles toepassen',
+      applyAllHelp: 'Vul bij actieve spoelen aan wat nog ontbreekt, uit alle profielstandaarden. Wat ze al hebben blijft ongewijzigd.',
+      applyAllFailed: '{{failed}} profielstandaarden konden niet worden toegepast; aangevuld bij {{updated}} spoelen',
     },
     suppliers: {
       label: 'Leveranciers',
@@ -5697,6 +5727,18 @@ export default {
 
   // Print modal
   printModal: {
+    multiFile: {
+      groupLabel: 'Wat er van de geselecteerde bestanden wordt',
+      alternatives: 'Alternatieven',
+      separate: 'Aparte opdrachten',
+      alternativesHint: 'Eén opdracht. De eerste passende printer die vrijkomt print zijn bestand.',
+      separateHint: 'Eén wachtrij-item per bestand, toegevoegd in de volgorde hieronder. De opties gelden voor elk item.',
+      alternativesBlocked: 'Meer dan één bestand is gesliced voor {{model}}. Alternatieven vragen om een ander printermodel per bestand.',
+      orderTitle: 'Volgorde in de wachtrij',
+      incompatible: 'Kan niet worden verzonden naar {{model}}-printers: {{files}}',
+      notSlicedFor: 'Niet gesliced voor {{model}}: {{files}}',
+      failed: 'Niet in de wachtrij gezet: {{filename}} ({{message}}). Eerder in de wachtrij gezet: {{queued}}.',
+    },
     variants: {
       editNote: 'Deze alternatieven zijn ingesteld toen de taak in de wachtrij werd geplaatst. Annuleer en plaats opnieuw in de wachtrij om ze te wijzigen.',
       title: 'Printeralternatieven',
@@ -6969,7 +7011,7 @@ export default {
     amsTemperatureHigh: 'AMS-temperatuur hoog',
     amsTemperatureHighDescription: 'Temperatuur van normale AMS overschrijdt drempel',
     amsDryingSuspendedTitle: 'Automatisch drogen gestopt',
-    amsDryingSuspendedDescription: 'Automatisch drogen heeft een AMS-eenheid opgegeven omdat de luchtvochtigheid niet onder de drempel kwam',
+    amsDryingSuspendedDescription: 'Automatisch drogen heeft een AMS-eenheid opgegeven: de luchtvochtigheid kwam niet onder de drempel, of de eenheid is nooit begonnen met verwarmen',
     amsHtHumidityHigh: 'AMS-HT-luchtvochtigheid hoog',
     amsHtHumidityHighDescription: 'AMS-HT-luchtvochtigheid overschrijdt drempel',
     amsHtTemperatureHigh: 'AMS-HT-temperatuur hoog',
@@ -7724,6 +7766,8 @@ export default {
       includeBeta: 'Bètaversies opnemen',
     },
     writeTag: {
+      writeWith: 'Schrijven met',
+      deviceOfflineOption: '{{name}} (apparaat offline)',
       tabExisting: 'Bestaande spoel',
       tabNew: 'Nieuwe spoel',
       tabReplace: 'Tag vervangen',
@@ -7814,7 +7858,7 @@ export default {
         pass: 'De printer meldt dat deze optie aanstaat — verzonden bestanden worden op de SD-kaart opgeslagen en archieven bevatten miniaturen en slicermetadata.',
         fail: 'De printer meldt dat deze optie uitstaat. Schakel "Verzonden bestanden op externe opslag bewaren" in — op nieuwere firmware (P2S 01.02 / Bambu Studio 2.6+) staat de schakelaar in de Afdrukinstellingen van de printer; op oudere versies in het tabblad Apparaat van Bambu Studio / OrcaSlicer. Zonder deze optie mist elke gearchiveerde afdruk zijn miniatuur en slicermetadata.',
         skip: 'Niet gecontroleerd — hiervoor is een actieve MQTT-verbinding nodig. Bij oudere slicers, waar deze instelling alleen in de slicer staat, rapporteert de printer hem nooit. Daardoor kan deze controle slagen terwijl de optie uitstaat — controleer installatiestap 4 handmatig.',
-        skip_unsupported_model: 'Dit model heeft een SD-slot maar geen manier om de optie in te schakelen — de huidige P1-seriefirmware toont de schakelaar niet in Bambu Studio en de printer heeft geen scherm. Hier is niets te herstellen; gearchiveerde afdrukken kunnen miniaturen en slicermetadata missen totdat Bambu Lab firmwareondersteuning toevoegt.',
+        skip_unsupported_model: 'Bij dit model kan de optie niet worden ingeschakeld: met de huidige firmware bieden de printer en Bambu Studio haar geen van beide aan. Hier valt niets op te lossen; gearchiveerde prints kunnen miniaturen en slicer-metadata missen totdat Bambu Lab de optie toevoegt.',
         fail_no_media: 'De optie staat aan, maar de printer meldt dat er geen kaart of stick in het slot zit, waardoor verzonden bestanden nergens kunnen worden opgeslagen. Plaats er een en druk opnieuw af — tot die tijd mist elke gearchiveerde afdruk zijn miniatuur en slicermetadata.',
         warn_internal_storage: 'De optie staat aan en opslag is aanwezig, maar de laatste afdruk ging toch naar de interne opslag van de printer, die Bambuddy niet kan lezen. Bij H2-serie, P2S en X2D stuurt de knop Afdrukken van Bambu Studio altijd daarheen, ongeacht deze instelling. Afdrukken worden gearchiveerd met naam en timing, maar zonder miniatuur of slicermetadata. Voor volledige archieven start je afdrukken vanuit Bambuddy of slice je in OrcaSlicer — of gebruik in Bambu Studio Verzenden met Extern geselecteerd en start daarna de afdruk.',
         warn_internal_history: 'De optie staat aan en er is opslag aanwezig, maar de laatste print liep vanaf een bestand dat al op de printer stond — opnieuw afdrukken via het scherm, starten vanuit Handy, of een eerder verstuurd bestand. Die bibliotheek staat op interne opslag die Bambuddy niet kan lezen, en geen enkele instelling verandert dat, omdat er voor die print niets is verstuurd. Hij wordt nog steeds gearchiveerd met naam en tijden, maar zonder thumbnail of slicer-metadata. Start prints vanuit Bambuddy of verstuur ze vanuit de slicer voor volledige archieven.',

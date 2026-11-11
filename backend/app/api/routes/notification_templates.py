@@ -43,6 +43,7 @@ EVENT_NAMES = {
     "ams_humidity_high": "AMS Humidity High",
     "ams_temperature_high": "AMS Temperature High",
     "ams_drying_suspended": "Auto-Drying Suspended",
+    "ams_drying_not_heating": "Auto-Drying Not Heating",
     "ha_sensor_alert": "Printer Sensor Alert",
     "location_ha_sensor_alert": "Storage Location Sensor Alert",
     "filament_low": "Filament Low",

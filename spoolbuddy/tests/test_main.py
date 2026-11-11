@@ -26,6 +26,7 @@ def _make_api():
     api = AsyncMock()
     api.heartbeat = AsyncMock(return_value=None)
     api.update_tare = AsyncMock(return_value={"ok": True})
+    api.has_buffered = MagicMock(return_value=False)
     return api
 
 
@@ -138,6 +139,38 @@ class TestHeartbeatLoopCommands:
         assert "pending_write" in shared
         assert shared["pending_write"]["spool_id"] == 42
         assert shared["pending_write"]["ndef_data"] == bytes.fromhex("DEADBEEF")
+        # An older Bambuddy sends no v2 encoding: v1 only.
+        assert shared["pending_write"]["ndef_v2"] is None
+
+    @pytest.mark.asyncio
+    async def test_write_tag_command_keeps_the_v2_encoding(self):
+        # #3500: Bambuddy sends OpenTag3D v2 beside v1 for a tag with room for it.
+        config = _make_config()
+        api = _make_api()
+        sent = False
+
+        async def mock_heartbeat(*args, **kwargs):
+            nonlocal sent
+            if sent:
+                return None
+            sent = True
+            return {
+                "pending_command": "write_tag",
+                "pending_write_payload": {"spool_id": 42, "ndef_data_hex": "DEADBEEF", "ndef_v2_hex": "CAFE"},
+            }
+
+        api.heartbeat = mock_heartbeat
+        shared = {"nfc": None, "scale": None, "display": MagicMock()}
+
+        task = asyncio.create_task(heartbeat_loop(config, api, time.monotonic(), shared))
+        await asyncio.sleep(0.1)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+        assert shared["pending_write"]["ndef_v2"] == bytes.fromhex("CAFE")
 
     @pytest.mark.asyncio
     async def test_display_settings_applied_from_heartbeat(self):
@@ -402,3 +435,145 @@ class TestNfcPollLoopTagScanned:
             tag_type="mifare_classic",
             raw_blocks=raw_blocks,
         )
+
+
+class TestNfcPollLoopWrite:
+    @pytest.mark.asyncio
+    async def test_the_v2_encoding_reaches_the_write(self):
+        # #3500: the reader picks v1 or v2 by the tag's size, so it needs both.
+        from daemon.nfc_reader import NFCState
+
+        nfc = MagicMock()
+        nfc.ok = True
+        nfc.poll = lambda: ("none", None)
+        nfc.state = NFCState.TAG_PRESENT
+        nfc.current_sak = 0x00
+        nfc.current_uid = "04A1B2C3"
+        nfc.write_ntag = MagicMock(return_value=(True, "Write successful (OpenTag3D v2)"))
+        api = AsyncMock()
+        api.has_buffered = MagicMock(return_value=False)
+        config = _make_config(nfc_poll_interval=0.0)
+        shared = {
+            "nfc": nfc,
+            "display": MagicMock(),
+            "pending_write": {"spool_id": 7, "ndef_data": b"v1", "ndef_v2": b"v2"},
+        }
+
+        async def _inline_to_thread(fn, *args, **kwargs):
+            return fn(*args, **kwargs)
+
+        with patch("daemon.main.asyncio.to_thread", _inline_to_thread):
+            task = asyncio.create_task(nfc_poll_loop(config, api, shared))
+            for _ in range(20):
+                await asyncio.sleep(0)
+                if api.write_tag_result.await_count:
+                    break
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        nfc.write_ntag.assert_called_once_with(b"v1", b"v2")
+
+
+class TestNoSecondWrite:
+    """#3076: the backend keeps the write command until it has the result, so a
+    result stuck in the buffer brought the same write back with the next
+    heartbeat, and it ran again on whatever tag was on the reader."""
+
+    async def _write_once(self, buffered: bool) -> dict:
+        from daemon.nfc_reader import NFCState
+
+        nfc = MagicMock()
+        nfc.ok = True
+        nfc.poll = lambda: ("none", None)
+        nfc.state = NFCState.TAG_PRESENT
+        nfc.current_sak = 0x00
+        nfc.current_uid = "04A1B2C3"
+        nfc.write_ntag = MagicMock(return_value=(True, "Write successful (OpenTag3D v1)"))
+        api = AsyncMock()
+        api.has_buffered = MagicMock(return_value=buffered)
+        shared = {
+            "nfc": nfc,
+            "display": MagicMock(),
+            "pending_write": {"spool_id": 7, "ndef_data": b"v1", "ndef_v2": None},
+        }
+
+        async def _inline_to_thread(fn, *args, **kwargs):
+            return fn(*args, **kwargs)
+
+        with patch("daemon.main.asyncio.to_thread", _inline_to_thread):
+            task = asyncio.create_task(nfc_poll_loop(_make_config(nfc_poll_interval=0.0), api, shared))
+            for _ in range(20):
+                await asyncio.sleep(0)
+                if "pending_write" not in shared:
+                    break
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        return shared
+
+    @pytest.mark.asyncio
+    async def test_an_unsent_result_is_remembered(self):
+        shared = await self._write_once(buffered=True)
+        assert shared["write_result_unsent"] == 7
+
+    @pytest.mark.asyncio
+    async def test_a_delivered_result_leaves_nothing_behind(self):
+        shared = await self._write_once(buffered=False)
+        assert "write_result_unsent" not in shared
+
+    async def _heartbeat(self, shared: dict, spool_id: int, still_buffered: bool) -> None:
+        api = _make_api()
+        api.has_buffered = MagicMock(return_value=still_buffered)
+        sent = False
+
+        async def mock_heartbeat(*args, **kwargs):
+            nonlocal sent
+            if sent:
+                return None
+            sent = True
+            return {
+                "pending_command": "write_tag",
+                "pending_write_payload": {"spool_id": spool_id, "ndef_data_hex": "DEADBEEF"},
+            }
+
+        api.heartbeat = mock_heartbeat
+        task = asyncio.create_task(heartbeat_loop(_make_config(), api, time.monotonic(), shared))
+        await asyncio.sleep(0.1)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    @pytest.mark.asyncio
+    async def test_the_same_write_is_not_armed_while_its_result_is_unsent(self):
+        shared = {"nfc": None, "scale": None, "display": MagicMock(), "write_result_unsent": 7}
+
+        await self._heartbeat(shared, spool_id=7, still_buffered=True)
+
+        assert "pending_write" not in shared
+        assert shared["write_result_unsent"] == 7
+
+    @pytest.mark.asyncio
+    async def test_a_result_sent_during_the_heartbeat_still_skips_its_stale_command(self):
+        # The heartbeat was answered before the buffer went out, so its
+        # command is the old one; the next heartbeat no longer carries it.
+        shared = {"nfc": None, "scale": None, "display": MagicMock(), "write_result_unsent": 7}
+
+        await self._heartbeat(shared, spool_id=7, still_buffered=False)
+
+        assert "pending_write" not in shared
+        assert "write_result_unsent" not in shared
+
+    @pytest.mark.asyncio
+    async def test_a_write_for_another_spool_is_armed(self):
+        shared = {"nfc": None, "scale": None, "display": MagicMock(), "write_result_unsent": 7}
+
+        await self._heartbeat(shared, spool_id=8, still_buffered=True)
+
+        assert shared["pending_write"]["spool_id"] == 8

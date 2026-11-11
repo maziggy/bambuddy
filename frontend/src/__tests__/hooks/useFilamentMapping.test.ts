@@ -1651,3 +1651,46 @@ describe('buildLoadedFilaments — a slot set on the printer screen (#3279)', ()
     expect(names).toEqual(['Translucent Orange', 'Translucent Orange']);
   });
 });
+
+describe('buildLoadedFilaments - H3C rack printer', () => {
+  // AMS 3H = unit 32 (type 6), slots at global trays 28-36; one external input
+  // per hotend, 247-255, and a single extruder.
+  const h3cStatus = (): PrinterStatus => {
+    const status = createPrinterStatus(
+      [{
+        id: 32,
+        ams_type: 6,
+        tray: [
+          { id: 0, tray_type: 'PLA', tray_color: 'DE4343FF', tray_info_idx: 'GFL99' },
+          { id: 6, tray_type: 'PETG', tray_color: 'F7D959FF', tray_info_idx: 'GFG99' },
+        ],
+      }] as unknown as PrinterStatus['ams'],
+      [247, 248, 249, 250, 251, 252, 253, 254, 255].map((id) => (
+        id === 250 ? { id, tray_type: 'TPU', tray_color: '000000FF' } : { id, tray_type: '' }
+      )) as PrinterStatus['vt_tray'],
+    );
+    (status as any).nozzles = [
+      { nozzle_type: 'hardened_steel', nozzle_diameter: '0.4' },
+      { nozzle_type: '', nozzle_diameter: '' },
+    ];
+    (status as any).ams_extruder_map = {};
+    return status;
+  };
+
+  it('numbers the AMS 3H slots 28 + slot and labels them 3H-n', () => {
+    const loaded = buildLoadedFilaments(h3cStatus());
+    const ams = loaded.filter((f) => !f.isExternal);
+    expect(ams.map((f) => [f.globalTrayId, f.label])).toEqual([[28, '3H-1'], [34, '3H-7']]);
+  });
+
+  it('does not read the nine external inputs as a dual-nozzle printer', () => {
+    const external = buildLoadedFilaments(h3cStatus()).find((f) => f.isExternal);
+    expect(external).toMatchObject({ globalTrayId: 250, trayId: 5, label: 'Ext-6' });
+    expect(external?.extruderId).toBeUndefined();
+  });
+
+  it('maps a filament to its AMS 3H slot', () => {
+    const reqs = { filaments: [{ slot_id: 1, type: 'PETG', color: '#F7D959', used_grams: 5 }] };
+    expect(computeAmsMapping(reqs, h3cStatus())).toEqual([34]);
+  });
+});

@@ -316,6 +316,8 @@ export default {
     },
     temperatures: {
       nozzle: 'Bico',
+      // The H3C's nozzle on the toolhead, by its rack position (#3442).
+      mounted: 'Bico {{n}}',
       bed: 'Cama',
       chamber: 'Câmara',
     },
@@ -379,10 +381,15 @@ export default {
       summary: '{{live}} ao vivo, {{snap}} fotos, {{total}} no total',
       layer: 'Camada {{cur}}/{{total}}',
       timeLeft: 'faltam {{time}}',
+      eta: 'termina {{time}}',
       statusMode: {
         off: 'Desligado',
         compact: 'Compacto',
         full: 'Completo',
+      },
+      controlsMode: {
+        hover: 'Ao passar o mouse',
+        always: 'Sempre',
       },
       settings: {
         title: 'Configurações do mural de câmeras',
@@ -391,7 +398,9 @@ export default {
         snapshotInterval: 'Intervalo de foto (segundos)',
         snapshotIntervalHint: 'Com que frequência os blocos não ao vivo buscam uma nova foto.',
         statusOverlay: 'Sobreposição de status',
-        statusOverlayHint: 'Compacto: apenas o selo de status. Completo: + progresso, camada e tempo restante.',
+        statusOverlayHint: 'Compacto: apenas o selo de status. Completo: + progresso, camada, tempo restante, horário de término e temperaturas.',
+        controls: 'Controles do bloco',
+        controlsHint: 'Pausar, parar e luz da câmara em cada bloco: ao passar o mouse ou sempre. Telas sensíveis ao toque sempre os mostram.',
       },
     },
     // Controls
@@ -414,6 +423,7 @@ export default {
     // Printer card
     readyToPrint: 'Pronto para imprimir',
     external: 'Externo',
+    externalInputsEmpty: 'As {{count}} entradas externas estão vazias',
     ext: 'Externo',
     extL: 'Ext-L',
     extR: 'Ext-R',
@@ -490,6 +500,7 @@ export default {
     activeNozzle: 'Ativo: {{nozzle}} bico',
     amsSwitchInletTooltip: 'Comutador de trajeto de filamento IN-{{inlet}} ({{side}}) — alimenta os dois bicos',
     nozzleRack: 'Suporte de bicos',
+    nozzleRackMounted: 'Na cabeça de impressão',
     nozzleDocked: 'Acoplado',
     nozzleMounted: 'Montado',
     nozzleActive: 'Ativo',
@@ -499,6 +510,7 @@ export default {
     nozzleStatus: 'Status',
     nozzleFilament: 'Filamento',
     nozzleWear: 'Desgaste',
+    nozzlePrintTime: 'Tempo de impressão',
     nozzleMaxTemp: 'Temp Máx',
     nozzleSerial: 'Número de série',
     nozzleHardenedSteel: 'Aço Endurecido',
@@ -563,6 +575,7 @@ export default {
       rfidRereadInitiated: 'Releitura de RFID iniciada',
       loadInitiated: 'Carregando filamento…',
       unloadInitiated: 'Descarregando filamento…',
+      unloadAms3h: 'Descarregando o slot {{n}}. Quando a impressora pedir, puxe o filamento de volta do AMS 3H com a mão.',
       failedToLoad: 'Falha ao carregar filamento',
       failedToUnload: 'Falha ao descarregar filamento',
     },
@@ -769,6 +782,7 @@ export default {
       screenOnly: 'Nesta impressora, a secagem do AMS só pode ser controlada pela tela da própria impressora (limitação da Bambu)',
       stoppingDrying: 'Parando secagem...',
       rotateTray: 'Girar o carretel durante a secagem',
+      ams3hDryerSlots: 'O AMS 3H seca apenas os slots {{a}} e {{b}}',
       rotateUnavailableReason: 'Indisponível — um slot deste AMS está carregado em direção ao cabeçote. O carretel está travado pelo tubo de alimentação e não pode girar. Retraia o filamento primeiro.',
       startMode: 'Horário de início',
       modeNow: 'Agora',
@@ -2022,6 +2036,14 @@ export default {
   },
 
   // Settings page
+  wled: {
+    connectionSection: 'Conexão', mappingSection: 'Mapeamento de status', testConnection: 'Testar conexão', notTested: 'Não testado', connected: 'Conectado ao WLED{{name}}{{version}}', notReachable: 'Não foi possível conectar ao WLED.', testPreset: 'Testar', presetTested: 'Predefinição ativada', presetTestFailed: 'Não foi possível ativar a predefinição', mappingSummary: 'Estados configurados: {{configured}} · Estados desativados: {{disabled}}',
+    title: 'WLED', description: 'Cores, efeitos e predefinições são gerenciados diretamente no WLED. O Bambuddy apenas associa estados da impressora a predefinições existentes.',
+    printer: 'Impressora', enabled: 'Ativar integração WLED', baseUrl: 'URL do WLED', loadPresets: 'Carregar predefinições', online: '{{count}} predefinições carregadas', offlineHint: 'WLED indisponível. Os IDs salvos serão mantidos.', noPrinters: 'Nenhuma impressora configurada.', noPreset: 'Desativado — sem predefinição', savedUnavailable: 'Predefinição {{id}} salva — indisponível', finishedTimeout: 'Tempo após conclusão (segundos)', finishedTimeoutHint: 'Depois muda da predefinição Concluída para Ociosa. 0 desativa.', saved: 'Configurações WLED salvas', saveError: 'Não foi possível salvar as configurações WLED',
+    presetSegmentHint: 'Selecione o segmento de destino ao criar a predefinição no WLED e ative “Checked segments only”. Durante a execução, o Bambuddy ativa apenas a predefinição configurada.',
+    status: { idle: 'Ociosa', prepare: 'Preparando', printing: 'Imprimindo', paused: 'Pausada', finished: 'Concluída', error: 'Falha / Erro', queue_waiting: 'Aguardando liberar a mesa', filament_problem: 'Problema de filamento', hms_error: 'Erro HMS', offline: 'Offline' },
+  },
+
   settings: {
     sliceEngine: 'Motor de fatiamento',
     sliceEngineSidecar: 'Sidecar do servidor',
@@ -2042,6 +2064,7 @@ export default {
       filament: 'Filamento',
       camera: 'Câmera',
       network: 'Rede',
+      wled: 'WLED',
       apiKeys: 'Chaves API',
       virtualPrinter: 'Impressora Virtual',
       failureDetection: 'Detecção de Falhas',
@@ -2835,7 +2858,7 @@ export default {
     tabDisplayPercentage: 'Porcentagem',
     tabDisplayTime: 'Tempo restante',
     autoArchivePrints: 'Arquivar impressões automaticamente',
-    autoArchiveDescription: 'Salvar automaticamente arquivos 3MF quando impressões forem concluídas. Desativado: nenhuma impressora arquiva impressões iniciadas fora do Bambuddy.',
+    autoArchiveDescription: 'Arquivar impressões iniciadas fora do Bambuddy (pelo fatiador ou pela impressora): arquivo 3MF, histórico, estatísticas e custo. Desativado: essas impressões ficam fora do arquivo e das estatísticas; o estoque de carretéis continua contando o filamento delas.',
     captureFinishPhotoDescription: 'Tirar foto da câmera da impressora quando a impressão for concluída. Bambuddy grava um timelapse curto durante a impressão para que a foto possa ser obtida do momento antes da mesa descer; o arquivo do timelapse é mantido se você habilitou o timelapse para esta impressão, caso contrário ele é excluído automaticamente após a captura da foto.',
     finishPhotoRestorePlate: 'Elevar a mesa para a foto final',
     finishPhotoRestorePlateDescription: 'A impressora baixa a mesa cerca de 100 mm ao fim de uma impressão, deixando a peça pronta abaixo do enquadramento da câmera. O Bambuddy a eleva novamente até logo acima da última camada impressa, tira a foto e depois a baixa de novo. Ignorado quando a altura da impressão é desconhecida ou há outro trabalho na fila.',
@@ -4214,8 +4237,8 @@ export default {
       groupAction: 'Agrupar como versões',
       groupTooltip: 'Marcar estes arquivos como o mesmo trabalho fatiado para impressoras diferentes',
       grouped: '{{count}} arquivos agrupados como versões',
-      printAlternatives: 'Imprimir ({{count}} alternativas)',
     },
+    printFiles: 'Imprimir ({{count}} arquivos)',
     title: 'Gerenciador de Arquivos',
     subtitle: 'Organize e gerencie seus arquivos de impressão',
     uploadFiles: 'Enviar Arquivos',
@@ -5306,6 +5329,13 @@ export default {
       deleteTitle: 'Excluir perfil padrão',
       deleteMessage: 'Excluir o perfil padrão de {{product}}? Carretéis que já têm os perfis os mantêm.',
       deleteFailed: 'Não foi possível excluir o perfil padrão',
+      search: 'Buscar por produto, cor ou perfil',
+      noMatch: 'Nenhum padrão de perfil corresponde',
+      presetsCount: 'Perfis de impressora: {{count}}',
+      kProfilesCount: 'Perfis K: {{count}}',
+      applyAll: 'Aplicar todos',
+      applyAllHelp: 'Preenche o que falta nos carretéis ativos com todos os padrões de perfil. Nada do que eles já têm é alterado.',
+      applyAllFailed: 'Não foi possível aplicar {{failed}} padrões de perfil; preenchido em {{updated}} carretéis',
     },
     suppliers: {
       label: 'Fornecedores',
@@ -5638,6 +5668,18 @@ export default {
 
   // Print modal
   printModal: {
+    multiFile: {
+      groupLabel: 'O que os arquivos selecionados se tornam',
+      alternatives: 'Alternativas',
+      separate: 'Trabalhos separados',
+      alternativesHint: 'Um único trabalho. A primeira impressora compatível que ficar livre imprime o seu arquivo.',
+      separateHint: 'Um item de fila por arquivo, adicionado na ordem abaixo. As opções valem para todos os itens.',
+      alternativesBlocked: 'Mais de um arquivo está fatiado para {{model}}. As alternativas exigem um modelo de impressora diferente para cada arquivo.',
+      orderTitle: 'Ordem da fila',
+      incompatible: 'Não pode ser enviado para impressoras {{model}}: {{files}}',
+      notSlicedFor: 'Não fatiado para {{model}}: {{files}}',
+      failed: 'Não adicionado à fila: {{filename}} ({{message}}). Adicionados antes: {{queued}}.',
+    },
     variants: {
       editNote: 'Estas alternativas foram definidas ao enfileirar o trabalho. Cancele e enfileire de novo para alterá-las.',
       title: 'Alternativas de impressora',
@@ -6905,7 +6947,7 @@ export default {
     amsTemperatureHigh: 'Temperatura Alta do AMS',
     amsTemperatureHighDescription: 'Temperatura do AMS regular excede o limite',
     amsDryingSuspendedTitle: 'Secagem automática suspensa',
-    amsDryingSuspendedDescription: 'A secagem automática desistiu de uma unidade AMS porque a umidade nunca ficou abaixo do limite',
+    amsDryingSuspendedDescription: 'A secagem automática desistiu de uma unidade AMS: a umidade nunca ficou abaixo do limite ou a unidade nunca começou a aquecer',
     amsHtHumidityHigh: 'Umidade Alta do AMS-HT',
     amsHtHumidityHighDescription: 'Umidade do AMS-HT excede o limite',
     amsHtTemperatureHigh: 'Temperatura Alta do AMS-HT',
@@ -7660,6 +7702,8 @@ export default {
       testReadTag: 'Ler tag',
     },
     writeTag: {
+      writeWith: 'Gravar com',
+      deviceOfflineOption: '{{name}} (dispositivo offline)',
       tabExisting: 'Bobina existente',
       tabNew: 'Nova bobina',
       tabReplace: 'Substituir tag',
@@ -7750,7 +7794,7 @@ export default {
         pass: 'A impressora informa que esta opção está ligada — os arquivos enviados serão armazenados no cartão SD e os arquivos terão miniaturas e metadados do fatiador.',
         fail: 'A impressora informa que esta opção está desligada. Ative "Armazenar arquivos enviados no armazenamento externo" — em firmwares recentes (P2S 01.02 / Bambu Studio 2.6+) o interruptor fica nas Configurações de Impressão da impressora; em versões mais antigas, está na aba Dispositivo do Bambu Studio / OrcaSlicer. Sem essa opção, cada impressão arquivada fica sem miniatura nem metadados do fatiador.',
         skip: 'Não verificado — é necessária uma conexão MQTT ativa. Em fatiadores mais antigos onde essa configuração existe apenas no fatiador, a impressora não a reporta, então esta verificação passa mesmo com a opção desligada — verifique o passo 4 da instalação manualmente.',
-        skip_unsupported_model: 'Este modelo tem slot SD mas nenhuma forma de ativar a opção — o firmware atual da série P1 não mostra o botão no Bambu Studio e a impressora não tem tela. Não há nada a corrigir aqui; as impressões arquivadas podem ficar sem miniaturas e metadados do fatiador até que a Bambu Lab adicione suporte por firmware.',
+        skip_unsupported_model: 'Este modelo não permite ativar a opção: com o firmware atual, nem a impressora nem o Bambu Studio a oferecem. Não há nada a corrigir aqui; impressões arquivadas podem ficar sem miniaturas e metadados do fatiador até que a Bambu Lab a adicione.',
         fail_no_media: 'A opção está ligada, mas a impressora não detecta cartão nem pendrive no slot, então os arquivos enviados não têm para onde ir. Insira um e imprima novamente — até lá, toda impressão arquivada ficará sem miniatura e sem metadados do fatiador.',
         warn_internal_storage: 'A opção está ligada e há armazenamento presente, mas a última impressão ainda assim foi para o armazenamento interno da impressora, que o Bambuddy não consegue ler. Na série H2, na P2S e na X2D o botão «Imprimir» do Bambu Studio sempre envia para lá, independentemente desta opção. As impressões são arquivadas com nome e tempos, mas sem miniatura nem metadados do fatiador. Para arquivos completos, inicie as impressões pelo Bambuddy ou fatie no OrcaSlicer, ou então no Bambu Studio use «Enviar» com «Externo» e inicie a impressão depois.',
         warn_internal_history: 'A opção está ligada e há armazenamento, mas a última impressão saiu de um arquivo que já estava na impressora: uma reimpressão pela tela dela, um início pelo Handy ou um arquivo enviado antes. Essa biblioteca fica no armazenamento interno, que o Bambuddy não consegue ler, e nenhuma opção muda isso, porque nada foi enviado para essa impressão. Ela continua arquivada com nome e tempos, mas sem miniatura nem metadados do fatiador. Para arquivos completos, inicie as impressões pelo Bambuddy ou envie-as pelo fatiador.',

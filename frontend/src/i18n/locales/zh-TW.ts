@@ -316,6 +316,8 @@ export default {
     },
     temperatures: {
       nozzle: '噴嘴',
+      // The H3C's nozzle on the toolhead, by its rack position (#3442).
+      mounted: '噴嘴 {{n}}',
       bed: '熱床',
       chamber: '腔室',
     },
@@ -379,10 +381,15 @@ export default {
       summary: '直播 {{live}} 個，快照 {{snap}} 個，共 {{total}} 個',
       layer: '第 {{cur}}/{{total}} 層',
       timeLeft: '剩餘 {{time}}',
+      eta: '預計完成 {{time}}',
       statusMode: {
         off: '關閉',
         compact: '精簡',
         full: '完整',
+      },
+      controlsMode: {
+        hover: '懸停時',
+        always: '一律',
       },
       settings: {
         title: '攝影機牆設定',
@@ -391,7 +398,9 @@ export default {
         snapshotInterval: '快照重新整理間隔（秒）',
         snapshotIntervalHint: '非直播畫面取得新快照的頻率。',
         statusOverlay: '狀態疊加',
-        statusOverlayHint: '精簡：僅顯示狀態標籤。完整：加上進度、層數、剩餘時間。',
+        statusOverlayHint: '精簡：僅顯示狀態標籤。完整：加上進度、層數、剩餘時間、預計完成時間、溫度。',
+        controls: '圖塊控制',
+        controlsHint: '每個圖塊上的暫停、停止和腔體燈：懸停時顯示或一律顯示。觸控螢幕一律顯示。',
       },
     },
     // Controls
@@ -414,6 +423,7 @@ export default {
     // Printer card
     readyToPrint: '準備列印',
     external: '外部',
+    externalInputsEmpty: '{{count}} 個外部輸入皆為空',
     ext: '外接',
     extL: '外接左',
     extR: '外接右',
@@ -490,6 +500,7 @@ export default {
     activeNozzle: '目前：{{nozzle}} 噴嘴',
     amsSwitchInletTooltip: '耗材變軌器 IN-{{inlet}}（{{side}}）— 可向兩個噴嘴供料',
     nozzleRack: '噴嘴架',
+    nozzleRackMounted: '在工具頭上',
     nozzleDocked: '已停靠',
     nozzleMounted: '已安裝',
     nozzleActive: '使用中',
@@ -499,6 +510,7 @@ export default {
     nozzleStatus: '狀態',
     nozzleFilament: '耗材',
     nozzleWear: '磨損',
+    nozzlePrintTime: '列印時長',
     nozzleMaxTemp: '最高溫度',
     nozzleSerial: '序列號',
     nozzleHardenedSteel: '硬化鋼',
@@ -563,6 +575,7 @@ export default {
       rfidRereadInitiated: '已發起 RFID 重新讀取',
       loadInitiated: '載入耗材中…',
       unloadInitiated: '卸載耗材中…',
+      unloadAms3h: '正在退出槽位 {{n}} 的線材。印表機提示時，請手動將線材從 AMS 3H 拉出。',
       failedToLoad: '載入耗材失敗',
       failedToUnload: '卸載耗材失敗',
     },
@@ -769,6 +782,7 @@ export default {
       screenOnly: '此印表機的 AMS 乾燥只能在印表機本身的螢幕上操作（Bambu 的限制）',
       stoppingDrying: '正在停止乾燥...',
       rotateTray: '乾燥時旋轉料盤',
+      ams3hDryerSlots: 'AMS 3H 僅烘乾槽位 {{a}} 和 {{b}}',
       rotateUnavailableReason: '無法使用 — 此 AMS 中有插槽已裝入列印頭。料盤被進料管固定，無法旋轉。請先退回耗材。',
       startMode: '開始時間',
       modeNow: '立即',
@@ -2022,6 +2036,14 @@ export default {
   },
 
   // Settings page
+  wled: {
+    connectionSection: '連線', mappingSection: '狀態對應', testConnection: '測試連線', notTested: '尚未測試', connected: '已連線至 WLED{{name}}{{version}}', notReachable: '無法連線至 WLED。', testPreset: '測試', presetTested: '預設已啟用', presetTestFailed: '無法啟用預設', mappingSummary: '已設定狀態: {{configured}} · 已停用狀態: {{disabled}}',
+    title: 'WLED', description: '顏色、效果與預設均直接在 WLED 中管理。Bambuddy 僅將印表機狀態對應至現有預設。',
+    printer: '印表機', enabled: '啟用 WLED 整合', baseUrl: 'WLED 網址', loadPresets: '載入預設', online: '已載入 {{count}} 個預設', offlineHint: 'WLED 無法使用。已儲存的預設 ID 將保留。', noPrinters: '尚未設定印表機。', noPreset: '已停用 — 無預設', savedUnavailable: '已儲存預設 {{id}} — 目前無法使用', finishedTimeout: '完成逾時（秒）', finishedTimeoutHint: '時間到後由完成預設切換至閒置預設。設為 0 可停用。', saved: 'WLED 設定已儲存', saveError: '無法儲存 WLED 設定',
+    presetSegmentHint: '在 WLED 中建立預設時選擇目標區段，並啟用「Checked segments only」。執行期間，Bambuddy 只會啟用已設定的預設。',
+    status: { idle: '閒置', prepare: '準備中', printing: '列印中', paused: '已暫停', finished: '已完成', error: '失敗 / 錯誤', queue_waiting: '等待清空列印板', filament_problem: '耗材問題', hms_error: 'HMS 錯誤', offline: '離線' },
+  },
+
   settings: {
     sliceEngine: '切片引擎',
     sliceEngineSidecar: '伺服器 sidecar',
@@ -2042,6 +2064,7 @@ export default {
       filament: '耗材',
       camera: '攝影機',
       network: '網路',
+      wled: 'WLED',
       apiKeys: 'API 金鑰',
       virtualPrinter: '虛擬印表機',
       spoolbuddy: 'SpoolBuddy',
@@ -2880,7 +2903,7 @@ export default {
     tabDisplayPercentage: '百分比',
     tabDisplayTime: '剩餘時間',
     autoArchivePrints: '自動歸檔列印',
-    autoArchiveDescription: '列印完成時自動儲存3MF檔案。關閉時，所有印表機都不會歸檔在 Bambuddy 之外啟動的列印。',
+    autoArchiveDescription: '歸檔在 Bambuddy 之外（從切片軟體或印表機）啟動的列印：3MF 檔案、列印歷史、統計和成本。關閉時，這些列印不會出現在歸檔和統計中；線材庫存仍會計入其線材用量。',
     captureFinishPhotoDescription: '列印完成時從印表機攝影機拍照。Bambuddy 會在列印期間錄製一段短縮時攝影，以便從熱床下降前的瞬間取得照片；如果您為本次列印啟用了縮時攝影，檔案將保留，否則會在拍照完成後自動刪除。',
     finishPhotoRestorePlate: '為完成照片抬升熱床',
     finishPhotoRestorePlateDescription: '列印結束時印表機會將熱床下降約 100 mm，使完成的模型落在相機取景範圍之下。Bambuddy 會將熱床抬回到最後一層列印高度略上方，拍攝照片後再次下降。若列印高度未知或佇列中還有其他任務，則跳過此步驟。',
@@ -4214,8 +4237,8 @@ export default {
       groupAction: '歸為版本群組',
       groupTooltip: '將這些檔案標記為針對不同印表機切片的同一工作',
       grouped: '已將 {{count}} 個檔案歸為版本群組',
-      printAlternatives: '列印（{{count}} 個備選）',
     },
+    printFiles: '列印（{{count}} 個檔案）',
     title: '檔案管理器',
     subtitle: '組織和管理您的列印檔案',
     uploadFiles: '上傳檔案',
@@ -5306,6 +5329,13 @@ export default {
       deleteTitle: '刪除設定檔預設值',
       deleteMessage: '刪除 {{product}} 的設定檔預設值?已有其設定檔的料盤會保留它們。',
       deleteFailed: '無法刪除設定檔預設值',
+      search: '依產品、顏色或預設搜尋',
+      noMatch: '沒有符合的設定檔預設值',
+      presetsCount: '印表機預設：{{count}}',
+      kProfilesCount: 'K 設定檔：{{count}}',
+      applyAll: '全部套用',
+      applyAllHelp: '以所有設定檔預設值為使用中的料盤填入尚未設定的項目。已有的內容不會變更。',
+      applyAllFailed: '{{failed}} 個設定檔預設值無法套用；已為 {{updated}} 個料盤填入',
     },
     suppliers: {
       label: '供應商',
@@ -5638,6 +5668,18 @@ export default {
 
   // Print modal
   printModal: {
+    multiFile: {
+      groupLabel: '所選檔案的處理方式',
+      alternatives: '備選',
+      separate: '獨立工作',
+      alternativesHint: '一項工作。第一台空閒且相符的印表機會列印它對應的檔案。',
+      separateHint: '每個檔案一個佇列項目，依下方順序加入。選項適用於每個項目。',
+      alternativesBlocked: '有多個檔案是為 {{model}} 切片的。備選要求每個檔案對應不同的印表機型號。',
+      orderTitle: '佇列順序',
+      incompatible: '無法傳送到 {{model}} 印表機：{{files}}',
+      notSlicedFor: '未為 {{model}} 切片：{{files}}',
+      failed: '未加入佇列：{{filename}}（{{message}}）。此前已加入：{{queued}}。',
+    },
     variants: {
       editNote: '這些備選在工作加入佇列時確定。如需變更，請取消後重新加入佇列。',
       title: '印表機備選',
@@ -6904,7 +6946,7 @@ export default {
     amsTemperatureHigh: 'AMS 溫度過高',
     amsTemperatureHighDescription: '普通 AMS 溫度超過閾值',
     amsDryingSuspendedTitle: '自動乾燥已暫停',
-    amsDryingSuspendedDescription: '濕度始終未降到閾值以下，已放棄對某個 AMS 單元的自動乾燥',
+    amsDryingSuspendedDescription: '已放棄對某個 AMS 單元的自動乾燥：濕度始終未降到閾值以下，或該單元從未開始加熱',
     amsHtHumidityHigh: 'AMS-HT 濕度過高',
     amsHtHumidityHighDescription: 'AMS-HT 濕度超過閾值',
     amsHtTemperatureHigh: 'AMS-HT 溫度過高',
@@ -7658,6 +7700,8 @@ export default {
       includeBeta: '包含測試版本',
     },
     writeTag: {
+      writeWith: '寫入裝置',
+      deviceOfflineOption: '{{name}}（離線）',
       tabExisting: '現有耗材',
       tabNew: '新耗材',
       tabReplace: '替換標籤',
@@ -7748,7 +7792,7 @@ export default {
         pass: '印表機回報此選項已開啟 — 傳送的檔案將儲存在 SD 卡上，封存將包含縮圖和切片機中繼資料。',
         fail: '印表機回報此選項已關閉。請啟用「將傳送的檔案儲存在外部儲存中」 — 在較新韌體 (P2S 01.02 / Bambu Studio 2.6+) 中，開關位於印表機的列印設定中；在較舊版本中位於 Bambu Studio / OrcaSlicer 的裝置分頁中。如果未啟用此選項，每次封存的列印都將沒有縮圖也沒有切片機中繼資料。',
         skip: '未檢查 — 需要有效的 MQTT 連線。在該設定僅存在於切片機中的較舊切片機上，印表機不會回報此設定，因此即使選項已關閉，此檢查也會通過 — 請手動驗證安裝步驟 4。',
-        skip_unsupported_model: '此型號有 SD 卡槽，但無法開啟該選項 — 目前 P1 系列韌體不會在 Bambu Studio 中顯示此開關，且印表機沒有螢幕。這裡無需修復；在 Bambu Lab 透過韌體加入支援之前，封存的列印可能缺少縮圖和切片中繼資料。',
+        skip_unsupported_model: '此型號無法開啟該選項：在目前韌體中，印表機和 Bambu Studio 都不提供此選項。這裡無需修復；在 Bambu Lab 新增之前，存檔的列印可能缺少縮圖和切片中繼資料。',
         fail_no_media: '該選項已開啟，但印表機的插槽中未偵測到記憶卡或隨身碟，傳送的檔案無處存放。插入一個再列印一次 — 在此之前，每一次歸檔的列印都會缺少縮圖與切片中繼資料。',
         warn_internal_storage: '該選項已開啟且儲存媒體在位，但上一次列印仍進入了 Bambuddy 無法讀取的印表機內部儲存。在 H2 系列、P2S 與 X2D 上，無論此選項如何設定，Bambu Studio 的「列印」按鈕總是傳送到那裡。列印會帶著名稱與時間歸檔，但沒有縮圖與切片中繼資料。要取得完整歸檔，請從 Bambuddy 啟動列印、改用 OrcaSlicer 切片，或在 Bambu Studio 中用「傳送」選擇「外部儲存」後再啟動列印。',
         warn_internal_history: '該選項已開啟，儲存媒體也在，但最近一次列印來自印表機裡既有的檔案 — 從它的螢幕重新列印、從 Handy 啟動，或是先前傳送過的檔案。這個檔案庫位於 Bambuddy 讀不到的內部儲存中，而且任何設定都改變不了，因為那次列印根本沒有傳送過檔案。它仍會帶著名稱與時間歸檔，但沒有縮圖與切片中繼資料。要獲得完整歸檔，請從 Bambuddy 啟動列印，或從切片軟體傳送。',

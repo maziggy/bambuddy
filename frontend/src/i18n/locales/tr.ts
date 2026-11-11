@@ -316,6 +316,8 @@ export default {
     },
     temperatures: {
       nozzle: 'Nozul',
+      // The H3C's nozzle on the toolhead, by its rack position (#3442).
+      mounted: 'Nozul {{n}}',
       bed: 'Tabla',
       chamber: 'Hazne',
     },
@@ -379,10 +381,15 @@ export default {
       summary: '{{live}} canlı, {{snap}} fotoğraf, toplam {{total}}',
       layer: 'Katman {{cur}}/{{total}}',
       timeLeft: '{{time}} kaldı',
+      eta: 'bitiş {{time}}',
       statusMode: {
         off: 'Kapalı',
         compact: 'Sade',
         full: 'Tam',
+      },
+      controlsMode: {
+        hover: 'Üzerine gelince',
+        always: 'Her zaman',
       },
       settings: {
         title: 'Kamera duvarı ayarları',
@@ -391,7 +398,9 @@ export default {
         snapshotInterval: 'Foto aralığı (saniye)',
         snapshotIntervalHint: 'Canlı olmayan döşemelerin ne sıklıkla yeni bir foto aldığı.',
         statusOverlay: 'Durum kaplaması',
-        statusOverlayHint: 'Sade: yalnızca durum rozeti. Tam: + ilerleme, katman, kalan süre.',
+        statusOverlayHint: 'Sade: yalnızca durum rozeti. Tam: + ilerleme, katman, kalan süre, bitiş saati, sıcaklıklar.',
+        controls: 'Kutucuk denetimleri',
+        controlsHint: 'Her kutucukta duraklat, durdur ve hazne ışığı: üzerine gelince veya her zaman. Dokunmatik ekranlar bunları her zaman gösterir.',
       },
     },
     // Kontroller
@@ -414,6 +423,7 @@ export default {
     // Yazıcı kartı
     readyToPrint: 'Baskıya hazır',
     external: 'Harici',
+    externalInputsEmpty: '{{count}} harici girişin tümü boş',
     ext: 'Harici',
     extL: 'Ext-L',
     extR: 'Ext-R',
@@ -490,6 +500,7 @@ export default {
     activeNozzle: 'Aktif: {{nozzle}} nozul',
     amsSwitchInletTooltip: 'Filament Hattı Değiştirici IN-{{inlet}} ({{side}}) — her iki nozulu besler',
     nozzleRack: 'Nozul Rafı',
+    nozzleRackMounted: 'Takım kafasında',
     nozzleDocked: 'Yuvalanmış',
     nozzleMounted: 'Takılı',
     nozzleActive: 'Aktif',
@@ -499,6 +510,7 @@ export default {
     nozzleStatus: 'Durum',
     nozzleFilament: 'Filament',
     nozzleWear: 'Aşınma',
+    nozzlePrintTime: 'Baskı süresi',
     nozzleMaxTemp: 'Maks. Sıcaklık',
     nozzleSerial: 'Seri',
     nozzleHardenedSteel: 'Sertleştirilmiş Çelik',
@@ -563,6 +575,7 @@ export default {
       rfidRereadInitiated: 'RFID yeniden okuma başlatıldı',
       loadInitiated: 'Filament yükleniyor…',
       unloadInitiated: 'Filament çıkarılıyor…',
+      unloadAms3h: '{{n}} numaralı yuva boşaltılıyor. Yazıcı istediğinde filamenti AMS 3H\'ten elle geri çekin.',
       failedToLoad: 'Filament yüklenemedi',
       failedToUnload: 'Filament çıkarılamadı',
     },
@@ -769,6 +782,7 @@ export default {
       screenOnly: 'Bu yazıcıda AMS kurutma yalnızca yazıcının kendi ekranından kontrol edilebilir (Bambu kısıtlaması)',
       stoppingDrying: 'Kurutma durduruluyor...',
       rotateTray: 'Kurutma sırasında makarayı döndür',
+      ams3hDryerSlots: 'AMS 3H yalnızca {{a}} ve {{b}} numaralı yuvaları kurutur',
       rotateUnavailableReason: 'Kullanılamaz — bu AMS\'nin bir yuvası kafaya doğru yüklenmiş durumda. Makara besleme borusu tarafından kilitlendiği için döndürülemez. Önce filamenti geri çekin.',
       startMode: 'Başlangıç zamanı',
       modeNow: 'Şimdi',
@@ -2024,6 +2038,14 @@ export default {
   },
 
   // Ayarlar sayfası
+  wled: {
+    connectionSection: 'Bağlantı', mappingSection: 'Durum eşleme', testConnection: 'Bağlantıyı test et', notTested: 'Test edilmedi', connected: 'WLED\'e bağlandı{{name}}{{version}}', notReachable: 'WLED\'e bağlanılamıyor.', testPreset: 'Test', presetTested: 'Ön ayar etkinleştirildi', presetTestFailed: 'Ön ayar etkinleştirilemedi', mappingSummary: 'Yapılandırılmış durumlar: {{configured}} · Devre dışı durumlar: {{disabled}}',
+    title: 'WLED', description: 'Renkler, efektler ve ön ayarlar doğrudan WLED içinde yönetilir. Bambuddy yalnızca yazıcı durumlarını mevcut ön ayarlarla eşleştirir.',
+    printer: 'Yazıcı', enabled: 'WLED entegrasyonunu etkinleştir', baseUrl: 'WLED URL’si', loadPresets: 'Ön ayarları yükle', online: '{{count}} ön ayar yüklendi', offlineHint: 'WLED kullanılamıyor. Kayıtlı ön ayar kimlikleri korunur.', noPrinters: 'Yapılandırılmış yazıcı yok.', noPreset: 'Devre dışı — ön ayar yok', savedUnavailable: 'Kayıtlı ön ayar {{id}} — kullanılamıyor', finishedTimeout: 'Bitiş zaman aşımı (saniye)', finishedTimeoutHint: 'Bu süreden sonra Bitti ön ayarından Boşta ön ayarına geçer. 0 devre dışı bırakır.', saved: 'WLED ayarları kaydedildi', saveError: 'WLED ayarları kaydedilemedi',
+    presetSegmentHint: 'Ön ayarı WLED içinde oluştururken hedef segmenti seçin ve “Checked segments only” seçeneğini etkinleştirin. Çalışma sırasında Bambuddy yalnızca yapılandırılmış ön ayarı etkinleştirir.',
+    status: { idle: 'Boşta', prepare: 'Hazırlanıyor', printing: 'Yazdırılıyor', paused: 'Duraklatıldı', finished: 'Bitti', error: 'Başarısız / Hata', queue_waiting: 'Tablanın boşaltılması bekleniyor', filament_problem: 'Filament sorunu', hms_error: 'HMS hatası', offline: 'Çevrimdışı' },
+  },
+
   settings: {
     sliceEngine: 'Dilimleme motoru',
     sliceEngineSidecar: 'Sunucu sidecar',
@@ -2044,6 +2066,7 @@ export default {
       filament: 'Filament',
       camera: 'Kamera',
       network: 'Ağ',
+      wled: 'WLED',
       apiKeys: 'API Anahtarları',
       virtualPrinter: 'Sanal Yazıcı',
       spoolbuddy: 'SpoolBuddy',
@@ -2886,7 +2909,7 @@ export default {
     tabDisplayTime: 'Kalan süre',
     // Arşiv
     autoArchivePrints: 'Baskıları otomatik arşivle',
-    autoArchiveDescription: 'Baskılar tamamlandığında 3MF dosyalarını otomatik olarak kaydet. Kapalıyken hiçbir yazıcı Bambuddy dışında başlatılan baskıları arşivlemez.',
+    autoArchiveDescription: 'Bambuddy dışında (dilimleyiciden veya yazıcıdan) başlatılan baskıları arşivle: 3MF dosyası, baskı geçmişi, istatistikler ve maliyet. Kapalıyken bu baskılar arşivde ve istatistiklerde yer almaz; makara envanteri filamentlerini yine sayar.',
     captureFinishPhotoDescription: 'Baskı tamamlandığında yazıcı kamerasından bir fotoğraf çek. Bambuddy, baskı sırasında kısa bir zaman atlamalı kayıt yapar, böylece fotoğraf tabla inmeden önceki andan alınabilir. Bu baskı için zaman atlamalı kaydı etkinleştirdiyseniz dosya saklanır, aksi takdirde fotoğraf çekildikten sonra otomatik olarak silinir.',
     finishPhotoRestorePlate: 'Bitiş fotoğrafı için tablayı yükselt',
     finishPhotoRestorePlateDescription: 'Yazıcı, baskı bittiğinde tablayı yaklaşık 100 mm aşağı indirir ve tamamlanmış baskı kameranın çerçevesinin altında kalır. Bambuddy tablayı son basılan katmanın hemen üzerine geri kaldırır, fotoğrafı çeker ve ardından tekrar indirir. Baskı yüksekliği bilinmiyorsa veya kuyrukta başka bir iş varsa atlanır.',
@@ -4222,8 +4245,8 @@ export default {
       groupAction: 'Sürüm olarak grupla',
       groupTooltip: 'Bu dosyaları farklı yazıcılar için dilimlenmiş aynı iş olarak işaretle',
       grouped: '{{count}} dosya sürüm olarak gruplandı',
-      printAlternatives: 'Yazdır ({{count}} alternatif)',
     },
+    printFiles: 'Yazdır ({{count}} dosya)',
     title: 'Dosya Yöneticisi',
     subtitle: 'Baskı dosyalarınızı organize edin ve yönetin',
     uploadFiles: 'Dosya Yükle',
@@ -5307,6 +5330,13 @@ export default {
       deleteTitle: 'Profil varsayılanını sil',
       deleteMessage: '{{product}} için profil varsayılanı silinsin mi? Profillerine zaten sahip makaralar onları korur.',
       deleteFailed: 'Profil varsayılanı silinemedi',
+      search: 'Ürün, renk veya profile göre ara',
+      noMatch: 'Eşleşen profil varsayılanı yok',
+      presetsCount: 'Yazıcı profilleri: {{count}}',
+      kProfilesCount: 'K profilleri: {{count}}',
+      applyAll: 'Tümünü uygula',
+      applyAllHelp: 'Tüm profil varsayılanlarından etkin makaralarda eksik olanları doldurur. Zaten olanlar değiştirilmez.',
+      applyAllFailed: '{{failed}} profil varsayılanı uygulanamadı; {{updated}} makarada dolduruldu',
     },
     suppliers: {
       label: 'Tedarikçiler',
@@ -5628,6 +5658,18 @@ export default {
 
   // Baskı modali
   printModal: {
+    multiFile: {
+      groupLabel: 'Seçilen dosyalar neye dönüşür',
+      alternatives: 'Alternatifler',
+      separate: 'Ayrı işler',
+      alternativesHint: 'Tek iş. Boşa çıkan ilk uygun yazıcı kendi dosyasını yazdırır.',
+      separateHint: 'Dosya başına bir kuyruk öğesi, aşağıdaki sırayla eklenir. Seçenekler her öğeye uygulanır.',
+      alternativesBlocked: '{{model}} için birden fazla dosya dilimlenmiş. Alternatifler için her dosyada farklı bir yazıcı modeli gerekir.',
+      orderTitle: 'Kuyruk sırası',
+      incompatible: '{{model}} yazıcılarına gönderilemez: {{files}}',
+      notSlicedFor: '{{model}} için dilimlenmemiş: {{files}}',
+      failed: 'Kuyruğa eklenmedi: {{filename}} ({{message}}). Önce eklenenler: {{queued}}.',
+    },
     variants: {
       editNote: 'Bu alternatifler iş kuyruğa alınırken belirlendi. Değiştirmek için iptal edip yeniden kuyruğa alın.',
       title: 'Yazıcı alternatifleri',
@@ -6874,7 +6916,7 @@ export default {
     amsTemperatureHigh: 'AMS Sıcaklığı Yüksek',
     amsTemperatureHighDescription: 'Normal AMS sıcaklığı eşiği aşıyor',
     amsDryingSuspendedTitle: 'Otomatik kurutma askıya alındı',
-    amsDryingSuspendedDescription: 'Nem hiçbir zaman eşiğin altına inmediği için bir AMS ünitesinde otomatik kurutmadan vazgeçildi',
+    amsDryingSuspendedDescription: 'Bir AMS ünitesinde otomatik kurutmadan vazgeçildi: nem hiçbir zaman eşiğin altına inmedi veya ünite hiç ısıtmaya başlamadı',
     amsHtHumidityHigh: 'AMS-HT Nemi Yüksek',
     amsHtHumidityHighDescription: 'AMS-HT nemi eşiği aşıyor',
     amsHtTemperatureHigh: 'AMS-HT Sıcaklığı Yüksek',
@@ -7612,6 +7654,8 @@ export default {
       includeBeta: 'Beta sürümleri dahil et',
     },
     writeTag: {
+      writeWith: 'Şununla yaz',
+      deviceOfflineOption: '{{name}} (çevrimdışı)',
       tabExisting: 'Mevcut Makara',
       tabNew: 'Yeni Makara',
       tabReplace: 'Etiketi Değiştir',
@@ -7702,7 +7746,7 @@ export default {
         pass: 'Yazıcı bu seçeneğin açık olduğunu bildiriyor — gönderilen dosyalar SD kartta saklanacak ve arşivler küçük resim ve dilimleyici meta verileri içerecek.',
         fail: 'Yazıcı bu seçeneğin kapalı olduğunu bildiriyor. "Gönderilen dosyaları harici depolamada sakla" seçeneğini etkinleştirin — yeni donanım yazılımlarında (P2S 01.02 / Bambu Studio 2.6+) düğme yazıcının Baskı Ayarları\'nda; eski sürümlerde Bambu Studio / OrcaSlicer\'in Cihaz sekmesindedir. Bu seçenek olmadan, arşivlenen her baskıda küçük resim ve dilimleyici meta verisi olmayacak.',
         skip: 'Kontrol edilmedi — etkin bir MQTT bağlantısı gerekli. Bu ayarın yalnızca dilimleyicide bulunduğu eski dilimleyicilerde yazıcı bunu bildirmez, bu nedenle seçenek kapalı olsa bile bu kontrol geçer — kurulum adımı 4\'ü manuel olarak doğrulayın.',
-        skip_unsupported_model: 'Bu modelde SD yuvası var ancak seçeneği açmanın bir yolu yok — mevcut P1 serisi bellenim, Bambu Studio\'da bu anahtarı göstermiyor ve yazıcının ekranı yok. Burada düzeltilecek bir şey yok; Bambu Lab bellenim desteği ekleyene kadar arşivlenen baskılarda küçük resimler ve dilimleyici meta verileri eksik olabilir.',
+        skip_unsupported_model: 'Bu modelde seçenek açılamıyor: mevcut ürün yazılımında ne yazıcı ne de Bambu Studio bu seçeneği sunuyor. Burada düzeltilecek bir şey yok; Bambu Lab ekleyene kadar arşivlenen baskılarda küçük resimler ve dilimleyici meta verileri eksik olabilir.',
         fail_no_media: 'Seçenek açık, ancak yazıcı yuvasında kart veya bellek bildirmiyor, dolayısıyla gönderilen dosyaların gideceği bir yer yok. Bir tane takıp yeniden yazdırın — o zamana kadar arşivlenen her baskıda küçük resim ve dilimleyici meta verileri eksik olacak.',
         warn_internal_storage: 'Seçenek açık ve depolama takılı, ancak son baskı yine de Bambuddy\'nin okuyamadığı dahili depolamaya gitti. H2 serisi, P2S ve X2D\'de Bambu Studio\'nun «Yazdır» düğmesi bu ayardan bağımsız olarak her zaman oraya gönderir. Baskılar adları ve süreleriyle arşivlenir, ancak küçük resim ve dilimleyici meta verileri olmadan. Eksiksiz arşivler için baskıları Bambuddy üzerinden başlatın, OrcaSlicer ile dilimleyin ya da Bambu Studio\'da «Gönder» ile «Harici» seçip baskıyı sonrasında başlatın.',
         warn_internal_history: 'Seçenek açık ve depolama takılı, ancak son baskı yazıcıda zaten bulunan bir dosyadan çalıştı — ekranından yeniden baskı, Handy üzerinden başlatma ya da daha önce gönderilmiş bir dosya. Bu kitaplık, Bambuddy\'nin okuyamadığı dahili depolamada durur ve o baskı için hiçbir şey gönderilmediğinden hiçbir ayar bunu değiştirmez. Adı ve süreleriyle yine arşivlenir, ama küçük resim ve dilimleyici meta verileri olmadan. Eksiksiz arşivler için baskıları Bambuddy\'den başlatın ya da dilimleyiciden gönderin.',

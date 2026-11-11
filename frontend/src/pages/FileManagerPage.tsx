@@ -73,6 +73,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
 import { LibraryTagFilterRail } from '../components/LibraryTagFilterRail';
 import { PrintModal } from '../components/PrintModal';
+import type { SeparateJobsProgress } from '../components/PrintModal/separateJobs';
 import { ModelViewerModal } from '../components/ModelViewerModal';
 import { SliceModal } from '../components/SliceModal';
 import { CombineFilesModal } from '../components/CombineFilesModal';
@@ -1848,6 +1849,10 @@ export function FileManagerPage() {
   const [folderDropTarget, setFolderDropTarget] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'file' | 'folder' | 'bulk'; id: number; count?: number } | null>(null);
   const [printFile, setPrintFile] = useState<LibraryFileListItem | null>(null);
+  // A separate-jobs run (#3462) that was partly queued: what is in the queue,
+  // so closing the dialog after a refusal doesn't queue it again on the next
+  // Print (#3471 review). Kept while the selection is exactly the files left.
+  const [separateJobsRun, setSeparateJobsRun] = useState<SeparateJobsProgress | null>(null);
   const [sliceFile, setSliceFile] = useState<LibraryFileListItem | null>(null);
   const [showCombineModal, setShowCombineModal] = useState(false);
   // A file just built by "Combine to 3MF", handed straight to the SliceModal.
@@ -2792,13 +2797,46 @@ export function FileManagerPage() {
     enabled: !!printFile?.variant_group_id,
   });
 
+  // The selection is the rest of a partly queued run: the files it left, and
+  // nothing else. Any other selection is a new print.
+  const selectionIsRunRest = useMemo(() => {
+    if (!separateJobsRun) return false;
+    const left = separateJobsRun.remainingFileIds;
+    return (
+      left.length > 0 &&
+      selectedSlicedFiles.length === left.length &&
+      selectedSlicedFiles.every((f) => left.includes(f.id))
+    );
+  }, [separateJobsRun, selectedSlicedFiles]);
+  // With several files selected the dialog shows the selection whichever
+  // file's Print was clicked, so it is the run's rest then too; otherwise a
+  // card's Print would start it as a new run and queue again what a printer
+  // already has (#3471 review). One file left resumes only from that file.
+  const resumeRun =
+    selectionIsRunRest &&
+    !!printFile &&
+    (selectedSlicedFiles.length > 1 || separateJobsRun!.remainingFileIds.includes(printFile.id));
+
+  // A run whose rest is no longer selected is over; a later selection of the
+  // same files is a new print.
+  useEffect(() => {
+    if (separateJobsRun && !printFile && !selectionIsRunRest) setSeparateJobsRun(null);
+  }, [separateJobsRun, printFile, selectionIsRunRest]);
+
   // Candidates for a cross-model print (#671), or undefined for an ordinary one.
   // An explicit multi-selection wins over the group: the user just said, in this
-  // action, which files they meant.
+  // action, which files they meant. The rest of a partly queued run stays a
+  // list even with one file left: a printer may already have it.
   const printVariantFiles = useMemo(() => {
     if (!printFile) return undefined;
-    if (selectedSlicedFiles.length > 1) {
-      return selectedSlicedFiles.map(f => ({
+    if (selectedSlicedFiles.length > 1 || resumeRun) {
+      // The rest of a run keeps the order the run had in its dialog, not the
+      // order the files were ticked in.
+      const order = resumeRun ? separateJobsRun!.remainingFileIds : null;
+      const files = order
+        ? [...selectedSlicedFiles].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id))
+        : selectedSlicedFiles;
+      return files.map(f => ({
         id: f.id,
         filename: f.filename,
         sliced_for_model: f.sliced_for_model,
@@ -2812,7 +2850,7 @@ export function FileManagerPage() {
       }));
     }
     return undefined;
-  }, [printFile, selectedSlicedFiles, printFileGroup]);
+  }, [resumeRun, separateJobsRun, printFile, selectedSlicedFiles, printFileGroup]);
 
   // The list the arrow keys walk: the one that actually holds the focused
   // file, which may be an intermediate column rather than the selected
@@ -3632,7 +3670,7 @@ export function FileManagerPage() {
                         <Printer className="w-4 h-4 sm:mr-1" />
                         <span className="hidden sm:inline">
                           {selectedSlicedFiles.length > 1
-                            ? t('fileManager.variants.printAlternatives', { count: selectedSlicedFiles.length })
+                            ? t('fileManager.printFiles', { count: selectedSlicedFiles.length })
                             : t('common.print')}
                         </span>
                       </Button>
@@ -4287,6 +4325,12 @@ export function FileManagerPage() {
           mode="create"
           libraryFileId={printVariantFiles?.[0]?.id ?? printFile.id}
           variantFiles={printVariantFiles}
+          // A version group is by definition alternatives; only an explicit
+          // selection (the same one printVariantFiles prefers) may mean separate
+          // jobs (#3462).
+          separateJobsAllowed={selectedSlicedFiles.length > 1 || resumeRun}
+          resumeSeparateJobs={resumeRun ? separateJobsRun! : undefined}
+          onSeparateJobsProgress={setSeparateJobsRun}
           // Naming a cross-model job after one of its files reads as though the
           // others aren't part of it.
           archiveName={
@@ -4294,9 +4338,20 @@ export function FileManagerPage() {
               ? `${printVariantFiles[0].filename} ${t('common.plusNMore', { count: printVariantFiles.length - 1 })}`
               : printFile.print_name || printFile.filename
           }
-          onClose={() => setPrintFile(null)}
+          onClose={() => {
+            setPrintFile(null);
+            // Closed after a refusal: what went in leaves the selection, and the
+            // rest reopens as that run (see separateJobsRun).
+            if (separateJobsRun) {
+              const done = separateJobsRun.queuedFileIds;
+              setSelectedFiles((prev) => prev.filter((id) => !done.includes(id)));
+              queryClient.invalidateQueries({ queryKey: ['library-files'] });
+              queryClient.invalidateQueries({ queryKey: ['queue'] });
+            }
+          }}
           onSuccess={() => {
             setPrintFile(null);
+            setSeparateJobsRun(null);
             setSelectedFiles([]);
             queryClient.invalidateQueries({ queryKey: ['library-files'] });
             queryClient.invalidateQueries({ queryKey: ['queue'] });

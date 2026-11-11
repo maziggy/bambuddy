@@ -1,11 +1,15 @@
 """OpenTag3D NDEF encoder for NTAG tags.
 
 Encodes spool data as an OpenTag3D NDEF message ready to write to NTAG
-starting at page 4 (after the manufacturer pages).
+starting at page 4, the first page of the data area.
+
+The Capability Container is not part of it: on NTAG21x it is page 3, set at
+the factory. A copy written from page 4 lands in the data area, where a Type 2
+reader takes it for an unknown TLV, skips the NDEF message and reports an
+empty tag (#3500).
 
 NDEF structure:
-  [CC: E1 10 12 00]              - Capability Container (4 bytes, page 4)
-  [TLV: 03 len]                  - NDEF Message TLV (2 bytes)
+  [TLV: 03 len]                  - NDEF Message TLV (2 bytes, page 4)
   [NDEF record header]           - D2 15 payload_len (3 bytes: MB|ME|SR, TNF=MIME, type_len=21)
   [Type: "application/opentag3d"] - 21 bytes
   [Payload: OpenTag3D fields]    - 102 bytes
@@ -99,8 +103,98 @@ def _build_payload(spool: Spool) -> bytes:
     )
 
 
+# OpenTag3D 2.004 (https://opentag3d.info/spec). 2.000 moved every field and
+# dropped NTAG213: this layout does not fit one, so v1 stays for those tags and
+# the SpoolBuddy daemon picks by the tag's size (#3500).
+V2_TAG_VERSION = 2004
+# Up to the end of the last field written (empty spool weight, 0xA0-0xA1). The
+# spec reads missing bytes as 0 (2.001), so the rest need not be written.
+V2_PAYLOAD_SIZE = 0xA2
+
+
+def _rgba_bytes(value: str | None) -> bytes:
+    """4 RGBA bytes from 6- or 8-char hex; 6 chars means opaque."""
+    text = (value or "").strip().lstrip("#")
+    if len(text) == 6:
+        text += "FF"
+    try:
+        return bytes.fromhex(text[:8].ljust(8, "0"))
+    except ValueError:
+        logger.warning("OpenTag3D encoder: invalid colour %r, encoding as transparent black", value)
+        return b"\x00\x00\x00\x00"
+
+
+def _put_text(buf: bytearray, offset: int, size: int, value: str | None) -> None:
+    """UTF-8, cut to *size* bytes without splitting a character, space-padded."""
+    raw = (value or "").encode("utf-8")[:size].decode("utf-8", "ignore").encode("utf-8")
+    buf[offset : offset + size] = raw.ljust(size, b" ")
+
+
+def _temp(celsius: int | None) -> int:
+    """A temperature as the spec stores it: degrees C divided by 5, one byte."""
+    try:
+        return max(0, min(int(celsius or 0) // 5, 255))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _build_v2_payload_from_dict(data: dict) -> bytes:
+    """OpenTag3D 2.004 payload from the same field dict as the v1 one.
+
+    Written: material, modifiers, manufacturer, colour name, colours 1-4
+    (2-4 from ``extra_colors``), diameter, print temperatures (target = the
+    minimum, as v1 wrote it), target weight and empty spool weight. Bambuddy
+    tracks no density or bed temperature, so those stay 0 (not set), and
+    chamber temperature 0 means no heating.
+    """
+    buf = bytearray(V2_PAYLOAD_SIZE)
+    struct.pack_into(">H", buf, 0x00, V2_TAG_VERSION)
+    _put_text(buf, 0x02, 5, data.get("material"))
+    _put_text(buf, 0x07, 5, data.get("subtype"))
+    _put_text(buf, 0x0C, 16, data.get("brand"))
+    _put_text(buf, 0x1C, 32, data.get("color_name"))
+    buf[0x3C:0x40] = _rgba_bytes(data.get("rgba") or "00000000")
+    extra = [tok for tok in (data.get("extra_colors") or "").split(",") if tok.strip()]
+    for i, colour in enumerate(extra[:3]):
+        offset = 0x40 + 4 * i
+        buf[offset : offset + 4] = _rgba_bytes(colour)
+    # 0x8C: diameter in micrometres
+    struct.pack_into(">H", buf, 0x8C, 1750)
+    buf[0x90] = _temp(data.get("nozzle_temp_min"))  # target print
+    buf[0x91] = _temp(data.get("nozzle_temp_min"))  # minimum print
+    buf[0x92] = _temp(data.get("nozzle_temp_max"))  # maximum print
+    struct.pack_into(">H", buf, 0x9E, max(0, min(int(data.get("label_weight") or 0), 65535)))
+    struct.pack_into(">H", buf, 0xA0, max(0, min(int(data.get("core_weight") or 0), 65535)))
+    return bytes(buf)
+
+
+def _spool_fields(spool: Spool) -> dict:
+    return {
+        "material": spool.material,
+        "subtype": spool.subtype,
+        "brand": spool.brand,
+        "color_name": spool.color_name,
+        "rgba": spool.rgba,
+        "extra_colors": spool.extra_colors,
+        "label_weight": spool.label_weight,
+        "core_weight": spool.core_weight,
+        "nozzle_temp_min": spool.nozzle_temp_min,
+        "nozzle_temp_max": spool.nozzle_temp_max,
+    }
+
+
+def encode_opentag3d_v2(spool: Spool) -> bytes:
+    """Encode a spool as an OpenTag3D 2.004 NDEF message, for NTAG215/216."""
+    return _encode_ndef(_build_v2_payload_from_dict(_spool_fields(spool)))
+
+
+def encode_opentag3d_v2_from_mapped(mapped: MappedSpoolFields) -> bytes:
+    """:func:`encode_opentag3d_v2` for a Spoolman-mapped spool dict."""
+    return _encode_ndef(_build_v2_payload_from_dict(dict(mapped)))
+
+
 def _encode_ndef(payload: bytes) -> bytes:
-    """Wrap a 102-byte payload in CC + TLV + NDEF record + terminator."""
+    """Wrap a payload in TLV + NDEF record + terminator."""
     mime_type = OPENTAG3D_MIME_TYPE
 
     # NDEF record: MB|ME|SR (0xD0) | TNF=MIME (0x02) => 0xD2
@@ -114,9 +208,8 @@ def _encode_ndef(payload: bytes) -> bytes:
     else:
         tlv = bytes([0x03, 0xFF, (ndef_len >> 8) & 0xFF, ndef_len & 0xFF])
 
-    cc = bytes([0xE1, 0x10, 0x12, 0x00])
     terminator = bytes([0xFE])
-    return cc + tlv + ndef_record + terminator
+    return tlv + ndef_record + terminator
 
 
 def encode_opentag3d(spool: Spool) -> bytes:

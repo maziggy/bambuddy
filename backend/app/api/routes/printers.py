@@ -5,6 +5,7 @@ import secrets
 import zipfile
 from pathlib import Path
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, Response
 from sqlalchemy import delete, func, select
@@ -50,6 +51,10 @@ from backend.app.schemas.printer import (
     PrinterStatus,
     PrinterUpdate,
     PrintOptionsResponse,
+    WLEDConnectionInfo,
+    WLEDPreset,
+    WLEDPresetListRequest,
+    WLEDPresetTestRequest,
     hms_error_responses,
 )
 from backend.app.services import camera_light as camera_light_service, drying_preflight, kprofile_drift
@@ -102,6 +107,7 @@ from backend.app.services.printer_media import (
 )
 from backend.app.services.slicer_filament_resolver import _ORCA_PROFILE_ID, lookup_orca_filament_id
 from backend.app.services.slot_nozzle import reports_two_nozzles, resolve_slot_nozzle
+from backend.app.services.wled import WLEDResponseError, wled_manager
 from backend.app.utils.filament_finish import different_finish, finish_generic_id
 from backend.app.utils.filament_ids import (
     GENERIC_FILAMENT_IDS,
@@ -114,6 +120,15 @@ from backend.app.utils.fts_routing import slot_extruder
 from backend.app.utils.http import build_content_disposition, download_error_response, safe_download_filename
 from backend.app.utils.kprofile_lookup import build_slot_k_resolver
 from backend.app.utils.printer_models import MAX_CHAMBER_TEMP_C, aux_fan_sides, uses_exhaust_fan_label
+from backend.app.utils.tray_ids import (
+    AMS_HT_IDS,
+    EXTERNAL_AMS_ID,
+    TrayLayout,
+    external_tray_id,
+    global_tray_id as studio_global_tray_id,
+    is_ams_ht_id,
+    legacy_tray_index,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printers", tags=["printers"])
@@ -227,11 +242,64 @@ async def create_printer(
     if await location_grantees(db, [printer.location]):
         await ws_manager.refresh_printer_scopes()
 
+    wled_manager.configure_printer(printer.id, printer.wled_config)
+
     # Connect to the printer
     if printer.is_active:
         await printer_manager.connect_printer(printer)
 
     return printer
+
+
+@router.post("/{printer_id}/wled/presets", response_model=list[WLEDPreset])
+async def list_wled_presets(
+    printer_id: int,
+    request: WLEDPresetListRequest,
+    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
+    db: AsyncSession = Depends(get_db, scope="function"),
+):
+    """Read existing presets from WLED without changing its configuration."""
+    if not await db.scalar(select(Printer.id).where(Printer.id == printer_id)):
+        raise HTTPException(404, "Printer not found")
+    try:
+        return await wled_manager.list_presets(request.base_url)
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(502, f"WLED returned HTTP {exc.response.status_code}") from exc
+    except (httpx.HTTPError, WLEDResponseError) as exc:
+        raise HTTPException(502, "Could not load WLED presets") from exc
+
+
+@router.post("/{printer_id}/wled/test-connection", response_model=WLEDConnectionInfo)
+async def test_wled_connection(
+    printer_id: int,
+    request: WLEDPresetListRequest,
+    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
+    db: AsyncSession = Depends(get_db, scope="function"),
+):
+    """Check WLED connectivity and return its optional identity."""
+    if not await db.scalar(select(Printer.id).where(Printer.id == printer_id)):
+        raise HTTPException(404, "Printer not found")
+    try:
+        return await wled_manager.get_info(request.base_url)
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(502, f"WLED returned HTTP {exc.response.status_code}") from exc
+    except (httpx.HTTPError, WLEDResponseError) as exc:
+        raise HTTPException(502, "Could not connect to WLED") from exc
+
+
+@router.post("/{printer_id}/wled/test-preset")
+async def test_wled_preset(
+    printer_id: int,
+    request: WLEDPresetTestRequest,
+    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
+    db: AsyncSession = Depends(get_db, scope="function"),
+):
+    """Activate one validated preset without changing stored configuration."""
+    if not await db.scalar(select(Printer.id).where(Printer.id == printer_id)):
+        raise HTTPException(404, "Printer not found")
+    if not await wled_manager.test_preset(printer_id, request.base_url, request.preset_id):
+        raise HTTPException(502, "Could not activate WLED preset")
+    return {"success": True}
 
 
 @router.get("/usb-cameras")
@@ -469,11 +537,23 @@ async def update_printer(
         except Exception as e:
             logger.error("Failed to sync virtual printers after printer IP change: %s", e)
 
+    if "wled_config" in update_data:
+        wled_manager.configure_printer(printer_id, printer.wled_config)
+        state = printer_manager.get_status(printer_id)
+        if state and printer.is_active:
+            wled_manager.handle_status(
+                printer_id,
+                state,
+                awaiting_plate_clear=printer_manager.is_awaiting_plate_clear(printer_id),
+            )
+
     # Reconnect if connection settings changed
     if any(k in update_data for k in ["ip_address", "access_code", "is_active"]):
         printer_manager.disconnect_printer(printer_id)
         if printer.is_active:
             await printer_manager.connect_printer(printer)
+        elif "is_active" in update_data:
+            wled_manager.handle_offline(printer_id)
 
     return printer
 
@@ -540,6 +620,7 @@ async def delete_printer(
         notify = await delete_provider(db, provider) or notify
 
     printer_manager.disconnect_printer(printer_id)
+    wled_manager.remove_printer(printer_id)
 
     # Locked from the archive sweep to the commit (PostgreSQL; SQLite's single
     # writer serialises this anyway). A print start adopting or writing an
@@ -695,6 +776,7 @@ async def _printer_status(db: AsyncSession, printer: Printer) -> PrinterStatus:
     # Virtual tray (external spool holder) - comes from vt_tray in raw_data (list)
     if "vt_tray" in raw_data:
         vt_tray = [AMSTray(**vt) for vt in vt_trays_to_dicts(raw_data["vt_tray"], _kprofile_k)]
+    tray_layout = TrayLayout.from_units(ams_units, vt_tray)
 
     # Convert nozzle info to response format
     nozzles = [
@@ -712,12 +794,14 @@ async def _printer_status(db: AsyncSession, printer: Printer) -> PrinterStatus:
             nozzle_type=n.get("type", ""),
             nozzle_diameter=n.get("diameter", ""),
             wear=n.get("wear"),
+            print_time_s=n.get("print_time_s"),
             stat=n.get("stat"),
             max_temp=n.get("max_temp", 0),
             serial_number=n.get("serial_number", ""),
             filament_color=n.get("filament_color", ""),
             filament_id=n.get("filament_id", ""),
             filament_type=n.get("filament_type", ""),
+            addr_id=n.get("addr_id"),
         )
         for n in (state.nozzle_rack or [])
     ]
@@ -840,6 +924,7 @@ async def _printer_status(db: AsyncSession, printer: Printer) -> PrinterStatus:
                 raw_data.get("mapping"),
                 active_extruder=state.active_extruder,
                 ams_extruder_map=nozzle_wiring(state),
+                tray_layout=tray_layout,
             )
             if state.state == "PAUSE"
             else None
@@ -851,6 +936,7 @@ async def _printer_status(db: AsyncSession, printer: Printer) -> PrinterStatus:
                 raw_data.get("mapping"),
                 active_extruder=state.active_extruder,
                 ams_extruder_map=nozzle_wiring(state),
+                tray_layout=tray_layout,
             )
             if state.state == "PAUSE"
             else None
@@ -1038,6 +1124,7 @@ async def disconnect_printer(
         raise HTTPException(404, "Printer not found")
 
     printer_manager.disconnect_printer(printer_id)
+    wled_manager.handle_offline(printer_id)
     return {"connected": False}
 
 
@@ -2581,12 +2668,11 @@ async def start_calibration(
 
 
 def _slot_preset_key(ams_id: int, tray_id: int) -> int:
-    # Mirrors frontend getGlobalTrayId (amsHelpers.ts): AMS-HT (128-135) is keyed
-    # by ams_id since each unit has a single slot and shares its global ID with
-    # the unit itself. Regular AMS and external (255) use ams_id*4+tray_id.
-    if 128 <= ams_id <= 135:
-        return ams_id
-    return ams_id * 4 + tray_id
+    # Mirrors frontend getGlobalTrayId (amsHelpers.ts): the slot's global tray
+    # id; the external inputs keep their 255 * 4 + tray_id key.
+    if ams_id == EXTERNAL_AMS_ID:
+        return legacy_tray_index(ams_id, tray_id)
+    return studio_global_tray_id(ams_id, tray_id)
 
 
 @router.get("/{printer_id}/slot-presets")
@@ -3043,7 +3129,7 @@ async def configure_ams_slot(
 
             if ams_id == 255:
                 vt_tray = state.raw_data.get("vt_tray") or []
-                ext_id = tray_id + 254
+                ext_id = external_tray_id(tray_id)
                 for vt in vt_tray:
                     if isinstance(vt, dict) and int(vt.get("id", 254)) == ext_id:
                         current_tray_info_idx = vt.get("tray_info_idx", "")
@@ -3192,16 +3278,16 @@ async def configure_ams_slot(
     # hardcoded extruder_id=0 and nozzle_id=HS00.
     k_value_unsent = False
     if k_value > 0 and cali_idx < 0:
-        # Calculate global tray ID for extrusion_cali_set
+        # extrusion_cali_set's flat tray index; an AMS-HT counts from 128.
         if ams_id <= 3:
-            global_tray_id = ams_id * 4 + tray_id
-        elif ams_id >= 128 and ams_id <= 135:
-            global_tray_id = (ams_id - 128) * 4 + tray_id
+            cali_tray_id = legacy_tray_index(ams_id, tray_id)
+        elif is_ams_ht_id(ams_id):
+            cali_tray_id = legacy_tray_index(ams_id - AMS_HT_IDS.start, tray_id)
         else:
-            global_tray_id = tray_id
+            cali_tray_id = tray_id
 
         k_value_unsent = not client.extrusion_cali_set(
-            tray_id=global_tray_id,
+            tray_id=cali_tray_id,
             k_value=k_value,
             nozzle_diameter=nozzle_diameter,
             nozzle_temp=nozzle_temp_max,
@@ -4641,15 +4727,36 @@ async def _apply_pa_after_refresh(printer_id: int, ams_id: int, slot_id: int):
 
 # 24-27 are the A2L AMS-Lite slots (normalised unit 6 = 6*4+slot); see
 # a2l-am-unit-16. An AMS-HT holds one tray, numbered by its unit id 128-135, as
-# the printer's tray_now reports it. All are valid alongside the regular 0-15.
+# the printer's tray_now reports it. 28-36 are AMS 3H slots, valid only on a
+# printer that has one. All are valid alongside the regular 0-15.
 _LOAD_TRAY_ID_ERROR = (
-    "tray_id must be 0..15 (AMS slot), 24..27 (A2L AMS-Lite), 128..135 (AMS-HT), 254 (external / Ext-L), or 255 (Ext-R)"
+    "tray_id must be 0..15 (AMS slot), 24..27 (A2L AMS-Lite), 28..36 (H3C AMS 3H), 128..135 (AMS-HT), "
+    "254 (external / Ext-L), or 255 (Ext-R)"
 )
+_AMS3H_PRINTER = TrayLayout.ams3h()
 
 
 def _is_valid_load_tray_id(tray_id: int) -> bool:
     """Whether ``tray_id`` names a slot the load/unload commands can address."""
-    return tray_id in range(16) or tray_id in range(24, 28) or tray_id in range(128, 136) or tray_id in (254, 255)
+    return (
+        tray_id in range(16)
+        or tray_id in range(24, 28)
+        or _AMS3H_PRINTER.rack_slot(tray_id) is not None
+        or is_ams_ht_id(tray_id)
+        or tray_id in (254, 255)
+    )
+
+
+def _client_tray_layout(client: object) -> TrayLayout:
+    """The connected printer's tray numbering; empty for a client that offers none."""
+    layout = getattr(client, "tray_layout", None)
+    return layout if isinstance(layout, TrayLayout) else TrayLayout()
+
+
+def _refuse_foreign_ams3h_tray(tray_id: int | None, layout: TrayLayout) -> None:
+    """An AMS 3H slot id names nothing on a printer without that AMS 3H."""
+    if tray_id is not None and _AMS3H_PRINTER.rack_slot(tray_id) is not None and layout.rack_slot(tray_id) is None:
+        raise HTTPException(400, _LOAD_TRAY_ID_ERROR)
 
 
 @router.post("/{printer_id}/ams/load")
@@ -4679,6 +4786,7 @@ async def ams_load(
 
     Tray ID encoding (matches Bambu firmware convention):
     - 0..15: AMS slot, computed as ams_id * 4 + slot_id
+    - 28..36: the H3C's AMS 3H, 28 + slot (its slot feeds its own hotend)
     - 128..135: AMS-HT, the unit id (one tray per unit)
     - 254: external spool (single-external printers, or Ext-L on dual-nozzle H2D)
     - 255: Ext-R on dual-nozzle H2D
@@ -4695,18 +4803,33 @@ async def ams_load(
     if not client:
         raise HTTPException(400, "Printer not connected")
 
+    # An AMS 3H slot has nothing to feed until the AMS has pulled its filament
+    # in at the inlet; Studio offers no Load before that.
+    layout = _client_tray_layout(client)
+    _refuse_foreign_ams3h_tray(tray_id, layout)
+    rack_slot = layout.rack_slot(tray_id)
+    if rack_slot is not None and not client.rack_tray_has_filament(tray_id):
+        raise HTTPException(
+            409,
+            f"AMS 3H slot {rack_slot[1] + 1} has no filament. Push the filament into the slot's inlet "
+            "until the AMS pulls it in, then load it.",
+        )
+
     success = client.ams_load_filament(tray_id, extruder_id=extruder_id)
     if not success:
         raise HTTPException(500, "Failed to send load command")
 
-    if tray_id == 254:
+    if rack_slot is not None:
+        target = f"AMS 3H slot {rack_slot[1] + 1}"
+    elif tray_id == 254:
         target = "external spool"
     elif tray_id == 255:
         target = "Ext-R"
     elif tray_id >= 128:
         target = f"AMS HT-{chr(ord('A') + tray_id - 128)}"
     else:
-        target = f"AMS {tray_id // 4} slot {tray_id % 4 + 1}"
+        unit, slot = layout.slot_key(tray_id)
+        target = f"AMS {unit} slot {slot + 1}"
     return {"success": True, "message": f"Loading filament from {target}"}
 
 
@@ -4738,6 +4861,7 @@ async def ams_unload(
     client = printer_manager.get_client(printer_id)
     if not client:
         raise HTTPException(400, "Printer not connected")
+    _refuse_foreign_ams3h_tray(tray_id, _client_tray_layout(client))
 
     success = client.ams_unload_filament(tray_id)
     if not success:

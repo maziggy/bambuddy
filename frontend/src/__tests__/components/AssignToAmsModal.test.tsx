@@ -491,4 +491,50 @@ describe('AssignToAmsModal', () => {
       });
     });
   });
+
+  describe('on the H3C (AMS 3H unit 32, nine per-hotend external inputs)', () => {
+    const H3C_STATUS = {
+      ...PRINTER_STATUS_ONLINE,
+      ams: [{
+        ...PRINTER_STATUS_ONLINE.ams[0],
+        id: 32,
+        ams_type: 6,
+        module_type: 'n10a',
+        tray: Array.from({ length: 9 }, (_, k) => ({ id: k, ...BLANK_TRAY })),
+      }],
+      vt_tray: Array.from({ length: 9 }, (_, k) => ({ id: 247 + k, ...BLANK_TRAY })),
+      ams_extruder_map: {},
+    };
+
+    beforeEach(() => {
+      vi.mocked(api.getPrinterStatus).mockResolvedValue(H3C_STATUS as never);
+    });
+
+    it('assigns to an AMS 3H slot by its unit 32 and slot', async () => {
+      const user = userEvent.setup();
+      render(<AssignToAmsModal isOpen={true} onClose={vi.fn()} spool={SPOOL as never} printerId={1} spoolmanMode={false} />);
+
+      await waitFor(() => expect(screen.queryAllByTestId('ams-slot')).toHaveLength(9));
+      await user.click(screen.getByRole('button', { name: 'AMS 3H Slot 9' }));
+
+      await waitFor(() => {
+        expect(api.assignSpool).toHaveBeenCalledWith(expect.objectContaining({ printer_id: 1, ams_id: 32, tray_id: 8 }));
+      });
+    });
+
+    it('names the external inputs Ext-1..Ext-9 and stores them under ams_id 255', async () => {
+      const user = userEvent.setup();
+      render(<AssignToAmsModal isOpen={true} onClose={vi.fn()} spool={SPOOL as never} printerId={1} spoolmanMode={false} />);
+
+      // Input 250 feeds hotend 5: "Ext-6", stored as (255, 5).
+      const ext6 = await screen.findByTitle('Ext-6');
+      for (let n = 1; n <= 9; n++) expect(screen.getByTitle(`Ext-${n}`)).toBeInTheDocument();
+      expect(screen.queryByText('Ext-L')).not.toBeInTheDocument();
+      await user.click(ext6);
+
+      await waitFor(() => {
+        expect(api.assignSpool).toHaveBeenCalledWith(expect.objectContaining({ printer_id: 1, ams_id: 255, tray_id: 5 }));
+      });
+    });
+  });
 });

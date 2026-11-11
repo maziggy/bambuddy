@@ -318,6 +318,8 @@ export default {
     },
     temperatures: {
       nozzle: 'Nozzle',
+      // The H3C's nozzle on the toolhead, by its rack position (#3442).
+      mounted: 'Nozzle {{n}}',
       bed: 'Bed',
       chamber: 'Chamber',
     },
@@ -381,10 +383,15 @@ export default {
       summary: '{{live}} live, {{snap}} snapshots, {{total}} total',
       layer: 'Layer {{cur}}/{{total}}',
       timeLeft: '{{time}} left',
+      eta: 'ETA {{time}}',
       statusMode: {
         off: 'Off',
         compact: 'Compact',
         full: 'Full',
+      },
+      controlsMode: {
+        hover: 'On hover',
+        always: 'Always',
       },
       settings: {
         title: 'Cam wall settings',
@@ -393,7 +400,9 @@ export default {
         snapshotInterval: 'Snapshot interval (seconds)',
         snapshotIntervalHint: 'How often non-live tiles fetch a fresh snapshot.',
         statusOverlay: 'Status overlay',
-        statusOverlayHint: 'Compact: state badge only. Full: + progress, layer, time left.',
+        statusOverlayHint: 'Compact: state badge only. Full: + progress, layer, time left, finish time, temperatures.',
+        controls: 'Tile controls',
+        controlsHint: 'Pause, stop and the chamber light on each tile: on hover, or always. Touch screens always show them.',
       },
     },
     // Controls
@@ -416,6 +425,7 @@ export default {
     // Printer card
     readyToPrint: 'Ready to print',
     external: 'External',
+    externalInputsEmpty: 'All {{count}} external inputs are empty',
     ext: 'Ext',
     extL: 'Ext-L',
     extR: 'Ext-R',
@@ -495,6 +505,7 @@ export default {
     activeNozzle: 'Active: {{nozzle}} nozzle',
     amsSwitchInletTooltip: 'Filament Track Switch IN-{{inlet}} ({{side}}) — feeds both nozzles',
     nozzleRack: 'Nozzle Rack',
+    nozzleRackMounted: 'On the toolhead',
     nozzleDocked: 'Docked',
     nozzleMounted: 'Mounted',
     nozzleActive: 'Active',
@@ -504,6 +515,7 @@ export default {
     nozzleStatus: 'Status',
     nozzleFilament: 'Filament',
     nozzleWear: 'Wear',
+    nozzlePrintTime: 'Print time',
     nozzleMaxTemp: 'Max Temp',
     nozzleSerial: 'Serial',
     nozzleHardenedSteel: 'Hardened Steel',
@@ -568,6 +580,7 @@ export default {
       rfidRereadInitiated: 'RFID re-read initiated',
       loadInitiated: 'Loading filament…',
       unloadInitiated: 'Unloading filament…',
+      unloadAms3h: 'Unloading slot {{n}}. When the printer asks, pull the filament back out of the AMS 3H by hand.',
       failedToLoad: 'Failed to load filament',
       failedToUnload: 'Failed to unload filament',
     },
@@ -774,6 +787,7 @@ export default {
       screenOnly: 'AMS drying on this printer can only be controlled from the printer\'s own screen (Bambu limitation)',
       stoppingDrying: 'Stopping drying...',
       rotateTray: 'Rotate spool during drying',
+      ams3hDryerSlots: 'The AMS 3H dries slots {{a}} and {{b}} only',
       rotateUnavailableReason: 'Unavailable — a slot in this AMS is loaded to the toolhead. The spool is locked by the feed tube and cannot rotate. Retract the filament first.',
       startMode: 'Start time',
       modeNow: 'Now',
@@ -2043,6 +2057,14 @@ export default {
   },
 
   // Settings page
+  wled: {
+    connectionSection: 'Connection', mappingSection: 'Status mapping', testConnection: 'Test connection', notTested: 'Not tested', connected: 'Connected to WLED{{name}}{{version}}', notReachable: 'Unable to connect to WLED.', testPreset: 'Test', presetTested: 'Preset activated', presetTestFailed: 'Could not activate preset', mappingSummary: 'Configured states: {{configured}} · Disabled states: {{disabled}}',
+    title: 'WLED', description: 'Colours, effects and presets are managed directly in WLED. Bambuddy only maps printer states to existing presets.',
+    printer: 'Printer', enabled: 'Enable WLED integration', baseUrl: 'WLED URL', loadPresets: 'Load presets', online: '{{count}} presets loaded', offlineHint: 'WLED is unavailable. Saved preset IDs are kept.', noPrinters: 'No printers configured.', noPreset: 'Disabled — no preset', savedUnavailable: 'Saved preset {{id}} — currently unavailable', finishedTimeout: 'Finished timeout (seconds)', finishedTimeoutHint: 'After this time, switch from Finished to the Idle preset. Set 0 to disable.', saved: 'WLED settings saved', saveError: 'Could not save WLED settings',
+    presetSegmentHint: 'Select the target segment when creating the preset in WLED and enable “Checked segments only”. During runtime, Bambuddy only activates the configured preset.',
+    status: { idle: 'Idle', prepare: 'Preparing', printing: 'Printing', paused: 'Paused', finished: 'Finished', error: 'Failed / Error', queue_waiting: 'Awaiting plate clear', filament_problem: 'Filament problem', hms_error: 'HMS error', offline: 'Offline' },
+  },
+
   settings: {
     sliceEngine: 'Slice engine',
     sliceEngineSidecar: 'Server sidecar',
@@ -2063,6 +2085,7 @@ export default {
       filament: 'Filament',
       camera: 'Camera',
       network: 'Network',
+      wled: 'WLED',
       apiKeys: 'API Keys',
       virtualPrinter: 'Virtual Printer',
       spoolbuddy: 'SpoolBuddy',
@@ -2905,7 +2928,7 @@ export default {
     tabDisplayTime: 'Time remaining',
     // Archive
     autoArchivePrints: 'Auto-archive prints',
-    autoArchiveDescription: 'Automatically save 3MF files when prints complete. When off, no printer archives prints started outside Bambuddy.',
+    autoArchiveDescription: 'Archive prints started outside Bambuddy (from the slicer or the printer): 3MF file, print history, statistics and cost. When off, those prints are missing from the archive and the statistics; spool inventory still counts their filament.',
     captureFinishPhotoDescription: 'Take a photo from printer camera when print completes. Bambuddy records a brief timelapse during the print so the photo can be sourced from the moment before the bed drops; the timelapse file is kept if you enabled timelapse for this print, otherwise it is deleted automatically after the photo is captured.',
     finishPhotoRestorePlate: 'Restore plate for finish photo',
     finishPhotoRestorePlateDescription: 'The printer drops the build plate about 100 mm when a print ends, leaving the finished print below the camera\'s framing. Bambuddy raises it back to just above the last printed layer, takes the photo, then lowers it again. Skipped when the print height is unknown or another job is queued.',
@@ -4259,8 +4282,8 @@ export default {
       groupAction: 'Group as versions',
       groupTooltip: 'Mark these files as the same job sliced for different printers',
       grouped: 'Grouped {{count}} files as versions',
-      printAlternatives: 'Print ({{count}} alternatives)',
     },
+    printFiles: 'Print ({{count}} files)',
     title: 'File Manager',
     subtitle: 'Organize and manage your print files',
     uploadFiles: 'Upload Files',
@@ -5362,6 +5385,13 @@ export default {
       deleteTitle: 'Delete profile default',
       deleteMessage: 'Delete the profile default for {{product}}? Spools that already have its profiles keep them.',
       deleteFailed: 'Could not delete the profile default',
+      search: 'Search by product, colour or preset',
+      noMatch: 'No profile default matches',
+      presetsCount: 'Printer presets: {{count}}',
+      kProfilesCount: 'K profiles: {{count}}',
+      applyAll: 'Apply all',
+      applyAllHelp: 'Fill in what active spools don\'t have yet, from every profile default. Nothing they already have is changed.',
+      applyAllFailed: '{{failed}} profile defaults could not be applied; filled in on {{updated}} spools',
     },
     suppliers: {
       label: 'Suppliers',
@@ -5699,6 +5729,18 @@ export default {
 
   // Print modal
   printModal: {
+    multiFile: {
+      groupLabel: 'What the selected files become',
+      alternatives: 'Alternatives',
+      separate: 'Separate jobs',
+      alternativesHint: 'One job. The first matching printer to free up prints its file.',
+      separateHint: 'One queue item per file, added in the order below. The options apply to every item.',
+      alternativesBlocked: 'More than one file is sliced for {{model}}. Alternatives need a different printer model for each file.',
+      orderTitle: 'Queue order',
+      incompatible: 'Cannot be dispatched to {{model}} printers: {{files}}',
+      notSlicedFor: 'Not sliced for {{model}}: {{files}}',
+      failed: 'Not queued: {{filename}} ({{message}}). Queued before it: {{queued}}.',
+    },
     variants: {
       editNote: 'These alternatives were set when the job was queued. Cancel and re-queue to change them.',
       title: 'Printer alternatives',
@@ -6971,7 +7013,7 @@ export default {
     amsTemperatureHigh: 'AMS Temperature High',
     amsTemperatureHighDescription: 'Regular AMS temperature exceeds threshold',
     amsDryingSuspendedTitle: 'Auto-Drying Suspended',
-    amsDryingSuspendedDescription: 'Automatic drying gave up on an AMS unit because humidity never fell below the threshold',
+    amsDryingSuspendedDescription: 'Automatic drying gave up on an AMS unit: humidity never fell below the threshold, or the unit never started heating',
     amsHtHumidityHigh: 'AMS-HT Humidity High',
     amsHtHumidityHighDescription: 'AMS-HT humidity exceeds threshold',
     amsHtTemperatureHigh: 'AMS-HT Temperature High',
@@ -7726,6 +7768,8 @@ export default {
       includeBeta: 'Include beta versions',
     },
     writeTag: {
+      writeWith: 'Write with',
+      deviceOfflineOption: '{{name}} (offline)',
       tabExisting: 'Existing Spool',
       tabNew: 'New Spool',
       tabReplace: 'Replace Tag',
@@ -7816,7 +7860,7 @@ export default {
         pass: 'The printer reports this option is on — sent files will be stored on the SD card and archives will have thumbnails and slicer metadata.',
         fail: 'The printer reports this option is off. Enable "Store sent files on external storage" — on newer firmware (P2S 01.02 / Bambu Studio 2.6+) the toggle lives on the printer\'s Print Settings; on older versions it\'s in Bambu Studio / OrcaSlicer\'s Device tab. Without it, every archived print is missing its thumbnail and slicer metadata.',
         skip: 'Not checked — needs a live MQTT connection. On older slicers where this setting lives only in the slicer the printer never reports it, so this check will pass even when the option is off — verify install step 4 manually.',
-        skip_unsupported_model: 'This model has an SD slot but no way to turn the option on — current P1-series firmware doesn\'t expose the toggle in Bambu Studio and the printer has no screen. Nothing to fix here; archived prints may lack thumbnails and slicer metadata until Bambu Lab adds firmware support.',
+        skip_unsupported_model: 'This model has no way to turn the option on: on current firmware neither the printer nor Bambu Studio offers it. Nothing to fix here; archived prints may lack thumbnails and slicer metadata until Bambu Lab adds it.',
         fail_no_media: 'The option is on, but the printer reports no card or stick in its slot, so there is nowhere for sent files to go. Insert one and print again — until then every archived print will be missing its thumbnail and slicer metadata.',
         warn_internal_storage: 'The option is on and storage is present, but the last print still went to the printer\'s internal storage, which Bambuddy cannot read. On H2-series, P2S and X2D, Bambu Studio\'s Print button always sends there whatever this option is set to. Prints archive with their name and timing, but without a thumbnail or slicer metadata. For complete archives, start prints from Bambuddy or slice in OrcaSlicer — or in Bambu Studio use Send with External selected, then start the print.',
         warn_internal_history: 'The option is on and storage is present, but the last print ran from a file that was already on the printer — a re-print from its screen, a start from Handy, or a file sent earlier. That library sits on internal storage Bambuddy cannot read, and no setting changes it, because nothing was sent for that print. It still archives with its name and timing, but without a thumbnail or slicer metadata. For complete archives, start prints from Bambuddy or send them from the slicer.',

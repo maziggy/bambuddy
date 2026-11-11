@@ -76,6 +76,7 @@ from backend.app.utils.printer_models import (
     normalize_printer_model_id,
 )
 from backend.app.utils.slicer_strings import first_slicer_string, slicer_strings
+from backend.app.utils.tray_ids import external_slot_index, is_ams_ht_id
 
 logger = logging.getLogger(__name__)
 
@@ -816,6 +817,18 @@ async def load_stock_aliases(db: AsyncSession, user: User | None) -> dict[str, P
     return _stock_aliases(cloud, standard)
 
 
+async def is_stock_cloud_preset(db: AsyncSession, user: User | None, ref: PresetRef, slot: str) -> bool:
+    """Whether ``ref`` is one of Bambu's stock presets on Bambu Cloud (#3497).
+
+    The cloud listing's "public" list, from the same cache as the listing; a
+    listing that can't be fetched counts as not stock.
+    """
+    if ref.source != "cloud":
+        return False
+    cloud, _status = await _fetch_cloud_presets(db, user)
+    return any(p.stock and p.id == ref.id for p in cloud.get(slot, []))
+
+
 def listed_ref(aliases: dict[str, PresetRef], ref: PresetRef) -> PresetRef:
     """The ref the listing shows for ``ref``: its cloud twin if hidden, else itself."""
     return aliases.get(f"{ref.source}:{ref.id}", ref)
@@ -902,7 +915,7 @@ async def list_loaded_spools(
                 for t in raw_trays
             ]
             # Same rule as the printer status: an AMS-HT is a unit id 128-135.
-            units.append(LoadedSpoolUnit(id=ams_id, is_ams_ht=128 <= ams_id <= 135, trays=trays))
+            units.append(LoadedSpoolUnit(id=ams_id, is_ams_ht=is_ams_ht_id(ams_id), trays=trays))
 
         external: list[LoadedSpoolTray] = []
         holders = [vt for vt in raw_data.get("vt_tray") or [] if isinstance(vt, dict)]
@@ -911,7 +924,7 @@ async def list_loaded_spools(
                 continue
             # The holders are trays 254 / 255; slot presets key them as AMS 255,
             # tray 0 / 1, the way the printer card saves them.
-            tray_id = int(vt.get("id", 254)) - 254
+            tray_id = external_slot_index(int(vt.get("id", 254)))
             external.append(_loaded_spool_tray(vt, 255, tray_id, saved.get((printer.id, 255, tray_id))))
 
         out.append(

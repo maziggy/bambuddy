@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
+import anyio
 import jwt
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -1244,41 +1245,48 @@ async def stream_opener_still_allowed(opener: StreamOpener, printer_id: int) -> 
     from backend.app.services.long_lived_tokens import _is_expired
 
     try:
-        async with async_session() as db:
-            auth_on = await is_auth_enabled(db)
-            if not opener.auth_on:
-                return not auth_on
-            if not auth_on:
-                return True
-            if opener.long_lived_id is not None:
-                record = await db.get(LongLivedToken, opener.long_lived_id)
-                if (
-                    record is None
-                    or record.revoked_at is not None
-                    or record.user_id != opener.long_lived_user_id
-                    or record.lookup_prefix != opener.long_lived_prefix
-                    or _is_expired(record, datetime.now(timezone.utc))
-                    or not await user_id_holds(db, record.user_id, Permission.CAMERA_VIEW, record.created_at)
-                ):
+        # Shielded (#3515): the stream ends when its viewer leaves, and a read
+        # cancelled halfway costs its pooled connection. The short check runs
+        # to the end first; the video stream itself is never shielded.
+        with anyio.CancelScope(shield=True):
+            async with async_session() as db:
+                auth_on = await is_auth_enabled(db)
+                if not opener.auth_on:
+                    return not auth_on
+                if not auth_on:
+                    return True
+                if opener.long_lived_id is not None:
+                    record = await db.get(LongLivedToken, opener.long_lived_id)
+                    if (
+                        record is None
+                        or record.revoked_at is not None
+                        or record.user_id != opener.long_lived_user_id
+                        or record.lookup_prefix != opener.long_lived_prefix
+                        or _is_expired(record, datetime.now(timezone.utc))
+                        or not await user_id_holds(db, record.user_id, Permission.CAMERA_VIEW, record.created_at)
+                    ):
+                        return False
+                    scope = await resolve_user_id_printer_scope(db, record.user_id)
+                elif opener.api_key_id is not None:
+                    if await usable_api_key_prefix(db, opener.api_key_id) != opener.api_key_prefix:
+                        return False
+                    if not await principal_holds(db, None, opener.api_key_id, Permission.CAMERA_VIEW):
+                        return False
+                    scope = await principal_printer_scope(db, None, opener.api_key_id)
+                elif opener.username:
+                    user = await get_user_by_username(db, opener.username)
+                    if user is None or not user.is_active or not user.has_permission(Permission.CAMERA_VIEW.value):
+                        return False
+                    changed = user.password_changed_at
+                    if changed is not None and changed.replace(tzinfo=None) > opener.started_at:
+                        return False
+                    scope = await principal_printer_scope(db, opener.username, None)
+                else:
                     return False
-                scope = await resolve_user_id_printer_scope(db, record.user_id)
-            elif opener.api_key_id is not None:
-                if await usable_api_key_prefix(db, opener.api_key_id) != opener.api_key_prefix:
-                    return False
-                if not await principal_holds(db, None, opener.api_key_id, Permission.CAMERA_VIEW):
-                    return False
-                scope = await principal_printer_scope(db, None, opener.api_key_id)
-            elif opener.username:
-                user = await get_user_by_username(db, opener.username)
-                if user is None or not user.is_active or not user.has_permission(Permission.CAMERA_VIEW.value):
-                    return False
-                changed = user.password_changed_at
-                if changed is not None and changed.replace(tzinfo=None) > opener.started_at:
-                    return False
-                scope = await principal_printer_scope(db, opener.username, None)
-            else:
-                return False
-            return scope.allows(printer_id)
+                return scope.allows(printer_id)
+        # Unreachable: nothing cancels this scope itself, so it never swallows
+        # the return above. Never an answer of "allowed" if it ever did.
+        return False
     except Exception:  # SEC-AUTH-EXC: logged and re-raised, never an answer
         logger.warning("Camera stream re-check failed", exc_info=True)
         raise

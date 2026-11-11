@@ -3862,22 +3862,6 @@
             {
                 "code": "reportArgumentType",
                 "range": {
-                    "startColumn": 32,
-                    "endColumn": 65,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportArgumentType",
-                "range": {
-                    "startColumn": 32,
-                    "endColumn": 65,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportArgumentType",
-                "range": {
                     "startColumn": 27,
                     "endColumn": 60,
                     "lineCount": 1

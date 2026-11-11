@@ -315,6 +315,8 @@ export default {
     },
     temperatures: {
       nozzle: 'ノズル',
+      // The H3C's nozzle on the toolhead, by its rack position (#3442).
+      mounted: 'ノズル {{n}}',
       bed: 'ベッド',
       chamber: 'チャンバー',
     },
@@ -378,10 +380,15 @@ export default {
       summary: 'ライブ {{live}}件、スナップ {{snap}}件、合計 {{total}}件',
       layer: 'レイヤー {{cur}}/{{total}}',
       timeLeft: '残り {{time}}',
+      eta: '完了予定 {{time}}',
       statusMode: {
         off: 'オフ',
         compact: 'コンパクト',
         full: 'フル',
+      },
+      controlsMode: {
+        hover: 'ホバー時',
+        always: '常に',
       },
       settings: {
         title: 'カメラウォール設定',
@@ -390,7 +397,9 @@ export default {
         snapshotInterval: 'スナップショット間隔（秒）',
         snapshotIntervalHint: '非ライブのタイルが新しいスナップショットを取得する頻度。',
         statusOverlay: 'ステータス表示',
-        statusOverlayHint: 'コンパクト：状態バッジのみ。フル：＋進捗・レイヤー・残り時間。',
+        statusOverlayHint: 'コンパクト：状態バッジのみ。フル：＋進捗・レイヤー・残り時間・完了予定時刻・温度。',
+        controls: 'タイルの操作',
+        controlsHint: '各タイルの一時停止・停止・庫内ライト：ホバー時または常に表示。タッチ画面では常に表示されます。',
       },
     },
     // Controls
@@ -413,6 +422,7 @@ export default {
     // Printer card
     readyToPrint: '印刷可能',
     external: '外部',
+    externalInputsEmpty: '{{count}} 個の外部入力はすべて空です',
     ext: '外部',
     extL: 'Ext-L',
     extR: 'Ext-R',
@@ -489,6 +499,7 @@ export default {
     activeNozzle: 'アクティブ: {{nozzle}}ノズル',
     amsSwitchInletTooltip: 'フィラメント経路切替器 IN-{{inlet}}（{{side}}）— 両方のノズルに供給できます',
     nozzleRack: 'ノズルラック',
+    nozzleRackMounted: 'ツールヘッドに装着中',
     nozzleDocked: 'ドッキング中',
     nozzleMounted: 'マウント中',
     nozzleActive: 'アクティブ',
@@ -498,6 +509,7 @@ export default {
     nozzleStatus: 'ステータス',
     nozzleFilament: 'フィラメント',
     nozzleWear: '摩耗',
+    nozzlePrintTime: '印刷時間',
     nozzleMaxTemp: '最高温度',
     nozzleSerial: 'シリアル',
     nozzleHardenedSteel: '焼入れ鋼',
@@ -562,6 +574,7 @@ export default {
       rfidRereadInitiated: 'RFID再読み取りを開始しました',
       loadInitiated: 'フィラメントをロード中…',
       unloadInitiated: 'フィラメントをアンロード中…',
+      unloadAms3h: 'スロット {{n}} をアンロード中です。プリンターに指示されたら、AMS 3H からフィラメントを手で引き戻してください。',
       failedToLoad: 'フィラメントのロードに失敗',
       failedToUnload: 'フィラメントのアンロードに失敗',
     },
@@ -768,6 +781,7 @@ export default {
       screenOnly: 'このプリンターでは、AMS の乾燥はプリンター本体の画面からのみ操作できます (Bambu の仕様上の制限)',
       stoppingDrying: '乾燥を停止しています...',
       rotateTray: '乾燥中にスプールを回転',
+      ams3hDryerSlots: 'AMS 3H で乾燥できるのはスロット {{a}} と {{b}} だけです',
       rotateUnavailableReason: '利用不可 — このAMSのスロットがツールヘッドにロードされています。スプールが供給チューブで固定されているため回転できません。先にフィラメントを引き戻してください。',
       startMode: '開始時刻',
       modeNow: '今すぐ',
@@ -2022,6 +2036,14 @@ export default {
   },
 
   // Settings page
+  wled: {
+    connectionSection: '接続', mappingSection: 'ステータスマッピング', testConnection: '接続をテスト', notTested: '未テスト', connected: 'WLED に接続済み{{name}}{{version}}', notReachable: 'WLED に接続できません。', testPreset: 'テスト', presetTested: 'プリセットを有効化しました', presetTestFailed: 'プリセットを有効化できませんでした', mappingSummary: '設定済みの状態: {{configured}}・無効な状態: {{disabled}}',
+    title: 'WLED', description: '色、エフェクト、プリセットはWLEDで直接管理します。Bambuddyはプリンターの状態を既存のプリセットに割り当てるだけです。',
+    printer: 'プリンター', enabled: 'WLED連携を有効化', baseUrl: 'WLEDのアドレス', loadPresets: 'プリセットを読み込む', online: '{{count}}件のプリセットを読み込みました', offlineHint: 'WLEDに接続できません。保存済みのプリセットIDは保持されます。', noPrinters: 'プリンターが設定されていません。', noPreset: '無効 — プリセットなし', savedUnavailable: '保存済みプリセット {{id}} — 現在利用不可', finishedTimeout: '完了タイムアウト（秒）', finishedTimeoutHint: 'この時間後に完了から待機プリセットへ切り替えます。0で無効です。', saved: 'WLED設定を保存しました', saveError: 'WLED設定を保存できませんでした',
+    presetSegmentHint: 'WLEDでプリセットを作成するときに対象セグメントを選択し、「Checked segments only」を有効にしてください。実行時、Bambuddyは設定されたプリセットのみを有効化します。',
+    status: { idle: '待機', prepare: '準備中', printing: '印刷中', paused: '一時停止', finished: '完了', error: '失敗 / エラー', queue_waiting: 'プレート取り外し待ち', filament_problem: 'フィラメント問題', hms_error: 'HMSエラー', offline: 'オフライン' },
+  },
+
   settings: {
     sliceEngine: 'スライスエンジン',
     sliceEngineSidecar: 'サーバーサイドカー',
@@ -2042,6 +2064,7 @@ export default {
       filament: 'フィラメント',
       camera: 'カメラ',
       network: 'ネットワーク',
+      wled: 'WLED',
       apiKeys: 'APIキー',
       virtualPrinter: '仮想プリンター',
       spoolbuddy: 'SpoolBuddy',
@@ -2882,7 +2905,7 @@ export default {
     tabDisplayTime: '残り時間',
     // Archive
     autoArchivePrints: '印刷を自動アーカイブ',
-    autoArchiveDescription: '印刷完了時に3MFファイルを自動保存。オフの場合、Bambuddy 以外から開始された印刷はどのプリンターでもアーカイブされません。',
+    autoArchiveDescription: 'Bambuddy 以外（スライサーまたはプリンター）から開始された印刷をアーカイブします：3MF ファイル、印刷履歴、統計、コスト。オフの場合、これらの印刷はアーカイブと統計に含まれません。スプール在庫ではフィラメント使用量が引き続き記録されます。',
     captureFinishPhotoDescription: '印刷完了時にプリンターカメラから写真を撮影します。Bambuddy は印刷中に短いタイムラプスを記録し、ベッドが下がる前の瞬間から写真を取得できるようにします。この印刷でタイムラプスを有効にしていた場合はタイムラプスファイルが保存され、それ以外の場合は写真の取得後に自動的に削除されます。',
     finishPhotoRestorePlate: '完了写真のためにプレートを戻す',
     finishPhotoRestorePlateDescription: 'プリンターは印刷終了時にビルドプレートを約 100 mm 下降させるため、完成した造形物がカメラの画角より下に来ます。Bambuddy はプレートを最終印刷レイヤーのすぐ上まで戻して写真を撮影し、その後再び下降させます。造形高さが不明な場合や次のジョブがキューにある場合はスキップされます。',
@@ -4227,8 +4250,8 @@ export default {
       groupAction: 'バージョンとしてグループ化',
       groupTooltip: 'これらのファイルを、異なるプリンター向けにスライスした同一ジョブとして扱います',
       grouped: '{{count}}個のファイルをバージョンとしてグループ化しました',
-      printAlternatives: '印刷（{{count}}件の候補）',
     },
+    printFiles: '印刷（{{count}}個のファイル）',
     title: 'ファイル管理',
     subtitle: '印刷ファイルの整理と管理',
     uploadFiles: 'ファイルをアップロード',
@@ -5320,6 +5343,13 @@ export default {
       deleteTitle: 'プロファイルの既定値を削除',
       deleteMessage: '{{product}} のプロファイル既定値を削除しますか? 既にそのプロファイルを持つスプールはそのまま保持します。',
       deleteFailed: 'プロファイルの既定値を削除できませんでした',
+      search: '製品、色、プリセットで検索',
+      noMatch: '一致するプロファイル既定値はありません',
+      presetsCount: 'プリンタープリセット: {{count}}',
+      kProfilesCount: 'K プロファイル: {{count}}',
+      applyAll: 'すべて適用',
+      applyAllHelp: 'すべてのプロファイル既定値から、使用中のスプールに未設定の項目を入力します。既に設定済みの項目は変更しません。',
+      applyAllFailed: '{{failed}} 件のプロファイル既定値を適用できませんでした。{{updated}} 本のスプールに入力しました',
     },
     suppliers: {
       label: 'サプライヤー',
@@ -5652,6 +5682,18 @@ export default {
 
   // Print modal
   printModal: {
+    multiFile: {
+      groupLabel: '選択したファイルの扱い',
+      alternatives: '候補',
+      separate: '個別のジョブ',
+      alternativesHint: '1つのジョブです。条件に合う最初に空いたプリンターがそのファイルを印刷します。',
+      separateHint: 'ファイルごとに1件のキュー項目を、下の順序で追加します。オプションはすべての項目に適用されます。',
+      alternativesBlocked: '{{model}} 向けにスライスされたファイルが複数あります。候補には、ファイルごとに異なるプリンターモデルが必要です。',
+      orderTitle: 'キューの順序',
+      incompatible: '{{model}} プリンターには送信できません：{{files}}',
+      notSlicedFor: '{{model}} 向けにスライスされていません：{{files}}',
+      failed: 'キューに追加されませんでした：{{filename}}（{{message}}）。これより前に追加済み：{{queued}}。',
+    },
     variants: {
       editNote: 'これらの候補はキュー追加時に決まります。変更するにはキャンセルして追加し直してください。',
       title: 'プリンターの候補',
@@ -6919,7 +6961,7 @@ export default {
     amsTemperatureHigh: 'AMS温度高',
     amsTemperatureHighDescription: '通常AMSの温度がしきい値を超過',
     amsDryingSuspendedTitle: '自動乾燥の停止',
-    amsDryingSuspendedDescription: '湿度がしきい値を下回らなかったため、AMS ユニットの自動乾燥を中止しました',
+    amsDryingSuspendedDescription: 'AMS ユニットの自動乾燥を中止しました：湿度がしきい値を下回らなかったか、ユニットが加熱を開始しませんでした',
     amsHtHumidityHigh: 'AMS-HT湿度高',
     amsHtHumidityHighDescription: 'AMS-HTの湿度がしきい値を超過',
     amsHtTemperatureHigh: 'AMS-HT温度高',
@@ -7674,6 +7716,8 @@ export default {
       testReadTag: 'タグを読み取り',
     },
     writeTag: {
+      writeWith: '書き込みに使うデバイス',
+      deviceOfflineOption: '{{name}}（オフライン）',
       tabExisting: '既存のスプール',
       tabNew: '新規スプール',
       tabReplace: 'タグ交換',
@@ -7764,7 +7808,7 @@ export default {
         pass: 'プリンターはこのオプションが有効と報告しています — 送信されたファイルはSDカードに保存され、アーカイブにはサムネイルとスライサーメタデータが含まれます。',
         fail: 'プリンターはこのオプションが無効と報告しています。「送信ファイルを外部ストレージに保存」を有効にしてください — 新しいファームウェア (P2S 01.02 / Bambu Studio 2.6以降) ではプリンター本体の印刷設定にトグルがあります。古いバージョンでは Bambu Studio / OrcaSlicer のデバイスタブにあります。この設定がないと、アーカイブされた印刷にはサムネイルもスライサーメタデータも残りません。',
         skip: '未確認 — アクティブなMQTT接続が必要です。古いスライサーでこの設定がスライサー側のみに存在する場合、プリンターはそれを報告しないため、オプションが無効でもこのチェックは通過します — インストール手順4を手動で確認してください。',
-        skip_unsupported_model: 'このモデルにはSDスロットがありますが、オプションを有効にする方法がありません — 現在のP1シリーズのファームウェアはBambu Studioにトグルを表示せず、プリンターに画面もありません。ここで修正すべきことはありません。Bambu Labがファームウェアで対応するまで、アーカイブされた印刷にはサムネイルやスライサーのメタデータが欠ける場合があります。',
+        skip_unsupported_model: 'このモデルではこのオプションを有効にできません。現在のファームウェアでは、プリンターにも Bambu Studio にもこのオプションがありません。ここで直すことはありません。Bambu Lab が追加するまで、アーカイブされたプリントにはサムネイルとスライサーのメタデータが欠けることがあります。',
         fail_no_media: 'オプションは有効ですが、プリンターのスロットにカードもUSBメモリも検出されないため、送信ファイルの保存先がありません。挿入して再度印刷してください。それまでアーカイブされる印刷にはサムネイルとスライサーメタデータがありません。',
         warn_internal_storage: 'オプションは有効でストレージも装着されていますが、直近の印刷は Bambuddy が読み取れないプリンターの内部ストレージに保存されました。H2 シリーズ、P2S、X2D では、この設定に関係なく Bambu Studio の「印刷」ボタンは常にそちらへ送信します。印刷は名前と時間付きでアーカイブされますが、サムネイルとスライサーのメタデータはありません。完全なアーカイブを残すには、Bambuddy から印刷を開始するか、OrcaSlicer でスライスするか、Bambu Studio で「送信」から「外部ストレージ」を選んだあとに印刷を開始してください。',
         warn_internal_history: 'オプションは有効でストレージもありますが、直近の印刷はすでにプリンター内にあったファイルから実行されました — 画面からの再印刷、Handy からの開始、または以前に送信したファイルです。そのライブラリは Bambuddy が読めない内部ストレージにあり、この印刷では何も送信されていないため、どの設定を変えても解決しません。名前と時間付きでアーカイブはされますが、サムネイルとスライサーのメタデータはありません。完全なアーカイブにするには、Bambuddy から印刷を開始するか、スライサーから送信してください。',

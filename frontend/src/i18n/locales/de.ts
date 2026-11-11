@@ -316,6 +316,8 @@ export default {
     },
     temperatures: {
       nozzle: 'Düse',
+      // The H3C's nozzle on the toolhead, by its rack position (#3442).
+      mounted: 'Düse {{n}}',
       bed: 'Druckbett',
       chamber: 'Kammer',
     },
@@ -379,10 +381,15 @@ export default {
       summary: '{{live}} live, {{snap}} Schnappschüsse, {{total}} insgesamt',
       layer: 'Schicht {{cur}}/{{total}}',
       timeLeft: 'noch {{time}}',
+      eta: 'fertig {{time}}',
       statusMode: {
         off: 'Aus',
         compact: 'Kompakt',
         full: 'Voll',
+      },
+      controlsMode: {
+        hover: 'Beim Überfahren',
+        always: 'Immer',
       },
       settings: {
         title: 'Kamera-Wand-Einstellungen',
@@ -391,7 +398,9 @@ export default {
         snapshotInterval: 'Schnappschuss-Intervall (Sekunden)',
         snapshotIntervalHint: 'Wie oft Nicht-Live-Kacheln einen neuen Schnappschuss abrufen.',
         statusOverlay: 'Status-Overlay',
-        statusOverlayHint: 'Kompakt: nur Status-Plakette. Voll: + Fortschritt, Schicht, Restzeit.',
+        statusOverlayHint: 'Kompakt: nur Status-Plakette. Voll: + Fortschritt, Schicht, Restzeit, Fertigstellung, Temperaturen.',
+        controls: 'Kachel-Steuerung',
+        controlsHint: 'Pause, Stopp und Kammerlicht auf jeder Kachel: beim Überfahren oder immer. Touchscreens zeigen sie immer.',
       },
     },
     // Controls
@@ -414,6 +423,7 @@ export default {
     // Printer card
     readyToPrint: 'Druckbereit',
     external: 'Extern',
+    externalInputsEmpty: 'Alle {{count}} externen Eingänge sind leer',
     ext: 'Extern',
     extL: 'Ext-L',
     extR: 'Ext-R',
@@ -490,6 +500,7 @@ export default {
     activeNozzle: 'Aktiv: {{nozzle}} Düse',
     amsSwitchInletTooltip: 'Filamentweiche IN-{{inlet}} ({{side}}) — versorgt beide Düsen',
     nozzleRack: 'Düsenhalter',
+    nozzleRackMounted: 'Am Werkzeugkopf',
     nozzleDocked: 'Angedockt',
     nozzleMounted: 'Montiert',
     nozzleActive: 'Aktiv',
@@ -499,6 +510,7 @@ export default {
     nozzleStatus: 'Status',
     nozzleFilament: 'Filament',
     nozzleWear: 'Verschleiß',
+    nozzlePrintTime: 'Druckzeit',
     nozzleMaxTemp: 'Max. Temp',
     nozzleSerial: 'Seriennr.',
     nozzleHardenedSteel: 'Gehärteter Stahl',
@@ -563,6 +575,7 @@ export default {
       rfidRereadInitiated: 'RFID-Neueinlesen gestartet',
       loadInitiated: 'Filament wird geladen…',
       unloadInitiated: 'Filament wird entladen…',
+      unloadAms3h: 'Slot {{n}} wird entladen. Sobald der Drucker dazu auffordert, das Filament von Hand aus dem AMS 3H zurückziehen.',
       failedToLoad: 'Filament konnte nicht geladen werden',
       failedToUnload: 'Filament konnte nicht entladen werden',
     },
@@ -769,6 +782,7 @@ export default {
       screenOnly: 'Die AMS-Trocknung kann bei diesem Drucker nur am Bildschirm des Druckers selbst gesteuert werden (Einschränkung von Bambu)',
       stoppingDrying: 'Trocknung wird gestoppt...',
       rotateTray: 'Spule während der Trocknung drehen',
+      ams3hDryerSlots: 'Der AMS 3H trocknet nur die Slots {{a}} und {{b}}',
       rotateUnavailableReason: 'Nicht verfügbar — in diesem AMS ist ein Slot zum Druckkopf hin geladen. Die Spule ist durch den Zuführschlauch blockiert und kann nicht rotieren. Filament zuerst zurückziehen.',
       startMode: 'Startzeit',
       modeNow: 'Jetzt',
@@ -2023,6 +2037,14 @@ export default {
   },
 
   // Settings page
+  wled: {
+    connectionSection: 'Verbindung', mappingSection: 'Statuszuordnung', testConnection: 'Verbindung testen', notTested: 'Nicht getestet', connected: 'Mit WLED verbunden{{name}}{{version}}', notReachable: 'WLED ist nicht erreichbar.', testPreset: 'Testen', presetTested: 'Preset aktiviert', presetTestFailed: 'Preset konnte nicht aktiviert werden', mappingSummary: 'Konfigurierte Zustände: {{configured}} · Deaktivierte Zustände: {{disabled}}',
+    title: 'WLED', description: 'Farben, Effekte und Presets werden direkt in WLED verwaltet. Bambuddy ordnet Druckerzustände lediglich vorhandenen Presets zu.',
+    printer: 'Drucker', enabled: 'WLED-Integration aktivieren', baseUrl: 'WLED-URL', loadPresets: 'Presets laden', online: '{{count}} Presets geladen', offlineHint: 'WLED ist nicht erreichbar. Gespeicherte Preset-IDs bleiben erhalten.', noPrinters: 'Keine Drucker konfiguriert.', noPreset: 'Deaktiviert – kein Preset', savedUnavailable: 'Gespeichertes Preset {{id}} – derzeit nicht verfügbar', finishedTimeout: 'Finished-Timeout (Sekunden)', finishedTimeoutHint: 'Danach vom Finished-Preset zum Idle-Preset wechseln. 0 deaktiviert den Timeout.', saved: 'WLED-Einstellungen gespeichert', saveError: 'WLED-Einstellungen konnten nicht gespeichert werden',
+    presetSegmentHint: 'Wähle das Zielsegment beim Erstellen des Presets direkt in WLED aus und aktiviere „Checked segments only“. Zur Laufzeit aktiviert Bambuddy ausschließlich das konfigurierte Preset.',
+    status: { idle: 'Bereit', prepare: 'Vorbereitung', printing: 'Druckt', paused: 'Pausiert', finished: 'Fertig', error: 'Fehlgeschlagen / Fehler', queue_waiting: 'Wartet auf freie Druckplatte', filament_problem: 'Filamentproblem', hms_error: 'HMS-Fehler', offline: 'Offline' },
+  },
+
   settings: {
     sliceEngine: 'Slice-Engine',
     sliceEngineSidecar: 'Server-Sidecar',
@@ -2043,6 +2065,7 @@ export default {
       filament: 'Filament',
       camera: 'Kamera',
       network: 'Netzwerk',
+      wled: 'WLED',
       apiKeys: 'API-Schlüssel',
       virtualPrinter: 'Virtueller Drucker',
       spoolbuddy: 'SpoolBuddy',
@@ -2883,7 +2906,7 @@ export default {
     tabDisplayTime: 'Verbleibende Zeit',
     // Archive
     autoArchivePrints: 'Drucke automatisch archivieren',
-    autoArchiveDescription: '3MF-Dateien automatisch speichern, wenn Drucke abgeschlossen sind. Aus: Kein Drucker archiviert Drucke, die außerhalb von Bambuddy gestartet wurden.',
+    autoArchiveDescription: 'Drucke archivieren, die außerhalb von Bambuddy gestartet wurden (im Slicer oder am Drucker): 3MF-Datei, Druckverlauf, Statistik und Kosten. Aus: Diese Drucke fehlen im Archiv und in der Statistik; der Spulenbestand zählt ihr Filament weiterhin.',
     captureFinishPhotoDescription: 'Foto von der Druckerkamera aufnehmen, wenn der Druck abgeschlossen ist. Bambuddy zeichnet während des Drucks einen kurzen Zeitraffer auf, damit das Foto aus dem Moment vor dem Absenken der Druckplatte stammen kann. Die Zeitraffer-Datei bleibt erhalten, wenn du den Zeitraffer für diesen Druck aktiviert hast, andernfalls wird sie nach Aufnahme des Fotos automatisch gelöscht.',
     finishPhotoRestorePlate: 'Druckplatte für Abschlussfoto anheben',
     finishPhotoRestorePlateDescription: 'Der Drucker senkt die Druckplatte am Druckende um etwa 100 mm ab, wodurch der fertige Druck unterhalb des Kamerabildausschnitts liegt. Bambuddy hebt sie wieder bis knapp über die zuletzt gedruckte Schicht an, nimmt das Foto auf und senkt sie danach wieder ab. Wird übersprungen, wenn die Druckhöhe unbekannt ist oder ein weiterer Auftrag in der Warteschlange steht.',
@@ -4227,8 +4250,8 @@ export default {
       groupAction: 'Als Versionen gruppieren',
       groupTooltip: 'Diese Dateien als denselben Auftrag markieren, gesliced für verschiedene Drucker',
       grouped: '{{count}} Dateien als Versionen gruppiert',
-      printAlternatives: 'Drucken ({{count}} Alternativen)',
     },
+    printFiles: 'Drucken ({{count}} Dateien)',
     title: 'Dateimanager',
     subtitle: 'Organisieren und verwalten Sie Ihre Druckdateien',
     uploadFiles: 'Dateien hochladen',
@@ -5320,6 +5343,13 @@ export default {
       deleteTitle: 'Profil-Standard löschen',
       deleteMessage: 'Profil-Standard für {{product}} löschen? Spulen, die seine Profile schon haben, behalten sie.',
       deleteFailed: 'Profil-Standard konnte nicht gelöscht werden',
+      search: 'Nach Produkt, Farbe oder Profil suchen',
+      noMatch: 'Kein Profil-Standard passt',
+      presetsCount: 'Druckerprofile: {{count}}',
+      kProfilesCount: 'K-Profile: {{count}}',
+      applyAll: 'Alle anwenden',
+      applyAllHelp: 'Bei aktiven Spulen aus allen Profil-Standards ergänzen, was noch fehlt. Vorhandenes wird nicht geändert.',
+      applyAllFailed: '{{failed}} Profil-Standards konnten nicht angewendet werden; bei {{updated}} Spulen ergänzt',
     },
     suppliers: {
       label: 'Lieferanten',
@@ -5652,6 +5682,18 @@ export default {
 
   // Print modal
   printModal: {
+    multiFile: {
+      groupLabel: 'Was aus den gewählten Dateien wird',
+      alternatives: 'Alternativen',
+      separate: 'Einzelne Aufträge',
+      alternativesHint: 'Ein Auftrag. Der erste passende Drucker, der frei wird, druckt seine Datei.',
+      separateHint: 'Ein Warteschlangeneintrag je Datei, in der Reihenfolge unten angelegt. Die Optionen gelten für jeden Eintrag.',
+      alternativesBlocked: 'Mehr als eine Datei ist für {{model}} gesliced. Alternativen brauchen für jede Datei ein anderes Druckermodell.',
+      orderTitle: 'Reihenfolge in der Warteschlange',
+      incompatible: 'Kann nicht an {{model}}-Drucker gesendet werden: {{files}}',
+      notSlicedFor: 'Nicht für {{model}} gesliced: {{files}}',
+      failed: 'Nicht eingereiht: {{filename}} ({{message}}). Davor eingereiht: {{queued}}.',
+    },
     variants: {
       editNote: 'Diese Alternativen wurden beim Einreihen festgelegt. Zum Ändern abbrechen und neu einreihen.',
       title: 'Drucker-Alternativen',
@@ -6918,7 +6960,7 @@ export default {
     amsTemperatureHigh: 'AMS-Temperatur hoch',
     amsTemperatureHighDescription: 'Normale AMS-Temperatur überschreitet Schwellenwert',
     amsDryingSuspendedTitle: 'Automatische Trocknung ausgesetzt',
-    amsDryingSuspendedDescription: 'Automatische Trocknung wurde für eine AMS-Einheit aufgegeben, weil die Luftfeuchtigkeit nie unter den Schwellenwert fiel',
+    amsDryingSuspendedDescription: 'Automatische Trocknung wurde für eine AMS-Einheit aufgegeben: Die Luftfeuchtigkeit fiel nie unter den Schwellenwert, oder die Einheit hat nie zu heizen begonnen',
     amsHtHumidityHigh: 'AMS-HT-Feuchtigkeit hoch',
     amsHtHumidityHighDescription: 'AMS-HT-Feuchtigkeit überschreitet Schwellenwert',
     amsHtTemperatureHigh: 'AMS-HT-Temperatur hoch',
@@ -7673,6 +7715,8 @@ export default {
       includeBeta: 'Beta-Versionen einschließen',
     },
     writeTag: {
+      writeWith: 'Schreiben mit',
+      deviceOfflineOption: '{{name}} (Gerät offline)',
       tabExisting: 'Vorhandene Spule',
       tabNew: 'Neue Spule',
       tabReplace: 'Tag ersetzen',
@@ -7763,7 +7807,7 @@ export default {
         pass: 'Der Drucker meldet, dass diese Option aktiv ist — gesendete Dateien werden auf der SD-Karte gespeichert und Archive enthalten Vorschaubilder und Slicer-Metadaten.',
         fail: 'Der Drucker meldet, dass diese Option deaktiviert ist. Aktivieren Sie "Gesendete Dateien auf externem Speicher speichern" — bei neuer Firmware (P2S 01.02 / Bambu Studio 2.6+) liegt der Schalter in den Druckeinstellungen des Druckers, bei älteren Versionen im Geräte-Tab von Bambu Studio / OrcaSlicer. Ohne diese Option fehlen jedem archivierten Druck Vorschaubild und Slicer-Metadaten.',
         skip: 'Nicht geprüft — eine aktive MQTT-Verbindung ist erforderlich. Bei älteren Slicern, in denen diese Einstellung nur im Slicer existiert, meldet sie der Drucker nicht — diese Prüfung besteht auch dann, wenn die Option deaktiviert ist. Prüfen Sie Installationsschritt 4 in diesem Fall manuell.',
-        skip_unsupported_model: 'Dieses Modell hat einen SD-Slot, aber keine Möglichkeit, die Option zu aktivieren — die aktuelle P1-Firmware zeigt den Schalter in Bambu Studio nicht an und der Drucker hat kein Display. Hier gibt es nichts zu beheben; archivierten Drucken fehlen möglicherweise Vorschaubilder und Slicer-Metadaten, bis Bambu Lab dies per Firmware unterstützt.',
+        skip_unsupported_model: 'Bei diesem Modell lässt sich die Option nicht einschalten: Mit der aktuellen Firmware bieten sie weder der Drucker noch Bambu Studio an. Hier ist nichts zu beheben; archivierten Drucken können Vorschaubilder und Slicer-Metadaten fehlen, bis Bambu Lab die Option nachreicht.',
         fail_no_media: 'Die Option ist aktiviert, aber der Drucker meldet weder Karte noch Stick im Steckplatz, daher können gesendete Dateien nirgends abgelegt werden. Legen Sie einen ein und drucken Sie erneut — bis dahin fehlen jedem archivierten Druck Vorschaubild und Slicer-Metadaten.',
         warn_internal_storage: 'Die Option ist aktiviert und ein Speicher ist vorhanden, aber der letzte Druck landete dennoch im internen Speicher des Druckers, den Bambuddy nicht lesen kann. Bei der H2-Serie, dem P2S und dem X2D sendet die Schaltfläche "Drucken" in Bambu Studio unabhängig von dieser Option immer dorthin. Drucke werden mit Namen und Zeiten archiviert, aber ohne Vorschaubild und Slicer-Metadaten. Für vollständige Archive den Druck aus Bambuddy starten oder in OrcaSlicer slicen — oder in Bambu Studio "Senden" mit "Extern" verwenden und den Druck danach starten.',
         warn_internal_history: 'Die Option ist aktiv und Speicher vorhanden, aber der letzte Druck lief aus einer Datei, die bereits auf dem Drucker lag — ein erneuter Druck über sein Display, ein Start aus Handy oder eine früher gesendete Datei. Diese Bibliothek liegt im internen Speicher, den Bambuddy nicht lesen kann, und keine Einstellung ändert das, denn für diesen Druck wurde nichts gesendet. Er wird weiterhin mit Namen und Zeiten archiviert, nur ohne Vorschaubild und Slicer-Metadaten. Für vollständige Archive Drucke aus Bambuddy starten oder aus dem Slicer senden.',

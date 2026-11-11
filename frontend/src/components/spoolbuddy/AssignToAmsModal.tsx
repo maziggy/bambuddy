@@ -6,16 +6,11 @@ import { api, type InventorySpool, type PrinterStatus, type AMSTray } from '../.
 import { ConfirmModal } from '../ConfirmModal';
 import { AmsUnitCard, NozzleBadge } from './AmsUnitCard';
 import type { AmsThresholds } from './AmsUnitCard';
-import { getFillBarColor } from '../../utils/amsHelpers';
+import { getFillBarColor, isAms3hUnit, isAmsHtUnit, rackExternalLabel, spoolBuddyAmsName } from '../../utils/amsHelpers';
+import { EXTERNAL_AMS_ID, externalSlotIndex, externalTrayId, isRackAms, layoutAmsType, trayLayoutOf } from '../../utils/trayIds';
 import { getSwatchStyle, resolveSpoolColorName } from '../../utils/colors';
 import { spoolSwatchStyle } from './spoolPaint';
 import { useUiSettings } from '../../hooks/useUiSettings';
-
-function getAmsName(id: number): string {
-  if (id <= 3) return `AMS ${String.fromCharCode(65 + id)}`;
-  if (id >= 128 && id <= 135) return `AMS HT ${String.fromCharCode(65 + id - 128)}`;
-  return `AMS ${id}`;
-}
 
 function isTrayEmpty(tray: AMSTray): boolean {
   return !tray.tray_type || tray.tray_type === '';
@@ -253,6 +248,8 @@ export function AssignToAmsModal({
   const regularAms = useMemo(() => amsUnits.filter(u => !u.is_ams_ht), [amsUnits]);
   const htAms = useMemo(() => amsUnits.filter(u => u.is_ams_ht), [amsUnits]);
   const vtTrays = useMemo(() => [...(status?.vt_tray ?? [])].sort((a, b) => (a.id ?? 254) - (b.id ?? 254)), [status?.vt_tray]);
+  const trayLayout = useMemo(() => trayLayoutOf(amsUnits, vtTrays), [amsUnits, vtTrays]);
+  const rackExternals = trayLayout.rack;
   const isDualNozzle = printer?.nozzle_count === 2 || status?.temperatures?.nozzle_2 !== undefined;
 
   const cachedAmsExtruderMap = useRef<Record<string, number>>({});
@@ -342,7 +339,7 @@ export function AssignToAmsModal({
 
   const getTrayForSlot = useCallback((amsId: number, trayId: number): AMSTray | null => {
     if (amsId === 254 || amsId === 255) {
-      const extTrayId = amsId === 254 ? 254 : 254 + trayId;
+      const extTrayId = amsId === 254 ? 254 : externalTrayId(trayId);
       return vtTrays.find(t => (t.id ?? 254) === extTrayId) || null;
     }
     const unit = amsUnits.find(u => u.id === amsId);
@@ -350,14 +347,16 @@ export function AssignToAmsModal({
   }, [amsUnits, vtTrays]);
 
   const getSlotLocationLabel = useCallback((amsId: number, trayId: number): string => {
-    if (amsId <= 3) return `${getAmsName(amsId)} ${t('ams.slot', 'Slot')} ${trayId + 1}`;
-    if (amsId >= 128 && amsId <= 135) return getAmsName(amsId);
+    const amsType = layoutAmsType(trayLayout, amsId);
+    if (amsId <= 3 || isRackAms(amsType)) return `${spoolBuddyAmsName(amsId, amsType)} ${t('ams.slot', 'Slot')} ${trayId + 1}`;
+    if (amsId === EXTERNAL_AMS_ID && rackExternals) return rackExternalLabel(externalTrayId(trayId));
+    if (isAmsHtUnit(amsId)) return spoolBuddyAmsName(amsId);
     if (!isDualNozzle) return t('printers.ext', 'Ext');
     // Current assignment records use AMS 255 with tray 0/1 for Ext-L/Ext-R;
     // AMS 254 is retained for compatibility with older assignment records.
     if (amsId === 254 || (amsId === 255 && trayId === 0)) return t('printers.extL', 'Ext-L');
     return t('printers.extR', 'Ext-R');
-  }, [t, isDualNozzle]);
+  }, [t, isDualNozzle, rackExternals, trayLayout]);
 
   const doAssign = useCallback((amsId: number, trayId: number) => {
     setStatusType('info');
@@ -451,7 +450,7 @@ export function AssignToAmsModal({
       const amsFill = tray.remain != null && tray.remain >= 0 ? tray.remain : null;
       const resolvedInvFill = (invFill === 0 && amsFill !== null && amsFill > 0) ? null : invFill;
       items.push({
-        key: `ht-${unit.id}`, label: getAmsName(unit.id),
+        key: `ht-${unit.id}`, label: spoolBuddyAmsName(unit.id),
         amsId: unit.id, trayId: 0, tray, isEmpty: isTrayEmpty(tray),
         nozzleSide: getNozzleSide(unit.id),
         effectiveFill: resolvedInvFill ?? amsFill,
@@ -460,15 +459,17 @@ export function AssignToAmsModal({
 
     for (const extTray of vtTrays) {
       const extTrayId = extTray.id ?? 254;
-      const extSlotTrayId = extTrayId - 254;
+      const extSlotTrayId = externalSlotIndex(extTrayId);
       const extInvFill = fillOverrides[`255-${extSlotTrayId}`] ?? null;
       const extAmsFill = extTray.remain != null && extTray.remain >= 0 ? extTray.remain : null;
       const extResolvedInvFill = (extInvFill === 0 && extAmsFill !== null && extAmsFill > 0) ? null : extInvFill;
       items.push({
         key: `ext-${extTrayId}`,
-        label: isDualNozzle
-          ? (extTrayId === 254 ? t('printers.extL', 'Ext-L') : t('printers.extR', 'Ext-R'))
-          : t('printers.ext', 'Ext'),
+        label: rackExternals
+          ? rackExternalLabel(extTrayId)
+          : isDualNozzle
+            ? (extTrayId === 254 ? t('printers.extL', 'Ext-L') : t('printers.extR', 'Ext-R'))
+            : t('printers.ext', 'Ext'),
         amsId: 255, trayId: extSlotTrayId, tray: extTray,
         isEmpty: isTrayEmpty(extTray),
         nozzleSide: isDualNozzle ? (extTrayId === 254 ? 'L' : 'R') : null,
@@ -477,7 +478,7 @@ export function AssignToAmsModal({
     }
 
     return items;
-  }, [htAms, vtTrays, isDualNozzle, t, getNozzleSide, fillOverrides]);
+  }, [htAms, vtTrays, isDualNozzle, t, getNozzleSide, fillOverrides, rackExternals]);
 
   if (!isOpen) return null;
 
@@ -631,8 +632,9 @@ export function AssignToAmsModal({
               {regularAms.length > 0 && (
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
                   {regularAms.map((unit) => (
+                    // The AMS 3H takes the full width for its nine slots.
+                    <div key={unit.id} className={isAms3hUnit(unit) ? 'xl:col-span-2' : 'contents'}>
                     <AmsUnitCard
-                      key={unit.id}
                       unit={unit}
                       activeSlot={
                         selectedSlot?.amsId === unit.id
@@ -647,6 +649,7 @@ export function AssignToAmsModal({
                       thresholds={amsThresholds}
                       fillOverrides={fillOverrides}
                     />
+                    </div>
                   ))}
                 </div>
               )}

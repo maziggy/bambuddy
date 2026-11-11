@@ -18,6 +18,7 @@ from backend.app.api.routes._spoolman_helpers import spoolman_net_weight
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import async_session
 from backend.app.services import spool_swaps
+from backend.app.services.printer_manager import printer_tray_layout
 from backend.app.services.spoolman import (
     SpoolmanClientError,
     SpoolmanNotFoundError,
@@ -25,6 +26,7 @@ from backend.app.services.spoolman import (
     get_spoolman_client,
     init_spoolman_client,
 )
+from backend.app.utils.tray_ids import EXTERNAL_AMS_ID, TrayLayout, external_slot_index
 
 logger = logging.getLogger(__name__)
 
@@ -74,23 +76,16 @@ def _hash_serial_to_hex32(serial: str) -> str:
     return format(hash_value, "X").zfill(8)
 
 
-def _global_tray_id_to_ams_slot(global_tray_id: int) -> tuple[int, int]:
+def _global_tray_id_to_ams_slot(global_tray_id: int, layout: TrayLayout | None = None) -> tuple[int, int]:
     """Convert global tray id to (ams_id, tray_id) tuple for fallback tag generation."""
-    # External spool slots use IDs 254/255 and map to ams_id=255 tray_id=0/1.
-    if global_tray_id >= 254:
-        return 255, max(0, global_tray_id - 254)
-    # AMS-HT units are addressed by ams_id directly and have a single tray.
-    if global_tray_id >= 128:
-        return global_tray_id, 0
-    # Standard AMS units: four trays each.
-    return global_tray_id // 4, global_tray_id % 4
+    return (layout or TrayLayout()).slot_key(global_tray_id)
 
 
-def _get_fallback_spool_tag(printer_serial: str, global_tray_id: int) -> str:
+def _get_fallback_spool_tag(printer_serial: str, global_tray_id: int, layout: TrayLayout | None = None) -> str:
     """Mirror frontend getFallbackSpoolTag(serial, amsId, trayId) exactly."""
     if not printer_serial:
         return ""
-    ams_id, tray_id = _global_tray_id_to_ams_slot(global_tray_id)
+    ams_id, tray_id = _global_tray_id_to_ams_slot(global_tray_id, layout)
     return get_fallback_spool_tag_for_slot(printer_serial, ams_id, tray_id)
 
 
@@ -118,7 +113,9 @@ def is_slot_fallback_tag(tag: str, printer_serials) -> bool:
     return any(tag[:8] == _hash_serial_to_hex32(s) for s in printer_serials if s)
 
 
-def _resolve_spool_tag(tray_info: dict, printer_serial: str = "", global_tray_id: int | None = None) -> str:
+def _resolve_spool_tag(
+    tray_info: dict, printer_serial: str = "", global_tray_id: int | None = None, layout: TrayLayout | None = None
+) -> str:
     """Get the best spool identifier from tray info (prefer tray_uuid over tag_uid).
 
     Returns empty string if no usable identifier is found.
@@ -131,7 +128,7 @@ def _resolve_spool_tag(tray_info: dict, printer_serial: str = "", global_tray_id
     if tag_uid and tag_uid != _ZERO_TAG_UID and _is_non_zero_identifier(tag_uid):
         return tag_uid
     if global_tray_id is not None:
-        return _get_fallback_spool_tag(printer_serial, global_tray_id)
+        return _get_fallback_spool_tag(printer_serial, global_tray_id, layout)
     return ""
 
 
@@ -326,7 +323,7 @@ def _resolve_slot_to_tray_fallback(
     # fields ``bambu_mqtt`` maintains on the state object itself, so an empty
     # payload must not short-circuit past it.
     if raw_data and not tray_state_only:
-        decoded = _decode_mqtt_mapping(raw_data.get("mapping"))
+        decoded = _decode_mqtt_mapping(raw_data.get("mapping"), TrayLayout.from_state(state))
         if decoded:
             return decoded, "mqtt"
 
@@ -356,12 +353,14 @@ def build_ams_tray_lookup(raw_data: dict) -> dict[int, dict]:
     """
     lookup = {}
     ams_data = raw_data.get("ams", [])
+    layout = TrayLayout.from_units(ams_data if isinstance(ams_data, list) else None)
     for ams_unit in ams_data:
         ams_id = int(ams_unit.get("id", 0))
         for tray in ams_unit.get("tray", []):
             tray_id = int(tray.get("id", 0))
-            # AMS-HT units have IDs starting at 128 with a single tray
-            global_tray_id = ams_id if ams_id >= 128 else ams_id * 4 + tray_id
+            # AMS-HT units have IDs starting at 128 with a single tray; the
+            # H3C's AMS 3H is 28 + slot (see utils.tray_ids)
+            global_tray_id = layout.global_tray_id(ams_id, tray_id)
             lookup[global_tray_id] = {
                 "tray_uuid": tray.get("tray_uuid", ""),
                 "tag_uid": tray.get("tag_uid", ""),
@@ -424,11 +423,12 @@ def _snapshot_tray_remain(raw_data: dict, skipped_out: list[str] | None = None) 
         if not isinstance(vt, dict):
             continue
         vt_id = int(vt.get("id", 254))
-        # 254 → (255, 0), 255 → (255, 1) — matches usage_tracker's encoding.
-        vt_tray_id = vt_id - 254
+        # 254 → (255, 0), 255 → (255, 1), a nozzle-rack printer's 247-253 →
+        # (255, 2-8) — matches usage_tracker's encoding.
+        vt_tray_id = external_slot_index(vt_id)
         remain = vt.get("remain", -1)
         if isinstance(remain, int) and 0 <= remain <= 100:
-            snapshot[f"255-{vt_tray_id}"] = {
+            snapshot[f"{EXTERNAL_AMS_ID}-{vt_tray_id}"] = {
                 "remain": remain,
                 "tray_uuid": vt.get("tray_uuid", "") or "",
             }
@@ -1085,6 +1085,7 @@ async def _report_spool_usage_for_slots(
     Returns number of spools successfully updated.
     """
     spools_updated = 0
+    layout = printer_tray_layout(printer_id)
     for slot_id, grams_used in filament_usage_items:
         if grams_used <= 0:
             continue
@@ -1095,7 +1096,7 @@ async def _report_spool_usage_for_slots(
             logger.debug("[SPOOLMAN] Slot %s: no tray at global_tray_id %s", slot_id, global_tray_id)
             continue
 
-        is_external = global_tray_id >= 254
+        is_external = layout.is_external(global_tray_id)
         tray_type = tray_info.get("tray_type", "")
         logger.debug(
             "[SPOOLMAN] Slot %s resolved to global_tray_id %s (tray_type=%s, external=%s)",
@@ -1117,7 +1118,7 @@ async def _report_spool_usage_for_slots(
         # same fetch the colour and material already pay for.
         spool_obj: dict | None = None
 
-        spool_tag = _resolve_spool_tag(tray_info, printer_serial, global_tray_id)
+        spool_tag = _resolve_spool_tag(tray_info, printer_serial, global_tray_id, layout)
         if spool_tag:
             spool = await client.find_spool_by_tag(spool_tag)
             if spool:
@@ -1128,7 +1129,7 @@ async def _report_spool_usage_for_slots(
                 spool_material = (spool.get("filament") or {}).get("material")
 
         if spool_id_to_use is None and printer_id is not None:
-            ams_id, tray_id = _global_tray_id_to_ams_slot(global_tray_id)
+            ams_id, tray_id = _global_tray_id_to_ams_slot(global_tray_id, layout)
             spool_id_to_use = await _resolve_spool_id_via_slot_assignment(printer_id, ams_id, tray_id)
             if spool_id_to_use is not None:
                 resolution_path = "slot-assignment"
@@ -1137,7 +1138,7 @@ async def _report_spool_usage_for_slots(
         # grams with the one it replaced (#3325); the first is the archive's.
         shares = None
         if swaps is not None:
-            shares = swaps.shares(*_global_tray_id_to_ams_slot(global_tray_id), slot_id, grams_used)
+            shares = swaps.shares(*_global_tray_id_to_ams_slot(global_tray_id, layout), slot_id, grams_used)
             if shares and shares[0][0] != spool_id_to_use:
                 spool_id_to_use = shares[0][0]
                 resolution_path = "swap log"
@@ -1238,6 +1239,7 @@ async def _report_spool_usage_split_by_tray_changes(
 
     spools_updated = 0
     handled_global_tray_ids: set[int] = set()
+    layout = printer_tray_layout(printer_id)
 
     for usage in filament_usage:
         slot_id = usage.get("slot_id", 0)
@@ -1275,7 +1277,7 @@ async def _report_spool_usage_split_by_tray_changes(
             spool_material: str | None = None
             spool_obj: dict | None = None
 
-            spool_tag = _resolve_spool_tag(tray_info, printer_serial, tray_global) if tray_info else ""
+            spool_tag = _resolve_spool_tag(tray_info, printer_serial, tray_global, layout) if tray_info else ""
             if spool_tag:
                 spool = await client.find_spool_by_tag(spool_tag)
                 if spool:
@@ -1286,7 +1288,7 @@ async def _report_spool_usage_split_by_tray_changes(
                     spool_material = (spool.get("filament") or {}).get("material")
 
             if spool_id_to_use is None:
-                seg_ams_id, seg_tray_id = _global_tray_id_to_ams_slot(tray_global)
+                seg_ams_id, seg_tray_id = _global_tray_id_to_ams_slot(tray_global, layout)
                 spool_id_to_use = await _resolve_spool_id_via_slot_assignment(printer_id, seg_ams_id, seg_tray_id)
                 if spool_id_to_use is not None:
                     resolution_path = "slot-assignment"
@@ -1296,7 +1298,7 @@ async def _report_spool_usage_split_by_tray_changes(
             if swaps is not None:
                 is_last = seg_idx + 1 >= len(tray_changes)
                 seg_shares = swaps.shares(
-                    *_global_tray_id_to_ams_slot(tray_global),
+                    *_global_tray_id_to_ams_slot(tray_global, layout),
                     slot_id,
                     segment_grams,
                     tray_changes[seg_idx][1],
@@ -1586,7 +1588,9 @@ async def _report_partial_usage(
                 diameter = 1.75
 
                 if tray_info:
-                    spool_tag = _resolve_spool_tag(tray_info, printer_serial, global_tray_id)
+                    spool_tag = _resolve_spool_tag(
+                        tray_info, printer_serial, global_tray_id, printer_tray_layout(printer_id)
+                    )
                     if spool_tag:
                         spool = await client.find_spool_by_tag(spool_tag)
                         if spool:
@@ -1960,16 +1964,17 @@ def _print_used_tray_keys(
     read into locals beforehand.
     """
     keys: set[tuple[int, int]] = set()
+    layout = TrayLayout.from_state(state)
     for global_tray_id in list(slot_to_tray or []):
         if isinstance(global_tray_id, int) and global_tray_id >= 0:
-            keys.add(_global_tray_id_to_ams_slot(global_tray_id))
+            keys.add(_global_tray_id_to_ams_slot(global_tray_id, layout))
     for change in getattr(state, "tray_change_log", None) or []:
         if isinstance(change, (tuple, list)) and change:
             global_tray_id = change[0]
             if isinstance(global_tray_id, int) and global_tray_id >= 0:
-                keys.add(_global_tray_id_to_ams_slot(global_tray_id))
+                keys.add(_global_tray_id_to_ams_slot(global_tray_id, layout))
     if isinstance(tray_now_at_start, int) and 0 <= tray_now_at_start <= _MAX_REAL_TRAY_ID:
-        keys.add(_global_tray_id_to_ams_slot(tray_now_at_start))
+        keys.add(_global_tray_id_to_ams_slot(tray_now_at_start, layout))
     return keys
 
 
@@ -1996,6 +2001,7 @@ async def _report_remain_delta_for_slots(
     """
     spools_updated = 0
     not_in_print: list[str] = []
+    layout = printer_tray_layout(printer_id)
     for slot_key, start in tray_remain_start.items():
         try:
             ams_id_str, tray_id_str = slot_key.split("-", 1)
@@ -2006,12 +2012,7 @@ async def _report_remain_delta_for_slots(
         # Skip slots already handled by the 3MF path. Encoding mirrors
         # build_ams_tray_lookup: VT trays land at 254/255, AMS-HT keeps
         # its native id (>=128), regular AMS slots are ams_id*4+tray_id.
-        if ams_id == 255:
-            global_tray_id = 254 + tray_id
-        elif ams_id >= 128:
-            global_tray_id = ams_id
-        else:
-            global_tray_id = ams_id * 4 + tray_id
+        global_tray_id = layout.tray_from_slot_key(ams_id, tray_id)
         if global_tray_id in handled_global_tray_ids:
             continue
 

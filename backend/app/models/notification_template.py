@@ -146,6 +146,17 @@ DEFAULT_TEMPLATES = [
         ),
     },
     {
+        "event_type": "ams_drying_not_heating",
+        "name": "Auto-Drying Not Heating",
+        "title_template": "Auto-Drying Suspended",
+        "body_template": (
+            "{printer} {ams_label}: stopped automatic drying. The printer accepted {cycles} drying commands "
+            "in a row, but each time the drying timer stood still and the unit did not heat. Clear the timer "
+            "with Stop on the printer card and check the AMS power; automatic drying resumes once humidity "
+            "is back at or below {threshold}%."
+        ),
+    },
+    {
         "event_type": "bed_cooled",
         "name": "Bed Cooled",
         "title_template": "Bed Cooled",

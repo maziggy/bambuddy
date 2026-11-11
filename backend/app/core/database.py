@@ -14,6 +14,50 @@ from backend.app.core.db_dialect import is_sqlite
 logger = logging.getLogger(__name__)
 
 
+def _make_aiosqlite_stop_idempotent() -> None:
+    """Make aiosqlite's ``Connection.stop()`` safe to call twice (#3515).
+
+    aiosqlite 0.22.1 queues a stop request for the connection's worker thread
+    on every call, and the thread exits at the first. A second call's future
+    is then never resolved, and whoever awaits it waits forever. SQLAlchemy
+    reaches this on a cancelled read: it discards the connection, and when
+    that close is cancelled in turn it calls ``stop()`` while the close is
+    still running. The close never ends, its session's exit waits on it, a
+    pooled connection is lost, and in a camera stream the cancelled wait spun
+    one CPU core at 100%.
+
+    Upstream: omnilib/aiosqlite#403, fix in #404. Once a release has it, this
+    stays harmless (a second call returns the first call's future either way)
+    and can go.
+
+    aiosqlite before 0.22.1 has no ``stop()``, and SQLAlchemy then never calls
+    one, so there is nothing to fix. requirements.txt still allows those
+    versions, and the in-app update keeps an installed one.
+    """
+    try:
+        from aiosqlite.core import Connection
+    except ImportError:  # PostgreSQL-only environment
+        return
+    original = getattr(Connection, "stop", None)
+    if original is None or getattr(original, "_bambuddy_idempotent", False):
+        return
+
+    @functools.wraps(original)
+    def stop(self):
+        try:
+            return self.__dict__["_bambuddy_stop_future"]
+        except KeyError:
+            future = original(self)
+            self.__dict__["_bambuddy_stop_future"] = future
+            return future
+
+    stop._bambuddy_idempotent = True  # type: ignore[attr-defined]
+    Connection.stop = stop
+
+
+_make_aiosqlite_stop_idempotent()
+
+
 def _set_sqlite_pragmas(dbapi_conn, connection_record):
     """Set SQLite pragmas on each new connection for concurrency and performance."""
     cursor = dbapi_conn.cursor()
@@ -632,6 +676,7 @@ async def init_db():
         finance,
         github_backup,
         group,
+        hms_notified_fault,
         kprofile_note,
         library,
         local_preset,
@@ -1677,32 +1722,41 @@ async def _migrate_update_auto_link_constraint(conn) -> None:
 
 
 async def _migrate_widen_spoolman_slot_ams_id_range(conn) -> None:
-    """Widen ck_ams_id_range on spoolman_slot_assignments to admit AMS-HT (#1274).
+    """Bring spoolman_slot_assignments' CHECKs up to the model's (AMS-HT #1274, the H3C's AMS 3H).
 
-    Old formula: (ams_id >= 0 AND ams_id <= 7) OR ams_id = 255
-    New formula: (ams_id >= 0 AND ams_id <= 7) OR (ams_id >= 128 AND ams_id <= 191) OR ams_id = 255
+    ck_ams_id_range, oldest formula: (ams_id >= 0 AND ams_id <= 7) OR ams_id = 255
+    #1274 added AMS-HT:  ... OR (ams_id >= 128 AND ams_id <= 191) OR ams_id = 255
+    Now also the AMS 3H: ... OR ams_id = 32 OR ...
+    ck_tray_id_range:    tray_id 0-3, and 4-8 for ams_id 32 / 255 (models.spoolman_slot_assignment)
 
-    The H2C/H2D AMS-HT reports ams_id 128+. The old constraint rejected every
-    AMS-HT slot link with `IntegrityError: CHECK constraint failed: ck_ams_id_range`.
+    The H2C/H2D AMS-HT reports ams_id 128+. The H3C's AMS 3H is unit 32 with
+    nine slots, and its per-hotend external inputs are stored as (255, 2-8).
+    The old constraints rejected every such slot link with
+    `IntegrityError: CHECK constraint failed`. A table whose tray check is a
+    plain ``tray_id <= 8`` gets the final form too, without any row on slot 4-8
+    of another unit (no AMS has such a slot).
 
     PostgreSQL: DROP CONSTRAINT IF EXISTS + ADD new formula via _safe_execute.
-    SQLite: table recreation when the old (narrower) formula is detected in
-    sqlite_master. Fresh installs already have the widened constraint from
-    the CREATE TABLE migration above.
+    SQLite: table recreation when an older formula is detected in
+    sqlite_master. Fresh installs get the model's constraints from create_all.
     """
     from sqlalchemy import text
 
-    _NEW_FORMULA = "(ams_id >= 0 AND ams_id <= 7) OR (ams_id >= 128 AND ams_id <= 191) OR ams_id = 255"
-    _CONSTRAINT_NAME = "ck_ams_id_range"
+    from backend.app.models.spoolman_slot_assignment import AMS_ID_CHECK, TRAY_ID_CHECK
 
     if not is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE spoolman_slot_assignments DROP CONSTRAINT IF EXISTS ck_ams_id_range")
         await _safe_execute(
-            conn,
-            f"ALTER TABLE spoolman_slot_assignments DROP CONSTRAINT IF EXISTS {_CONSTRAINT_NAME}",
+            conn, f"ALTER TABLE spoolman_slot_assignments ADD CONSTRAINT ck_ams_id_range CHECK ({AMS_ID_CHECK})"
         )
+        await _safe_execute(conn, "ALTER TABLE spoolman_slot_assignments DROP CONSTRAINT IF EXISTS ck_tray_id_range")
+        dropped = await conn.execute(
+            text(f"DELETE FROM spoolman_slot_assignments WHERE NOT ({TRAY_ID_CHECK})")  # nosec B608 -- the model's constant CHECK text
+        )
+        if dropped.rowcount:
+            logger.warning("Dropped %d Spoolman slot assignment(s) naming a slot no AMS has", dropped.rowcount)
         await _safe_execute(
-            conn,
-            f"ALTER TABLE spoolman_slot_assignments ADD CONSTRAINT {_CONSTRAINT_NAME} CHECK ({_NEW_FORMULA})",
+            conn, f"ALTER TABLE spoolman_slot_assignments ADD CONSTRAINT ck_tray_id_range CHECK ({TRAY_ID_CHECK})"
         )
         return
 
@@ -1714,8 +1768,8 @@ async def _migrate_widen_spoolman_slot_ams_id_range(conn) -> None:
     if not row:
         return
     sql = row[0] or ""
-    # Already widened by an earlier run or by the fresh-install CREATE TABLE above.
-    if "ams_id >= 128" in sql:
+    # Already in the final form (a previous start, or create_all on a fresh install).
+    if "ams_id = 32" in sql and "ams_id IN (32, 255)" in sql:
         return
     # Pre-migration table without any CHECK constraint at all → leave alone;
     # the app-level validation handles correctness and we don't risk a
@@ -1731,29 +1785,38 @@ async def _migrate_widen_spoolman_slot_ams_id_range(conn) -> None:
                     "CREATE TABLE spoolman_slot_assignments_v2 ("
                     "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                     "printer_id INTEGER NOT NULL REFERENCES printers(id) ON DELETE CASCADE, "
-                    f"ams_id INTEGER NOT NULL CHECK ({_NEW_FORMULA}), "
-                    "tray_id INTEGER NOT NULL CHECK (tray_id >= 0 AND tray_id <= 3), "
+                    "ams_id INTEGER NOT NULL, "
+                    "tray_id INTEGER NOT NULL, "
                     "spoolman_spool_id INTEGER NOT NULL, "
                     "assigned_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "
-                    "CONSTRAINT uq_slot_assignment UNIQUE(printer_id, ams_id, tray_id)"
+                    "CONSTRAINT uq_slot_assignment UNIQUE(printer_id, ams_id, tray_id), "
+                    f"CONSTRAINT ck_ams_id_range CHECK ({AMS_ID_CHECK}), "
+                    f"CONSTRAINT ck_tray_id_range CHECK ({TRAY_ID_CHECK})"
                     ")"
                 )
             )
             await conn.execute(
                 text(
-                    "INSERT INTO spoolman_slot_assignments_v2 "
+                    "INSERT INTO spoolman_slot_assignments_v2 "  # nosec B608 -- the model's constant CHECK text
                     "(id, printer_id, ams_id, tray_id, spoolman_spool_id, assigned_at) "
                     "SELECT id, printer_id, ams_id, tray_id, spoolman_spool_id, assigned_at "
-                    "FROM spoolman_slot_assignments"
+                    f"FROM spoolman_slot_assignments WHERE {TRAY_ID_CHECK}"
                 )
             )
             original = (await conn.execute(text("SELECT count(*) FROM spoolman_slot_assignments"))).scalar_one()
+            kept = (
+                await conn.execute(
+                    text(f"SELECT count(*) FROM spoolman_slot_assignments WHERE {TRAY_ID_CHECK}")  # nosec B608 -- the model's constant CHECK text
+                )
+            ).scalar_one()
             copied = (await conn.execute(text("SELECT count(*) FROM spoolman_slot_assignments_v2"))).scalar_one()
-            if copied != original:
+            if copied != kept:
                 raise RuntimeError(
                     f"spoolman_slot_assignments migration: row count mismatch after copy "
-                    f"({original} in source, {copied} in copy)"
+                    f"({kept} to keep in source, {copied} in copy)"
                 )
+            if original != kept:
+                logger.warning("Dropped %d Spoolman slot assignment(s) naming a slot no AMS has", original - kept)
             await conn.execute(text("DROP TABLE spoolman_slot_assignments"))
             await conn.execute(text("ALTER TABLE spoolman_slot_assignments_v2 RENAME TO spoolman_slot_assignments"))
             # The index sits on the renamed table; recreate it idempotently
@@ -4692,18 +4755,21 @@ async def _run_migrations(conn):
     # Migration: Create spoolman_slot_assignments table for local AMS-slot→Spoolman-spool mapping.
     # Replaces the pattern of writing spool.location in Spoolman (which polluted the
     # user-editable storage_location field in the UI).
-    # ck_ams_id_range formula was widened in #1274 to admit AMS-HT (ams_id 128-191).
+    # ck_ams_id_range formula was widened in #1274 to admit AMS-HT (ams_id 128-191),
+    # and for the H3C's AMS 3H (as models.spoolman_slot_assignment).
     await _safe_execute(
         conn,
         """
         CREATE TABLE IF NOT EXISTS spoolman_slot_assignments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             printer_id INTEGER NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
-            ams_id INTEGER NOT NULL CHECK ((ams_id >= 0 AND ams_id <= 7) OR (ams_id >= 128 AND ams_id <= 191) OR ams_id = 255),
-            tray_id INTEGER NOT NULL CHECK (tray_id >= 0 AND tray_id <= 3),
+            ams_id INTEGER NOT NULL,
+            tray_id INTEGER NOT NULL,
             spoolman_spool_id INTEGER NOT NULL,
             assigned_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            CONSTRAINT uq_slot_assignment UNIQUE(printer_id, ams_id, tray_id)
+            CONSTRAINT uq_slot_assignment UNIQUE(printer_id, ams_id, tray_id),
+            CONSTRAINT ck_ams_id_range CHECK ((ams_id >= 0 AND ams_id <= 7) OR ams_id = 32 OR (ams_id >= 128 AND ams_id <= 191) OR ams_id = 255),
+            CONSTRAINT ck_tray_id_range CHECK (tray_id >= 0 AND (tray_id <= 3 OR (ams_id IN (32, 255) AND tray_id <= 8)))
         )
         """
         if is_sqlite()
@@ -4711,11 +4777,13 @@ async def _run_migrations(conn):
         CREATE TABLE IF NOT EXISTS spoolman_slot_assignments (
             id SERIAL PRIMARY KEY,
             printer_id INTEGER NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
-            ams_id INTEGER NOT NULL CHECK ((ams_id >= 0 AND ams_id <= 7) OR (ams_id >= 128 AND ams_id <= 191) OR ams_id = 255),
-            tray_id INTEGER NOT NULL CHECK (tray_id >= 0 AND tray_id <= 3),
+            ams_id INTEGER NOT NULL,
+            tray_id INTEGER NOT NULL,
             spoolman_spool_id INTEGER NOT NULL,
             assigned_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            CONSTRAINT uq_slot_assignment UNIQUE(printer_id, ams_id, tray_id)
+            CONSTRAINT uq_slot_assignment UNIQUE(printer_id, ams_id, tray_id),
+            CONSTRAINT ck_ams_id_range CHECK ((ams_id >= 0 AND ams_id <= 7) OR ams_id = 32 OR (ams_id >= 128 AND ams_id <= 191) OR ams_id = 255),
+            CONSTRAINT ck_tray_id_range CHECK (tray_id >= 0 AND (tray_id <= 3 OR (ams_id IN (32, 255) AND tray_id <= 8)))
         )
         """,
     )
@@ -4725,8 +4793,8 @@ async def _run_migrations(conn):
     )
 
     # Migration: widen ck_ams_id_range on spoolman_slot_assignments to allow
-    # AMS-HT ids (128-191). Existing installs created before #1274 carry the
-    # stale formula which rejects every AMS-HT slot link with a CHECK violation.
+    # AMS-HT ids (128-191) and the H3C's AMS 3H (32, nine slots). Existing
+    # installs carry a stale formula which rejects such slot links.
     await _migrate_widen_spoolman_slot_ams_id_range(conn)
 
     # Migration: Create spoolman_k_profile table for K-value calibration profiles linked to Spoolman spools.
@@ -5872,6 +5940,8 @@ async def _run_migrations(conn):
         await conn.execute(
             text("UPDATE printers SET camera_light_auto = :off WHERE camera_light_auto IS NULL"), {"off": False}
         )
+    # Migration: optional per-printer WLED preset configuration (#1528).
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN wled_config JSON")
 
     # Migration: printer-scoped groups (#1727). Defaults off, so no existing
     # group narrows anyone's printers on upgrade; the group_printers table
@@ -6038,6 +6108,7 @@ async def _run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN plate_estimates JSON")
 
     await _backfill_archive_run_photos(conn)
+    await _migrate_h3c_queue_tray_ids(conn)
 
     await _migrate_auth_datetimes_to_timestamp(conn)
     await _migrate_add_missing_set_null_fks(conn)
@@ -6087,6 +6158,67 @@ async def _backfill_print_log_plate_ids(conn) -> None:
                 " WHERE e.archive_id = print_log_entries.archive_id) = 1"
             )
         )
+        await conn.execute(text('INSERT INTO settings ("key", value) VALUES (:k, :v)'), {"k": flag, "v": "true"})
+
+
+async def _migrate_h3c_queue_tray_ids(conn) -> None:
+    """Renumber the AMS 3H slots of queued H3C jobs from 128 + k to Studio's 28 + k.
+
+    Bambuddy without H3C support numbered the AMS 3H (unit 32) as
+    ``32 * 4 + k``, the AMS-HT range, so an H3C job queued then carries 128-136
+    where the slot is now 28-36. Only jobs for an H3C (its printer, or
+    target_model H3C) are touched; the H3C has no AMS-HT, so 128-136 there can
+    only mean that. Once only, gated by a settings flag, so a mapping written
+    afterwards is never rewritten.
+    """
+    import json
+
+    from sqlalchemy import text
+
+    from backend.app.utils.tray_ids import AMS3H_UNIT_ID, RACK_SLOT_COUNT, TrayLayout, legacy_tray_index
+
+    old_base = legacy_tray_index(AMS3H_UNIT_ID, 0)  # 128
+    ams3h = TrayLayout.ams3h()
+    flag = "_migrate_h3c_queue_tray_ids_done"
+    async with conn.begin_nested():
+        already = (
+            await conn.execute(text('SELECT value FROM settings WHERE "key" = :k'), {"k": flag})
+        ).scalar_one_or_none()
+        if already is not None:
+            return
+        targets = (
+            (
+                "print_queue",
+                "q.ams_mapping IS NOT NULL AND (UPPER(q.target_model) IN ('H3C', 'N10') "
+                "OR q.printer_id IN (SELECT id FROM printers WHERE UPPER(model) IN ('H3C', 'N10')))",
+            ),
+            ("print_queue_variants", "q.ams_mapping IS NOT NULL AND UPPER(q.target_model) IN ('H3C', 'N10')"),
+        )
+        renumbered = 0
+        for table, where in targets:
+            query = f"SELECT q.id, q.ams_mapping FROM {table} q WHERE {where}"  # nosec B608 -- table and filter from the fixed targets above
+            rows = (await conn.execute(text(query))).all()
+            for row_id, raw in rows:
+                try:
+                    mapping = json.loads(raw)
+                except (TypeError, ValueError):
+                    continue
+                if not isinstance(mapping, list):
+                    continue
+                new = [
+                    ams3h.global_tray_id(AMS3H_UNIT_ID, v - old_base)
+                    if type(v) is int and old_base <= v < old_base + RACK_SLOT_COUNT
+                    else v
+                    for v in mapping
+                ]
+                if new != mapping:
+                    await conn.execute(
+                        text(f"UPDATE {table} SET ams_mapping = :m WHERE id = :id"),  # nosec B608 -- table from the fixed targets above
+                        {"m": json.dumps(new), "id": row_id},
+                    )
+                    renumbered += 1
+        if renumbered:
+            logger.info("Renumbered the AMS 3H slots of %d queued H3C job(s) to Bambu Studio's 28-36", renumbered)
         await conn.execute(text('INSERT INTO settings ("key", value) VALUES (:k, :v)'), {"k": flag, "v": "true"})
 
 

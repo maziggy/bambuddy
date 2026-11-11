@@ -90,8 +90,19 @@ class NFCReader:
     def current_sak(self) -> int | None:
         return self._current_sak
 
-    def write_ntag(self, data: bytes) -> tuple[bool, str]:
+    def write_ntag(self, data: bytes, data_v2: bytes | None = None) -> tuple[bool, str]:
         """Write raw NDEF bytes to currently present NTAG tag.
+
+        *data* is OpenTag3D v1, which fits every NTAG. *data_v2* (OpenTag3D
+        2.004, #3500) is written instead when the tag's Capability Container
+        says it has room for it; v2 does not fit an NTAG213.
+
+        The Capability Container is read first: a tag whose CC is not NDEF
+        (a blank MIFARE Ultralight also answers with SAK 0x00) or whose data
+        area is smaller than the payload is refused rather than written past
+        its end (#3076). Afterwards the pages are read back, since the PN5180
+        cannot see the tag's ACK: data that reads back different fails the
+        write. A read-back that gets no answer leaves it "not verified".
 
         Requires tag in TAG_PRESENT state with SAK=0x00.
         Returns (success, message).
@@ -113,16 +124,77 @@ class NFCReader:
             if uid_bytes.hex().upper() != self._current_uid:
                 return False, "Tag UID changed during write"
 
+            # Page 3 is the Capability Container; READ returns pages 3-6.
+            try:
+                cc_pages = self._nfc.ntag_read_pages(start_page=3, num_pages=1)
+            except Exception as e:
+                logger.warning("Could not read the tag's Capability Container: %s", e)
+                cc_pages = None
+
+            version = "v1"
+            if data_v2 is not None:
+                data, version = choose_ndef(cc_pages, data, data_v2)
+            refusal = capacity_refusal(cc_pages, len(data))
+            if refusal:
+                logger.warning("NTAG write refused for tag %s: %s", self._current_uid, refusal)
+                return False, refusal
+
+            # A fresh select before writing, as the write path always had.
+            if self._nfc.reactivate_card() is None:
+                return False, "Failed to reactivate card for write"
+
             # Write starting at page 4
-            success = self._nfc.ntag_write_pages(start_page=4, data=data)
-            if success:
-                logger.info("NTAG write successful: %d bytes to tag %s", len(data), self._current_uid)
-                return True, "Write successful"
-            else:
-                return False, "Write or verification failed"
+            if not self._nfc.ntag_write_pages(start_page=4, data=data):
+                return False, "Write failed"
+
+            verified, mismatch = self._verify_written(data)
+            if verified is False:
+                return False, mismatch
+            note = "" if verified else ", not verified"
+            logger.info(
+                "NTAG write successful%s: %d bytes (OpenTag3D %s) to tag %s",
+                note,
+                len(data),
+                version,
+                self._current_uid,
+            )
+            return True, f"Write successful (OpenTag3D {version}{note})"
         except Exception as e:
             logger.error("NTAG write error: %s", e)
             return False, f"Write error: {e}"
+
+    def _verify_written(self, data: bytes) -> tuple[bool | None, str]:
+        """Read the written pages back and compare (#3076).
+
+        (True, "") when they match, (False, where) when they differ, (None, "")
+        when the tag could not be read back. The PN5180 used to
+        get no answer to a READ right after a batch write, so the tag is
+        selected afresh first; a read that still fails proves nothing either
+        way, and the write keeps counting as done, as it did before.
+        """
+        padded = data + bytes(-len(data) % 4)
+        try:
+            if self._nfc.reactivate_card() is None:
+                logger.warning("NTAG read-back skipped: the tag did not answer the reselect")
+                return None, ""
+            read = self._nfc.ntag_read_pages(start_page=4, num_pages=len(padded) // 4)
+        except Exception as e:
+            logger.warning("NTAG read-back failed: %s", e)
+            return None, ""
+        if read is None or len(read) < len(padded):
+            logger.warning("NTAG read-back got no complete answer; the write is not verified")
+            return None, ""
+        for offset in range(0, len(padded), 4):
+            if read[offset : offset + 4] != padded[offset : offset + 4]:
+                page = 4 + offset // 4
+                logger.warning(
+                    "NTAG read-back mismatch at page %d: wrote %s, read %s",
+                    page,
+                    padded[offset : offset + 4].hex(),
+                    read[offset : offset + 4].hex(),
+                )
+                return False, f"Verification failed at page {page}: the tag holds other data"
+        return True, ""
 
     def poll(self) -> tuple[str, dict | None]:
         """Poll for tag. Returns (event_type, event_data).
@@ -263,6 +335,38 @@ def _extract_tray_uuid(blocks: dict[int, bytes]) -> str | None:
     if uuid_str == "0" * 32:
         return None
     return uuid_str
+
+
+def capacity_refusal(cc_pages: bytes | None, size: int) -> str | None:
+    """Why *size* bytes can't go onto this tag, or None (#3076).
+
+    *cc_pages* starts with page 3, the Capability Container. NTAG21x tags come
+    with an NDEF CC (E1, version, data area size / 8, access); a blank MIFARE
+    Ultralight, which also reports SAK 0x00, has none and holds 48 bytes. An
+    unreadable CC proves nothing, so the write goes ahead as it always did.
+    """
+    if not cc_pages or len(cc_pages) < 4:
+        return None
+    if cc_pages[0] != 0xE1:
+        return "Not an NDEF-formatted NTAG tag. Use an NTAG213, 215 or 216."
+    capacity = cc_pages[2] * 8
+    if size > capacity:
+        return f"Tag too small: {size} bytes to write, {capacity} bytes of space"
+    return None
+
+
+def choose_ndef(cc_pages: bytes | None, data_v1: bytes, data_v2: bytes) -> tuple[bytes, str]:
+    """Pick the OpenTag3D encoding the tag has room for (#3500).
+
+    *cc_pages* starts with page 3, the NDEF Capability Container
+    (E1, version, data area size / 8, access). v2 is chosen only when the CC
+    reads as NDEF and its data area holds the whole v2 message: an NTAG213
+    (size byte 0x12, 144 bytes) gets v1, an NTAG215/216 (0x3E/0x6D) gets v2.
+    Anything unreadable gets v1, which fits every NTAG.
+    """
+    if cc_pages and len(cc_pages) >= 4 and cc_pages[0] == 0xE1 and len(data_v2) <= cc_pages[2] * 8:
+        return data_v2, "v2"
+    return data_v1, "v1"
 
 
 def _raw_blocks(blocks: dict[int, bytes]) -> dict[str, str]:

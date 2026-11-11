@@ -20,6 +20,7 @@ import { useTranslation } from 'react-i18next';
 import { Toggle } from './Toggle';
 import {
   computeBackupGroups,
+  isAms3hUnit,
   isAmsHtUnit,
   normalizeColor,
   type AmsUnitLike,
@@ -43,6 +44,7 @@ interface AmsBackupModalProps {
  * counts toward readability.
  */
 function formatSlotLabel(amsId: number, slotIdx: number): string {
+  if (isAms3hUnit({ id: amsId })) return `3H·${slotIdx + 1}`;
   const isHt = isAmsHtUnit(amsId);
   const normalizedId = amsId >= 128 ? amsId - 128 : amsId;
   const letter = String.fromCharCode(65 + normalizedId);

@@ -836,7 +836,12 @@ async def nfc_write_tag(
     Spoolman, so one with the same id must not stand in for the Spoolman spool.
     """
     from backend.app.models.spool import Spool
-    from backend.app.services.opentag3d import encode_opentag3d, encode_opentag3d_from_mapped
+    from backend.app.services.opentag3d import (
+        encode_opentag3d,
+        encode_opentag3d_from_mapped,
+        encode_opentag3d_v2,
+        encode_opentag3d_v2_from_mapped,
+    )
 
     # Find the device first (required regardless of spool source)
     result = await db.execute(select(SpoolBuddyDevice).where(SpoolBuddyDevice.device_id == req.device_id))
@@ -854,6 +859,7 @@ async def nfc_write_tag(
         if spool is None:
             raise HTTPException(status_code=404, detail="Spool not found")
         ndef_data = encode_opentag3d(spool)
+        ndef_v2 = encode_opentag3d_v2(spool)
         data_origin = "local"
     else:
         from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool
@@ -890,6 +896,7 @@ async def nfc_write_tag(
             )
 
         ndef_data = encode_opentag3d_from_mapped(mapped)
+        ndef_v2 = encode_opentag3d_v2_from_mapped(mapped)
         data_origin = "spoolman"
 
         # Warn when fields that drive NFC content are absent in Spoolman.
@@ -924,7 +931,12 @@ async def nfc_write_tag(
     device.pending_write_payload = json.dumps(
         {
             "spool_id": req.spool_id,
+            # OpenTag3D v1, which fits every NTAG; what a reader that knows
+            # nothing else writes.
             "ndef_data_hex": ndef_data.hex(),
+            # OpenTag3D 2.004, for a tag with room for it (NTAG215/216). The
+            # daemon picks by the tag's size (#3500).
+            "ndef_v2_hex": ndef_v2.hex(),
             "data_origin": data_origin,
         }
     )
@@ -1122,7 +1134,17 @@ async def nfc_write_result(
                 )
                 return {"status": "ok", "linked": False, "message": "Spool not found"}
 
-            spool.tag_uid = req.tag_uid.upper()
+            # The tag now holds this spool's data, so it moves here from any
+            # other spool that had it, as in the Spoolman branch above.
+            # Otherwise two spools share the UID and a scan finds the old one
+            # (#3505). Archived spools give it up as well, as link-tag does.
+            tag_uid = req.tag_uid.upper()
+            previous = await db.execute(select(Spool).where(func.upper(Spool.tag_uid) == tag_uid, Spool.id != spool.id))
+            for holder in previous.scalars().all():
+                holder.tag_uid = None
+                logger.info("Tag %s moved from spool %d to spool %d", tag_uid, holder.id, spool.id)
+
+            spool.tag_uid = tag_uid
             spool.tag_type = "ntag"
             spool.data_origin = "opentag3d"
             spool.encode_time = datetime.now(timezone.utc)

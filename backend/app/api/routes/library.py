@@ -85,8 +85,10 @@ from backend.app.services.archive import ThreeMFParser, estimate_filament_cost
 from backend.app.services.design_settings import (
     DesignOverride,
     apply_design_overrides,
+    changed_process_keys,
     extract_design_process_overrides,
     overrides_from_config,
+    record_process_changes,
 )
 from backend.app.services.filament_requirements import annotate_rack_groups
 from backend.app.services.library_folder_access import (
@@ -4461,6 +4463,9 @@ async def _run_slicer_with_fallback(
     # the embedded plate / model definitions remain intact.
     is_3mf = model_filename.lower().endswith(".3mf")
     primary_bytes = model_bytes
+    # The process JSON before Bambuddy layers its own settings on the picked
+    # preset, to tell which keys the output 3MF has to list as changed (#3497).
+    process_as_picked = presets["process"]
     if is_3mf:
         # Strip inherit/unset sentinels from Metadata/project_settings.config
         # so the CLI's StaticPrintConfig range validator accepts the file
@@ -4513,6 +4518,23 @@ async def _run_slicer_with_fallback(
     # config (#1881) and the designer's tweaks (#2622).
     if request.process_overrides:
         presets["process"] = apply_process_overrides(presets["process"], request.process_overrides)
+
+    # #3497: the slicer CLI leaves different_settings_to_system empty, so the
+    # keys set above are not marked as changed in the output 3MF and Bambu
+    # Studio reopens it with the stock preset's values. Only for a system
+    # process preset, bundled (standard) or Bambu's stock copy on Bambu Cloud,
+    # which signed-in users pick instead (#3386): the system preset is then
+    # the base those keys differ from. A private cloud, Orca Cloud or local
+    # preset already is the user's own preset.
+    from backend.app.api.routes.slicer_presets import is_stock_cloud_preset
+
+    process_ref = request.process_preset
+    process_changes = (
+        changed_process_keys(process_as_picked, presets["process"])
+        if process_ref is not None
+        and (process_ref.source == "standard" or await is_stock_cloud_preset(db, user, process_ref, "process"))
+        else []
+    )
 
     used_embedded_settings = False
     # "Slice as designed" (#2611): honour the file's embedded
@@ -4867,6 +4889,9 @@ async def _run_slicer_with_fallback(
     # meant to slice with a profile their sidecar image predates. Skipped on
     # the embedded-settings path, which sends no filament profiles for the
     # bundle to resolve in the first place.
+    if process_changes and request.export_3mf and not used_embedded_settings:
+        result = result._replace(content=record_process_changes(result.content, process_changes))
+
     if not used_embedded_settings:
         unresolved = unresolved_filament_slots(result.content, export_3mf=bool(request.export_3mf))
         if unresolved:

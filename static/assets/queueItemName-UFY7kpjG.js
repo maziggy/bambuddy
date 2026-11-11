@@ -1,0 +1,1 @@
+function e(e,t){if(e.archive_name)return e.archive_name;if(e.library_file_name)return e.library_file_name;let n=e.variants??[];if(n.length>0){let e=n[0].filename,r=n.length-1;return r>0&&t?`${e} ${t(r)}`:e}return`File #${e.archive_id??e.library_file_id}`}export{e as t};

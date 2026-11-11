@@ -513,6 +513,7 @@ export default {
     nozzleStatus: 'Status',
     nozzleFilament: 'Filament',
     nozzleWear: 'Slitage',
+    nozzlePrintTime: 'Utskriftstid',
     nozzleMaxTemp: 'Max temp',
     nozzleSerial: 'Serienummer',
     nozzleHardenedSteel: 'Härdat stål',

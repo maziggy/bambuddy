@@ -601,6 +601,7 @@ export interface NozzleRackSlot {
   nozzle_type: string;
   nozzle_diameter: string;
   wear: number | null;
+  print_time_s?: number | null;  // H2C: seconds this nozzle has printed (#1908); null when not reported
   stat: number | null;  // Nozzle status (e.g. mounted/docked)
   max_temp: number;
   serial_number: string;

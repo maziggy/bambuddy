@@ -512,6 +512,14 @@ function NozzleSlotHoverCard({ slot, index, activeStatus, filamentName, children
                   </div>
                 )}
 
+                {/* Print time (H2C firmware only, hide if not reported) */}
+                {slot.print_time_s != null && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-[length:var(--pc-t10,10px)] uppercase tracking-wider text-bambu-gray font-medium">{t('printers.nozzlePrintTime')}</span>
+                    <span className="text-xs text-white font-semibold">{formatDuration(slot.print_time_s)}</span>
+                  </div>
+                )}
+
                 {/* Max Temp (hide if 0) */}
                 {slot.max_temp > 0 && (
                   <div className="flex items-center justify-between">
@@ -650,6 +658,12 @@ function DualNozzleHoverCard({ leftSlot, rightSlot, activeNozzle, filamentInfo, 
           <div className="flex items-center justify-between">
             <span className="text-[length:var(--pc-t10,10px)] text-bambu-gray">{t('printers.nozzleWear')}</span>
             <span className="text-xs text-white font-semibold">{slot.wear}%</span>
+          </div>
+        )}
+        {slot.print_time_s != null && (
+          <div className="flex items-center justify-between">
+            <span className="text-[length:var(--pc-t10,10px)] text-bambu-gray">{t('printers.nozzlePrintTime')}</span>
+            <span className="text-xs text-white font-semibold">{formatDuration(slot.print_time_s)}</span>
           </div>
         )}
         {/* Serial and max temp only available on the right (removable) nozzle */}

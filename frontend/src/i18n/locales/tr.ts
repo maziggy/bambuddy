@@ -510,6 +510,7 @@ export default {
     nozzleStatus: 'Durum',
     nozzleFilament: 'Filament',
     nozzleWear: 'Aşınma',
+    nozzlePrintTime: 'Baskı süresi',
     nozzleMaxTemp: 'Maks. Sıcaklık',
     nozzleSerial: 'Seri',
     nozzleHardenedSteel: 'Sertleştirilmiş Çelik',

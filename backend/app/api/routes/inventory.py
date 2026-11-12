@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.core.auth import (
+    ApiKeyActor,
+    RequestActor,
     RequestPrinterScope,
     RequireAnyPermissionIfAuthEnabled,
     RequirePermissionIfAuthEnabled,
@@ -125,6 +127,23 @@ def spool_response_loads():
         selectinload(Spool.k_profiles),
         selectinload(Spool.supplier_links).selectinload(SpoolSupplier.supplier),
     )
+
+
+async def load_preset_lookup_user(db: AsyncSession, user_id: int | None) -> User | None:
+    """The user whose cloud sign-in resolves a spool's preset, by id (#3519).
+
+    For callers that have no signed-in user of their own: an API key (its
+    owner) and the replay on insert (whoever made the assignment). Without
+    one, a custom cloud preset (PFUS/PFCN) can't be looked up when each user
+    signs in to the cloud separately, and the slot gets a generic filament.
+    None for no id or a deactivated user. Groups are loaded because the
+    resolver asks the user for permissions.
+    """
+    if user_id is None:
+        return None
+    result = await db.execute(select(User).where(User.id == user_id).options(selectinload(User.groups)))
+    user = result.scalar_one_or_none()
+    return user if user is not None and user.is_active else None
 
 
 # Bounded read size for the CSV import body so a chunked upload with no
@@ -2427,11 +2446,19 @@ async def assign_spool(
     db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Assign a spool to an AMS slot and auto-configure via MQTT."""
     from backend.app.services.printer_manager import printer_manager
 
     printer_scope.ensure(data.printer_id)
+
+    # An API key (a SpoolBuddy client) has no signed-in user, so its owner's
+    # cloud sign-in resolves a custom preset; without it the slot got Generic
+    # PLA where the web UI got the preset's own filament (#3519).
+    preset_user = current_user
+    if preset_user is None and isinstance(actor, ApiKeyActor):
+        preset_user = await load_preset_lookup_user(db, actor.id)
 
     # 1. Validate spool exists and is not archived
     result = await db.execute(select(Spool).options(*spool_response_loads()).where(Spool.id == data.spool_id))
@@ -2555,6 +2582,7 @@ async def assign_spool(
                 tray_id=data.tray_id,
                 fingerprint_color=fingerprint_color,
                 fingerprint_type=fingerprint_type,
+                assigned_by_user_id=preset_user.id if preset_user is not None else None,
             )
             db.add(assignment)
             await spool_swaps.record_assignment(
@@ -2636,7 +2664,7 @@ async def assign_spool(
         try:
             configured = await apply_spool_to_slot_via_mqtt(
                 db=db,
-                current_user=current_user,
+                current_user=preset_user,
                 spool=spool,
                 printer_id=data.printer_id,
                 ams_id=data.ams_id,

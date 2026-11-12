@@ -137,6 +137,9 @@ APPLIED: frozenset[tuple[str, str]] = frozenset(
         ("print_queue", "created_by_id"),
         ("scheduled_dryings", "created_by_id"),
         ("slicer_pipelines", "created_by"),
+        # A new user given the id would have their cloud sign-in used for the
+        # slot's preset (#3519).
+        ("spool_assignment", "assigned_by_user_id"),
         ("sponsor_toast_state", "user_id"),
         ("user_email_preferences", "user_id"),
         ("user_groups", "user_id"),

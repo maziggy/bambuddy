@@ -6146,6 +6146,14 @@ async def _run_migrations(conn):
     # (``print_cost_estimate.fill_plate_estimates``).
     await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN plate_estimates JSON")
 
+    # Migration: who assigned a spool to a slot, whose cloud sign-in the replay
+    # on insert resolves a custom preset with (#3519). Nullable, no backfill:
+    # earlier assignments replay as before.
+    await _safe_execute(
+        conn,
+        "ALTER TABLE spool_assignment ADD COLUMN assigned_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL",
+    )
+
     await _backfill_archive_run_photos(conn)
     await _migrate_h3c_queue_tray_ids(conn)
 

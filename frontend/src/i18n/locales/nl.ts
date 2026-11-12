@@ -316,6 +316,8 @@ export default {
     },
     temperatures: {
       nozzle: 'Nozzle',
+      // The H3C's nozzle on the toolhead, by its rack position (#3442).
+      mounted: 'Nozzle {{n}}',
       bed: 'Printbed',
       chamber: 'Kamer',
     },

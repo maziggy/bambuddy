@@ -17,6 +17,7 @@ import pytest
 
 from backend.app.api.routes.library import _run_slicer_with_fallback
 from backend.app.schemas.slicer import PresetRef, SliceRequest
+from backend.app.schemas.slicer_presets import UnifiedPreset
 from backend.app.services.design_settings import changed_process_keys, record_process_changes
 
 pytestmark = pytest.mark.unit
@@ -118,10 +119,12 @@ class TestChangedKeys:
         assert changed_process_keys("{", json.dumps({"a": "1"})) == []
 
 
-def _request(process_source: str = "standard", **overrides) -> SliceRequest:
+def _request(
+    process_source: str = "standard", process_id: str = "0.20mm Standard @BBL A1M", **overrides
+) -> SliceRequest:
     return SliceRequest(
         printer_preset=PresetRef(source="standard", id="Bambu Lab A1 mini 0.4 nozzle"),
-        process_preset=PresetRef(source=process_source, id="0.20mm Standard @BBL A1M"),
+        process_preset=PresetRef(source=process_source, id=process_id),
         filament_presets=[PresetRef(source="standard", id="Bambu PLA Basic @BBL A1M")],
         export_3mf=True,
         **overrides,
@@ -151,8 +154,16 @@ def _source_3mf() -> bytes:
     return buffer.getvalue()
 
 
-async def _slice(request: SliceRequest, *, model: str = "stl", embedded_fallback: bool = False):
+def _cloud_listing(*presets: UnifiedPreset, status: str = "ok"):
+    slots = {"printer": [], "process": list(presets), "filament": []}
+    return AsyncMock(return_value=(slots, status))
+
+
+async def _slice(request: SliceRequest, *, model: str = "stl", embedded_fallback: bool = False, cloud_listing=None):
     from backend.app.services import preset_resolver, slicer_api as slicer_api_module
+
+    if cloud_listing is None:
+        cloud_listing = _cloud_listing(status="not_authenticated")
 
     result = slicer_api_module.SliceResult(
         content=_sliced_3mf(["", "", ""]),
@@ -183,6 +194,7 @@ async def _slice(request: SliceRequest, *, model: str = "stl", embedded_fallback
         patch("backend.app.services.preset_resolver.resolve_preset_ref", new=AsyncMock(side_effect=_resolve)),
         patch.object(slicer_api_module, "SlicerApiService", return_value=service),
         patch.object(slicer_api_module, "get_stall_timeout_seconds", new=AsyncMock(return_value=60.0)),
+        patch("backend.app.api.routes.slicer_presets._fetch_cloud_presets", new=cloud_listing),
     ):
         result, _ = await _run_slicer_with_fallback(
             SimpleNamespace(get=AsyncMock(return_value=None)),
@@ -223,8 +235,48 @@ class TestTheSlice:
     async def test_no_overrides_lists_nothing(self):
         assert await _slice(_request()) == ["", "", ""]
 
-    async def test_a_cloud_or_local_process_preset_lists_nothing(self):
-        listed = await _slice(_request(process_source="local", process_overrides={"sparse_infill_density": "40%"}))
+    async def test_a_local_process_preset_lists_nothing(self):
+        cloud_listing = _cloud_listing(status="not_authenticated")
+        listed = await _slice(
+            _request(process_source="local", process_overrides={"sparse_infill_density": "40%"}),
+            cloud_listing=cloud_listing,
+        )
+
+        assert listed == ["", "", ""]
+        # Nor does it ask Bambu Cloud.
+        cloud_listing.assert_not_awaited()
+
+    async def test_bambus_stock_process_preset_on_bambu_cloud_lists_them(self):
+        # Signed in, the stock presets are picked from Bambu Cloud (#3386).
+        listed = await _slice(
+            _request(
+                process_source="cloud",
+                process_id="GP000",
+                process_overrides={"sparse_infill_density": "40%", "sparse_infill_pattern": "gyroid"},
+            ),
+            cloud_listing=_cloud_listing(
+                UnifiedPreset(id="GP000", name="0.20mm Standard @BBL A1M", source="cloud", stock=True)
+            ),
+        )
+
+        assert listed == ["sparse_infill_density;sparse_infill_pattern", "", ""]
+
+    async def test_a_private_bambu_cloud_process_preset_lists_nothing(self):
+        listed = await _slice(
+            _request(process_source="cloud", process_id="PPUS1", process_overrides={"sparse_infill_density": "40%"}),
+            cloud_listing=_cloud_listing(
+                UnifiedPreset(id="PPUS1", name="My 0.20mm", source="cloud", stock=False),
+                UnifiedPreset(id="GP000", name="0.20mm Standard @BBL A1M", source="cloud", stock=True),
+            ),
+        )
+
+        assert listed == ["", "", ""]
+
+    async def test_a_cloud_preset_without_the_listing_lists_nothing(self):
+        listed = await _slice(
+            _request(process_source="cloud", process_id="GP000", process_overrides={"sparse_infill_density": "40%"}),
+            cloud_listing=_cloud_listing(status="unreachable"),
+        )
 
         assert listed == ["", "", ""]
 

@@ -316,6 +316,8 @@ export default {
     },
     temperatures: {
       nozzle: 'Ugello',
+      // The H3C's nozzle on the toolhead, by its rack position (#3442).
+      mounted: 'Ugello {{n}}',
       bed: 'Piatto',
       chamber: 'Camera',
     },

@@ -558,6 +558,23 @@ def apply_tray_exist_bits(
     return cleared
 
 
+def _external_slot_to_merge(pushed: object, existing: object) -> dict | None:
+    """The one cached external slot a pushed ``vt_tray`` dict updates, or None (#3513).
+
+    It updates the slot when it names no slot or the cached one's. A push that
+    empties the slot (``tray_type`` ``""``) replaces it, so a removed spool
+    keeps no preset, K value or temperatures, as does one naming another slot.
+    """
+    if not isinstance(pushed, dict) or not isinstance(existing, list) or len(existing) != 1:
+        return None
+    cached = existing[0]
+    if not isinstance(cached, dict) or pushed.get("tray_type") == "":
+        return None
+    if "id" in pushed and str(pushed["id"]) != str(cached.get("id")):
+        return None
+    return cached
+
+
 # --- H2C nozzle-rack dispatch mapping (#2800) -------------------------------
 #
 # Physical nozzle IDs the H2C reports for its six rack slots, verified on
@@ -2760,6 +2777,12 @@ class BambuMQTTClient:
                 # Don't let a single-spool vt_tray dict overwrite multi-slot vir_slot data
                 if isinstance(vt_tray, dict) and isinstance(existing, list) and len(existing) > 1:
                     pass  # Keep the vir_slot data
+                elif (cached_slot := _external_slot_to_merge(vt_tray, existing)) is not None:
+                    # A delta carries only what changed, often without the
+                    # id: a colour-only change on an A1 mini pushes just
+                    # {"tray_color": ...}. Stored as it came, it emptied the
+                    # slot until the next full push (#3513).
+                    self.state.raw_data["vt_tray"] = [{**cached_slot, **vt_tray}]
                 else:
                     if isinstance(vt_tray, dict):
                         vt_tray = [vt_tray]
@@ -2772,6 +2795,10 @@ class BambuMQTTClient:
             # stale inventory assignment on the ams_id=255 slot (#2575). Detect
             # external-spool identity changes here and fire the same callback.
             self._maybe_trigger_external_spool_change()
+            # The external slot's own read-back: its delta can come without
+            # any AMS data, which is where the check otherwise runs (#3513).
+            if "vt_tray" in print_data and self._pending_assignments:
+                self._check_assignment_verifications()
 
             # Parse ams_status directly from print data (NOT from print.ams)
             # ams_status is a combined value: lower 8 bits = sub status, bits 8-15 = main status
@@ -4729,6 +4756,40 @@ class BambuMQTTClient:
         except (TypeError, ValueError):
             return False
 
+    def _apply_nozzle_temp(self, temps: dict, temp_val) -> None:
+        """Set ``nozzle`` / ``nozzle_target`` / ``nozzle_heating`` from an extruder's ``temp``.
+
+        H2D protocol: temp field encoding depends on value
+        - When > 500: encoded as (target * 65536 + current) - heater is ON
+        - When < 500: direct Celsius current temp only - heater is OFF
+        """
+        # Check if we recently set the target locally (within 5 seconds)
+        # If so, don't let MQTT data overwrite it
+        local_set_time = self.state.temperatures.get("_nozzle_target_set_time", 0)
+        respect_local_target = (time.time() - local_set_time) < 5.0
+
+        if temp_val > 500:
+            # Encoded format: temp = target * 65536 + current
+            target = temp_val // 65536
+            current = temp_val % 65536
+            if 0 < target < 500 and not respect_local_target:
+                temps["nozzle_target"] = float(target)
+            if -50 < current < 500:
+                temps["nozzle"] = float(current)
+            # Heating = encoded AND we're using the MQTT target (not local override)
+            # If local target is being respected, use local target to determine heating
+            if respect_local_target:
+                local_target = self.state.temperatures.get("nozzle_target", 0)
+                temps["nozzle_heating"] = local_target > 0 and current < local_target
+            else:
+                temps["nozzle_heating"] = target > 0 and current < target
+        elif -50 < temp_val < 500:
+            # Direct Celsius = heater is OFF (or at target with heater off)
+            temps["nozzle"] = float(temp_val)
+            if not respect_local_target:
+                temps["nozzle_target"] = 0.0
+            temps["nozzle_heating"] = False  # Direct = not heating
+
     def _update_state(self, data: dict):
         """Update printer state from message data."""
         _previous_state = self.state.state
@@ -5095,15 +5156,22 @@ class BambuMQTTClient:
             and len(data["device"]["extruder"]["info"]) >= 2
         )
 
+        # A rack printer (H3C, #3442) swaps hotends on its one extruder, and
+        # nozzle_temper keeps reporting the one just put back in the rack. The
+        # mounted one's temperature is in device.extruder.info, which Bambu
+        # Studio reads over nozzle_temper too (DevExtruderSystem ParseV2_0).
+        # The layout knows an H3C by its model before any AMS data came.
+        mounted_tool_temp = self.tray_layout.rack
+
         # Standard nozzle fields: these are for the RIGHT/default nozzle on H2D
         # For H2D, we use these for nozzle_2 (RIGHT), for others use as nozzle (primary)
         # NOTE: On H2D, nozzle_temper seems to mirror left nozzle - we override with extruder_info[0] later
-        if "nozzle_temper" in data:
+        if "nozzle_temper" in data and not mounted_tool_temp:
             if has_h2d_extruder_info:
                 temps["nozzle_2"] = float(data["nozzle_temper"])  # Will be overridden by extruder_info[0]
             else:
                 temps["nozzle"] = float(data["nozzle_temper"])
-        if "nozzle_target_temper" in data:
+        if "nozzle_target_temper" in data and not mounted_tool_temp:
             if has_h2d_extruder_info:
                 temps["nozzle_2_target"] = float(data["nozzle_target_temper"])  # RIGHT target on H2D
             else:
@@ -5245,35 +5313,10 @@ class BambuMQTTClient:
                     # - When > 500: encoded as (target * 65536 + current) - heater is ON
                     # - When < 500: direct Celsius current temp only - heater is OFF
                     if len(extruder_info) >= 2 and "temp" in extruder_info[1]:
-                        ext1 = extruder_info[1]
-                        temp_val = ext1["temp"]
-
-                        # Check if we recently set the target locally (within 5 seconds)
-                        # If so, don't let MQTT data overwrite it
-                        local_set_time = self.state.temperatures.get("_nozzle_target_set_time", 0)
-                        respect_local_target = (time.time() - local_set_time) < 5.0
-
-                        if temp_val > 500:
-                            # Encoded format: temp = target * 65536 + current
-                            target = temp_val // 65536
-                            current = temp_val % 65536
-                            if 0 < target < 500 and not respect_local_target:
-                                temps["nozzle_target"] = float(target)
-                            if -50 < current < 500:
-                                temps["nozzle"] = float(current)
-                            # Heating = encoded AND we're using the MQTT target (not local override)
-                            # If local target is being respected, use local target to determine heating
-                            if respect_local_target:
-                                local_target = self.state.temperatures.get("nozzle_target", 0)
-                                temps["nozzle_heating"] = local_target > 0 and current < local_target
-                            else:
-                                temps["nozzle_heating"] = target > 0 and current < target
-                        elif -50 < temp_val < 500:
-                            # Direct Celsius = heater is OFF (or at target with heater off)
-                            temps["nozzle"] = float(temp_val)
-                            if not respect_local_target:
-                                temps["nozzle_target"] = 0.0
-                            temps["nozzle_heating"] = False  # Direct = not heating
+                        self._apply_nozzle_temp(temps, extruder_info[1]["temp"])
+                    # The H3C's one extruder: the hotend mounted on it (#3442).
+                    elif mounted_tool_temp and "temp" in extruder_info[0]:
+                        self._apply_nozzle_temp(temps, extruder_info[0]["temp"])
                     # The extruder snow is read by _parse_extruder_position, before the
                     # AMS block of the same frame (tray_now resolution needs it first).
                 # Parse bed heating state from device.bed.info.temp encoding

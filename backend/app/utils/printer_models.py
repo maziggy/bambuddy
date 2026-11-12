@@ -282,34 +282,53 @@ NOZZLE_RACK_MODELS = frozenset(
 )
 
 
-# Models where Bambu's own firmware/UI names the enclosure fan (big_fan2 /
-# airduct part id 3) "Exhaust" rather than "Chamber". On these the printer's
-# touchscreen and Bambu Studio both call it the exhaust fan, and on the P2S it
-# is an add-on kit rather than built-in hardware. Other enclosed models
-# (X1 / P1S / H2 series) keep the "Chamber" naming.
+# Models where Bambu names the enclosure fan (big_fan2 / airduct part id 3)
+# "Exhaust" rather than "Chamber". Bambu Studio calls part 3 "Exhaust" unless a
+# printer's file renames it, and only the X1 Carbon, X1, X1E and P1S files
+# rename it to "Chamber". On the P2S it is an add-on kit rather than built-in
+# hardware. The H2 series and the H3C were missing (#3521). Must match
+# MODELS_WITH_EXHAUST_LABEL in frontend PrintersPage.tsx (a test checks).
 EXHAUST_FAN_LABEL_MODELS = frozenset(
     [
-        # Display names (uppercase, no spaces)
+        # Display names, as the printer card spells them
         "P2S",
         "X2D",
+        "H2D",
+        "H2D Pro",
+        "H2C",
+        "H2S",
+        "H3C",
         # Internal codes
         "N7",  # P2S
         "N6",  # X2D
+        "O1D",  # H2D
+        "O1E",  # H2D Pro
+        "O2D",  # H2D Pro
+        "O1C",  # H2C
+        "O1C2",  # H2C
+        "O1S",  # H2S
+        "N10",  # H3C
     ]
 )
+
+
+def _model_key(model: str | None) -> str:
+    return model.strip().upper().replace(" ", "").replace("-", "") if isinstance(model, str) else ""
+
+
+_EXHAUST_FAN_LABEL_KEYS = frozenset(_model_key(m) for m in EXHAUST_FAN_LABEL_MODELS)
 
 
 def uses_exhaust_fan_label(model: str | None) -> bool:
     """Return True if this model calls the big_fan2 enclosure fan "Exhaust".
 
-    P2S/X2D name that fan "Exhaust" in Bambu's firmware/UI; everything else
-    enclosed calls it the chamber fan. Used so the UI badge and the API
+    The models in EXHAUST_FAN_LABEL_MODELS name that fan "Exhaust"; the X1
+    series and P1S call it the chamber fan. Used so the UI badge and the API
     response message agree on what the user sees.
     """
     if not model:
         return False
-    normalized = model.strip().upper().replace(" ", "").replace("-", "")
-    return normalized in EXHAUST_FAN_LABEL_MODELS
+    return _model_key(model) in _EXHAUST_FAN_LABEL_KEYS
 
 
 # Models whose airduct part 10 is the RIGHT auxiliary fan and part 2 the left
@@ -395,10 +414,6 @@ CHAMBER_HEATER_NEEDS_HEATING_MODE_MODELS = frozenset(["H3C", "N10"])
 PROGRESS_INCLUDES_START_SEQUENCE_MODELS = frozenset(["H3C", "N10"])
 
 AMS3H_MODELS = frozenset(["H3C", "N10"])
-
-
-def _model_key(model: str | None) -> str:
-    return model.strip().upper().replace(" ", "").replace("-", "") if isinstance(model, str) else ""
 
 
 def progress_includes_start_sequence(model: str | None) -> bool:

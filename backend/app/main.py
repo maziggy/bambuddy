@@ -2995,11 +2995,21 @@ async def _unlink_stale_assignments(printer_id: int, ams_data: list, printing_no
                         try:
                             from backend.app.api.routes.inventory import (
                                 apply_spool_to_slot_via_mqtt,
+                                load_preset_lookup_user,
                             )
+                            from backend.app.core.auth import is_auth_enabled
+
+                            # Whoever made the assignment: their cloud sign-in
+                            # resolves a custom preset, which nobody's did here,
+                            # so the slot got Generic PLA on insert (#3519). With
+                            # login off the shared sign-in applies, as before.
+                            replay_user = None
+                            if assignment.assigned_by_user_id is not None and await is_auth_enabled(db):
+                                replay_user = await load_preset_lookup_user(db, assignment.assigned_by_user_id)
 
                             configured = await apply_spool_to_slot_via_mqtt(
                                 db=db,
-                                current_user=None,
+                                current_user=replay_user,
                                 spool=assignment.spool,
                                 printer_id=printer_id,
                                 ams_id=assignment.ams_id,

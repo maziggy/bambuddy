@@ -19,14 +19,14 @@ async def loaded_filaments(
     db: AsyncSession,
     model: str,
     *,
+    allows: Callable[[int], bool],
     location: str | None = None,
-    allows: Callable[[int], bool] | None = None,
 ) -> list[dict]:
     """Deduplicated filaments loaded across the active printers of ``model``.
 
-    ``allows`` limits the printers to the ones a caller may see (the route
-    passes its printer scope). Without it every active printer of the model
-    counts.
+    ``allows`` limits the printers to the ones the caller may use, usually
+    ``PrinterScope.allows``. It is required so that no caller reads every
+    printer of the model by leaving it out.
     """
     from backend.app.utils.printer_models import normalize_printer_model, normalize_printer_model_id
 
@@ -40,7 +40,7 @@ async def loaded_filaments(
         query = query.where(Printer.location == location)
 
     result = await db.execute(query)
-    printers_list = [p for p in result.scalars().all() if allows is None or allows(p.id)]
+    printers_list = [p for p in result.scalars().all() if allows(p.id)]
 
     if not printers_list:
         return []

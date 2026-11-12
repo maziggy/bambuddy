@@ -12,6 +12,7 @@ confidence, the slice goes out exactly as it did before the feature existed.
 import io
 import json
 import zipfile
+from contextlib import ExitStack
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -21,6 +22,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from backend.app.api.routes.library import _run_slicer_with_fallback
+from backend.app.core.printer_scope import ALL_PRINTERS, PrinterScope
 from backend.app.schemas.slicer import PresetRef, SliceRequest
 from backend.app.services.filament_map import auto_filament_map, plan_filament_map
 from backend.app.services.slicer_api import SlicerApiService
@@ -43,8 +45,8 @@ LEAF_PRINTER = json.dumps({"name": "Bambu Lab X2D 0.4 nozzle", "inherits": "fdm_
 SINGLE_PRINTER = json.dumps({"name": "Bambu Lab X1 Carbon 0.4 nozzle", "nozzle_diameter": ["0.4"]})
 
 
-def _filament(name: str, colour: str) -> str:
-    return json.dumps({"name": name, "filament_colour": [colour]})
+def _filament(name: str, colour: str, material: str = "PLA") -> str:
+    return json.dumps({"name": name, "filament_type": [material], "filament_colour": [colour]})
 
 
 WHITE = _filament("Test PLA White", "#FFFFFF")
@@ -64,15 +66,48 @@ class TestPlanFilamentMap:
         assert plan_filament_map(DUAL_PRINTER, [WHITE, GREEN], GREEN_ON_EXTERNAL) == [1, 2]
 
     def test_colour_matching_ignores_case_and_alpha(self):
-        spools = [{"color": "00ae42", "extruder_id": 0}]
+        spools = [{"type": "pla", "color": "00ae42", "extruder_id": 0}]
         assert plan_filament_map(DUAL_PRINTER, [WHITE, GREEN], spools) == [1, 2]
+
+    def test_the_material_has_to_match_as_well_as_the_colour(self):
+        # White PETG on the second nozzle cannot print a white PLA filament:
+        # dispatch would find no spool for it.
+        petg_white = [{"type": "PETG", "color": "#FFFFFF", "extruder_id": 0}]
+        assert plan_filament_map(DUAL_PRINTER, [GREEN, WHITE], petg_white) is None
+        white_petg = _filament("Test PETG White", "#FFFFFF", "PETG")
+        assert plan_filament_map(DUAL_PRINTER, [GREEN, white_petg], petg_white) == [1, 2]
+
+    def test_a_spool_without_a_type_is_never_used(self):
+        spools = [{"color": "#00AE42", "extruder_id": 0}]
+        assert plan_filament_map(DUAL_PRINTER, [WHITE, GREEN], spools) is None
+
+    def test_equivalent_materials_match(self):
+        # The dispatch matcher treats PA12-CF as PA-CF, so the map does too.
+        spools = [{"type": "PA12-CF", "color": "#000000", "extruder_id": 0}]
+        black_pa = _filament("Test PA-CF Black", "#000000", "PA-CF")
+        assert plan_filament_map(DUAL_PRINTER, [WHITE, black_pa], spools) == [1, 2]
+
+    def test_a_standard_preset_takes_its_material_from_its_name(self):
+        # A bundled preset reaches Bambuddy as an inherits stub with no
+        # filament_type; Bambu's names carry the material.
+        stub = json.dumps(
+            {"name": "Bambu PETG HF @BBL X2D", "inherits": "Bambu PETG HF @BBL X2D", "filament_colour": ["#FFFFFF"]}
+        )
+        petg_white = [{"type": "PETG", "color": "#FFFFFF", "extruder_id": 0}]
+        assert plan_filament_map(DUAL_PRINTER, [GREEN, stub], petg_white) == [1, 2]
+        pla_white = [{"type": "PLA", "color": "#FFFFFF", "extruder_id": 0}]
+        assert plan_filament_map(DUAL_PRINTER, [GREEN, stub], pla_white) is None
+
+    def test_a_name_without_a_known_material_is_never_moved(self):
+        mine = json.dumps({"name": "My white", "filament_colour": ["#FFFFFF"]})
+        assert plan_filament_map(DUAL_PRINTER, [GREEN, mine], WHITE_ON_EXTERNAL) is None
 
     def test_a_filament_after_the_first_is_preferred(self):
         # White and green are both on the external spool side; the base
         # (filament 1) stays on the main extruder.
         spools = [
-            {"color": "#FFFFFF", "extruder_id": 0},
-            {"color": "#00AE42", "extruder_id": 0},
+            {"type": "PLA", "color": "#FFFFFF", "extruder_id": 0},
+            {"type": "PLA", "color": "#00AE42", "extruder_id": 0},
         ]
         assert plan_filament_map(DUAL_PRINTER, [WHITE, GREEN, RED], spools) == [1, 2, 1]
 
@@ -82,10 +117,11 @@ class TestPlanFilamentMap:
     def test_the_profile_extruder_map_decides_which_side_is_second(self):
         # Reversed wiring: slicer extruder 2 is MQTT id 1.
         printer = json.dumps({"nozzle_diameter": ["0.4", "0.4"], "physical_extruder_map": ["0", "1"]})
-        spools = [{"color": "#00AE42", "extruder_id": 1}]
+        spools = [{"type": "PLA", "color": "#00AE42", "extruder_id": 1}]
         assert plan_filament_map(printer, [WHITE, GREEN], spools) == [1, 2]
         # Green on MQTT id 0 is the first extruder on this machine: nothing to move.
-        assert plan_filament_map(printer, [WHITE, GREEN], [{"color": "#00AE42", "extruder_id": 0}]) is None
+        on_first = [{"type": "PLA", "color": "#00AE42", "extruder_id": 0}]
+        assert plan_filament_map(printer, [WHITE, GREEN], on_first) is None
 
     def test_a_leaf_profile_uses_the_inherited_extruder_map(self):
         assert plan_filament_map(LEAF_PRINTER, [WHITE, GREEN], GREEN_ON_EXTERNAL) == [1, 2]
@@ -93,14 +129,22 @@ class TestPlanFilamentMap:
     def test_single_colour_is_left_alone(self):
         assert plan_filament_map(DUAL_PRINTER, [GREEN], GREEN_ON_EXTERNAL) is None
 
-    def test_copies_of_one_filament_count_as_single_colour(self):
-        # The slice route fills slots a plate does not print with a copy of
-        # the plate's own filament; that is still a one-colour plate.
+    def test_one_filament_in_every_slot_is_single_colour(self):
         assert plan_filament_map(DUAL_PRINTER, [GREEN, GREEN, GREEN], GREEN_ON_EXTERNAL) is None
 
-    def test_a_copied_slot_is_never_the_one_moved(self):
-        spools = [{"color": "#FFFFFF", "extruder_id": 0}]
-        assert plan_filament_map(DUAL_PRINTER, [WHITE, GREEN, WHITE], spools) == [2, 1, 1]
+    def test_a_plate_printing_one_slot_is_single_colour(self):
+        assert plan_filament_map(DUAL_PRINTER, [WHITE, GREEN], GREEN_ON_EXTERNAL, used_slots={2}) is None
+
+    def test_an_unused_slot_is_never_the_one_moved(self):
+        # Slot 1 is not printed on this plate and stands in with green, the
+        # same filament slot 3 prints. Slot 3 is the one to move.
+        assert plan_filament_map(DUAL_PRINTER, [GREEN, WHITE, GREEN], GREEN_ON_EXTERNAL, used_slots={2, 3}) == [
+            1,
+            1,
+            2,
+        ]
+        # Only the unused slot matches the second nozzle: nothing to move.
+        assert plan_filament_map(DUAL_PRINTER, [GREEN, WHITE, RED], GREEN_ON_EXTERNAL, used_slots={2, 3}) is None
 
     def test_single_nozzle_profile_is_left_alone(self):
         assert plan_filament_map(SINGLE_PRINTER, [WHITE, GREEN], GREEN_ON_EXTERNAL) is None
@@ -110,22 +154,23 @@ class TestPlanFilamentMap:
         assert plan_filament_map(DUAL_PRINTER, [WHITE, GREEN], []) is None
 
     def test_no_job_colour_on_the_second_extruder(self):
-        spools = [*AMS_ONLY, {"color": "#123456", "extruder_id": 0}]
+        spools = [*AMS_ONLY, {"type": "PLA", "color": "#123456", "extruder_id": 0}]
         assert plan_filament_map(DUAL_PRINTER, [WHITE, GREEN], spools) is None
 
     def test_filaments_without_a_colour_are_never_moved(self):
-        blank = json.dumps({"name": "Test PLA"})
+        blank = json.dumps({"name": "Test PLA", "filament_type": ["PLA"]})
         assert plan_filament_map(DUAL_PRINTER, [WHITE, blank], GREEN_ON_EXTERNAL) is None
 
     def test_unreadable_input_is_left_alone(self):
         assert plan_filament_map("not json", [WHITE, GREEN], GREEN_ON_EXTERNAL) is None
         bad_map = json.dumps({"physical_extruder_map": ["left", "right"]})
         assert plan_filament_map(bad_map, [WHITE, GREEN], GREEN_ON_EXTERNAL) is None
-        assert plan_filament_map(DUAL_PRINTER, ["not json", GREEN], [{"color": None, "extruder_id": 0}]) is None
+        broken = [{"type": "PLA", "color": None, "extruder_id": 0}]
+        assert plan_filament_map(DUAL_PRINTER, ["not json", GREEN], broken) is None
 
 
 class TestAutoFilamentMap:
-    async def _run(self, model: str | None, spools=None, error: Exception | None = None):
+    async def _run(self, model: str | None, spools=None, error: Exception | None = None, used_slots=None):
         lookup = AsyncMock(return_value=spools or [], side_effect=error)
         with patch("backend.app.services.loaded_filaments.loaded_filaments", new=lookup):
             result = await auto_filament_map(
@@ -133,13 +178,27 @@ class TestAutoFilamentMap:
                 target_model=model,
                 printer_json=DUAL_PRINTER,
                 filament_jsons=[WHITE, GREEN],
+                allows=self.allows,
+                used_slots=used_slots,
             )
         return result, lookup
+
+    @staticmethod
+    def allows(printer_id: int) -> bool:
+        return printer_id == 5
 
     async def test_looks_up_the_target_model_and_plans(self):
         result, lookup = await self._run("X2D", GREEN_ON_EXTERNAL)
         assert result == [1, 2]
         assert lookup.await_args.args[1] == "X2D"
+
+    async def test_the_lookup_keeps_to_the_callers_printers(self):
+        _, lookup = await self._run("X2D", GREEN_ON_EXTERNAL)
+        assert lookup.await_args.kwargs["allows"] is self.allows
+
+    async def test_the_used_slots_reach_the_plan(self):
+        result, _ = await self._run("X2D", GREEN_ON_EXTERNAL, used_slots={1})
+        assert result is None
 
     async def test_single_nozzle_model_does_not_look_anything_up(self):
         result, lookup = await self._run("X1C", GREEN_ON_EXTERNAL)
@@ -239,7 +298,20 @@ class TestSliceRouteWiring:
             **kwargs,
         )
 
-    async def _run(self, request: SliceRequest, *, printer_json=DUAL_PRINTER, lookup=None, slice_effect=None):
+    async def _run(
+        self,
+        request: SliceRequest,
+        *,
+        printer_json=DUAL_PRINTER,
+        lookup=None,
+        slice_effect=None,
+        model_bytes: bytes = b"solid cube\nendsolid cube\n",
+        model_filename: str = "cube.stl",
+        current_user_id: int | None = None,
+        target_printer_id: int | None = None,
+        scope=None,
+        extra_patches=(),
+    ):
         from backend.app.services import slicer_api as slicer_api_module
 
         result = slicer_api_module.SliceResult(
@@ -249,6 +321,7 @@ class TestSliceRouteWiring:
         service.close = AsyncMock()
         service.slice_with_profiles = AsyncMock(return_value=result, side_effect=slice_effect)
         service.slice_without_profiles = AsyncMock(return_value=result)
+        self.service = service
 
         async def _setting(_db, key):
             return {"preferred_slicer": "orcaslicer", "orcaslicer_api_url": "http://sidecar:3000"}.get(key)
@@ -262,21 +335,28 @@ class TestSliceRouteWiring:
 
         if lookup is None:
             lookup = AsyncMock(return_value=GREEN_ON_EXTERNAL)
+        scope_lookup = AsyncMock(return_value=scope if scope is not None else ALL_PRINTERS)
 
         with (
+            patch("backend.app.core.printer_scope.resolve_user_id_printer_scope", new=scope_lookup),
             patch("backend.app.api.routes.settings.get_setting", new=AsyncMock(side_effect=_setting)),
             patch("backend.app.services.preset_resolver.resolve_preset_ref", new=AsyncMock(side_effect=_resolve)),
             patch("backend.app.services.loaded_filaments.loaded_filaments", new=lookup),
             patch.object(slicer_api_module, "SlicerApiService", return_value=service),
             patch.object(slicer_api_module, "get_stall_timeout_seconds", new=AsyncMock(return_value=60.0)),
+            ExitStack() as stack,
         ):
+            for extra in extra_patches:
+                stack.enter_context(extra)
             await _run_slicer_with_fallback(
                 SimpleNamespace(get=AsyncMock(return_value=None)),
-                model_bytes=b"solid cube\nendsolid cube\n",
-                model_filename="cube.stl",
+                model_bytes=model_bytes,
+                model_filename=model_filename,
                 request=request,
-                current_user_id=None,
+                current_user_id=current_user_id,
+                target_printer_id=target_printer_id,
             )
+        self.scope_lookup = scope_lookup
         return service, lookup
 
     async def test_the_planned_map_is_sent(self):
@@ -316,3 +396,154 @@ class TestSliceRouteWiring:
             await self._run(self._request(filament_map=[1, 2]), slice_effect=SlicerInputError("bad map"))
         assert exc.value.status_code == 400
         assert "bad map" in exc.value.detail
+
+    async def test_an_input_error_with_a_planned_map_is_not_retried(self):
+        # SlicerInputError also covers an oversized upload, which the service
+        # raises so the same upload is not sent again.
+        from backend.app.services.slicer_api import SlicerInputError
+
+        with pytest.raises(HTTPException) as exc:
+            await self._run(self._request(), slice_effect=SlicerInputError("too large"))
+        assert exc.value.status_code == 400
+        assert self.service.slice_with_profiles.await_count == 1
+
+    async def test_spools_are_read_only_from_the_users_printers(self):
+        # A user who sees printer 5 but not printer 6 plans from printer 5 only.
+        _, lookup = await self._run(self._request(), current_user_id=42, scope=PrinterScope(frozenset({5})))
+        self.scope_lookup.assert_awaited_once()
+        assert self.scope_lookup.await_args.args[1] == 42
+        allows = lookup.await_args.kwargs["allows"]
+        assert (allows(5), allows(6)) == (True, False)
+
+    async def test_a_known_target_printer_is_the_only_one_read(self):
+        _, lookup = await self._run(
+            self._request(), current_user_id=42, target_printer_id=5, scope=PrinterScope(frozenset({5, 6}))
+        )
+        allows = lookup.await_args.kwargs["allows"]
+        assert (allows(5), allows(6)) == (True, False)
+
+    async def test_a_target_printer_outside_the_scope_is_not_read(self):
+        _, lookup = await self._run(
+            self._request(), current_user_id=42, target_printer_id=6, scope=PrinterScope(frozenset({5}))
+        )
+        assert lookup.await_args.kwargs["allows"](6) is False
+
+    async def test_each_plate_of_an_arranged_slice_all_gets_the_map(self):
+        from backend.app.services import slicer_3mf_convert
+
+        source = io.BytesIO()
+        with zipfile.ZipFile(source, "w") as archive:
+            archive.writestr("3D/3dmodel.model", "<model/>")
+        service, _ = await self._run(
+            self._request(plate=0, auto_arrange=True),
+            model_bytes=source.getvalue(),
+            model_filename="project.3mf",
+            extra_patches=(
+                patch.object(slicer_3mf_convert, "count_plates_in_3mf", return_value=2),
+                patch.object(slicer_3mf_convert, "merge_plate_3mfs", return_value=_sliced_3mf()),
+            ),
+        )
+        calls = service.slice_with_profiles.await_args_list
+        assert [call.kwargs["plate"] for call in calls] == [1, 2]
+        assert [call.kwargs["filament_map"] for call in calls] == [[1, 2], [1, 2]]
+
+    async def test_a_refused_plate_of_a_slice_all_is_retried_without_the_map(self):
+        from backend.app.services import slicer_3mf_convert
+        from backend.app.services.slicer_api import SlicerApiServerError, SliceResult
+
+        ok = SliceResult(content=_sliced_3mf(), print_time_seconds=1, filament_used_g=1.0, filament_used_mm=1.0)
+        source = io.BytesIO()
+        with zipfile.ZipFile(source, "w") as archive:
+            archive.writestr("3D/3dmodel.model", "<model/>")
+        service, _ = await self._run(
+            self._request(plate=0, auto_arrange=True),
+            model_bytes=source.getvalue(),
+            model_filename="project.3mf",
+            slice_effect=[ok, SlicerApiServerError("unprintable area"), ok],
+            extra_patches=(
+                patch.object(slicer_3mf_convert, "count_plates_in_3mf", return_value=2),
+                patch.object(slicer_3mf_convert, "merge_plate_3mfs", return_value=_sliced_3mf()),
+            ),
+        )
+        calls = service.slice_with_profiles.await_args_list
+        assert [(call.kwargs["plate"], call.kwargs.get("filament_map")) for call in calls] == [
+            (1, [1, 2]),
+            (2, [1, 2]),
+            (2, None),
+        ]
+
+    async def test_a_slot_the_plate_does_not_print_is_not_moved(self):
+        # Plate 1 prints only slot 1 (white). Slot 2 is green and green is on
+        # the second nozzle, but the plate never uses it.
+        from backend.app.services import slicer_3mf_convert
+
+        source = io.BytesIO()
+        with zipfile.ZipFile(source, "w") as archive:
+            archive.writestr("3D/3dmodel.model", "<model/>")
+        service, _ = await self._run(
+            self._request(plate=1),
+            model_bytes=source.getvalue(),
+            model_filename="project.3mf",
+            extra_patches=(patch.object(slicer_3mf_convert, "plate_used_slots", return_value={1}),),
+        )
+        assert "filament_map" not in service.slice_with_profiles.await_args.kwargs
+
+    async def test_a_3mf_gets_the_map_in_its_plates_and_the_retry_does_not(self):
+        from backend.app.services.slicer_api import SlicerApiServerError, SliceResult
+
+        ok = SliceResult(content=_sliced_3mf(), print_time_seconds=1, filament_used_g=1.0, filament_used_mm=1.0)
+        source = _project_3mf()
+        service, _ = await self._run(
+            self._request(plate=1),
+            model_bytes=source,
+            model_filename="project.3mf",
+            slice_effect=[SlicerApiServerError("unprintable area"), ok],
+        )
+        first, second = service.slice_with_profiles.await_args_list
+        assert 'value="1 2"' in _plate_settings(first.kwargs["model_bytes"])
+        assert second.kwargs["model_bytes"] == source
+
+
+def _project_3mf(mode: str = "Auto For Flush", maps: str = "1 1") -> bytes:
+    """A 3MF whose plate carries its own filament map, as Bambu Studio 2.x saves one."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("3D/3dmodel.model", "<model/>")
+        archive.writestr(
+            "Metadata/model_settings.config",
+            "<config><plate>"
+            '<metadata key="plater_id" value="1"/>'
+            f'<metadata key="filament_map_mode" value="{mode}"/>'
+            f'<metadata key="filament_maps" value="{maps}"/>'
+            "</plate></config>",
+        )
+    return buffer.getvalue()
+
+
+def _plate_settings(data: bytes) -> str:
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        return archive.read("Metadata/model_settings.config").decode()
+
+
+class TestPlateFilamentMap:
+    """Bambu Studio reads a plate's own map before ``--filament-map``."""
+
+    def test_the_plate_map_is_set_to_manual_and_the_map(self):
+        from backend.app.services.slicer_3mf_convert import with_plate_filament_map
+
+        settings = _plate_settings(with_plate_filament_map(_project_3mf(), [1, 2]))
+        assert '<metadata key="filament_map_mode" value="Manual"/>' in settings
+        assert '<metadata key="filament_maps" value="1 2"/>' in settings
+        assert '<metadata key="plater_id" value="1"/>' in settings
+
+    def test_the_other_members_are_kept(self):
+        from backend.app.services.slicer_3mf_convert import with_plate_filament_map
+
+        with zipfile.ZipFile(io.BytesIO(with_plate_filament_map(_project_3mf(), [2, 1]))) as archive:
+            assert archive.read("3D/3dmodel.model") == b"<model/>"
+
+    def test_a_3mf_without_plate_maps_is_unchanged(self):
+        from backend.app.services.slicer_3mf_convert import with_plate_filament_map
+
+        assert with_plate_filament_map(_sliced_3mf(), [1, 2]) == _sliced_3mf()
+        assert with_plate_filament_map(b"not a zip", [1, 2]) == b"not a zip"

@@ -380,6 +380,20 @@ describe('PrintersPage', () => {
       expect(screen.queryByTitle('Exhaust')).not.toBeInTheDocument();
     });
 
+    // Built in on these, and "Exhaust" in Bambu Studio: no printer file renames
+    // part 3 for them (#3521). Shown without exhaust_fan_present.
+    it.each(['H2D', 'H2D Pro', 'H2C', 'H2S', 'H3C'])(
+      'labels the built-in fan "Exhaust" on the %s and always shows it',
+      async (model) => {
+        renderWithStatus({ ...mockPrinters[0], model }, { ...statusWithFans, exhaust_fan_present: false });
+
+        await waitFor(() => {
+          expect(screen.getByTitle('Exhaust')).toBeInTheDocument();
+        });
+        expect(screen.queryByTitle('Chamber Fan')).not.toBeInTheDocument();
+      },
+    );
+
     it('hides the left aux badge when the accessory is not reported', async () => {
       renderWithStatus({ ...mockPrinters[0], model: 'P2S' }, statusWithFans);
 

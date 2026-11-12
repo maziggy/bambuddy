@@ -1765,16 +1765,29 @@ const MODELS_WITH_CHAMBER_FAN: ReadonlySet<string> = new Set([
   'H3C',
 ]);
 
-// On the P2S/X2D, the enclosure fan (big_fan2 / airduct part id 3) is a
-// dedicated chamber EXHAUST fan: it's its own control and stays the same
-// regardless of cooling/heating mode (unlike the aux fan, id 2, which a flap
-// re-tasks between part-cooling and chamber-filter recirculation). Bambu's own
-// firmware/UI and Bambu Studio (FAN_CHAMBER_0_IDX -> "Exhaust") label it
-// "Exhaust" on these models. Other enclosed models (X1/P1S/H2*) keep "Chamber".
+// The enclosure fan (big_fan2 / airduct part id 3) is the chamber EXHAUST fan
+// on these models: its own control, the same in cooling and heating mode
+// (unlike the aux fan, id 2, which a flap re-tasks between part cooling and
+// chamber-filter recirculation). Bambu Studio names part 3 "Exhaust"
+// (FAN_CHAMBER_0_IDX) unless a printer's file renames it, and only the X1
+// Carbon, X1, X1E and P1S files rename it to "Chamber", so those keep that
+// label. The H2 series and the H3C were missing here (#3521); the H3C's own
+// "Chamber" fan is a different one, part 15.
 const MODELS_WITH_EXHAUST_LABEL: ReadonlySet<string> = new Set([
   'P2S',
   'X2D',
+  'H2D',
+  'H2D Pro',
+  'H2C',
+  'H2S',
+  'H3C',
 ]);
+
+// Where the exhaust fan is an add-on kit rather than built in, so its badge
+// waits for the printer to report it (exhaust_fan_present). It is fitted from
+// the factory on the X2D, which reports it all the same. Kept apart from the
+// label set: the H2 series and the H3C have it built in and always show it.
+const MODELS_WITH_EXHAUST_KIT: ReadonlySet<string> = new Set(['P2S', 'X2D']);
 
 // Models whose aux fan (airduct part 2) is the LEFT one and part 10 the right
 // (#3373). Bambu Studio names them per model: on the X2D (N6) "2" is Left(Aux)
@@ -4652,23 +4665,22 @@ function PrinterCard({
               // control that does nothing. Mirrors the enclosure-door badge
               // gate above.
               const hasChamberFan = MODELS_WITH_CHAMBER_FAN.has(printer.model ?? '');
-              // On P2S/X2D the big_fan2 fan is the dedicated chamber EXHAUST fan
-              // ("Exhaust" in Bambu's naming) and is an add-on kit, not preinstalled:
-              // show it only when the printer actually reports it (airduct part id 3,
-              // surfaced as exhaust_fan_present). Other enclosed models (X1/P1S/H2*)
-              // have a built-in chamber fan that's always present, so they keep the
-              // existing model-list gate and the "Chamber Fan" label.
-              const isExhaustModel = MODELS_WITH_EXHAUST_LABEL.has(printer.model ?? '');
-              const chamberFanLabel = isExhaustModel
+              // The big_fan2 fan is "Exhaust" in Bambu's naming on the models in
+              // MODELS_WITH_EXHAUST_LABEL and "Chamber Fan" on the rest. On
+              // P2S/X2D it is an add-on kit, not preinstalled: show it only when
+              // the printer actually reports it (airduct part id 3, surfaced as
+              // exhaust_fan_present). Elsewhere it is built in and always shown.
+              const chamberFanLabel = MODELS_WITH_EXHAUST_LABEL.has(printer.model ?? '')
                 ? t('printers.fans.exhaust')
                 : t('printers.fans.chamber');
+              const isExhaustKitModel = MODELS_WITH_EXHAUST_KIT.has(printer.model ?? '');
               // Composed rather than either/or so both lists stay live for
               // P2S/X2D: the model must have an enclosure fan at all, AND —
               // where that fan is an add-on kit — actually report it. Written
-              // as `isExhaustModel ? exhaust_fan_present : hasChamberFan` the
+              // as `isExhaustKitModel ? exhaust_fan_present : hasChamberFan` the
               // P2S/X2D entries in MODELS_WITH_CHAMBER_FAN became unreachable,
               // which reads as if removing them were safe.
-              const showChamberFan = hasChamberFan && (!isExhaustModel || status.exhaust_fan_present);
+              const showChamberFan = hasChamberFan && (!isExhaustKitModel || status.exhaust_fan_present);
               // The second auxiliary part cooling fan (airduct part id 10):
               // the left one on the P2S (an accessory kit), the right one on
               // the X2D, where part 2 is the left. Only reported (non-null)

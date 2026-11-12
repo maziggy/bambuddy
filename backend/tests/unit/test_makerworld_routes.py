@@ -950,6 +950,16 @@ class TestLibraryStatus:
         assert resp.status_code == 422, resp.text
 
     @pytest.mark.asyncio
+    async def test_accepts_exactly_200_ids(self, async_client):
+        resp = await async_client.post(
+            "/api/v1/makerworld/library-status",
+            json={"model_ids": list(range(1, 201))},
+        )
+        assert resp.status_code == 200, resp.text
+        assert len(resp.json()) == 200
+        assert resp.json()["1"] == []
+
+    @pytest.mark.asyncio
     async def test_does_not_call_provider_cloud_service(self, async_client, db_session):
         """Membership must stay DB-only — never build a MakerWorldService."""
         db_session.add(

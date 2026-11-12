@@ -1,0 +1,200 @@
+2026-11-12 17:54:49,419 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-12 17:54:57,501 INFO [backend.app.main] [-] [SNAPSHOT] Capturing from external camera for printer 1
+2026-11-12 17:54:57,965 INFO [backend.app.main] [-] [SNAPSHOT] External camera frame: 12189 bytes
+2026-11-12 17:55:19,451 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(227, 1, 201, None), (225, 1, 199, None)]
+2026-11-12 17:55:19,457 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-12 17:55:28,937 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:56951
+2026-11-12 17:55:28,937 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:32946
+2026-11-12 17:55:42,539 INFO [backend.app.main] [-] [SNAPSHOT] Capturing from external camera for printer 1
+2026-11-12 17:55:42,920 INFO [backend.app.main] [-] [SNAPSHOT] External camera frame: 11846 bytes
+2026-11-12 17:55:49,489 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(227, 1, 201, None), (225, 1, 199, None)]
+2026-11-12 17:55:49,495 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-12 17:56:19,528 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(227, 1, 201, None), (225, 1, 199, None)]
+2026-11-12 17:56:19,539 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-12 17:56:27,198 INFO [backend.app.main] [-] [SNAPSHOT] Capturing from external camera for printer 1
+2026-11-12 17:56:27,603 INFO [backend.app.main] [-] [SNAPSHOT] External camera frame: 12704 bytes
+2026-11-12 17:56:29,076 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:56951
+2026-11-12 17:56:29,076 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:32946
+2026-11-12 17:56:49,572 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(227, 1, 201, None), (225, 1, 199, None)]
+2026-11-12 17:56:49,578 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-12 17:57:15,459 INFO [backend.app.main] [-] [SNAPSHOT] Capturing from external camera for printer 1
+2026-11-12 17:57:15,939 INFO [backend.app.main] [-] [SNAPSHOT] External camera frame: 12052 bytes
+2026-11-12 17:57:17,763 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-12 17:57:19,612 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(227, 1, 201, None), (225, 1, 199, None)]
+2026-11-12 17:57:19,618 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-12 17:57:29,218 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:56951
+2026-11-12 17:57:29,218 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:32946
+2026-11-12 17:57:49,653 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(227, 1, 201, None), (225, 1, 199, None)]
+2026-11-12 17:57:49,658 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-12 17:58:04,583 INFO [backend.app.main] [-] [SNAPSHOT] Capturing from external camera for printer 1
+2026-11-12 17:58:04,990 INFO [backend.app.main] [-] [SNAPSHOT] External camera frame: 11873 bytes
+2026-11-12 17:58:19,690 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(227, 1, 201, None), (225, 1, 199, None)]
+2026-11-12 17:58:19,696 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-12 17:58:29,350 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:56951
+2026-11-12 17:58:29,351 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:32946
+2026-11-12 17:58:29,376 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-11-12 17:58:29,376 INFO [uvicorn.error] [-] [IP]:38776 - "WebSocket /api/v1/ws" 403
+2026-11-12 17:58:29,376 INFO [uvicorn.error] [-] connection rejected (403 Forbidden)
+2026-11-12 17:58:29,382 INFO [uvicorn.access] [-] [IP]:38734 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-11-12 17:58:29,392 INFO [uvicorn.access] [-] [IP]:38728 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-12 17:58:32,524 INFO [uvicorn.access] [-] [IP]:38734 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-12 17:58:32,548 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-11-12 17:58:32,549 INFO [uvicorn.error] [-] [IP]:38788 - "WebSocket /api/v1/ws?token=[REDACTED]" [accepted]
+2026-11-12 17:58:32,549 INFO [uvicorn.error] [-] connection open
+2026-11-12 17:58:32,553 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-11-12 17:58:32,554 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-11-12 17:58:33,734 INFO [backend.app.api.routes.cloud] [c44d07fd] get_filament_info called with 2 IDs: ['GFG02', 'GFG00']
+2026-11-12 17:58:33,741 INFO [uvicorn.access] [-] [IP]:38726 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-12 17:58:49,728 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(227, 1, 201, None), (225, 1, 199, None)]
+2026-11-12 17:58:49,734 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-12 17:58:57,433 INFO [backend.app.main] [-] [SNAPSHOT] Capturing from external camera for printer 1
+2026-11-12 17:58:57,821 INFO [backend.app.main] [-] [SNAPSHOT] External camera frame: 12005 bytes
+2026-11-12 17:59:19,767 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(227, 1, 201, None), (225, 1, 199, None)]
+2026-11-12 17:59:19,773 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-12 17:59:29,480 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:56951
+2026-11-12 17:59:29,480 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:32946
+2026-11-12 17:59:49,805 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(227, 1, 201, None), (225, 1, 199, None)]
+2026-11-12 17:59:49,811 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-12 17:59:49,910 INFO [backend.app.main] [-] [SNAPSHOT] Capturing from external camera for printer 1
+2026-11-12 17:59:50,220 INFO [backend.app.main] [-] [SNAPSHOT] External camera frame: 12381 bytes
+2026-11-12 17:59:57,722 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-11-12 18:00:00,245 INFO [backend.app.services.smart_plug_manager] [-] Captured 2 energy snapshot(s)
+2026-11-12 18:00:19,840 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(227, 1, 201, None), (225, 1, 199, None)]
+2026-11-12 18:00:19,844 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-12 18:00:29,621 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:56951
+2026-11-12 18:00:29,621 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:32946
+2026-11-12 18:00:34,597 INFO [backend.app.main] [-] [SNAPSHOT] Capturing from external camera for printer 1
+2026-11-12 18:00:34,959 INFO [backend.app.main] [-] [SNAPSHOT] External camera frame: 12385 bytes
+2026-11-12 18:00:44,831 INFO [uvicorn.access] [-] [IP]:40158 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-12 18:00:44,889 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-11-12 18:00:44,894 INFO [uvicorn.error] [-] [IP]:40194 - "WebSocket /api/v1/ws?token=[REDACTED]" [accepted]
+2026-11-12 18:00:44,894 INFO [uvicorn.error] [-] connection open
+2026-11-12 18:00:44,915 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-11-12 18:00:44,916 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-11-12 18:00:49,873 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(227, 1, 201, None), (225, 1, 199, None)]
+2026-11-12 18:00:49,877 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-12 18:01:14,438 INFO [backend.app.api.routes.print_queue] [ce747547] Updated queue item 225
+2026-11-12 18:01:14,439 INFO [uvicorn.access] [-] [IP]:43476 - "PATCH /api/v1/queue/225 HTTP/1.1" 200
+2026-11-12 18:01:19,911 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(227, 1, 201, None), (225, 1, 199, None)]
+2026-11-12 18:01:19,917 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-12 18:01:21,314 INFO [backend.app.main] [-] [SNAPSHOT] Capturing from external camera for printer 1
+2026-11-12 18:01:21,360 INFO [backend.app.main] [-] [SNAPSHOT] External camera frame: 12182 bytes
+2026-11-12 18:01:29,766 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:56951
+2026-11-12 18:01:29,766 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:32946
+2026-11-12 18:01:49,950 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(227, 1, 201, None), (225, 1, 199, None)]
+2026-11-12 18:01:49,956 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-12 18:01:59,969 INFO [backend.app.main] [-] [SNAPSHOT] Capturing from external camera for printer 1
+2026-11-12 18:02:00,339 INFO [backend.app.main] [-] [SNAPSHOT] External camera frame: 12221 bytes
+2026-11-12 18:02:17,772 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-12 18:02:19,988 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(227, 1, 201, None), (225, 1, 199, None)]
+2026-11-12 18:02:19,994 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-12 18:02:29,910 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:56951
+2026-11-12 18:02:29,910 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:32946
+2026-11-12 18:02:36,528 INFO [backend.app.main] [-] [SNAPSHOT] Capturing from external camera for printer 1
+2026-11-12 18:02:36,856 INFO [backend.app.main] [-] [SNAPSHOT] External camera frame: 12099 bytes
+2026-11-12 18:02:50,022 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(227, 1, 201, None), (225, 1, 199, None)]
+2026-11-12 18:02:50,027 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-12 18:02:59,350 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-11-12 18:03:12,694 INFO [uvicorn.access] [-] [IP]:39648 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-12 18:03:12,743 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-11-12 18:03:12,744 INFO [uvicorn.error] [-] [IP]:60216 - "WebSocket /api/v1/ws?token=[REDACTED]" [accepted]
+2026-11-12 18:03:12,744 INFO [uvicorn.error] [-] connection open
+2026-11-12 18:03:12,750 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-11-12 18:03:12,751 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-11-12 18:03:20,056 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(227, 1, 201, None), (225, 1, 199, None)]
+2026-11-12 18:03:20,060 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-12 18:03:30,048 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:56951
+2026-11-12 18:03:30,048 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:32946
+2026-11-12 18:03:50,092 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(227, 1, 201, None), (225, 1, 199, None)]
+2026-11-12 18:03:50,099 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-12 18:04:20,131 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(227, 1, 201, None), (225, 1, 199, None)]
+2026-11-12 18:04:20,137 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-12 18:04:30,196 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:56951
+2026-11-12 18:04:30,196 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:32946
+2026-11-12 18:04:50,168 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(227, 1, 201, None), (225, 1, 199, None)]
+2026-11-12 18:04:50,174 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-12 18:04:58,387 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-11-12 18:05:20,203 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(227, 1, 201, None), (225, 1, 199, None)]
+2026-11-12 18:05:20,208 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-12 18:05:30,336 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:56951
+2026-11-12 18:05:30,336 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:32946
+2026-11-12 18:05:40,839 INFO [backend.app.main] [-] [SNAPSHOT] Capturing from external camera for printer 1
+2026-11-12 18:05:41,331 INFO [backend.app.main] [-] [SNAPSHOT] External camera frame: 12159 bytes
+2026-11-12 18:05:41,795 INFO [backend.app.services.notification_service] [-] Sent notification via Ntfy Push
+2026-11-12 18:05:41,795 INFO [backend.app.main] [-] [HMS] Sent notification for 1 error(s) on printer 1
+2026-11-12 18:05:50,242 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(227, 1, 201, None), (225, 1, 199, None)]
+2026-11-12 18:05:50,253 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=PAUSE, awaiting_plate_clear=False)
+2026-11-12 18:06:20,285 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(227, 1, 201, None), (225, 1, 199, None)]
+2026-11-12 18:06:20,291 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=PAUSE, awaiting_plate_clear=False)
+2026-11-12 18:06:29,757 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-11-12 18:06:29,757 INFO [uvicorn.error] [-] [IP]:55798 - "WebSocket /api/v1/ws" 403
+2026-11-12 18:06:29,758 INFO [uvicorn.error] [-] connection rejected (403 Forbidden)
+2026-11-12 18:06:30,490 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:56951
+2026-11-12 18:06:30,490 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:32946
+2026-11-12 18:06:32,798 INFO [uvicorn.access] [-] [IP]:55736 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-12 18:06:32,820 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-11-12 18:06:32,822 INFO [uvicorn.error] [-] [IP]:55804 - "WebSocket /api/v1/ws?token=[REDACTED]" [accepted]
+2026-11-12 18:06:32,822 INFO [uvicorn.error] [-] connection open
+2026-11-12 18:06:32,827 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-11-12 18:06:32,827 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-11-12 18:06:50,324 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(227, 1, 201, None), (225, 1, 199, None)]
+2026-11-12 18:06:50,329 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=PAUSE, awaiting_plate_clear=False)
+2026-11-12 18:07:17,781 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-12 18:07:20,368 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(227, 1, 201, None), (225, 1, 199, None)]
+2026-11-12 18:07:20,376 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=PAUSE, awaiting_plate_clear=False)
+2026-11-12 18:07:30,643 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:56951
+2026-11-12 18:07:30,643 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:32946
+2026-11-12 18:07:50,411 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(227, 1, 201, None), (225, 1, 199, None)]
+2026-11-12 18:07:50,417 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=PAUSE, awaiting_plate_clear=False)
+2026-11-12 18:08:20,448 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(227, 1, 201, None), (225, 1, 199, None)]
+2026-11-12 18:08:20,454 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=PAUSE, awaiting_plate_clear=False)
+2026-11-12 18:08:30,792 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:56951
+2026-11-12 18:08:30,792 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:32946
+2026-11-12 18:08:35,488 INFO [backend.app.main] [-] [SNAPSHOT] Capturing from external camera for printer 1
+2026-11-12 18:08:35,908 INFO [backend.app.main] [-] [SNAPSHOT] External camera frame: 12186 bytes
+2026-11-12 18:08:36,152 INFO [backend.app.services.notification_service] [-] Sent notification via Ntfy Push
+2026-11-12 18:08:36,152 INFO [backend.app.main] [-] [HMS] Sent notification for 1 error(s) on printer 1
+2026-11-12 18:08:50,487 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(227, 1, 201, None), (225, 1, 199, None)]
+2026-11-12 18:08:50,492 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=PAUSE, awaiting_plate_clear=False)
+2026-11-12 18:09:13,016 INFO [backend.app.api.routes.support] [8729c248] Log level changed to DEBUG
+2026-11-12 18:09:13,017 INFO [backend.app.api.routes.bug_report] [8729c248] Bug report: enabled debug logging
+2026-11-12 18:09:13,017 DEBUG [backend.app.services.bambu_mqtt] [8729c248] [[SERIAL]] Requesting status update (pushall)
+2026-11-12 18:09:13,017 INFO [uvicorn.access] [-] [IP]:52838 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-11-12 18:09:13,099 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': False}
+2026-11-12 18:09:13,100 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-11-12 18:09:13,100 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: PAUSE, gcode_file: Chunky_Double_-_Hanger.3mf, subtask_name: Chunky_Double_-_Hanger
+2026-11-12 18:09:13,100 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_tar': '3', 'tray_now': '255', 'tray_pre': '3', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'version': 20, 'insert_flag': True, 'power_on_flag': False}
+2026-11-12 18:09:13,100 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-11-12 18:09:13,101 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-11-12 18:09:13,101 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-11-12 18:09:13,101 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-11-12 18:09:13,101 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 261 (main=1, sub=5)
+2026-11-12 18:09:13,101 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-12 18:09:13,101 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-11-12 18:09:13,101 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-11-12 18:09:13,102 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-11-12 18:09:13,102 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-11-12 18:09:13,102 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: [{'attr': 83887104, 'code': 65604, 'action': 0, 'timestamp': 1794026680}, {'attr': 117449472, 'code': 131078, 'action': 0, 'timestamp': 1794109221}]
+2026-11-12 18:09:13,102 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] print_error: 117473286 (0x07008006) -> short_code=0700_8006
+2026-11-12 18:09:13,102 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-11-12 18:09:13,102 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -46dBm
+2026-11-12 18:09:13,102 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-11-12 18:09:13,102 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: PAUSE -> PAUSE, file: Chunky_Double_-_Hanger.3mf, subtask: Chunky_Double_-_Hanger
+2026-11-12 18:09:15,123 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-12 18:09:18,496 DEBUG [backend.app.main] [-] Recorded 3 printer sensor history entries
+2026-11-12 18:09:19,171 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-12 18:09:20,255 DEBUG [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP NOTIFY for A1 Mini Queue (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-11-12 18:09:20,526 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(227, 1, 201, None), (225, 1, 199, None)]
+2026-11-12 18:09:20,531 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=PAUSE, awaiting_plate_clear=False)
+2026-11-12 18:09:21,198 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-12 18:09:23,244 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-12 18:09:25,270 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-12 18:09:25,271 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -47dBm
+2026-11-12 18:09:27,295 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-12 18:09:27,295 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -46dBm
+2026-11-12 18:09:29,185 INFO [uvicorn.access] [-] [IP]:41042 - "PATCH /api/v1/users/1 HTTP/1.1" 200
+2026-11-12 18:09:29,340 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-12 18:09:30,946 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:56951
+2026-11-12 18:09:30,946 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [A1 Mini Queue] 1Hz status push: 60 pushes/min to [IP]:32946
+2026-11-12 18:09:31,374 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-12 18:09:33,410 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status

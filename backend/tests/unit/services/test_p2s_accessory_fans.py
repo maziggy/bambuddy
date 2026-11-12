@@ -314,10 +314,31 @@ class TestExhaustFanLabelModels:
         for model in ("P2S", "X2D", "p2s", " P2S ", "N7", "N6"):
             assert uses_exhaust_fan_label(model) is True, model
 
+    def test_h2_series_and_h3c_use_exhaust_label(self):
+        """Bambu Studio doesn't rename their part 3, so it is "Exhaust" (#3521)."""
+        from backend.app.utils.printer_models import uses_exhaust_fan_label
+
+        for model in (
+            "H2D",
+            "H2D Pro",
+            "H2DPRO",
+            "H2C",
+            "H2S",
+            "H3C",
+            "O1D",
+            "O1E",
+            "O2D",
+            "O1C",
+            "O1C2",
+            "O1S",
+            "N10",
+        ):
+            assert uses_exhaust_fan_label(model) is True, model
+
     def test_other_enclosed_models_keep_chamber_label(self):
         from backend.app.utils.printer_models import uses_exhaust_fan_label
 
-        for model in ("X1C", "X1", "X1E", "P1S", "H2D", "H2C", "H2S", "A1"):
+        for model in ("X1C", "X1", "X1E", "P1S", "A1"):
             assert uses_exhaust_fan_label(model) is False, model
 
     def test_unknown_or_missing_model_defaults_to_chamber(self):
@@ -331,8 +352,8 @@ class TestExhaustFanLabelModels:
 class TestExhaustLabelModelListsAgree:
     """The exhaust-label model list is duplicated across the stack.
 
-    The backend keeps ``EXHAUST_FAN_LABEL_MODELS`` (display names plus the N7/N6
-    internal codes, since the API can be handed either) and the frontend keeps
+    The backend keeps ``EXHAUST_FAN_LABEL_MODELS`` (display names plus the internal
+    codes, since the API can be handed either) and the frontend keeps
     ``MODELS_WITH_EXHAUST_LABEL`` in PrintersPage.tsx (display names only —
     ``printer.model`` is always a display name by the time it reaches the card).
     Both are correct as written, but nothing stopped them drifting apart: adding
@@ -378,8 +399,8 @@ class TestExhaustLabelModelListsAgree:
     def test_every_backend_display_name_is_handled_by_the_frontend(self):
         from backend.app.utils.printer_models import EXHAUST_FAN_LABEL_MODELS
 
-        # N7/N6 are internal codes that never reach the card, so exclude them.
-        internal_codes = {"N7", "N6"}
+        # Internal codes never reach the card, so exclude them.
+        internal_codes = {"N7", "N6", "O1D", "O1E", "O2D", "O1C", "O1C2", "O1S", "N10"}
         backend_display = set(EXHAUST_FAN_LABEL_MODELS) - internal_codes
         missing = backend_display - self._frontend_models()
         assert not missing, (

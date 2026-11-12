@@ -141,6 +141,7 @@ async def _drive_print_start(
         pm.get_status = MagicMock(return_value=state)
         pm.get_printer = MagicMock(return_value=MagicMock(serial_number="TEST1898"))
         pm.get_client = MagicMock(return_value=None)  # else its mock dispatch id is stored
+        pm.get_current_print_user = MagicMock(return_value=None)  # a print nobody started in Bambuddy
 
         from backend.app.main import on_print_start
 

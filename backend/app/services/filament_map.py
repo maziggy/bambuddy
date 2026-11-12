@@ -14,12 +14,15 @@ the map is computed here and sent to the sidecar as ``filamentMap``.
 
 The map has to match what is physically loaded, or the print comes out in the
 wrong colours. It is therefore derived from the spools the printer reports,
-and every doubt returns ``None``, which leaves the slice exactly as it was
-before this module existed.
+matched on material type as well as colour, and every doubt returns ``None``,
+which leaves the slice exactly as it was before this module existed.
 """
 
 import json
 import logging
+from collections.abc import Callable
+
+from backend.app.utils.filament_types import canonical_filament_type, known_printer_filament_type
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +58,35 @@ def _rgb(value: object) -> str | None:
     return hex_part[:6]
 
 
+def _material(profile: dict) -> str | None:
+    """The canonical material type a filament profile prints, or ``None``.
+
+    A full profile states it in ``filament_type`` (a one-element list, like
+    ``filament_colour``). A standard preset arrives as an ``inherits`` stub
+    that the sidecar expands later, so only its name is here; Bambu's preset
+    names carry the material ("Bambu PETG HF @BBL X2D"), and a name that does
+    not reduce to a known type gives ``None`` rather than a guess.
+    """
+    declared = profile.get("filament_type")
+    if isinstance(declared, (list, tuple)):
+        declared = declared[0] if declared else None
+    if isinstance(declared, str) and declared.strip():
+        return canonical_filament_type(declared.strip())
+    name = profile.get("name") or profile.get("inherits")
+    if isinstance(name, str):
+        reduced = known_printer_filament_type(name)
+        if reduced is not None:
+            return canonical_filament_type(reduced)
+    return None
+
+
+def _spool_material(spool: dict) -> str | None:
+    value = spool.get("type")
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return canonical_filament_type(value.strip())
+
+
 def _profile(raw: str) -> dict:
     try:
         data = json.loads(raw)
@@ -67,18 +99,22 @@ def plan_filament_map(
     printer_json: str,
     filament_jsons: list[str],
     loaded_spools: list[dict],
+    used_slots: set[int] | None = None,
 ) -> list[int] | None:
     """The ``filament_map`` for this slice, or ``None`` to leave it unchanged.
 
     ``filament_jsons`` are the filament profiles in plate-slot order, already
     carrying the colour being printed. ``loaded_spools`` is what
-    ``GET /printers/available-filaments`` returns for the target model: one
-    entry per loaded spool with ``color`` and ``extruder_id``.
+    ``loaded_filaments`` returns for the target printers: one entry per loaded
+    spool with ``type``, ``color`` and ``extruder_id``. ``used_slots`` are the
+    1-based slots the plate prints with, when the source says so; the slice
+    route fills the other slots with a stand-in profile, and those are never
+    moved. ``None`` means every slot prints.
 
     At most one filament is moved to the second extruder. On the printers this
     was measured on, the AMS feeds one extruder and the other is fed only by
-    the external spool holder, so the second nozzle has exactly one colour to
-    offer and it must be the colour actually on that spool.
+    the external spool holder, so the second nozzle has exactly one filament
+    to offer, and it must be the material and colour actually on that spool.
     """
     if len(filament_jsons) < 2:
         return None  # single colour: nothing to spread
@@ -98,39 +134,33 @@ def plan_filament_map(
     except (TypeError, ValueError):
         return None
 
-    # The colours the second extruder has loaded right now.
-    aux_colours = {
-        rgb
+    # The (material, colour) pairs the second extruder has loaded right now.
+    aux_filaments = {
+        (material, rgb)
         for spool in loaded_spools
         if isinstance(spool, dict) and spool.get("extruder_id") == aux_mqtt_id
-        for rgb in [_rgb(spool.get("color"))]
-        if rgb is not None
+        for material, rgb in [(_spool_material(spool), _rgb(spool.get("color")))]
+        if material is not None and rgb is not None
     }
-    if not aux_colours:
+    if not aux_filaments:
         return None  # nothing loaded on the second nozzle
 
-    wanted = [_rgb(_profile(raw).get("filament_colour")) for raw in filament_jsons]
+    profiles = [_profile(raw) for raw in filament_jsons]
+    wanted = [(_material(profile), _rgb(profile.get("filament_colour"))) for profile in profiles]
 
-    # A slot that is a byte-for-byte copy of an earlier one is the placeholder
-    # the slice route writes into slots the plate does not print. It is never
-    # the one worth moving, and a plate whose other slots are all such copies
-    # prints a single filament.
-    distinct = [i for i, raw in enumerate(filament_jsons) if raw not in filament_jsons[:i]]
-    if len(distinct) < 2:
-        return None
-    candidates = [i for i in distinct if wanted[i] in aux_colours]
+    printing = [i for i in range(len(wanted)) if used_slots is None or (i + 1) in used_slots]
+    if len({wanted[i] for i in printing}) < 2:
+        return None  # the plate prints one filament
+    candidates = [i for i in printing if wanted[i] in aux_filaments]
     if not candidates:
-        return None  # the second nozzle has none of these colours
+        return None  # the second nozzle has none of these filaments
 
     # Prefer a filament other than the first: filament 1 is conventionally the
     # base, and Bambu advise against running a print's main material through
     # the second extruder. When only the first matches it is still moved,
     # because one nozzle per colour beats a filament swap at every layer.
     pick = next((i for i in candidates if i > 0), candidates[0])
-    mapping = [AUX_EXTRUDER if i == pick else HOME_EXTRUDER for i in range(len(wanted))]
-    if len(set(mapping)) < 2:
-        return None
-    return mapping
+    return [AUX_EXTRUDER if i == pick else HOME_EXTRUDER for i in range(len(wanted))]
 
 
 async def auto_filament_map(
@@ -139,8 +169,15 @@ async def auto_filament_map(
     target_model: str | None,
     printer_json: str,
     filament_jsons: list[str],
+    allows: Callable[[int], bool],
+    used_slots: set[int] | None = None,
 ) -> list[int] | None:
-    """Look up what the target printer has loaded and plan a map from it.
+    """Look up what the target printers have loaded and plan a map from it.
+
+    ``allows`` says which printers the slice may plan from: the user's printer
+    scope, narrowed to one printer when the caller knows it. A map read from a
+    printer the user cannot see would send them a file that waits for filament
+    on their own printer.
 
     Never raises. Any failure (an unknown model, an unreachable printer, a
     profile that does not parse) is logged and answered with ``None``, so the
@@ -148,7 +185,7 @@ async def auto_filament_map(
     """
     from backend.app.utils.printer_models import is_dual_nozzle_model, is_nozzle_rack_model
 
-    if len(filament_jsons) < 2 or not is_dual_nozzle_model(target_model):
+    if target_model is None or len(filament_jsons) < 2 or not is_dual_nozzle_model(target_model):
         return None
     # A rack machine (H2C) numbers its hotends by rack position, not by
     # extruder, so the two-extruder reasoning here does not describe it.
@@ -158,8 +195,8 @@ async def auto_filament_map(
     try:
         from backend.app.services.loaded_filaments import loaded_filaments
 
-        loaded = await loaded_filaments(db, target_model)
-        mapping = plan_filament_map(printer_json, filament_jsons, list(loaded or []))
+        loaded = await loaded_filaments(db, target_model, allows=allows)
+        mapping = plan_filament_map(printer_json, filament_jsons, list(loaded or []), used_slots)
     except Exception as exc:
         logger.warning("Filament map skipped, slicing with the default grouping: %s", exc)
         return None

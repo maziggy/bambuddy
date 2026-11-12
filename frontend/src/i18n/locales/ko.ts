@@ -1185,8 +1185,11 @@ export default {
       download: '다운로드',
       edit: '편집',
       delete: '삭제',
-      runsBadge: '{{count}}회 인쇄',
-      runsBadgeTitle: '총 {{count}}회 인쇄 — {{successful}}회 성공, {{failed}}회 실패. 전체 인쇄 기록을 보려면 클릭하세요.'
+      runsBadge_one: '{{count}}회 인쇄',
+      runsBadge_other: '{{count}}회 인쇄',
+      runsBadgeTitle_one: '총 {{count}}회 인쇄 — {{successful}}회 성공, {{failed}}회 실패. 전체 인쇄 기록을 보려면 클릭하세요.',
+      runsBadgeTitle_other: '총 {{count}}회 인쇄 — {{successful}}회 성공, {{failed}}회 실패. 전체 인쇄 기록을 보려면 클릭하세요.',
+      runsBadgeLast: '마지막 인쇄: {{date}}',
     },
     modal: {
       deleteArchive: '아카이브 삭제',

@@ -612,6 +612,46 @@ describe('ArchivesPage', () => {
       expect(screen.getByText('aborted')).toBeInTheDocument();
       expect(screen.getByText('cancelled')).toBeInTheDocument();
     });
+
+    // #1634: a card says how often it printed and how it went, from one print.
+    const runs = (successful: number, failed: number, last: string | null = '2026-11-01T09:00:00Z') => ({
+      run_count: successful + failed,
+      successful_run_count: successful,
+      failed_run_count: failed,
+      last_run_at: last,
+    });
+
+    it('counts a single print, coloured by how it went, with its date', async () => {
+      server.use(
+        http.get('/api/v1/archives/', () =>
+          HttpResponse.json([
+            { ...mockArchives[0], id: 211, print_name: 'PrintedOnce', ...runs(1, 0) },
+            { ...mockArchives[0], id: 212, print_name: 'OnlyFailed', status: 'failed', ...runs(0, 2) },
+          ]),
+        ),
+      );
+      render(<ArchivesPage />);
+
+      await screen.findByText('PrintedOnce');
+      const once = screen.getByText('1 print');
+      expect(once.className).toContain('text-bambu-green');
+      expect(once.getAttribute('title')).toContain('Last printed:');
+      expect(screen.getByText('2 prints').className).toContain('text-status-error');
+    });
+
+    it('shows no count for an archive that never printed', async () => {
+      server.use(
+        http.get('/api/v1/archives/', () =>
+          HttpResponse.json([
+            { ...mockArchives[0], id: 213, print_name: 'NeverPrinted', status: 'archived', ...runs(0, 0, null) },
+          ]),
+        ),
+      );
+      render(<ArchivesPage />);
+
+      await screen.findByText('NeverPrinted');
+      expect(screen.queryByText(/^\d+ prints?$/)).not.toBeInTheDocument();
+    });
   });
 
   // Archive redesign P4: a card opens its archive's page; the controls on it

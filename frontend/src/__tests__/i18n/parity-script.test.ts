@@ -47,6 +47,23 @@ describe('compareLocales (parity-script self-test)', () => {
     expect(hasReport(result.reports, 'zh-CN: extra keys vs en', 'a.stray')).toBe(true);
   });
 
+  // #1634: ru, uk and pl need _few/_many next to en's _one/_other.
+  it('accepts extra plural forms of a key en pluralises', () => {
+    const result = compareLocales({
+      en: toMap({ n_one: '{{count}} print', n_other: '{{count}} prints' }),
+      ru: toMap({ n_one: 'a {{count}}', n_other: 'b {{count}}', n_few: 'c {{count}}', n_many: 'd {{count}}' }),
+    });
+    expect(result.failed).toBe(false);
+  });
+
+  it('flags a _few key for a key en does not pluralise', () => {
+    const result = compareLocales({
+      en: toMap({ n: 'x' }),
+      ru: toMap({ n: 'y', n_few: 'z' }),
+    });
+    expect(hasReport(result.reports, 'ru: extra keys vs en', 'n_few')).toBe(true);
+  });
+
   it('flags placeholder mismatch (missing placeholder in translation)', () => {
     const result = compareLocales({
       en: toMap({ greeting: 'Hello {{name}}!' }),

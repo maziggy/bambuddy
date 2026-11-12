@@ -565,7 +565,14 @@ export function compareLocales(locales) {
     if (code === 'en') continue;
     const keys = new Set(map.keys());
     const missing = [...enKeys].filter((k) => !keys.has(k)).sort();
-    const extra = [...keys].filter((k) => !enKeys.has(k)).sort();
+    // A language with more plural forms than English (ru, uk, pl: _few,
+    // _many) adds them next to en's _one/_other; without them i18next falls
+    // back to English for those counts.
+    const isExtraPluralForm = (k) => {
+      const m = k.match(/^(.*)_(zero|two|few|many)$/);
+      return m !== null && enKeys.has(`${m[1]}_other`);
+    };
+    const extra = [...keys].filter((k) => !enKeys.has(k) && !isExtraPluralForm(k)).sort();
     add(`${code}: missing keys vs en`, missing);
     add(`${code}: extra keys vs en`, extra);
   }

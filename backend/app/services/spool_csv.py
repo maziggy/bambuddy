@@ -17,9 +17,10 @@ import io
 from datetime import datetime, timezone
 
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.database import is_sqlite
 from backend.app.models.color_catalog import ColorCatalogEntry
 from backend.app.models.spool import Spool
 from backend.app.models.supplier import Supplier, supplier_name_key
@@ -38,6 +39,11 @@ from backend.app.schemas.spool import SpoolCreate
 # `material_number` (#2870) are SpoolCreate fields included so a round-trip
 # preserves them (they'd otherwise be lost).
 CSV_COLUMNS = [
+    # The spool's id (#3520): a printed label's QR code carries it, so moving
+    # the inventory to another install must not renumber the spools. Import
+    # keeps it when this install never handed it out (see `_decide_ids`), and
+    # gives the spool a new one otherwise; an empty cell is a new spool.
+    "id",
     "material",
     "brand",
     "subtype",
@@ -102,6 +108,8 @@ class ImportRowResult(BaseModel):
 
     row_number: int  # 1-based data row (header is not counted)
     status: str  # "valid" | "error" | "skipped"
+    # The id the spool is created with (#3520); None gets the next free one.
+    keeps_id: int | None = None
     reason: str | None = None
     material: str | None = None
     brand: str | None = None
@@ -390,6 +398,16 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
 
         row_error: str | None = None
 
+        requested_id: int | None = None
+        id_cell = cell(raw_row, "id")
+        if id_cell:
+            try:
+                requested_id = int(id_cell)
+            except ValueError:
+                requested_id = 0
+            if requested_id < 1:
+                row_error = f"id must be a positive whole number (got '{id_cell}')"
+
         # Plain text passthrough columns.
         for field in (
             "subtype",
@@ -543,12 +561,15 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
                 resolved_color=resolved_color,
                 cross_material_color=cross_material_color,
                 duplicate_of_existing=_spool_key(material, brand, color_name) in existing_keys,
+                keeps_id=requested_id,
                 spool=spool_data,
                 supplier_ids=supplier_ids,
                 purchase_supplier_id=purchase_supplier_id,
             )
         )
         valid += 1
+
+    await _decide_ids(db, rows, warnings)
 
     return ImportPreview(
         columns=CSV_COLUMNS,
@@ -559,6 +580,50 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
         rows=rows,
         warnings=warnings,
     )
+
+
+async def highest_spool_id_given_out(db: AsyncSession) -> int:
+    """The highest spool id this install has ever handed out, deleted ones included.
+
+    Spool ids are never reused (old print logs and usage records may still
+    name one), so only an id above this is free to give an imported spool.
+    """
+    highest = (await db.execute(select(func.max(Spool.id)))).scalar() or 0
+    if is_sqlite():
+        seq = (await db.execute(text("SELECT seq FROM sqlite_sequence WHERE name = 'spool'"))).scalar()
+        return max(highest, seq or 0)
+    sequence = (await db.execute(text("SELECT pg_get_serial_sequence('spool', 'id')"))).scalar()
+    if sequence:
+        state = (await db.execute(text(f"SELECT last_value, is_called FROM {sequence}"))).first()  # noqa: S608  # nosec B608 -- name from pg_get_serial_sequence
+        if state is not None:
+            last_value, is_called = state
+            highest = max(highest, last_value if is_called else last_value - 1)
+    return highest
+
+
+async def _decide_ids(db: AsyncSession, rows: list[ImportRowResult], warnings: list[str]) -> None:
+    """Keep each valid row's id when this install never handed it out (#3520).
+
+    On a fresh install every id qualifies. An id already given out here, or
+    one the file names twice, would merge two spools' records, so that row
+    gets a new id instead: one warning for all of them, not one per row.
+    """
+    highest = await highest_spool_id_given_out(db)
+    taken: set[int] = set()
+    renumbered = 0
+    for row in rows:
+        if row.keeps_id is None:
+            continue
+        if row.status != "valid" or row.keeps_id <= highest or row.keeps_id in taken:
+            if row.status == "valid":
+                renumbered += 1
+            row.keeps_id = None
+            continue
+        taken.add(row.keeps_id)
+    if renumbered:
+        warnings.append(
+            f"{renumbered} spool(s) get a new id: their id is already used on this install or appears twice in the file"
+        )
 
 
 def serialize(spools: list[Spool]) -> bytes:

@@ -123,3 +123,27 @@ class MakerWorldStatus(BaseModel):
         default=False,
         description="A token is stored but Bambu has rejected it — the user must sign in to Bambu Cloud again.",
     )
+
+
+class MakerWorldLibraryStatusRequest(BaseModel):
+    """Body for POST /makerworld/library-status.
+
+    Bulk membership check against local library provenance only — no
+    MakerWorld / Bambu cloud I/O. Same canonical URL matching rules as
+    ``resolve``'s ``already_imported_library_ids``.
+    """
+
+    model_ids: list[int] = Field(
+        ...,
+        min_length=0,
+        max_length=200,
+        description=(
+            "MakerWorld design IDs (the number in /models/{id}). At most 200 "
+            "per request. Duplicates are collapsed in the response."
+        ),
+    )
+
+
+# Response is a flat map ``{ "<model_id>": [<library_file_id>, ...] }`` so a
+# client can index a collection/grid without dumping the whole library.
+# Keys are decimal strings because JSON object keys are always strings.

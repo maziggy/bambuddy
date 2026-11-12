@@ -75,12 +75,13 @@ async def _make_key(
 ) -> str:
     """Mint an API key with the scopes /makerworld/* expects.
 
-    /status + /resolve gate on ``Permission.MAKERWORLD_VIEW`` which maps
-    to the ``can_read_status`` scope (see ``_APIKEY_SCOPE_BY_PERMISSION``
-    in core/auth.py). /import gates on ``Permission.MAKERWORLD_IMPORT``
-    which maps to ``can_manage_library``. ``can_access_cloud`` is what
-    ``resolve_api_key_cloud_owner`` checks before returning the owner —
-    the separate field this PR's fix actually depends on.
+    /status + /resolve + /library-status gate on ``Permission.MAKERWORLD_VIEW``
+    which maps to the ``can_read_status`` scope (see
+    ``_APIKEY_SCOPE_BY_PERMISSION`` in core/auth.py). /import gates on
+    ``Permission.MAKERWORLD_IMPORT`` which maps to ``can_manage_library``.
+    ``can_access_cloud`` is what ``resolve_api_key_cloud_owner`` checks
+    before returning the owner — the separate field this PR's fix actually
+    depends on.
     """
     full_key, key_hash, key_prefix = generate_api_key()
     row = APIKey(
@@ -301,6 +302,66 @@ class TestImportEndpoint:
         result = await db_session.execute(select(LibraryFile).where(LibraryFile.id == body["library_file_id"]))
         saved = result.scalar_one()
         assert saved.created_by_id == admin.id
+
+
+class TestLibraryStatusEndpoint:
+    """POST /makerworld/library-status — DB-only membership for API keys (#3493).
+
+    Same ``makerworld:view`` / ``can_read_status`` gate as resolve, but must
+    never call ``_build_service`` (no cloud I/O).
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_api_key_with_read_status_gets_membership(self, async_client: AsyncClient, db_session: AsyncSession):
+        await _setup_auth_with_admin(async_client)
+        admin = await _store_admin_cloud_token(db_session, "mwadmin", token="fake-bambu-token")
+        key = await _make_key(db_session, owner=admin, name="library-status-ok")
+
+        db_session.add(
+            LibraryFile(
+                filename="cube.3mf",
+                file_path="library/files/cube.3mf",
+                file_type="3mf",
+                file_size=10,
+                source_type="makerworld",
+                source_url="https://makerworld.com/models/1400373#profileId-1",
+                created_by_id=admin.id,
+            )
+        )
+        await db_session.commit()
+
+        with patch("backend.app.api.routes.makerworld._build_service") as build:
+            resp = await async_client.post(
+                "/api/v1/makerworld/library-status",
+                json={"model_ids": [1400373, 999]},
+                headers={"X-API-Key": key},
+            )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["999"] == []
+        assert len(body["1400373"]) == 1
+        build.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_api_key_without_read_status_is_forbidden(self, async_client: AsyncClient, db_session: AsyncSession):
+        await _setup_auth_with_admin(async_client)
+        admin = await _store_admin_cloud_token(db_session, "mwadmin", token="fake-bambu-token")
+        key = await _make_key(
+            db_session,
+            owner=admin,
+            name="library-status-denied",
+            can_read_status=False,
+            can_manage_library=True,
+        )
+
+        resp = await async_client.post(
+            "/api/v1/makerworld/library-status",
+            json={"model_ids": [1400373]},
+            headers={"X-API-Key": key},
+        )
+        assert resp.status_code == 403, resp.text
 
 
 class TestJwtPathUnchanged:

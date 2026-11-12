@@ -92,6 +92,16 @@ class TestAnonymousIsRefusedFirst:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_anonymous_library_status_is_401(self, async_client: AsyncClient):
+        await _setup_auth_with_admin(async_client)
+        resp = await async_client.post(
+            "/api/v1/makerworld/library-status",
+            json={"model_ids": [1400373]},
+        )
+        assert resp.status_code == 401, resp.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_anonymous_with_a_malformed_body_is_still_401_not_422(self, async_client: AsyncClient):
         """The permission moved into the handler, but authentication stayed a
         route dependency precisely so an unauthenticated caller cannot probe
@@ -129,6 +139,20 @@ class TestPermissionStillBites:
         resp = await async_client.post(
             "/api/v1/makerworld/resolve",
             json={"url": "https://makerworld.com/en/models/1400373"},
+            headers={"Authorization": f"Bearer {jwt}"},
+        )
+        assert resp.status_code == 403, resp.text
+        assert "makerworld:view" in resp.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_user_without_view_cannot_library_status(self, async_client: AsyncClient):
+        admin = await _setup_auth_with_admin(async_client)
+        jwt = await _make_user(async_client, admin, username="mwnoview2", permissions=["printers:read"])
+
+        resp = await async_client.post(
+            "/api/v1/makerworld/library-status",
+            json={"model_ids": [1400373]},
             headers={"Authorization": f"Bearer {jwt}"},
         )
         assert resp.status_code == 403, resp.text
@@ -210,6 +234,15 @@ class TestAnotherUsersImport:
             seen = await async_client.post(
                 "/api/v1/makerworld/resolve", json={"url": "https://makerworld.com/en/models/1400373"}, headers=second
             )
+        # Before second imports: colleague's row must not leak via membership either.
+        status_before = await async_client.post(
+            "/api/v1/makerworld/library-status",
+            json={"model_ids": [1400373]},
+            headers=second,
+        )
+        assert status_before.status_code == 200, status_before.text
+        assert status_before.json() == {"1400373": []}
+
         with patch(
             "backend.app.api.routes.makerworld._build_service", AsyncMock(side_effect=lambda *a: _import_service())
         ):
@@ -218,3 +251,19 @@ class TestAnotherUsersImport:
         assert seen.json()["already_imported_library_ids"] == []
         assert mine["was_existing"] is False
         assert mine["library_file_id"] != theirs["library_file_id"]
+
+        # After both have imported: each user sees only their own row.
+        status_second = await async_client.post(
+            "/api/v1/makerworld/library-status",
+            json={"model_ids": [1400373]},
+            headers=second,
+        )
+        assert status_second.status_code == 200, status_second.text
+        assert status_second.json() == {"1400373": [mine["library_file_id"]]}
+        status_first = await async_client.post(
+            "/api/v1/makerworld/library-status",
+            json={"model_ids": [1400373]},
+            headers=first,
+        )
+        assert status_first.status_code == 200, status_first.text
+        assert status_first.json() == {"1400373": [theirs["library_file_id"]]}

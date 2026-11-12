@@ -162,6 +162,7 @@ export function SpoolCsvImportModal({ onClose, onImported }: SpoolCsvImportModal
                       <thead className="bg-bambu-dark sticky top-0">
                         <tr className="text-left text-bambu-gray">
                           <th className="px-3 py-2 font-medium">{t('inventory.csv.colRow', 'Row')}</th>
+                          <th className="px-3 py-2 font-medium">#</th>
                           <th className="px-3 py-2 font-medium">{t('inventory.csv.colStatus', 'Status')}</th>
                           <th className="px-3 py-2 font-medium">{t('inventory.material', 'Material')}</th>
                           <th className="px-3 py-2 font-medium">{t('inventory.brand', 'Brand')}</th>
@@ -172,6 +173,8 @@ export function SpoolCsvImportModal({ onClose, onImported }: SpoolCsvImportModal
                         {preview.rows.map((row) => (
                           <tr key={row.row_number} className="border-t border-bambu-dark-tertiary">
                             <td className="px-3 py-2 text-bambu-gray">{row.row_number}</td>
+                            {/* The id the spool keeps (#3520); empty means it gets a new one. */}
+                            <td className="px-3 py-2 text-white">{row.keeps_id ?? '—'}</td>
                             <td className="px-3 py-2">
                               <div className="flex items-center gap-1.5">
                                 {statusIcon(row.status)}

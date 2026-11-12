@@ -7,7 +7,7 @@ import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import case, delete, func, select
+from sqlalchemy import case, delete, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -22,7 +22,7 @@ from backend.app.core.auth import (
     require_auth_if_enabled,
 )
 from backend.app.core.catalog_defaults import DEFAULT_COLOR_CATALOG, DEFAULT_SPOOL_CATALOG
-from backend.app.core.database import get_db
+from backend.app.core.database import get_db, is_sqlite
 from backend.app.core.permissions import Permission
 from backend.app.core.printer_scope import PrinterScope
 from backend.app.core.websocket import ws_manager
@@ -91,6 +91,7 @@ from backend.app.services.spool_csv import (
     MAX_CSV_IMPORT_BYTES,
     ImportPreview,
     ImportResult,
+    ImportRowResult,
     parse_and_validate,
     serialize,
 )
@@ -1494,6 +1495,22 @@ async def export_spools_csv(
     )
 
 
+async def _continue_spool_ids_after(db: AsyncSession, highest: int) -> None:
+    """Make the next new spool's id follow the ids an import kept (#3520).
+
+    The kept rows are flushed first. SQLite's AUTOINCREMENT then already
+    continues after them; a PostgreSQL sequence knows nothing of ids given
+    explicitly and would hand out one of them next. Only ever raised: every
+    kept id is above what the sequence has given out (``_decide_ids``).
+    """
+    await db.flush()
+    if is_sqlite():
+        return
+    sequence = (await db.execute(text("SELECT pg_get_serial_sequence('spool', 'id')"))).scalar()
+    if sequence:
+        await db.execute(text("SELECT setval(:s, :v)"), {"s": sequence, "v": highest})
+
+
 @router.post("/spools/import", response_model=ImportPreview | ImportResult)
 async def import_spools_csv(
     file: UploadFile = File(...),
@@ -1535,29 +1552,42 @@ async def import_spools_csv(
     if dry_run:
         return preview
 
-    created = 0
-    for row in preview.rows:
-        if row.status == "valid" and row.spool is not None:
-            # Deliberately no material-number inheritance here (#2870), unlike
-            # the other create paths: the file is authoritative. A CSV that
-            # leaves the column blank is stating "no number", not asking for
-            # one to be guessed from whatever else is in the inventory.
-            # The file has no lock column: a used weight in it is locked.
-            spool = Spool(**_lock_entered_weight(dict(row.spool), set()))
-            db.add(spool)
-            # Supplier assignments resolved by name during parsing (#2988).
-            # Flush first so the spool has an id to hang the links on.
-            if row.supplier_ids:
-                await db.flush()
-                for supplier_id in row.supplier_ids:
-                    db.add(
-                        SpoolSupplier(
-                            spool_id=spool.id,
-                            supplier_id=supplier_id,
-                            is_purchase_source=supplier_id == row.purchase_supplier_id,
-                        )
+    async def add_spool(row: ImportRowResult) -> None:
+        # Deliberately no material-number inheritance here (#2870), unlike
+        # the other create paths: the file is authoritative. A CSV that
+        # leaves the column blank is stating "no number", not asking for
+        # one to be guessed from whatever else is in the inventory.
+        # The file has no lock column: a used weight in it is locked.
+        spool = Spool(**_lock_entered_weight(dict(row.spool or {}), set()))
+        if row.keeps_id is not None:
+            spool.id = row.keeps_id
+        db.add(spool)
+        # Supplier assignments resolved by name during parsing (#2988).
+        # Flush first so the spool has an id to hang the links on.
+        if row.supplier_ids:
+            await db.flush()
+            for supplier_id in row.supplier_ids:
+                db.add(
+                    SpoolSupplier(
+                        spool_id=spool.id,
+                        supplier_id=supplier_id,
+                        is_purchase_source=supplier_id == row.purchase_supplier_id,
                     )
-            created += 1
+                )
+
+    valid_rows = [row for row in preview.rows if row.status == "valid" and row.spool is not None]
+    # Rows keeping their id go in first (#3520): a row without one takes the
+    # next free id, which could be one a later row in the file still needs.
+    kept_ids = [row.keeps_id for row in valid_rows if row.keeps_id is not None]
+    for row in valid_rows:
+        if row.keeps_id is not None:
+            await add_spool(row)
+    if kept_ids:
+        await _continue_spool_ids_after(db, max(kept_ids))
+    for row in valid_rows:
+        if row.keeps_id is None:
+            await add_spool(row)
+    created = len(valid_rows)
 
     if created:
         await db.commit()

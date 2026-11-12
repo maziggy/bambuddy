@@ -35,7 +35,7 @@ class TestInventoryCsvExport:
         body = response.text
         lines = body.strip().splitlines()
         # Header row uses the fixed schema.
-        assert lines[0].split(",")[0] == "material"
+        assert lines[0].split(",")[:2] == ["id", "material"]
         assert "rgba" in lines[0]
         # Data row present, rgba written without leading '#'.
         assert "Polymaker" in body
@@ -535,3 +535,127 @@ class TestInventoryCsvDuplicateWarning:
         assert real.json()["created"] == 2
         all_spools = (await db_session.execute(select(Spool))).scalars().all()
         assert len(all_spools) == 3  # 1 pre-existing + 2 imported
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+class TestInventoryCsvKeepsIds:
+    """A moved inventory keeps its spool ids: printed labels' QR codes carry them (#3520)."""
+
+    async def _base(self, db_session: AsyncSession) -> int:
+        from backend.app.services.spool_csv import highest_spool_id_given_out
+
+        return await highest_spool_id_given_out(db_session)
+
+    async def _ids_by_color(self, db_session: AsyncSession) -> dict[str, int]:
+        db_session.expire_all()
+        rows = (await db_session.execute(select(Spool))).scalars().all()
+        return {s.color_name: s.id for s in rows}
+
+    async def test_export_writes_the_id(self, async_client: AsyncClient, db_session: AsyncSession):
+        spool = Spool(material="PLA", brand="B", color_name="Red", rgba="ff0000ff")
+        db_session.add(spool)
+        await db_session.commit()
+
+        response = await async_client.get("/api/v1/inventory/spools/export")
+
+        header, row = response.text.strip().splitlines()[:2]
+        assert header.split(",")[0] == "id"
+        assert row.split(",")[0] == str(spool.id)
+
+    async def test_import_keeps_ids_and_their_gaps(self, async_client: AsyncClient, db_session: AsyncSession):
+        base = await self._base(db_session)
+        # Out of order, with gaps, and a row without an id ahead of them: it
+        # must not take an id a later row still needs.
+        csv_text = f"id,material,color_name\n,PLA,New\n{base + 5},PLA,Five\n{base + 1},PETG,One\n{base + 3},PLA,Three\n"
+
+        response = await async_client.post("/api/v1/inventory/spools/import", files=_csv_upload(csv_text))
+
+        assert response.status_code == 200, response.text
+        assert response.json()["created"] == 4
+        ids = await self._ids_by_color(db_session)
+        assert ids["Five"] == base + 5
+        assert ids["One"] == base + 1
+        assert ids["Three"] == base + 3
+        assert ids["New"] == base + 6
+
+    async def test_the_next_spool_continues_after_the_kept_ids(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """Only kept ids in the file: the next spool still gets a fresh id (PostgreSQL's sequence)."""
+        base = await self._base(db_session)
+        csv_text = f"id,material,color_name\n{base + 4},PLA,Four\n"
+        await async_client.post("/api/v1/inventory/spools/import", files=_csv_upload(csv_text))
+
+        response = await async_client.post("/api/v1/inventory/spools", json={"material": "PLA", "color_name": "Later"})
+
+        assert response.status_code == 200, response.text
+        assert response.json()["id"] == base + 5
+
+    async def test_dry_run_shows_the_id_each_spool_keeps(self, async_client: AsyncClient, db_session: AsyncSession):
+        base = await self._base(db_session)
+        csv_text = f"id,material\n{base + 2},PLA\n,PETG\n"
+
+        response = await async_client.post("/api/v1/inventory/spools/import?dry_run=true", files=_csv_upload(csv_text))
+
+        rows = response.json()["rows"]
+        assert [r["keeps_id"] for r in rows] == [base + 2, None]
+        assert response.json()["warnings"] == []
+
+    async def test_an_id_in_use_gets_a_new_one(self, async_client: AsyncClient, db_session: AsyncSession):
+        existing = Spool(material="PLA", color_name="Existing")
+        db_session.add(existing)
+        await db_session.commit()
+        csv_text = f"id,material,color_name\n{existing.id},PETG,Imported\n"
+
+        preview = await async_client.post("/api/v1/inventory/spools/import?dry_run=true", files=_csv_upload(csv_text))
+        await async_client.post("/api/v1/inventory/spools/import", files=_csv_upload(csv_text))
+
+        assert preview.json()["rows"][0]["keeps_id"] is None
+        assert any("1 spool(s) get a new id" in w for w in preview.json()["warnings"])
+        ids = await self._ids_by_color(db_session)
+        assert ids["Existing"] == existing.id
+        assert ids["Imported"] > existing.id
+
+    async def test_a_deleted_spools_id_is_not_reused(self, async_client: AsyncClient, db_session: AsyncSession):
+        """Old print logs and usage records may still name it."""
+        gone = Spool(material="PLA", color_name="Gone")
+        db_session.add(gone)
+        await db_session.commit()
+        gone_id = gone.id
+        await db_session.delete(gone)
+        await db_session.commit()
+        csv_text = f"id,material,color_name\n{gone_id},PLA,Imported\n"
+
+        await async_client.post("/api/v1/inventory/spools/import", files=_csv_upload(csv_text))
+
+        assert (await self._ids_by_color(db_session))["Imported"] > gone_id
+
+    async def test_an_id_named_twice_is_kept_once(self, async_client: AsyncClient, db_session: AsyncSession):
+        base = await self._base(db_session)
+        csv_text = f"id,material,color_name\n{base + 2},PLA,First\n{base + 2},PLA,Second\n"
+
+        response = await async_client.post("/api/v1/inventory/spools/import", files=_csv_upload(csv_text))
+
+        assert response.json()["created"] == 2
+        ids = await self._ids_by_color(db_session)
+        assert ids["First"] == base + 2
+        assert ids["Second"] == base + 3
+
+    @pytest.mark.parametrize("bad", ["abc", "0", "-3", "1.5"])
+    async def test_a_bad_id_is_a_row_error(self, async_client: AsyncClient, bad: str):
+        csv_text = f"id,material\n{bad},PLA\n"
+
+        response = await async_client.post("/api/v1/inventory/spools/import?dry_run=true", files=_csv_upload(csv_text))
+
+        row = response.json()["rows"][0]
+        assert row["status"] == "error"
+        assert "id must be a positive whole number" in row["reason"]
+
+    async def test_a_csv_without_an_id_column_still_imports(self, async_client: AsyncClient, db_session: AsyncSession):
+        response = await async_client.post(
+            "/api/v1/inventory/spools/import", files=_csv_upload("material,color_name\nPLA,Plain\n")
+        )
+
+        assert response.json()["created"] == 1
+        assert response.json()["errors"] == 0

@@ -8764,6 +8764,7 @@ class PrintScheduler:
                 printer_scope=printer_scope,
                 is_short=is_short,
                 unmatched_on=unmatched_on,
+                sliced_nozzle=candidates[0].sliced_nozzle,
             )
             # Every idle printer short comes back as the first of them.
             if match_id is None or await is_short(match_id):

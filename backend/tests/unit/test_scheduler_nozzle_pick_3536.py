@@ -430,3 +430,38 @@ class TestQueuePassNozzle:
         assert launched.call_args[0][0] == [item_id]
         assert launched.call_args[0][1] == {item_id: 2}
         assert (await _get_item(a1_farm, item_id)).printer_id == 2
+
+
+class TestShortHoldNozzle:
+    """A job held for low filament on A1-1 only moves to a printer whose nozzle fits.
+
+    Without the nozzle the move would pin it on a 0.4 mm A1, where the
+    dispatch guard (#1899) then fails it.
+    """
+
+    async def _release(self, ctx, states):
+        item_id = await _add_any_a1(ctx, 0.6, printer_id=1, manual_start=True, filament_short=True)
+        scheduler = PrintScheduler()
+
+        async def short_on(db, item, printer_id, *, require_known=False):
+            return printer_id == 1  # A1-2 has enough filament
+
+        with (
+            patch("backend.app.services.print_scheduler.printer_manager.is_connected", MagicMock(return_value=True)),
+            patch("backend.app.services.print_scheduler.printer_manager.get_status", lambda pid: states.get(pid)),
+            patch.object(scheduler, "_filament_short_on", AsyncMock(side_effect=short_on)),
+            patch.object(scheduler, "_unmatched_on", AsyncMock(return_value=[])),
+            patch.object(scheduler, "_is_printer_idle", MagicMock(return_value=True)),
+        ):
+            async with ctx.session_maker() as db:
+                item = await _load(db, item_id)
+                moved = await scheduler._release_short_model_hold(db, item, set(), False, ALL_PRINTERS)
+                return moved, item.printer_id
+
+    @pytest.mark.asyncio
+    async def test_not_moved_to_a_printer_with_the_wrong_nozzle(self, a1_farm):
+        assert await self._release(a1_farm, {1: _state("0.6"), 2: _state("0.4")}) == (False, 1)
+
+    @pytest.mark.asyncio
+    async def test_moved_to_a_printer_whose_nozzle_fits(self, a1_farm):
+        assert await self._release(a1_farm, {1: _state("0.6"), 2: _state("0.6")}) == (True, 2)

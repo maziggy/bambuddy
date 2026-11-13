@@ -13,6 +13,9 @@ if TYPE_CHECKING:
     from backend.app.models.group import Group
     from backend.app.models.user_email_pref import UserEmailPreference
 
+# The system group whose members are admins.
+ADMIN_GROUP_NAME = "Administrators"
+
 
 class User(Base):
     """User model for authentication and authorization.
@@ -108,7 +111,17 @@ class User(Base):
         """
         if self.role == "admin":
             return True
-        return any(g.name == "Administrators" for g in self.groups)
+        return any(g.name == ADMIN_GROUP_NAME for g in self.groups)
+
+    def sync_role_to_groups(self) -> None:
+        """Make the legacy ``role`` say what the groups say.
+
+        ``is_admin`` honours either, so a user moved out of Administrators
+        whose role still read "admin" stayed an admin, with nothing in the UI
+        to change it (#3533). Call after every change to ``groups``; needs
+        them loaded.
+        """
+        self.role = "admin" if any(g.name == ADMIN_GROUP_NAME for g in self.groups) else "user"
 
     def get_permissions(self) -> set[str]:
         """Get all permissions from all groups the user belongs to.

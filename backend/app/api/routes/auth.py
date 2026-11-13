@@ -1491,6 +1491,7 @@ async def _provision_ldap_user(db: AsyncSession, ldap_user, ldap_config) -> User
     if mapped_group_names:
         groups_result = await db.execute(select(Group).where(Group.name.in_(mapped_group_names)))
         new_user.groups = list(groups_result.scalars().all())
+    new_user.sync_role_to_groups()
 
     db.add(new_user)
     await db.flush()
@@ -1556,6 +1557,7 @@ async def _sync_ldap_user(db: AsyncSession, user: User, ldap_user, ldap_config) 
     groups_changed = current_group_ids != new_group_ids
     if groups_changed:
         user.groups = new_groups
+        user.sync_role_to_groups()
         changed = True
 
     if changed:

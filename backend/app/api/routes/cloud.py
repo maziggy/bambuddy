@@ -1458,7 +1458,7 @@ async def _build_filament_id_map(user: User | None, account: int | None) -> dict
 @router.get("/fields/{preset_type}")
 async def get_preset_fields(
     preset_type: Literal["filament", "print", "process", "printer"],
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
 ):
     """
@@ -1482,7 +1482,7 @@ async def get_preset_fields(
 
 @router.get("/fields")
 async def get_all_preset_fields(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
 ):
     """

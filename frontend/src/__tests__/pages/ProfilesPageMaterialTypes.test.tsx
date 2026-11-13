@@ -7,8 +7,10 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useEffect } from 'react';
+import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import { render } from '../utils';
 import { server } from '../mocks/server';
@@ -92,6 +94,16 @@ afterEach(() => {
   setAuthToken(null);
 });
 
+// The test's QueryClient, to change the settings the way the Settings page does.
+let queryClient: QueryClient | undefined;
+function GrabQueryClient() {
+  const client = useQueryClient();
+  useEffect(() => {
+    queryClient = client;
+  }, [client]);
+  return null;
+}
+
 async function openCreateModal(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole('button', { name: 'New Preset' }));
   await screen.findByText('Create New Preset');
@@ -124,6 +136,27 @@ describe('ProfilesPage: Material type options', () => {
     await openCreateModal(user);
 
     await waitFor(() => expect(optionValues(typeSelect())).toEqual(['PLA', 'TPU-AMS']));
+  });
+
+  it('fetches the list again when the preferred slicer changes', async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <ProfilesPage />
+        <GrabQueryClient />
+      </>,
+    );
+
+    await openCreateModal(user);
+    await waitFor(() => expect(optionValues(typeSelect())).toEqual(['PLA', 'TPU-AMS']));
+
+    // Settings -> Slicer saved: the page writes the new settings into the cache.
+    slicer = 'orcaslicer';
+    act(() => {
+      queryClient!.setQueryData(['settings'], { preferred_slicer: 'orcaslicer' });
+    });
+
+    await waitFor(() => expect(optionValues(typeSelect())).toEqual(['PLA', 'SBS']));
   });
 
   it('keeps a profile’s own type selectable when the list does not have it', async () => {

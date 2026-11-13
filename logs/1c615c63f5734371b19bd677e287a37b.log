@@ -1,0 +1,200 @@
+2026-11-13 08:50:29,728 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-13 08:50:44,145 INFO [backend.app.main] [-] Recorded 5 AMS sensor history entries
+2026-11-13 08:50:59,775 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(1529, 2, None, 290), (1530, 4, None, 292), (1531, 3, None, 292), (1532, 5, None, 292)]
+2026-11-13 08:50:59,783 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 4}
+2026-11-13 08:50:59,783 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-13 08:51:29,834 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(1529, 2, None, 290), (1530, 4, None, 292), (1531, 3, None, 292), (1532, 5, None, 292)]
+2026-11-13 08:51:29,840 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 4}
+2026-11-13 08:51:29,840 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-13 08:51:59,889 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(1529, 2, None, 290), (1530, 4, None, 292), (1531, 3, None, 292), (1532, 5, None, 292)]
+2026-11-13 08:51:59,895 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 4}
+2026-11-13 08:51:59,896 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-13 08:52:29,950 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(1529, 2, None, 290), (1530, 4, None, 292), (1531, 3, None, 292), (1532, 5, None, 292)]
+2026-11-13 08:52:29,957 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 4}
+2026-11-13 08:52:29,957 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-13 08:53:00,018 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(1529, 2, None, 290), (1530, 4, None, 292), (1531, 3, None, 292), (1532, 5, None, 292)]
+2026-11-13 08:53:00,026 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 4}
+2026-11-13 08:53:00,027 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-13 08:53:30,078 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(1529, 2, None, 290), (1530, 4, None, 292), (1531, 3, None, 292), (1532, 5, None, 292)]
+2026-11-13 08:53:30,085 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 4}
+2026-11-13 08:53:30,085 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-13 08:54:00,133 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(1529, 2, None, 290), (1530, 4, None, 292), (1531, 3, None, 292), (1532, 5, None, 292)]
+2026-11-13 08:54:00,140 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 4}
+2026-11-13 08:54:00,140 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-13 08:54:00,374 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Tray change during print: tray=2 at layer=0
+2026-11-13 08:54:30,191 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(1529, 2, None, 290), (1530, 4, None, 292), (1531, 3, None, 292), (1532, 5, None, 292)]
+2026-11-13 08:54:30,198 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 4}
+2026-11-13 08:54:30,198 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-13 08:54:59,855 INFO [backend.app.api.routes.support] [4f8b54e1] Log level changed to DEBUG
+2026-11-13 08:54:59,855 INFO [backend.app.api.routes.bug_report] [4f8b54e1] Bug report: enabled debug logging
+2026-11-13 08:54:59,855 DEBUG [backend.app.services.bambu_mqtt] [4f8b54e1] [[SERIAL]] Requesting status update (pushall)
+2026-11-13 08:54:59,856 DEBUG [backend.app.services.bambu_mqtt] [4f8b54e1] [[SERIAL]] Requesting status update (pushall)
+2026-11-13 08:54:59,856 DEBUG [backend.app.services.bambu_mqtt] [4f8b54e1] [[SERIAL]] Requesting status update (pushall)
+2026-11-13 08:54:59,856 DEBUG [backend.app.services.bambu_mqtt] [4f8b54e1] [[SERIAL]] Requesting status update (pushall)
+2026-11-13 08:54:59,857 DEBUG [backend.app.services.bambu_mqtt] [4f8b54e1] [[SERIAL]] Requesting status update (pushall)
+2026-11-13 08:54:59,858 INFO [uvicorn.access] [-] [IP]:39008 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-11-13 08:54:59,893 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:54:59,894 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -55dBm
+2026-11-13 08:55:00,038 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: , subtask_name: P1S_PETG_Anemostat_V2
+2026-11-13 08:55:00,038 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'd', 'tray_is_bbl_bits': 'd', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'd', 'tray_reading_bits': '0', 'version': 6, 'insert_flag': True, 'power_on_flag': False}
+2026-11-13 08:55:00,039 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-11-13 08:55:00,039 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-11-13 08:55:00,039 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-11-13 08:55:00,040 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-11-13 08:55:00,040 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-11-13 08:55:00,040 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:00,040 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-11-13 08:55:00,041 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-11-13 08:55:00,041 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: , subtask_name: P1S_PETG_Anemostat_V2
+2026-11-13 08:55:00,041 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-11-13 08:55:00,041 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'd', 'tray_is_bbl_bits': 'd', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'd', 'tray_reading_bits': '0', 'version': 72, 'insert_flag': True, 'power_on_flag': False}
+2026-11-13 08:55:00,042 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-11-13 08:55:00,042 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-11-13 08:55:00,042 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-11-13 08:55:00,042 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-11-13 08:55:00,043 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-11-13 08:55:00,043 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-11-13 08:55:00,043 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -57dBm
+2026-11-13 08:55:00,043 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-11-13 08:55:00,044 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-11-13 08:55:00,044 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-11-13 08:55:00,044 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: , subtask: P1S_PETG_Anemostat_V2
+2026-11-13 08:55:00,044 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:00,045 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-11-13 08:55:00,045 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-11-13 08:55:00,045 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-11-13 08:55:00,045 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-11-13 08:55:00,046 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-11-13 08:55:00,046 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-11-13 08:55:00,046 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -64dBm
+2026-11-13 08:55:00,046 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-11-13 08:55:00,046 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: , subtask: P1S_PETG_Anemostat_V2
+2026-11-13 08:55:00,253 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(1529, 2, None, 290), (1530, 4, None, 292), (1531, 3, None, 292), (1532, 5, None, 292)]
+2026-11-13 08:55:00,261 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 4}
+2026-11-13 08:55:00,261 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-11-13 08:55:00,512 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: , subtask_name: P1S_PETG_Anemostat_V2
+2026-11-13 08:55:00,513 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': '9', 'tray_is_bbl_bits': '9', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': '9', 'tray_reading_bits': '0', 'version': 65, 'insert_flag': True, 'power_on_flag': False}
+2026-11-13 08:55:00,513 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-11-13 08:55:00,514 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-11-13 08:55:00,514 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-11-13 08:55:00,515 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-11-13 08:55:00,515 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-11-13 08:55:00,516 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:00,517 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-11-13 08:55:00,518 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-11-13 08:55:00,518 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-11-13 08:55:00,519 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-11-13 08:55:00,520 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: A1_PETG_Anemostat_V2.3mf, subtask_name: A1_PETG_Anemostat_V2
+2026-11-13 08:55:00,521 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_tar': '2', 'tray_now': '2', 'tray_pre': '2', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'version': 54, 'insert_flag': True, 'power_on_flag': False}
+2026-11-13 08:55:00,521 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-11-13 08:55:00,522 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 2
+2026-11-13 08:55:00,523 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-11-13 08:55:00,524 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-11-13 08:55:00,524 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-11-13 08:55:00,525 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1002 -> extruder 0
+2026-11-13 08:55:00,525 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-11-13 08:55:00,525 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-11-13 08:55:00,526 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -46dBm
+2026-11-13 08:55:00,526 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-11-13 08:55:00,527 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-11-13 08:55:00,527 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:00,527 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: , subtask: P1S_PETG_Anemostat_V2
+2026-11-13 08:55:00,528 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-11-13 08:55:00,528 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-11-13 08:55:00,529 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-11-13 08:55:00,530 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-11-13 08:55:00,530 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-11-13 08:55:00,530 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'disable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-11-13 08:55:00,530 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -73dBm
+2026-11-13 08:55:00,531 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-11-13 08:55:00,531 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: A1_PETG_Anemostat_V2.3mf, subtask: A1_PETG_Anemostat_V2
+2026-11-13 08:55:00,939 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-11-13 08:55:00,940 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-11-13 08:55:00,940 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: , subtask_name: A1_PETG_Anemostat_V2
+2026-11-13 08:55:00,940 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'd', 'tray_is_bbl_bits': 'd', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'd', 'tray_reading_bits': '0', 'version': 63, 'insert_flag': True, 'power_on_flag': False}
+2026-11-13 08:55:00,941 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-11-13 08:55:00,941 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-11-13 08:55:00,942 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1002 -> extruder 0
+2026-11-13 08:55:00,942 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-11-13 08:55:00,943 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-11-13 08:55:00,943 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:00,943 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-11-13 08:55:00,944 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-11-13 08:55:00,944 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-11-13 08:55:00,945 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-11-13 08:55:00,945 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-11-13 08:55:00,946 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'disable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-11-13 08:55:00,946 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -56dBm
+2026-11-13 08:55:00,947 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-11-13 08:55:00,947 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: , subtask: A1_PETG_Anemostat_V2
+2026-11-13 08:55:02,027 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:02,028 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -65dBm
+2026-11-13 08:55:02,428 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:02,429 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -47dBm
+2026-11-13 08:55:02,543 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:02,853 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:03,970 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:03,971 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -58dBm
+2026-11-13 08:55:04,479 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:04,588 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:05,499 DEBUG [backend.app.api.routes.printers] [1c65d542] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-11-13 08:55:05,499 DEBUG [backend.app.api.routes.printers] [1c65d542] Using tray_now directly as global ID: 255
+2026-11-13 08:55:05,500 DEBUG [backend.app.api.routes.printers] [1c65d542] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-11-13 08:55:05,500 DEBUG [backend.app.api.routes.printers] [1c65d542] Using tray_now directly as global ID: 255
+2026-11-13 08:55:05,501 DEBUG [backend.app.api.routes.printers] [1c65d542] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-11-13 08:55:05,501 DEBUG [backend.app.api.routes.printers] [1c65d542] Using tray_now directly as global ID: 255
+2026-11-13 08:55:05,501 DEBUG [backend.app.api.routes.printers] [1c65d542] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-11-13 08:55:05,501 DEBUG [backend.app.api.routes.printers] [1c65d542] Using tray_now directly as global ID: 255
+2026-11-13 08:55:06,014 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:06,014 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -59dBm
+2026-11-13 08:55:06,015 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:06,123 DEBUG [backend.app.api.routes.printers] [1d8021e4] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-11-13 08:55:06,123 DEBUG [backend.app.api.routes.printers] [1d8021e4] Using tray_now directly as global ID: 255
+2026-11-13 08:55:06,635 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:06,636 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -74dBm
+2026-11-13 08:55:06,914 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:06,915 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -55dBm
+2026-11-13 08:55:07,999 DEBUG [backend.app.api.routes.printers] [f67730b5] API returning ams_mapping: [2], ams_extruder_map: {'0': 0}
+2026-11-13 08:55:07,999 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:07,999 DEBUG [backend.app.api.routes.printers] [f67730b5] Using tray_now directly as global ID: 2
+2026-11-13 08:55:08,030 DEBUG [backend.app.main] [-] Recorded 15 printer sensor history entries
+2026-11-13 08:55:08,470 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:08,983 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:08,984 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -56dBm
+2026-11-13 08:55:09,742 DEBUG [backend.app.api.routes.printers] [5aa728c0] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-11-13 08:55:09,742 DEBUG [backend.app.api.routes.printers] [5aa728c0] Using tray_now directly as global ID: 255
+2026-11-13 08:55:10,470 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:10,471 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -46dBm
+2026-11-13 08:55:10,826 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:10,981 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:11,095 DEBUG [backend.app.main] [-] [[PRINTER]] Runtime tracking: added 30s, total=1819225s (505.34h)
+2026-11-13 08:55:11,105 DEBUG [backend.app.main] [-] Updated runtime for 1 printer(s)
+2026-11-13 08:55:12,032 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:12,033 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -64dBm
+2026-11-13 08:55:12,094 INFO [backend.app.api.routes.print_queue] [b1b66767] Updated queue item 1530
+2026-11-13 08:55:12,096 INFO [uvicorn.access] [-] [IP]:39100 - "PATCH /api/v1/queue/1530 HTTP/1.1" 200
+2026-11-13 08:55:12,567 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:12,568 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -47dBm
+2026-11-13 08:55:12,779 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:12,779 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -73dBm
+2026-11-13 08:55:13,018 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:13,019 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -55dBm
+2026-11-13 08:55:14,007 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:14,008 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -58dBm
+2026-11-13 08:55:14,922 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:14,922 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -74dBm
+2026-11-13 08:55:16,114 DEBUG [backend.app.api.routes.printers] [a56b8ea4] API returning ams_mapping: [2], ams_extruder_map: {'0': 0}
+2026-11-13 08:55:16,115 DEBUG [backend.app.api.routes.printers] [a56b8ea4] Using tray_now directly as global ID: 2
+2026-11-13 08:55:16,508 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:16,513 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -46dBm
+2026-11-13 08:55:16,970 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:17,079 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:18,076 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:18,077 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -65dBm
+2026-11-13 08:55:18,081 DEBUG [backend.app.api.routes.printers] [51c15baa] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-11-13 08:55:18,082 DEBUG [backend.app.api.routes.printers] [51c15baa] Using tray_now directly as global ID: 255
+2026-11-13 08:55:18,608 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:19,005 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:19,006 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -73dBm
+2026-11-13 08:55:19,112 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-13 08:55:19,112 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -54dBm

@@ -6146,6 +6146,13 @@ async def _run_migrations(conn):
     # (``print_cost_estimate.fill_plate_estimates``).
     await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN plate_estimates JSON")
 
+    # Migration: the G-code fingerprint of the archive's file (#1634), so a
+    # slice sent again from the slicer adds a run to its archive. Nullable, no
+    # default; filled from the archived file after startup
+    # (``archive_gcode_hash.fill_gcode_hashes``).
+    await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN gcode_hash VARCHAR(64)")
+    await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_print_archives_gcode_hash ON print_archives (gcode_hash)")
+
     # Migration: who assigned a spool to a slot, whose cloud sign-in the replay
     # on insert resolves a custom preset with (#3519). Nullable, no backfill:
     # earlier assignments replay as before.
@@ -6153,6 +6160,15 @@ async def _run_migrations(conn):
         conn,
         "ALTER TABLE spool_assignment ADD COLUMN assigned_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL",
     )
+
+    # Migration: what a smart plug's temperature-based auto-off waits for
+    # (#3464), and the bed's own threshold. NOT NULL with the model's server
+    # defaults, identical DDL on SQLite and Postgres; existing plugs keep
+    # waiting for the nozzle only, as they did.
+    await _safe_execute(
+        conn, "ALTER TABLE smart_plugs ADD COLUMN off_temp_source VARCHAR(20) NOT NULL DEFAULT 'nozzle'"
+    )
+    await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN off_bed_temp_threshold INTEGER NOT NULL DEFAULT 35")
 
     await _backfill_archive_run_photos(conn)
     await _migrate_h3c_queue_tray_ids(conn)

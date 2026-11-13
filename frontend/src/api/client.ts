@@ -2418,6 +2418,8 @@ export interface CloudDevice {
 }
 
 // Smart Plug types
+export type SmartPlugTempSource = 'nozzle' | 'bed';
+
 export interface SmartPlug {
   id: number;
   name: string;
@@ -2475,6 +2477,9 @@ export interface SmartPlug {
   off_delay_mode: 'time' | 'temperature';
   off_delay_minutes: number;
   off_temp_threshold: number;
+  // #3464: what temperature mode waits for, and the bed's own threshold.
+  off_temp_source: SmartPlugTempSource;
+  off_bed_temp_threshold: number;
   // #1349: auto-off after AMS drying completes.
   auto_off_after_drying: boolean;
   off_delay_after_drying_minutes: number;
@@ -2553,6 +2558,9 @@ export interface SmartPlugCreate {
   off_delay_mode?: 'time' | 'temperature';
   off_delay_minutes?: number;
   off_temp_threshold?: number;
+  // #3464
+  off_temp_source?: SmartPlugTempSource;
+  off_bed_temp_threshold?: number;
   // #1349
   auto_off_after_drying?: boolean;
   off_delay_after_drying_minutes?: number;
@@ -2623,6 +2631,9 @@ export interface SmartPlugUpdate {
   off_delay_mode?: 'time' | 'temperature';
   off_delay_minutes?: number;
   off_temp_threshold?: number;
+  // #3464
+  off_temp_source?: SmartPlugTempSource;
+  off_bed_temp_threshold?: number;
   // #1349
   auto_off_after_drying?: boolean;
   off_delay_after_drying_minutes?: number;

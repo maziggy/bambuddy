@@ -1369,9 +1369,14 @@ function CreatePresetModal({
     return presetsOfType.filter(p => isUserPreset(p.setting_id));
   }, [presetsOfType]);
 
+  // The Material type options are those of the preferred slicer (#2928), so
+  // changing it in Settings has to fetch the definitions again.
+  const { data: appSettings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
+  const preferredSlicer = appSettings?.preferred_slicer;
+
   // Fetch field definitions from API (cached, only loaded once per type)
   const { data: fieldDefinitions } = useQuery({
-    queryKey: ['cloudFields', presetType],
+    queryKey: ['cloudFields', presetType, preferredSlicer],
     queryFn: () => api.getCloudFields(presetType === 'print' ? 'process' : presetType),
     staleTime: 1000 * 60 * 60, // Cache for 1 hour
   });
@@ -1712,6 +1717,11 @@ function CreatePresetModal({
           className={baseClass}
         >
           <option value="">{placeholder}</option>
+          {/* A value the list does not have, like a type the other slicer
+              offers, stays selectable instead of showing as empty (#2928). */}
+          {typeof value === 'string' && value !== '' && !field.options?.some(opt => opt.value === value) && (
+            <option value={value}>{value}</option>
+          )}
           {field.options?.map(opt => (
             <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}

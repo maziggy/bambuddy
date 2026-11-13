@@ -121,6 +121,7 @@ _FORMULA_INJECTION_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 # Columns whose CSV cell must be coerced to a number before SpoolCreate sees it.
 # DictReader hands us strings; SpoolCreate wants int/float. Empty cell → omit
 # the field (falls back to the schema default / None).
+_TAG_TEXT_COLUMNS = ("tag_uid", "tray_uuid", "slicer_filament", "slicer_filament_name", "data_origin", "tag_type")
 _INT_COLUMNS = {"label_weight", "core_weight", "nozzle_temp_min", "nozzle_temp_max", "low_stock_threshold_pct"}
 _FLOAT_COLUMNS = {"cost_per_kg", "weight_used"}
 
@@ -493,6 +494,16 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
             value = cell(raw_row, field)
             if value:
                 data[field] = value
+
+        # The tag and preset columns (#3324) have no length limit in SpoolCreate.
+        # PostgreSQL refuses a value longer than its column and fails the whole
+        # import, so a cell that does not fit is this row's error instead.
+        if row_error is None:
+            for field in _TAG_TEXT_COLUMNS:
+                limit = getattr(Spool.__table__.c[field].type, "length", None)
+                if limit and len(data.get(field, "")) > limit:
+                    row_error = f"{field} is longer than {limit} characters"
+                    break
 
         # Numeric columns: parse only if present, else leave to schema defaults.
         for field in _INT_COLUMNS:

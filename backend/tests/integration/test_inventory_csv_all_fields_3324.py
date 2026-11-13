@@ -178,6 +178,24 @@ class TestTagFieldsAreImported:
         assert row["status"] == "error"
         assert "core_weight" in row["reason"]
 
+    @pytest.mark.parametrize(
+        "field", ["tag_uid", "tray_uuid", "slicer_filament", "slicer_filament_name", "data_origin", "tag_type"]
+    )
+    async def test_a_value_longer_than_its_column_is_a_row_error(
+        self, async_client: AsyncClient, db_session: AsyncSession, field: str
+    ):
+        """PostgreSQL would refuse it and fail the whole import; only this row fails."""
+        limit = getattr(Spool.__table__.c[field].type, "length", None)
+        csv_text = f"material,{field}\nPLA,{'A' * (limit + 1)}\nPETG,{'A' * limit}\n"
+
+        response = await async_client.post(
+            "/api/v1/inventory/spools/import", files={"file": ("x.csv", csv_text.encode(), "text/csv")}
+        )
+
+        body = response.json()
+        assert body["created"] == 1, response.text
+        assert (await db_session.execute(select(Spool.material))).scalars().all() == ["PETG"]
+
     async def test_a_tag_columns_file_has_no_unknown_column_warning(self, async_client: AsyncClient):
         response = await async_client.post(
             "/api/v1/inventory/spools/import?dry_run=true",

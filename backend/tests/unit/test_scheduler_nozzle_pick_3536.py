@@ -8,10 +8,21 @@ printer filter built on it.
 """
 
 from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from backend.app.services.print_scheduler import _candidates_for, _sliced_nozzle, _wrong_nozzle_label
+import backend.app.models  # noqa: F401 - populate Base.metadata
+from backend.app.core.database import Base
+from backend.app.models.printer import Printer
+from backend.app.services.print_scheduler import (
+    PrintScheduler,
+    _asks_nothing_new,
+    _candidates_for,
+    _sliced_nozzle,
+    _wrong_nozzle_label,
+)
 
 # --- Task 1: sliced diameter per candidate ---------------------------------
 
@@ -139,3 +150,126 @@ def test_only_the_same_size_fits(sliced, installed):
 def test_float_noise_from_metadata_still_fits():
     assert _wrong_nozzle_label("A1-1", _state("0.6"), 0.6000001) is None
     assert _wrong_nozzle_label("A1-1", _state("0.4"), 0.6000001) == "A1-1 (0.4mm)"
+
+
+# --- Task 3: the matcher passes over a printer with the wrong nozzle --------
+
+
+@pytest.fixture
+async def a1_farm():
+    """Two A1s in "Workshop"; A1-1 is the one with fewer print hours."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    session_maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_maker() as db:
+        db.add_all(
+            [
+                Printer(
+                    id=pid,
+                    name=f"A1-{pid}",
+                    serial_number=f"A1000{pid}",
+                    ip_address=f"192.0.2.{pid}",
+                    access_code="x",
+                    model="A1",
+                    is_active=True,
+                    location="Workshop",
+                    runtime_seconds=pid * 3600,
+                )
+                for pid in (1, 2)
+            ]
+        )
+        await db.commit()
+    try:
+        yield SimpleNamespace(session_maker=session_maker)
+    finally:
+        await engine.dispose()
+
+
+async def _find(ctx, scheduler, states, *, exclude=frozenset(), connected=True, idle=None, **kwargs):
+    """Run the matcher; ``states`` maps printer id to its reported state (or None)."""
+    idle = idle or {}
+    with (
+        patch("backend.app.services.print_scheduler.printer_manager.get_status", lambda pid: states.get(pid)),
+        patch(
+            "backend.app.services.print_scheduler.printer_manager.is_connected",
+            lambda pid: connected if not callable(connected) else connected(pid),
+        ),
+        patch.object(scheduler, "_is_printer_idle", lambda pid, *_a, **_k: idle.get(pid, True)),
+    ):
+        async with ctx.session_maker() as db:
+            return await scheduler._find_idle_printer_for_model(db, "A1", set(exclude), **kwargs)
+
+
+class TestMatcherNozzle:
+    @pytest.mark.asyncio
+    async def test_skips_the_printer_with_the_wrong_nozzle(self, a1_farm):
+        states = {1: _state("0.4"), 2: _state("0.6")}
+        assert await _find(a1_farm, PrintScheduler(), states, sliced_nozzle=0.6) == (2, None)
+
+    @pytest.mark.asyncio
+    async def test_no_printer_fits_names_every_nozzle(self, a1_farm):
+        states = {1: _state("0.4"), 2: _state("0.4")}
+        assert await _find(a1_farm, PrintScheduler(), states, sliced_nozzle=0.6) == (
+            None,
+            "No A1 has a 0.6mm nozzle: A1-1 (0.4mm), A1-2 (0.4mm)",
+        )
+
+    @pytest.mark.asyncio
+    async def test_reason_names_the_location(self, a1_farm):
+        states = {1: _state("0.4"), 2: _state("0.4")}
+        _, reason = await _find(a1_farm, PrintScheduler(), states, sliced_nozzle=0.6, target_location="Workshop")
+        assert reason.startswith("No A1 in Workshop has a 0.6mm nozzle: ")
+
+    @pytest.mark.asyncio
+    async def test_float_noise_in_the_sliced_size_is_not_shown(self, a1_farm):
+        states = {1: _state("0.4"), 2: _state("0.4")}
+        _, reason = await _find(a1_farm, PrintScheduler(), states, sliced_nozzle=0.6000001)
+        assert reason.startswith("No A1 has a 0.6mm nozzle: ")
+
+    @pytest.mark.asyncio
+    async def test_unknown_sliced_nozzle_behaves_as_before(self, a1_farm):
+        states = {1: _state("0.4"), 2: _state("0.6")}
+        assert await _find(a1_farm, PrintScheduler(), states, sliced_nozzle=None) == (1, None)
+
+    @pytest.mark.asyncio
+    async def test_printer_without_status_fits(self, a1_farm):
+        states = {1: None, 2: _state("0.4")}
+        assert await _find(a1_farm, PrintScheduler(), states, sliced_nozzle=0.6) == (1, None)
+
+    @pytest.mark.asyncio
+    async def test_wrong_nozzle_printer_does_not_hide_a_busy_matching_one(self, a1_farm):
+        """The only printer that fits is busy: the job just waits, silently."""
+        states = {1: _state("0.4"), 2: _state("0.6")}
+        pick, reason = await _find(a1_farm, PrintScheduler(), states, exclude={2}, sliced_nozzle=0.6)
+        assert pick is None
+        assert reason == "Busy: A1-2"
+        assert PrintScheduler._is_busy_only(reason) is True
+
+    @pytest.mark.asyncio
+    async def test_busy_or_offline_wrong_nozzle_printers_read_as_nozzle_not_busy(self, a1_farm):
+        """A1-1 is printing, A1-2 offline, both 0.4: waiting would never help."""
+        states = {1: _state("0.4"), 2: _state("0.4")}
+        pick, reason = await _find(
+            a1_farm,
+            PrintScheduler(),
+            states,
+            connected=lambda pid: pid == 1,
+            idle={1: False},
+            sliced_nozzle=0.6,
+        )
+        assert pick is None
+        assert reason == "No A1 has a 0.6mm nozzle: A1-1 (0.4mm), A1-2 (0.4mm)"
+
+    @pytest.mark.asyncio
+    async def test_excluded_wrong_nozzle_printer_is_not_listed_as_busy(self, a1_farm):
+        states = {1: _state("0.4"), 2: _state("0.4")}
+        _, reason = await _find(a1_farm, PrintScheduler(), states, exclude={1, 2}, sliced_nozzle=0.6)
+        assert reason.startswith("No A1 has a 0.6mm nozzle: ")
+
+    @pytest.mark.asyncio
+    async def test_nozzle_reason_is_not_busy_only_and_asks_something(self, a1_farm):
+        states = {1: _state("0.4"), 2: _state("0.4")}
+        _, reason = await _find(a1_farm, PrintScheduler(), states, sliced_nozzle=0.6)
+        assert PrintScheduler._is_busy_only(reason) is False
+        assert _asks_nothing_new(reason) is False

@@ -1030,7 +1030,8 @@ export function SettingsPage() {
       password: userFormData.password || undefined,
       // Empty removes the email; the backend reads null as "unchanged".
       email: userFormData.email,
-      role: userFormData.role,
+      // No role: there is no field for it, and the backend derives it from
+      // the groups. Sending the old one back kept a demoted admin an admin (#3533).
       group_ids: userFormData.group_ids,
     };
     if (!updateData.password) {

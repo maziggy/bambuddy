@@ -156,10 +156,12 @@ describe('SettingsPage users & groups wiring', () => {
     expect(writes()[0].body).toEqual({
       username: 'alice2',
       email: 'alice@example.com',
-      role: 'user',
       group_ids: [4],
     });
     expect(writes()[0].body).not.toHaveProperty('password');
+    // The groups decide who is an admin; the old role sent back kept a
+    // demoted admin one (#3533).
+    expect(writes()[0].body).not.toHaveProperty('role');
   });
 
   it('edit user with the email field emptied sends an empty email, which removes it', async () => {

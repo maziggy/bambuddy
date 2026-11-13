@@ -2800,6 +2800,18 @@ def _slot_feeds_print(printer_id: int, ams_id: int, tray_id: int) -> bool:
     return any(slot.has_filament and slot.holds(ams_id, tray_id) for slot in slots.values())
 
 
+def _tray_reports_no_filament(color: str, tray_type: str) -> bool:
+    """Does this tray report carry no filament data at all?
+
+    No type, and a colour that is either empty or ``00000000``: firmware sends
+    both for a blank slot, and ``00000000`` is what Bambuddy's own slot reset
+    writes. A reconnect mid-print brought it in that form and got past every
+    guard that only knew the empty string (#3526). A clear spool also reports
+    ``00000000``, but always with a type, so it is not blank.
+    """
+    return not tray_type.strip() and color.strip().upper() in ("", "00000000")
+
+
 async def _unlink_stale_assignments(printer_id: int, ams_data: list, printing_now: bool) -> None:
     """Unlink built-in inventory assignments whose slot no longer holds their spool.
 
@@ -3054,7 +3066,7 @@ async def _unlink_stale_assignments(printer_id: int, ams_data: list, printing_no
                         # firmware clears colour and type when it unloads a spool
                         # it just emptied. Unlinking here would erase the record
                         # of which spool fed the print so far.
-                        if printing_now and not cur_color.strip() and not cur_type.strip():
+                        if printing_now and _tray_reports_no_filament(cur_color, cur_type):
                             logger.info(
                                 "Auto-unlink skipped: spool %d AMS%d-T%d — tray data cleared during a running print "
                                 "(runout?)",
@@ -3078,8 +3090,7 @@ async def _unlink_stale_assignments(printer_id: int, ams_data: list, printing_no
                         # rather than cancelling it (#3186).
                         if (
                             spool_present(current_tray) is True
-                            and not cur_color.strip()
-                            and not cur_type.strip()
+                            and _tray_reports_no_filament(cur_color, cur_type)
                             and not slot_unlink_grace.is_held(
                                 printer_id,
                                 ("inventory", assignment.ams_id, assignment.tray_id, assignment.spool_id),
@@ -3098,7 +3109,7 @@ async def _unlink_stale_assignments(printer_id: int, ams_data: list, printing_no
                         # unit's bits, colour and type for a moment and lost
                         # four saved assignments that way (#3186); unlink only
                         # if the slot is still blank after the grace period.
-                        if not cur_color.strip() and not cur_type.strip():
+                        if _tray_reports_no_filament(cur_color, cur_type):
                             hold_key = ("inventory", assignment.ams_id, assignment.tray_id, assignment.spool_id)
                             if not slot_unlink_grace.removal_confirmed(printer_id, hold_key):
                                 held.add(hold_key)

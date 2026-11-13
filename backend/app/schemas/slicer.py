@@ -155,6 +155,15 @@ class SliceRequest(BaseModel):
             "source. ``>= 1`` slices that one plate."
         ),
     )
+    one_file_per_plate: bool = Field(
+        default=False,
+        description=(
+            "Only with ``plate=0`` on a 3MF that has several plates: slice each plate "
+            'on its own and save it as its own file ("<name> - plate N") instead of '
+            "one multi-plate 3MF (#2818). Ignored for any other plate and for a "
+            "source with a single plate."
+        ),
+    )
     export_3mf: bool = Field(
         default=False,
         description="If true, request a 3MF response with embedded G-code instead of raw G-code.",
@@ -322,6 +331,10 @@ class SliceResponse(BaseModel):
     # somewhere the user isn't looking, with no signal, is what made #2810
     # impossible to reproduce from the UI.
     external_write_fallback: str | None = None
+    # Every file the slice made, in plate order, when it made one per plate
+    # (``one_file_per_plate``); the fields above describe the first of them.
+    # ``None`` for a slice that made a single file.
+    library_file_ids: list[int] | None = None
 
 
 class SliceArchiveResponse(BaseModel):
@@ -335,3 +348,5 @@ class SliceArchiveResponse(BaseModel):
     filament_used_g: float
     filament_used_mm: float
     used_embedded_settings: bool = False
+    # As on SliceResponse: every archive the slice made, one per plate.
+    archive_ids: list[int] | None = None

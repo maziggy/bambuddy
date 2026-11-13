@@ -1133,6 +1133,71 @@ describe('SliceModal', () => {
     expect((body as { plate?: number }).plate).toBe(0);
   });
 
+  describe('one file per plate (#2818)', () => {
+    async function openSliceAll() {
+      mockApi.getLibraryFilePlates.mockResolvedValue(makeMultiPlateLibraryResponse());
+      mockApi.sliceLibraryFile.mockResolvedValue({
+        job_id: 42,
+        status: 'pending',
+        status_url: '/api/v1/slice-jobs/42',
+      });
+      renderWithTracker({
+        source: { kind: 'libraryFile', id: 100, filename: 'Multi.3mf' },
+        onClose: vi.fn(),
+      });
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole('button', { name: /Plate 1.*Cube/ }));
+      await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+      return user;
+    }
+
+    it('is only offered once "Slice all plates" is ticked', async () => {
+      const user = await openSliceAll();
+
+      expect(screen.queryByRole('checkbox', { name: /One file per plate/i })).toBeNull();
+      await user.click(await screen.findByRole('checkbox', { name: /Slice all 2 plates/i }));
+
+      expect(screen.getByRole('checkbox', { name: /One file per plate/i })).toBeDefined();
+    });
+
+    it('sends plate=0 with one_file_per_plate when ticked', async () => {
+      const user = await openSliceAll();
+
+      await user.click(await screen.findByRole('checkbox', { name: /Slice all 2 plates/i }));
+      await user.click(screen.getByRole('checkbox', { name: /One file per plate/i }));
+      await user.click(screen.getByRole('button', { name: /Slice 2 plates as separate files/i }));
+
+      await waitFor(() => expect(mockApi.sliceLibraryFile).toHaveBeenCalledTimes(1));
+      const [, body] = mockApi.sliceLibraryFile.mock.calls[0];
+      expect(body).toEqual(expect.objectContaining({ plate: 0, one_file_per_plate: true }));
+    });
+
+    it('leaves the field out when not ticked', async () => {
+      const user = await openSliceAll();
+
+      await user.click(await screen.findByRole('checkbox', { name: /Slice all 2 plates/i }));
+      await user.click(screen.getByRole('button', { name: /Slice all 2 plates/i }));
+
+      await waitFor(() => expect(mockApi.sliceLibraryFile).toHaveBeenCalledTimes(1));
+      const [, body] = mockApi.sliceLibraryFile.mock.calls[0];
+      expect((body as { plate?: number }).plate).toBe(0);
+      expect(body).not.toHaveProperty('one_file_per_plate');
+    });
+
+    it('is not sent for a single plate, whatever was ticked before', async () => {
+      const user = await openSliceAll();
+
+      await user.click(await screen.findByRole('checkbox', { name: /Slice all 2 plates/i }));
+      await user.click(screen.getByRole('checkbox', { name: /One file per plate/i }));
+      await user.click(screen.getByRole('checkbox', { name: /Slice all 2 plates/i }));
+      await user.click(screen.getByRole('button', { name: /^Slice$/ }));
+
+      await waitFor(() => expect(mockApi.sliceLibraryFile).toHaveBeenCalledTimes(1));
+      const [, body] = mockApi.sliceLibraryFile.mock.calls[0];
+      expect(body).not.toHaveProperty('one_file_per_plate');
+    });
+  });
+
   it('"Slice all plates" toggle is hidden for single-plate sources', async () => {
     mockApi.getLibraryFilePlates.mockResolvedValue({
       file_id: 100,

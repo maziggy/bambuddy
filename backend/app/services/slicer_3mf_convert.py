@@ -48,6 +48,38 @@ def count_plates_in_3mf(zip_bytes: bytes) -> int:
     return len(re.findall(r'<metadata key="plater_id" value="(\d+)"', xml))
 
 
+def plates_with_objects_in_3mf(zip_bytes: bytes) -> list[int]:
+    """The plates of the source 3MF that hold at least one object, in order.
+
+    Bambu Studio writes a ``<model_instance>`` under a ``<plate>`` for every
+    object on it, so a plate without one is empty: slicing it alone fails with
+    nothing to slice. A file that lists no instance on any plate carries no
+    such data, and every plate it declares is returned. ``[]`` when the file
+    isn't a parseable 3MF or declares no plate (#2818).
+    """
+    import defusedxml.ElementTree as ET
+
+    try:
+        with zipfile.ZipFile(BytesIO(zip_bytes), "r") as zf:
+            if _MODEL_SETTINGS_PATH not in zf.namelist():
+                return []
+            root = ET.fromstring(zf.read(_MODEL_SETTINGS_PATH))
+    except (zipfile.BadZipFile, OSError, KeyError, ET.ParseError, ValueError):
+        return []
+    plates: list[tuple[int, bool]] = []
+    for plate_elem in root.iter("plate"):
+        for meta in plate_elem.findall("metadata"):
+            if meta.get("key") == "plater_id":
+                try:
+                    plates.append((int(meta.get("value", "")), plate_elem.find("model_instance") is not None))
+                except ValueError:
+                    pass
+                break
+    if not any(has_objects for _, has_objects in plates):
+        return [plate for plate, _ in plates]
+    return [plate for plate, has_objects in plates if has_objects]
+
+
 def extract_source_printer_model(zip_bytes: bytes) -> str | None:
     """Return the canonical short model code (e.g. ``"X1C"``, ``"H2D"``) for
     the 3MF's embedded ``printer_model`` field, or ``None`` if the input

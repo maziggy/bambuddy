@@ -5699,7 +5699,11 @@ async def slice_archive(
     user originally sent to slice) → ``file_path`` (the sliced 3MF/gcode that
     actually printed).
     """
-    from backend.app.api.routes.library import guard_nozzle_class_reslice, slice_and_persist_as_archive
+    from backend.app.api.routes.library import (
+        guard_nozzle_class_reslice,
+        slice_and_persist_as_archive,
+        slice_each_plate,
+    )
     from backend.app.core.database import async_session
     from backend.app.services.slice_dispatch import (
         http_exception_to_job_error,
@@ -5774,18 +5778,27 @@ async def slice_archive(
                     HTTPException(status_code=404, detail="Archive disappeared during slice")
                 )
             try:
-                response = await slice_and_persist_as_archive(
-                    task_db,
-                    model_bytes=model_bytes,
-                    model_filename=src_filename,
-                    request=request,
-                    source_archive=src_archive,
-                    current_user_id=user_id,
-                    job_id=job_id,
-                    owner_id=owner_id,
+                responses = await slice_each_plate(
+                    lambda name, part, plate_of: slice_and_persist_as_archive(
+                        task_db,
+                        model_bytes=model_bytes,
+                        model_filename=name,
+                        request=part,
+                        source_archive=src_archive,
+                        current_user_id=user_id,
+                        job_id=job_id,
+                        owner_id=owner_id,
+                        plate_of=plate_of,
+                    ),
+                    model_bytes,
+                    src_filename,
+                    request,
                 )
             except HTTPException as exc:
                 raise http_exception_to_job_error(exc) from exc
+        response = responses[0]
+        if len(responses) > 1:
+            response = response.model_copy(update={"archive_ids": [r.archive_id for r in responses]})
         return response.model_dump()
 
     job = await slice_dispatch.enqueue(

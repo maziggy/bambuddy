@@ -178,9 +178,7 @@ class TestTagFieldsAreImported:
         assert row["status"] == "error"
         assert "core_weight" in row["reason"]
 
-    @pytest.mark.parametrize(
-        "field", ["tag_uid", "tray_uuid", "slicer_filament", "slicer_filament_name", "data_origin", "tag_type"]
-    )
+    @pytest.mark.parametrize("field", ["slicer_filament", "slicer_filament_name", "data_origin", "tag_type"])
     async def test_a_value_longer_than_its_column_is_a_row_error(
         self, async_client: AsyncClient, db_session: AsyncSession, field: str
     ):
@@ -218,33 +216,117 @@ class TestTagFieldsAreImported:
         spool = (await db_session.execute(select(Spool))).scalars().one()
         assert (spool.tag_uid, spool.tray_uuid) == (self.TAG, self.UUID)
 
-    @pytest.mark.parametrize("column,value", [("tray_uuid", UUID.lower()), ("tag_uid", TAG.lower())])
-    async def test_the_same_tag_is_flagged_as_a_duplicate_whatever_the_name(
+    @pytest.mark.parametrize(
+        "written,stored",
+        [("04a1b2c3d4e5f6", "04A1B2C3D4E5F6"), ("04:A1:B2:C3:D4:E5:F6", "04A1B2C3D4E5F6"), (" 04-a1-b2 ", "04A1B2")],
+    )
+    async def test_a_tag_uid_is_stored_as_the_printer_reports_it(
+        self, async_client: AsyncClient, db_session: AsyncSession, written, stored
+    ):
+        csv_text = f'material,tag_uid,tray_uuid\nPLA,"{written}",{self.UUID.lower()}\n'
+
+        response = await async_client.post(
+            "/api/v1/inventory/spools/import", files={"file": ("x.csv", csv_text.encode(), "text/csv")}
+        )
+
+        assert response.json()["created"] == 1, response.text
+        spool = (await db_session.execute(select(Spool))).scalars().one()
+        assert (spool.tag_uid, spool.tray_uuid) == (stored, self.UUID)
+
+    @pytest.mark.parametrize("value", ["xyz", "::", "0000000000000000"])
+    async def test_a_tag_without_an_id_is_none(self, async_client: AsyncClient, db_session: AsyncSession, value):
+        csv_text = f"material,tag_uid,tray_uuid\nPLA,{value},{value}\n"
+
+        response = await async_client.post(
+            "/api/v1/inventory/spools/import", files={"file": ("x.csv", csv_text.encode(), "text/csv")}
+        )
+
+        assert response.json()["created"] == 1, response.text
+        spool = (await db_session.execute(select(Spool))).scalars().one()
+        assert (spool.tag_uid, spool.tray_uuid) == (None, None)
+
+    @pytest.mark.parametrize(
+        "column,value", [("tray_uuid", UUID.lower()), ("tag_uid", TAG.lower()), ("tag_uid", "04:a1:b2:c3:d4:e5:f6")]
+    )
+    async def test_a_tag_linked_to_an_active_spool_is_a_row_error(
         self, async_client: AsyncClient, db_session: AsyncSession, column, value
     ):
+        """Two active spools on one tag make the AMS pick either (#3110)."""
         db_session.add(
             Spool(material="PLA", brand="Bambu Lab", color_name="Jade", tag_uid=self.TAG, tray_uuid=self.UUID)
         )
         await db_session.commit()
-        csv_text = f"material,color_name,{column}\nPETG,Other name,{value}\n"
+        csv_text = f'material,color_name,{column}\nPETG,Other name,"{value}"\nABS,Free,\n'
+
+        response = await async_client.post(
+            "/api/v1/inventory/spools/import", files={"file": ("x.csv", csv_text.encode(), "text/csv")}
+        )
+
+        assert response.json()["created"] == 1, response.text
+        materials = (await db_session.execute(select(Spool.material).order_by(Spool.id))).scalars().all()
+        assert materials == ["PLA", "ABS"]
+
+    async def test_the_preview_names_the_spool_that_has_the_tag(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        holder = Spool(material="PLA", tag_uid=self.TAG)
+        db_session.add(holder)
+        await db_session.commit()
+
+        response = await async_client.post(
+            "/api/v1/inventory/spools/import?dry_run=true",
+            files={"file": ("x.csv", f"material,tag_uid\nPETG,{self.TAG}\n".encode(), "text/csv")},
+        )
+
+        row = response.json()["rows"][0]
+        assert row["status"] == "error"
+        assert row["reason"] == f"tag_uid {self.TAG} is already linked to spool #{holder.id}"
+
+    async def test_a_tag_on_an_archived_spool_does_not_count(self, async_client: AsyncClient, db_session: AsyncSession):
+        from datetime import datetime, timezone
+
+        db_session.add(Spool(material="PLA", tag_uid=self.TAG, archived_at=datetime.now(timezone.utc)))
+        await db_session.commit()
+
+        response = await async_client.post(
+            "/api/v1/inventory/spools/import?dry_run=true",
+            files={"file": ("x.csv", f"material,tag_uid\nPETG,{self.TAG}\n".encode(), "text/csv")},
+        )
+
+        assert response.json()["rows"][0]["status"] == "valid"
+
+    async def test_a_tag_repeated_from_an_earlier_row_is_a_row_error(self, async_client: AsyncClient):
+        csv_text = f"material,tray_uuid\nPLA,{self.UUID}\nPETG,{self.UUID.lower()}\nABS,\n"
 
         response = await async_client.post(
             "/api/v1/inventory/spools/import?dry_run=true",
             files={"file": ("x.csv", csv_text.encode(), "text/csv")},
         )
 
-        assert response.json()["rows"][0]["duplicate_of_existing"] is True
+        rows = response.json()["rows"]
+        assert [r["status"] for r in rows] == ["valid", "error", "valid"]
+        assert rows[1]["reason"] == f"tray_uuid {self.UUID} is already on row {rows[0]['row_number']}"
+
+    async def test_a_row_that_failed_does_not_claim_its_tag(self, async_client: AsyncClient):
+        csv_text = f"material,tag_uid,core_weight\nPLA,{self.TAG},heavy\nPETG,{self.TAG},\n"
+
+        response = await async_client.post(
+            "/api/v1/inventory/spools/import?dry_run=true",
+            files={"file": ("x.csv", csv_text.encode(), "text/csv")},
+        )
+
+        assert [r["status"] for r in response.json()["rows"]] == ["error", "valid"]
 
     async def test_an_empty_or_all_zero_tag_identifies_nothing(
         self, async_client: AsyncClient, db_session: AsyncSession
     ):
         db_session.add(Spool(material="PLA", color_name="A", tag_uid="00000000000000"))
         await db_session.commit()
-        csv_text = "material,color_name,tag_uid\nPETG,B,00000000000000\nABS,C,\n"
+        csv_text = "material,color_name,tag_uid\nPETG,B,00000000000000\nABS,C,\nASA,D,00000000000000\n"
 
         response = await async_client.post(
             "/api/v1/inventory/spools/import?dry_run=true",
             files={"file": ("x.csv", csv_text.encode(), "text/csv")},
         )
 
-        assert [r["duplicate_of_existing"] for r in response.json()["rows"]] == [False, False]
+        assert [r["status"] for r in response.json()["rows"]] == ["valid", "valid", "valid"]

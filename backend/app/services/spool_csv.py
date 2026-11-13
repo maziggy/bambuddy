@@ -25,6 +25,7 @@ from backend.app.models.color_catalog import ColorCatalogEntry
 from backend.app.models.spool import Spool
 from backend.app.models.supplier import Supplier, supplier_name_key
 from backend.app.schemas.spool import SpoolCreate
+from backend.app.utils.tag_normalization import normalize_tag_uid, normalize_tray_uuid
 
 # Fixed CSV header, in output order. Round-trips cleanly: export writes these
 # columns, import expects them. `material` is the only required field; the rest
@@ -285,26 +286,38 @@ async def _load_existing_spool_keys(db: AsyncSession) -> set[tuple[str, str, str
     return {_spool_key(m, b, c) for m, b, c in result.all()}
 
 
-def _tag_key(value: str | None) -> str | None:
-    """Identity of a tag value for the duplicate warning, or None when it has none.
+_TAG_ID_COLUMNS = ("tag_uid", "tray_uuid")
 
-    Case-insensitive; an empty or all-zero value (what a tag without an id reads
-    as) identifies nothing.
+
+def _tag_identity(field: str, value: str | None) -> str | None:
+    """A tag id as the AMS lookup and link-tag store it, or None when it has none.
+
+    Hex digits only, upper case, as ``normalize_tag_uid`` / ``normalize_tray_uuid``
+    make it: a lowercase id or one written with colons (04:A3:...) would never
+    match the printer's exact compare. A value that normalises to empty, or to
+    all zeros (what a tag without an id reads as), identifies nothing.
     """
-    key = (value or "").strip().lower()
-    if not key or not key.strip("0"):
-        return None
-    return key
+    normalize = normalize_tag_uid if field == "tag_uid" else normalize_tray_uuid
+    key = normalize(value)
+    return key if key.strip("0") else None
 
 
-async def _load_existing_tag_keys(db: AsyncSession) -> set[str]:
-    """Tag UIDs and spool UUIDs of the active spools, for the duplicate warning (#3324).
+async def _load_linked_tags(db: AsyncSession) -> dict[tuple[str, str], int]:
+    """``(field, tag id)`` → the active spool it is linked to (#3324).
 
-    A row that carries one of them is the same physical spool even when its
-    material, brand or colour name were typed differently.
+    Normalised like the import's values, so one stored as written by an older
+    import still matches. Lowest id first, as link-tag reports a holder.
     """
-    result = await db.execute(select(Spool.tag_uid, Spool.tray_uuid).where(Spool.archived_at.is_(None)))
-    return {key for pair in result.all() for key in map(_tag_key, pair) if key}
+    result = await db.execute(
+        select(Spool.id, Spool.tag_uid, Spool.tray_uuid).where(Spool.archived_at.is_(None)).order_by(Spool.id)
+    )
+    linked: dict[tuple[str, str], int] = {}
+    for spool_id, tag_uid, tray_uuid in result.all():
+        for field, value in zip(_TAG_ID_COLUMNS, (tag_uid, tray_uuid), strict=True):
+            key = _tag_identity(field, value)
+            if key:
+                linked.setdefault((field, key), spool_id)
+    return linked
 
 
 def _resolve_color(
@@ -418,7 +431,9 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
     # issuing a SELECT per row.
     catalog = await _load_color_catalog(db)
     existing_keys = await _load_existing_spool_keys(db)
-    existing_tags = await _load_existing_tag_keys(db)
+    linked_tags = await _load_linked_tags(db)
+    # Tags of the file's earlier valid rows, to the row that carries them.
+    file_tags: dict[tuple[str, str], int] = {}
     supplier_map = await _load_supplier_map(db)
     unknown_suppliers: set[str] = set()
 
@@ -494,6 +509,29 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
             value = cell(raw_row, field)
             if value:
                 data[field] = value
+
+        for field in _TAG_ID_COLUMNS:
+            if field in data:
+                key = _tag_identity(field, data[field])
+                if key:
+                    data[field] = key
+                else:
+                    del data[field]
+
+        # One tag on two active spools makes the AMS pick either of them, so a
+        # tag already linked, or repeated from an earlier row, fails the row,
+        # as link-tag answers 409 (#3110).
+        if row_error is None:
+            for field in _TAG_ID_COLUMNS:
+                key = data.get(field)
+                if not key:
+                    continue
+                if (field, key) in linked_tags:
+                    row_error = f"{field} {key} is already linked to spool #{linked_tags[(field, key)]}"
+                    break
+                if (field, key) in file_tags:
+                    row_error = f"{field} {key} is already on row {file_tags[(field, key)]}"
+                    break
 
         # The tag and preset columns (#3324) have no length limit in SpoolCreate.
         # PostgreSQL refuses a value longer than its column and fails the whole
@@ -645,8 +683,7 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
                 rgba=spool.rgba,
                 resolved_color=resolved_color,
                 cross_material_color=cross_material_color,
-                duplicate_of_existing=_spool_key(material, brand, color_name) in existing_keys
-                or any(key in existing_tags for key in map(_tag_key, (data.get("tag_uid"), data.get("tray_uuid")))),
+                duplicate_of_existing=_spool_key(material, brand, color_name) in existing_keys,
                 keeps_id=requested_id,
                 spool=spool_data,
                 supplier_ids=supplier_ids,
@@ -654,6 +691,9 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
             )
         )
         valid += 1
+        for field in _TAG_ID_COLUMNS:
+            if data.get(field):
+                file_tags[(field, data[field])] = row_number
 
     await _decide_ids(db, rows, warnings)
 

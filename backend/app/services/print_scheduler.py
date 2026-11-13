@@ -3370,7 +3370,11 @@ class PrintScheduler:
             .where(PrintLogEntry.printer_id.in_(printer_ids), PrintLogEntry.completed_at.is_not(None))
             .group_by(PrintLogEntry.printer_id)
         )
-        return {printer_id: finished for printer_id, finished in result.all() if finished is not None}
+        return {
+            printer_id: finished
+            for printer_id, finished in result.all()
+            if printer_id is not None and finished is not None
+        }
 
     async def _wakeable_printer_ids(self, db: AsyncSession) -> set[int]:
         """Printer IDs that at least one enabled ``auto_on`` plug can power on.

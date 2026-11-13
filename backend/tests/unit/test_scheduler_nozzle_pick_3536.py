@@ -63,6 +63,12 @@ def test_sliced_nozzle_rejects_garbage_and_non_positive():
     assert _sliced_nozzle(None, SimpleNamespace(file_metadata={"nozzle_diameter": "0.6"})) == 0.6
 
 
+def test_sliced_nozzle_is_read_without_rounding():
+    # The tolerance lives in _nozzle_mismatch_message, not here.
+    meta = SimpleNamespace(file_metadata={"nozzle_diameter": "0.6000001"})
+    assert _sliced_nozzle(None, meta) == 0.6000001
+
+
 def test_candidates_carry_their_own_nozzle():
     single = _item(library_file=SimpleNamespace(file_metadata={"nozzle_diameter": 0.6}))
     assert [c.sliced_nozzle for c in _candidates_for(single)] == [0.6]

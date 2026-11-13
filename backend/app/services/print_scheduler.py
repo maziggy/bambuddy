@@ -502,6 +502,8 @@ class _ModelCandidate:
     required_filament_types: str | None
     filament_overrides: str | None
     variant: "PrintQueueVariant | None" = None
+    # Nozzle diameter (mm) the file was sliced for, None when unknown (#3536).
+    sliced_nozzle: float | None = None
 
 
 def _sliced_for_model(archive, library_file) -> str | None:
@@ -511,6 +513,26 @@ def _sliced_for_model(archive, library_file) -> str | None:
     if library_file is not None and library_file.file_metadata:
         return library_file.file_metadata.get("sliced_for_model")
     return None
+
+
+def _sliced_nozzle(archive, library_file) -> float | None:
+    """Nozzle diameter (mm) a 3MF was sliced for, None when unknown (#3536).
+
+    Fail-safe: a missing, unparsable or non-positive value means "unknown", and
+    unknown never excludes a printer. Not rounded here; the tolerance lives in
+    ``_nozzle_mismatch_message``.
+    """
+    if archive is not None:
+        raw = archive.nozzle_diameter
+    elif library_file is not None and library_file.file_metadata:
+        raw = library_file.file_metadata.get("nozzle_diameter")
+    else:
+        return None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
 
 
 def _filament_constraints(candidate: _ModelCandidate) -> tuple[list[str] | None, list[dict] | None]:
@@ -599,6 +621,7 @@ def _candidates_for(item: PrintQueueItem) -> list[_ModelCandidate]:
                 sliced_for=_sliced_for_model(item.archive, item.library_file),
                 required_filament_types=item.required_filament_types,
                 filament_overrides=item.filament_overrides,
+                sliced_nozzle=_sliced_nozzle(item.archive, item.library_file),
             )
         ]
 
@@ -617,6 +640,7 @@ def _candidates_for(item: PrintQueueItem) -> list[_ModelCandidate]:
             required_filament_types=v.required_filament_types,
             filament_overrides=v.filament_overrides,
             variant=v,
+            sliced_nozzle=_sliced_nozzle(None, v.library_file),
         )
         for v in ordered
     ]

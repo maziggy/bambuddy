@@ -496,7 +496,10 @@ async def import_instance(
 async def library_status(
     body: MakerWorldLibraryStatusRequest,
     db: AsyncSession = Depends(get_db, scope="function"),
-    current_user: User | None = RequirePermissionIfAuthEnabled(makerworld_provider.view_permission),
+    # MakerWorld-only route: pin Permission.MAKERWORLD_VIEW (not
+    # provider.view_permission) so the dependency type is Permission, not
+    # Permission | None from the ModelProvider base class.
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.MAKERWORLD_VIEW),
     actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Report which of the given MakerWorld model IDs already have library files.

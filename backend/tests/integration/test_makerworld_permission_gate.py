@@ -160,6 +160,60 @@ class TestPermissionStillBites:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_view_without_library_read_gets_empty_library_status(self, async_client: AsyncClient):
+        """``makerworld:view`` alone may call the endpoint, but with neither
+        ``library:read_own`` nor ``library:read_all`` ``owned_row_clauses``
+        returns None and membership lists stay empty even when rows exist.
+        """
+        admin = await _setup_auth_with_admin(async_client)
+        importer = {
+            "Authorization": f"Bearer {await _make_user(
+                async_client,
+                admin,
+                username='mwlibimp',
+                permissions=['makerworld:view', 'makerworld:import', 'library:read_own', 'library:upload'],
+            )}"
+        }
+        viewer = {
+            "Authorization": f"Bearer {await _make_user(
+                async_client,
+                admin,
+                username='mwviewonly',
+                permissions=['makerworld:view'],
+            )}"
+        }
+
+        with patch(
+            "backend.app.api.routes.makerworld._build_service",
+            AsyncMock(side_effect=lambda *a: _import_service()),
+        ):
+            imported = (
+                await async_client.post(
+                    "/api/v1/makerworld/import",
+                    json={"model_id": 1400373, "profile_id": 298919107},
+                    headers=importer,
+                )
+            ).json()
+
+        empty = await async_client.post(
+            "/api/v1/makerworld/library-status",
+            json={"model_ids": [1400373]},
+            headers=viewer,
+        )
+        assert empty.status_code == 200, empty.text
+        assert empty.json() == {"1400373": []}
+
+        # Sanity: the row is readable for the importer who has library:read_own.
+        owned = await async_client.post(
+            "/api/v1/makerworld/library-status",
+            json={"model_ids": [1400373]},
+            headers=importer,
+        )
+        assert owned.status_code == 200, owned.text
+        assert owned.json() == {"1400373": [imported["library_file_id"]]}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_user_holding_the_permission_gets_through(self, async_client: AsyncClient):
         admin = await _setup_auth_with_admin(async_client)
         jwt = await _make_user(

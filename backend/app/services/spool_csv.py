@@ -327,7 +327,11 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
     except UnicodeDecodeError:
         return _empty_preview(["File is not valid UTF-8 text."])
 
-    reader = csv.reader(io.StringIO(text))
+    # Excel in a comma-decimal locale (de, fr, nl, it, ...) saves "CSV" with
+    # ";" between fields and "," as the decimal mark.
+    first_line = text.split("\n", 1)[0]
+    delimiter = ";" if first_line.count(";") > first_line.count(",") else ","
+    reader = csv.reader(io.StringIO(text), delimiter=delimiter)
     try:
         header = next(reader)
     except StopIteration:
@@ -435,6 +439,8 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
             for field in _FLOAT_COLUMNS:
                 value = cell(raw_row, field)
                 if value:
+                    if delimiter == ";":
+                        value = value.replace(",", ".")
                     try:
                         data[field] = float(value)
                     except ValueError:

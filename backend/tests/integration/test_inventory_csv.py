@@ -141,6 +141,19 @@ class TestInventoryCsvImportReal:
         spool = result.scalars().one()
         assert spool.color_name == "Snow"
 
+    async def test_semicolon_file_with_decimal_commas(self, async_client: AsyncClient, db_session: AsyncSession):
+        # What Excel saves as CSV in a comma-decimal locale (de, fr, nl, ...).
+        csv_text = "material;brand;color_name;label_weight;cost_per_kg\r\nPLA;Polymaker;Jade White;1000;24,99\r\n"
+
+        response = await async_client.post("/api/v1/inventory/spools/import", files=_csv_upload(csv_text))
+
+        assert response.status_code == 200, response.text
+        assert response.json()["created"] == 1
+        result = await db_session.execute(select(Spool))
+        spool = result.scalars().one()
+        assert (spool.brand, spool.color_name, spool.label_weight) == ("Polymaker", "Jade White", 1000)
+        assert spool.cost_per_kg == 24.99
+
 
 @pytest.mark.asyncio
 @pytest.mark.integration

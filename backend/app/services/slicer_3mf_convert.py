@@ -57,14 +57,14 @@ def plates_with_objects_in_3mf(zip_bytes: bytes) -> list[int]:
     such data, and every plate it declares is returned. ``[]`` when the file
     isn't a parseable 3MF or declares no plate (#2818).
     """
-    import xml.etree.ElementTree as ET
+    import defusedxml.ElementTree as ET
 
     try:
         with zipfile.ZipFile(BytesIO(zip_bytes), "r") as zf:
             if _MODEL_SETTINGS_PATH not in zf.namelist():
                 return []
             root = ET.fromstring(zf.read(_MODEL_SETTINGS_PATH))
-    except (zipfile.BadZipFile, OSError, KeyError, ET.ParseError):
+    except (zipfile.BadZipFile, OSError, KeyError, ET.ParseError, ValueError):
         return []
     plates: list[tuple[int, bool]] = []
     for plate_elem in root.iter("plate"):

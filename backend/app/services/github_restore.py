@@ -1686,6 +1686,11 @@ class GitHubRestoreService:
                 file_path="",
                 file_size=entry.get("file_size") or 0,
                 content_hash=entry.get("content_hash"),
+                # The file is not in the backup, so its G-code cannot be read
+                # here: the backup's fingerprint lets a print of the same slice
+                # sent from the slicer join this archive and give it the file
+                # (#1634). Older backups have none, and the fill marks it read.
+                gcode_hash=_gcode_hash_of(entry),
                 **fields,
             )
             created_at = _parse_dt(entry.get("created_at"))
@@ -2740,3 +2745,12 @@ class GitHubRestoreService:
 
 # Singleton instance
 github_restore_service = GitHubRestoreService()
+
+
+_GCODE_HASH = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _gcode_hash_of(entry: dict) -> str | None:
+    """The backed-up G-code fingerprint (#1634), when it is one."""
+    value = entry.get("gcode_hash")
+    return value if isinstance(value, str) and _GCODE_HASH.match(value) else None

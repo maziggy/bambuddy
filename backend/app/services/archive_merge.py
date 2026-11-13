@@ -42,6 +42,7 @@ from backend.app.models.archive_alias import ArchiveAlias
 from backend.app.models.print_log import INCLUDE_OPEN_RUNS, RUN_OPEN, PrintLogEntry
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.services import archive_work
+from backend.app.services.archive_gcode_hash import refresh_gcode_hash_async
 from backend.app.services.print_cost_estimate import refresh_plate_estimates
 from backend.app.utils.archive_paths import archive_dir, archive_photos_dir, find_archive_photo
 from backend.app.utils.local_time import utcnow_naive
@@ -542,6 +543,8 @@ async def _merge(
             # The same file (one hash), but the survivor's was missing: its
             # plates are read from the one it takes over (#3375).
             refresh_plate_estimates(survivor)
+            # And its G-code, which the missing file could not give (#1634).
+            await refresh_gcode_hash_async(survivor)
         for run in runs[archive.id]:
             if run.photos:
                 run.photos = [photos[p] for p in run.photos if p in photos]

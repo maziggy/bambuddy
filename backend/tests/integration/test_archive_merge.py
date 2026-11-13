@@ -7,6 +7,7 @@ alias, their money untouched.
 
 from __future__ import annotations
 
+import zipfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -581,6 +582,25 @@ async def test_the_survivor_reads_its_plates_from_the_file_it_takes_over(async_c
 
     archive = await _row(db_session, PrintArchive, dupes.x)
     assert archive.plate_estimates == PLATES
+
+
+async def test_the_survivor_reads_the_gcode_of_the_file_it_takes_over(async_client, db_session, files, dupes):
+    """#1634: a slice sent again from the slicer finds the survivor by it."""
+    from backend.app.services.archive_gcode_hash import NO_GCODE, gcode_fingerprint
+
+    (dupes.x_dir / "file.3mf").unlink()
+    for folder in (dupes.y_dir, dupes.z_dir):
+        with zipfile.ZipFile(folder / "file.3mf", "w") as zf:
+            zf.writestr("Metadata/plate_1.gcode", "G28\n")
+    survivor = await db_session.get(PrintArchive, dupes.x)
+    survivor.gcode_hash = NO_GCODE  # read while its file was missing
+    await db_session.commit()
+
+    await async_client.post("/api/v1/archives/merge", json={"survivor_ids": [dupes.x]})
+
+    archive = await _row(db_session, PrintArchive, dupes.x)
+    assert archive.gcode_hash == gcode_fingerprint(files / archive.file_path)
+    assert archive.gcode_hash not in (None, NO_GCODE)
 
 
 async def test_a_copy_that_fails_leaves_no_partial_file(files):

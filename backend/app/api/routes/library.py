@@ -4375,6 +4375,7 @@ async def _run_slicer_with_fallback(
     request: SliceRequest,
     current_user_id: int | None = None,
     job_id: int | None = None,
+    plate_of: tuple[int, int] | None = None,
 ):
     """Validate presets, dispatch to the right sidecar, run the slicer with
     the auto-fallback for 3MF inputs whose `--load-settings` path crashes the
@@ -4391,6 +4392,11 @@ async def _run_slicer_with_fallback(
     toast can show "Generating G-code (75%)" instead of just elapsed
     time. Pass None for synchronous routes that aren't tracked by the
     dispatcher.
+
+    `plate_of`: ``(N, M)`` when this slice is plate N of M sliced one after
+    another (one file per plate, #2818). Each progress frame then carries it
+    as ``multi_plate_index`` / ``multi_plate_count``, as the arrange slice-all
+    loop does, so the toast says "(plate N/M)".
     """
     from backend.app.api.routes.settings import get_setting
     from backend.app.services.preset_resolver import resolve_preset_ref
@@ -4622,6 +4628,8 @@ async def _run_slicer_with_fallback(
         progress_request_id = str(uuid4())
 
         def _on_progress(snapshot: dict) -> None:
+            if plate_of is not None:
+                snapshot = {**snapshot, "multi_plate_index": plate_of[0], "multi_plate_count": plate_of[1]}
             _dispatch.set_progress(job_id, snapshot)
 
         progress_callback = _on_progress
@@ -5003,47 +5011,57 @@ _CALLER = object()
 
 def split_slice_by_plate(
     model_bytes: bytes, model_filename: str, request: SliceRequest
-) -> list[tuple[str, SliceRequest]]:
-    """The slices a request stands for: ``(filename, request)`` for each.
+) -> list[tuple[str, SliceRequest, tuple[int, int] | None]]:
+    """The slices a request stands for: ``(filename, request, plate_of)`` for each.
 
-    Usually one, the request as it came. With ``one_file_per_plate`` on a
-    multi-plate 3MF sliced as a whole (``plate=0``) it is one per plate, each
-    named "<name> - plate N" and asking for that plate alone (#2818). A source
-    with a single plate, or that is not a 3MF, stays the one slice it was.
+    Usually one, the request as it came, with ``plate_of`` ``None``. With
+    ``one_file_per_plate`` on a multi-plate 3MF sliced as a whole (``plate=0``)
+    it is one per plate, each named "<name> - plate N", asking for that plate
+    alone, with ``plate_of`` ``(N, plates in the source)`` (#2818). An empty
+    plate is skipped: the slicer refuses it, and there is nothing to print.
+    A source with a single plate, or that is not a 3MF, stays the one slice it was.
     """
     if request.plate != 0 or not request.one_file_per_plate or not model_filename.lower().endswith(".3mf"):
-        return [(model_filename, request)]
+        return [(model_filename, request, None)]
 
-    from backend.app.services.slicer_3mf_convert import count_plates_in_3mf
+    from backend.app.services.slicer_3mf_convert import count_plates_in_3mf, plates_with_objects_in_3mf
 
     plate_count = count_plates_in_3mf(model_bytes)
-    if plate_count <= 1:
-        return [(model_filename, request)]
+    plates = plates_with_objects_in_3mf(model_bytes)
+    if plate_count <= 1 or not plates:
+        return [(model_filename, request, None)]
     stem, ext = model_filename.rsplit(".", 1)
     return [
-        (f"{stem} - plate {plate}.{ext}", request.model_copy(update={"plate": plate, "one_file_per_plate": False}))
-        for plate in range(1, plate_count + 1)
+        (
+            f"{stem} - plate {plate}.{ext}",
+            request.model_copy(update={"plate": plate, "one_file_per_plate": False}),
+            (plate, plate_count),
+        )
+        for plate in plates
     ]
 
 
 async def slice_each_plate(slice_one, model_bytes: bytes, model_filename: str, request: SliceRequest) -> list:
-    """Run ``slice_one(filename, request)`` for every slice the request stands for.
+    """Run ``slice_one(filename, request, plate_of)`` for every slice the request stands for.
 
     The plates go one after another, as the sidecar slices one thing at a time.
+    ``plate_of`` is ``(N, M)`` for plate N of the source's M, for the progress
+    to name the plate, and ``None`` for a request that stays one slice.
     When one of several fails the error names the plate and how many before it
     were saved, as those files stay: they are complete slices.
     """
     parts = split_slice_by_plate(model_bytes, model_filename, request)
     responses = []
-    for number, (name, part_request) in enumerate(parts, start=1):
+    for name, part_request, plate_of in parts:
         try:
-            responses.append(await slice_one(name, part_request))
+            responses.append(await slice_one(name, part_request, plate_of))
         except HTTPException as exc:
-            if len(parts) == 1:
+            if plate_of is None:
                 raise
             saved = f" {len(responses)} earlier plate(s) were saved." if responses else ""
             raise HTTPException(
-                status_code=exc.status_code, detail=f"Plate {number} of {len(parts)} failed: {exc.detail}.{saved}"
+                status_code=exc.status_code,
+                detail=f"Plate {plate_of[0]} of {plate_of[1]} failed: {exc.detail}.{saved}",
             ) from exc
     return responses
 
@@ -5059,6 +5077,7 @@ async def slice_and_persist(
     current_user_id: int | None,
     job_id: int | None = None,
     owner_id: int | None | object = _CALLER,
+    plate_of: tuple[int, int] | None = None,
 ) -> SliceResponse:
     """Slice a model and save the result as a new ``LibraryFile`` in
     ``folder_id`` (same folder as the source by convention).
@@ -5081,6 +5100,7 @@ async def slice_and_persist(
         request=library_request,
         current_user_id=current_user_id,
         job_id=job_id,
+        plate_of=plate_of,
     )
 
     # Same reduction as the archive sink: ``model_filename`` may be built from
@@ -5214,6 +5234,7 @@ async def slice_and_persist_as_archive(
     current_user_id: int | None,
     job_id: int | None = None,
     owner_id: int | None | object = _CALLER,
+    plate_of: tuple[int, int] | None = None,
 ):
     """Slice a model and save the result as a new ``PrintArchive`` row,
     inheriting printer / project / makerworld metadata from the source
@@ -5236,6 +5257,7 @@ async def slice_and_persist_as_archive(
         request=archive_request,
         job_id=job_id,
         current_user_id=current_user_id,
+        plate_of=plate_of,
     )
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -5517,7 +5539,7 @@ async def slice_library_file(
         async with async_session() as task_db:
             try:
                 responses = await slice_each_plate(
-                    lambda name, part: slice_and_persist(
+                    lambda name, part, plate_of: slice_and_persist(
                         task_db,
                         model_bytes=model_bytes,
                         model_filename=name,
@@ -5527,6 +5549,7 @@ async def slice_library_file(
                         current_user_id=user_id,
                         job_id=job_id,
                         owner_id=owner_id,
+                        plate_of=plate_of,
                     ),
                     model_bytes,
                     model_filename,

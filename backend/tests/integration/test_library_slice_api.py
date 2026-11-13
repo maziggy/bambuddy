@@ -81,19 +81,24 @@ def _is_slice_post(request: httpx.Request) -> bool:
 
 
 async def _wait_for_job(client: AsyncClient, job_id: int, timeout: float = 5.0) -> dict:
-    """Poll `/api/v1/slice-jobs/{id}` until the job hits a terminal state.
+    """Wait for the job to hit a terminal state, then read it from `/api/v1/slice-jobs/{id}`.
 
     The dispatcher runs work as an asyncio task on the same event loop, so
-    poll-with-sleep here is enough — a few yields and the task finishes.
+    waiting with sleep here is enough — a few yields and the task finishes.
+    The wait reads the dispatcher, not the endpoint: a request meanwhile
+    shares the test database's one in-memory connection with the job, and
+    its rollback can undo a row the job has added and not yet committed.
     """
+    from backend.app.services.slice_dispatch import slice_dispatch
+
     deadline = asyncio.get_event_loop().time() + timeout
     while asyncio.get_event_loop().time() < deadline:
-        r = await client.get(f"/api/v1/slice-jobs/{job_id}")
-        if r.status_code != 200:
-            raise AssertionError(f"slice-jobs poll failed: {r.status_code} {r.text}")
-        body = r.json()
-        if body["status"] in ("completed", "failed"):
-            return body
+        job = slice_dispatch.get(job_id)
+        if job is None or job.status in ("completed", "failed"):
+            r = await client.get(f"/api/v1/slice-jobs/{job_id}")
+            if r.status_code != 200:
+                raise AssertionError(f"slice-jobs poll failed: {r.status_code} {r.text}")
+            return r.json()
         await asyncio.sleep(0.05)
     raise AssertionError(f"slice job {job_id} did not finish in {timeout}s")
 
@@ -1539,6 +1544,72 @@ class TestOneFilePerPlate:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_the_progress_names_the_plate(
+        self, async_client: AsyncClient, db_session, slice_test_setup, monkeypatch
+    ):
+        """Each plate's progress runs 0-100% again: the toast's "(plate N/M)" says which."""
+        from backend.app.services.slice_dispatch import slice_dispatch
+        from backend.app.services.slicer_api import SlicerApiService
+
+        original = SlicerApiService.slice_with_profiles
+
+        async def reporting(self, *args, **kwargs):
+            kwargs["on_progress"]({"stage": "Generating G-code", "percent": 50})
+            return await original(self, *args, **kwargs)
+
+        snapshots: list[dict | None] = []
+        record = slice_dispatch.set_progress
+        monkeypatch.setattr(SlicerApiService, "slice_with_profiles", reporting)
+        monkeypatch.setattr(
+            slice_dispatch, "set_progress", lambda job_id, snap: (snapshots.append(snap), record(job_id, snap))
+        )
+        file_id = await self._library_source(db_session, slice_test_setup, plate_count=3)
+        self._sidecar([])
+
+        final = await self._slice(
+            async_client, file_id, self._request(slice_test_setup, plate=0, one_file_per_plate=True)
+        )
+
+        assert final["status"] == "completed", final
+        plates = [(s["multi_plate_index"], s["multi_plate_count"]) for s in snapshots if s and "percent" in s]
+        assert plates == [(1, 3), (2, 3), (3, 3)]
+        assert all(s["stage"] == "Generating G-code" for s in snapshots if s and "percent" in s)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_an_empty_plate_is_skipped(self, async_client: AsyncClient, db_session, slice_test_setup):
+        """The slicer refuses a plate with nothing on it; the plates around it still come out."""
+        objects = {1: True, 2: False, 3: True}
+        plate_blocks = "\n".join(
+            f'<plate><metadata key="plater_id" value="{n}"/>'
+            + ('<model_instance><metadata key="object_id" value="1"/></model_instance>' if has else "")
+            + "</plate>"
+            for n, has in objects.items()
+        )
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("3D/3dmodel.model", "<model/>")
+            zf.writestr("Metadata/project_settings.config", json.dumps({"printer_model": "Bambu Lab X1 Carbon"}))
+            zf.writestr(
+                "Metadata/model_settings.config", f"<?xml version='1.0'?>\n<config>\n{plate_blocks}\n</config>\n"
+            )
+        file_id = await self._library_source(db_session, slice_test_setup, plate_count=3)
+        row = await db_session.get(LibraryFile, file_id)
+        (slice_test_setup["tmp_path"] / row.file_path).write_bytes(buf.getvalue())
+        calls: list[int | None] = []
+        self._sidecar(calls)
+
+        final = await self._slice(
+            async_client, file_id, self._request(slice_test_setup, plate=0, one_file_per_plate=True)
+        )
+
+        assert final["status"] == "completed", final
+        assert calls == [1, 3]
+        names = [(await db_session.get(LibraryFile, made)).filename for made in final["result"]["library_file_ids"]]
+        assert names == ["Multi - plate 1.gcode.3mf", "Multi - plate 3.gcode.3mf"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_an_archive_source_makes_one_archive_per_plate(
         self, async_client: AsyncClient, db_session, slice_test_setup, printer_factory, archive_factory, monkeypatch
     ):
@@ -1562,10 +1633,6 @@ class TestOneFilePerPlate:
             json=self._request(slice_test_setup, plate=0, one_file_per_plate=True),
         )
         assert resp.status_code == 202, resp.text
-        # The mocked job takes a few ms. Polling it meanwhile shares the test
-        # database's one in-memory connection with the job's two saves, and the
-        # poll's rollback can undo the first before the second refreshes it.
-        await asyncio.sleep(0.5)
         final = await _wait_for_job(async_client, resp.json()["job_id"], timeout=15.0)
 
         assert final["status"] == "completed", final

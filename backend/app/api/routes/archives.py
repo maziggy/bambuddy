@@ -5779,7 +5779,7 @@ async def slice_archive(
                 )
             try:
                 responses = await slice_each_plate(
-                    lambda name, part: slice_and_persist_as_archive(
+                    lambda name, part, plate_of: slice_and_persist_as_archive(
                         task_db,
                         model_bytes=model_bytes,
                         model_filename=name,
@@ -5788,6 +5788,7 @@ async def slice_archive(
                         current_user_id=user_id,
                         job_id=job_id,
                         owner_id=owner_id,
+                        plate_of=plate_of,
                     ),
                     model_bytes,
                     src_filename,

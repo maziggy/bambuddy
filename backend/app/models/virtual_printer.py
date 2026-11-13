@@ -46,6 +46,10 @@ class VirtualPrinter(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     mode: Mapped[str] = mapped_column(String(20), default=VP_MODE_LIBRARY)  # library|review|queue|proxy
     auto_dispatch: Mapped[bool] = mapped_column(Boolean, server_default="true")  # queue mode: auto-start or manual
+    # Queue mode with auto_dispatch on: only the first job sent to an idle target
+    # starts by itself; the ones sent while it has a job running or waiting are
+    # staged (manual_start) and start when released one by one (#3299).
+    auto_dispatch_first_only: Mapped[bool] = mapped_column(Boolean, server_default="false")
     queue_force_color_match: Mapped[bool] = mapped_column(
         Boolean, server_default="false"
     )  # queue mode: pin per-slot type+color from the 3MF onto the queue

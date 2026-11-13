@@ -6437,6 +6437,10 @@ export default {
       title: 'Envío automático',
       description: 'Iniciar automáticamente las impresiones al añadirlas a la cola. Cuando está desactivado, las impresiones esperan al envío manual.',
     },
+    autoDispatchFirstOnly: {
+      title: 'Solo el primer trabajo se inicia solo',
+      description: 'El primer archivo enviado a una impresora sin nada en cola ni imprimiendo se inicia por sí mismo. Los enviados mientras tiene un trabajo en curso o en espera quedan preparados y solo se inician al pulsar Reproducir en cada uno.',
+    },
     queueForceColorMatch: {
       title: 'Forzar la coincidencia de color',
       description: 'Negarse a enviar a una impresora que no tiene cargados el tipo y el color exactos de filamento. Desactivado de forma predeterminada — sin esto, la cola usa la coincidencia solo por modelo y puede elegir una impresora con el color equivocado cargado.',

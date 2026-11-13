@@ -6480,6 +6480,10 @@ export default {
       title: 'Automatisch verzenden',
       description: 'Start afdrukken automatisch wanneer ze aan de wachtrij worden toegevoegd. Als dit uitstaat, wachten afdrukken op handmatige verzending.',
     },
+    autoDispatchFirstOnly: {
+      title: 'Alleen de eerste opdracht start zelf',
+      description: 'Het eerste bestand naar een printer zonder wachtende of lopende opdrachten start vanzelf. Bestanden die worden gestuurd terwijl er een opdracht loopt of wacht, worden klaargezet en starten pas als je bij elk op Start drukt.',
+    },
     queueForceColorMatch: {
       title: 'Kleurmatch afdwingen',
       description: 'Weiger een taak te verzenden naar een printer waarop niet exact het juiste filamenttype en de juiste kleur zijn geladen. Standaard uit — zonder dit gebruikt de wachtrij alleen modelmatching en kan een printer worden gekozen waarop de verkeerde kleur is geladen.',

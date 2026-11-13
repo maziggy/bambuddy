@@ -50,6 +50,7 @@ class VirtualPrinterCreate(BaseModel):
     library_folder_id: int | None = None
     queue_remove_after_print: bool = False
     auto_dispatch: bool = True
+    auto_dispatch_first_only: bool = False
     queue_force_color_match: bool = False
     save_ams_mapping: bool = False
     gcode_injection: bool = False
@@ -68,6 +69,7 @@ class VirtualPrinterUpdate(IgnoresNullForRequiredColumns):
     library_folder_id: int | None = None
     queue_remove_after_print: bool | None = None
     auto_dispatch: bool | None = None
+    auto_dispatch_first_only: bool | None = None
     queue_force_color_match: bool | None = None
     save_ams_mapping: bool | None = None
     gcode_injection: bool | None = None
@@ -148,6 +150,7 @@ async def _vp_to_dict(vp, db: AsyncSession, status: dict | None = None) -> dict:
         "library_folder_id": vp.library_folder_id,
         "queue_remove_after_print": vp.queue_remove_after_print,
         "auto_dispatch": vp.auto_dispatch,
+        "auto_dispatch_first_only": vp.auto_dispatch_first_only,
         "queue_force_color_match": vp.queue_force_color_match,
         "save_ams_mapping": vp.save_ams_mapping,
         "gcode_injection": vp.gcode_injection,
@@ -306,6 +309,7 @@ async def create_virtual_printer(
         library_folder_id=body.library_folder_id,
         queue_remove_after_print=body.queue_remove_after_print,
         auto_dispatch=body.auto_dispatch,
+        auto_dispatch_first_only=body.auto_dispatch_first_only,
         queue_force_color_match=body.queue_force_color_match,
         save_ams_mapping=body.save_ams_mapping,
         gcode_injection=body.gcode_injection,
@@ -566,6 +570,8 @@ async def update_virtual_printer(
         vp.queue_remove_after_print = body.queue_remove_after_print
     if body.auto_dispatch is not None:
         vp.auto_dispatch = body.auto_dispatch
+    if body.auto_dispatch_first_only is not None:
+        vp.auto_dispatch_first_only = body.auto_dispatch_first_only
     if body.queue_force_color_match is not None:
         vp.queue_force_color_match = body.queue_force_color_match
     if body.save_ams_mapping is not None:

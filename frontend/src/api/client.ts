@@ -9306,6 +9306,9 @@ export interface VirtualPrinterConfig {
   // Queue mode: remove the file from the File Manager once its print starts.
   queue_remove_after_print: boolean;
   auto_dispatch: boolean;
+  // With auto_dispatch on: only the first job sent to an idle target starts by
+  // itself, the rest are staged until released one by one (#3299).
+  auto_dispatch_first_only: boolean;
   queue_force_color_match: boolean;
   save_ams_mapping: boolean;
   gcode_injection: boolean;
@@ -9336,6 +9339,7 @@ export const multiVirtualPrinterApi = {
     access_code?: string;
     target_printer_id?: number;
     auto_dispatch?: boolean;
+    auto_dispatch_first_only?: boolean;
     queue_force_color_match?: boolean;
     save_ams_mapping?: boolean;
     gcode_injection?: boolean;
@@ -9359,6 +9363,7 @@ export const multiVirtualPrinterApi = {
     library_folder_id?: number | null;
     queue_remove_after_print?: boolean;
     auto_dispatch?: boolean;
+    auto_dispatch_first_only?: boolean;
     queue_force_color_match?: boolean;
     save_ams_mapping?: boolean;
     gcode_injection?: boolean;

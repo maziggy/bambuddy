@@ -6417,6 +6417,10 @@ export default {
       title: 'Lancement automatique',
       description: 'Lancer automatiquement les impressions ajoutées à la file. Désactivé, les impressions attendent un lancement manuel.',
     },
+    autoDispatchFirstOnly: {
+      title: 'Seul le premier travail démarre seul',
+      description: "Le premier fichier envoyé à une imprimante sans rien en file ni en cours démarre seul. Les fichiers envoyés pendant qu'elle a un travail en cours ou en attente sont mis en attente et ne démarrent que lorsque tu appuies sur Lancer pour chacun.",
+    },
     queueForceColorMatch: {
       title: 'Forcer la correspondance des couleurs',
       description: 'Refuser l\'envoi vers une imprimante qui n\'a pas exactement le type de filament et la couleur chargés. Désactivé par défaut — sans cela, la file d\'attente utilise uniquement la correspondance par modèle et peut choisir une imprimante avec la mauvaise couleur.',

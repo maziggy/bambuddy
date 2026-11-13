@@ -291,6 +291,74 @@ class TestVirtualPrinterAutoDispatchAPI:
         assert get_resp.json()["auto_dispatch"] is False
 
 
+class TestVirtualPrinterAutoDispatchFirstOnlyAPI:
+    """auto_dispatch_first_only (#3299) on /api/v1/virtual-printers endpoints."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_defaults_to_off(self, async_client: AsyncClient):
+        """A VP starts every job itself until told to start only the first."""
+        response = await async_client.post(
+            "/api/v1/virtual-printers",
+            json={"name": "FirstOnlyDefault", "mode": "queue", "access_code": "12345678"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["auto_dispatch_first_only"] is False
+        assert response.json()["auto_dispatch"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_can_be_set_on_create(self, async_client: AsyncClient):
+        response = await async_client.post(
+            "/api/v1/virtual-printers",
+            json={
+                "name": "FirstOnlyCreate",
+                "mode": "queue",
+                "access_code": "12345678",
+                "auto_dispatch_first_only": True,
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["auto_dispatch_first_only"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_can_be_toggled_and_persists(self, async_client: AsyncClient):
+        create_resp = await async_client.post(
+            "/api/v1/virtual-printers",
+            json={"name": "FirstOnlyToggle", "mode": "queue", "access_code": "12345678"},
+        )
+        vp_id = create_resp.json()["id"]
+
+        on = await async_client.put(f"/api/v1/virtual-printers/{vp_id}", json={"auto_dispatch_first_only": True})
+        assert on.status_code == 200
+        assert on.json()["auto_dispatch_first_only"] is True
+        assert (await async_client.get(f"/api/v1/virtual-printers/{vp_id}")).json()["auto_dispatch_first_only"] is True
+
+        off = await async_client.put(f"/api/v1/virtual-printers/{vp_id}", json={"auto_dispatch_first_only": False})
+        assert off.json()["auto_dispatch_first_only"] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_updating_something_else_leaves_it_alone(self, async_client: AsyncClient):
+        create_resp = await async_client.post(
+            "/api/v1/virtual-printers",
+            json={
+                "name": "FirstOnlyKeep",
+                "mode": "queue",
+                "access_code": "12345678",
+                "auto_dispatch_first_only": True,
+            },
+        )
+        vp_id = create_resp.json()["id"]
+
+        response = await async_client.put(f"/api/v1/virtual-printers/{vp_id}", json={"auto_dispatch": False})
+
+        assert response.json()["auto_dispatch_first_only"] is True
+
+
 class TestVirtualPrinterGcodeInjectionAPI:
     """Integration tests for gcode_injection (#1516) on /api/v1/virtual-printers endpoints."""
 

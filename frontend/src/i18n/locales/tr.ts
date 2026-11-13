@@ -6393,6 +6393,10 @@ export default {
       title: 'Otomatik sevk',
       description: 'Kuyruğa eklendiğinde baskıları otomatik olarak başlat. Kapalıyken, baskılar manuel sevki bekler.',
     },
+    autoDispatchFirstOnly: {
+      title: 'Yalnızca ilk iş kendiliğinden başlar',
+      description: "Kuyrukta veya baskıda işi olmayan bir yazıcıya gönderilen ilk dosya kendiliğinden başlar. Yazıcının çalışan veya bekleyen bir işi varken gönderilen dosyalar beklemeye alınır ve yalnızca her biri için Başlat'a bastığınızda başlar.",
+    },
     queueForceColorMatch: {
       title: 'Renk eşleşmesini zorla',
       description: 'Tam olarak doğru filament türü ve rengi yüklü olmayan bir yazıcıya sevk etmeyi reddet. Varsayılan olarak kapalı — bu olmadan kuyruk yalnızca model eşleşmesi kullanır ve yanlış renk yüklü bir yazıcı seçebilir.',

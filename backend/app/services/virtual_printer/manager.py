@@ -293,6 +293,7 @@ class VirtualPrinterInstance:
         target_printer_serial: str = "",
         target_printer_id: int | None = None,
         auto_dispatch: bool = True,
+        auto_dispatch_first_only: bool = False,
         queue_force_color_match: bool = False,
         save_ams_mapping: bool = False,
         gcode_injection: bool = False,
@@ -316,6 +317,7 @@ class VirtualPrinterInstance:
         self.target_printer_serial = target_printer_serial
         self.target_printer_id = target_printer_id
         self.auto_dispatch = auto_dispatch
+        self.auto_dispatch_first_only = auto_dispatch_first_only
         self.queue_force_color_match = queue_force_color_match
         self.save_ams_mapping = save_ams_mapping
         self.gcode_injection = gcode_injection
@@ -1283,6 +1285,17 @@ class VirtualPrinterInstance:
                     # below runs once and the existing behaviour is preserved.
                     plate_ids = self._extract_plate_ids(file_path)
 
+                    # "Start the first job, stage the rest" (#3299): the first
+                    # plate of an upload starts by itself only when the target
+                    # has nothing queued and is not printing, also a print the
+                    # queue did not start; everything else waits for its own Play.
+                    first_starts_itself = (
+                        self.auto_dispatch
+                        and self.auto_dispatch_first_only
+                        and not await self._target_has_queued_work(db, target_model)
+                        and not await self._target_is_printing(db, target_model)
+                    )
+
                     # Pick a base position the same way the manual /print-queue/
                     # POST does, then hand consecutive positions to each plate
                     # so a Send All keeps plate-order execution inside the
@@ -1386,7 +1399,9 @@ class VirtualPrinterInstance:
                             plate_id=plate_id,
                             position=max_pos + offset,
                             status="pending",
-                            manual_start=not self.auto_dispatch or review_required,
+                            manual_start=not self.auto_dispatch
+                            or review_required
+                            or (self.auto_dispatch_first_only and not (first_starts_itself and offset == 1)),
                             required_filament_types=required_filament_types_json,
                             filament_overrides=filament_overrides_json,
                             bed_levelling=bed_levelling,
@@ -1479,6 +1494,61 @@ class VirtualPrinterInstance:
                 file_path.unlink(missing_ok=True)
             except OSError:
                 pass
+
+    async def _target_has_queued_work(self, db, target_model: str | None) -> bool:
+        """Whether this virtual printer's target has a job pending or printing (#3299).
+
+        A job waiting for its Play counts: staged jobs are work, so the next
+        upload is staged behind them rather than treated as a new first job.
+        With a fixed target that is the printer's own queue; for "any <model>"
+        it is the model's, jobs aimed at the model or at a printer of it.
+        """
+        from sqlalchemy import exists, or_, select as _sql_select, true
+
+        from backend.app.models.print_queue import PrintQueueItem
+        from backend.app.models.printer import Printer
+
+        busy = PrintQueueItem.status.in_(("pending", "printing"))
+        if self.target_printer_id:
+            scope = PrintQueueItem.printer_id == self.target_printer_id
+        elif target_model:
+            of_model = _sql_select(Printer.id).where(Printer.model == target_model)
+            scope = or_(PrintQueueItem.target_model == target_model, PrintQueueItem.printer_id.in_(of_model))
+        else:
+            # No target at all: any job in the queue.
+            scope = true()
+        return bool((await db.execute(_sql_select(exists().where(busy, scope)))).scalar())
+
+    async def _target_is_printing(self, db, target_model: str | None) -> bool:
+        """Whether this virtual printer's target is printing right now (#3299).
+
+        A print started on the printer or sent straight from the slicer has no
+        queue item, so the queue alone would take the next upload for a first
+        job. A connected printer is busy while it reports anything but IDLE,
+        FINISH or FAILED, the states the scheduler treats as idle. For "any
+        <model>" any printer of the model counts; a disconnected one does not.
+        """
+        if self._printer_manager is None:
+            return False
+        if self.target_printer_id:
+            printer_ids = [self.target_printer_id]
+        elif target_model:
+            from sqlalchemy import select as _sql_select
+
+            from backend.app.models.printer import Printer
+
+            rows = await db.execute(_sql_select(Printer.id).where(Printer.model == target_model))
+            printer_ids = list(rows.scalars().all())
+        else:
+            # No target at all: any printer, as for the queue.
+            printer_ids = list(self._printer_manager.get_all_statuses())
+        for printer_id in printer_ids:
+            if not self._printer_manager.is_connected(printer_id):
+                continue
+            state = self._printer_manager.get_status(printer_id)
+            if state is not None and state.state not in ("IDLE", "FINISH", "FAILED"):
+                return True
+        return False
 
     async def _broadcast_library_files_changed(self) -> None:
         """Let open File Manager pages refetch: a file arrived outside a request."""
@@ -2014,6 +2084,7 @@ class VirtualPrinterManager:
                 or instance.remote_interface_ip != (vp.remote_interface_ip or "")
                 or instance.target_printer_id != vp.target_printer_id
                 or instance.auto_dispatch != vp.auto_dispatch
+                or instance.auto_dispatch_first_only != vp.auto_dispatch_first_only
                 # Queue-mode behaviour toggle — without it the running
                 # instance silently keeps the old value until process
                 # restart (#1552 follow-up family).
@@ -2057,6 +2128,7 @@ class VirtualPrinterManager:
                     # value restarted every proxy VP on every sync.
                     target_printer_id=vp.target_printer_id,
                     auto_dispatch=vp.auto_dispatch,
+                    auto_dispatch_first_only=vp.auto_dispatch_first_only,
                     queue_force_color_match=vp.queue_force_color_match,
                     save_ams_mapping=vp.save_ams_mapping,
                     gcode_injection=vp.gcode_injection,
@@ -2078,6 +2150,7 @@ class VirtualPrinterManager:
                     serial_suffix=vp.serial_suffix,
                     target_printer_id=vp.target_printer_id,
                     auto_dispatch=vp.auto_dispatch,
+                    auto_dispatch_first_only=vp.auto_dispatch_first_only,
                     queue_force_color_match=vp.queue_force_color_match,
                     save_ams_mapping=vp.save_ams_mapping,
                     gcode_injection=vp.gcode_injection,

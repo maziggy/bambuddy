@@ -6416,6 +6416,10 @@ export default {
       title: 'Avvio automatico',
       description: 'Avvia automaticamente le stampe aggiunte alla coda. Se disattivato, le stampe attendono l\'avvio manuale.',
     },
+    autoDispatchFirstOnly: {
+      title: 'Solo il primo lavoro parte da solo',
+      description: 'Il primo file inviato a una stampante senza nulla in coda né in stampa parte da solo. I file inviati mentre ha un lavoro in corso o in attesa restano in attesa e partono solo quando premi Avvia su ciascuno.',
+    },
     queueForceColorMatch: {
       title: 'Forza corrispondenza colori',
       description: 'Rifiuta di inviare a una stampante che non ha esattamente il tipo di filamento e il colore caricato. Disattivato per impostazione predefinita — senza questo, la coda usa solo la corrispondenza per modello e potrebbe scegliere una stampante con il colore sbagliato.',

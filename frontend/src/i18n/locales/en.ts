@@ -6482,6 +6482,10 @@ export default {
       title: 'Auto-dispatch',
       description: 'Automatically start prints when added to queue. When off, prints wait for manual dispatch.',
     },
+    autoDispatchFirstOnly: {
+      title: 'Only the first job starts itself',
+      description: 'The first file sent to a printer with nothing queued or printing starts on its own. Files sent while it has a job running or waiting are staged and start only when you press Play on each.',
+    },
     queueForceColorMatch: {
       title: 'Force color match',
       description: 'Refuse to dispatch onto a printer that does not have the exact filament type and color loaded. Off by default — without this, the queue uses model-only matching and may pick a printer with the wrong color loaded.',

@@ -5357,6 +5357,10 @@ async def slice_and_persist_as_archive(
     from backend.app.services.print_cost_estimate import refresh_plate_estimates
 
     refresh_plate_estimates(new_archive)
+    # Its G-code, so a print of this slice sent from the slicer joins it (#1634)
+    from backend.app.services.archive_gcode_hash import refresh_gcode_hash_async
+
+    await refresh_gcode_hash_async(new_archive)
     db.add(new_archive)
     await db.commit()
     await db.refresh(new_archive)

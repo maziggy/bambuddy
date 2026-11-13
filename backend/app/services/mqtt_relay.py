@@ -20,6 +20,11 @@ from backend.app.utils.paho_teardown import retire_paho_client
 logger = logging.getLogger(__name__)
 
 
+# Fields the printer status topic takes from the same dict the REST status and the
+# WebSocket send, so a subscriber reads them in the shape it already knows (#3401).
+_STATUS_FIELDS_FROM_STATE = ("door_open", "active_extruder", "tray_now", "ams", "vt_tray", "hms_errors")
+
+
 class MQTTRelayService:
     """Publishes BamBuddy events to an external MQTT broker."""
 
@@ -36,6 +41,7 @@ class MQTTRelayService:
         self._broker = ""
         self._port = 1883
         self._last_printer_status: dict[int, float] = {}  # printer_id -> last publish timestamp
+        self._last_printer_connected: dict[int, bool] = {}  # printer_id -> `connected` in the last publish
         self._smart_plug_service = None  # Lazy import to avoid circular dependency
         self._settings: dict = {}  # Store settings for smart plug service
         self._disconnection_event: threading.Event | None = None
@@ -112,6 +118,11 @@ class MQTTRelayService:
                 client_id=f"bambuddy-{id(self)}",
                 protocol=mqtt.MQTTv311,
             )
+
+            # Last Will: the broker publishes this when the connection drops without a
+            # clean disconnect (crash, killed container), which would otherwise leave the
+            # retained "online" in place for good (#3401). It replaces that retained message.
+            self.client.will_set(f"{self.topic_prefix}/status", json.dumps({"status": "offline"}), qos=1, retain=True)
 
             # Set up callbacks
             self.client.on_connect = self._on_connect
@@ -250,16 +261,28 @@ class MQTTRelayService:
         printer_serial: str,
         awaiting_plate_clear: bool = False,
     ):
-        """Publish printer status change (throttled to 1 update/sec per printer)."""
+        """Publish printer status change (throttled to 1 update/sec per printer).
+
+        A change of ``connected`` is never throttled: the update that says a printer
+        dropped is retained, and held back it would leave the previous status
+        standing for as long as the printer stays quiet (#3401).
+        """
         if not self.enabled or not self.connected:
             return
 
         # Throttle status updates to avoid flooding MQTT broker
         now = time.time()
         last_publish = self._last_printer_status.get(printer_id, 0)
-        if now - last_publish < self.STATUS_THROTTLE_SECONDS:
+        last_connected = self._last_printer_connected.get(printer_id)
+        connected_changed = last_connected is not None and last_connected != state.connected
+        if not connected_changed and now - last_publish < self.STATUS_THROTTLE_SECONDS:
             return  # Skip this update, too soon since last publish
         self._last_printer_status[printer_id] = now
+        self._last_printer_connected[printer_id] = state.connected
+
+        from backend.app.services.printer_manager import printer_state_to_dict
+
+        snapshot = printer_state_to_dict(state, printer_id)
 
         # Build status payload from PrinterState
         payload = {
@@ -286,6 +309,7 @@ class MQTTRelayService:
             "heatbreak_fan_speed": state.heatbreak_fan_speed,
             "left_aux_fan_speed": state.left_aux_fan_speed,
             "exhaust_fan_present": state.exhaust_fan_present,
+            **{field: snapshot[field] for field in _STATUS_FIELDS_FROM_STATE},
             # Bambuddy-side gate, not printer telemetry (#2525). Mirrors what the
             # Web UI already receives via printer_state_to_dict, so an external
             # automation can tell "finished" from "finished and still waiting for

@@ -1300,9 +1300,16 @@ class BambuFTPClient:
                     e,
                     type(e).__name__,
                 )
-                if callback_exception is None:
-                    # A cancelled upload is deleted below; its size says nothing.
-                    self._check_unconfirmed_upload(remote_path, file_size)
+                # A cancelled upload is deleted below; its size says nothing.
+                if callback_exception is None and not self._check_unconfirmed_upload(remote_path, file_size):
+                    # Not complete on the printer: no print command for it.
+                    # NETWORK, so the caller's retry uploads it again (#3538).
+                    self.last_failure = FtpFailure(
+                        FtpFailureKind.NETWORK,
+                        f"{remote_path} did not reach its full size on the printer",
+                        None,
+                    )
+                    return False
 
             if callback_exception is not None:
                 cleanup_result: DeleteResult = DeleteResult.FAILED
@@ -1369,25 +1376,56 @@ class BambuFTPClient:
             self.last_failure = FtpFailure(kind, str(e), code)
             return False
 
-    def _check_unconfirmed_upload(self, remote_path: str, expected_size: int) -> None:
-        """Read an upload's size back when its 226 never came.
+    # How long an unconfirmed upload's size is watched for the printer to
+    # finish writing it out (#3538).
+    UNCONFIRMED_SIZE_POLL_INTERVAL = 5.0
+    UNCONFIRMED_SIZE_POLL_TIMEOUT = 120.0
 
-        The upload still counts (an H2D can take 30+ s to answer), but a
-        printer that kept a partial file should not go unnoticed. A fresh
-        connection, because this one may be waiting for that late reply.
+    def _check_unconfirmed_upload(self, remote_path: str, expected_size: int) -> bool:
+        """Read an upload's size back when its 226 never came. True if it may print.
+
+        A fresh connection, because this one may be waiting for that late
+        reply. An A1 can still be writing a large file out when the reply
+        times out: it read 0 bytes 2 s later and the full size minutes after,
+        and the print command sent in between made it refuse the file
+        (#3538). So a short size is read again until it matches or the time
+        runs out; only then is the upload a failure. A size that cannot be
+        read at all says nothing, and the upload counts as before.
         """
         server_size = _size_on_new_connection(self, remote_path)
         if server_size is None:
             logger.warning("FTP upload of %s could not be read back to check its size", remote_path)
-        elif server_size != expected_size:
-            logger.error(
-                "FTP upload of %s is %s bytes on the printer, expected %s: the file may be incomplete",
-                remote_path,
-                server_size,
-                expected_size,
-            )
-        else:
+            return True
+        if server_size == expected_size:
             logger.info("FTP upload of %s verified on a new connection (%s bytes)", remote_path, server_size)
+            return True
+        logger.info(
+            "FTP upload of %s is %s of %s bytes on the printer; waiting for it to finish writing",
+            remote_path,
+            server_size,
+            expected_size,
+        )
+        started = time.monotonic()
+        while time.monotonic() - started < self.UNCONFIRMED_SIZE_POLL_TIMEOUT:
+            time.sleep(self.UNCONFIRMED_SIZE_POLL_INTERVAL)
+            size = _size_on_new_connection(self, remote_path)
+            if size is not None:
+                server_size = size
+            if server_size == expected_size:
+                logger.info(
+                    "FTP upload of %s complete on the printer after %.0fs (%s bytes)",
+                    remote_path,
+                    time.monotonic() - started,
+                    server_size,
+                )
+                return True
+        logger.error(
+            "FTP upload of %s is %s bytes on the printer, expected %s: incomplete, not printing it",
+            remote_path,
+            server_size,
+            expected_size,
+        )
+        return False
 
     def delete_file(self, remote_path: str) -> DeleteResult:
         """Delete a file from the printer.

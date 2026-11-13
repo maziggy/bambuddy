@@ -3,12 +3,18 @@ import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { Plug, Power, PowerOff, Loader2, Trash2, Settings2, Thermometer, Clock, Wifi, WifiOff, Edit2, Bell, Calendar, LayoutGrid, ExternalLink, Home, Radio, Eye, Globe } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
-import type { SmartPlug, SmartPlugUpdate } from '../api/client';
+import type { SmartPlug, SmartPlugTempSource, SmartPlugUpdate } from '../api/client';
 import { Card, CardContent } from './Card';
 import { Button } from './Button';
 import { ConfirmModal } from './ConfirmModal';
 import { useToast } from '../contexts/ToastContext';
 import { NumberInput } from './NumberInput';
+
+// What temperature-based auto-off can wait for (#3464), in display order.
+const TEMP_SOURCES: { value: SmartPlugTempSource; labelKey: string; descriptionKey: string }[] = [
+  { value: 'nozzle', labelKey: 'smartPlugs.tempSourceNozzle', descriptionKey: 'smartPlugs.tempSourceNozzleDescription' },
+  { value: 'bed', labelKey: 'smartPlugs.tempSourceBed', descriptionKey: 'smartPlugs.tempSourceBedDescription' },
+];
 
 interface SmartPlugCardProps {
   plug: SmartPlug;
@@ -38,6 +44,8 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
   });
 
   const linkedPrinter = printers?.find(p => p.id === plug.printer_id);
+  // Anything unknown waits for the nozzle, as the backend does.
+  const tempSource = TEMP_SOURCES.find((s) => s.value === plug.off_temp_source) ?? TEMP_SOURCES[0];
 
   // Control mutation with optimistic updates
   const controlMutation = useMutation({
@@ -458,18 +466,58 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
                       />
                     </div>
                   ) : (
-                    <div>
-                      <label className="block text-xs text-bambu-gray mb-1">{t('smartPlugs.tempThreshold')}</label>
-                      <NumberInput
-                        min={30}
-                        max={100}
-                        value={plug.off_temp_threshold}
-                        onChange={(v) => updateMutation.mutate({ off_temp_threshold: v })}
-                        fallback={70}
-                        className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:border-bambu-green focus:outline-none"
-                      />
-                      <p className="text-xs text-bambu-gray mt-1">{t('smartPlugs.tempThresholdDescription')}</p>
-                    </div>
+                    <>
+                      {/* What has to cool before the plug turns off (#3464):
+                          the bed stays hot long after the nozzle. */}
+                      <div>
+                        <p className="text-xs text-bambu-gray mb-1">{t('smartPlugs.tempSource')}</p>
+                        <div className="flex gap-2">
+                          {TEMP_SOURCES.map(({ value, labelKey }) => (
+                            <button
+                              key={value}
+                              onClick={() => updateMutation.mutate({ off_temp_source: value })}
+                              className={`flex-1 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                                tempSource.value === value
+                                  ? 'bg-bambu-green text-white'
+                                  : 'bg-bambu-dark text-bambu-gray hover:text-white'
+                              }`}
+                            >
+                              {t(labelKey)}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-xs text-bambu-gray mt-1">
+                          {t(tempSource.descriptionKey)}
+                        </p>
+                      </div>
+                      {tempSource.value === 'nozzle' && (
+                        <div>
+                          <label className="block text-xs text-bambu-gray mb-1">{t('smartPlugs.nozzleTempThreshold')}</label>
+                          <NumberInput
+                            min={30}
+                            max={100}
+                            value={plug.off_temp_threshold}
+                            onChange={(v) => updateMutation.mutate({ off_temp_threshold: v })}
+                            fallback={70}
+                            className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:border-bambu-green focus:outline-none"
+                          />
+                        </div>
+                      )}
+                      {tempSource.value === 'bed' && (
+                        <div>
+                          <label className="block text-xs text-bambu-gray mb-1">{t('smartPlugs.bedTempThreshold')}</label>
+                          <NumberInput
+                            min={20}
+                            max={100}
+                            value={plug.off_bed_temp_threshold}
+                            onChange={(v) => updateMutation.mutate({ off_bed_temp_threshold: v })}
+                            fallback={35}
+                            className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:border-bambu-green focus:outline-none"
+                          />
+                          <p className="text-xs text-bambu-gray mt-1">{t('smartPlugs.bedTempThresholdDescription')}</p>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )}

@@ -191,6 +191,54 @@ class TestSmartPlugsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_temp_mode_waits_for_the_nozzle_by_default(self, async_client: AsyncClient, smart_plug_factory):
+        """#3464: plugs that never chose a source keep the nozzle-only behaviour."""
+        plug = await smart_plug_factory()
+
+        response = await async_client.get(f"/api/v1/smart-plugs/{plug.id}")
+
+        assert response.status_code == 200
+        assert response.json()["off_temp_source"] == "nozzle"
+        assert response.json()["off_bed_temp_threshold"] == 35
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_off_temp_source(self, async_client: AsyncClient, smart_plug_factory):
+        """#3464: temperature mode can wait for the bed, with its own threshold."""
+        plug = await smart_plug_factory(off_delay_mode="temperature")
+
+        response = await async_client.patch(
+            f"/api/v1/smart-plugs/{plug.id}", json={"off_temp_source": "bed", "off_bed_temp_threshold": 40}
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["off_temp_source"] == "bed"
+        assert result["off_bed_temp_threshold"] == 40
+        assert result["off_temp_threshold"] == 70  # the nozzle's own threshold is untouched
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"off_temp_source": "chamber"},
+            {"off_temp_source": "both"},
+            {"off_bed_temp_threshold": 10},
+            {"off_bed_temp_threshold": 130},
+        ],
+    )
+    async def test_update_rejects_invalid_temp_source_settings(
+        self, async_client: AsyncClient, smart_plug_factory, payload
+    ):
+        plug = await smart_plug_factory()
+
+        response = await async_client.patch(f"/api/v1/smart-plugs/{plug.id}", json=payload)
+
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_update_schedule_settings(self, async_client: AsyncClient, smart_plug_factory, db_session):
         """Verify schedule settings can be updated."""
         plug = await smart_plug_factory(schedule_enabled=False)

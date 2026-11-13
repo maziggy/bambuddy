@@ -3518,6 +3518,23 @@ class PrintScheduler:
                     )
                     continue
 
+                # #3536: the matcher rejects a printer whose nozzle cannot print
+                # the file, so waking one only spends this pass's single wake and
+                # the boot wait. A powered-off printer keeps its last status, so
+                # the nozzle is readable here. Fail-safe: no status or no reported
+                # nozzle means "fits" (None) and the printer is woken as before.
+                label = _wrong_nozzle_label(
+                    printer.name, printer_manager.get_status(printer.id), candidate.sliced_nozzle
+                )
+                if label:
+                    logger.info(
+                        "Not powering on printer %s for a %s job: its nozzle cannot print the file (%s)",
+                        printer.id,
+                        candidate.target_model,
+                        label,
+                    )
+                    continue
+
                 shortfall = self._cached_filament_shortfall(printer.id, required_types, filament_overrides)
                 if shortfall:
                     logger.info(

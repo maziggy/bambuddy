@@ -8,7 +8,7 @@ printer filter built on it.
 """
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -20,6 +20,7 @@ from backend.app.services.print_scheduler import (
     PrintScheduler,
     _asks_nothing_new,
     _candidates_for,
+    _ModelCandidate,
     _sliced_nozzle,
     _wrong_nozzle_label,
 )
@@ -273,3 +274,51 @@ class TestMatcherNozzle:
         _, reason = await _find(a1_farm, PrintScheduler(), states, sliced_nozzle=0.6)
         assert PrintScheduler._is_busy_only(reason) is False
         assert _asks_nothing_new(reason) is False
+
+
+# --- Task 4: the wake path does not power on a printer with the wrong nozzle --
+
+
+class TestWakeNozzle:
+    async def _wake(self, ctx, sliced_nozzle):
+        scheduler = PrintScheduler()
+        plug = SimpleNamespace(id=1, auto_on=True, enabled=True, controls_printer_power=True)
+        power_on = AsyncMock(return_value=True)
+        # Both printers are off but keep their last status (A1-1 0.4, A1-2 0.6).
+        states = {1: _state("0.4"), 2: _state("0.6")}
+        with (
+            patch("backend.app.services.print_scheduler.printer_manager.is_connected", MagicMock(return_value=False)),
+            patch(
+                "backend.app.services.print_scheduler.printer_manager.is_awaiting_plate_clear",
+                MagicMock(return_value=False),
+            ),
+            patch("backend.app.services.print_scheduler.printer_manager.get_status", lambda pid: states.get(pid)),
+            patch.object(scheduler, "_cached_filament_shortfall", MagicMock(return_value=[])),
+            patch.object(scheduler, "_get_smart_plugs", AsyncMock(return_value=[plug])),
+            patch.object(scheduler, "_power_on_and_wait", power_on),
+        ):
+            async with ctx.session_maker() as db:
+                return await scheduler._wake_printer_for_model(
+                    db,
+                    [
+                        _ModelCandidate(
+                            target_model="A1",
+                            sliced_for=None,
+                            required_filament_types=None,
+                            filament_overrides=None,
+                            sliced_nozzle=sliced_nozzle,
+                        )
+                    ],
+                    None,
+                    set(),
+                    {1, 2},
+                    require_plate_clear=False,
+                )
+
+    @pytest.mark.asyncio
+    async def test_wakes_the_printer_whose_nozzle_fits(self, a1_farm):
+        assert await self._wake(a1_farm, 0.6) == (2, 2)
+
+    @pytest.mark.asyncio
+    async def test_unknown_sliced_nozzle_wakes_the_least_worn_as_before(self, a1_farm):
+        assert await self._wake(a1_farm, None) == (1, 1)

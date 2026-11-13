@@ -5192,6 +5192,9 @@ async def _claim_slicer_resend_archive(db: AsyncSession, printer_id: int, source
     find its archive by the file's bytes. Not one a merge is moving. Held in
     ``archive_work`` from here, with no await between, until the caller
     releases it once the run is open.
+
+    Returns the archive and whether something else holds it already: a queue
+    dispatch uploading or printing its file, which the file must stay for.
     """
     from backend.app.models.archive import PrintArchive
     from backend.app.services import archive_work
@@ -5219,8 +5222,9 @@ async def _claim_slicer_resend_archive(db: AsyncSession, printer_id: int, source
     for candidate in candidates:
         if archive_work.is_merging(candidate.id):
             continue
+        in_use = archive_work.is_held(candidate.id)
         archive_work.hold(candidate.id)
-        return candidate
+        return candidate, in_use
     return None
 
 
@@ -5235,16 +5239,18 @@ async def _start_slicer_resend_run(
     started_at: datetime | None,
     original_filename: str | None,
     logger: logging.Logger,
+    file_in_use: bool = False,
 ):
     """Start this print's run on the archive ``_claim_slicer_resend_archive``
     found (#1634). The archive takes the new file in place of its own, unless
-    another print of it is running: that one still reads the file (its pauses,
+    another print of it is running, or a queue dispatch holds it
+    (``file_in_use``): that one still reads the file (its upload, pauses,
     objects and estimate), and the G-code is the same. None when the printer
     was deleted meanwhile; the caller stops.
     """
     from backend.app.models.print_log import INCLUDE_OPEN_RUNS, RUN_OPEN, PrintLogEntry
 
-    printing_elsewhere = (
+    printing_elsewhere = file_in_use or (
         await db.scalar(
             select(PrintLogEntry.id)
             .where(PrintLogEntry.archive_id == archive.id, PrintLogEntry.status == RUN_OPEN)
@@ -6753,8 +6759,9 @@ async def on_print_start(printer_id: int, data: dict):
             # download's is the file's own name, as before.
             start_filename = downloaded_filename if reused_3mf_from is not None else None
             try:
-                joined = await _claim_slicer_resend_archive(db, printer_id, temp_path)
-                if joined is not None:
+                claimed = await _claim_slicer_resend_archive(db, printer_id, temp_path)
+                if claimed is not None:
+                    joined, file_in_use = claimed
                     joined_archive_id = joined.id
                     archive = await _start_slicer_resend_run(
                         db,
@@ -6766,6 +6773,7 @@ async def on_print_start(printer_id: int, data: dict):
                         started_at=detected_at,
                         original_filename=start_filename,
                         logger=logger,
+                        file_in_use=file_in_use,
                     )
                     if archive is None:
                         return

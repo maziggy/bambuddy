@@ -264,3 +264,96 @@ class TestName:
 
         (row,) = await _archives(db_session)
         assert row.print_name == "Wall bracket, left"
+
+
+class TestWhatTheArchiveKeeps:
+    async def test_the_saved_ams_pick_stays(self, test_engine, db_session, printer_factory, files):
+        printer = await printer_factory()
+        pick = {"mapping": [0, 2], "printer_id": printer.id}
+        await _archived(db_session, printer.id, files, extra_data={"slicer_ams_mapping": pick})
+
+        await _send_again(test_engine, printer, files)
+
+        (row,) = await _archives(db_session)
+        assert row.extra_data["slicer_ams_mapping"] == pick
+
+    async def test_a_copy_that_fails_its_check_leaves_the_old_file(
+        self, test_engine, db_session, printer_factory, files
+    ):
+        """Same file name: the copy goes to a temporary name first, so a
+        truncated one never lands on the archive's file."""
+        printer = await printer_factory()
+        archive = await _archived(db_session, printer.id, files, name="Bracket_plate_1.gcode.3mf")
+        old_file = files / archive.file_path
+        old_bytes = old_file.read_bytes()
+
+        def truncated(_src, dst, *_args, **_kwargs):
+            dst.write_bytes(b"not a zip")
+
+        with patch("backend.app.services.archive._copy_and_fsync", side_effect=truncated):
+            await _send_again(test_engine, printer, files)
+
+        (row,) = await _archives(db_session)
+        assert (row.file_path, row.content_hash) == (archive.file_path, archive.content_hash)
+        assert old_file.read_bytes() == old_bytes
+        assert len(await _open_runs(db_session, archive.id)) == 1
+
+    async def test_a_file_a_queue_dispatch_holds_is_kept(self, test_engine, db_session, printer_factory, files):
+        """A queue dispatch holding the archive uploads or prints its file: the
+        resend adds its run but does not take the file away under it."""
+        printer = await printer_factory()
+        archive = await _archived(db_session, printer.id, files)
+        old_file = files / archive.file_path
+
+        archive_work.hold(archive.id)
+        try:
+            await _send_again(test_engine, printer, files)
+            assert archive_work.is_held(archive.id), "the dispatch's hold is its own"
+        finally:
+            archive_work.release(archive.id)
+
+        (row,) = await _archives(db_session)
+        assert row.file_path == archive.file_path
+        assert old_file.exists()
+        assert len(await _open_runs(db_session, archive.id)) == 1
+
+
+class TestEvents:
+    async def test_a_joined_archive_is_updated_not_created(self, test_engine, db_session, printer_factory, files):
+        printer = await printer_factory()
+        archive = await _archived(db_session, printer.id, files)
+
+        mocks = await _send_again(test_engine, printer, files)
+
+        mocks["ws_manager"].send_archive_created.assert_not_awaited()
+        mocks["mqtt_relay"].on_archive_created.assert_not_awaited()
+        (event,), _ = mocks["ws_manager"].send_archive_updated.await_args
+        assert event["id"] == archive.id
+
+    async def test_a_new_archive_is_created(self, test_engine, db_session, printer_factory, files):
+        printer = await printer_factory()
+
+        mocks = await _send_again(test_engine, printer, files)
+
+        mocks["ws_manager"].send_archive_created.assert_awaited_once()
+        mocks["mqtt_relay"].on_archive_created.assert_awaited_once()
+
+
+class TestPrinterDeleted:
+    async def test_a_joined_archive_is_not_removed_as_one_just_written(
+        self, test_engine, db_session, printer_factory, files
+    ):
+        """The check after writing removes an archive this start wrote for a
+        printer deleted meanwhile. A joined archive is not this start's: it
+        holds earlier runs, and its adoption checked the printer itself."""
+        printer = await printer_factory()
+        archive = await _archived(db_session, printer.id, files)
+        drop = AsyncMock(return_value=True)
+
+        with patch("backend.app.main._drop_archive_of_deleted_printer", drop):
+            await _send_again(test_engine, printer, files)
+
+        drop.assert_not_awaited()
+        (row,) = await _archives(db_session)
+        assert row.id == archive.id
+        assert len(await _open_runs(db_session, archive.id)) == 1

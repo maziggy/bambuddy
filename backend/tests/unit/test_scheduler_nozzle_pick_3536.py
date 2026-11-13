@@ -30,6 +30,7 @@ from backend.app.services.print_scheduler import (
     _sliced_nozzle,
     _wrong_nozzle_label,
 )
+from backend.tests.unit.test_scheduler_dispatch_order_2915 import PRINTERS as ORDER_PRINTERS, _farm
 
 # --- Sliced diameter per candidate -------------------------------------------
 
@@ -193,7 +194,7 @@ async def a1_farm():
         await engine.dispose()
 
 
-async def _find(ctx, scheduler, states, *, exclude=frozenset(), connected=True, idle=None, **kwargs):
+async def _find(ctx, scheduler, states, *, model="A1", exclude=frozenset(), connected=True, idle=None, **kwargs):
     """Run the matcher; ``states`` maps printer id to its reported state (or None)."""
     idle = idle or {}
     with (
@@ -205,7 +206,7 @@ async def _find(ctx, scheduler, states, *, exclude=frozenset(), connected=True, 
         patch.object(scheduler, "_is_printer_idle", lambda pid, *_a, **_k: idle.get(pid, True)),
     ):
         async with ctx.session_maker() as db:
-            return await scheduler._find_idle_printer_for_model(db, "A1", set(exclude), **kwargs)
+            return await scheduler._find_idle_printer_for_model(db, model, set(exclude), **kwargs)
 
 
 class TestMatcherNozzle:
@@ -502,3 +503,84 @@ class TestDryingPrinterIds:
     @pytest.mark.asyncio
     async def test_unknown_sliced_nozzle_counts_every_printer(self, a1_farm):
         assert await self._ids(a1_farm, None, {1: _state("0.4"), 2: _state("0.6")}) == {1, 2}
+
+
+# --- Chosen pick order (#2915) plus nozzle ------------------------------------
+
+
+class TestPickOrderNozzle:
+    """The nozzle check passes a printer over whatever order the setting picks in.
+
+    Farm from the #2915 tests: X1C-1 most worn (priority 2), X1C-2 priority 1,
+    X1C-3 fewest hours (no priority).
+    """
+
+    async def _pick(self, setting, nozzles, sliced_nozzle=0.6):
+        engine, ctx = await _farm(setting, **ORDER_PRINTERS)
+        try:
+            states = {pid: _state(d) for pid, d in nozzles.items()}
+            return await _find(ctx, PrintScheduler(), states, model="X1C", sliced_nozzle=sliced_nozzle)
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("setting", "nozzles", "expected"),
+        [
+            ("priority", {1: "0.6", 2: "0.4", 3: "0.6"}, 1),  # priority 1 has the wrong nozzle
+            ("priority", {1: "0.4", 2: "0.4", 3: "0.6"}, 3),  # only the one without priority fits
+            ("most_hours", {1: "0.4", 2: "0.6", 3: "0.6"}, 2),  # the most worn has the wrong nozzle
+            ("fewest_hours", {1: "0.6", 2: "0.6", 3: "0.4"}, 2),  # the least worn has the wrong nozzle
+        ],
+    )
+    async def test_the_next_printer_in_the_chosen_order_whose_nozzle_fits(self, setting, nozzles, expected):
+        assert await self._pick(setting, nozzles) == (expected, None)
+
+    @pytest.mark.asyncio
+    async def test_the_reason_names_the_printers_in_the_chosen_order(self):
+        assert await self._pick("priority", {1: "0.4", 2: "0.4", 3: "0.4"}) == (
+            None,
+            "No X1C has a 0.6mm nozzle: X1C-2 (0.4mm), X1C-1 (0.4mm), X1C-3 (0.4mm)",
+        )
+
+    @pytest.mark.asyncio
+    async def test_the_wake_step_passes_over_the_first_in_order_with_the_wrong_nozzle(self):
+        """All off; X1C-2 (priority 1) last reported 0.4, so X1C-1 is woken instead."""
+        engine, ctx = await _farm("priority", **ORDER_PRINTERS)
+        scheduler = PrintScheduler()
+        plug = SimpleNamespace(id=1, auto_on=True, enabled=True, controls_printer_power=True)
+        states = {1: _state("0.6"), 2: _state("0.4"), 3: _state("0.6")}
+        try:
+            with (
+                patch(
+                    "backend.app.services.print_scheduler.printer_manager.is_connected", MagicMock(return_value=False)
+                ),
+                patch(
+                    "backend.app.services.print_scheduler.printer_manager.is_awaiting_plate_clear",
+                    MagicMock(return_value=False),
+                ),
+                patch("backend.app.services.print_scheduler.printer_manager.get_status", lambda pid: states.get(pid)),
+                patch.object(scheduler, "_cached_filament_shortfall", MagicMock(return_value=[])),
+                patch.object(scheduler, "_get_smart_plugs", AsyncMock(return_value=[plug])),
+                patch.object(scheduler, "_power_on_and_wait", AsyncMock(return_value=True)),
+            ):
+                async with ctx.session_maker() as db:
+                    woken = await scheduler._wake_printer_for_model(
+                        db,
+                        [
+                            _ModelCandidate(
+                                target_model="X1C",
+                                sliced_for=None,
+                                required_filament_types=None,
+                                filament_overrides=None,
+                                sliced_nozzle=0.6,
+                            )
+                        ],
+                        None,
+                        set(),
+                        {1, 2, 3},
+                        require_plate_clear=False,
+                    )
+        finally:
+            await engine.dispose()
+        assert woken == (1, 1)

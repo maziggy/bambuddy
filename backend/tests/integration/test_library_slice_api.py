@@ -587,14 +587,30 @@ class TestSliceLibraryFile:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_3mf_falls_back_to_embedded_settings_on_cli_failure(
-        self, async_client: AsyncClient, db_session, slice_test_setup
+    @pytest.mark.parametrize(
+        ("source_model", "target_model", "falls_back"),
+        [
+            # Same printer: the file's own settings are a valid slice for it.
+            ("Bambu Lab X1 Carbon", "Bambu Lab X1 Carbon", True),
+            # #3535: another printer, or one side unknown -- the fallback would
+            # hand back G-code for the file's printer as a completed slice.
+            ("Bambu Lab P1S", "Bambu Lab X1 Carbon", False),
+            (None, "Bambu Lab X1 Carbon", False),
+            ("Bambu Lab X1 Carbon", None, False),
+        ],
+    )
+    async def test_3mf_falls_back_to_embedded_settings_on_cli_failure_only_for_its_own_printer(
+        self, async_client: AsyncClient, db_session, slice_test_setup, source_model, target_model, falls_back
     ):
         # When the slicer CLI fails on the --load-settings path (segfault
         # on complex H2D models), Bambuddy retries with no profile triplet
-        # so the CLI uses the file's embedded settings.
+        # so the CLI uses the file's embedded settings -- which describe the
+        # printer the file was sliced for, so only when that is the target.
+        settings = {"prime_tower_brim_width": "-1"}
+        if source_model:
+            settings["printer_model"] = source_model
         src_3mf_path = slice_test_setup["tmp_path"] / "library" / "files" / "complex.3mf"
-        src_3mf_path.write_bytes(_make_3mf_with_settings({"prime_tower_brim_width": "-1"}))
+        src_3mf_path.write_bytes(_make_3mf_with_settings(settings))
         threemf = LibraryFile(
             filename="complex.3mf",
             file_path=str(src_3mf_path.relative_to(slice_test_setup["tmp_path"])),
@@ -602,8 +618,20 @@ class TestSliceLibraryFile:
             file_size=src_3mf_path.stat().st_size,
         )
         db_session.add(threemf)
+        printer_id = slice_test_setup["printer_id"]
+        if target_model:
+            target = LocalPreset(
+                name="# Target printer 0.4 nozzle",
+                preset_type="printer",
+                source="orcaslicer",
+                setting=json.dumps({"name": "Target printer 0.4 nozzle", "printer_model": target_model}),
+            )
+            db_session.add(target)
         await db_session.commit()
         await db_session.refresh(threemf)
+        if target_model:
+            await db_session.refresh(target)
+            printer_id = target.id
 
         call_count = {"n": 0}
 
@@ -632,7 +660,7 @@ class TestSliceLibraryFile:
         response = await async_client.post(
             f"/api/v1/library/files/{threemf.id}/slice",
             json={
-                "printer_preset_id": slice_test_setup["printer_id"],
+                "printer_preset_id": printer_id,
                 "process_preset_id": slice_test_setup["process_id"],
                 "filament_preset_id": slice_test_setup["filament_id"],
             },
@@ -640,9 +668,14 @@ class TestSliceLibraryFile:
         assert response.status_code == 202
 
         final = await _wait_for_job(async_client, response.json()["job_id"])
-        assert final["status"] == "completed", final
-        assert final["result"]["used_embedded_settings"] is True
-        assert call_count["n"] == 2  # primary + fallback retry
+        if falls_back:
+            assert final["status"] == "completed", final
+            assert final["result"]["used_embedded_settings"] is True
+            assert call_count["n"] == 2  # primary + fallback retry
+        else:
+            assert final["status"] == "failed", final
+            assert final["error_status"] == 502
+            assert call_count["n"] == 1  # no retry with another printer's settings
 
     @pytest.mark.asyncio
     @pytest.mark.integration

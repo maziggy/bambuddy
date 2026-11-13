@@ -25,6 +25,7 @@ from backend.app.core.logging_filters import (
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
+from backend.app.models.virtual_printer import VirtualPrinter
 from backend.app.utils.printer_models import PRINTER_MODEL_ID_MAP, PRINTER_MODEL_MAP
 
 logger = logging.getLogger(__name__)
@@ -266,8 +267,8 @@ def _is_model_name(name: str, model: str | None) -> bool:
 async def collect_sensitive_strings(db: AsyncSession) -> dict[str, str]:
     """Collect known sensitive values from the database for log redaction.
 
-    Covers printer names, serial numbers, IP addresses, access codes, auth
-    usernames, and the Bambu Cloud email. Pass the result to
+    Covers printer names, serial numbers (virtual printers' too), IP
+    addresses, access codes, auth usernames, and the Bambu Cloud email. Pass the result to
     :func:`sanitize_log_content`.
     """
     sensitive_strings: dict[str, str] = {}
@@ -285,6 +286,19 @@ async def collect_sensitive_strings(db: AsyncSession) -> dict[str, str]:
             sensitive_strings[ip_address] = "[IP]"
         if access_code:
             sensitive_strings[access_code] = "[ACCESS_CODE]"
+
+    # Virtual printer serials. Stored only as a suffix: the serial is the
+    # model's prefix plus it, and many prefixes (A2L, P2S, H2D, X2D) are past
+    # what the serial pattern below matches, so the certificate log lines
+    # carried them whole (#3526). Every prefix, so a log written before the
+    # VP's model was changed is covered as well.
+    from backend.app.services.virtual_printer.manager import MODEL_SERIAL_PREFIXES, _get_serial_for_model
+
+    result = await db.execute(select(VirtualPrinter.serial_suffix))
+    for (suffix,) in result.all():
+        if suffix:
+            for model in (*MODEL_SERIAL_PREFIXES, ""):
+                sensitive_strings[_get_serial_for_model(model, suffix)] = "[SERIAL]"
 
     # Auth usernames
     result = await db.execute(select(User.username))

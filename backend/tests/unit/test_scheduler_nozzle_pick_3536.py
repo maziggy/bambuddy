@@ -465,3 +465,25 @@ class TestShortHoldNozzle:
     @pytest.mark.asyncio
     async def test_moved_to_a_printer_whose_nozzle_fits(self, a1_farm):
         assert await self._release(a1_farm, {1: _state("0.6"), 2: _state("0.6")}) == (True, 2)
+
+
+# --- Auto-drying: which printers an "Any model" job counts for ---------------
+
+
+class TestDryingPrinterIds:
+    """An "Any A1" job that no 0.4 mm A1 can print must not block or trigger drying there."""
+
+    async def _ids(self, ctx, nozzle, states):
+        item_id = await _add_any_a1(ctx, nozzle)
+        with patch("backend.app.services.print_scheduler.printer_manager.get_status", lambda pid: states.get(pid)):
+            async with ctx.session_maker() as db:
+                item = await _load(db, item_id)
+                return await PrintScheduler()._model_job_printer_ids(db, item, ALL_PRINTERS, {})
+
+    @pytest.mark.asyncio
+    async def test_only_printers_whose_nozzle_fits_count(self, a1_farm):
+        assert await self._ids(a1_farm, 0.6, {1: _state("0.4"), 2: _state("0.6")}) == {2}
+
+    @pytest.mark.asyncio
+    async def test_unknown_sliced_nozzle_counts_every_printer(self, a1_farm):
+        assert await self._ids(a1_farm, None, {1: _state("0.4"), 2: _state("0.6")}) == {1, 2}

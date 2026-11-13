@@ -6309,7 +6309,10 @@ class PrintScheduler:
         of each of its candidate models, in its location, that its creator may use.
 
         ``cache`` holds one lookup per model, location and creator for the pass,
-        so a long queue of model jobs does not query once per job."""
+        so a long queue of model jobs does not query once per job.
+
+        A printer whose last known nozzle cannot print the file is left out
+        (#3536): the job stays pending there, so it must not hold drying off."""
         printer_ids: set[int] = set()
         for candidate in _candidates_for(item):
             if not candidate.target_model:
@@ -6318,7 +6321,16 @@ class PrintScheduler:
             if key not in cache:
                 printers = await self._printers_for_model(db, candidate.target_model, item.target_location, scope)
                 cache[key] = {printer.id for printer in printers}
-            printer_ids |= cache[key]
+            # #3536: a job with no fitting nozzle now stays pending instead of
+            # failing at once, so it must not count for a printer whose last
+            # known nozzle cannot print it (it would block or trigger drying
+            # there for good). Unknown nozzle fits (fail-safe). The cache stays
+            # per model; the filter runs per candidate, not per cache entry.
+            printer_ids |= {
+                pid
+                for pid in cache[key]
+                if _wrong_nozzle_label("", printer_manager.get_status(pid), candidate.sliced_nozzle) is None
+            }
         return printer_ids
 
     async def _check_auto_drying(

@@ -2568,3 +2568,140 @@ class TestSpoolmanSlotAssignmentDuringRunout:
 
         db_session.expunge_all()
         assert await db_session.get(SpoolmanSlotAssignment, row_id) is None
+
+
+class TestAutoUnlinkZeroColourIsBlank:
+    """#3526: a blank tray can arrive as colour ``00000000`` rather than "".
+
+    Four printers lost MQTT for a minute or two; on reconnect an A1 mini's AMS
+    lite and an A2L's external spool first reported ``00000000`` with no type,
+    mid-print, and four assignments were deleted as fingerprint mismatches. The
+    runout guard, the presence-bit guard and the grace hold all only knew an
+    empty colour as blank.
+    """
+
+    BLANK = {"tray_type": "", "tray_color": "00000000"}
+
+    @staticmethod
+    async def _assignment(db_session, printer, spool, ams_id=0, tray_id=1):
+        from backend.app.models.spool_assignment import SpoolAssignment
+
+        assignment = SpoolAssignment(
+            spool_id=spool.id,
+            printer_id=printer.id,
+            ams_id=ams_id,
+            tray_id=tray_id,
+            fingerprint_color="91202BFF",
+            fingerprint_type="PLA",
+        )
+        db_session.add(assignment)
+        await db_session.commit()
+        return assignment.id
+
+    @staticmethod
+    async def _exists(db_session, assignment_id):
+        from backend.app.models.spool_assignment import SpoolAssignment
+
+        db_session.expunge_all()
+        return await db_session.get(SpoolAssignment, assignment_id) is not None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_zero_colour_blank_mid_print_keeps_the_assignment(
+        self, async_client: AsyncClient, printer_factory, spool_factory, db_session: AsyncSession
+    ):
+        """Held past the grace period too: during a print it is a runout, never
+        a removal, however long it lasts."""
+        from backend.app.services import slot_unlink_grace
+
+        printer = await printer_factory(name="A1 mini")
+        spool = await spool_factory(material="PLA+", rgba="91202BFF")
+        assignment_id = await self._assignment(db_session, printer, spool)
+
+        ams_data = [{"id": 0, "tray": [{"id": 1, **self.BLANK, "state": 3}]}]
+        clock = [1000.0]
+        with patch.object(slot_unlink_grace, "_now", lambda: clock[0]):
+            await TestAutoUnlinkOccupiedSlot._run(printer.id, ams_data, _make_printing_status(ams_data, state="PAUSE"))
+            clock[0] += slot_unlink_grace.GRACE_SECONDS
+            await TestAutoUnlinkOccupiedSlot._run(printer.id, ams_data, _make_printing_status(ams_data, state="PAUSE"))
+
+        assert await self._exists(db_session, assignment_id), "a blank report mid-print is a runout, not a swap"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_zero_colour_blank_on_the_external_spool_mid_print_keeps_the_assignment(
+        self, async_client: AsyncClient, printer_factory, spool_factory, db_session: AsyncSession
+    ):
+        from backend.app.services import slot_unlink_grace
+
+        printer = await printer_factory(name="A2L")
+        spool = await spool_factory(material="PLA+", rgba="E1E4E5FF")
+        assignment_id = await self._assignment(db_session, printer, spool, ams_id=255, tray_id=0)
+
+        status = _make_mock_status(ams_data=[], vt_tray=[{"id": "254", **self.BLANK}])
+        status.state = "RUNNING"
+        clock = [1000.0]
+        with patch.object(slot_unlink_grace, "_now", lambda: clock[0]):
+            await TestAutoUnlinkOccupiedSlot._run(printer.id, [], status)
+            clock[0] += slot_unlink_grace.GRACE_SECONDS
+            await TestAutoUnlinkOccupiedSlot._run(printer.id, [], status)
+
+        assert await self._exists(db_session, assignment_id)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_zero_colour_blank_from_an_occupied_slot_keeps_the_assignment(
+        self, async_client: AsyncClient, printer_factory, spool_factory, db_session: AsyncSession
+    ):
+        from backend.app.services import slot_unlink_grace
+
+        printer = await printer_factory(name="A1 mini")
+        spool = await spool_factory(material="PLA+", rgba="91202BFF")
+        assignment_id = await self._assignment(db_session, printer, spool)
+
+        ams_data = [{"id": 0, "tray": [{"id": 1, "exists": True, **self.BLANK, "state": 3}]}]
+        clock = [1000.0]
+        with patch.object(slot_unlink_grace, "_now", lambda: clock[0]):
+            await TestAutoUnlinkOccupiedSlot._run(printer.id, ams_data, _make_printing_status(ams_data, state="IDLE"))
+            clock[0] += slot_unlink_grace.GRACE_SECONDS
+            await TestAutoUnlinkOccupiedSlot._run(printer.id, ams_data, _make_printing_status(ams_data, state="IDLE"))
+
+        assert await self._exists(db_session, assignment_id)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_zero_colour_blank_while_idle_is_held_for_the_grace_period(
+        self, async_client: AsyncClient, printer_factory, spool_factory, db_session: AsyncSession
+    ):
+        from backend.app.services import slot_unlink_grace
+
+        printer = await printer_factory(name="A1 mini")
+        spool = await spool_factory(material="PLA+", rgba="91202BFF")
+        assignment_id = await self._assignment(db_session, printer, spool)
+
+        ams_data = [{"id": 0, "tray": [{"id": 1, **self.BLANK, "state": 3}]}]
+        clock = [1000.0]
+        with patch.object(slot_unlink_grace, "_now", lambda: clock[0]):
+            await TestAutoUnlinkOccupiedSlot._run(printer.id, ams_data, _make_printing_status(ams_data, state="IDLE"))
+            assert await self._exists(db_session, assignment_id), "one blank push is not a removal"
+
+            clock[0] += slot_unlink_grace.GRACE_SECONDS
+            await TestAutoUnlinkOccupiedSlot._run(printer.id, ams_data, _make_printing_status(ams_data, state="IDLE"))
+
+        assert not await self._exists(db_session, assignment_id), "a slot that stays blank is still unlinked"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_clear_spool_reporting_zero_colour_is_not_blank(
+        self, async_client: AsyncClient, printer_factory, spool_factory, db_session: AsyncSession
+    ):
+        """A clear filament reports ``00000000`` too, but with its type: a clear
+        PETG in place of the assigned PLA is a swap, even mid-print."""
+        printer = await printer_factory(name="A1 mini")
+        spool = await spool_factory(material="PLA+", rgba="91202BFF")
+        assignment_id = await self._assignment(db_session, printer, spool)
+
+        ams_data = [{"id": 0, "tray": [{"id": 1, "tray_type": "PETG", "tray_color": "00000000", "state": 11}]}]
+        await TestAutoUnlinkOccupiedSlot._run(printer.id, ams_data, _make_printing_status(ams_data, state="RUNNING"))
+
+        assert not await self._exists(db_session, assignment_id)

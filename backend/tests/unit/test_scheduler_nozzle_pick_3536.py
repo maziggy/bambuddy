@@ -9,7 +9,9 @@ printer filter built on it.
 
 from types import SimpleNamespace
 
-from backend.app.services.print_scheduler import _candidates_for, _sliced_nozzle
+import pytest
+
+from backend.app.services.print_scheduler import _candidates_for, _sliced_nozzle, _wrong_nozzle_label
 
 # --- Task 1: sliced diameter per candidate ---------------------------------
 
@@ -67,3 +69,67 @@ def test_candidates_carry_their_own_nozzle():
 
     multi = _item(variants=[_variant(1, 0.4), _variant(2, 0.6)])
     assert sorted(c.sliced_nozzle for c in _candidates_for(multi)) == [0.4, 0.6]
+
+
+# --- Task 2: does this nozzle fit? ------------------------------------------
+
+
+def _state(*diameters: str):
+    """PrinterState-shaped namespace with the given nozzle diameter strings."""
+    return SimpleNamespace(nozzles=[SimpleNamespace(nozzle_diameter=d) for d in diameters])
+
+
+def _h2c(*rack: tuple[int, str], mounted: str = "0.4"):
+    """H2C-shaped state: one mounted hotend plus docked nozzles (#2885 shape)."""
+    info = [{"id": 0, "diameter": mounted, "wear": 0, "max_temp": 350, "serial_number": "SN0"}]
+    info += [
+        {"id": nozzle_id, "diameter": d, "wear": 0, "max_temp": 350, "serial_number": f"SN{nozzle_id}"}
+        for nozzle_id, d in rack
+    ]
+    return SimpleNamespace(nozzles=[SimpleNamespace(nozzle_diameter=mounted)], nozzle_rack=info)
+
+
+def test_wrong_nozzle_label_single_and_dual():
+    assert _wrong_nozzle_label("A1-1", _state("0.4"), 0.6) == "A1-1 (0.4mm)"
+    assert _wrong_nozzle_label("A1-1", _state("0.6"), 0.6) is None
+    assert _wrong_nozzle_label("H2D-1", _state("0.4", "0.4"), 0.6) == "H2D-1 (0.4mm)"
+    assert _wrong_nozzle_label("H2D-1", _state("0.4", "0.6"), 0.6) is None
+
+
+def test_wrong_nozzle_label_unknown_fits():
+    assert _wrong_nozzle_label("A1-1", _state("0.4"), None) is None
+    assert _wrong_nozzle_label("A1-1", _state("0.4"), 0) is None
+    assert _wrong_nozzle_label("A1-1", None, 0.6) is None
+    assert _wrong_nozzle_label("A1-1", _state(""), 0.6) is None  # nothing reported
+
+
+def test_wrong_nozzle_label_rack():
+    assert _wrong_nozzle_label("H2C-1", _h2c((16, "0.6")), 0.6) is None
+    assert _wrong_nozzle_label("H2C-1", _h2c((16, "0.2"), (18, "0.8")), 0.6) == "H2C-1 (0.4mm, rack 0.2mm / 0.8mm)"
+
+
+def test_wrong_nozzle_label_rack_without_mounted_nozzle():
+    status = SimpleNamespace(
+        nozzles=[SimpleNamespace(nozzle_diameter="")],
+        nozzle_rack=[{"id": 16, "diameter": "0.2", "max_temp": 350, "serial_number": "SN16"}],
+    )
+    assert _wrong_nozzle_label("H2C-1", status, 0.6) == "H2C-1 (no nozzle mounted, rack 0.2mm)"
+
+
+SIZES = ["0.2", "0.4", "0.6", "0.8"]
+
+
+@pytest.mark.parametrize("sliced", SIZES)
+@pytest.mark.parametrize("installed", SIZES)
+def test_only_the_same_size_fits(sliced, installed):
+    # Same size fits, every other (also the neighbouring one) never does.
+    label = _wrong_nozzle_label("A1-1", _state(installed), float(sliced))
+    if sliced == installed:
+        assert label is None
+    else:
+        assert label == f"A1-1 ({installed}mm)"
+
+
+def test_float_noise_from_metadata_still_fits():
+    assert _wrong_nozzle_label("A1-1", _state("0.6"), 0.6000001) is None
+    assert _wrong_nozzle_label("A1-1", _state("0.4"), 0.6000001) == "A1-1 (0.4mm)"

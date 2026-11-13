@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, String, false, func
+from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, String, false, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
@@ -25,6 +25,9 @@ class Printer(Base):
     # What an hour of printing costs in wear on this machine (#694). Empty or 0
     # leaves wear cost off for the printer.
     wear_cost_per_hour: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Place in the order "Any model" jobs pick printers when Settings > Queue >
+    # printer order is "priority" (#2915): lowest first, empty last, ties by id.
+    dispatch_priority: Mapped[int | None] = mapped_column(Integer, nullable=True)
     runtime_seconds: Mapped[int] = mapped_column(
         default=0
     )  # Accumulated active runtime (RUNNING state only — see #1521)

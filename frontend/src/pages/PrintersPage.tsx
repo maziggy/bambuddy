@@ -8678,6 +8678,7 @@ function EditPrinterModal({
     auto_archive: printer.auto_archive,
     is_active: printer.is_active,
     wear_cost_per_hour: printer.wear_cost_per_hour ? String(printer.wear_cost_per_hour) : '',
+    dispatch_priority: printer.dispatch_priority != null ? String(printer.dispatch_priority) : '',
   });
   const { data: settings } = useUiSettings();
   const currency = getCurrencySymbol(settings?.currency || 'USD');
@@ -8736,6 +8737,8 @@ function EditPrinterModal({
       is_active: form.is_active,
       // Empty or 0 turns wear cost off for this printer (#694)
       wear_cost_per_hour: Number(form.wear_cost_per_hour) > 0 ? Number(form.wear_cost_per_hour) : null,
+      // Empty clears it; 0 is a real place (first) (#2915)
+      dispatch_priority: form.dispatch_priority.trim() === '' ? null : Math.max(0, Math.round(Number(form.dispatch_priority)) || 0),
     };
     // Only include access_code if it was changed
     if (form.access_code) {
@@ -8902,6 +8905,23 @@ function EditPrinterModal({
                 placeholder="0.00"
               />
               <p className="text-xs text-bambu-gray mt-1">{t('printers.modal.wearCostHelp')}</p>
+            </div>
+            <div>
+              <label htmlFor="edit_dispatch_priority" className="block text-sm text-bambu-gray mb-1">
+                {t('printers.modal.dispatchPriorityLabel', 'Priority for any-model jobs')}
+              </label>
+              <input
+                id="edit_dispatch_priority"
+                type="number"
+                min={0}
+                step={1}
+                inputMode="numeric"
+                className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                value={form.dispatch_priority}
+                onChange={(e) => setForm({ ...form, dispatch_priority: e.target.value })}
+                placeholder="-"
+              />
+              <p className="text-xs text-bambu-gray mt-1">{t('printers.modal.dispatchPriorityHelp')}</p>
             </div>
             {/* Maintenance Mode toggle (#1476) — checkbox is the inverse of
                 is_active because the user-facing concept is "is this printer

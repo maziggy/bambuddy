@@ -181,6 +181,9 @@ class PrinterUpdate(IgnoresNullForRequiredColumns):
     print_hours_offset: float | None = None
     # Wear cost per printing hour (#694); null or 0 turns it off.
     wear_cost_per_hour: float | None = Field(default=None, ge=0, le=100000)
+    # Place in the pick order of "Any model" jobs when the order setting is "priority"
+    # (#2915); lowest first, null last.
+    dispatch_priority: int | None = Field(default=None, ge=0, le=100000)
     external_camera_url: str | None = None
     external_camera_type: str | None = None
     external_camera_enabled: bool | None = None
@@ -204,6 +207,7 @@ class PrinterResponse(PrinterBase):
     supports_nozzle_flow_type: bool = True
     print_hours_offset: float = 0.0
     wear_cost_per_hour: float | None = None  # #694
+    dispatch_priority: int | None = None  # #2915
     external_camera_url: str | None = None
     external_camera_type: str | None = None
     external_camera_enabled: bool = False

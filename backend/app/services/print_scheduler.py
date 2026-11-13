@@ -9604,34 +9604,37 @@ class PrintScheduler:
         upload_failure = FtpFailureReport()
 
         try:
-            if ftp_retry_enabled:
-                uploaded = await with_ftp_retry(
-                    upload_file_async,
-                    printer.ip_address,
-                    printer.access_code,
-                    file_path,
-                    remote_path,
-                    socket_timeout=ftp_timeout,
-                    printer_model=printer.model,
-                    progress_callback=progress_bridge,
-                    respect_handshake_cooloff=False,
-                    failure=upload_failure,
-                    max_retries=ftp_retry_count,
-                    retry_delay=ftp_retry_delay,
-                    operation_name=f"Upload print to {printer.name}",
-                )
-            else:
-                uploaded = await upload_file_async(
-                    printer.ip_address,
-                    printer.access_code,
-                    file_path,
-                    remote_path,
-                    socket_timeout=ftp_timeout,
-                    printer_model=printer.model,
-                    progress_callback=progress_bridge,
-                    respect_handshake_cooloff=False,
-                    failure=upload_failure,
-                )
+            # The printer's MQTT goes quiet while it receives the file; the
+            # stale check must not reconnect it under the print command (#3538).
+            with printer_manager.uploading(item.printer_id):
+                if ftp_retry_enabled:
+                    uploaded = await with_ftp_retry(
+                        upload_file_async,
+                        printer.ip_address,
+                        printer.access_code,
+                        file_path,
+                        remote_path,
+                        socket_timeout=ftp_timeout,
+                        printer_model=printer.model,
+                        progress_callback=progress_bridge,
+                        respect_handshake_cooloff=False,
+                        failure=upload_failure,
+                        max_retries=ftp_retry_count,
+                        retry_delay=ftp_retry_delay,
+                        operation_name=f"Upload print to {printer.name}",
+                    )
+                else:
+                    uploaded = await upload_file_async(
+                        printer.ip_address,
+                        printer.access_code,
+                        file_path,
+                        remote_path,
+                        socket_timeout=ftp_timeout,
+                        printer_model=printer.model,
+                        progress_callback=progress_bridge,
+                        respect_handshake_cooloff=False,
+                        failure=upload_failure,
+                    )
         except UploadCancelled as e:
             uploaded = False
             upload_error = (

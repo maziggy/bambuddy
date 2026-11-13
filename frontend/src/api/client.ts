@@ -3990,6 +3990,8 @@ export const SPOOL_LABEL_FIELDS = [
   'name',
   'location',
   'material_number',
+  'owner',
+  'batch_id',
   'temps',
   'weight',
   'note',
@@ -4118,6 +4120,12 @@ export interface InventorySpool {
   // Internal material / article number (#2870) — the purchasing identifier
   // shared by all spools of the same product.
   material_number: string | null;
+  // The manufacturer's batch / lot ID (#2828), who the spool belongs to
+  // (#1301) and the day it was bought, YYYY-MM-DD (#3408). In Spoolman mode the
+  // batch is Spoolman's lot number, read-only; the other two are always null.
+  batch_id: string | null;
+  owner: string | null;
+  purchase_date: string | null;
   k_profiles?: SpoolKProfile[];
   storage_location?: string | null;
   location_id?: number | null;

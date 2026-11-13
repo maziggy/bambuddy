@@ -32,6 +32,7 @@ import {
   invalidateInventoryLocations,
   invalidateSpoolAndLocationQueries,
 } from '../utils/inventoryQueries';
+import { useOwnerSuggestions } from '../hooks/useOwnerSuggestions';
 import { useUiSettings } from '../hooks/useUiSettings';
 
 type TabId = 'filament' | 'appearance' | 'printers';
@@ -479,6 +480,9 @@ export function SpoolFormModal({
           category: spool.category || '',
           low_stock_threshold_pct: spool.low_stock_threshold_pct ?? null,
           material_number: spool.material_number || '',
+          batch_id: spool.batch_id || '',
+          owner: spool.owner || '',
+          purchase_date: spool.purchase_date || '',
           location_id: spool.location_id ?? null,
           last_dried_at: (() => {
             const dried = isCopying ? null : parseUTCDate(spool.last_dried_at);
@@ -925,6 +929,10 @@ export function SpoolFormModal({
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   })();
+  // Owners already named on other spools, and the registered users (#1301):
+  // suggested while typing, so one person is not entered as "Alice" and
+  // "alice" and "Alice ". Anyone else can still be typed in.
+  const availableOwners = useOwnerSuggestions(allSpools, !spoolmanMode);
   const globalLowStockThreshold = settingsForForm?.low_stock_threshold ?? 20;
 
   const unassignMutation = useMutation({
@@ -1151,6 +1159,9 @@ export function SpoolFormModal({
       category: formData.category.trim() || null,
       low_stock_threshold_pct: formData.low_stock_threshold_pct,
       material_number: formData.material_number.trim() || null,
+      batch_id: formData.batch_id.trim() || null,
+      owner: formData.owner.trim() || null,
+      purchase_date: formData.purchase_date || null,
       ...(spoolmanMode ? { spoolman_filament_id: formData.spoolman_filament_id } : {}),
     };
 
@@ -1362,6 +1373,7 @@ export function SpoolFormModal({
                   currencySymbol={currencySymbol}
                   availableCategories={availableCategories}
                   availableMaterialNumbers={availableMaterialNumbers}
+                  availableOwners={availableOwners}
                   availableLocations={storageLocations}
                   showLastDried={isEditing}
                   onCreateLocation={async (name) => {

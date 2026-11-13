@@ -5,7 +5,7 @@
  * Spoolman mode must never emit internal-only keys.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { BulkEditSpoolsModal } from '../../components/BulkEditSpoolsModal';
@@ -147,5 +147,32 @@ describe('BulkEditSpoolsModal wiring', () => {
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(onClose).toHaveBeenCalled();
     expect(onApply).not.toHaveBeenCalled();
+  });
+
+  it('a box of new spools gets its owner, batch and purchase date in one edit (#1301, #2828, #3408)', async () => {
+    const user = userEvent.setup();
+    render(<BulkEditSpoolsModal {...baseProps} spoolmanMode={false} />);
+
+    await tickAndType(user, 'Owner', 'Alice');
+    await user.keyboard('{Escape}');
+    await tickAndType(user, 'Batch ID', 'LOT-9');
+    const dateRow = row('Purchase date');
+    await user.click(within(dateRow).getByRole('checkbox'));
+    fireEvent.change(dateRow.querySelector('input[type="date"]') as HTMLElement, { target: { value: '2026-04-05' } });
+    await user.click(screen.getByRole('button', { name: /Apply to 3 spools/ }));
+
+    await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1));
+    expect(onApply).toHaveBeenCalledWith({ owner: 'Alice', batch_id: 'LOT-9', purchase_date: '2026-04-05' });
+  });
+
+  it('suggests the owners already named', async () => {
+    const user = userEvent.setup();
+    render(<BulkEditSpoolsModal {...baseProps} availableOwners={['Alice', 'Bob']} spoolmanMode={false} />);
+
+    const r = row('Owner');
+    await user.click(within(r).getByRole('checkbox'));
+    await user.click(r.querySelector('input[type="text"]') as HTMLElement);
+
+    expect(await screen.findByText('Bob')).toBeTruthy();
   });
 });

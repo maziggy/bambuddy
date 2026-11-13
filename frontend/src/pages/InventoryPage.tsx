@@ -31,7 +31,7 @@ import { colorSortKey, resolveSpoolColorName } from '../utils/colors';
 import { useColorCatalogVersion } from '../hooks/useColorCatalogVersion';
 import { getCurrencySymbol } from '../utils/currency';
 import { shownCostPerKg } from '../utils/spoolCost';
-import { formatDateInput, parseUTCDate, type DateFormat } from '../utils/date';
+import { formatCalendarDate, formatDateInput, parseUTCDate, type DateFormat } from '../utils/date';
 import { formatAssignmentSlotLabel } from '../utils/amsHelpers';
 import { filterSpoolsByQuery } from '../utils/inventorySearch';
 import {
@@ -45,6 +45,7 @@ import {
   useLocationSensorColorPrefs,
   type LocationSensorAlertColor,
 } from '../utils/locationSensorDefaults';
+import { useOwnerSuggestions } from '../hooks/useOwnerSuggestions';
 import { useUiSettings } from '../hooks/useUiSettings';
 
 type ArchiveFilter = 'active' | 'archived';
@@ -73,8 +74,10 @@ function spoolGroupKey(s: InventorySpool): string {
   // not collapse two spools that share the base colour but differ on
   // gradient stops or visual effect (#1154).
   // last_dried_at too: a dried spool is not interchangeable with an undried
-  // one, and folding it into a group would hide the date (#2863).
-  return `${s.material}|${s.subtype || ''}|${s.brand || ''}|${s.color_name || ''}|${s.rgba || ''}|${s.extra_colors || ''}|${s.effect_type || ''}|${s.label_weight}|${s.last_dried_at || ''}`;
+  // one, and folding it into a group would hide the date (#2863). Likewise the
+  // batch, the owner and the purchase date: spools of different owners are not
+  // one stack (#2828, #1301, #3408).
+  return `${s.material}|${s.subtype || ''}|${s.brand || ''}|${s.color_name || ''}|${s.rgba || ''}|${s.extra_colors || ''}|${s.effect_type || ''}|${s.label_weight}|${s.last_dried_at || ''}|${s.batch_id || ''}|${s.owner || ''}|${s.purchase_date || ''}`;
 }
 
 // Column definitions for the inventory table
@@ -119,6 +122,9 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'printed_since_weight', label: 'Printed Since Weight', visible: false },
   { id: 'note', label: 'Note', visible: false },
   { id: 'material_number', label: 'Material No.', visible: false },
+  { id: 'batch_id', label: 'Batch ID', visible: false },
+  { id: 'owner', label: 'Owner', visible: false },
+  { id: 'purchase_date', label: 'Purchase Date', visible: false },
   { id: 'suppliers', label: 'Suppliers', visible: false },
   { id: 'pa_k', label: 'PA(K)', visible: true },
   { id: 'tag_id', label: 'Tag ID', visible: false },
@@ -260,6 +266,9 @@ const columnHeaders: Record<string, (t: TFn) => string> = {
   printed_since_weight: () => 'Printed Since Weight',
   note: (t) => t('inventory.note'),
   material_number: (t) => t('inventory.materialNumber'),
+  batch_id: (t) => t('inventory.batchId'),
+  owner: (t) => t('inventory.owner'),
+  purchase_date: (t) => t('inventory.purchaseDate'),
   suppliers: (t) => t('inventory.suppliers.label'),
   pa_k: () => 'PA(K)',
   tag_id: () => 'Tag ID',
@@ -408,6 +417,11 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
   ),
   material_number: ({ spool }) => (
     <span className="text-sm text-bambu-gray">{spool.material_number || '-'}</span>
+  ),
+  batch_id: ({ spool }) => <span className="text-sm text-bambu-gray">{spool.batch_id || '-'}</span>,
+  owner: ({ spool }) => <span className="text-sm text-bambu-gray">{spool.owner || '-'}</span>,
+  purchase_date: ({ spool, dateFormat }) => (
+    <span className="text-sm text-bambu-gray">{formatCalendarDate(spool.purchase_date, dateFormat)}</span>
   ),
   // Supplier chips (#2988): purchase source first and highlighted; the
   // others read as alternative sources. Tooltip carries the supplier's
@@ -586,6 +600,10 @@ const columnSortValues: Record<
   remaining: (s) => s.label_weight > 0 ? Math.max(0, s.label_weight - s.weight_used) / s.label_weight : 0,
   note: (s) => (s.note || '').toLowerCase(),
   material_number: (s) => materialNumberSortKey(s.material_number),
+  batch_id: (s) => (s.batch_id || '').toLowerCase(),
+  owner: (s) => (s.owner || '').toLowerCase(),
+  // YYYY-MM-DD sorts as text in date order; none sorts first.
+  purchase_date: (s) => s.purchase_date || '',
   // Sorts on the purchase-source supplier, falling back to the first
   // assignment — a spool has to sit in exactly one place in the list.
   suppliers: (s) => {
@@ -760,6 +778,8 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
       spoolmanMode ? api.getSpoolmanInventorySpools(true) : api.getSpools(true),
     refetchInterval: 30000,
   });
+  // Bulk Edit's owner suggestions: owners in use and the registered users (#1301).
+  const ownerSuggestions = useOwnerSuggestions(spools, !spoolmanMode);
 
   // CSV export (#1576) — downloads the active inventory as a CSV file.
   const handleExportCsv = useCallback(async () => {
@@ -2674,6 +2694,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
         availableBrands={dedupeAndSort((spools ?? []).map((s) => s.brand))}
         availableCategories={dedupeAndSort((spools ?? []).map((s) => s.category))}
         availableMaterialNumbers={dedupeAndSort((spools ?? []).map((s) => s.material_number))}
+        availableOwners={ownerSuggestions}
         availableSlicerFilaments={dedupeAndSort((spools ?? []).map((s) => s.slicer_filament))}
         availableSlicerFilamentNames={dedupeAndSort((spools ?? []).map((s) => s.slicer_filament_name))}
         spoolmanMode={spoolmanMode}

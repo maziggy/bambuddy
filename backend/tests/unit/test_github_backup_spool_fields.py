@@ -90,3 +90,20 @@ async def test_collects_when_the_spool_was_last_used(db_session):
     await GitHubBackupService()._collect_spools(db_session, files)
 
     assert files["spools/inventory.json"]["spools"][0]["last_used"] == "2026-10-18 09:15:00"
+
+
+@pytest.mark.asyncio
+async def test_collects_the_batch_owner_and_purchase_date(db_session):
+    """#2828, #1301, #3408 — the date as YYYY-MM-DD, which restore reads back."""
+    from datetime import date
+
+    db_session.add(Spool(material="PLA", batch_id="LOT-1", owner="Alice", purchase_date=date(2026, 3, 14)))
+    db_session.add(Spool(material="PETG"))
+    await db_session.commit()
+
+    files: dict = {}
+    await GitHubBackupService()._collect_spools(db_session, files)
+
+    first, second = files["spools/inventory.json"]["spools"]
+    assert (first["batch_id"], first["owner"], first["purchase_date"]) == ("LOT-1", "Alice", "2026-03-14")
+    assert (second["batch_id"], second["owner"], second["purchase_date"]) == (None, None, None)

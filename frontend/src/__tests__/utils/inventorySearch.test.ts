@@ -38,6 +38,29 @@ function makeSpool(overrides: Partial<InventorySpool> = {}): InventorySpool {
   };
 }
 
+describe('spoolMatchesQuery: batch, owner and purchase date', () => {
+  it('finds a spool by its batch ID (#2828)', () => {
+    const spool = makeSpool({ batch_id: 'LOT-2411-07' });
+    expect(spoolMatchesQuery(spool, 'lot-2411')).toBe(true);
+    expect(spoolMatchesQuery(spool, 'LOT-9')).toBe(false);
+  });
+
+  it('finds a spool by its owner (#1301)', () => {
+    const spool = makeSpool({ owner: 'Alice Smith' });
+    expect(spoolMatchesQuery(spool, 'alice')).toBe(true);
+    expect(spoolMatchesQuery(spool, 'bob')).toBe(false);
+  });
+
+  it('a spool without them is not found by chance', () => {
+    expect(spoolMatchesQuery(makeSpool({ batch_id: null, owner: null }), 'null')).toBe(false);
+  });
+
+  it('filters a list down to one owner', () => {
+    const spools = [makeSpool({ id: 1, owner: 'Alice' }), makeSpool({ id: 2, owner: 'Bob' }), makeSpool({ id: 3 })];
+    expect(filterSpoolsByQuery(spools, 'bob').map((s) => s.id)).toEqual([2]);
+  });
+});
+
 describe('spoolMatchesQuery', () => {
   it('returns true for empty query', () => {
     expect(spoolMatchesQuery(makeSpool(), '')).toBe(true);

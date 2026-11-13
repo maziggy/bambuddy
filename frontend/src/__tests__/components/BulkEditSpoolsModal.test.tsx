@@ -39,6 +39,9 @@ const baseProps = {
 
 const INTERNAL_ONLY = [
   'inventory.materialNumber',
+  'inventory.batchId',
+  'inventory.owner',
+  'inventory.purchaseDate',
   'inventory.category',
   'inventory.lowStockThresholdOverride',
 ];

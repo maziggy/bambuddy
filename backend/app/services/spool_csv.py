@@ -14,7 +14,7 @@ only the rows that came back `valid`.
 
 import csv
 import io
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import func, select, text
@@ -63,6 +63,12 @@ CSV_COLUMNS = [
     "category",
     "low_stock_threshold_pct",
     "material_number",
+    # Batch ID (#2828), owner (#1301) and purchase date (#3408): the spool's own
+    # bookkeeping, SpoolCreate fields included so a round-trip keeps them. The
+    # date is written and read as YYYY-MM-DD.
+    "batch_id",
+    "owner",
+    "purchase_date",
     # Supplier assignments (#2988): `suppliers` is the "; "-joined names of
     # all assigned suppliers, `purchase_supplier` the one this spool was
     # actually bought from (or empty). Import matches names against the
@@ -421,10 +427,22 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
             "storage_location",
             "category",
             "material_number",
+            "batch_id",
+            "owner",
         ):
             value = cell(raw_row, field)
             if value:
                 data[field] = value
+
+        # Purchase date (#3408): a day, not a timestamp. A full ISO timestamp is
+        # accepted and cut to its date, since that is what a spreadsheet often
+        # turns a date cell into.
+        purchase_date_cell = cell(raw_row, "purchase_date")
+        if purchase_date_cell:
+            try:
+                data["purchase_date"] = date.fromisoformat(purchase_date_cell.strip()[:10])
+            except ValueError:
+                row_error = f"purchase_date must be a date as YYYY-MM-DD (got '{purchase_date_cell}')"
 
         # Numeric columns: parse only if present, else leave to schema defaults.
         for field in _INT_COLUMNS:

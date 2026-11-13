@@ -56,6 +56,7 @@ import {
 } from '../../components/spool-form/utils';
 import { MATERIALS } from '../../components/spool-form/constants';
 import { NumberInput } from '../../components/NumberInput';
+import { useOwnerSuggestions } from '../../hooks/useOwnerSuggestions';
 import { useUiSettings } from '../../hooks/useUiSettings';
 import { useKioskDevice } from '../../hooks/useKioskDevice';
 
@@ -530,6 +531,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
       spoolmanMode ? api.getSpoolmanInventorySpools(true) : api.getSpools(true),
   });
   const { data: settingsForForm } = useUiSettings();
+  const ownerSuggestions = useOwnerSuggestions(allSpoolsForForm, !spoolmanMode);
 
   const [viewMode, setViewMode] = useState<NewSpoolViewMode>('simple');
   const [activeSubTab, setActiveSubTab] = useState<NewSpoolSubTab>('filament');
@@ -843,6 +845,9 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
       category: formData.category.trim() || null,
       low_stock_threshold_pct: formData.low_stock_threshold_pct,
       material_number: formData.material_number.trim() || null,
+      batch_id: formData.batch_id.trim() || null,
+      owner: formData.owner.trim() || null,
+      purchase_date: formData.purchase_date || null,
     };
 
     setCreating(true);
@@ -1067,6 +1072,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
               availableMaterialNumbers={Array.from(new Set(
                 allSpoolsForForm.map((s) => s.material_number?.trim()).filter((n): n is string => !!n),
               )).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))}
+              availableOwners={ownerSuggestions}
               globalLowStockThreshold={settingsForForm?.low_stock_threshold ?? 20}
               spoolmanMode={spoolmanMode}
             />

@@ -504,6 +504,9 @@ export function SpoolBuddyDashboard() {
           category: null,
           low_stock_threshold_pct: null,
           material_number: null,
+          batch_id: null,
+          owner: null,
+          purchase_date: null,
         });
       }
     } catch (e) {

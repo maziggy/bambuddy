@@ -3,6 +3,7 @@ import { Scale } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useToast } from '../../contexts/ToastContext';
 import { toDateTimeLocalValue } from '../../utils/date';
+import { SuggestionInput } from './SuggestionInput';
 import type { AdditionalSectionProps } from './types';
 
 function SpoolWeightPicker({
@@ -176,6 +177,7 @@ export function AdditionalSection({
   currencySymbol,
   availableCategories,
   availableMaterialNumbers,
+  availableOwners = [],
   availableLocations = [],
   onCreateLocation,
   globalLowStockThreshold,
@@ -347,6 +349,55 @@ export function AdditionalSection({
           )}
           <p className="text-xs text-bambu-gray mt-1">{t('inventory.materialNumberHelp')}</p>
         </div>
+      )}
+
+      {/* Batch ID (#2828), owner (#1301) and purchase date (#3408). Hidden in
+          Spoolman mode: Spoolman has its own lot number, shown read-only in the
+          list, and no owner or purchase date to write these to. */}
+      {!spoolmanMode && (
+        <>
+          <div>
+            <label className="block text-sm font-medium text-bambu-gray mb-1" htmlFor="spool-batch-id">
+              {t('inventory.batchId')}
+            </label>
+            <input
+              id="spool-batch-id"
+              type="text"
+              className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder:text-bambu-gray/50 focus:outline-none focus:border-bambu-green"
+              placeholder={t('inventory.batchIdPlaceholder')}
+              value={formData.batch_id}
+              maxLength={64}
+              onChange={(e) => updateField('batch_id', e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-bambu-gray mb-1" htmlFor="spool-owner">
+              {t('inventory.owner')}
+            </label>
+            <SuggestionInput
+              id="spool-owner"
+              options={availableOwners}
+              placeholder={t('inventory.ownerPlaceholder')}
+              value={formData.owner}
+              maxLength={100}
+              onChange={(next) => updateField('owner', next)}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-bambu-gray mb-1" htmlFor="spool-purchase-date">
+              {t('inventory.purchaseDate')}
+            </label>
+            <input
+              id="spool-purchase-date"
+              type="date"
+              className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green"
+              value={formData.purchase_date}
+              onChange={(e) => updateField('purchase_date', e.target.value)}
+            />
+          </div>
+        </>
       )}
 
       {/* Category (#729) */}

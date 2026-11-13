@@ -6,7 +6,7 @@ dependent rows, overwrite-vs-skip, the settings credential blocklist, and the
 K-profile paths that depend on live printers.
 """
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1069,6 +1069,42 @@ class TestRestoreSpools:
         assert row.category == "Production"
         assert row.low_stock_threshold_pct == 40
         assert row.storage_location == "Shelf B"
+
+    @pytest.mark.asyncio
+    async def test_restores_the_batch_owner_and_purchase_date(self, db_session):
+        """#2828, #1301, #3408."""
+        entry = self._spool_entry(batch_id="LOT-1", owner="Alice", purchase_date="2026-03-14")
+
+        await _service()._restore_spools(db_session, {"spools": [entry]}, None, False, _CategoryTally(), {})
+        await db_session.commit()
+
+        row = (await db_session.execute(select(Spool))).scalar_one()
+        assert (row.batch_id, row.owner, row.purchase_date) == ("LOT-1", "Alice", date(2026, 3, 14))
+
+    @pytest.mark.asyncio
+    async def test_a_backup_predating_them_does_not_wipe_them(self, db_session):
+        db_session.add(
+            Spool(material="PLA", tag_uid="AABBCCDD", batch_id="LOT-1", owner="Alice", purchase_date=date(2026, 3, 14))
+        )
+        await db_session.commit()
+
+        await _service()._restore_spools(
+            db_session, {"spools": [self._spool_entry()]}, None, True, _CategoryTally(), {}
+        )
+        await db_session.commit()
+
+        row = (await db_session.execute(select(Spool))).scalar_one()
+        assert (row.batch_id, row.owner, row.purchase_date) == ("LOT-1", "Alice", date(2026, 3, 14))
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bad", ["not a date", 20260314, "", None])
+    async def test_a_damaged_purchase_date_restores_as_none_without_failing(self, db_session, bad):
+        entry = self._spool_entry(purchase_date=bad)
+
+        await _service()._restore_spools(db_session, {"spools": [entry]}, None, False, _CategoryTally(), {})
+        await db_session.commit()
+
+        assert (await db_session.execute(select(Spool))).scalar_one().purchase_date is None
 
     @pytest.mark.asyncio
     async def test_location_id_is_never_restored(self, db_session):

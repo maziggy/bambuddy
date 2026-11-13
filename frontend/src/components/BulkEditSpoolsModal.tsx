@@ -27,7 +27,10 @@ type EditableField =
   | 'core_weight'
   | 'category'
   | 'low_stock_threshold_pct'
-  | 'material_number';
+  | 'material_number'
+  | 'batch_id'
+  | 'owner'
+  | 'purchase_date';
 
 type FieldSpec = {
   id: EditableField;
@@ -36,8 +39,9 @@ type FieldSpec = {
    *  text = plain text input.
    *  number = number input.
    *  color = colour picker + hex input.
-   *  textarea = multi-line text. */
-  type: 'searchable' | 'searchableClosed' | 'text' | 'number' | 'color' | 'textarea';
+   *  textarea = multi-line text.
+   *  date = calendar date picker, sent as YYYY-MM-DD. */
+  type: 'searchable' | 'searchableClosed' | 'text' | 'number' | 'color' | 'textarea' | 'date';
   labelKey: string;
   min?: number;
   max?: number;
@@ -69,6 +73,11 @@ const FIELDS: FieldSpec[] = [
   // Internal material / article number (#2870) — bulk-assigning it is the
   // main way existing inventories get numbered.
   { id: 'material_number', type: 'searchable', labelKey: 'inventory.materialNumber', internalOnly: true },
+  // Batch ID (#2828), owner (#1301) and purchase date (#3408): what a box of
+  // new spools gets in one go.
+  { id: 'batch_id', type: 'text', labelKey: 'inventory.batchId', internalOnly: true },
+  { id: 'owner', type: 'searchable', labelKey: 'inventory.owner', internalOnly: true },
+  { id: 'purchase_date', type: 'date', labelKey: 'inventory.purchaseDate', internalOnly: true },
 ];
 
 export interface BulkEditSpoolsModalProps {
@@ -82,6 +91,8 @@ export interface BulkEditSpoolsModalProps {
   availableBrands: string[];
   availableCategories: string[];
   availableMaterialNumbers: string[];
+  /** Owners already named on other spools (#1301): suggested for the owner field. */
+  availableOwners?: string[];
   availableSlicerFilaments: string[];
   availableSlicerFilamentNames: string[];
   /** Spoolman-backed inventory: hides the fields Spoolman cannot store. */
@@ -222,7 +233,7 @@ function combineUnique(...lists: string[][]): string[] {
 export function BulkEditSpoolsModal({
   isOpen, selectedCount, isPending,
   availableLocations, availableMaterials, availableSubtypes, availableBrands, availableCategories,
-  availableMaterialNumbers, availableSlicerFilaments, availableSlicerFilamentNames,
+  availableMaterialNumbers, availableOwners = [], availableSlicerFilaments, availableSlicerFilamentNames,
   spoolmanMode = false,
   onClose, onApply,
 }: BulkEditSpoolsModalProps) {
@@ -296,6 +307,10 @@ export function BulkEditSpoolsModal({
   const categoryOptions: Option[] = useMemo(
     () => combineUnique(availableCategories).map((m) => ({ value: m, label: m })),
     [availableCategories],
+  );
+  const ownerOptions: Option[] = useMemo(
+    () => combineUnique(availableOwners).map((o) => ({ value: o, label: o })),
+    [availableOwners],
   );
   const materialNumberOptions: Option[] = useMemo(
     () => combineUnique(availableMaterialNumbers).map((m) => ({ value: m, label: m })),
@@ -379,6 +394,7 @@ export function BulkEditSpoolsModal({
     if (id === 'brand') return brandOptions;
     if (id === 'category') return categoryOptions;
     if (id === 'material_number') return materialNumberOptions;
+    if (id === 'owner') return ownerOptions;
     if (id === 'slicer_filament') return slicerFilamentOptions;
     if (id === 'slicer_filament_name') return slicerFilamentNameOptions;
     if (id === 'location_id') return locationOptions;
@@ -447,7 +463,7 @@ export function BulkEditSpoolsModal({
 
     return (
       <input
-        type={f.type === 'number' ? 'number' : 'text'}
+        type={f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : 'text'}
         disabled={isPending}
         value={value}
         onChange={(e) => setField(f.id, e.target.value)}

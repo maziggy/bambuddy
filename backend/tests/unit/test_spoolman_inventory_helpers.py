@@ -122,6 +122,19 @@ class TestMapSpoolmanSpool:
             blank = {**MINIMAL_SPOOL, "filament": {**MINIMAL_SPOOL["filament"], "article_number": value}}
             assert _map_spoolman_spool(blank)["material_number"] is None
 
+    def test_lot_number_maps_to_batch_id(self):
+        """Spoolman's spool.lot_nr is the batch ID (#2828); owner and purchase date have no home there."""
+        mapped = _map_spoolman_spool({**MINIMAL_SPOOL, "lot_nr": " LOT-2411-07 "})
+
+        assert mapped["batch_id"] == "LOT-2411-07"
+        assert mapped["owner"] is None
+        assert mapped["purchase_date"] is None
+
+    def test_missing_or_blank_lot_number_maps_to_none(self):
+        assert _map_spoolman_spool(MINIMAL_SPOOL)["batch_id"] is None
+        for value in ("", "   ", None):
+            assert _map_spoolman_spool({**MINIMAL_SPOOL, "lot_nr": value})["batch_id"] is None
+
     def test_padded_article_number_is_trimmed(self):
         """The filter chip matches exactly against trimmed options (#2870)."""
         spool = {**MINIMAL_SPOOL, "filament": {**MINIMAL_SPOOL["filament"], "article_number": " 15 "}}

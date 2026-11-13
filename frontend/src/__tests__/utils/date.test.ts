@@ -17,6 +17,7 @@ import {
   formatDuration,
   formatRelativeTime,
   localDateKey,
+  formatCalendarDate,
 } from '../../utils/date';
 
 describe('getDatePlaceholder', () => {
@@ -501,5 +502,30 @@ describe('localDateKey (#1446 — Print Activity heatmap bucketing)', () => {
     // The exact local date depends on the CI runner's tz, but the result
     // must always be a well-formed YYYY-MM-DD (10 chars, two dashes).
     expect(key).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+describe('formatCalendarDate', () => {
+  it('formats a day in each format without shifting it', () => {
+    expect(formatCalendarDate('2026-03-01', 'iso')).toBe('2026-03-01');
+    expect(formatCalendarDate('2026-03-01', 'eu')).toBe('01/03/2026');
+    expect(formatCalendarDate('2026-03-01', 'us')).toBe('03/01/2026');
+  });
+
+  it('keeps the first and last day of a year', () => {
+    // A day read as a UTC instant and shown locally slips to the day before
+    // west of Greenwich; these are the values where that changes the year.
+    expect(formatCalendarDate('2026-01-01', 'iso')).toBe('2026-01-01');
+    expect(formatCalendarDate('2026-12-31', 'iso')).toBe('2026-12-31');
+  });
+
+  it('cuts a full timestamp to its day', () => {
+    expect(formatCalendarDate('2026-03-14T08:30:00', 'iso')).toBe('2026-03-14');
+  });
+
+  it('shows a dash for nothing or for something that is not a day', () => {
+    for (const value of [null, undefined, '', 'soon', '14/03/2026']) {
+      expect(formatCalendarDate(value, 'iso')).toBe('-');
+    }
   });
 });

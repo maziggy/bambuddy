@@ -40,7 +40,7 @@ import re
 from collections.abc import Iterable
 from contextvars import ContextVar
 from dataclasses import dataclass, field as dataclasses_field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import httpx
 from pydantic import BaseModel
@@ -167,6 +167,16 @@ def _admin_only_for_restore(key: str) -> bool:
 # the backup was written by a newer version, so accept it rather than dropping
 # data, but keep the list for validation messages.
 _KNOWN_NOZZLES = {"0.2", "0.4", "0.6", "0.8"}
+
+
+def _parse_date(value) -> date | None:
+    """A day the backup wrote as YYYY-MM-DD, or None when it is not one."""
+    if not value or not isinstance(value, str):
+        return None
+    try:
+        return date.fromisoformat(value.strip()[:10])
+    except ValueError:
+        return None
 
 
 def _parse_dt(value) -> datetime | None:
@@ -2018,6 +2028,13 @@ class GitHubRestoreService:
             # When it was last used (LU-4), same late-field rule.
             if "last_used" in entry:
                 fields["last_used"] = _parse_dt(entry.get("last_used"))
+            # Batch ID (#2828), owner (#1301) and purchase date (#3408), same
+            # late-field rule.
+            for late_field in ("batch_id", "owner"):
+                if late_field in entry:
+                    fields[late_field] = entry[late_field]
+            if "purchase_date" in entry:
+                fields["purchase_date"] = _parse_date(entry.get("purchase_date"))
             # Last drying (#2863), same late-field rule.
             if "last_dried_at" in entry:
                 fields["last_dried_at"] = _parse_dt(entry.get("last_dried_at"))

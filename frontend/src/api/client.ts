@@ -490,6 +490,7 @@ export interface Printer {
   plate_detection_enabled: boolean;  // Check plate before print
   plate_detection_roi?: PlateDetectionROI;  // ROI for plate detection
   wear_cost_per_hour: number | null;  // Wear cost per printing hour (#694)
+  dispatch_priority: number | null;  // Place in the pick order of any-model jobs, lowest first (#2915)
   wled_config: WLEDConfig | null;
   created_at: string;
   updated_at: string;
@@ -823,6 +824,7 @@ export interface PrinterCreate {
   plate_detection_enabled?: boolean;
   plate_detection_roi?: PlateDetectionROI;
   wear_cost_per_hour?: number | null;
+  dispatch_priority?: number | null;
   wled_config?: WLEDConfig | null;
 }
 
@@ -1477,6 +1479,8 @@ export interface APIKeyCreateResponse extends APIKey {
 export type CalibrationMode = 'off' | 'on' | 'auto';
 
 // Settings types
+export type ModelDispatchOrder = 'fewest_hours' | 'most_hours' | 'least_recently_used' | 'priority';
+
 export interface AppSettings {
   auto_archive: boolean;
   save_thumbnails: boolean;
@@ -1635,6 +1639,8 @@ export interface AppSettings {
   require_plate_clear: boolean;
   // Shortest job first scheduling
   queue_shortest_first: boolean;
+  // Which printer an any-model job takes when several can run it (#2915).
+  model_dispatch_order: ModelDispatchOrder;
   // How many printers the queue may upload to at once (#2555). 1 restores the
   // old strictly-serial behaviour, where every printer waited out every other
   // printer's transfer.

@@ -6045,6 +6045,10 @@ async def _run_migrations(conn):
     await _safe_execute(conn, f"ALTER TABLE print_log_entries ADD COLUMN wear_cost {float_type}")
     await _safe_execute(conn, f"ALTER TABLE print_archives ADD COLUMN wear_cost {float_type}")
 
+    # Migration: a printer's place in the pick order of "Any model" jobs (#2915).
+    # Nullable: no printer has one until the order setting is "priority" and one is set.
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN dispatch_priority INTEGER")
+
     # Migration: when each spool was last dried, at what temperature and for
     # how long (#2863). Nullable: no spool has a drying record until one ends.
     datetime_type = "DATETIME" if is_sqlite() else "TIMESTAMP"

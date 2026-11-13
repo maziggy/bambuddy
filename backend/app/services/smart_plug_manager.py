@@ -61,6 +61,28 @@ async def publish_plug_state(
         logger.debug("MQTT relay: failed to publish the state of plug %s: %s", plug_id, e)
 
 
+def _cooled_down(temps: dict, temp_source: str, nozzle_threshold: int, bed_threshold: int) -> tuple[bool, str]:
+    """Whether a temperature-based auto-off may switch off, and what was read.
+
+    ``temp_source`` picks what must be below its threshold (#3464): the
+    hottest nozzle (the H2 series has two) or the bed. A reading the
+    printer hasn't reported counts as hot, so it keeps the plug on. Any other
+    value waits for the nozzle, as temperature mode did before #3464.
+    """
+    if temp_source == "bed":
+        bed_temp = temps.get("bed", 999)
+        return bed_temp < bed_threshold, f"bed={bed_temp}°C (threshold {bed_threshold}°C)"
+
+    nozzle_temp = temps.get("nozzle", 999)
+    nozzle_2_temp = temps.get("nozzle_2")
+    if nozzle_2_temp is not None:
+        reading = f"nozzle1={nozzle_temp}°C, nozzle2={nozzle_2_temp}°C"
+        nozzle_temp = max(nozzle_temp, nozzle_2_temp)
+    else:
+        reading = f"nozzle={nozzle_temp}°C"
+    return nozzle_temp < nozzle_threshold, f"{reading} (threshold {nozzle_threshold}°C)"
+
+
 def _is_script_plug(plug) -> bool:
     """A Home Assistant script entity: it can be run, not switched."""
     return (
@@ -506,7 +528,8 @@ class SmartPlugManager:
 
         Honours the per-plug ``off_delay_mode`` — ``time`` waits
         ``off_delay_minutes``; ``temperature`` waits until the nozzle drops
-        below ``off_temp_threshold`` (#1890 — the queue/scheduler auto-off
+        below ``off_temp_threshold``, or the bed below ``off_bed_temp_threshold``
+        (``off_temp_source``, #3464) (#1890 — the queue/scheduler auto-off
         paths used to hardcode 50°C / 600s and ignore these settings). Both
         branches register a cancellable task in ``_pending_off``, so a re-print
         cancels the pending off via :meth:`on_print_start`.
@@ -694,7 +717,14 @@ class SmartPlugManager:
         # Cancel any existing task for this plug
         self._cancel_pending_off(plug.id)
 
-        logger.info("Scheduling temperature-based turn-off for plug '%s' (threshold: %s°C)", plug.name, temp_threshold)
+        logger.info(
+            "Scheduling temperature-based turn-off for plug '%s' (waits for: %s, nozzle threshold: %s°C, "
+            "bed threshold: %s°C)",
+            plug.name,
+            plug.off_temp_source,
+            temp_threshold,
+            plug.off_bed_temp_threshold,
+        )
 
         # Mark as pending in database (survives restarts)
         spawn_background_task(self._mark_auto_off_pending(plug.id, True), name=f"plug-auto-off-pending-{plug.id}")
@@ -709,6 +739,8 @@ class SmartPlugManager:
                 plug.password,
                 printer_id,
                 temp_threshold,
+                temp_source=plug.off_temp_source,
+                bed_temp_threshold=plug.off_bed_temp_threshold,
                 controls_printer_power=plug.controls_printer_power,
                 plug_name=plug.name,
                 rest_off_url=plug.rest_off_url if plug.plug_type == "rest" else None,
@@ -730,6 +762,8 @@ class SmartPlugManager:
         printer_id: int,
         temp_threshold: int,
         *,
+        temp_source: str = "nozzle",
+        bed_temp_threshold: int = 35,
         controls_printer_power: bool = True,
         plug_name: str = "",
         rest_off_url: str | None = None,
@@ -739,7 +773,9 @@ class SmartPlugManager:
     ):
         """Poll temperature until below threshold, then turn off.
 
-        For dual-extruder printers (H2 series), checks both nozzles.
+        ``temp_source`` is what has to cool (#3464): the nozzle (both nozzles
+        on dual-extruder H2 printers) below ``temp_threshold``, or the bed
+        below ``bed_temp_threshold``.
         """
         try:
             check_interval = 10  # seconds
@@ -750,26 +786,12 @@ class SmartPlugManager:
                 status = printer_manager.get_status(printer_id)
 
                 if status:
-                    temps = status.temperatures or {}
-                    nozzle_temp = temps.get("nozzle", 999)
-                    # Check second nozzle for dual-extruder printers (H2 series)
-                    nozzle_2_temp = temps.get("nozzle_2")
+                    cooled, reading = _cooled_down(
+                        status.temperatures or {}, temp_source, temp_threshold, bed_temp_threshold
+                    )
+                    logger.info("Temp check plug %s: %s", plug_id, reading)
 
-                    # Get the maximum temperature across all nozzles
-                    max_nozzle_temp = nozzle_temp
-                    if nozzle_2_temp is not None:
-                        max_nozzle_temp = max(nozzle_temp, nozzle_2_temp)
-                        logger.info(
-                            f"Temp check plug {plug_id}: nozzle1={nozzle_temp}°C, "
-                            f"nozzle2={nozzle_2_temp}°C, max={max_nozzle_temp}°C, "
-                            f"threshold={temp_threshold}°C"
-                        )
-                    else:
-                        logger.info(
-                            "Temp check plug %s: nozzle=%s°C, threshold=%s°C", plug_id, nozzle_temp, temp_threshold
-                        )
-
-                    if max_nozzle_temp < temp_threshold:
+                    if cooled:
                         # #1890: the nozzle can dip below the threshold between
                         # a finished print and a fresh one starting (e.g. a
                         # touchscreen reprint during the PREPARE/heating phase).
@@ -786,7 +808,7 @@ class SmartPlugManager:
                             elapsed += check_interval
                             continue
 
-                        # All nozzles are below threshold, turn off
+                        # Cool enough, turn off
                         class PlugInfo:
                             def __init__(self):
                                 self.plug_type = plug_type
@@ -805,10 +827,7 @@ class SmartPlugManager:
                         plug_info = PlugInfo()
                         service = await self.get_service_for_plug(plug_info)
                         success = await service.turn_off(plug_info)
-                        logger.info(
-                            f"Turned off plug {plug_id} after nozzle temp dropped to "
-                            f"{max_nozzle_temp}°C (threshold: {temp_threshold}°C)"
-                        )
+                        logger.info("Turned off plug %s after cooling down: %s", plug_id, reading)
 
                         # Mark auto_off_executed in database and update printer status
                         if success:

@@ -91,6 +91,9 @@ class SmartPlugBase(BaseModel):
     off_delay_mode: Literal["time", "temperature"] = "time"
     off_delay_minutes: int = Field(default=5, ge=0, le=60)
     off_temp_threshold: int = Field(default=70, ge=30, le=150)
+    # #3464: what temperature mode waits for, and the bed's own threshold.
+    off_temp_source: Literal["nozzle", "bed"] = "nozzle"
+    off_bed_temp_threshold: int = Field(default=35, ge=20, le=100)
     # #1349: auto-off after AMS drying completes. Independent of `auto_off`
     # (print-finish). Fires whenever any AMS on the linked printer finishes
     # a dry cycle.
@@ -188,6 +191,9 @@ class SmartPlugUpdate(IgnoresNullForRequiredColumns):
     off_delay_mode: Literal["time", "temperature"] | None = None
     off_delay_minutes: int | None = Field(default=None, ge=0, le=60)
     off_temp_threshold: int | None = Field(default=None, ge=30, le=150)
+    # #3464: see SmartPlugBase.off_temp_source.
+    off_temp_source: Literal["nozzle", "bed"] | None = None
+    off_bed_temp_threshold: int | None = Field(default=None, ge=20, le=100)
     # #1349: per-plug drying auto-off.
     auto_off_after_drying: bool | None = None
     off_delay_after_drying_minutes: int | None = Field(default=None, ge=0, le=120)

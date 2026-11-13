@@ -48,6 +48,8 @@ const createMockPlug = (overrides: Partial<SmartPlug> = {}): SmartPlug => ({
   off_delay_mode: 'time',
   off_delay_minutes: 5,
   off_temp_threshold: 70,
+  off_temp_source: 'nozzle',
+  off_bed_temp_threshold: 35,
   username: null,
   password: null,
   power_alert_enabled: false,

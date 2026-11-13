@@ -6161,6 +6161,15 @@ async def _run_migrations(conn):
         "ALTER TABLE spool_assignment ADD COLUMN assigned_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL",
     )
 
+    # Migration: what a smart plug's temperature-based auto-off waits for
+    # (#3464), and the bed's own threshold. NOT NULL with the model's server
+    # defaults, identical DDL on SQLite and Postgres; existing plugs keep
+    # waiting for the nozzle only, as they did.
+    await _safe_execute(
+        conn, "ALTER TABLE smart_plugs ADD COLUMN off_temp_source VARCHAR(20) NOT NULL DEFAULT 'nozzle'"
+    )
+    await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN off_bed_temp_threshold INTEGER NOT NULL DEFAULT 35")
+
     await _backfill_archive_run_photos(conn)
     await _migrate_h3c_queue_tray_ids(conn)
 

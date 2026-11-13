@@ -173,3 +173,51 @@ class TestSetting:
 
         assert response.json()["hide_ams_firmware_warning"] is False
         assert is_hidden_hms_code("0500040000010044") is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+class TestStartup:
+    """The stored choice is applied when Bambuddy starts, not only when it is saved."""
+
+    async def _store(self, db_session, value: str) -> None:
+        from backend.app.models.settings import Settings
+
+        db_session.add(Settings(key="hide_ams_firmware_warning", value=value))
+        await db_session.commit()
+
+    async def test_a_stored_on_hides_the_warning(self, db_session):
+        from backend.app.main import load_hide_ams_firmware_warning
+
+        await self._store(db_session, "true")
+        await load_hide_ams_firmware_warning(db_session)
+
+        assert is_hidden_hms_code("0500040000010044") is True
+
+    async def test_a_stored_off_lists_it(self, db_session):
+        from backend.app.main import load_hide_ams_firmware_warning
+
+        hms_errors.set_hide_ams_firmware_mismatch(True)
+        await self._store(db_session, "false")
+        await load_hide_ams_firmware_warning(db_session)
+
+        assert is_hidden_hms_code("0500040000010044") is False
+
+    async def test_nothing_stored_lists_it(self, db_session):
+        from backend.app.main import load_hide_ams_firmware_warning
+
+        hms_errors.set_hide_ams_firmware_mismatch(True)
+        await load_hide_ams_firmware_warning(db_session)
+
+        assert is_hidden_hms_code("0500040000010044") is False
+
+    async def test_the_lifespan_loads_it_after_the_migrations(self):
+        """Read from the source, as in test_oidc_env_startup.py: running the
+        lifespan starts printers, MQTT and schedulers."""
+        import inspect
+
+        from backend.app.main import lifespan
+
+        source = inspect.getsource(lifespan)
+        call = source.index("await load_hide_ams_firmware_warning(")
+        assert source.index("await init_db()") < call

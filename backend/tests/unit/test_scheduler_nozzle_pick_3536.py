@@ -31,7 +31,7 @@ from backend.app.services.print_scheduler import (
     _wrong_nozzle_label,
 )
 
-# --- Task 1: sliced diameter per candidate ---------------------------------
+# --- Sliced diameter per candidate -------------------------------------------
 
 
 def _item(*, variants=None, archive=None, library_file=None):
@@ -95,7 +95,7 @@ def test_candidates_carry_their_own_nozzle():
     assert sorted(c.sliced_nozzle for c in _candidates_for(multi)) == [0.4, 0.6]
 
 
-# --- Task 2: does this nozzle fit? ------------------------------------------
+# --- Does this nozzle fit? ---------------------------------------------------
 
 
 def _state(*diameters: str):
@@ -159,7 +159,7 @@ def test_float_noise_from_metadata_still_fits():
     assert _wrong_nozzle_label("A1-1", _state("0.4"), 0.6000001) == "A1-1 (0.4mm)"
 
 
-# --- Task 3: the matcher passes over a printer with the wrong nozzle --------
+# --- Matcher: passes over a printer with the wrong nozzle --------------------
 
 
 @pytest.fixture
@@ -281,8 +281,20 @@ class TestMatcherNozzle:
         assert PrintScheduler._is_busy_only(reason) is False
         assert _asks_nothing_new(reason) is False
 
+    @pytest.mark.asyncio
+    async def test_missing_filament_and_wrong_nozzle_mixed(self, a1_farm):
+        """A1-1 has the wrong nozzle, A1-2 fits but lacks PETG: only the filament is named."""
+        scheduler = PrintScheduler()
+        states = {1: _state("0.4"), 2: _state("0.6")}
+        with patch.object(
+            scheduler, "_get_missing_filament_types", lambda pid, _types, *_a, **_k: ["PETG"] if pid == 2 else []
+        ):
+            pick, reason = await _find(a1_farm, scheduler, states, sliced_nozzle=0.6, required_filament_types=["PETG"])
+        assert pick is None
+        assert reason == "Waiting for filament: A1-2 (needs PETG)"
 
-# --- Task 4: the wake path does not power on a printer with the wrong nozzle --
+
+# --- Wake path: does not power on a printer with the wrong nozzle ------------
 
 
 class TestWakeNozzle:
@@ -330,7 +342,7 @@ class TestWakeNozzle:
         assert await self._wake(a1_farm, None) == (1, 1)
 
 
-# --- Task 5: end to end through the queue pass -------------------------------
+# --- Queue pass: end to end ---------------------------------------------------
 
 
 async def _add_any_a1(ctx, nozzle, **fields):
@@ -430,6 +442,9 @@ class TestQueuePassNozzle:
         assert launched.call_args[0][0] == [item_id]
         assert launched.call_args[0][1] == {item_id: 2}
         assert (await _get_item(a1_farm, item_id)).printer_id == 2
+
+
+# --- Low-filament hold release -----------------------------------------------
 
 
 class TestShortHoldNozzle:

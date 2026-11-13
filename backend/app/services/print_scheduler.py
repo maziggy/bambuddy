@@ -3480,6 +3480,8 @@ class PrintScheduler:
         rather than woken (#2876): the colours are readable while it is off, so
         switching a farm on one machine at a time to discover them wakes
         printers that could never have taken the job.
+        A printer whose last known nozzle cannot print the file is passed over
+        the same way (#3536).
 
         Deliberately does NOT go on to match the job once a printer is up: AMS
         trays arrive with the first status push after connect, so a filament

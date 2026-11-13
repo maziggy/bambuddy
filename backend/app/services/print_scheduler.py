@@ -2583,6 +2583,7 @@ class PrintScheduler:
                                 drying_ids=drying_held,
                                 unmatched_on=unmatched_on,
                                 refused_uploads={pid: self._upload_refusal_kind.get(pid) for pid in backoff_printers},
+                                sliced_nozzle=candidate.sliced_nozzle,
                             )
                             # "Only if the previous print succeeded" is about the
                             # printer the job lands on: one whose last print failed

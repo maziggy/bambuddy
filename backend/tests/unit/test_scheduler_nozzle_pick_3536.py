@@ -7,14 +7,20 @@ of the fix in order: the sliced diameter carried on each candidate, then the
 printer filter built on it.
 """
 
+from contextlib import ExitStack
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.orm import selectinload
 
 import backend.app.models  # noqa: F401 - populate Base.metadata
 from backend.app.core.database import Base
+from backend.app.core.printer_scope import ALL_PRINTERS
+from backend.app.models.library import LibraryFile
+from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
 from backend.app.services.print_scheduler import (
     PrintScheduler,
@@ -322,3 +328,105 @@ class TestWakeNozzle:
     @pytest.mark.asyncio
     async def test_unknown_sliced_nozzle_wakes_the_least_worn_as_before(self, a1_farm):
         assert await self._wake(a1_farm, None) == (1, 1)
+
+
+# --- Task 5: end to end through the queue pass -------------------------------
+
+
+async def _add_any_a1(ctx, nozzle, **fields):
+    async with ctx.session_maker() as db:
+        lib = LibraryFile(
+            filename="part-a.gcode.3mf",
+            file_path="/library/part-a.gcode.3mf",
+            file_size=10,
+            file_type="gcode.3mf",
+            file_metadata={"nozzle_diameter": nozzle},
+        )
+        db.add(lib)
+        await db.flush()
+        values = {"status": "pending", "position": 1, "target_model": "A1", "library_file_id": lib.id}
+        values.update(fields)
+        item = PrintQueueItem(**values)
+        db.add(item)
+        await db.commit()
+        return item.id
+
+
+async def _load(db, item_id):
+    return (
+        await db.execute(
+            select(PrintQueueItem)
+            .where(PrintQueueItem.id == item_id)
+            .options(
+                selectinload(PrintQueueItem.library_file),
+                selectinload(PrintQueueItem.archive),
+                selectinload(PrintQueueItem.variants),
+            )
+        )
+    ).scalar_one()
+
+
+async def _get_item(ctx, item_id):
+    async with ctx.session_maker() as db:
+        return await _load(db, item_id)
+
+
+class TestQueuePassNozzle:
+    async def _pass(self, ctx, states):
+        scheduler = PrintScheduler()
+        launched = MagicMock()
+        dispatched = AsyncMock()
+        patches = [
+            patch("backend.app.services.print_scheduler.async_session", ctx.session_maker),
+            patch("backend.app.core.database.async_session", ctx.session_maker),
+            patch("backend.app.services.print_scheduler.printer_manager.is_connected", MagicMock(return_value=True)),
+            patch("backend.app.services.print_scheduler.printer_manager.get_status", lambda pid: states.get(pid)),
+            patch(
+                "backend.app.services.print_scheduler.ha_sensor_manager.blocked_printers",
+                AsyncMock(return_value={}),
+            ),
+            patch(
+                "backend.app.services.notification_service.notification_service.on_queue_job_waiting",
+                AsyncMock(),
+            ),
+            patch(
+                "backend.app.services.notification_service.notification_service.on_queue_job_assigned",
+                AsyncMock(),
+            ),
+            patch("backend.app.services.print_scheduler.compute_deficit_for_queue_item", AsyncMock(return_value=[])),
+            patch.object(scheduler, "_filament_short_on", AsyncMock(return_value=False)),
+            patch.object(scheduler, "_is_printer_idle", MagicMock(return_value=True)),
+            patch.object(scheduler, "_check_auto_drying", AsyncMock()),
+            patch.object(scheduler, "_ensure_ams_mapping", AsyncMock(return_value=None)),
+            patch.object(scheduler, "_block_on_unmatched_filament", AsyncMock(return_value=False)),
+            patch.object(scheduler, "_unmatched_on", AsyncMock(return_value=[])),
+            patch.object(scheduler, "_launch_uploads", launched),
+            patch.object(scheduler, "_dispatch_one", dispatched),
+        ]
+        with ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            await scheduler.check_queue()
+        return launched, dispatched
+
+    @pytest.mark.asyncio
+    async def test_waits_with_the_nozzle_reason_when_no_printer_fits(self, a1_farm):
+        item_id = await _add_any_a1(a1_farm, 0.6)
+        launched, dispatched = await self._pass(a1_farm, {1: _state("0.4"), 2: _state("0.4")})
+
+        item = await _get_item(a1_farm, item_id)
+        assert item.status == "pending"
+        assert item.printer_id is None
+        assert item.waiting_reason == "No A1 has a 0.6mm nozzle: A1-1 (0.4mm), A1-2 (0.4mm)"
+        launched.assert_not_called()
+        dispatched.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_goes_to_the_printer_whose_nozzle_fits(self, a1_farm):
+        item_id = await _add_any_a1(a1_farm, 0.6)
+        launched, _ = await self._pass(a1_farm, {1: _state("0.4"), 2: _state("0.6")})
+
+        launched.assert_called_once()
+        assert launched.call_args[0][0] == [item_id]
+        assert launched.call_args[0][1] == {item_id: 2}
+        assert (await _get_item(a1_farm, item_id)).printer_id == 2

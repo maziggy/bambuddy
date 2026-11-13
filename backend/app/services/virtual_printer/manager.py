@@ -1287,12 +1287,13 @@ class VirtualPrinterInstance:
 
                     # "Start the first job, stage the rest" (#3299): the first
                     # plate of an upload starts by itself only when the target
-                    # has nothing queued or printing; everything else waits for
-                    # its own Play.
+                    # has nothing queued and is not printing, also a print the
+                    # queue did not start; everything else waits for its own Play.
                     first_starts_itself = (
                         self.auto_dispatch
                         and self.auto_dispatch_first_only
                         and not await self._target_has_queued_work(db, target_model)
+                        and not await self._target_is_printing(db, target_model)
                     )
 
                     # Pick a base position the same way the manual /print-queue/
@@ -1517,6 +1518,37 @@ class VirtualPrinterInstance:
             # No target at all: any job in the queue.
             scope = true()
         return bool((await db.execute(_sql_select(exists().where(busy, scope)))).scalar())
+
+    async def _target_is_printing(self, db, target_model: str | None) -> bool:
+        """Whether this virtual printer's target is printing right now (#3299).
+
+        A print started on the printer or sent straight from the slicer has no
+        queue item, so the queue alone would take the next upload for a first
+        job. A connected printer is busy while it reports anything but IDLE,
+        FINISH or FAILED, the states the scheduler treats as idle. For "any
+        <model>" any printer of the model counts; a disconnected one does not.
+        """
+        if self._printer_manager is None:
+            return False
+        if self.target_printer_id:
+            printer_ids = [self.target_printer_id]
+        elif target_model:
+            from sqlalchemy import select as _sql_select
+
+            from backend.app.models.printer import Printer
+
+            rows = await db.execute(_sql_select(Printer.id).where(Printer.model == target_model))
+            printer_ids = list(rows.scalars().all())
+        else:
+            # No target at all: any printer, as for the queue.
+            printer_ids = list(self._printer_manager.get_all_statuses())
+        for printer_id in printer_ids:
+            if not self._printer_manager.is_connected(printer_id):
+                continue
+            state = self._printer_manager.get_status(printer_id)
+            if state is not None and state.state not in ("IDLE", "FINISH", "FAILED"):
+                return True
+        return False
 
     async def _broadcast_library_files_changed(self) -> None:
         """Let open File Manager pages refetch: a file arrived outside a request."""

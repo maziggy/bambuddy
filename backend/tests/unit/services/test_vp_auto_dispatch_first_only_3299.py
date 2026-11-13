@@ -73,7 +73,7 @@ def _factory(added: list):
     return MagicMock(return_value=ctx)
 
 
-async def _send(tmp_path, *, plates=1, has_work=False, **vp):
+async def _send(tmp_path, *, plates=1, has_work=False, printing=False, **vp):
     """Send a file to a queue-mode VP; return the queue items it made."""
     added: list = []
     inst = VirtualPrinterInstance(
@@ -95,6 +95,7 @@ async def _send(tmp_path, *, plates=1, has_work=False, **vp):
         patch("backend.app.core.auth.queue_review_required_for", return_value=False),
         patch("backend.app.core.websocket.ws_manager.send_library_files_changed", new_callable=AsyncMock),
         patch.object(inst, "_target_has_queued_work", AsyncMock(return_value=has_work)),
+        patch.object(inst, "_target_is_printing", AsyncMock(return_value=printing)),
     ):
         await inst._add_to_print_queue(file_path, "192.168.1.100")
     return [item for item in added if isinstance(item, PrintQueueItem)]
@@ -112,6 +113,13 @@ class TestFirstJobStartsItself:
         items = await _send(tmp_path, auto_dispatch=True, auto_dispatch_first_only=True, has_work=True)
 
         assert [i.manual_start for i in items] == [True]
+
+    @pytest.mark.asyncio
+    async def test_a_job_sent_while_the_target_prints_outside_the_queue_is_staged(self, tmp_path):
+        """A print started on the printer or from the slicer has no queue item, and still counts."""
+        items = await _send(tmp_path, plates=2, auto_dispatch=True, auto_dispatch_first_only=True, printing=True)
+
+        assert [i.manual_start for i in items] == [True, True]
 
     @pytest.mark.asyncio
     async def test_only_the_first_plate_of_a_send_all_starts_by_itself(self, tmp_path):
@@ -203,43 +211,49 @@ class TestOtherModesAreUnchanged:
         assert [i.manual_start for i in added if isinstance(i, PrintQueueItem)] == [True]
 
 
+@pytest.fixture
+async def db():
+    """A real database with printers 1 and 2 (P1S) and 3 (X1C)."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with maker() as session:
+        for idx, model in ((1, "P1S"), (2, "P1S"), (3, "X1C")):
+            session.add(
+                Printer(
+                    id=idx,
+                    name=f"P{idx}",
+                    serial_number=f"SERIAL{idx}",
+                    ip_address=f"192.168.1.{idx}",
+                    access_code="12345678",
+                    model=model,
+                )
+            )
+        await session.commit()
+        yield session
+    await engine.dispose()
+
+
+def _instance(tmp_path, **kwargs):
+    return VirtualPrinterInstance(
+        vp_id=63,
+        name="Ask",
+        mode="queue",
+        model="C12",
+        access_code="12345678",
+        serial_suffix="391800063",
+        base_dir=tmp_path,
+        session_factory=MagicMock(),
+        **kwargs,
+    )
+
+
 class TestTargetHasQueuedWork:
     """The question itself, against a real database."""
 
-    @pytest.fixture
-    async def db(self):
-        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-        async with maker() as session:
-            for idx, model in ((1, "P1S"), (2, "P1S"), (3, "X1C")):
-                session.add(
-                    Printer(
-                        id=idx,
-                        name=f"P{idx}",
-                        serial_number=f"SERIAL{idx}",
-                        ip_address=f"192.168.1.{idx}",
-                        access_code="12345678",
-                        model=model,
-                    )
-                )
-            await session.commit()
-            yield session
-        await engine.dispose()
-
     def _inst(self, tmp_path, **kwargs):
-        return VirtualPrinterInstance(
-            vp_id=63,
-            name="Ask",
-            mode="queue",
-            model="C12",
-            access_code="12345678",
-            serial_suffix="391800063",
-            base_dir=tmp_path,
-            session_factory=MagicMock(),
-            **kwargs,
-        )
+        return _instance(tmp_path, **kwargs)
 
     async def _item(self, db, status="pending", **kwargs):
         db.add(PrintQueueItem(status=status, **kwargs))
@@ -288,3 +302,69 @@ class TestTargetHasQueuedWork:
 
         assert await self._inst(tmp_path)._target_has_queued_work(db, "P1S") is True
         assert await self._inst(tmp_path)._target_has_queued_work(db, "X1C") is False
+
+
+def _printers(states: dict[int, str | None]):
+    """A printer manager with these printers connected (a state) or not (None)."""
+    pm = MagicMock()
+    pm.is_connected = MagicMock(side_effect=lambda pid: states.get(pid) is not None)
+    pm.get_status = MagicMock(side_effect=lambda pid: MagicMock(state=states[pid]) if states.get(pid) else None)
+    pm.get_all_statuses = MagicMock(
+        return_value={pid: MagicMock(state=state) for pid, state in states.items() if state is not None}
+    )
+    return pm
+
+
+class TestTargetIsPrinting:
+    """The live state: a print the queue did not start still makes the target busy."""
+
+    def _inst(self, tmp_path, states=None, **kwargs):
+        inst = _instance(tmp_path, **kwargs)
+        inst._printer_manager = _printers(states or {})
+        return inst
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("state", ["RUNNING", "PAUSE", "PREPARE", "SLICING"])
+    async def test_a_fixed_target_that_prints_is_busy(self, db, tmp_path, state):
+        inst = self._inst(tmp_path, {1: state}, target_printer_id=1)
+
+        assert await inst._target_is_printing(db, None) is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("state", ["IDLE", "FINISH", "FAILED"])
+    async def test_a_fixed_target_that_is_idle_is_not_busy(self, db, tmp_path, state):
+        inst = self._inst(tmp_path, {1: state}, target_printer_id=1)
+
+        assert await inst._target_is_printing(db, None) is False
+
+    @pytest.mark.asyncio
+    async def test_a_disconnected_fixed_target_is_not_busy(self, db, tmp_path):
+        inst = self._inst(tmp_path, {1: None}, target_printer_id=1)
+
+        assert await inst._target_is_printing(db, None) is False
+
+    @pytest.mark.asyncio
+    async def test_another_printer_printing_does_not_make_a_fixed_target_busy(self, db, tmp_path):
+        inst = self._inst(tmp_path, {1: "IDLE", 2: "RUNNING"}, target_printer_id=1)
+
+        assert await inst._target_is_printing(db, None) is False
+
+    @pytest.mark.asyncio
+    async def test_for_any_model_a_printer_of_the_model_printing_is_busy(self, db, tmp_path):
+        inst = self._inst(tmp_path, {1: "IDLE", 2: "RUNNING", 3: "IDLE"})
+
+        assert await inst._target_is_printing(db, "P1S") is True
+        assert await inst._target_is_printing(db, "X1C") is False
+
+    @pytest.mark.asyncio
+    async def test_for_any_model_a_disconnected_printer_does_not_count(self, db, tmp_path):
+        inst = self._inst(tmp_path, {1: "IDLE", 2: None})
+
+        assert await inst._target_is_printing(db, "P1S") is False
+
+    @pytest.mark.asyncio
+    async def test_without_a_printer_manager_nothing_is_busy(self, db, tmp_path):
+        inst = self._inst(tmp_path, target_printer_id=1)
+        inst._printer_manager = None
+
+        assert await inst._target_is_printing(db, None) is False

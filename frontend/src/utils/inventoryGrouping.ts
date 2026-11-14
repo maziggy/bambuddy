@@ -5,6 +5,9 @@ import type { InventorySpool } from '../api/client';
 // members so the header shows group totals (#1368), while identity fields are
 // carried from the first member — all members share them, they are the group
 // key. The expanded per-spool rows keep using the real per-member spools.
+// A scale reading belongs to one spool, so the header has none: compared with
+// the summed weight, the first member's reading made every weighed group show
+// a mismatch, and its Sync button re-synced only that first spool.
 export function aggregateGroupSpool(spools: InventorySpool[]): InventorySpool {
   const base = spools[0];
   let labelWeight = 0;
@@ -20,5 +23,7 @@ export function aggregateGroupSpool(spools: InventorySpool[]): InventorySpool {
     label_weight: labelWeight,
     weight_used: weightUsed,
     core_weight: coreWeight,
+    last_scale_weight: null,
+    last_weighed_at: null,
   };
 }

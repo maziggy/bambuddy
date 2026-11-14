@@ -31,6 +31,7 @@ from backend.app.models.printer import Printer
 from backend.app.models.user import User
 from backend.app.schemas.maintenance import (
     MaintenanceHistoryResponse,
+    MaintenanceLogEntryResponse,
     MaintenanceLogPage,
     MaintenanceStatus,
     MaintenanceTypeCreate,
@@ -993,7 +994,8 @@ async def get_printer_maintenance_log(
     result = await db.execute(
         select(MaintenanceLogEntry).where(where).order_by(*_NEWEST_FIRST).limit(limit).offset(offset)
     )
-    return MaintenanceLogPage(items=list(result.scalars().all()), total=total)
+    items = [MaintenanceLogEntryResponse.model_validate(entry) for entry in result.scalars().all()]
+    return MaintenanceLogPage(items=items, total=total)
 
 
 def _csv_response(file_bytes: bytes, filename: str) -> StreamingResponse:

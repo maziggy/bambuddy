@@ -324,6 +324,75 @@ class NotificationService:
             return f"{hours}h {minutes}m"
         return f"{minutes}m"
 
+    async def _printer_location(self, db: AsyncSession, printer_id: int | None) -> str:
+        """The printer's location (#3496); empty when it has none or is not known."""
+        if printer_id is None:
+            return ""
+        from backend.app.models.printer import Printer
+
+        try:
+            location = await db.scalar(select(Printer.location).where(Printer.id == printer_id))
+        except Exception as e:
+            logger.debug("Could not read the location of printer %s: %s", printer_id, e)
+            return ""
+        return (location or "").strip()
+
+    async def _print_cost_variables(self, db: AsyncSession, archive_data: dict | None) -> dict[str, str]:
+        """Filament, energy and wear cost of the print that ended, and their sum (#1379).
+
+        Read from the print's own log entry, as the Print Log shows them: that is
+        this run's cost, where the archive's is the first run's. Plain numbers
+        with two decimals, in the currency set in Settings (``currency`` is its code); "N/A" where the cost
+        is not tracked (no smart plug for energy, no hourly wear cost) or the
+        print has no log entry (a print from outside Bambuddy).
+        """
+        not_tracked = {"filament_cost": "N/A", "energy_cost": "N/A", "wear_cost": "N/A", "total_cost": "N/A"}
+        currency = await self._configured_currency(db)
+        not_tracked["currency"] = currency
+        archive_id = (archive_data or {}).get("archive_id")
+        run_id = (archive_data or {}).get("run_id")
+        if archive_id is None or run_id is None:
+            return not_tracked
+        try:
+            from backend.app.services.print_log import run_of
+
+            run = await run_of(db, int(archive_id), int(run_id))
+        except Exception as e:
+            logger.debug("Could not read the costs of run %s: %s", run_id, e)
+            return not_tracked
+        if run is None:
+            return not_tracked
+
+        parts = {"filament_cost": run.cost, "energy_cost": run.energy_cost, "wear_cost": run.wear_cost}
+        variables = {key: f"{value:.2f}" if value is not None else "N/A" for key, value in parts.items()}
+        known = [value for value in parts.values() if value is not None]
+        variables["total_cost"] = f"{sum(known):.2f}" if known else "N/A"
+        variables["currency"] = currency
+        return variables
+
+    async def _configured_currency(self, db: AsyncSession) -> str:
+        """The currency code set in Settings (e.g. "EUR"), as every cost in Bambuddy is shown in."""
+        from backend.app.services.finance_balance import resolve_configured_currency
+
+        try:
+            return await resolve_configured_currency(db)
+        except Exception as e:
+            logger.debug("Could not read the currency setting: %s", e)
+            return ""
+
+    async def _maintenance_variables(self, db: AsyncSession, printer_id: int) -> dict[str, str]:
+        """How near the printer is to its next service (#2776), from the Maintenance page's figures."""
+        from backend.app.services.maintenance_notification_text import NO_MAINTENANCE_VARIABLES, maintenance_variables
+
+        try:
+            from backend.app.api.routes.maintenance import _get_printer_maintenance_internal
+
+            overview = await _get_printer_maintenance_internal(printer_id, db, commit=False)
+        except Exception as e:
+            logger.debug("Could not read the maintenance of printer %s: %s", printer_id, e)
+            return dict(NO_MAINTENANCE_VARIABLES)
+        return maintenance_variables(overview.maintenance_items)
+
     def _clean_filename(self, filename: str) -> str:
         """Extract filename and remove file extensions."""
         import os
@@ -1832,6 +1901,7 @@ class NotificationService:
 
         variables = {
             "printer": printer_name,
+            "location": await self._printer_location(db, printer_id),
             "filename": filename,
             "estimated_time": time_str,
             "eta": eta_str,
@@ -1897,11 +1967,15 @@ class NotificationService:
 
         variables = {
             "printer": printer_name,
+            "location": await self._printer_location(db, printer_id),
             "filename": filename,
             "duration": "Unknown",
             "filament_grams": "Unknown",
             "reason": "Unknown",
         }
+        variables.update(await self._print_cost_variables(db, archive_data))
+        # Not at print start: the figure would be stale by the end of the job.
+        variables.update(await self._maintenance_variables(db, printer_id))
 
         if archive_data:
             # {{duration}} on completion / failure / stopped events is the *actual*
@@ -2720,6 +2794,7 @@ class NotificationService:
         db: AsyncSession,
         image_data: bytes | None = None,
         finish_photo_url: str | None = None,
+        printer_id: int | None = None,
     ) -> None:
         """Send a print event email notification to the user who submitted the job.
 
@@ -2733,6 +2808,7 @@ class NotificationService:
             finish_photo_url: The same snapshot's public URL — only used so the
                 template can reference {finish_photo_url}, which is what opts
                 the email into inlining the photo (see send_user_print_notification).
+            printer_id: The printer, for the {location} variable (#3496).
         """
         if created_by_id is None:
             logger.debug("[EMAIL] Skipping user print email (%s): no created_by_id", event_type)
@@ -2816,6 +2892,7 @@ class NotificationService:
             # Build variables
             variables = {
                 "printer": printer_name,
+                "location": await self._printer_location(db, printer_id),
                 "filename": self._clean_filename(filename),
             }
             if finish_photo_url:

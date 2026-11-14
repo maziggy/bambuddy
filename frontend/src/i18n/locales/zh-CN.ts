@@ -2046,6 +2046,23 @@ export default {
     noPermissionEditIntervals: '您没有编辑间隔的权限',
     // Configure link
     configureSettings: '配置维护类型和间隔',
+    // Maintenance log
+    resetDialogTitle: '重置“{{task}}”？',
+    resetDialogMessage: '将此任务在 {{printer}} 上标记为已完成，并重新开始计算间隔。此次重置会记录到打印机的维护日志中。',
+    commentLabel: '备注（可选）',
+    commentPlaceholder: '做了什么、使用的零件、发现的问题……',
+    log: '日志',
+    viewLog: '查看维护日志',
+    logTitle: '维护日志：{{printer}}',
+    logEmpty: '此打印机尚无维护记录。',
+    logShowing: '显示 {{shown}} / {{total}}',
+    loadMore: '加载更多',
+    exportCsv: '导出 CSV',
+    exportAll: '导出日志',
+    exportAllHint: '将所有打印机（包括已删除的）的维护日志下载为 CSV',
+    performedBy: '执行人：{{user}}',
+    atPrintHours: '打印 {{hours}} 小时时',
+    exportFailed: '导出失败：{{error}}',
   },
 
   // Settings page

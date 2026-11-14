@@ -2067,6 +2067,23 @@ export default {
     noPermissionEditIntervals: 'Nie masz uprawnień do edytowania interwałów',
     // Configure link
     configureSettings: 'Skonfiguruj typy i interwały konserwacji',
+    // Maintenance log
+    resetDialogTitle: 'Zresetować „{{task}}”?',
+    resetDialogMessage: 'Oznacza to zadanie jako wykonane na {{printer}} i rozpoczyna jego interwał od nowa. Reset zostanie dodany do dziennika konserwacji drukarki.',
+    commentLabel: 'Komentarz (opcjonalnie)',
+    commentPlaceholder: 'Co zrobiono, użyte części, zauważone problemy…',
+    log: 'Dziennik',
+    viewLog: 'Pokaż dziennik konserwacji',
+    logTitle: 'Dziennik konserwacji: {{printer}}',
+    logEmpty: 'Dla tej drukarki nie zapisano jeszcze żadnej konserwacji.',
+    logShowing: 'Wyświetlono {{shown}} z {{total}}',
+    loadMore: 'Wczytaj więcej',
+    exportCsv: 'Eksportuj CSV',
+    exportAll: 'Eksportuj dziennik',
+    exportAllHint: 'Pobierz jako CSV dziennik konserwacji wszystkich drukarek, także usuniętych',
+    performedBy: 'wykonał(a): {{user}}',
+    atPrintHours: 'przy {{hours}} h',
+    exportFailed: 'Eksport nie powiódł się: {{error}}',
   },
 
   // Settings page

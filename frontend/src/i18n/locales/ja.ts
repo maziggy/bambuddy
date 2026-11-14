@@ -2046,6 +2046,23 @@ export default {
     noPermissionEditIntervals: 'メンテナンス間隔を編集する権限がありません',
     // Configure link
     configureSettings: 'メンテナンスタイプと間隔を設定',
+    // Maintenance log
+    resetDialogTitle: '「{{task}}」をリセットしますか？',
+    resetDialogMessage: '{{printer}} でこのタスクを完了済みにし、間隔を再開します。リセットはプリンターのメンテナンスログに記録されます。',
+    commentLabel: 'コメント（任意）',
+    commentPlaceholder: '実施内容、使用部品、気づいた点など…',
+    log: 'ログ',
+    viewLog: 'メンテナンスログを表示',
+    logTitle: 'メンテナンスログ: {{printer}}',
+    logEmpty: 'このプリンターのメンテナンス記録はまだありません。',
+    logShowing: '{{total}} 件中 {{shown}} 件を表示',
+    loadMore: 'さらに読み込む',
+    exportCsv: 'CSV をエクスポート',
+    exportAll: 'ログをエクスポート',
+    exportAllHint: '削除済みを含む全プリンターのメンテナンスログを CSV でダウンロード',
+    performedBy: '実施者: {{user}}',
+    atPrintHours: '印刷時間 {{hours}} h 時点',
+    exportFailed: 'エクスポートに失敗しました: {{error}}',
   },
 
   // Settings page

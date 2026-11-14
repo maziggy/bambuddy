@@ -2067,6 +2067,23 @@ export default {
     noPermissionEditIntervals: 'You do not have permission to edit intervals',
     // Configure link
     configureSettings: 'Configure maintenance types and intervals',
+    // Maintenance log
+    resetDialogTitle: 'Reset "{{task}}"?',
+    resetDialogMessage: 'Marks this task as done on {{printer}} and starts its interval again. The reset is added to the printer\'s maintenance log.',
+    commentLabel: 'Comment (optional)',
+    commentPlaceholder: 'What was done, parts used, anything noticed…',
+    log: 'Log',
+    viewLog: 'View maintenance log',
+    logTitle: 'Maintenance log: {{printer}}',
+    logEmpty: 'No maintenance has been logged for this printer yet.',
+    logShowing: 'Showing {{shown}} of {{total}}',
+    loadMore: 'Load more',
+    exportCsv: 'Export CSV',
+    exportAll: 'Export log',
+    exportAllHint: 'Download the maintenance log of all printers, including deleted ones, as CSV',
+    performedBy: 'by {{user}}',
+    atPrintHours: 'at {{hours}} h',
+    exportFailed: 'Export failed: {{error}}',
   },
 
   // Settings page

@@ -6201,6 +6201,7 @@ async def _run_migrations(conn):
     await _migrate_spool_usage_outlives_its_archive(conn)
     await _migrate_spool_usage_outlives_its_spool(conn)
     await _backfill_pipeline_job_final_status(conn)
+    await _backfill_maintenance_log(conn)
     await _release_stuck_budget_reservations(conn)
     await _release_slots_of_archived_spools(conn)
     await _migrate_pg_column_types(conn)
@@ -6718,6 +6719,35 @@ async def _backfill_pipeline_job_final_status(conn) -> None:
         )
     if result.rowcount:
         logger.info("Stored the final status of %d pipeline job(s) from their queue entry", result.rowcount)
+
+
+async def _backfill_maintenance_log(conn) -> None:
+    """Copy maintenance history into the maintenance log.
+
+    The log (maintenance_log_entries) is written with each reset and outlives
+    the printer and its tasks; resets before it existed are only in
+    maintenance_history, which goes with them. Not gated: it copies only
+    history rows the log has no entry for (``history_id``), so a second run
+    changes nothing. Who reset them was never recorded and stays unknown.
+    """
+    from sqlalchemy import text
+
+    async with conn.begin_nested():
+        result = await conn.execute(
+            text(
+                "INSERT INTO maintenance_log_entries (printer_id, printer_name, maintenance_type_id, "
+                "maintenance_type_name, hours_at_maintenance, notes, performed_at, history_id) "
+                "SELECT pm.printer_id, p.name, pm.maintenance_type_id, t.name, "
+                "COALESCE(h.hours_at_maintenance, 0), h.notes, h.performed_at, h.id "
+                "FROM maintenance_history h "
+                "JOIN printer_maintenance pm ON pm.id = h.printer_maintenance_id "
+                "JOIN printers p ON p.id = pm.printer_id "
+                "JOIN maintenance_types t ON t.id = pm.maintenance_type_id "
+                "WHERE NOT EXISTS (SELECT 1 FROM maintenance_log_entries l WHERE l.history_id = h.id)"
+            )
+        )
+    if result.rowcount:
+        logger.info("Copied %d maintenance history row(s) into the maintenance log", result.rowcount)
 
 
 async def _release_stuck_budget_reservations(conn) -> None:

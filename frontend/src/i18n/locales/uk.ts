@@ -2063,6 +2063,23 @@ export default {
     noPermissionEditIntervals: "Ви не маєте дозволу редагувати інтервали",
     // Configure link
     configureSettings: "Налаштувати типи та інтервали технічного обслуговування",
+    // Maintenance log
+    resetDialogTitle: 'Скинути «{{task}}»?',
+    resetDialogMessage: 'Позначає це завдання виконаним на {{printer}} і запускає його інтервал заново. Скидання додається до журналу обслуговування принтера.',
+    commentLabel: 'Коментар (необов\'язково)',
+    commentPlaceholder: 'Що зроблено, які деталі використано, зауваження…',
+    log: 'Журнал',
+    viewLog: 'Відкрити журнал обслуговування',
+    logTitle: 'Журнал обслуговування: {{printer}}',
+    logEmpty: 'Для цього принтера ще не записано жодного обслуговування.',
+    logShowing: 'Показано {{shown}} з {{total}}',
+    loadMore: 'Завантажити ще',
+    exportCsv: 'Експорт у CSV',
+    exportAll: 'Експорт журналу',
+    exportAllHint: 'Завантажити журнал обслуговування всіх принтерів, включно з видаленими, у форматі CSV',
+    performedBy: 'виконав(ла): {{user}}',
+    atPrintHours: 'при {{hours}} год',
+    exportFailed: 'Помилка експорту: {{error}}',
   },
 
   // Settings page

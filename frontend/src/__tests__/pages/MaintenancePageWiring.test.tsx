@@ -130,8 +130,14 @@ function typeTile(name: string): HTMLElement {
   return screen.getByText(name).closest('.rounded-xl') as HTMLElement;
 }
 
+/** The reset dialog, opened by a task's Reset button. */
+async function resetDialog(task: string): Promise<HTMLElement> {
+  const heading = await screen.findByRole('heading', { name: `Reset "${task}"?` });
+  return heading.closest('div.fixed') as HTMLElement;
+}
+
 describe('MaintenancePage wiring: status tab', () => {
-  it('Reset on a task sends performMaintenance for that printer\'s item only', async () => {
+  it('Reset asks first, then sends performMaintenance with the comment for that printer\'s item only', async () => {
     const user = userEvent.setup();
     render(<MaintenancePage />);
 
@@ -139,9 +145,46 @@ describe('MaintenancePage wiring: status tab', () => {
     await user.click(within(beta).getByRole('button', { name: /expand/i }));
     await user.click(await within(beta).findByRole('button', { name: 'Reset' }));
 
+    const dialog = await resetDialog('Nozzle Task');
+    expect(within(dialog).getByText(/on Beta Printer/)).toBeInTheDocument();
+    expect(writes()).toEqual([]);
+    await user.type(within(dialog).getByLabelText('Comment (optional)'), '  Nozzle swapped to 0.6  ');
+    await user.click(within(dialog).getByRole('button', { name: 'Reset' }));
+
     await waitFor(() => expect(writes()).toHaveLength(1));
-    expect(writes()[0]).toMatchObject({ method: 'POST', path: '/api/v1/maintenance/items/21/perform' });
+    expect(writes()[0]).toMatchObject({
+      method: 'POST',
+      path: '/api/v1/maintenance/items/21/perform',
+      body: { notes: 'Nozzle swapped to 0.6' },
+    });
     expect(await screen.findByText('Maintenance marked as complete')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Reset "Nozzle Task"?' })).not.toBeInTheDocument());
+  });
+
+  it('a reset without a comment sends no notes', async () => {
+    const user = userEvent.setup();
+    render(<MaintenancePage />);
+
+    const alpha = await printerCard('Alpha Printer');
+    await user.click(within(alpha).getByRole('button', { name: /expand/i }));
+    await user.click(await within(alpha).findByRole('button', { name: 'Reset' }));
+    await user.click(within(await resetDialog('Nozzle Task')).getByRole('button', { name: 'Reset' }));
+
+    await waitFor(() => expect(writes()).toHaveLength(1));
+    expect(writes()[0]).toEqual({ method: 'POST', path: '/api/v1/maintenance/items/11/perform', search: '', body: {} });
+  });
+
+  it('cancelling the reset dialog sends nothing', async () => {
+    const user = userEvent.setup();
+    render(<MaintenancePage />);
+
+    const beta = await printerCard('Beta Printer');
+    await user.click(within(beta).getByRole('button', { name: /expand/i }));
+    await user.click(await within(beta).findByRole('button', { name: 'Reset' }));
+    await user.click(within(await resetDialog('Nozzle Task')).getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Reset "Nozzle Task"?' })).not.toBeInTheDocument());
+    expect(writes()).toEqual([]);
   });
 
   it('the item toggle PATCHes { enabled } for that item', async () => {
@@ -246,6 +289,111 @@ describe('MaintenancePage wiring: settings tab', () => {
     await user.click(await screen.findByRole('button', { name: 'Restore Default Tasks' }));
     await waitFor(() => expect(writes()).toHaveLength(1));
     expect(writes()[0]).toMatchObject({ method: 'POST', path: '/api/v1/maintenance/types/restore-defaults' });
+  });
+});
+
+describe('MaintenancePage wiring: maintenance log', () => {
+  const LOG_ENTRY = {
+    id: 5,
+    printer_id: 2,
+    printer_name: 'Beta Printer',
+    maintenance_type_id: 1,
+    maintenance_type_name: 'Clean Nozzle',
+    hours_at_maintenance: 248.04,
+    notes: 'Swapped to hardened 0.4',
+    performed_by_id: 9,
+    performed_by_username: 'mechanic',
+    performed_at: '2026-11-01T10:30:00',
+  };
+
+  function stubDownloads() {
+    const createObjectURL = vi.fn(() => 'blob:maintenance-log');
+    // A subclass, not a copy: requests still build URLs with `new URL()`.
+    class DownloadURL extends URL {
+      static createObjectURL = createObjectURL;
+      static revokeObjectURL = vi.fn();
+    }
+    vi.stubGlobal('URL', DownloadURL);
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    return createObjectURL;
+  }
+
+  beforeEach(() => {
+    server.use(
+      http.get('*/api/v1/maintenance/printers/:id/log', async ({ request, params }) => {
+        await record(request);
+        const items = params.id === '2' ? [LOG_ENTRY] : [];
+        return HttpResponse.json({ items, total: items.length });
+      }),
+      http.get('*/api/v1/maintenance/printers/:id/log/export', async ({ request }) => {
+        await record(request);
+        return new HttpResponse('csv', {
+          headers: { 'Content-Type': 'text/csv', 'Content-Disposition': 'attachment; filename="maintenance_log_Beta.csv"' },
+        });
+      }),
+      http.get('*/api/v1/maintenance/log/export', async ({ request }) => {
+        await record(request);
+        return new HttpResponse('csv', {
+          headers: { 'Content-Type': 'text/csv', 'Content-Disposition': 'attachment; filename="maintenance_log_all.csv"' },
+        });
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('a printer\'s Log lists its resets with task, user, hours and comment', async () => {
+    const user = userEvent.setup();
+    render(<MaintenancePage />);
+
+    const beta = await printerCard('Beta Printer');
+    await user.click(within(beta).getByRole('button', { name: 'Log' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Maintenance log: Beta Printer' });
+    expect(await within(dialog).findByText('Clean Nozzle')).toBeInTheDocument();
+    expect(within(dialog).getByText('by mechanic')).toBeInTheDocument();
+    expect(within(dialog).getByText('at 248.0 h')).toBeInTheDocument();
+    expect(within(dialog).getByText('Swapped to hardened 0.4')).toBeInTheDocument();
+    expect(within(dialog).getByText('Showing 1 of 1')).toBeInTheDocument();
+    expect(sent.some((s) => s.path === '/api/v1/maintenance/printers/2/log')).toBe(true);
+  });
+
+  it('a printer without resets shows the empty log and cannot export', async () => {
+    const user = userEvent.setup();
+    render(<MaintenancePage />);
+
+    await user.click(within(await printerCard('Alpha Printer')).getByRole('button', { name: 'Log' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Maintenance log: Alpha Printer' });
+    expect(await within(dialog).findByText('No maintenance has been logged for this printer yet.')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Export CSV' })).toBeDisabled();
+  });
+
+  it('Export CSV downloads that printer\'s log', async () => {
+    const createObjectURL = stubDownloads();
+    const user = userEvent.setup();
+    render(<MaintenancePage />);
+
+    await user.click(within(await printerCard('Beta Printer')).getByRole('button', { name: 'Log' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Maintenance log: Beta Printer' });
+    await within(dialog).findByText('Clean Nozzle');
+    await user.click(within(dialog).getByRole('button', { name: 'Export CSV' }));
+
+    await waitFor(() => expect(createObjectURL).toHaveBeenCalledTimes(1));
+    expect(sent.some((s) => s.path === '/api/v1/maintenance/printers/2/log/export')).toBe(true);
+  });
+
+  it('Export log in the header downloads the whole fleet\'s log', async () => {
+    const createObjectURL = stubDownloads();
+    const user = userEvent.setup();
+    render(<MaintenancePage />);
+
+    await user.click(await screen.findByRole('button', { name: 'Export log' }));
+
+    await waitFor(() => expect(createObjectURL).toHaveBeenCalledTimes(1));
+    expect(sent.some((s) => s.path === '/api/v1/maintenance/log/export')).toBe(true);
   });
 });
 

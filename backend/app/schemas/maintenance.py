@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
 
@@ -128,7 +128,42 @@ class PrinterMaintenanceOverview(BaseModel):
     warning_count: int
 
 
+MAINTENANCE_NOTES_MAX_LENGTH = 1000
+
+
 class PerformMaintenanceRequest(BaseModel):
     """Request to mark maintenance as performed."""
 
-    notes: str | None = None
+    # The optional comment logged with the reset.
+    notes: str | None = Field(default=None, max_length=MAINTENANCE_NOTES_MAX_LENGTH)
+
+    @field_validator("notes")
+    @classmethod
+    def _blank_notes_are_none(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+
+class MaintenanceLogEntryResponse(BaseModel):
+    """One reset in a printer's maintenance log."""
+
+    id: int
+    printer_id: int | None  # None once the printer is deleted
+    printer_name: str
+    maintenance_type_id: int | None  # None once the custom task is deleted
+    maintenance_type_name: str
+    hours_at_maintenance: float
+    notes: str | None
+    performed_by_id: int | None
+    performed_by_username: str | None  # None when authentication was off
+    performed_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class MaintenanceLogPage(BaseModel):
+    items: list[MaintenanceLogEntryResponse]
+    total: int

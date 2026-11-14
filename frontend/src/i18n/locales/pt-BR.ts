@@ -2046,6 +2046,23 @@ export default {
     noPermissionEditIntervals: 'Você não tem permissão para editar intervalos',
     // Configure link
     configureSettings: 'Configure tipos de manutenção e intervalos',
+    // Maintenance log
+    resetDialogTitle: 'Redefinir “{{task}}”?',
+    resetDialogMessage: 'Marca esta tarefa como concluída em {{printer}} e reinicia seu intervalo. A redefinição é adicionada ao registro de manutenção da impressora.',
+    commentLabel: 'Comentário (opcional)',
+    commentPlaceholder: 'O que foi feito, peças usadas, observações…',
+    log: 'Registro',
+    viewLog: 'Ver registro de manutenção',
+    logTitle: 'Registro de manutenção: {{printer}}',
+    logEmpty: 'Nenhuma manutenção foi registrada para esta impressora ainda.',
+    logShowing: 'Mostrando {{shown}} de {{total}}',
+    loadMore: 'Carregar mais',
+    exportCsv: 'Exportar CSV',
+    exportAll: 'Exportar registro',
+    exportAllHint: 'Baixar em CSV o registro de manutenção de todas as impressoras, incluindo as excluídas',
+    performedBy: 'por {{user}}',
+    atPrintHours: 'com {{hours}} h de impressão',
+    exportFailed: 'Falha na exportação: {{error}}',
   },
 
   // Settings page

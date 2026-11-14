@@ -2046,6 +2046,23 @@ export default {
     noPermissionEditIntervals: 'Pas d\'autorisation modification intervalles',
     // Configure link
     configureSettings: 'Configurer types et intervalles',
+    // Maintenance log
+    resetDialogTitle: 'Réinitialiser « {{task}} » ?',
+    resetDialogMessage: 'Marque cette tâche comme effectuée sur {{printer}} et redémarre son intervalle. La réinitialisation est ajoutée au journal de maintenance de l\'imprimante.',
+    commentLabel: 'Commentaire (facultatif)',
+    commentPlaceholder: 'Ce qui a été fait, pièces utilisées, remarques…',
+    log: 'Journal',
+    viewLog: 'Voir le journal de maintenance',
+    logTitle: 'Journal de maintenance : {{printer}}',
+    logEmpty: 'Aucune maintenance n\'a encore été enregistrée pour cette imprimante.',
+    logShowing: '{{shown}} sur {{total}} affichés',
+    loadMore: 'Charger plus',
+    exportCsv: 'Exporter en CSV',
+    exportAll: 'Exporter le journal',
+    exportAllHint: 'Télécharger en CSV le journal de maintenance de toutes les imprimantes, y compris celles supprimées',
+    performedBy: 'par {{user}}',
+    atPrintHours: 'à {{hours}} h d\'impression',
+    exportFailed: 'Échec de l\'export : {{error}}',
   },
 
   // Settings page

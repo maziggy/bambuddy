@@ -2048,6 +2048,23 @@ export default {
     noPermissionEditIntervals: 'Aralıkları düzenleme izniniz yok',
     // Yapılandırma bağlantısı
     configureSettings: 'Bakım türlerini ve aralıklarını yapılandır',
+    // Maintenance log
+    resetDialogTitle: '“{{task}}” sıfırlansın mı?',
+    resetDialogMessage: 'Bu görevi {{printer}} üzerinde yapıldı olarak işaretler ve aralığını yeniden başlatır. Sıfırlama, yazıcının bakım günlüğüne eklenir.',
+    commentLabel: 'Yorum (isteğe bağlı)',
+    commentPlaceholder: 'Yapılanlar, kullanılan parçalar, fark edilenler…',
+    log: 'Günlük',
+    viewLog: 'Bakım günlüğünü görüntüle',
+    logTitle: 'Bakım günlüğü: {{printer}}',
+    logEmpty: 'Bu yazıcı için henüz bakım kaydedilmedi.',
+    logShowing: '{{total}} kayıttan {{shown}} tanesi gösteriliyor',
+    loadMore: 'Daha fazla yükle',
+    exportCsv: 'CSV dışa aktar',
+    exportAll: 'Günlüğü dışa aktar',
+    exportAllHint: 'Silinenler dahil tüm yazıcıların bakım günlüğünü CSV olarak indir',
+    performedBy: 'yapan: {{user}}',
+    atPrintHours: '{{hours}} saatte',
+    exportFailed: 'Dışa aktarma başarısız: {{error}}',
   },
 
   // Ayarlar sayfası

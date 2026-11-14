@@ -2046,6 +2046,23 @@ export default {
     noPermissionEditIntervals: '您沒有編輯間隔的權限',
     // Configure link
     configureSettings: '設定維護類型和間隔',
+    // Maintenance log
+    resetDialogTitle: '重設「{{task}}」？',
+    resetDialogMessage: '將此任務在 {{printer}} 上標記為已完成，並重新開始計算間隔。此次重設會記錄到印表機的維護日誌中。',
+    commentLabel: '備註（選填）',
+    commentPlaceholder: '做了什麼、使用的零件、發現的問題……',
+    log: '日誌',
+    viewLog: '檢視維護日誌',
+    logTitle: '維護日誌：{{printer}}',
+    logEmpty: '此印表機尚無維護紀錄。',
+    logShowing: '顯示 {{shown}} / {{total}}',
+    loadMore: '載入更多',
+    exportCsv: '匯出 CSV',
+    exportAll: '匯出日誌',
+    exportAllHint: '將所有印表機（包括已刪除的）的維護日誌下載為 CSV',
+    performedBy: '執行者：{{user}}',
+    atPrintHours: '列印 {{hours}} 小時時',
+    exportFailed: '匯出失敗：{{error}}',
   },
 
   // Settings page

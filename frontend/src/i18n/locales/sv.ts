@@ -2064,6 +2064,23 @@ export default {
     noPermissionEditIntervals: 'Du har inte behörighet att redigera intervall',
     // Configure link
     configureSettings: 'Konfigurera underhållstyper och intervall',
+    // Maintenance log
+    resetDialogTitle: 'Återställ ”{{task}}”?',
+    resetDialogMessage: 'Markerar uppgiften som utförd på {{printer}} och startar om dess intervall. Återställningen läggs till i skrivarens underhållslogg.',
+    commentLabel: 'Kommentar (valfritt)',
+    commentPlaceholder: 'Vad som gjordes, delar som användes, iakttagelser…',
+    log: 'Logg',
+    viewLog: 'Visa underhållslogg',
+    logTitle: 'Underhållslogg: {{printer}}',
+    logEmpty: 'Inget underhåll har loggats för den här skrivaren än.',
+    logShowing: 'Visar {{shown}} av {{total}}',
+    loadMore: 'Läs in fler',
+    exportCsv: 'Exportera CSV',
+    exportAll: 'Exportera logg',
+    exportAllHint: 'Ladda ner underhållsloggen för alla skrivare, även borttagna, som CSV',
+    performedBy: 'av {{user}}',
+    atPrintHours: 'vid {{hours}} h',
+    exportFailed: 'Exporten misslyckades: {{error}}',
   },
 
   // Settings page

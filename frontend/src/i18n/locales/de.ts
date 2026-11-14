@@ -2047,6 +2047,23 @@ export default {
     noPermissionEditIntervals: 'Sie haben keine Berechtigung, Intervalle zu bearbeiten',
     // Configure link
     configureSettings: 'Wartungstypen und Intervalle konfigurieren',
+    // Maintenance log
+    resetDialogTitle: '„{{task}}“ zurücksetzen?',
+    resetDialogMessage: 'Markiert diese Aufgabe auf {{printer}} als erledigt und startet ihr Intervall neu. Das Zurücksetzen wird im Wartungsprotokoll des Druckers festgehalten.',
+    commentLabel: 'Kommentar (optional)',
+    commentPlaceholder: 'Was gemacht wurde, verwendete Teile, Auffälligkeiten…',
+    log: 'Protokoll',
+    viewLog: 'Wartungsprotokoll anzeigen',
+    logTitle: 'Wartungsprotokoll: {{printer}}',
+    logEmpty: 'Für diesen Drucker wurde noch keine Wartung protokolliert.',
+    logShowing: '{{shown}} von {{total}} angezeigt',
+    loadMore: 'Mehr laden',
+    exportCsv: 'CSV exportieren',
+    exportAll: 'Protokoll exportieren',
+    exportAllHint: 'Wartungsprotokoll aller Drucker, auch gelöschter, als CSV herunterladen',
+    performedBy: 'von {{user}}',
+    atPrintHours: 'bei {{hours}} h',
+    exportFailed: 'Export fehlgeschlagen: {{error}}',
   },
 
   // Settings page

@@ -2065,6 +2065,23 @@ export default {
     noPermissionEditIntervals: 'Je hebt geen toestemming om intervallen te bewerken',
     // Configure link
     configureSettings: 'Onderhoudstypen en intervallen configureren',
+    // Maintenance log
+    resetDialogTitle: '“{{task}}” resetten?',
+    resetDialogMessage: 'Markeert deze taak als uitgevoerd op {{printer}} en start het interval opnieuw. De reset wordt toegevoegd aan het onderhoudslogboek van de printer.',
+    commentLabel: 'Opmerking (optioneel)',
+    commentPlaceholder: 'Wat er is gedaan, gebruikte onderdelen, opvallende zaken…',
+    log: 'Logboek',
+    viewLog: 'Onderhoudslogboek bekijken',
+    logTitle: 'Onderhoudslogboek: {{printer}}',
+    logEmpty: 'Voor deze printer is nog geen onderhoud vastgelegd.',
+    logShowing: '{{shown}} van {{total}} getoond',
+    loadMore: 'Meer laden',
+    exportCsv: 'CSV exporteren',
+    exportAll: 'Logboek exporteren',
+    exportAllHint: 'Het onderhoudslogboek van alle printers, ook verwijderde, als CSV downloaden',
+    performedBy: 'door {{user}}',
+    atPrintHours: 'bij {{hours}} u',
+    exportFailed: 'Exporteren mislukt: {{error}}',
   },
 
   // Settings page

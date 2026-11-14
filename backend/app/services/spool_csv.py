@@ -17,7 +17,7 @@ import io
 from datetime import datetime, timezone
 
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import func, select, text
+from sqlalchemy import func, inspect as sa_inspect, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import is_sqlite
@@ -25,6 +25,7 @@ from backend.app.models.color_catalog import ColorCatalogEntry
 from backend.app.models.spool import Spool
 from backend.app.models.supplier import Supplier, supplier_name_key
 from backend.app.schemas.spool import SpoolCreate
+from backend.app.utils.tag_normalization import normalize_tag_uid, normalize_tray_uuid
 
 # Fixed CSV header, in output order. Round-trips cleanly: export writes these
 # columns, import expects them. `material` is the only required field; the rest
@@ -73,7 +74,40 @@ CSV_COLUMNS = [
     # the round-trip.
     "suppliers",
     "purchase_supplier",
+    # Tag and preset fields (#3324): the RFID tag a spool is linked to, the empty
+    # spool weight and the slicer preset. Imported so a spool that comes back in
+    # from a file (a BambuMan export, or a backup of this inventory) stays linked
+    # to its tag instead of turning up as a second, unlinked copy.
+    "tag_uid",
+    "tray_uuid",
+    "slicer_filament",
+    "slicer_filament_name",
+    "core_weight",
+    "data_origin",
+    "tag_type",
 ]
+
+# Columns of the spool table the export leaves out. `archived_at` is always
+# empty because the export only covers active spools.
+_EXPORT_SKIP = {"archived_at"}
+
+
+def export_columns() -> list[str]:
+    """Every column the export writes: the importable ones, then the rest.
+
+    CSV_COLUMNS lead, in their fixed order, so a file stays readable by anything
+    that expects that layout. After them come all the other columns of the spool
+    table in model order, read from the model itself. A column added to Spool in
+    a later release is exported without touching this module. The extra columns
+    are export-only: the importer recognises them and leaves them out.
+    """
+    extra = [
+        attr.key
+        for attr in sa_inspect(Spool).column_attrs
+        if attr.key not in CSV_COLUMNS and attr.key not in _EXPORT_SKIP
+    ]
+    return CSV_COLUMNS + extra
+
 
 # Upload ceiling for the import endpoint. A spool inventory CSV is a few KB
 # even with thousands of rows; 5 MB is a generous cap that still refuses an
@@ -88,7 +122,8 @@ _FORMULA_INJECTION_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 # Columns whose CSV cell must be coerced to a number before SpoolCreate sees it.
 # DictReader hands us strings; SpoolCreate wants int/float. Empty cell → omit
 # the field (falls back to the schema default / None).
-_INT_COLUMNS = {"label_weight", "nozzle_temp_min", "nozzle_temp_max", "low_stock_threshold_pct"}
+_TAG_TEXT_COLUMNS = ("tag_uid", "tray_uuid", "slicer_filament", "slicer_filament_name", "data_origin", "tag_type")
+_INT_COLUMNS = {"label_weight", "core_weight", "nozzle_temp_min", "nozzle_temp_max", "low_stock_threshold_pct"}
 _FLOAT_COLUMNS = {"cost_per_kg", "weight_used"}
 
 # label_weight default, pulled from the schema so the weight_used bounds check
@@ -251,6 +286,40 @@ async def _load_existing_spool_keys(db: AsyncSession) -> set[tuple[str, str, str
     return {_spool_key(m, b, c) for m, b, c in result.all()}
 
 
+_TAG_ID_COLUMNS = ("tag_uid", "tray_uuid")
+
+
+def _tag_identity(field: str, value: str | None) -> str | None:
+    """A tag id as the AMS lookup and link-tag store it, or None when it has none.
+
+    Hex digits only, upper case, as ``normalize_tag_uid`` / ``normalize_tray_uuid``
+    make it: a lowercase id or one written with colons (04:A3:...) would never
+    match the printer's exact compare. A value that normalises to empty, or to
+    all zeros (what a tag without an id reads as), identifies nothing.
+    """
+    normalize = normalize_tag_uid if field == "tag_uid" else normalize_tray_uuid
+    key = normalize(value)
+    return key if key.strip("0") else None
+
+
+async def _load_linked_tags(db: AsyncSession) -> dict[tuple[str, str], int]:
+    """``(field, tag id)`` → the active spool it is linked to (#3324).
+
+    Normalised like the import's values, so one stored as written by an older
+    import still matches. Lowest id first, as link-tag reports a holder.
+    """
+    result = await db.execute(
+        select(Spool.id, Spool.tag_uid, Spool.tray_uuid).where(Spool.archived_at.is_(None)).order_by(Spool.id)
+    )
+    linked: dict[tuple[str, str], int] = {}
+    for spool_id, tag_uid, tray_uuid in result.all():
+        for field, value in zip(_TAG_ID_COLUMNS, (tag_uid, tray_uuid), strict=True):
+            key = _tag_identity(field, value)
+            if key:
+                linked.setdefault((field, key), spool_id)
+    return linked
+
+
 def _resolve_color(
     catalog: list[ColorCatalogEntry], brand: str | None, color_name: str | None, material: str | None
 ) -> tuple[str, str | None, str | None, bool] | None:
@@ -339,9 +408,15 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
 
     norm_header = [_normalize_header(h) for h in header]
     known = set(CSV_COLUMNS)
-    unknown = [h for h in norm_header if h and h not in known]
+    # Columns only the export writes (every other spool field) are recognised, so
+    # a file exported from here is not reported as having unknown columns.
+    export_only = set(export_columns()) - known
+    unknown = [h for h in norm_header if h and h not in known and h not in export_only]
     if unknown:
         warnings.append(f"Ignoring unknown columns: {', '.join(unknown)}")
+    left_out = [h for h in dict.fromkeys(norm_header) if h in export_only]
+    if left_out:
+        warnings.append(f"Export-only columns not imported: {', '.join(left_out)}")
     # Map canonical field name → column index in this file (first occurrence).
     col_index: dict[str, int] = {}
     for idx, h in enumerate(norm_header):
@@ -356,6 +431,9 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
     # issuing a SELECT per row.
     catalog = await _load_color_catalog(db)
     existing_keys = await _load_existing_spool_keys(db)
+    linked_tags = await _load_linked_tags(db)
+    # Tags of the file's earlier valid rows, to the row that carries them.
+    file_tags: dict[tuple[str, str], int] = {}
     supplier_map = await _load_supplier_map(db)
     unknown_suppliers: set[str] = set()
 
@@ -421,10 +499,49 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
             "storage_location",
             "category",
             "material_number",
+            "tag_uid",
+            "tray_uuid",
+            "slicer_filament",
+            "slicer_filament_name",
+            "data_origin",
+            "tag_type",
         ):
             value = cell(raw_row, field)
             if value:
                 data[field] = value
+
+        for field in _TAG_ID_COLUMNS:
+            if field in data:
+                key = _tag_identity(field, data[field])
+                if key:
+                    data[field] = key
+                else:
+                    del data[field]
+
+        # One tag on two active spools makes the AMS pick either of them, so a
+        # tag already linked, or repeated from an earlier row, fails the row,
+        # as link-tag answers 409 (#3110).
+        if row_error is None:
+            for field in _TAG_ID_COLUMNS:
+                key = data.get(field)
+                if not key:
+                    continue
+                if (field, key) in linked_tags:
+                    row_error = f"{field} {key} is already linked to spool #{linked_tags[(field, key)]}"
+                    break
+                if (field, key) in file_tags:
+                    row_error = f"{field} {key} is already on row {file_tags[(field, key)]}"
+                    break
+
+        # The tag and preset columns (#3324) have no length limit in SpoolCreate.
+        # PostgreSQL refuses a value longer than its column and fails the whole
+        # import, so a cell that does not fit is this row's error instead.
+        if row_error is None:
+            for field in _TAG_TEXT_COLUMNS:
+                limit = getattr(Spool.__table__.c[field].type, "length", None)
+                if limit and len(data.get(field, "")) > limit:
+                    row_error = f"{field} is longer than {limit} characters"
+                    break
 
         # Numeric columns: parse only if present, else leave to schema defaults.
         for field in _INT_COLUMNS:
@@ -574,6 +691,9 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
             )
         )
         valid += 1
+        for field in _TAG_ID_COLUMNS:
+            if data.get(field):
+                file_tags[(field, data[field])] = row_number
 
     await _decide_ids(db, rows, warnings)
 
@@ -633,7 +753,7 @@ async def _decide_ids(db: AsyncSession, rows: list[ImportRowResult], warnings: l
 
 
 def serialize(spools: list[Spool]) -> bytes:
-    """Render spools to CSV bytes using the fixed schema (export side).
+    """Render spools to CSV bytes: the importable columns, then every other spool field.
 
     rgba is written without a leading `#`, matching the import-side
     normalisation, so export → import round-trips without transformation.
@@ -642,9 +762,10 @@ def serialize(spools: list[Spool]) -> bytes:
     """
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(CSV_COLUMNS)
+    columns = export_columns()
+    writer.writerow(columns)
     for spool in spools:
-        writer.writerow([_sanitize_cell(_cell_value(spool, col)) for col in CSV_COLUMNS])
+        writer.writerow([_sanitize_cell(_cell_value(spool, col)) for col in columns])
     return output.getvalue().encode("utf-8")
 
 

@@ -20,7 +20,7 @@ import {
   RotateCcw,
   FolderArchive,
 } from 'lucide-react';
-import { api } from '../api/client';
+import { api, ApiError } from '../api/client';
 import type {
   GitHubBackupConfig,
   GitHubBackupConfigCreate,
@@ -64,6 +64,7 @@ function StatusBadge({ status }: StatusBadgeProps) {
     success: 'bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400',
     failed: 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400',
     skipped: 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400',
+    warning: 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400',
     running: 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400',
   };
 
@@ -71,6 +72,7 @@ function StatusBadge({ status }: StatusBadgeProps) {
     success: <CheckCircle className="w-3 h-3" />,
     failed: <XCircle className="w-3 h-3" />,
     skipped: <SkipForward className="w-3 h-3" />,
+    warning: <AlertTriangle className="w-3 h-3" />,
     running: <Loader2 className="w-3 h-3 animate-spin" />,
   };
 
@@ -222,7 +224,9 @@ export function GitHubBackupSettings() {
   const triggerLocalBackupMutation = useMutation({
     mutationFn: api.triggerLocalBackup,
     onSuccess: (data) => {
-      if (data.success) {
+      if (data.success && data.missing_files) {
+        showToast(t('backup.backupMissingFiles', { count: data.missing_files }), 'warning');
+      } else if (data.success) {
         showToast(t('backup.scheduledBackupComplete'));
       } else {
         showToast(data.message, 'error');
@@ -248,6 +252,11 @@ export function GitHubBackupSettings() {
     },
   });
 
+  // A backup and a restore never run at the same time; the API answers 409
+  // with which one is running.
+  const busyMessage = (code: string | null | undefined) =>
+    code === 'restore_running' ? t('backup.restoreRunning') : code === 'backup_running' ? t('backup.restoreBlockedByBackup') : null;
+
   const restoreLocalBackupMutation = useMutation({
     mutationFn: async (filename: string) => {
       setRestoreConfirmFile(null);
@@ -270,9 +279,10 @@ export function GitHubBackupSettings() {
     onError: (e) => {
       setIsRestoring(false);
       setOperationStatus('');
-      const msg = e instanceof Error ? e.message : t('backup.failedToRestore');
+      const busy = e instanceof ApiError && e.status === 409 ? busyMessage(e.code) : null;
+      const msg = busy ?? (e instanceof Error ? e.message : t('backup.failedToRestore'));
       setRestoreResult({ success: false, message: msg });
-      showToast(msg, 'error');
+      showToast(msg, busy ? 'warning' : 'error');
     },
   });
 
@@ -1118,13 +1128,14 @@ export function GitHubBackupSettings() {
               <Button
                 variant="secondary"
                 size="sm"
-                disabled={isExporting || isRestoring || !isAdmin}
+                disabled={isExporting || isRestoring || !isAdmin || localBackupStatus?.is_running}
+                title={localBackupStatus?.is_running ? t('backup.backupAlreadyRunning') : undefined}
                 onClick={async () => {
                   setIsExporting(true);
                   setOperationStatus(t('backup.preparingBackup'));
                   try {
                     setOperationStatus(t('backup.creatingArchive'));
-                    const { blob, filename } = await api.exportBackup();
+                    const { blob, filename, missingFiles } = await api.exportBackup();
                     setOperationStatus(t('backup.downloadingFile'));
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
@@ -1132,9 +1143,17 @@ export function GitHubBackupSettings() {
                     a.download = filename;
                     a.click();
                     URL.revokeObjectURL(url);
-                    showToast(t('backup.backupDownloaded'));
+                    if (missingFiles > 0) {
+                      showToast(t('backup.backupMissingFiles', { count: missingFiles }), 'warning');
+                    } else {
+                      showToast(t('backup.backupDownloaded'));
+                    }
                   } catch (e) {
-                    showToast(t('backup.failedToCreateBackup', { message: e instanceof Error ? e.message : 'Unknown error' }), 'error');
+                    if (e instanceof ApiError && e.status === 409) {
+                      showToast(e.code === 'restore_running' ? t('backup.restoreRunning') : t('backup.backupAlreadyRunning'), 'warning');
+                    } else {
+                      showToast(t('backup.failedToCreateBackup', { message: e instanceof Error ? e.message : 'Unknown error' }), 'error');
+                    }
                   } finally {
                     setIsExporting(false);
                     setOperationStatus('');
@@ -1414,6 +1433,11 @@ export function GitHubBackupSettings() {
                         <span>{formatRelativeTime(localBackupStatus.last_backup_at)}</span>
                       </div>
                     )}
+                    {localBackupStatus?.last_status === 'warning' && (
+                      <div className="text-yellow-700 dark:text-yellow-400 mt-1">
+                        {t('backup.backupMissingFiles', { count: localBackupStatus.last_missing_files })}
+                      </div>
+                    )}
                     {localBackupStatus?.next_run && (
                       <div className="text-bambu-gray mt-1">
                         <span>{t('backup.nextBackup')}: </span>
@@ -1559,9 +1583,12 @@ export function GitHubBackupSettings() {
             try {
               setOperationStatus(t('backup.uploadingFile'));
               const result = await api.importBackup(restoreFile);
-              setRestoreResult(result);
+              const busy = result.success ? null : busyMessage(result.code);
+              setRestoreResult(busy ? { success: false, message: busy } : result);
               if (result.success) {
                 showToast(t('backup.backupRestoredRestart'), 'success');
+              } else if (busy) {
+                showToast(busy, 'warning');
               } else {
                 showToast(result.message || t('backup.failedToRestore'), 'error');
               }

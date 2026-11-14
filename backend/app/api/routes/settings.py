@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 import io
 import json
 import logging
@@ -913,12 +915,168 @@ async def get_homeassistant_settings(db: AsyncSession) -> dict:
     }
 
 
-async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]:
+def _copy_sqlite_database(src: Path, dest: Path) -> None:
+    """Copy the live SQLite database through SQLite's backup API.
+
+    Runs in a worker thread, so the app keeps writing while it copies. A plain
+    file copy could then catch the main file in the middle of a checkpoint; the
+    backup API copies one consistent snapshot instead.
+
+    The source opens read-only: a plain connect creates an empty database at a
+    path that doesn't exist, and the backup would carry that instead of failing.
+    as_uri() escapes the path, where a ? in it would swallow mode=ro.
+    """
+    import sqlite3
+
+    source = sqlite3.connect(f"{src.absolute().as_uri()}?mode=ro", uri=True)
+    try:
+        target = sqlite3.connect(dest)
+        try:
+            source.backup(target)
+        finally:
+            target.close()
+    finally:
+        source.close()
+
+
+# Folders inside the backed-up directories that only hold files of the moment:
+# archive/temp has print-start downloads and the 3MFs behind the printer card,
+# fetched and deleted while a backup runs. Copied, a deleted one would turn a
+# good backup into a warning and one still being written would go in truncated,
+# and a restore has no use for either.
+_BACKUP_SKIP = {"archive": {"temp"}}
+
+
+def _copy_backup_dirs(dirs_to_backup: list[tuple[str, Path]], temp_path: Path) -> list[str]:
+    """Copy the data directories into the backup staging folder (worker thread).
+
+    Returns what could not be copied, as paths inside the backup. The app goes
+    on writing during the copy. A file it deleted meanwhile is simply gone and
+    was never part of the data; a file that is still there but could not be
+    copied is missing from the backup, which is then still made but must not
+    pass for complete.
+    """
+    import shutil
+
+    copy_warnings: list[str] = []
+    for name, src_dir in dirs_to_backup:
+        if src_dir.exists() and any(src_dir.iterdir()):
+            skip = _BACKUP_SKIP.get(name, set())
+
+            def ignore(directory: str, entries: list[str], src_dir: Path = src_dir, skip: set[str] = skip) -> set[str]:
+                # Only directly below the backed-up directory: a folder named
+                # "temp" deeper down is user data like any other.
+                return skip.intersection(entries) if Path(directory) == src_dir else set()
+
+            try:
+                shutil.copytree(
+                    src_dir, temp_path / name, ignore=ignore
+                )  # SEC-PATH-OK: name iterates the dirs_to_backup tuple of constant strings ("archive", "virtual_printer", ...)
+            except shutil.Error as e:
+                # One (source, destination, reason) per file.
+                missing = [
+                    f"{name}/{Path(source).relative_to(src_dir).as_posix()}"
+                    for source, _dest, _why in e.args[0]
+                    if Path(source).exists()
+                ]
+                if missing:
+                    logger.warning("Some files in %s could not be copied: %s", name, e)
+                else:
+                    logger.debug("Files in %s were deleted during the backup copy: %s", name, e)
+                copy_warnings.extend(missing)
+            except PermissionError as e:
+                logger.warning("Permission denied copying %s: %s", name, e)
+                copy_warnings.append(f"{name}/")
+    return copy_warnings
+
+
+def _export_rows(dst, insert_sql: str, rows) -> None:
+    """Write one table's rows into the portable SQLite export (worker thread)."""
+    dst.executemany(
+        insert_sql, (tuple(json.dumps(v) if isinstance(v, (list, dict)) else v for v in row) for row in rows)
+    )
+
+
+def _write_backup_zip(temp_path: Path, zip_file: Path) -> None:
+    """Deflate the staging folder into the backup ZIP (worker thread)."""
+    with zipfile.ZipFile(zip_file, "w", zipfile.ZIP_DEFLATED) as zf:
+        for file_path in temp_path.rglob("*"):
+            if file_path.is_file():
+                arcname = file_path.relative_to(temp_path)
+                zf.write(file_path, arcname)
+
+
+async def _wait_for_worker(worker: asyncio.Future | None) -> None:
+    """Wait until a backup step's worker thread has finished.
+
+    Cancelling the await does not stop the thread. The clean-up after a cancel
+    must not delete the staging folder while a copy still writes into it, so it
+    waits here first, through any further cancel. The step's own result or error
+    no longer matters to a cancelled backup.
+    """
+    while worker is not None and not worker.done():
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await asyncio.shield(worker)
+
+
+class BackupAlreadyRunning(Exception):
+    """Another backup, or a restore, is running right now."""
+
+    def __init__(self, restore: bool = False):
+        super().__init__("A restore is running" if restore else "A backup is already running")
+        self.restore = restore
+
+
+def _busy_detail(restore: bool, message: str) -> dict[str, str]:
+    """The 409 body while a backup or a restore holds the lock. The code lets
+    the frontend say which one, translated, instead of the English text."""
+    return {"code": "restore_running" if restore else "backup_running", "message": message}
+
+
+# One backup or restore at a time, whoever starts it: each backup stages its own
+# copy of the archive, so two at once would double the temp disk use on exactly
+# the installs where a backup takes minutes; and a restore replaces the database
+# and the data folders a backup would be copying.
+_backup_lock = asyncio.Lock()
+# The running backup or restore plus the backups waiting for it.
+# _backup_lock.locked() alone reads False for a moment while the lock passes to
+# a waiting backup, and a download that checked it then would queue up behind it.
+_backup_claims = 0
+# Whether the lock is held by a restore, so a refused download can say which.
+_restore_running = False
+
+
+async def create_backup_zip(output_path: Path | None = None, *, wait: bool = True) -> tuple[Path, str, list[str]]:
     """Create a complete backup ZIP (database + all data directories).
 
     If output_path is given, the ZIP is written there.
     Otherwise a temporary file is created (caller must clean up).
-    Returns (zip_path, filename).
+    Returns (zip_path, filename, copy_warnings), the last being what could not
+    be copied into it (see _copy_backup_dirs).
+
+    Only one backup runs at a time. A caller that waits (the scheduled local
+    backup, "Run backup now") starts once the running one has finished; with
+    wait=False (the download) a running backup raises BackupAlreadyRunning
+    right away instead.
+    """
+    global _backup_claims
+
+    if not wait and _backup_claims:
+        raise BackupAlreadyRunning(restore=_restore_running)
+    _backup_claims += 1
+    try:
+        async with _backup_lock:
+            return await _build_backup_zip(output_path)
+    finally:
+        _backup_claims -= 1
+
+
+async def _build_backup_zip(output_path: Path | None) -> tuple[Path, str, list[str]]:
+    """The work of create_backup_zip, which holds the backup lock around it.
+
+    Copying the archive and deflating the ZIP can take minutes on a large
+    install, so that file work runs in worker threads. On the event loop it
+    stalled the whole app for as long: no printer status, no queue, no API.
     """
     import shutil
     import tempfile
@@ -928,8 +1086,28 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
     base_dir = app_settings.base_dir
     filename = f"bambuddy-backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}.zip"
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_path = Path(temp_dir)
+    # The step now running in a worker thread: the executor's own future, done
+    # when the thread is. Not a Task, which asyncio.run cancels with all the
+    # others at shutdown and which then reads as done with its thread still
+    # copying. It is awaited through a shield, so a cancel ends only the await,
+    # and the clean-up below waits on it.
+    loop = asyncio.get_running_loop()
+    worker: asyncio.Future | None = None
+
+    async def in_thread(func, *args):
+        nonlocal worker
+        worker = loop.run_in_executor(None, func, *args)
+        return await asyncio.shield(worker)
+
+    # Not a `with` block: its exit would delete the staged copy of the archive
+    # on the event loop again.
+    temp_dir = tempfile.TemporaryDirectory()
+    # The finished ZIP, once it is this run's own: the temp file it made, or the
+    # name it renamed its .part onto. Two backups in the same second share that
+    # name, so a ZIP that is merely there may be another run's complete backup.
+    own_zip: Path | None = None
+    try:
+        temp_path = Path(temp_dir.name)
 
         if is_sqlite():
             from sqlalchemy import text
@@ -943,11 +1121,10 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
                 await conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
 
             # Copy database file
-            shutil.copy2(db_path, temp_path / "bambuddy.db")
+            await in_thread(_copy_sqlite_database, db_path, temp_path / "bambuddy.db")
         else:
             # PostgreSQL: export to a portable SQLite file via SQLAlchemy.
             # This makes backups restorable on both SQLite and Postgres installs.
-            import json
             import sqlite3
 
             from sqlalchemy import create_engine as create_sync_engine
@@ -970,31 +1147,34 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
             # renders as BLOB, so OIDC icon bytes survive the round trip.
             schema_engine = create_sync_engine(f"sqlite:///{backup_db_path}")
             try:
-                metadata.create_all(schema_engine)
+                await in_thread(metadata.create_all, schema_engine)
             finally:
+                await _wait_for_worker(worker)
                 schema_engine.dispose()
 
-            dst = sqlite3.connect(str(backup_db_path))
+            # The inserts and the commit run in worker threads, one at a time,
+            # so the connection must not be tied to the thread that opened it.
+            dst = sqlite3.connect(str(backup_db_path), check_same_thread=False)
+            try:
+                # Export data from Postgres to SQLite
+                async with engine.connect() as conn:
+                    for table in metadata.sorted_tables:
+                        result = await conn.execute(table.select())
+                        rows = result.fetchall()
+                        if not rows:
+                            continue
+                        columns = list(result.keys())
+                        placeholders = ", ".join(["?"] * len(columns))
+                        col_list = ", ".join(columns)
+                        insert_sql = f"INSERT INTO {table.name} ({col_list}) VALUES ({placeholders})"  # noqa: S608  # nosec B608 — table/column names from ORM metadata, not user input
 
-            # Export data from Postgres to SQLite
-            async with engine.connect() as conn:
-                for table in metadata.sorted_tables:
-                    result = await conn.execute(table.select())
-                    rows = result.fetchall()
-                    if not rows:
-                        continue
-                    columns = list(result.keys())
-                    placeholders = ", ".join(["?"] * len(columns))
-                    col_list = ", ".join(columns)
-                    insert_sql = f"INSERT INTO {table.name} ({col_list}) VALUES ({placeholders})"  # noqa: S608  # nosec B608 — table/column names from ORM metadata, not user input
+                        await in_thread(_export_rows, dst, insert_sql, rows)
 
-                    def _serialize_row(row):
-                        return tuple(json.dumps(v) if isinstance(v, (list, dict)) else v for v in row)
-
-                    dst.executemany(insert_sql, [_serialize_row(row) for row in rows])
-
-            dst.commit()
-            dst.close()
+                await in_thread(dst.commit)
+            finally:
+                # After a cancel an insert may still be running on this connection.
+                await _wait_for_worker(worker)
+                await in_thread(dst.close)
             logger.info("PostgreSQL backup exported to portable SQLite format")
 
         # Copy data directories (if they exist)
@@ -1007,16 +1187,7 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
             ("overlay-branding", base_dir / "overlay-branding"),
         ]
 
-        for name, src_dir in dirs_to_backup:
-            if src_dir.exists() and any(src_dir.iterdir()):
-                try:
-                    shutil.copytree(
-                        src_dir, temp_path / name
-                    )  # SEC-PATH-OK: name iterates the dirs_to_backup tuple of constant strings ("archive", "virtual_printer", ...)
-                except shutil.Error as e:
-                    logger.warning("Some files in %s could not be copied: %s", name, e)
-                except PermissionError as e:
-                    logger.warning("Permission denied copying %s: %s", name, e)
+        copy_warnings = await in_thread(_copy_backup_dirs, dirs_to_backup, temp_path)
 
         # Say which version made this, so a restore that cannot import it can
         # name the versions rather than a list of columns. Backups from before
@@ -1055,18 +1226,50 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
             zip_file = (
                 output_path / filename
             )  # SEC-PATH-OK: filename = f"bambuddy-backup-{datetime.now()...}.zip" generated in create_backup_zip itself
+            # The backup list, Download, Restore and Delete all run while this
+            # is being written, so it only gets a name they match once it's whole.
+            part_file = (
+                output_path / f".{filename}.part"
+            )  # SEC-PATH-OK: filename = f"bambuddy-backup-{datetime.now()...}.zip" generated in create_backup_zip itself
         else:
             fd, tmp = tempfile.mkstemp(suffix=".zip")
             os.close(fd)
-            zip_file = Path(tmp)
+            zip_file = part_file = own_zip = Path(tmp)
 
-        with zipfile.ZipFile(zip_file, "w", zipfile.ZIP_DEFLATED) as zf:
-            for file_path in temp_path.rglob("*"):
-                if file_path.is_file():
-                    arcname = file_path.relative_to(temp_path)
-                    zf.write(file_path, arcname)
+        rename: asyncio.Future | None = None
+        try:
+            await in_thread(_write_backup_zip, temp_path, part_file)
+            if part_file != zip_file:
+                # Started here rather than through in_thread, so that a cancel
+                # landing before the await still leaves the future to look at.
+                rename = worker = loop.run_in_executor(None, os.replace, part_file, zip_file)
+                await asyncio.shield(rename)
+                own_zip = zip_file
+        except BaseException:
+            # The caller never gets this ZIP, and nothing else would ever
+            # delete a temp file or a .part. A cancel can land after the rename,
+            # so whether the ZIP is this run's own is read off the rename itself.
+            await _wait_for_worker(worker)
+            if rename is not None and not rename.cancelled() and rename.exception() is None:
+                own_zip = zip_file
+            part_file.unlink(missing_ok=True)
+            if own_zip is not None:
+                own_zip.unlink(missing_ok=True)
+            raise
+    finally:
+        # After a cancel the step's thread is still running; the clean-up waits
+        # for it rather than delete the folder under a copy that writes into it.
+        await _wait_for_worker(worker)
+        try:
+            await asyncio.to_thread(temp_dir.cleanup)
+        except BaseException:
+            # A cancel here (shutdown) skips the return: the caller never gets
+            # the finished ZIP, and a download's temp file would stay forever.
+            if own_zip is not None:
+                own_zip.unlink(missing_ok=True)
+            raise
 
-    return zip_file, filename
+    return zip_file, filename, copy_warnings
 
 
 @router.get("/backup")
@@ -1079,13 +1282,19 @@ async def create_backup(
     from starlette.background import BackgroundTask
 
     try:
-        zip_file, filename = await create_backup_zip()
+        zip_file, filename, copy_warnings = await create_backup_zip(wait=False)
         return FileResponse(
             path=zip_file,
             filename=filename,
             media_type="application/zip",
+            # The body is the ZIP, so a backup that misses files says so here.
+            headers={"X-Backup-Missing-Files": str(len(copy_warnings))} if copy_warnings else None,
             background=BackgroundTask(lambda: zip_file.unlink(missing_ok=True)),
         )
+    except BackupAlreadyRunning as busy:
+        # Say so now rather than hold the request open for the minutes the
+        # running backup can take.
+        raise HTTPException(status_code=409, detail=_busy_detail(busy.restore, str(busy)))
     except Exception as e:
         logger.error("Backup failed: %s", e, exc_info=True)
         return JSONResponse(
@@ -1518,7 +1727,33 @@ async def restore_backup(
 
     Replaces the database and all data directories from the backup ZIP.
     Requires a restart after restore.
+
+    Holds the backup lock: a restore replacing the database and the data folders
+    while a backup copies them would leave both broken. With a backup running
+    (or waiting) the restore answers 409 at once; a backup that starts during a
+    restore waits for it (the download answers 409).
     """
+    global _backup_claims, _restore_running
+
+    if _backup_claims:
+        raise HTTPException(
+            status_code=409,
+            detail=_busy_detail(
+                _restore_running, "A restore is running" if _restore_running else "A backup is running"
+            ),
+        )
+    _backup_claims += 1
+    _restore_running = True
+    try:
+        async with _backup_lock:
+            return await _restore_backup_zip(file, db)
+    finally:
+        _restore_running = False
+        _backup_claims -= 1
+
+
+async def _restore_backup_zip(file: UploadFile, db: AsyncSession):
+    """The work of restore_backup, which holds the backup lock around it."""
     import shutil
     import tempfile
 

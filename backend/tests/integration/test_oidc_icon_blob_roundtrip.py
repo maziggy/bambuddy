@@ -13,8 +13,8 @@ things that these tests pin:
   ``spoolbuddy_devices.created_at``) with no ``DEFAULT`` — later inserts
   wrote ``NULL`` and 500'd on read (#2526). ``create_all`` emits the default.
 
-The SQLite *source* path is just ``shutil.copy2`` of the live .db file and is
-therefore unaffected — these guards only matter for the PostgreSQL branch.
+The SQLite *source* path just copies the live .db file (SQLite's backup API)
+and is therefore unaffected — these guards only matter for the PostgreSQL branch.
 """
 
 import hashlib

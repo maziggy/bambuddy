@@ -225,6 +225,16 @@ def printer_filament_type(material: str | None) -> str:
     return text
 
 
+def known_printer_filament_type(text: str | None) -> str | None:
+    """``printer_filament_type`` when it places ``text`` on a known type, else ``None``.
+
+    For reading a material out of a preset name ("Bambu PETG HF @BBL X2D" is
+    PETG), where an unrecognised name must not be taken for a type.
+    """
+    reduced = printer_filament_type(text)
+    return reduced if reduced in _PRINTER_TYPE_SET else None
+
+
 def nozzle_temp_range(material: str | None, tray_type: str | None) -> tuple[int, int]:
     """The nozzle range to send with a slot, given a spool's material and the
     type the slot will carry.

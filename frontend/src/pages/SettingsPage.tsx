@@ -1304,6 +1304,7 @@ export function SettingsPage() {
       baseline.ams_history_retention_days !== localSettings.ams_history_retention_days ||
       baseline.printer_sensor_history_retention_days !== localSettings.printer_sensor_history_retention_days ||
       baseline.disable_filament_warnings !== localSettings.disable_filament_warnings ||
+      (baseline.hide_ams_firmware_warning ?? false) !== (localSettings.hide_ams_firmware_warning ?? false) ||
       baseline.prefer_lowest_filament !== localSettings.prefer_lowest_filament ||
       (baseline.queue_drying_enabled ?? false) !== (localSettings.queue_drying_enabled ?? false) ||
       (baseline.queue_drying_block ?? false) !== (localSettings.queue_drying_block ?? false) ||
@@ -1434,6 +1435,7 @@ export function SettingsPage() {
         ams_history_retention_days: localSettings.ams_history_retention_days,
         printer_sensor_history_retention_days: localSettings.printer_sensor_history_retention_days,
         disable_filament_warnings: localSettings.disable_filament_warnings,
+        hide_ams_firmware_warning: localSettings.hide_ams_firmware_warning,
         prefer_lowest_filament: localSettings.prefer_lowest_filament,
         queue_drying_enabled: localSettings.queue_drying_enabled,
         queue_drying_block: localSettings.queue_drying_block,
@@ -6403,6 +6405,23 @@ export function SettingsPage() {
                       type="checkbox"
                       checked={localSettings.disable_filament_warnings}
                       onChange={(e) => updateSetting('disable_filament_warnings', e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                  </label>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-white">{t('settings.hideAmsFirmwareWarning')}</p>
+                    <p className="text-sm text-bambu-gray">
+                      {t('settings.hideAmsFirmwareWarningDesc')}
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={localSettings.hide_ams_firmware_warning ?? false}
+                      onChange={(e) => updateSetting('hide_ams_firmware_warning', e.target.checked)}
                       className="sr-only peer"
                     />
                     <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>

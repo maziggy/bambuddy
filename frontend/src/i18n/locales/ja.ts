@@ -2296,6 +2296,8 @@ export default {
     preferLowestFilament: '残量が少ないフィラメントを優先',
     preferLowestFilamentDesc: '複数のスプールが一致する場合、残量が最も少ないものを使用します',
     preferLowestFilamentBackupNote: 'プリンタ側でAMSフィラメントバックアップが有効な場合のみ動作します。無効の場合、選択したスプールが切れても予備スプールに切り替えできません。',
+    hideAmsFirmwareWarning: 'AMSファームウェアの警告を非表示にする',
+    hideAmsFirmwareWarningDesc: '常にこの警告を出すBMCUなどのAMS代替品向けに、「AMSのファームウェアがプリンターと一致しません」という警告を非表示にします。印刷エラーは非表示になりません。',
     trackingModeBuiltIn: '内蔵インベントリ',
     trackingModeBuiltInDesc: 'RFID自動検出と使用量追跡を含む',
     trackingModeSpoolmanDesc: '外部フィラメント管理サーバー',

@@ -919,6 +919,20 @@ class PrinterManager:
         for printer_id in list(self._clients.keys()):
             self.disconnect_printer(printer_id, timeout=timeout)
 
+    def apply_hms_filter(self) -> None:
+        """Apply a change of the hidden-fault choice to the printers now (#3269).
+
+        Hiding drops the matching faults from every printer's list at once.
+        Showing them again asks each printer for a full report, which is what
+        carries its fault list.
+        """
+        from backend.app.services.hms_errors import is_hidden_hms_code
+
+        for client in self._clients.values():
+            client.state.hms_errors = [e for e in client.state.hms_errors if not is_hidden_hms_code(e.full_code)]
+            if client.state.connected:
+                client.request_status_update()
+
     def get_status(self, printer_id: int) -> PrinterState | None:
         """Get the current status of a printer (checks for stale connections)."""
         if printer_id in self._clients:

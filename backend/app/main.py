@@ -12241,6 +12241,17 @@ async def initialize_wled_printers(db: AsyncSession) -> None:
             wled_manager.handle_offline(printer_id)
 
 
+async def load_hide_ams_firmware_warning(db: AsyncSession) -> None:
+    """Apply the stored "hide the AMS firmware warning" choice (#3269).
+
+    Saving the setting applies it at once; this carries it over a restart.
+    """
+    from backend.app.api.routes.settings import get_setting, setting_is_true
+    from backend.app.services.hms_errors import set_hide_ams_firmware_mismatch
+
+    set_hide_ams_firmware_mismatch(setting_is_true(await get_setting(db, "hide_ams_firmware_warning")))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -12368,6 +12379,11 @@ async def lifespan(app: FastAPI):
     # before MQTT connections begin emitting status callbacks.
     async with async_session() as db:
         await initialize_wled_printers(db)
+
+    # The user's choice to hide the AMS firmware mismatch warning, before any
+    # printer reports a fault (#3269).
+    async with async_session() as db:
+        await load_hide_ams_firmware_warning(db)
 
     # Layer change callback for external camera timelapse
     async def on_layer_change(printer_id: int, layer_num: int):

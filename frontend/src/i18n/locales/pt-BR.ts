@@ -2252,6 +2252,8 @@ export default {
     preferLowestFilament: 'Preferir filamento com menor resto',
     preferLowestFilamentDesc: 'Quando vários carretéis correspondem, usar o com menos filamento restante',
     preferLowestFilamentBackupNote: 'Só tem efeito quando o AMS Filament Backup está habilitado na impressora — caso contrário, a impressora não pode trocar para um segundo carretel quando o escolhido acabar.',
+    hideAmsFirmwareWarning: 'Ocultar o aviso de firmware do AMS',
+    hideAmsFirmwareWarningDesc: 'Oculta o aviso "O firmware do AMS não corresponde à impressora", para um BMCU ou outro substituto do AMS que o exibe o tempo todo. Os erros de impressão nunca são ocultados.',
     trackingModeBuiltIn: 'Inventário Interno',
     trackingModeBuiltInDesc: 'Correspondência automática de RFID e rastreamento de uso incluídos',
     trackingModeSpoolmanDesc: 'Servidor de gerenciamento de filamento externo',

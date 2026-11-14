@@ -2349,6 +2349,8 @@ export default {
     preferLowestFilament: 'Föredra rulle med minst filament kvar',
     preferLowestFilamentDesc: 'När flera rullar matchar, använd den med minst filament kvar',
     preferLowestFilamentBackupNote: 'Gäller endast när AMS filamentbackup är aktiverat på skrivaren — annars kan skrivaren inte byta till en andra rulle när den valda tar slut.',
+    hideAmsFirmwareWarning: 'Dölj varningen om AMS-firmware',
+    hideAmsFirmwareWarningDesc: 'Döljer varningen "AMS-firmwaren matchar inte skrivaren", för en BMCU eller en annan AMS-ersättare som visar den hela tiden. Utskriftsfel döljs aldrig.',
     trackingModeBuiltIn: 'Inbyggd inventering',
     trackingModeBuiltInDesc: 'RFID-auto-matchning och användningsspårning inkluderad',
     trackingModeSpoolmanDesc: 'Extern filamenthanteringsserver',

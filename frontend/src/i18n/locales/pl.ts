@@ -2319,6 +2319,8 @@ export default {
     preferLowestFilament: 'Preferuj najmniejszą pozostałą ilość filamentu',
     preferLowestFilamentDesc: 'Gdy pasuje kilka szpul, użyj tej, na której zostało najmniej filamentu',
     preferLowestFilamentBackupNote: 'Działa tylko wtedy, gdy na drukarce włączono AMS Filament Backup — w przeciwnym razie drukarka nie może przełączyć się na drugą szpulę, gdy wybrana się skończy.',
+    hideAmsFirmwareWarning: 'Ukryj ostrzeżenie o oprogramowaniu AMS',
+    hideAmsFirmwareWarningDesc: 'Ukrywa ostrzeżenie „Oprogramowanie AMS nie pasuje do drukarki” dla BMCU lub innego zamiennika AMS, który zgłasza je stale. Błędy drukowania nigdy nie są ukrywane.',
     trackingModeBuiltIn: 'Wbudowany magazyn',
     trackingModeBuiltInDesc: 'Zawiera automatyczne dopasowanie RFID i śledzenie zużycia',
     trackingModeSpoolmanDesc: 'Zewnętrzny serwer zarządzania filamentem',

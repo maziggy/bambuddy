@@ -102,6 +102,13 @@ class AppSettings(BaseModel):
         default=False,
         description="Disable insufficient filament warnings when printing or queueing prints",
     )
+    hide_ams_firmware_warning: bool = Field(
+        default=False,
+        description=(
+            "Hide the 'AMS firmware does not match the printer' warning (HMS 05XX_0400_0001_0044). "
+            "For a BMCU or another AMS replacement that raises it permanently. Print errors are never hidden."
+        ),
+    )
     prefer_lowest_filament: bool = Field(
         default=False,
         description="When multiple AMS spools match, prefer the one with lowest remaining filament",
@@ -772,6 +779,7 @@ class AppSettingsUpdate(BaseModel):
     spoolman_report_partial_usage: bool | None = None
     auto_add_unknown_rfid: bool | None = None
     disable_filament_warnings: bool | None = None
+    hide_ams_firmware_warning: bool | None = None
     prefer_lowest_filament: bool | None = None
     check_updates: bool | None = None
     check_printer_firmware: bool | None = None

@@ -2317,6 +2317,8 @@ export default {
     preferLowestFilament: 'Voorkeur voor laagste resterende hoeveelheid filament',
     preferLowestFilamentDesc: 'Als meerdere spoelen overeenkomen, gebruik dan de spoel met de minste resterende hoeveelheid filament',
     preferLowestFilamentBackupNote: 'Dit werkt alleen wanneer AMS Filament Backup op de printer is ingeschakeld — anders kan de printer niet overschakelen naar een tweede spoel wanneer de gekozen spoel leeg raakt.',
+    hideAmsFirmwareWarning: 'AMS-firmwarewaarschuwing verbergen',
+    hideAmsFirmwareWarningDesc: 'Verbergt de waarschuwing "De firmware van de AMS komt niet overeen met de printer", voor een BMCU of een andere AMS-vervanger die deze steeds geeft. Printfouten worden nooit verborgen.',
     trackingModeBuiltIn: 'Ingebouwde voorraad',
     trackingModeBuiltInDesc: 'Automatische RFID-koppeling en verbruikstracking inbegrepen',
     trackingModeSpoolmanDesc: 'Externe filamentbeheerserver',

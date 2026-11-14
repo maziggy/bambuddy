@@ -2297,6 +2297,8 @@ export default {
     preferLowestFilament: 'Niedrigsten Filamentrest bevorzugen',
     preferLowestFilamentDesc: 'Bei mehreren passenden Spulen die mit dem geringsten Restfilament verwenden',
     preferLowestFilamentBackupNote: 'Wirkt nur, wenn AMS Filament Backup am Drucker aktiviert ist — sonst kann der Drucker beim Aufbrauchen der ersten Spule nicht auf eine zweite Spule wechseln.',
+    hideAmsFirmwareWarning: 'AMS-Firmware-Warnung ausblenden',
+    hideAmsFirmwareWarningDesc: 'Blendet die Warnung „AMS-Firmware passt nicht zum Drucker“ aus, für ein BMCU oder einen anderen AMS-Ersatz, der sie dauerhaft auslöst. Druckfehler werden nie ausgeblendet.',
     trackingModeBuiltIn: 'Integriertes Inventar',
     trackingModeBuiltInDesc: 'RFID-Erkennung und Verbrauchserfassung inklusive',
     trackingModeSpoolmanDesc: 'Externer Filament-Management-Server',

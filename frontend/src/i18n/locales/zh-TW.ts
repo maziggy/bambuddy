@@ -2297,6 +2297,8 @@ export default {
     preferLowestFilament: '優先使用剩餘最少的耗材',
     preferLowestFilamentDesc: '當多個料盤匹配時，使用剩餘耗材最少的那個',
     preferLowestFilamentBackupNote: '僅當印表機端啟用了 AMS 備用料盤時才生效——否則當選中的料盤耗盡時，印表機無法切換到備用料盤。',
+    hideAmsFirmwareWarning: '隱藏 AMS 韌體警告',
+    hideAmsFirmwareWarningDesc: '為持續觸發該警告的 BMCU 或其他 AMS 替代品隱藏「AMS 韌體與列印機不符」警告。列印錯誤不會被隱藏。',
     trackingModeBuiltIn: '內建庫存',
     trackingModeBuiltInDesc: '包含 RFID 自動匹配和用量追蹤',
     trackingModeSpoolmanDesc: '外部耗材管理伺服器',

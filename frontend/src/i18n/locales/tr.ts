@@ -2300,6 +2300,8 @@ export default {
     preferLowestFilament: 'En az kalan filamenti tercih et',
     preferLowestFilamentDesc: 'Birden fazla makara eşleştiğinde, kalan filamenti en az olanı kullan',
     preferLowestFilamentBackupNote: 'Yalnızca yazıcıda AMS Filament Backup etkinleştirildiğinde uygulanır — aksi takdirde seçilen makara bittiğinde yazıcı ikinci bir makaraya geçemez.',
+    hideAmsFirmwareWarning: 'AMS yazılım uyarısını gizle',
+    hideAmsFirmwareWarningDesc: 'Sürekli bu uyarıyı veren BMCU veya başka bir AMS yedeği için "AMS yazılımı yazıcıyla eşleşmiyor" uyarısını gizler. Baskı hataları asla gizlenmez.',
     trackingModeBuiltIn: 'Yerleşik Envanter',
     trackingModeBuiltInDesc: 'RFID otomatik eşleştirme ve kullanım takibi dahil',
     trackingModeSpoolmanDesc: 'Harici filament yönetim sunucusu',

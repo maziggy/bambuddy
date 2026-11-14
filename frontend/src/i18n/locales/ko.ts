@@ -2201,6 +2201,8 @@ export default {
     preferLowestFilament: '남은 필라멘트가 가장 적은 것 우선',
     preferLowestFilamentDesc: '여러 스풀이 일치할 때 남은 필라멘트가 가장 적은 것 사용',
     preferLowestFilamentBackupNote: '프린터에서 AMS 필라멘트 백업이 활성화된 경우에만 적용됩니다. 그렇지 않으면 선택한 스풀이 다 떨어졌을 때 두 번째 스풀로 전환할 수 없습니다.',
+    hideAmsFirmwareWarning: 'AMS 펌웨어 경고 숨기기',
+    hideAmsFirmwareWarningDesc: '항상 이 경고를 띄우는 BMCU 등 AMS 대체품을 위해 "AMS 펌웨어가 프린터와 일치하지 않습니다" 경고를 숨깁니다. 출력 오류는 숨기지 않습니다.',
     trackingModeBuiltIn: '내장 인벤토리',
     trackingModeBuiltInDesc: 'RFID 자동 매칭 및 사용량 추적 포함',
     trackingModeSpoolmanDesc: '외부 필라멘트 관리 서버',

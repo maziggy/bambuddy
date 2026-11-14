@@ -1656,6 +1656,7 @@ export default {
       startPrint: 'Baskıyı Başlat',
       stopPrint: 'Baskıyı Durdur',
       requeue: 'Yeniden Kuyrukla',
+      duplicate: 'Çoğalt (kuyruğa bir kopya daha ekle)',
     },
     // Toplu düzenleme
     bulkEdit: {
@@ -1684,6 +1685,8 @@ export default {
       selected: '{{count}} seçildi',
       editSelected: 'Seçilenleri Düzenle',
       cancelSelected: 'Seçilenleri İptal Et',
+      duplicateSelected: 'Çoğalt',
+      duplicateNone: 'Seçilen işlerin hiçbiri çoğaltılamaz',
     },
     // Onaylar
     confirm: {
@@ -1721,6 +1724,10 @@ export default {
       bulkUpdatedNone: 'Hiçbir iş güncellenmedi',
       bulkCancelled: '{{count}} öğe iptal edildi',
       bulkCancelFailed: 'Öğeler iptal edilemedi',
+      duplicated: 'Kuyruğun sonuna {{count}} iş eklendi',
+      duplicateFailed: 'Öğeler çoğaltılamadı',
+      duplicatePartial: '{{total}} işten {{added}} tanesi eklendi; kalanlar çoğaltılamadı',
+      duplicateSkipped: '{{count}} iş eklendi; çoğaltılamayan {{skipped}} iş atlandı',
       batchCreated: '"{{name}}" yığını oluşturuldu',
       batchCreateFailed: 'Yığın oluşturma başarısız',
       batchUngrouped: '{{count}} öğe gruptan çıkarıldı',

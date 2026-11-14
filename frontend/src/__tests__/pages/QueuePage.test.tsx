@@ -2374,3 +2374,99 @@ describe('QueuePage: jobs held by failed prints on every printer of their model'
     await waitFor(() => expect(resumed).toBe('X1C'));
   });
 });
+
+describe('QueuePage duplicate', () => {
+  let posted: Record<string, unknown>[];
+  let failAfter: number | null;
+  let queueGets: number;
+  const DUP = 'Duplicate (add another copy to the queue)';
+  const printerJob = { ...mockQueueItems[0], id: 11, archive_id: 11, archive_name: 'Printer Job', ams_mapping: [2] };
+  const modelJob = { ...mockQueueItems[0], id: 12, archive_id: 12, archive_name: 'Model Job', printer_id: null, target_model: 'A1', target_location: 'Shop', required_filament_types: ['PLA'], ams_mapping: [3] };
+
+  const setup = (items: MockItem[]) => {
+    server.use(
+      // Counts queue fetches, then falls through to the regular queue handler.
+      http.get('/api/v1/queue/', () => { queueGets += 1; }),
+      ...serveQueue(items),
+      http.get('/api/v1/printers/', () => HttpResponse.json(mockPrinters)),
+      http.post('/api/v1/queue/', async ({ request }) => {
+        if (failAfter !== null && posted.length >= failAfter) return HttpResponse.json({ detail: 'boom' }, { status: 500 });
+        const body = (await request.json()) as Record<string, unknown>;
+        posted.push(body);
+        return HttpResponse.json({ ...mockQueueItems[0], ...body, id: 100 + posted.length, status: 'pending' });
+      })
+    );
+  };
+
+  beforeEach(() => {
+    vi.mocked(localStorage.getItem).mockImplementation((key: string) => {
+      if (key === 'queue.historyCollapsed') return 'false';
+      if (key === 'queue.viewMode') return 'list';
+      return null;
+    });
+    posted = [];
+    failAfter = null;
+    queueGets = 0;
+  });
+
+  it('offers Duplicate on queued and printing jobs, not on history', async () => {
+    setup(mockQueueItems);
+    render(<QueuePage />);
+    await waitFor(() => expect(screen.getByText('Test Print 1')).toBeInTheDocument());
+    expect(screen.getAllByRole('button', { name: DUP })).toHaveLength(2);
+  });
+
+  it('does not offer Duplicate for a printer-card upload whose file is deleted on dispatch (#2819)', async () => {
+    setup([{ ...mockQueueItems[0], archive_id: null, library_file_id: 7, cleanup_library_after_dispatch: true }]);
+    render(<QueuePage />);
+    await waitFor(() => expect(screen.getByText('Test Print 1')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: DUP })).not.toBeInTheDocument();
+  });
+
+  it('keeps the slot pick for a specific printer and leaves it out for any-printer-of-a-model jobs', async () => {
+    const user = userEvent.setup();
+    setup([printerJob, modelJob]);
+    render(<QueuePage />);
+    await waitFor(() => expect(screen.getByText('Model Job')).toBeInTheDocument());
+    for (const btn of screen.getAllByRole('button', { name: DUP })) {
+      await user.click(btn);
+      await waitFor(() => expect(btn).not.toBeDisabled());
+    }
+    await waitFor(() => expect(posted).toHaveLength(2));
+    const byArchive = Object.fromEntries(posted.map((p) => [p.archive_id, p]));
+    expect(byArchive[11]).toMatchObject({ printer_id: 1, ams_mapping: [2] });
+    expect(byArchive[11]).not.toHaveProperty('target_model');
+    expect(byArchive[12]).toMatchObject({ target_model: 'A1', target_location: 'Shop', required_filament_types: ['PLA'] });
+    expect(byArchive[12]).not.toHaveProperty('ams_mapping');
+    expect(byArchive[12]).not.toHaveProperty('printer_id');
+    for (const p of posted) {
+      expect(p).not.toHaveProperty('id');
+      expect(p).not.toHaveProperty('status');
+      expect(p).not.toHaveProperty('scheduled_time');
+      expect(p).not.toHaveProperty('batch_id');
+    }
+  });
+
+  it('bulk Duplicate copies the selection, and refreshes the queue and reports the count when one copy fails', async () => {
+    const user = userEvent.setup();
+    failAfter = 1;
+    setup([printerJob, modelJob]);
+    render(<QueuePage />);
+    await waitFor(() => expect(screen.getByText('Model Job')).toBeInTheDocument());
+    await user.click(screen.getByText('Select All'));
+    const gets = queueGets;
+    await user.click(await screen.findByTitle('Duplicate'));
+    expect(await screen.findByText('Added 1 of 2 job(s); the rest could not be duplicated')).toBeInTheDocument();
+    expect(posted).toHaveLength(1);
+    await waitFor(() => expect(queueGets).toBeGreaterThan(gets));
+  });
+
+  it('disables bulk Duplicate when none of the selected jobs can be duplicated', async () => {
+    const user = userEvent.setup();
+    setup([{ ...mockQueueItems[0], archive_id: null, library_file_id: 7, cleanup_library_after_dispatch: true }]);
+    render(<QueuePage />);
+    await waitFor(() => expect(screen.getByText('Test Print 1')).toBeInTheDocument());
+    await user.click(screen.getByText('Select All'));
+    expect(await screen.findByTitle('None of the selected jobs can be duplicated')).toBeDisabled();
+  });
+});

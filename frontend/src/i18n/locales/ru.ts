@@ -1594,6 +1594,7 @@ export default {
       startPrint: "Запустить печать",
       stopPrint: "Остановить печать",
       requeue: "Вернуть в очередь",
+      duplicate: 'Дублировать (добавить ещё одну копию в очередь)',
     },
     bulkEdit: {
       title: "Изменить {{count}} задание",
@@ -1621,6 +1622,8 @@ export default {
       selected: "Выбрано: {{count}}",
       editSelected: "Изменить выбранные",
       cancelSelected: "Отменить выбранные",
+      duplicateSelected: 'Дублировать',
+      duplicateNone: 'Ни одно из выбранных заданий нельзя дублировать',
     },
     confirm: {
       cancelTitle: "Отменить запланированную печать",
@@ -1656,6 +1659,10 @@ export default {
       bulkUpdatedNone: 'Ни одно задание не обновлено',
       bulkCancelled: "Отменено заданий: {{count}}",
       bulkCancelFailed: "Не удалось отменить задания",
+      duplicated: 'Добавлено заданий в конец очереди: {{count}}',
+      duplicateFailed: 'Не удалось дублировать элементы',
+      duplicatePartial: 'Добавлено {{added}} из {{total}} заданий; остальные не удалось дублировать',
+      duplicateSkipped: 'Добавлено заданий: {{count}}; пропущено {{skipped}}, которые нельзя дублировать',
       batchCreated: "Партия «{{name}}» создана",
       batchCreateFailed: "Не удалось создать партию",
       batchUngrouped: "Разгруппировано заданий: {{count}}",

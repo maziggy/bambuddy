@@ -1656,6 +1656,7 @@ export default {
       startPrint: 'Iniciar impresión',
       stopPrint: 'Detener impresión',
       requeue: 'Volver a encolar',
+      duplicate: 'Duplicar (añadir otra copia a la cola)',
     },
     // Bulk edit
     bulkEdit: {
@@ -1684,6 +1685,8 @@ export default {
       selected: '{{count}} seleccionados',
       editSelected: 'Editar seleccionados',
       cancelSelected: 'Cancelar seleccionados',
+      duplicateSelected: 'Duplicar',
+      duplicateNone: 'Ninguno de los trabajos seleccionados se puede duplicar',
     },
     // Confirmations
     confirm: {
@@ -1721,6 +1724,10 @@ export default {
       bulkUpdatedNone: 'No se actualizó ningún trabajo',
       bulkCancelled: 'Se cancelaron {{count}} elemento(s)',
       bulkCancelFailed: 'Error al cancelar los elementos',
+      duplicated: 'Se añadieron {{count}} trabajo(s) al final de la cola',
+      duplicateFailed: 'No se pudieron duplicar los elementos',
+      duplicatePartial: 'Se añadieron {{added}} de {{total}} trabajo(s); el resto no se pudo duplicar',
+      duplicateSkipped: 'Se añadieron {{count}} trabajo(s); se omitieron {{skipped}} que no se pueden duplicar',
       batchCreated: 'Lote "{{name}}" creado',
       batchCreateFailed: 'Error al crear el lote',
       batchUngrouped: '{{count}} elemento(s) desagrupado(s)',

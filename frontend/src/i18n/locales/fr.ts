@@ -1656,6 +1656,7 @@ export default {
       startPrint: 'Démarrer',
       stopPrint: 'Arrêter',
       requeue: 'Remettre en file',
+      duplicate: 'Dupliquer (ajouter une autre copie à la file)',
     },
     // Bulk edit
     bulkEdit: {
@@ -1684,6 +1685,8 @@ export default {
       selected: '{{count}} sélectionnés',
       editSelected: 'Modifier la sélection',
       cancelSelected: 'Annuler la sélection',
+      duplicateSelected: 'Dupliquer',
+      duplicateNone: 'Aucune des tâches sélectionnées ne peut être dupliquée',
     },
     // Confirmations
     confirm: {
@@ -1721,6 +1724,10 @@ export default {
       bulkUpdatedNone: 'Aucune tâche mise à jour',
       bulkCancelled: '{{count}} éléments annulés',
       bulkCancelFailed: 'Échec annulation',
+      duplicated: '{{count}} tâche(s) ajoutée(s) à la fin de la file',
+      duplicateFailed: 'Échec de la duplication des éléments',
+      duplicatePartial: '{{added}} tâche(s) sur {{total}} ajoutée(s) ; les autres n\'ont pas pu être dupliquées',
+      duplicateSkipped: '{{count}} tâche(s) ajoutée(s) ; {{skipped}} non duplicable(s) ignorée(s)',
       batchCreated: 'Lot « {{name}} » créé',
       batchCreateFailed: 'Échec de la création du lot',
       batchUngrouped: '{{count}} élément(s) dégroupé(s)',

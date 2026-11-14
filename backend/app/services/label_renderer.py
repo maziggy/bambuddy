@@ -46,13 +46,51 @@ from __future__ import annotations
 import io
 from dataclasses import dataclass
 from datetime import date
+from pathlib import Path
 from typing import Literal
 
 import qrcode
 from reportlab.lib.colors import Color, HexColor, black, white
 from reportlab.lib.pagesizes import A4, letter
 from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas as rl_canvas
+
+# Label text is printed in Liberation Sans, embedded in the PDF (#3553). The
+# PDF base fonts (Helvetica) only cover Western European characters, so names
+# in Polish, Czech, Cyrillic or Greek lost letters. Liberation Sans has the
+# same letter widths as Helvetica, so the layout and truncation are unchanged.
+_FONT_DIR = Path(__file__).resolve().parent.parent / "data" / "fonts"
+FONT_REGULAR = "LabelSans"
+FONT_BOLD = "LabelSans-Bold"
+FONT_ITALIC = "LabelSans-Italic"
+
+
+def _register_fonts() -> None:
+    registered = set(pdfmetrics.getRegisteredFontNames())
+    for name, filename in (
+        (FONT_REGULAR, "LiberationSans-Regular.ttf"),
+        (FONT_BOLD, "LiberationSans-Bold.ttf"),
+        (FONT_ITALIC, "LiberationSans-Italic.ttf"),
+    ):
+        if name not in registered:
+            pdfmetrics.registerFont(TTFont(name, str(_FONT_DIR / filename)))
+
+
+_register_fonts()
+
+
+def _new_canvas(buf: io.BytesIO, pagesize: tuple[float, float]) -> rl_canvas.Canvas:
+    """A canvas whose default font is the label font, so the PDF does not
+    carry an unused Helvetica resource."""
+    # types-reportlab declares initialFontName as a float; reportlab takes a font name.
+    return rl_canvas.Canvas(
+        buf,
+        pagesize=pagesize,
+        initialFontName=FONT_REGULAR,  # pyright: ignore[reportArgumentType]
+    )
+
 
 TemplateName = Literal[
     "ams_holder_74x33",
@@ -361,8 +399,8 @@ def _draw_label_tight(
     # easiest thing to read on a small AMS holder at arm's length.
     brand_size = 6.5
     if data.brand and "brand" in fields:
-        c.setFont("Helvetica-Bold", brand_size)
-        brand = _truncate_to_width(c, data.brand, "Helvetica-Bold", brand_size, text_w)
+        c.setFont(FONT_BOLD, brand_size)
+        brand = _truncate_to_width(c, data.brand, FONT_BOLD, brand_size, text_w)
         c.drawString(text_x, y + h - pad - brand_size, brand)
 
     # Second line: material + subtype, small
@@ -370,8 +408,8 @@ def _draw_label_tight(
     sub_line = " ".join(filter(None, [data.material, data.subtype])) if "material" in fields else ""
     sub_y_baseline = y + h - pad - brand_size - 0.6 - sub_size
     if sub_line:
-        c.setFont("Helvetica", sub_size)
-        sub_line = _truncate_to_width(c, sub_line, "Helvetica", sub_size, text_w)
+        c.setFont(FONT_REGULAR, sub_size)
+        sub_line = _truncate_to_width(c, sub_line, FONT_REGULAR, sub_size, text_w)
         c.drawString(text_x, sub_y_baseline, sub_line)
 
     # Third line (when there's room): hex code, tiny — useful when the user
@@ -382,15 +420,15 @@ def _draw_label_tight(
         hex_y = sub_y_baseline - 0.4 - hex_size
         # Don't render if it'd collide with the spool ID at the bottom.
         if hex_y > inner_y + 13:
-            c.setFont("Helvetica", hex_size)
+            c.setFont(FONT_REGULAR, hex_size)
             c.drawString(text_x, hex_y, hex_code)
 
     # Bottom: BIG spool ID — the killer field at-a-glance.
     if "spool_id" not in fields:
         return
     id_size = 13
-    c.setFont("Helvetica-Bold", id_size)
-    id_text = _truncate_to_width(c, f"#{data.spool_id}", "Helvetica-Bold", id_size, text_w)
+    c.setFont(FONT_BOLD, id_size)
+    id_text = _truncate_to_width(c, f"#{data.spool_id}", FONT_BOLD, id_size, text_w)
     c.drawString(text_x, inner_y + 0.5, id_text)
 
 
@@ -456,18 +494,18 @@ def _draw_label_roomy(
     # are what the label has always used; the rest share the location's.
     rows: list[tuple[LabelField, str, str, float, float]] = [
         # Brand — bumped to bold + larger per the #809 follow-up.
-        ("brand", data.brand or "", "Helvetica-Bold", 8, 1.2),
-        ("material", " · ".join(filter(None, [data.material, data.subtype])), "Helvetica", 7, 1.5),
+        ("brand", data.brand or "", FONT_BOLD, 8, 1.2),
+        ("material", " · ".join(filter(None, [data.material, data.subtype])), FONT_REGULAR, 7, 1.5),
         # Hex colour code — useful for telling near-identical material+colour
         # spools apart when the swatch is small or the user is colour-blind.
-        ("hex", _hex_code_label(data.rgba), "Helvetica", 6.5, 1.2),
-        ("name", name if name not in repeats else "", "Helvetica-Bold", 9, 1.2),
-        ("location", data.storage_location or "", "Helvetica-Oblique", 6.5, 1.2),
-        ("material_number", data.material_number or "", "Helvetica", 6.5, 1.2),
-        ("temps", _temps_text(data), "Helvetica", 6.5, 1.2),
-        ("weight", _weight_text(data), "Helvetica", 6.5, 1.2),
-        ("note", data.note or "", "Helvetica-Oblique", 6.5, 1.2),
-        ("added", data.added.isoformat() if data.added else "", "Helvetica", 6.5, 1.2),
+        ("hex", _hex_code_label(data.rgba), FONT_REGULAR, 6.5, 1.2),
+        ("name", name if name not in repeats else "", FONT_BOLD, 9, 1.2),
+        ("location", data.storage_location or "", FONT_ITALIC, 6.5, 1.2),
+        ("material_number", data.material_number or "", FONT_REGULAR, 6.5, 1.2),
+        ("temps", _temps_text(data), FONT_REGULAR, 6.5, 1.2),
+        ("weight", _weight_text(data), FONT_REGULAR, 6.5, 1.2),
+        ("note", data.note or "", FONT_ITALIC, 6.5, 1.2),
+        ("added", data.added.isoformat() if data.added else "", FONT_REGULAR, 6.5, 1.2),
     ]
 
     cursor_y = y + h - pad
@@ -482,8 +520,8 @@ def _draw_label_roomy(
         cursor_y -= gap
 
     if show_id:
-        c.setFont("Helvetica-Bold", id_size)
-        id_text = _truncate_to_width(c, f"#{data.spool_id}", "Helvetica-Bold", id_size, text_w)
+        c.setFont(FONT_BOLD, id_size)
+        id_text = _truncate_to_width(c, f"#{data.spool_id}", FONT_BOLD, id_size, text_w)
         c.drawString(text_x, inner_y + 0.5, id_text)
 
 
@@ -599,7 +637,7 @@ def _render_single_label_pdf(
     page_w, page_h = w_mm * mm, h_mm * mm
 
     buf = io.BytesIO()
-    c = rl_canvas.Canvas(buf, pagesize=(page_w, page_h))
+    c = _new_canvas(buf, (page_w, page_h))
     c.setTitle(f"Bambuddy spool labels ({template})")
 
     for data in data_list:
@@ -660,7 +698,7 @@ def _render_sheet_pdf(
     row_gap = layout.row_gap_mm * mm
 
     buf = io.BytesIO()
-    c = rl_canvas.Canvas(buf, pagesize=page_size)
+    c = _new_canvas(buf, page_size)
     c.setTitle(f"Bambuddy spool labels ({title})")
 
     per_page = layout.capacity
@@ -737,7 +775,7 @@ def render_label_preview_pdf(
     w_mm, h_mm = label_size_mm(template)
     page_w, page_h = w_mm * mm, h_mm * mm
     buf = io.BytesIO()
-    c = rl_canvas.Canvas(buf, pagesize=(page_w, page_h))
+    c = _new_canvas(buf, (page_w, page_h))
     _draw_label(c, 0, 0, page_w, page_h, data, monochrome, fields)
     c.showPage()
     c.save()

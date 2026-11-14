@@ -66,14 +66,13 @@ def _text(template: str, data: LabelData, fields=DEFAULT_LABEL_FIELDS) -> bytes:
     c.showPage()
     c.save()
     pdf = buf.getvalue()
-    streams = []
-    for m in re.finditer(rb"stream\r?\n(.*?)endstream", pdf, re.S):
-        # The object's own dictionary sits between its "N 0 obj" and "stream".
-        head = pdf[pdf.rfind(b" obj", 0, m.start()) : m.start()]
-        if b"/Subtype /Image" not in head:
-            streams.append(m.group(1))
-    assert len(streams) == 1, f"expected one page content stream, got {len(streams)}"
-    return streams[0]
+    # The page names its content stream; the embedded fonts and the QR image
+    # are streams of their own.
+    refs = re.findall(rb"/Contents (\d+) 0 R", pdf)
+    assert len(refs) == 1, f"expected one page content stream, got {len(refs)}"
+    m = re.search(rb"(?<!\d)" + refs[0] + rb" 0 obj.*?stream\r?\n(.*?)endstream", pdf, re.S)
+    assert m is not None
+    return m.group(1)
 
 
 def test_default_fields_are_what_labels_always_carried():

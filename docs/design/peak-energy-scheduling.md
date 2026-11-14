@@ -1,8 +1,8 @@
 # Peak energy hours: keep the queue out of expensive electricity (#2639)
 
-Status: **draft for maintainer review**. Nothing here is wired into the
-scheduler yet; the branch carries only the pure decision core
-(`backend/app/services/peak_energy.py`) with its unit tests, and static mockups.
+Status: **draft for maintainer review**. This PR is the design and static
+mockups only. The pure decision core (`backend/app/services/peak_energy.py`)
+and its unit tests follow in a separate PR, so this one has no code changes.
 
 ## Problem
 
@@ -310,12 +310,12 @@ real screenshots go in the wiki PR with the implementation.
 
 Small, reviewable PRs, each with tests and every locale updated:
 
-1. **Decision core** (this branch): `services/peak_energy.py`, pure, typed,
+1. **Decision core** (follow-up PR): `services/peak_energy.py`, pure, typed,
    unit-tested. No behavior change.
 2. **Settings and print queue**: settings keys and validation, the
    `ignore_peak_energy` column, the scheduler hook after the
-   `scheduled_time` check, the `/start` 409, `/peak-energy/status`, the settings
-   card and the queue reason/banner/override.
+   `scheduled_time` check, the `/start` 409, `/peak-energy/status`, the Energy
+   tab section and the queue reason/banner/override.
 3. **Drying**: hold and stop/resume for scheduled and auto drying, plus the
    `drying_record` length fix.
 4. **Home Assistant source** and timeline shading.
@@ -323,7 +323,7 @@ Small, reviewable PRs, each with tests and every locale updated:
 
 ## Testing
 
-- **Unit** (in this branch, 32 tests): window parsing and validation, merging,
+- **Unit** (with PR 1, 34 tests): window parsing and validation, merging,
   overnight and all-day windows, DST fall-back and spring-forward, both
   policies including the weekend gap, "too long for any gap" fallback, unknown
   estimates, drying start/stop.

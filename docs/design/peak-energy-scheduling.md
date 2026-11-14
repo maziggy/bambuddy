@@ -233,12 +233,31 @@ search entries keep working as aliases so old links don't break.
 
 - One toggle to enable, and a source selector: **Time windows** or
   **Home Assistant**.
-- Window rows with weekday chips in Sunday-first order (S M T W T F S) and two
-  24-hour time inputs, `+ Add window`, and a week strip that draws the merged
+- Window rows with weekday chips that start on the locale's first day of the
+  week (see below) and two 24-hour time inputs, `+ Add window`, and a week strip that draws the merged
   result, so an overnight window or an overlap is obvious at a glance. The
   server time zone is shown next to the windows.
 - The print policy as two radios with the margin under the second.
 - Two drying toggles.
+
+Weekday chip order follows the locale, not a fixed Sunday. Only the display
+order changes; stored days stay 0 = Sunday.
+
+- Locale: Bambuddy's UI language (`i18n.language`, the language picker). That
+  is often just `en` or `de`, with no region, so when the browser's
+  `navigator.language` has the same base language (`en-GB`), use it for the
+  region. Bambuddy has no other locale or week-start setting today.
+- First day: `new Intl.Locale(tag).getWeekInfo().firstDay`, or the older
+  `weekInfo` property where only that exists. `firstDay` runs 1 = Monday to
+  7 = Sunday, so the chip index is `firstDay % 7`.
+- Fallback: Sunday, when neither exists. Per MDN's compatibility data,
+  `getWeekInfo()` is in Chrome and Edge 130+, Safari 17+ (macOS and iOS) and
+  Firefox 153+; Chrome and Edge 99-129 have only the `weekInfo` property;
+  older Firefox has neither, so it falls back to Sunday.
+- One small helper (`firstDayOfWeek(locale): number`) with a vitest per case,
+  so the week strip and any later calendar use the same rule.
+
+The mockups show an `en-US` user, so their chips start on Sunday.
 
 ![Energy tab, Home Assistant source](peak-energy-scheduling/energy-tab-home-assistant.png)
 

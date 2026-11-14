@@ -309,6 +309,14 @@ class TestResolve:
         assert resp.status_code == 200, resp.text
         assert sorted(resp.json()["already_imported_library_ids"]) == sorted([model_row.id, plate_row.id])
 
+        # library-status must return the same membership set without cloud I/O.
+        status = await async_client.post(
+            "/api/v1/makerworld/library-status",
+            json={"model_ids": [1400373]},
+        )
+        assert status.status_code == 200, status.text
+        assert sorted(status.json()["1400373"]) == sorted(resp.json()["already_imported_library_ids"])
+
     @pytest.mark.asyncio
     async def test_gate_uses_the_permission_of_the_provider_the_url_routes_to(self, async_client):
         """Same rule as import, keyed off the pasted URL instead of
@@ -795,6 +803,184 @@ class TestImport:
         assert resp.status_code == 409, resp.text
         # Pre-existing file's contents must not be clobbered by the failed write.
         assert (ext_dir / "benchy.3mf").read_bytes() == b"pre-existing"
+
+
+class TestLibraryStatus:
+    """POST /makerworld/library-status — DB-only bulk membership (#3493)."""
+
+    @pytest.mark.asyncio
+    async def test_empty_request_returns_empty_map(self, async_client):
+        resp = await async_client.post("/api/v1/makerworld/library-status", json={"model_ids": []})
+        assert resp.status_code == 200, resp.text
+        assert resp.json() == {}
+
+    @pytest.mark.asyncio
+    async def test_unknown_ids_return_empty_lists(self, async_client):
+        resp = await async_client.post(
+            "/api/v1/makerworld/library-status",
+            json={"model_ids": [3532227, 4018786]},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json() == {"3532227": [], "4018786": []}
+
+    @pytest.mark.asyncio
+    async def test_matches_whole_model_and_plate_urls_like_resolve(self, async_client, db_session):
+        """Parity with ``resolve``'s ``already_imported_library_ids`` filter:
+        whole-model canonical URL *and* any ``#profileId-`` plate row."""
+        model_row = LibraryFile(
+            filename="prev.3mf",
+            file_path="library/files/prev.3mf",
+            file_type="3mf",
+            file_size=100,
+            source_type="makerworld",
+            source_url="https://makerworld.com/models/1400373",
+        )
+        plate_row = LibraryFile(
+            filename="prev-plate.3mf",
+            file_path="library/files/prev-plate.3mf",
+            file_type="3mf",
+            file_size=100,
+            source_type="makerworld",
+            source_url="https://makerworld.com/models/1400373#profileId-298919107",
+        )
+        other = LibraryFile(
+            filename="other.3mf",
+            file_path="library/files/other.3mf",
+            file_type="3mf",
+            file_size=100,
+            source_type="makerworld",
+            source_url="https://makerworld.com/models/9999999#profileId-1",
+        )
+        db_session.add_all([model_row, plate_row, other])
+        await db_session.commit()
+        await db_session.refresh(model_row)
+        await db_session.refresh(plate_row)
+
+        resp = await async_client.post(
+            "/api/v1/makerworld/library-status",
+            json={"model_ids": [1400373, 4018786]},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert sorted(body["1400373"]) == sorted([model_row.id, plate_row.id])
+        assert body["4018786"] == []
+        assert "9999999" not in body
+
+    @pytest.mark.asyncio
+    async def test_does_not_match_prefix_sibling_model_ids(self, async_client, db_session):
+        """``140037`` must not match rows for ``1400373`` (and vice versa)."""
+        row = LibraryFile(
+            filename="long.3mf",
+            file_path="library/files/long.3mf",
+            file_type="3mf",
+            file_size=100,
+            source_type="makerworld",
+            source_url="https://makerworld.com/models/1400373#profileId-1",
+        )
+        db_session.add(row)
+        await db_session.commit()
+
+        resp = await async_client.post(
+            "/api/v1/makerworld/library-status",
+            json={"model_ids": [140037, 1400373, 14003730]},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["140037"] == []
+        assert body["14003730"] == []
+        assert body["1400373"] == [row.id]
+
+    @pytest.mark.asyncio
+    async def test_excludes_soft_deleted_rows(self, async_client, db_session):
+        alive = LibraryFile(
+            filename="alive.3mf",
+            file_path="library/files/alive.3mf",
+            file_type="3mf",
+            file_size=100,
+            source_type="makerworld",
+            source_url="https://makerworld.com/models/42",
+        )
+        trashed = LibraryFile(
+            filename="trashed.3mf",
+            file_path="library/files/trashed.3mf",
+            file_type="3mf",
+            file_size=100,
+            source_type="makerworld",
+            source_url="https://makerworld.com/models/42#profileId-9",
+            deleted_at=datetime(2025, 6, 1, 12, 0, 0),
+        )
+        db_session.add_all([alive, trashed])
+        await db_session.commit()
+        await db_session.refresh(alive)
+
+        resp = await async_client.post(
+            "/api/v1/makerworld/library-status",
+            json={"model_ids": [42]},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json() == {"42": [alive.id]}
+
+    @pytest.mark.asyncio
+    async def test_collapses_duplicate_request_ids(self, async_client, db_session):
+        row = LibraryFile(
+            filename="dup.3mf",
+            file_path="library/files/dup.3mf",
+            file_type="3mf",
+            file_size=100,
+            source_type="makerworld",
+            source_url="https://makerworld.com/models/7",
+        )
+        db_session.add(row)
+        await db_session.commit()
+        await db_session.refresh(row)
+
+        resp = await async_client.post(
+            "/api/v1/makerworld/library-status",
+            json={"model_ids": [7, 7, 8]},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json() == {"7": [row.id], "8": []}
+
+    @pytest.mark.asyncio
+    async def test_rejects_more_than_200_ids(self, async_client):
+        resp = await async_client.post(
+            "/api/v1/makerworld/library-status",
+            json={"model_ids": list(range(1, 202))},
+        )
+        assert resp.status_code == 422, resp.text
+
+    @pytest.mark.asyncio
+    async def test_accepts_exactly_200_ids(self, async_client):
+        resp = await async_client.post(
+            "/api/v1/makerworld/library-status",
+            json={"model_ids": list(range(1, 201))},
+        )
+        assert resp.status_code == 200, resp.text
+        assert len(resp.json()) == 200
+        assert resp.json()["1"] == []
+
+    @pytest.mark.asyncio
+    async def test_does_not_call_provider_cloud_service(self, async_client, db_session):
+        """Membership must stay DB-only — never build a MakerWorldService."""
+        db_session.add(
+            LibraryFile(
+                filename="local.3mf",
+                file_path="library/files/local.3mf",
+                file_type="3mf",
+                file_size=100,
+                source_type="makerworld",
+                source_url="https://makerworld.com/models/1",
+            )
+        )
+        await db_session.commit()
+
+        with patch("backend.app.api.routes.makerworld._build_service") as build:
+            resp = await async_client.post(
+                "/api/v1/makerworld/library-status",
+                json={"model_ids": [1]},
+            )
+        assert resp.status_code == 200, resp.text
+        build.assert_not_called()
 
 
 class TestRecentImports:

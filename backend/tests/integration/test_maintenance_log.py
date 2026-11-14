@@ -4,17 +4,20 @@ Entries outlive the printer, the custom task and the user (their names are
 kept as they were), so the log stays an audit trail. It is read per printer
 and exported as CSV per printer or for the whole fleet; a printer-scoped
 caller sees only their printers, and not the entries of deleted ones.
+Entries can be deleted, by age or one at a time, with the history row of the
+same reset, so a deleted comment is gone from the database.
 """
 
 from __future__ import annotations
 
 import csv
 import io
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from httpx import AsyncClient
 
-from backend.app.models.maintenance import MaintenanceLogEntry
+from backend.app.models.maintenance import MaintenanceHistory, MaintenanceLogEntry
 from backend.tests.integration.test_archives_last_per_printer import _admin_token, _auth, _user
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
@@ -52,6 +55,31 @@ async def _entry(db_session, entry_id: int) -> MaintenanceLogEntry:
     entry = await db_session.get(MaintenanceLogEntry, entry_id)
     assert entry is not None
     return entry
+
+
+async def _age(db_session, entry_id: int, days: int) -> int:
+    """Move an entry ``days`` into the past; returns its history row's id."""
+    entry = await _entry(db_session, entry_id)
+    entry.performed_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
+    history_id = entry.history_id
+    await db_session.commit()
+    assert history_id is not None
+    return history_id
+
+
+async def _history_exists(db_session, history_id: int) -> bool:
+    db_session.expire_all()
+    return await db_session.get(MaintenanceHistory, history_id) is not None
+
+
+async def _logged(async_client, printer_factory, name: str, *notes: str) -> tuple[int, list[int]]:
+    """A printer with one reset per note; returns its id and the entry ids, oldest first."""
+    printer_id = (await printer_factory(name=name)).id
+    item = await _first_item(async_client, printer_id)
+    for note in notes:
+        await _perform(async_client, item["id"], note)
+    entries = (await _log(async_client, printer_id))["items"]
+    return printer_id, [e["id"] for e in reversed(entries)]
 
 
 class TestLogging:
@@ -209,6 +237,77 @@ class TestExport:
         assert {r[1] for r in rows[1:]} >= {"Fleet A", "Fleet B"}
 
 
+class TestCleanup:
+    async def test_a_printer_s_old_entries_go_with_their_history(self, async_client, printer_factory, db_session):
+        printer_id, (old, recent, _today) = await _logged(
+            async_client, printer_factory, "Cleanup", "old", "recent", "today"
+        )
+        other_id, (other_old,) = await _logged(async_client, printer_factory, "Cleanup Other", "other old")
+        old_history = await _age(db_session, old, 400)
+        recent_history = await _age(db_session, recent, 10)
+        other_history = await _age(db_session, other_old, 400)
+
+        response = await async_client.delete(f"{BASE}/printers/{printer_id}/log", params={"older_than_days": 30})
+
+        assert response.status_code == 200, response.text
+        assert response.json() == {"deleted": 1}
+        assert [e["notes"] for e in (await _log(async_client, printer_id))["items"]] == ["today", "recent"]
+        assert not await _history_exists(db_session, old_history)
+        assert await _history_exists(db_session, recent_history)
+        # Another printer's entries are not touched.
+        assert (await _log(async_client, other_id))["total"] == 1
+        assert await _history_exists(db_session, other_history)
+
+    async def test_the_age_must_be_given_and_at_least_a_day(self, async_client, printer_factory):
+        printer_id, _ = await _logged(async_client, printer_factory, "Cleanup Age", "kept")
+
+        for params in ({}, {"older_than_days": 0}, {"older_than_days": -5}):
+            assert (await async_client.delete(f"{BASE}/printers/{printer_id}/log", params=params)).status_code == 422
+            assert (await async_client.delete(f"{BASE}/log", params=params)).status_code == 422
+        assert (await _log(async_client, printer_id))["total"] == 1
+
+    async def test_cleaning_up_an_unknown_printer_is_not_found(self, async_client):
+        response = await async_client.delete(f"{BASE}/printers/999999/log", params={"older_than_days": 1})
+
+        assert response.status_code == 404
+
+    async def test_the_fleet_cleanup_covers_every_printer_and_deleted_ones(
+        self, async_client, printer_factory, db_session
+    ):
+        a_id, (a_old, a_new) = await _logged(async_client, printer_factory, "Fleet Clean A", "a old", "a new")
+        b_id, (b_old,) = await _logged(async_client, printer_factory, "Fleet Clean B", "b old")
+        gone_id, (gone_old,) = await _logged(async_client, printer_factory, "Fleet Clean Gone", "gone old")
+        for entry_id in (a_old, b_old, gone_old):
+            await _age(db_session, entry_id, 100)
+        assert (await async_client.delete(f"/api/v1/printers/{gone_id}")).status_code == 200
+
+        response = await async_client.delete(f"{BASE}/log", params={"older_than_days": 30})
+
+        assert response.status_code == 200, response.text
+        assert response.json() == {"deleted": 3}
+        assert [e["id"] for e in (await _log(async_client, a_id))["items"]] == [a_new]
+        assert (await _log(async_client, b_id))["total"] == 0
+        db_session.expire_all()
+        assert await db_session.get(MaintenanceLogEntry, gone_old) is None
+
+    async def test_one_entry_goes_with_its_history_and_the_reset_stays(self, async_client, printer_factory, db_session):
+        printer_id, (kept, mistaken) = await _logged(async_client, printer_factory, "Mistake", "kept", "by mistake")
+        history_id = (await _entry(db_session, mistaken)).history_id
+        before = await _first_item(async_client, printer_id)
+
+        response = await async_client.delete(f"{BASE}/log/{mistaken}")
+
+        assert response.status_code == 200, response.text
+        assert [e["id"] for e in (await _log(async_client, printer_id))["items"]] == [kept]
+        assert history_id is not None
+        assert not await _history_exists(db_session, history_id)
+        # Deleting the entry does not undo the reset.
+        assert (await _first_item(async_client, printer_id))["last_performed_at"] == before["last_performed_at"]
+
+    async def test_deleting_an_unknown_entry_is_not_found(self, async_client):
+        assert (await async_client.delete(f"{BASE}/log/999999")).status_code == 404
+
+
 class TestWithAuthentication:
     PERMISSIONS = ["maintenance:read", "maintenance:update", "printers:read"]
 
@@ -255,3 +354,46 @@ class TestWithAuthentication:
 
         assert log.status_code in (403, 404)
         assert export.status_code in (403, 404)
+
+    async def test_cleanup_needs_the_delete_permission(self, async_client, printer_factory):
+        printer_id, (entry_id,) = await _logged(async_client, printer_factory, "No Delete", "kept")
+        admin = await _admin_token(async_client)
+        jwt, _ = await _user(async_client, admin, "no_delete", self.PERMISSIONS)
+
+        for path, params in (
+            (f"{BASE}/printers/{printer_id}/log", {"older_than_days": 1}),
+            (f"{BASE}/log", {"older_than_days": 1}),
+            (f"{BASE}/log/{entry_id}", {}),
+        ):
+            response = await async_client.delete(path, params=params, headers=_auth(jwt))
+            assert response.status_code == 403, (path, response.text)
+        assert (await _log(async_client, printer_id, headers=_auth(admin)))["total"] == 1
+
+    async def test_a_scoped_user_cleans_up_only_their_printers(self, async_client, printer_factory, db_session):
+        mine, (mine_old,) = await _logged(async_client, printer_factory, "Clean Mine", "mine")
+        theirs, (theirs_old,) = await _logged(async_client, printer_factory, "Clean Theirs", "theirs")
+        gone, (gone_old,) = await _logged(async_client, printer_factory, "Clean Gone", "gone")
+        for entry_id in (mine_old, theirs_old, gone_old):
+            await _age(db_session, entry_id, 100)
+        assert (await async_client.delete(f"/api/v1/printers/{gone}")).status_code == 200
+        admin = await _admin_token(async_client)
+        jwt, _ = await _user(
+            async_client, admin, "scoped_cleaner", [*self.PERMISSIONS, "maintenance:delete"], printer_ids=[mine]
+        )
+
+        fleet = await async_client.delete(f"{BASE}/log", params={"older_than_days": 30}, headers=_auth(jwt))
+        other_printer = await async_client.delete(
+            f"{BASE}/printers/{theirs}/log", params={"older_than_days": 30}, headers=_auth(jwt)
+        )
+        other_entry = await async_client.delete(f"{BASE}/log/{theirs_old}", headers=_auth(jwt))
+        deleted_printer_entry = await async_client.delete(f"{BASE}/log/{gone_old}", headers=_auth(jwt))
+
+        assert fleet.status_code == 200, fleet.text
+        assert fleet.json() == {"deleted": 1}
+        assert other_printer.status_code in (403, 404)
+        assert other_entry.status_code == 404
+        assert deleted_printer_entry.status_code == 404
+        db_session.expire_all()
+        assert await db_session.get(MaintenanceLogEntry, mine_old) is None
+        assert await db_session.get(MaintenanceLogEntry, theirs_old) is not None
+        assert await db_session.get(MaintenanceLogEntry, gone_old) is not None

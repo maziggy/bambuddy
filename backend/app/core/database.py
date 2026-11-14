@@ -6726,13 +6726,23 @@ async def _backfill_maintenance_log(conn) -> None:
 
     The log (maintenance_log_entries) is written with each reset and outlives
     the printer and its tasks; resets before it existed are only in
-    maintenance_history, which goes with them. Not gated: it copies only
-    history rows the log has no entry for (``history_id``), so a second run
-    changes nothing. Who reset them was never recorded and stays unknown.
+    maintenance_history, which goes with them. Who reset them was never
+    recorded and stays unknown.
+
+    Once only, gated by a settings flag: entries deleted from the log later
+    (cleanup, a mistaken reset) still have their history row, and a second
+    pass would bring them back. Rows the log already has an entry for
+    (``history_id``) are skipped either way.
     """
     from sqlalchemy import text
 
+    flag = "_backfill_maintenance_log_done"
     async with conn.begin_nested():
+        already = (
+            await conn.execute(text('SELECT value FROM settings WHERE "key" = :k'), {"k": flag})
+        ).scalar_one_or_none()
+        if already is not None:
+            return
         result = await conn.execute(
             text(
                 "INSERT INTO maintenance_log_entries (printer_id, printer_name, maintenance_type_id, "
@@ -6746,6 +6756,7 @@ async def _backfill_maintenance_log(conn) -> None:
                 "WHERE NOT EXISTS (SELECT 1 FROM maintenance_log_entries l WHERE l.history_id = h.id)"
             )
         )
+        await conn.execute(text('INSERT INTO settings ("key", value) VALUES (:k, :v)'), {"k": flag, "v": "true"})
     if result.rowcount:
         logger.info("Copied %d maintenance history row(s) into the maintenance log", result.rowcount)
 

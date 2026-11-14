@@ -7839,6 +7839,14 @@ export const api = {
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
   },
+  // Deletes the entries older than the given days: one printer's, or with no
+  // printer the whole fleet's (deleted printers included for an unscoped caller).
+  cleanUpMaintenanceLog: (olderThanDays: number, printerId?: number) => {
+    const path = printerId === undefined ? '/maintenance/log' : `/maintenance/printers/${printerId}/log`;
+    return request<{ deleted: number }>(`${path}?older_than_days=${olderThanDays}`, { method: 'DELETE' });
+  },
+  deleteMaintenanceLogEntry: (entryId: number) =>
+    request<{ status: string; id: number }>(`/maintenance/log/${entryId}`, { method: 'DELETE' }),
   setPrinterHours: (printerId: number, totalHours: number) =>
     request<{ printer_id: number; total_hours: number; archive_hours: number; offset_hours: number }>(
       `/maintenance/printers/${printerId}/hours?total_hours=${totalHours}`,

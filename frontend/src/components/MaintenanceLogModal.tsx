@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useInfiniteQuery } from '@tanstack/react-query';
-import { AlertTriangle, Download, History, Loader2, X } from 'lucide-react';
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { AlertTriangle, Download, History, Loader2, Trash2, X } from 'lucide-react';
 import { api } from '../api/client';
 import type { MaintenanceLogEntry } from '../api/client';
 import { formatDateTime, type TimeFormat } from '../utils/date';
 import { Button } from './Button';
+import { ConfirmModal } from './ConfirmModal';
+import { MaintenanceLogCleanupModal } from './MaintenanceLogCleanupModal';
 import { useToast } from '../contexts/ToastContext';
+import { useAuth } from '../contexts/AuthContext';
 import { useUiSettings } from '../hooks/useUiSettings';
 
 const PAGE_SIZE = 50;
@@ -17,21 +20,28 @@ interface MaintenanceLogModalProps {
   onClose: () => void;
 }
 
-/** A printer's maintenance log, newest first, with its CSV export. */
+/** A printer's maintenance log, newest first, with its CSV export and cleanup. */
 export function MaintenanceLogModal({ printerId, printerName, onClose }: MaintenanceLogModalProps) {
   const { t } = useTranslation();
   const { showToast } = useToast();
+  const { hasPermission } = useAuth();
+  const queryClient = useQueryClient();
   const { data: settings } = useUiSettings();
   const timeFormat: TimeFormat = settings?.time_format || 'system';
+  const canDelete = hasPermission('maintenance:delete');
   const [exporting, setExporting] = useState(false);
+  const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<MaintenanceLogEntry | null>(null);
+  // Escape closes the confirmation on top first, not the log under it too.
+  const confirming = cleanupOpen || pendingDelete !== null;
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape' && !confirming) onClose();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [onClose, confirming]);
 
   // One page per request, each fetched once: "Load more" asks for the next
   // offset instead of a bigger first page (the API caps a page at 500).
@@ -47,6 +57,31 @@ export function MaintenanceLogModal({ printerId, printerName, onClose }: Mainten
 
   const entries = data?.pages.flatMap((page) => page.items) ?? [];
   const total = data?.pages.at(-1)?.total ?? 0;
+  // Only an empty log has nothing to export or clean up; when the list failed
+  // to load, both may still work.
+  const logEmpty = !isError && total === 0;
+
+  const onDeleteError = (err: Error) => showToast(t('maintenance.deleteFailed', { error: err.message }), 'error');
+
+  const cleanupMutation = useMutation({
+    mutationFn: (olderThanDays: number) => api.cleanUpMaintenanceLog(olderThanDays, printerId),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['maintenanceLog'] });
+      setCleanupOpen(false);
+      showToast(t('maintenance.cleanUpDone', { deleted: result.deleted }));
+    },
+    onError: onDeleteError,
+  });
+
+  const deleteEntryMutation = useMutation({
+    mutationFn: (entryId: number) => api.deleteMaintenanceLogEntry(entryId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['maintenanceLog'] });
+      setPendingDelete(null);
+      showToast(t('maintenance.entryDeleted'));
+    },
+    onError: onDeleteError,
+  });
 
   const handleExport = async () => {
     setExporting(true);
@@ -60,7 +95,7 @@ export function MaintenanceLogModal({ printerId, printerName, onClose }: Mainten
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={confirming ? undefined : onClose}>
       <div
         role="dialog"
         aria-modal="true"
@@ -76,10 +111,14 @@ export function MaintenanceLogModal({ printerId, printerName, onClose }: Mainten
               {t('maintenance.logTitle', { printer: printerName })}
             </h2>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {/* Only an empty log has nothing to export; when the list failed to
-                load, the export may still work. */}
-            <Button size="sm" variant="secondary" onClick={handleExport} disabled={exporting || (!isError && total === 0)}>
+          <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+            {canDelete && (
+              <Button size="sm" variant="secondary" onClick={() => setCleanupOpen(true)} disabled={logEmpty}>
+                <Trash2 className="w-3.5 h-3.5" />
+                {t('maintenance.cleanUp')}
+              </Button>
+            )}
+            <Button size="sm" variant="secondary" onClick={handleExport} disabled={exporting || logEmpty}>
               {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
               {t('maintenance.exportCsv')}
             </Button>
@@ -114,7 +153,12 @@ export function MaintenanceLogModal({ printerId, printerName, onClose }: Mainten
           ) : (
             <ul className="space-y-2">
               {entries.map((entry) => (
-                <LogEntryRow key={entry.id} entry={entry} timeFormat={timeFormat} />
+                <LogEntryRow
+                  key={entry.id}
+                  entry={entry}
+                  timeFormat={timeFormat}
+                  onDelete={canDelete ? () => setPendingDelete(entry) : undefined}
+                />
               ))}
             </ul>
           )}
@@ -144,20 +188,64 @@ export function MaintenanceLogModal({ printerId, printerName, onClose }: Mainten
             )}
           </div>
         )}
+
+        {cleanupOpen && (
+          <MaintenanceLogCleanupModal
+            printerName={printerName}
+            isLoading={cleanupMutation.isPending}
+            onConfirm={(days) => cleanupMutation.mutate(days)}
+            onCancel={() => setCleanupOpen(false)}
+          />
+        )}
+
+        {pendingDelete && (
+          <ConfirmModal
+            title={t('maintenance.deleteEntryTitle')}
+            message={t('maintenance.deleteEntryMessage', {
+              task: pendingDelete.maintenance_type_name,
+              date: formatDateTime(pendingDelete.performed_at, timeFormat),
+            })}
+            confirmText={t('common.delete')}
+            variant="danger"
+            overlayZIndex="z-[60]"
+            isLoading={deleteEntryMutation.isPending}
+            onConfirm={() => deleteEntryMutation.mutate(pendingDelete.id)}
+            onCancel={() => setPendingDelete(null)}
+          />
+        )}
       </div>
     </div>
   );
 }
 
-function LogEntryRow({ entry, timeFormat }: { entry: MaintenanceLogEntry; timeFormat: TimeFormat }) {
+interface LogEntryRowProps {
+  entry: MaintenanceLogEntry;
+  timeFormat: TimeFormat;
+  /** Shown only to users who may delete entries. */
+  onDelete?: () => void;
+}
+
+function LogEntryRow({ entry, timeFormat, onDelete }: LogEntryRowProps) {
   const { t } = useTranslation();
   return (
     <li className="rounded-lg border border-bambu-dark-tertiary bg-bambu-dark/30 px-3 py-2">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
         <span className="font-medium text-white">{entry.maintenance_type_name}</span>
-        <time dateTime={entry.performed_at} className="text-xs text-bambu-gray">
-          {formatDateTime(entry.performed_at, timeFormat)}
-        </time>
+        <span className="flex items-center gap-2">
+          <time dateTime={entry.performed_at} className="text-xs text-bambu-gray">
+            {formatDateTime(entry.performed_at, timeFormat)}
+          </time>
+          {onDelete && (
+            <button
+              onClick={onDelete}
+              className="p-1 -my-1 rounded text-bambu-gray hover:text-red-600 dark:hover:text-red-400 transition-colors self-center"
+              aria-label={t('maintenance.deleteEntry')}
+              title={t('maintenance.deleteEntry')}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </span>
       </div>
       <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-bambu-gray">
         {entry.performed_by_username && <span>{t('maintenance.performedBy', { user: entry.performed_by_username })}</span>}

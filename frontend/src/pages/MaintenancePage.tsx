@@ -46,6 +46,7 @@ import { Button } from '../components/Button';
 import { Toggle } from '../components/Toggle';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { MaintenanceLogModal } from '../components/MaintenanceLogModal';
+import { MaintenanceLogCleanupModal } from '../components/MaintenanceLogCleanupModal';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -1161,6 +1162,7 @@ export function MaintenancePage() {
   const [activeTab, setActiveTab] = useState<TabType>('status');
   const [resetItem, setResetItem] = useState<MaintenanceStatus | null>(null);
   const [exportingLog, setExportingLog] = useState(false);
+  const [cleanupLogOpen, setCleanupLogOpen] = useState(false);
 
   const { data: overview, isLoading } = useQuery({
     queryKey: ['maintenanceOverview'],
@@ -1278,6 +1280,18 @@ export function MaintenancePage() {
     },
   });
 
+  const cleanupLogMutation = useMutation({
+    mutationFn: (olderThanDays: number) => api.cleanUpMaintenanceLog(olderThanDays),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['maintenanceLog'] });
+      setCleanupLogOpen(false);
+      showToast(t('maintenance.cleanUpDone', { deleted: result.deleted }));
+    },
+    onError: (error: Error) => {
+      showToast(t('maintenance.deleteFailed', { error: error.message }), 'error');
+    },
+  });
+
   const handlePerform = (item: MaintenanceStatus) => {
     setResetItem(item);
   };
@@ -1322,16 +1336,29 @@ export function MaintenancePage() {
             {t('maintenance.title')}
           </h1>
           {activeTab === 'status' && hasPermission('maintenance:read') && (
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={handleExportAllLogs}
-              disabled={exportingLog}
-              title={t('maintenance.exportAllHint')}
-            >
-              {exportingLog ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
-              {t('maintenance.exportAll')}
-            </Button>
+            <div className="flex items-center gap-2 flex-wrap">
+              {hasPermission('maintenance:delete') && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setCleanupLogOpen(true)}
+                  title={t('maintenance.cleanUpHint')}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  {t('maintenance.cleanUpLog')}
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={handleExportAllLogs}
+                disabled={exportingLog}
+                title={t('maintenance.exportAllHint')}
+              >
+                {exportingLog ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                {t('maintenance.exportAll')}
+              </Button>
+            </div>
           )}
         </div>
         <p className="text-bambu-gray mt-1">
@@ -1439,6 +1466,14 @@ export function MaintenancePage() {
           onConfirm={(notes) => performMutation.mutate({ id: resetItem.id, notes: notes.trim() || undefined })}
           onCancel={() => setResetItem(null)}
           t={t}
+        />
+      )}
+
+      {cleanupLogOpen && (
+        <MaintenanceLogCleanupModal
+          isLoading={cleanupLogMutation.isPending}
+          onConfirm={(days) => cleanupLogMutation.mutate(days)}
+          onCancel={() => setCleanupLogOpen(false)}
         />
       )}
     </div>

@@ -2,7 +2,8 @@
 
 They are only in maintenance_history, which goes with its printer task. The
 copy takes the printer's and the task's names as they are now; who reset them
-was never recorded. A second start copies nothing again.
+was never recorded. A second start copies nothing again, not even entries
+deleted from the log since.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ async def engine():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
     async with engine.begin() as conn:
         for ddl in (
+            'CREATE TABLE settings (id INTEGER PRIMARY KEY, "key" VARCHAR(100) NOT NULL UNIQUE, value TEXT)',
             "CREATE TABLE printers (id INTEGER PRIMARY KEY, name VARCHAR(100) NOT NULL)",
             "CREATE TABLE maintenance_types (id INTEGER PRIMARY KEY, name VARCHAR(100) NOT NULL)",
             "CREATE TABLE printer_maintenance (id INTEGER PRIMARY KEY, printer_id INTEGER NOT NULL, "
@@ -111,3 +113,13 @@ async def test_resets_already_logged_are_not_copied(engine):
         entries = await _entries(conn)
 
     assert [(e[0], e[-1]) for e in entries] == [(10, "mechanic"), (11, None)]
+
+
+async def test_entries_deleted_from_the_log_stay_deleted(engine):
+    async with engine.begin() as conn:
+        await _backfill_maintenance_log(conn)
+        await conn.execute(text("DELETE FROM maintenance_log_entries WHERE history_id = 10"))
+        await _backfill_maintenance_log(conn)
+        entries = await _entries(conn)
+
+    assert [e[0] for e in entries] == [11]

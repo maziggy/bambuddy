@@ -113,6 +113,24 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+function signInWith(permissions: string[]) {
+  setAuthToken('test-token-1', 'session');
+  server.use(
+    http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+    http.get('*/api/v1/auth/me', () =>
+      HttpResponse.json({
+        id: 9,
+        username: 'viewer',
+        is_active: true,
+        is_admin: false,
+        groups: [],
+        permissions,
+        created_at: '2026-01-01T00:00:00Z',
+      }),
+    ),
+  );
+}
+
 /** The printer card whose heading is `name`. */
 async function printerCard(name: string): Promise<HTMLElement> {
   const heading = await screen.findByRole('heading', { name });
@@ -358,8 +376,32 @@ describe('MaintenancePage wiring: maintenance log', () => {
           headers: { 'Content-Type': 'text/csv', 'Content-Disposition': 'attachment; filename="maintenance_log_all.csv"' },
         });
       }),
+      http.delete('*/api/v1/maintenance/log/:entryId', async ({ request, params }) => {
+        await record(request);
+        return HttpResponse.json({ status: 'deleted', id: Number(params.entryId) });
+      }),
+      http.delete('*/api/v1/maintenance/log', async ({ request }) => {
+        await record(request);
+        return HttpResponse.json({ deleted: 4 });
+      }),
+      http.delete('*/api/v1/maintenance/printers/:id/log', async ({ request }) => {
+        await record(request);
+        return HttpResponse.json({ deleted: 1 });
+      }),
     );
   });
+
+  async function openBetaLog(user: ReturnType<typeof userEvent.setup>): Promise<HTMLElement> {
+    await user.click(within(await printerCard('Beta Printer')).getByRole('button', { name: 'Log' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Maintenance log: Beta Printer' });
+    await within(dialog).findByText('Clean Nozzle');
+    return dialog;
+  }
+
+  /** A confirmation on top of the page, found by its heading. */
+  async function confirmation(title: string): Promise<HTMLElement> {
+    return (await screen.findByRole('heading', { name: title })).closest('div.fixed') as HTMLElement;
+  }
 
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -462,27 +504,115 @@ describe('MaintenancePage wiring: maintenance log', () => {
     await waitFor(() => expect(createObjectURL).toHaveBeenCalledTimes(1));
     expect(sent.some((s) => s.path === '/api/v1/maintenance/log/export')).toBe(true);
   });
+
+  it('deleting an entry asks first, then deletes that entry and reloads the log', async () => {
+    const user = userEvent.setup();
+    render(<MaintenancePage />);
+    const dialog = await openBetaLog(user);
+
+    await user.click(within(dialog).getByRole('button', { name: 'Delete entry' }));
+    const confirm = await confirmation('Delete this log entry?');
+    expect(within(confirm).getByText(/"Clean Nozzle" from .* is permanently removed/)).toBeInTheDocument();
+    expect(writes()).toEqual([]);
+    await user.click(within(confirm).getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() =>
+      expect(writes()).toEqual([{ method: 'DELETE', path: '/api/v1/maintenance/log/5', search: '', body: null }]),
+    );
+    expect(await screen.findByText('Log entry deleted')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(sent.filter((s) => s.method === 'GET' && s.path === '/api/v1/maintenance/printers/2/log')).toHaveLength(2),
+    );
+    expect(screen.queryByRole('heading', { name: 'Delete this log entry?' })).not.toBeInTheDocument();
+  });
+
+  it('Escape cancels the entry delete and leaves the log open', async () => {
+    const user = userEvent.setup();
+    render(<MaintenancePage />);
+    const dialog = await openBetaLog(user);
+
+    await user.click(within(dialog).getByRole('button', { name: 'Delete entry' }));
+    await confirmation('Delete this log entry?');
+    await user.keyboard('{Escape}');
+
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Delete this log entry?' })).not.toBeInTheDocument());
+    expect(screen.getByRole('dialog', { name: 'Maintenance log: Beta Printer' })).toBeInTheDocument();
+    expect(writes()).toEqual([]);
+  });
+
+  it('Clean up in a printer\'s log deletes its entries older than the chosen days', async () => {
+    const user = userEvent.setup();
+    render(<MaintenancePage />);
+    const dialog = await openBetaLog(user);
+
+    await user.click(within(dialog).getByRole('button', { name: 'Clean up' }));
+    const confirm = await confirmation('Delete old log entries?');
+    expect(within(confirm).getByText(/maintenance log of Beta Printer/)).toBeInTheDocument();
+    const days = within(confirm).getByLabelText('Delete entries older than (days)');
+    expect(days).toHaveValue(365);
+    await user.clear(days);
+    await user.type(days, '90');
+    await user.click(within(confirm).getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() =>
+      expect(writes()).toEqual([
+        { method: 'DELETE', path: '/api/v1/maintenance/printers/2/log', search: '?older_than_days=90', body: null },
+      ]),
+    );
+    expect(await screen.findByText('Log entries deleted: 1')).toBeInTheDocument();
+  });
+
+  it('the cleanup cannot be confirmed without an age of at least one day', async () => {
+    const user = userEvent.setup();
+    render(<MaintenancePage />);
+    const dialog = await openBetaLog(user);
+
+    await user.click(within(dialog).getByRole('button', { name: 'Clean up' }));
+    const confirm = await confirmation('Delete old log entries?');
+    const days = within(confirm).getByLabelText('Delete entries older than (days)');
+    const deleteButton = within(confirm).getByRole('button', { name: 'Delete' });
+
+    await user.clear(days);
+    expect(deleteButton).toBeDisabled();
+    await user.type(days, '0');
+    expect(deleteButton).toBeDisabled();
+    await user.clear(days);
+    await user.type(days, '1.5');
+    expect(deleteButton).toBeDisabled();
+    expect(writes()).toEqual([]);
+  });
+
+  it('Clean up log in the header cleans up the whole fleet', async () => {
+    const user = userEvent.setup();
+    render(<MaintenancePage />);
+
+    await user.click(await screen.findByRole('button', { name: 'Clean up log' }));
+    const confirm = await confirmation('Delete old log entries?');
+    expect(within(confirm).getByText(/for all printers you can see/)).toBeInTheDocument();
+    await user.click(within(confirm).getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() =>
+      expect(writes()).toEqual([
+        { method: 'DELETE', path: '/api/v1/maintenance/log', search: '?older_than_days=365', body: null },
+      ]),
+    );
+    expect(await screen.findByText('Log entries deleted: 4')).toBeInTheDocument();
+  });
+
+  it('without maintenance:delete there is no cleanup and no entry delete', async () => {
+    signInWith(['maintenance:read']);
+    const user = userEvent.setup();
+    render(<MaintenancePage />);
+
+    expect(await screen.findByRole('button', { name: 'Export log' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Clean up log' })).not.toBeInTheDocument());
+    const dialog = await openBetaLog(user);
+    expect(within(dialog).queryByRole('button', { name: 'Clean up' })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: 'Delete entry' })).not.toBeInTheDocument();
+  });
 });
 
 describe('MaintenancePage wiring: permissions', () => {
-  function signInWith(permissions: string[]) {
-    setAuthToken('test-token-1', 'session');
-    server.use(
-      http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
-      http.get('*/api/v1/auth/me', () =>
-        HttpResponse.json({
-          id: 9,
-          username: 'viewer',
-          is_active: true,
-          is_admin: false,
-          groups: [],
-          permissions,
-          created_at: '2026-01-01T00:00:00Z',
-        }),
-      ),
-    );
-  }
-
   it('a read-only user gets disabled controls and nothing is sent', async () => {
     signInWith(['maintenance:read']);
     const user = userEvent.setup();

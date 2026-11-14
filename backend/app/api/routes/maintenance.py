@@ -1,10 +1,12 @@
 """Maintenance tracking API routes."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -43,6 +45,7 @@ from backend.app.schemas.maintenance import (
 from backend.app.services.export import ExportService
 from backend.app.services.notification_service import notification_service
 from backend.app.utils.http import build_content_disposition
+from backend.app.utils.local_time import utcnow_naive
 from backend.app.utils.printer_models import get_rod_type, normalize_printer_model_id
 
 logger = logging.getLogger(__name__)
@@ -1035,6 +1038,89 @@ async def export_maintenance_log(
     result = await db.execute(query)
     file_bytes, filename = ExportService.export_maintenance_log(result.scalars().all(), "all")
     return _csv_response(file_bytes, filename)
+
+
+# A cleanup keeps at least the last day: no age can empty the log by accident.
+_OLDER_THAN_DAYS = Query(ge=1, le=36500, description="Delete the entries older than this many days")
+
+
+def _older_than(days: int):
+    # performed_at is naive UTC, like every timestamp the app writes.
+    return MaintenanceLogEntry.performed_at < utcnow_naive() - timedelta(days=days)
+
+
+async def _delete_log_entries(db: AsyncSession, *conditions) -> int:
+    """Delete the log entries matching ``conditions``, and the history rows of the same resets.
+
+    Each reset is written to maintenance_history too, comment included; left
+    there, a deleted entry would still be in the database and its backups.
+    """
+    copied_from = select(MaintenanceLogEntry.history_id).where(*conditions, MaintenanceLogEntry.history_id.is_not(None))
+    await db.execute(delete(MaintenanceHistory).where(MaintenanceHistory.id.in_(copied_from)))
+    result = cast(CursorResult, await db.execute(delete(MaintenanceLogEntry).where(*conditions)))
+    await db.commit()
+    return result.rowcount
+
+
+@router.delete("/printers/{printer_id}/log")
+async def clean_up_printer_maintenance_log(
+    printer_id: int,
+    older_than_days: int = _OLDER_THAN_DAYS,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.MAINTENANCE_DELETE),
+):
+    """Delete a printer's maintenance log entries older than ``older_than_days``."""
+    await _ensure_printer(db, printer_id)
+    deleted = await _delete_log_entries(db, MaintenanceLogEntry.printer_id == printer_id, _older_than(older_than_days))
+    logger.info(
+        "Deleted %d maintenance log entries of printer %d older than %d days", deleted, printer_id, older_than_days
+    )
+    return {"deleted": deleted}
+
+
+@router.delete("/log")
+async def clean_up_maintenance_log(
+    older_than_days: int = _OLDER_THAN_DAYS,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_DELETE),
+    printer_scope: PrinterScope = RequestPrinterScope,
+):
+    """Delete the maintenance log entries older than ``older_than_days`` of every
+    printer the caller may see.
+
+    Entries of deleted printers go too, but only for callers who see every
+    printer, as in the export.
+    """
+    conditions = [_older_than(older_than_days)]
+    if (in_scope := printer_scope.where_strict(MaintenanceLogEntry.printer_id)) is not None:
+        conditions.append(in_scope)
+    deleted = await _delete_log_entries(db, *conditions)
+    logger.info("Deleted %d maintenance log entries older than %d days", deleted, older_than_days)
+    return {"deleted": deleted}
+
+
+@router.delete("/log/{entry_id}")
+async def delete_maintenance_log_entry(
+    entry_id: int,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_DELETE),
+    printer_scope: PrinterScope = RequestPrinterScope,
+):
+    """Delete one maintenance log entry, e.g. of a task reset by mistake.
+
+    The task's last reset stays as it is: deleting the entry does not undo it.
+    """
+    entry = await db.get(MaintenanceLogEntry, entry_id)
+    # An entry of a deleted printer is reachable only by a caller who sees
+    # every printer; ``allows`` alone lets any caller at rows with no printer.
+    out_of_scope = entry is not None and (
+        not printer_scope.allows(entry.printer_id) or (entry.printer_id is None and not printer_scope.is_unrestricted)
+    )
+    if entry is None or out_of_scope:
+        raise HTTPException(status_code=404, detail="Maintenance log entry not found")
+    await _delete_log_entries(db, MaintenanceLogEntry.id == entry_id)
+    logger.info("Maintenance log entry %d deleted", entry_id)
+    return {"status": "deleted", "id": entry_id}
 
 
 @router.get("/summary")

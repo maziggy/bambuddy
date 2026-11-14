@@ -243,6 +243,7 @@ async def create_printer(
         await ws_manager.refresh_printer_scopes()
 
     wled_manager.configure_printer(printer.id, printer.wled_config)
+    wled_manager.set_plate_clear_override(printer.id, printer.plate_clear_override)
 
     # Connect to the printer
     if printer.is_active:
@@ -537,8 +538,10 @@ async def update_printer(
         except Exception as e:
             logger.error("Failed to sync virtual printers after printer IP change: %s", e)
 
-    if "wled_config" in update_data:
-        wled_manager.configure_printer(printer_id, printer.wled_config)
+    if "wled_config" in update_data or "plate_clear_override" in update_data:
+        if "wled_config" in update_data:
+            wled_manager.configure_printer(printer_id, printer.wled_config)
+        wled_manager.set_plate_clear_override(printer_id, printer.plate_clear_override)
         state = printer_manager.get_status(printer_id)
         if state and printer.is_active:
             wled_manager.handle_status(

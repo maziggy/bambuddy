@@ -487,6 +487,7 @@ export interface Printer {
   external_camera_snapshot_url: string | null;  // optional single-frame override (#1177)
   camera_rotation: number;  // 0, 90, 180, 270 degrees
   camera_light_auto: boolean;  // picked for the chamber light when camera_light_mode is 'selected' (#1655)
+  plate_clear_override: PlateClearOverride;  // overrides the require_plate_clear setting for this printer (#2860)
   plate_detection_enabled: boolean;  // Check plate before print
   plate_detection_roi?: PlateDetectionROI;  // ROI for plate detection
   wear_cost_per_hour: number | null;  // Wear cost per printing hour (#694)
@@ -803,6 +804,9 @@ export interface PrinterStatus {
   supports_chamber_heater?: boolean;
 }
 
+// 'inherit' follows the require_plate_clear setting; 'on' / 'off' decide for one printer (#2860)
+export type PlateClearOverride = 'inherit' | 'on' | 'off';
+
 export interface PrinterCreate {
   name: string;
   serial_number: string;
@@ -821,6 +825,7 @@ export interface PrinterCreate {
   external_camera_snapshot_url?: string | null;
   camera_rotation?: number;
   camera_light_auto?: boolean;
+  plate_clear_override?: PlateClearOverride;
   plate_detection_enabled?: boolean;
   plate_detection_roi?: PlateDetectionROI;
   wear_cost_per_hour?: number | null;

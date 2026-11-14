@@ -22,9 +22,9 @@ hand.
    next window, until a gap it fits into.
 3. AMS drying (scheduled, queue auto-drying and humidity-triggered) does not
    start during a window, and can optionally be stopped when one begins and
-   finished afterwards.
+   finished afterward.
 4. The user always sees why a job is waiting and until when, and can override
-   it per job ("Start now anyway").
+   it per job with the queue's existing start button.
 5. Off by default; with it off, nothing behaves differently.
 
 ## Non-goals (v1)
@@ -38,7 +38,7 @@ hand.
 - Different schedules per printer or per location. One schedule for the whole
   install. (Open question 4.)
 - Choosing the cheapest slot from a price forecast. v1 is "avoid windows", not
-  "optimise cost".
+  "optimize cost".
 - Prints started outside the queue (from Bambu Studio, Handy, or the printer's
   screen). Bambuddy does not gate those today and won't start to.
 
@@ -55,10 +55,10 @@ hand.
 - *As a user who dries filament overnight*, my 8-hour drying run scheduled for
   6 pm starts at 9 pm. A drying run in progress at 5 pm stops and the remaining
   hours run after 9 pm.
-- *As a user in a hurry*, I press "Start now anyway" on a held job and it starts
+- *As a user in a hurry*, I press the start button on a held job, confirm, and it starts
   on the next scheduler pass.
 
-## Behaviour
+## Behavior
 
 ### Defining windows
 
@@ -71,8 +71,8 @@ A window is `{days, start, end}` where `days` are the weekdays the window
   17:00-21:00 behaves as one 14:00-21:00 period.
 - Windows are interpreted in the server's time zone (`TZ`, via
   `utils.local_time.local_zone()`), which is what the rest of Bambuddy already
-  uses for calendar reasoning. The settings card shows the zone so a container
-  without `TZ` (UTC) is obvious. (Open question 5.)
+  uses for calendar reasoning. There is no separate time zone setting. The
+  Energy tab shows the zone so a container without `TZ` (UTC) is obvious.
 - DST: windows keep their wall-clock meaning. A 17:00 window is 17:00 local on
   both sides of a change. A window starting inside a spring-forward gap is
   shifted by the gap; an ambiguous fall-back time takes its first occurrence.
@@ -107,10 +107,10 @@ pending item that is not `manual_start` and not `ignore_peak_energy`:
 
 - `POST /queue/{id}/start` on a held item during a window answers `409` with
   `code=peak_energy` and the window's end time, the same pattern as the
-  existing filament-deficit check. The UI then asks: **Start now anyway** or
-  **Start after peak**. "Anyway" retries with `ignore_peak_energy=true`, which
-  sets the item's new `ignore_peak_energy` flag; "after peak" just leaves it
-  queued.
+  existing filament-deficit check. The UI shows a confirm dialog with the
+  standard **Start after peak** (secondary) and **Start now** (primary)
+  buttons. "Start now" retries with `ignore_peak_energy=true`, which sets the
+  item's new `ignore_peak_energy` flag; "Start after peak" leaves it queued.
 - Items created by an explicit "print now" action on the printer card
   (`cleanup_library_after_dispatch`) are created with `ignore_peak_energy=true`,
   because the user asked for that printer, now. (Open question 2.)
@@ -186,7 +186,7 @@ Settings (key/value rows, like the existing drying and energy settings):
 |---|---|---|
 | `peak_energy_enabled` | bool | `false` |
 | `peak_energy_source` | `"windows" \| "homeassistant"` | `"windows"` |
-| `peak_energy_windows` | JSON string, list of `{"days":[0-6], "start":"HH:MM", "end":"HH:MM"}` (0 = Monday) | `""` |
+| `peak_energy_windows` | JSON string, list of `{"days":[0-6], "start":"HH:MM", "end":"HH:MM"}` (0 = Sunday, as JS `Date.getDay()`) | `""` |
 | `peak_energy_ha_entity` | str | `""` |
 | `peak_energy_ha_states` | str, comma-separated | `"peak,on"` |
 | `peak_energy_print_policy` | `"start_outside" \| "finish_before"` | `"start_outside"` |
@@ -217,33 +217,64 @@ No new table. No change to `scheduled_dryings`.
 - `waiting_reason`: the queue page currently shows this as raw text. For peak
   holds the scheduler writes a code, `peak_energy:<reason>:<iso until>`
   (`in_peak_window` or `would_overlap_peak`), and the frontend renders a
-  translated, localised message. Scheduled drying already uses short codes.
+  translated, localized message. Scheduled drying already uses short codes.
 
 ## UI
 
-### Settings: a "Peak energy hours" card next to "Auto-Drying"
+### Settings: rename "Smart Plugs" to "Energy"
 
-![Settings card mockup](peak-energy-scheduling/settings-card.png)
+The existing **Smart Plugs** tab becomes **Energy** and holds two sections:
+**Smart Plugs** (unchanged) and the new **Peak Energy Scheduling**. Power and
+cost belong together, and the plugs are what most users meter peak hours with.
+The tab id changes from `plugs` to `energy`; `?tab=plugs` and the settings
+search entries keep working as aliases so old links don't break.
 
-- One toggle to enable, the server time zone shown next to the windows.
-- Window rows with weekday chips and two 24-hour time inputs, `+ Add window`,
-  and a week strip that draws the merged result, so an overnight window or an
-  overlap is obvious at a glance.
+![Energy tab, manual windows](peak-energy-scheduling/energy-tab.png)
+
+- One toggle to enable, and a source selector: **Time windows** or
+  **Home Assistant**.
+- Window rows with weekday chips in Sunday-first order (S M T W T F S) and two
+  24-hour time inputs, `+ Add window`, and a week strip that draws the merged
+  result, so an overnight window or an overlap is obvious at a glance. The
+  server time zone is shown next to the windows.
 - The print policy as two radios with the margin under the second.
 - Two drying toggles.
-- With the Home Assistant source (not drawn), the window editor is replaced by
-  an entity picker and a "states that mean peak" field, and the
-  "finish before" radio is disabled with a hint.
+
+![Energy tab, Home Assistant source](peak-energy-scheduling/energy-tab-home-assistant.png)
+
+- With the Home Assistant source, the window editor is replaced by an entity
+  search that works like the one in the Add Smart Plug dialog (friendly name,
+  entity id and current state), limited to `select`, `input_select`,
+  `binary_sensor` and `input_boolean` entities. "States that mean peak" shows
+  the entity's own options as checkboxes (`on` for a binary entity). A live
+  line shows the entity's current state and whether jobs can start.
+- The "finish before" radio is disabled with a hint, because Home Assistant
+  can't tell us when the next peak starts.
 
 ### Queue: why a job waits, and the override
 
-![Queue mockup](peak-energy-scheduling/queue-waiting.png)
+![Queue, manual windows](peak-energy-scheduling/queue-waiting.png)
 
 - A banner while a window is active: "Peak energy hours until 9:00 PM. 3 jobs
   are waiting."
 - Held jobs use the existing purple **Waiting** badge with a translated reason
-  and time, and a **Start now anyway** button.
+  and time.
+- The override is the row's existing ▶ start icon button, unchanged in style.
+  During peak it opens the confirm dialog below instead of starting at once.
 - Held scheduled drying runs show the same reason on their card.
+
+![Queue, Home Assistant source](peak-energy-scheduling/queue-waiting-home-assistant.png)
+
+With the Home Assistant source there is no known end time, so the banner reads
+"Peak energy hours, according to Home Assistant. 3 jobs are waiting." and each
+badge says "Starts when Home Assistant reports off-peak" instead of a time.
+
+![Start during peak dialog](peak-energy-scheduling/start-during-peak-dialog.png)
+
+The dialog uses the app's standard modal footer and `Button` variants:
+**Start after peak** is `secondary` and **Start now** is `primary`, the same
+pair the queue's other dialogs use. With the Home Assistant source the text
+says "until Home Assistant reports off-peak" instead of a time.
 
 ### Timeline: shade the windows
 
@@ -261,7 +292,7 @@ real screenshots go in the wiki PR with the implementation.
 Small, reviewable PRs, each with tests and every locale updated:
 
 1. **Decision core** (this branch): `services/peak_energy.py`, pure, typed,
-   unit-tested. No behaviour change.
+   unit-tested. No behavior change.
 2. **Settings and print queue**: settings keys and validation, the
    `ignore_peak_energy` column, the scheduler hook after the
    `scheduled_time` check, the `/start` 409, `/peak-energy/status`, the settings
@@ -300,7 +331,5 @@ Small, reviewable PRs, each with tests and every locale updated:
    be per-printer opt-in, with a warning about adhesion.
 4. **Per-printer or per-location schedules**: needed by anyone? The data model
    could later add an optional `printer_ids` list per window.
-5. **Time zone**: use the server `TZ` (proposed, matches `local_time`), or add
-   a setting like `finance_budget_reset_timezone`?
-6. **Notifications**: should holding a job send one ("3 jobs held until
+5. **Notifications**: should holding a job send one ("3 jobs held until
    9:00 PM"), or is the queue banner enough? Proposed: no notification in v1.

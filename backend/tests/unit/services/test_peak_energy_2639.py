@@ -24,7 +24,8 @@ from backend.app.services.peak_energy import (
 )
 
 DENVER = ZoneInfo("America/Denver")
-WEEKDAYS = frozenset(range(5))
+# 0 = Sunday, so Monday-Friday is 1-5.
+WEEKDAYS = frozenset(range(1, 6))
 WEEKDAY_EVENINGS = PeakSchedule(windows=(PeakWindow(WEEKDAYS, time(17), time(21)),), zone=DENVER)
 
 
@@ -53,7 +54,7 @@ class TestActiveWindow:
         assert WEEKDAY_EVENINGS.next_start(local(*FRI, 22)) == local(2026, 11, 23, 17)
 
     def test_overnight_window_spans_midnight(self):
-        overnight = PeakSchedule(windows=(PeakWindow(frozenset({0}), time(22), time(6)),), zone=DENVER)
+        overnight = PeakSchedule(windows=(PeakWindow(frozenset({1}), time(22), time(6)),), zone=DENVER)
         # Tuesday 02:00 is inside Monday's 22:00-06:00 window.
         assert overnight.active_until(local(2026, 11, 17, 2)) == local(2026, 11, 17, 6)
 
@@ -65,7 +66,7 @@ class TestActiveWindow:
         assert split.active_until(local(*MON, 15)) == local(*MON, 21)
 
     def test_equal_start_and_end_is_a_full_day(self):
-        all_monday = PeakSchedule(windows=(PeakWindow(frozenset({0}), time(0), time(0)),), zone=DENVER)
+        all_monday = PeakSchedule(windows=(PeakWindow(frozenset({1}), time(0), time(0)),), zone=DENVER)
         assert all_monday.active_until(local(*MON, 12)) == local(2026, 11, 17, 0)
 
 
@@ -82,7 +83,7 @@ class TestDaylightSaving:
 
     def test_window_inside_the_spring_forward_gap_still_has_positive_length(self):
         # 02:00-03:00 does not exist on 2026-03-08 in Denver.
-        gap = PeakSchedule(windows=(PeakWindow(frozenset({6}), time(2), time(4)),), zone=DENVER)
+        gap = PeakSchedule(windows=(PeakWindow(frozenset({0}), time(2), time(4)),), zone=DENVER)
         [(start, end)] = gap.intervals(local(2026, 3, 8, 0), local(2026, 3, 8, 12))
         assert end > start
 
@@ -160,9 +161,20 @@ class TestEmptySchedule:
         assert decide_drying_start(empty, now) == Allow()
 
 
+class TestWeekdayNumbering:
+    def test_zero_is_sunday(self):
+        sunday_only = PeakSchedule(windows=(PeakWindow(frozenset({0}), time(9), time(10)),), zone=DENVER)
+        assert sunday_only.active_until(local(2026, 11, 22, 9, 30)) == local(2026, 11, 22, 10)
+        assert sunday_only.active_until(local(*MON, 9, 30)) is None
+
+    def test_six_is_saturday(self):
+        saturday_only = PeakSchedule(windows=(PeakWindow(frozenset({6}), time(9), time(10)),), zone=DENVER)
+        assert saturday_only.active_until(local(*SAT, 9, 30)) == local(*SAT, 10)
+
+
 class TestParseWindows:
     def test_parses_the_setting_format(self):
-        windows = parse_windows('[{"days": [0, 1, 2, 3, 4], "start": "17:00", "end": "21:00"}]')
+        windows = parse_windows('[{"days": [1, 2, 3, 4, 5], "start": "17:00", "end": "21:00"}]')
         assert windows == (PeakWindow(WEEKDAYS, time(17), time(21)),)
 
     def test_empty_string_means_no_windows(self):

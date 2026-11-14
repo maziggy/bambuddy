@@ -51,7 +51,9 @@ class DeferReason(StrEnum):
 class PeakWindow:
     """One recurring window: on each of ``days``, from ``start`` to ``end``.
 
-    ``days`` are Python weekdays (0 = Monday) on which the window *starts*.
+    ``days`` are the weekdays on which the window *starts*, 0 = Sunday through
+    6 = Saturday (the JavaScript ``Date.getDay()`` and cron numbering, which
+    the frontend already uses; Python's ``weekday()`` starts at Monday).
     ``end <= start`` means it ends the next day (22:00-06:00); ``end == start``
     means a full 24 hours.
     """
@@ -68,10 +70,10 @@ class PeakWindow:
 
     def occurrence_on(self, day: date, zone: tzinfo) -> tuple[datetime, datetime] | None:
         """The UTC interval this window covers when it starts on local ``day``."""
-        if day.weekday() not in self.days:
+        if sunday_first_weekday(day) not in self.days:
             return None
         end_day = day if self.end > self.start else day + timedelta(days=1)
-        # Combine in the local zone, then normalise through UTC. A wall time
+        # Combine in the local zone, then normalize through UTC. A wall time
         # that does not exist (spring-forward gap) comes out shifted by the
         # gap; an ambiguous one (fall-back) takes its first occurrence. Either
         # way the window keeps its wall-clock meaning on DST days.
@@ -81,6 +83,11 @@ class PeakWindow:
 
 
 Interval = tuple[datetime, datetime]
+
+
+def sunday_first_weekday(day: date) -> int:
+    """0 = Sunday ... 6 = Saturday."""
+    return (day.weekday() + 1) % 7
 
 
 def _merge(intervals: Iterable[Interval]) -> list[Interval]:
@@ -211,7 +218,8 @@ def should_stop_drying(schedule: PeakSchedule, now: datetime) -> bool:
 def parse_windows(raw: str) -> tuple[PeakWindow, ...]:
     """Parse the ``peak_energy_windows`` setting.
 
-    Format: a JSON list of ``{"days": [0-6, ...], "start": "HH:MM", "end": "HH:MM"}``.
+    Format: a JSON list of ``{"days": [0-6, ...], "start": "HH:MM", "end": "HH:MM"}``
+    with 0 = Sunday.
     An empty string means no windows. Raises ValueError with a message fit for
     a 422 response on anything malformed.
     """
@@ -229,7 +237,7 @@ def parse_windows(raw: str) -> tuple[PeakWindow, ...]:
             raise ValueError(f"window {i}: must be an object")
         days = entry.get("days")
         if not isinstance(days, list) or not all(isinstance(d, int) and not isinstance(d, bool) for d in days):
-            raise ValueError(f"window {i}: days must be a list of weekday numbers 0-6")
+            raise ValueError(f"window {i}: days must be a list of weekday numbers 0-6 (0 = Sunday)")
         windows.append(
             PeakWindow(
                 days=frozenset(days),

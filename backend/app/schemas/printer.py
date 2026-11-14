@@ -559,6 +559,9 @@ class PrinterStatus(BaseModel):
     # True = ON, False = OFF, None = unknown / unsupported (A1 family — protocol field
     # not yet identified). UI treats None as "status unavailable", not as a hard disable.
     ams_filament_backup: bool | None = None
+    # Prompt sounds (start / finish music and alerts): True / False, or None when the
+    # printer does not report the option, so the UI offers no toggle (#3483).
+    sound_enabled: bool | None = None
     # Queue: printer is awaiting the user to acknowledge the build plate is cleared
     # after a finished/failed print. Persisted across restarts (#961).
     awaiting_plate_clear: bool = False

@@ -111,6 +111,19 @@ def parse_ams_filament_backup_from_cfg(cfg_raw: object) -> bool | None:
         return None
 
 
+def parse_sound_from_home_flag(home_flag: object) -> tuple[bool, bool] | None:
+    """Read the printer's prompt-sound option from a ``print.home_flag`` value (#3483).
+
+    Returns ``(supported, enabled)``: bit 18 says the printer has the option at
+    all (the toggle is offered only then) and bit 17 whether the sound is on.
+    Bambu Studio reads the same bits for its "prompt sound" setting. ``None``
+    when the value is not an integer, so a malformed frame changes nothing.
+    """
+    if isinstance(home_flag, bool) or not isinstance(home_flag, int):
+        return None
+    return bool((home_flag >> 18) & 1), bool((home_flag >> 17) & 1)
+
+
 def parse_ams_filament_backup_from_home_flag(home_flag: object) -> bool | None:
     """Extract AMS Filament Backup state from a push_status ``print.home_flag`` value.
 
@@ -1387,6 +1400,10 @@ class PrinterState:
     # which uses the old protocol path; field not yet found). Consumers must treat
     # None as "no opinion" — preserving today's behaviour, NOT as "disabled".
     ams_filament_backup: bool | None = None
+    # Prompt sounds (start / finish music and alerts), from home_flag bits 17 and 18 (#3483).
+    # sound_supported is False until a frame says the printer has the option.
+    sound_supported: bool = False
+    sound_enabled: bool = False
 
 
 # Stage name mapping from BambuStudio DeviceManager.cpp
@@ -5767,6 +5784,22 @@ class BambuMQTTClient:
                 )
             self.state.store_to_sdcard = store_to_sdcard
 
+            sound = parse_sound_from_home_flag(home_flag)
+            if sound is not None:
+                supported, enabled = sound
+                self.state.sound_supported = supported
+                hold_start = self._xcam_hold_start.get("print_option_sound_enable")
+                if hold_start is not None and (time.time() - hold_start) <= self._xcam_hold_time:
+                    # The user just changed it; the next frames still carry the old
+                    # value until the printer has applied it.
+                    logger.debug("[%s] prompt sound push ignored (hold active)", self.serial_number)
+                else:
+                    if enabled != self.state.sound_enabled:
+                        logger.debug(
+                            "[%s] prompt sound changed: %s -> %s", self.serial_number, self.state.sound_enabled, enabled
+                        )
+                    self.state.sound_enabled = enabled
+
         # Door open detection — source depends on printer family:
         #   X1 series (X1, X1C, X1E): home_flag bit 23
         #   All others (P1/P2/H2/A1/N-series): top-level `stat` field (hex string), bit 23
@@ -7166,8 +7199,14 @@ class BambuMQTTClient:
             self.state.print_options.auto_recovery_step_loss = enabled
         elif option_name == "auto_switch_filament":
             self.state.ams_filament_backup = enabled
+        elif option_name == "sound_enable":
+            self.state.sound_enabled = enabled
 
         return True
+
+    def set_sound_enable(self, enabled: bool) -> bool:
+        """Turn the printer's prompt sounds (start / finish music, alerts) on or off (#3483)."""
+        return self._set_print_option("sound_enable", enabled)
 
     def set_ams_filament_backup(self, enabled: bool) -> bool:
         """Toggle AMS Filament Backup (a.k.a. auto-switch / auto-refill).

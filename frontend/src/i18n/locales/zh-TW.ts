@@ -465,6 +465,8 @@ export default {
     // Chamber light
     chamberLightOn: '開啟腔室燈',
     chamberLightOff: '關閉腔室燈',
+    printerSoundOn: '開啟列印機提示音',
+    printerSoundOff: '關閉列印機提示音',
     // Files
     files: '檔案',
     browseFiles: '瀏覽印表機檔案',
@@ -560,6 +562,9 @@ export default {
       failedToPausePrint: '暫停列印失敗',
       failedToResumePrint: '繼續列印失敗',
       failedToControlChamberLight: '控制腔室燈失敗',
+      printerSoundEnabled: '列印機提示音已開啟',
+      printerSoundDisabled: '列印機提示音已關閉',
+      failedToControlPrinterSound: '變更列印機提示音失敗',
       failedToSetSpeed: '設定列印速度失敗',
       failedToUpdateSetting: '更新設定失敗',
       failedToSkipObjects: '跳過物件失敗',

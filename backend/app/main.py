@@ -2445,7 +2445,7 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
         f"{state.stg_cur}:{bed_target}:{nozzle_target}:"
         f"{state.cooling_fan_speed}:{state.big_fan1_speed}:{state.big_fan2_speed}:"
         f"{state.chamber_light}:{state.active_extruder}:{state.tray_now}:{vt_tray_key}:"
-        f"{ams_dry_key}:{ams_tray_key}:{state.door_open}:{state.ams_filament_backup}:{fts_key}"
+        f"{ams_dry_key}:{ams_tray_key}:{state.door_open}:{state.ams_filament_backup}:{state.sound_supported}:{state.sound_enabled}:{fts_key}"
     )
 
     # Fields that change only when the machine does (a nozzle swap, a firmware

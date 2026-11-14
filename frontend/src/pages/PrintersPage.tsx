@@ -96,6 +96,8 @@ import {
   Signal,
   Clock,
   MoreVertical,
+  Volume2,
+  VolumeX,
   Trash2,
   RefreshCw,
   RotateCw,
@@ -3102,6 +3104,29 @@ function PrinterCard({
     },
   });
 
+  // Printer prompt sounds (start / finish music, alerts), with an optimistic update (#3483)
+  const printerSoundMutation = useMutation({
+    mutationFn: (enabled: boolean) => api.setPrinterSound(printer.id, enabled),
+    onMutate: async (enabled) => {
+      await queryClient.cancelQueries({ queryKey: ['printerStatus', printer.id] });
+      const previousStatus = queryClient.getQueryData(['printerStatus', printer.id]);
+      queryClient.setQueryData(['printerStatus', printer.id], (old: typeof status) => ({
+        ...old,
+        sound_enabled: enabled,
+      }));
+      return { previousStatus };
+    },
+    onSuccess: (_, enabled) => {
+      showToast(enabled ? t('printers.toast.printerSoundEnabled') : t('printers.toast.printerSoundDisabled'));
+    },
+    onError: (error: Error, _, context) => {
+      if (context?.previousStatus) {
+        queryClient.setQueryData(['printerStatus', printer.id], context.previousStatus);
+      }
+      showToast(error.message || t('printers.toast.failedToControlPrinterSound'), 'error');
+    },
+  });
+
   // Print speed mutation with optimistic update
   const printSpeedMutation = useMutation({
     mutationFn: (mode: number) => api.setPrintSpeed(printer.id, mode),
@@ -5035,6 +5060,27 @@ function PrinterCard({
                       >
                         <ChamberLight on={status.chamber_light ?? false} className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
                       </button>
+
+                      {/* Prompt sounds: only on a printer that reports the option (#3483) */}
+                      {status.sound_enabled != null && (
+                        <button
+                          onClick={() => printerSoundMutation.mutate(!status.sound_enabled)}
+                          disabled={!status.connected || printerSoundMutation.isPending || !hasPermission('printers:control')}
+                          className={`${iconControlClass} ${
+                            status.sound_enabled
+                              ? 'bg-bambu-green/10 text-bambu-green hover:bg-bambu-green/20'
+                              : 'bg-bambu-dark text-bambu-gray/50 hover:bg-bambu-dark-tertiary hover:text-white'
+                          }`}
+                          title={!hasPermission('printers:control') ? t('printers.permission.noControl') : (status.sound_enabled ? t('printers.printerSoundOff') : t('printers.printerSoundOn'))}
+                          aria-pressed={status.sound_enabled}
+                        >
+                          {status.sound_enabled ? (
+                            <Volume2 className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
+                          ) : (
+                            <VolumeX className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
+                          )}
+                        </button>
+                      )}
 
                       {/* Airduct Mode (P2S / X2D / H2* / H3C, an H2D Pro stored as "H2D Pro", #3335) */}
                       {(['P2S', 'X2D', 'H2D', 'H2D Pro', 'H2C', 'H2S', 'H3C'].includes(printer.model ?? '')) && (() => {

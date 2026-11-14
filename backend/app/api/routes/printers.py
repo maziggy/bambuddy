@@ -956,6 +956,7 @@ async def _printer_status(db: AsyncSession, printer: Printer) -> PrinterStatus:
         firmware_version=state.firmware_version,
         developer_mode=state.developer_mode if state else None,
         ams_filament_backup=state.ams_filament_backup if state else None,
+        sound_enabled=(state.sound_enabled if state.sound_supported else None) if state else None,
         awaiting_plate_clear=printer_manager.is_awaiting_plate_clear(printer_id),
         supports_drying=supports_drying(printer.model, state.firmware_version),
         supports_drying_while_printing=supports_drying_while_printing(printer.model, state.firmware_version),
@@ -2535,6 +2536,32 @@ async def set_print_option(
         "print_halt": print_halt,
         "sensitivity": sensitivity,
     }
+
+
+@router.post("/{printer_id}/sound")
+async def set_printer_sound(
+    printer_id: int,
+    enabled: bool = Query(..., description="True for prompt sounds on, False for off"),
+    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db, scope="function"),
+):
+    """Turn the printer's prompt sounds (start / finish music and alerts) on or off (#3483)."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    client = printer_manager.get_client(printer_id)
+    if not client or not client.state.connected:
+        raise HTTPException(400, "Printer not connected")
+    if not client.state.sound_supported:
+        raise HTTPException(400, "This printer does not report a sound option")
+
+    success = client.set_sound_enable(enabled)
+    if not success:
+        raise HTTPException(500, "Failed to send command to printer")
+
+    return {"success": True, "sound_enabled": enabled}
 
 
 @router.post("/{printer_id}/ams-backup")

@@ -792,6 +792,9 @@ export interface PrinterStatus {
   // AMS Filament Backup ("auto-switch" to a backup spool when one runs out).
   // true = ON, false = OFF, null = unknown / unsupported (A1 family).
   ams_filament_backup: boolean | null;
+  // Prompt sounds (start / finish music, alerts): true / false, or null when the
+  // printer has no such option, so no toggle is offered (#3483).
+  sound_enabled?: boolean | null;
   // Queue: printer is awaiting user ack that the build plate was cleared after a
   // finished/failed print. Persisted across restarts (#961).
   awaiting_plate_clear: boolean;
@@ -5580,6 +5583,11 @@ export const api = {
   // Chamber Light Control
   setChamberLight: (printerId: number, on: boolean) =>
     request<{ success: boolean; message: string }>(`/printers/${printerId}/chamber-light?on=${on}`, {
+      method: 'POST',
+    }),
+
+  setPrinterSound: (printerId: number, enabled: boolean) =>
+    request<{ success: boolean; sound_enabled: boolean }>(`/printers/${printerId}/sound?enabled=${enabled}`, {
       method: 'POST',
     }),
 

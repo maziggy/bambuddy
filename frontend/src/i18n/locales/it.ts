@@ -465,6 +465,8 @@ export default {
     // Chamber light
     chamberLightOn: 'Accendi luce camera',
     chamberLightOff: 'Spegni luce camera',
+    printerSoundOn: 'Attiva i suoni della stampante',
+    printerSoundOff: 'Disattiva i suoni della stampante',
     // Files
     files: 'File',
     browseFiles: 'Sfoglia file stampante',
@@ -560,6 +562,9 @@ export default {
       failedToPausePrint: 'Impossibile mettere in pausa stampa',
       failedToResumePrint: 'Impossibile riprendere stampa',
       failedToControlChamberLight: 'Impossibile controllare luce camera',
+      printerSoundEnabled: 'Suoni della stampante attivati',
+      printerSoundDisabled: 'Suoni della stampante disattivati',
+      failedToControlPrinterSound: 'Impossibile cambiare i suoni della stampante',
       failedToSetSpeed: 'Impossibile impostare la velocità di stampa',
       failedToUpdateSetting: 'Impossibile aggiornare impostazione',
       failedToSkipObjects: 'Impossibile saltare oggetti',

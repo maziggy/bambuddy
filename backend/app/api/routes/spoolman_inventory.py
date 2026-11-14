@@ -2839,6 +2839,7 @@ def _supplier_link_to_dict(link: SpoolmanSpoolSupplier) -> dict:
         "supplier_article_number": link.supplier_article_number,
         "quoted_price_per_kg": link.quoted_price_per_kg,
         "is_purchase_source": link.is_purchase_source,
+        "product_url": link.product_url,
     }
 
 

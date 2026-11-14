@@ -12,7 +12,10 @@ import {
   ResponsiveContainer, ReferenceLine, Legend,
 } from 'recharts';
 import { api } from '../api/client';
-import type { InventorySpool, SpoolUsageRecord, FilamentSkuSettings, ShoppingListItem } from '../api/client';
+import type { InventorySpool, SpoolUsageRecord, FilamentSkuSettings, ShoppingListItem, ShoppingListItemCreate } from '../api/client';
+import { productBuyOptions, isWebUrl, type BuyOption } from '../utils/productLinks';
+import { getCurrencySymbol } from '../utils/currency';
+import { BuyButton } from './BuyButton';
 import { getSwatchStyle } from '../utils/colors';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -68,6 +71,8 @@ interface SkuForecast {
   reorderTriggerDate: Date | null;
   reorderAlert: boolean;
   stockBreakAlert: boolean;
+  /** Where the SKU can be bought, from all its spools' supplier pages (#2540). */
+  buyOptions: BuyOption[];
 }
 
 type SortKey = 'material' | 'used' | 'days_left' | 'stock';
@@ -319,6 +324,18 @@ export function ForecastPanel({ spools, spoolmanMode = false }: { spools: Invent
     return [...map.values()];
   }, [spools]);
 
+  // Where each SKU can be bought (#2540), from all its spools: archived ones
+  // too, since a SKU used up is still bought where it was.
+  const buyOptionsBySku = useMemo(() => {
+    const bySku = new Map<string, InventorySpool[]>();
+    for (const spool of spools) {
+      const key = skuKey(spool.material, spool.subtype, spool.brand, spool.color_name);
+      bySku.set(key, [...(bySku.get(key) ?? []), spool]);
+    }
+    return new Map([...bySku].map(([key, list]) => [key, productBuyOptions(list)]));
+  }, [spools]);
+  const currencySymbol = getCurrencySymbol(settings?.currency || 'USD');
+
   const forecasts = useMemo((): SkuForecast[] => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const now = Date.now();
@@ -413,9 +430,10 @@ export function ForecastPanel({ spools, spoolmanMode = false }: { spools: Invent
         daysRemaining, daysUntilROP,
         projectedEmptyDate, reorderTriggerDate,
         reorderAlert, stockBreakAlert,
+        buyOptions: buyOptionsBySku.get(group.key) ?? [],
       };
     });
-  }, [groups, settingsMap, usageBySpoolId, globalLeadTime, spoolmanMode]);
+  }, [groups, settingsMap, usageBySpoolId, globalLeadTime, spoolmanMode, buyOptionsBySku]);
 
   const uniqueMaterials = useMemo(() =>
     [...new Set(groups.map((g) => g.material))].sort(),
@@ -561,7 +579,7 @@ export function ForecastPanel({ spools, spoolmanMode = false }: { spools: Invent
       {alertsOpen && alerts.length > 0 && (
         <div className="space-y-2">
           {alerts.map((f) => (
-            <AlertBanner key={f.group.key} forecast={f} onCart={() => setCartModal(f)} />
+            <AlertBanner key={f.group.key} forecast={f} onCart={() => setCartModal(f)} currencySymbol={currencySymbol} />
           ))}
         </div>
       )}
@@ -573,6 +591,7 @@ export function ForecastPanel({ spools, spoolmanMode = false }: { spools: Invent
           forecasts={forecasts}
           globalLeadTime={globalLeadTime}
           canWrite={canWrite}
+          currencySymbol={currencySymbol}
           onClose={() => setListOpen(false)}
           onRemove={(id) => {
             api.removeFromShoppingList(id)
@@ -650,6 +669,7 @@ export function ForecastPanel({ spools, spoolmanMode = false }: { spools: Invent
                     onSaved={() => queryClient.invalidateQueries({ queryKey: ['sku-settings'] })}
                     onCart={() => setCartModal(f)}
                     showToast={showToast}
+                    currencySymbol={currencySymbol}
                   />
                 ))}
               </tbody>
@@ -678,6 +698,7 @@ export function ForecastPanel({ spools, spoolmanMode = false }: { spools: Invent
       {cartModal && (
         <AddToCartModal
           forecast={cartModal}
+          currencySymbol={currencySymbol}
           onClose={() => setCartModal(null)}
           onAdd={(item) => {
             api.addToShoppingList(item).then(() => {
@@ -725,7 +746,7 @@ function SortableTh({
 
 // ── Alert Banner ──────────────────────────────────────────────────────────────
 
-function AlertBanner({ forecast: f, onCart }: { forecast: SkuForecast; onCart: () => void }) {
+function AlertBanner({ forecast: f, onCart, currencySymbol }: { forecast: SkuForecast; onCart: () => void; currencySymbol: string }) {
   const { t } = useTranslation();
   const label = skuLabel(f.group.brand, f.group.material, f.group.subtype, f.group.colorName);
   const isBreak = f.stockBreakAlert;
@@ -753,8 +774,28 @@ function AlertBanner({ forecast: f, onCart }: { forecast: SkuForecast; onCart: (
       >
         <ShoppingCart className="w-3 h-3" /> {t('forecast.order')}
       </button>
+      <BuyButton
+        options={f.buyOptions}
+        currencySymbol={currencySymbol}
+        className="p-1 rounded border border-current opacity-70 hover:opacity-100 transition-opacity"
+        iconClassName="w-3.5 h-3.5"
+      />
     </div>
   );
+}
+
+function cartItemBuyOptions(item: ShoppingListItem, forecast: SkuForecast | null): BuyOption[] {
+  if (isWebUrl(item.product_url)) {
+    return [{
+      supplier_id: item.supplier_id ?? 0,
+      supplier_name: item.supplier_name ?? new URL(item.product_url.trim()).host,
+      product_url: item.product_url.trim(),
+      supplier_article_number: item.supplier_article_number,
+      quoted_price_per_kg: null,
+      is_purchase_source: true,
+    }];
+  }
+  return forecast?.buyOptions ?? [];
 }
 
 // ── Usage + Projection Chart ──────────────────────────────────────────────────
@@ -947,9 +988,10 @@ function GlobalLeadTimeSetting({ value, onSave }: { value: number; onSave: (v: n
 // ── Forecast Row ──────────────────────────────────────────────────────────────
 
 function ForecastRow({
-  forecast: f, globalLeadTime, canWrite, onSaved, onCart, showToast,
+  forecast: f, globalLeadTime, canWrite, onSaved, onCart, showToast, currencySymbol,
 }: {
   forecast: SkuForecast;
+  currencySymbol: string;
   globalLeadTime: number;
   canWrite: boolean;
   onSaved: () => void;
@@ -1082,6 +1124,11 @@ function ForecastRow({
         {/* Actions */}
         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-end gap-1">
+            <BuyButton
+              options={f.buyOptions}
+              currencySymbol={currencySymbol}
+              className="p-1.5 text-bambu-gray hover:text-bambu-green rounded transition-colors"
+            />
             {canWrite && (
               <button
                 onClick={onCart}
@@ -1353,8 +1400,9 @@ function SafetyMarginField({
 // ── Shopping list panel ───────────────────────────────────────────────────────
 
 function ShoppingListPanel({
-  items, forecasts, globalLeadTime, canWrite, onClose, onRemove, onClear,
+  items, forecasts, globalLeadTime, canWrite, onClose, onRemove, onClear, currencySymbol,
 }: {
+  currencySymbol: string;
   items: ShoppingListItem[];
   forecasts: SkuForecast[];
   globalLeadTime: number;
@@ -1399,7 +1447,15 @@ function ShoppingListPanel({
           low_stock_threshold_pct: null,
           material_number: null,
         };
-        await api.bulkCreateSpools(spoolBase, item.quantity_spools);
+        // Where it was bought becomes the new spools' purchase source, with
+        // its page; their other supplier links come from the SKU's spools (#2540).
+        await api.bulkCreateSpools(
+          spoolBase,
+          item.quantity_spools,
+          item.supplier_id != null
+            ? { supplier_id: item.supplier_id, supplier_article_number: item.supplier_article_number, product_url: item.product_url }
+            : null,
+        );
         await api.removeFromShoppingList(id);
       }
     },
@@ -1436,7 +1492,7 @@ function ShoppingListPanel({
   );
 
   function downloadCsv() {
-    const headers = [t('forecast.qty'), t('forecast.material'), t('inventory.brand'), t('inventory.subtype'), t('inventory.color'), `${t('forecast.weight')} (g)`, `${t('forecast.leadTime')} (d)`, t('forecast.expectedRestock'), t('forecast.status'), t('forecast.note')];
+    const headers = [t('forecast.qty'), t('forecast.material'), t('inventory.brand'), t('inventory.subtype'), t('inventory.color'), `${t('forecast.weight')} (g)`, `${t('forecast.leadTime')} (d)`, t('forecast.expectedRestock'), t('forecast.status'), t('forecast.note'), t('forecast.supplier'), t('forecast.productUrl')];
     const rows = items.map((i) => {
       const f = forecastMap.get(skuKey(i.material, i.subtype, i.brand, i.color_name)) ?? null;
       const avgSpoolG = f && f.totalSpools > 0 ? f.totalLabelG / f.totalSpools : 1000;
@@ -1454,6 +1510,8 @@ function ShoppingListPanel({
         restock,
         i.status,
         i.note ?? '',
+        i.supplier_name ?? '',
+        isWebUrl(i.product_url) ? i.product_url.trim() : '',
       ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',');
     });
     const csv = [headers.join(','), ...rows].join('\n');
@@ -1564,6 +1622,12 @@ function ShoppingListPanel({
                           <AlertTriangle className="w-3.5 h-3.5 text-red-600 dark:text-red-400 flex-shrink-0" aria-label={t('forecast.stockBreakBefore')} />
                         )}
                       </div>
+                      {item.supplier_name && (
+                        <div className="text-xs text-bambu-gray mt-0.5">
+                          {item.supplier_name}
+                          {item.supplier_article_number ? ` · ${item.supplier_article_number}` : ''}
+                        </div>
+                      )}
                     </td>
                     {/* Weight */}
                     <td className="px-4 py-2.5">
@@ -1598,6 +1662,11 @@ function ShoppingListPanel({
                     {/* Actions */}
                     <td className="px-4 py-2.5">
                       <div className="flex items-center justify-end gap-1">
+                        <BuyButton
+                          options={cartItemBuyOptions(item, f)}
+                          currencySymbol={currencySymbol}
+                          className="p-1.5 rounded text-bambu-gray hover:text-bambu-green transition-colors"
+                        />
                         {canWrite && (
                           <>
                             {/* Purchased icon — available when pending */}
@@ -1899,11 +1968,12 @@ function CartLogisticsRow({
 // ── Add to Cart Modal ─────────────────────────────────────────────────────────
 
 function AddToCartModal({
-  forecast: f, onClose, onAdd,
+  forecast: f, onClose, onAdd, currencySymbol,
 }: {
   forecast: SkuForecast;
   onClose: () => void;
-  onAdd: (item: { material: string; subtype: string | null; brand: string | null; color_name: string | null; quantity_spools: number; note: string | null }) => void;
+  onAdd: (item: ShoppingListItemCreate) => void;
+  currencySymbol: string;
 }) {
   const { t } = useTranslation();
   const label = skuLabel(f.group.brand, f.group.material, f.group.subtype, f.group.colorName);
@@ -1911,6 +1981,10 @@ function AddToCartModal({
   const [qty, setQty] = useState('1');
   const [durationDays, setDurationDays] = useState('30');
   const [note, setNote] = useState('');
+  // Where to buy it (#2540): the supplier it was bought from first; the
+  // spools it becomes when received get it as their purchase source.
+  const [sourceId, setSourceId] = useState<number | null>(f.buyOptions[0]?.supplier_id ?? null);
+  const source = f.buyOptions.find((o) => o.supplier_id === sourceId) ?? null;
 
   const spoolsForDuration = useMemo(() => {
     if (!f.dailyRateG || f.dailyRateG <= 0) return null;
@@ -1925,7 +1999,13 @@ function AddToCartModal({
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    onAdd({ material: f.group.material, subtype: f.group.subtype, brand: f.group.brand, color_name: f.group.colorName, quantity_spools: finalQty, note: note || null });
+    onAdd({
+      material: f.group.material, subtype: f.group.subtype, brand: f.group.brand, color_name: f.group.colorName,
+      quantity_spools: finalQty, note: note || null,
+      supplier_id: source?.supplier_id ?? null,
+      supplier_article_number: source?.supplier_article_number ?? null,
+      product_url: source?.product_url ?? null,
+    });
   }
 
   return (
@@ -1989,6 +2069,27 @@ function AddToCartModal({
               ) : (
                 <div className="text-xs text-yellow-700 dark:text-yellow-400 px-1">{t('forecast.noUsageQty')}</div>
               )}
+            </div>
+          )}
+
+          {f.buyOptions.length > 0 && (
+            <div className="space-y-1.5">
+              <label htmlFor="cart-buy-from" className="text-xs text-bambu-gray">{t('forecast.buyFrom')}</label>
+              <select
+                id="cart-buy-from"
+                value={sourceId ?? ''}
+                onChange={(e) => setSourceId(e.target.value === '' ? null : Number(e.target.value))}
+                className="w-full px-3 py-2 bg-bambu-dark-tertiary border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green"
+              >
+                {f.buyOptions.map((o) => (
+                  <option key={o.supplier_id} value={o.supplier_id}>
+                    {o.quoted_price_per_kg != null
+                      ? `${o.supplier_name} · ${t('inventory.suppliers.pricePerKg', { price: `${currencySymbol}${o.quoted_price_per_kg.toFixed(2)}` })}`
+                      : o.supplier_name}
+                  </option>
+                ))}
+                <option value="">{t('inventory.suppliers.none')}</option>
+              </select>
             </div>
           )}
 

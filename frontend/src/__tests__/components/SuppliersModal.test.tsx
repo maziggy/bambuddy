@@ -115,6 +115,31 @@ describe('SuppliersModal', () => {
     expect(await screen.findByText('NewShop')).toBeInTheDocument();
   });
 
+  it('adds https:// to a website typed without a scheme, and refuses a broken one (#2540)', async () => {
+    (api.createSupplier as ReturnType<typeof vi.fn>).mockResolvedValue({ ...suppliers[1], id: 3 });
+    const user = userEvent.setup();
+    renderModal();
+    await screen.findByText('Filament24');
+    await user.click(screen.getByRole('button', { name: /Add/i }));
+    await user.type(screen.getByPlaceholderText(/Name \(e\.g\./), 'Jake');
+    const website = screen.getByPlaceholderText(/website/i);
+    const submit = () => {
+      const buttons = screen.getAllByRole('button', { name: /Add/i });
+      return user.click(buttons[buttons.length - 1]);
+    };
+
+    await user.type(website, 'https:/jake.de');
+    await submit();
+    expect(api.createSupplier).not.toHaveBeenCalled();
+
+    await user.clear(website);
+    await user.type(website, '3djake.de');
+    await submit();
+    await waitFor(() => {
+      expect(api.createSupplier).toHaveBeenCalledWith(expect.objectContaining({ name: 'Jake', website: 'https://3djake.de' }));
+    });
+  });
+
   it('picks up a supplier created elsewhere when the shared key is invalidated', async () => {
     // What the inventory_changed broadcast does: useWebSocket invalidates
     // inventory-suppliers, and every consumer of that key re-reads (#2988).

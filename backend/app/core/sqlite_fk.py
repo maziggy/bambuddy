@@ -115,6 +115,9 @@ APPLIED: frozenset[tuple[str, str]] = frozenset(
         # smart_plugs: a printer delete now deletes its plugs; their energy
         # history would pass to the next plug given the id.
         ("smart_plug_energy_snapshots", "plug_id"),
+        # suppliers: a shopping list item names its supplier; the next supplier
+        # given the id would be credited with the spools it becomes (#2540).
+        ("filament_shopping_list", "supplier_id"),
         # users: everything a user owns goes with them or loses its owner, or a
         # new user given the freed id inherits it (wallet, cost centres, private
         # folders). Without an owner, folders and private cost centres are left

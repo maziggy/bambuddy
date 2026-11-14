@@ -1483,6 +1483,7 @@ describe('SpoolFormModal copy mode', () => {
           quoted_price_per_kg: 21.5,
           // Where a copy was bought is unknown — only the source list carries over.
           is_purchase_source: false,
+          product_url: null,
         },
       ],
     ]);

@@ -119,8 +119,8 @@ describe('SupplierSection', () => {
     renderSection(
       <Harness
         initial={[
-          { supplier_id: 1, supplier_name: 'Filament24', supplier_article_number: '', quoted_price_per_kg: null, is_purchase_source: true },
-          { supplier_id: 2, supplier_name: 'PrintStore', supplier_article_number: '', quoted_price_per_kg: null, is_purchase_source: false },
+          { supplier_id: 1, supplier_name: 'Filament24', supplier_article_number: '', quoted_price_per_kg: null, is_purchase_source: true, product_url: '' },
+          { supplier_id: 2, supplier_name: 'PrintStore', supplier_article_number: '', quoted_price_per_kg: null, is_purchase_source: false, product_url: '' },
         ]}
         onChange={onChange}
       />,
@@ -141,7 +141,7 @@ describe('SupplierSection', () => {
     renderSection(
       <Harness
         initial={[
-          { supplier_id: 1, supplier_name: 'Filament24', supplier_article_number: '', quoted_price_per_kg: null, is_purchase_source: false },
+          { supplier_id: 1, supplier_name: 'Filament24', supplier_article_number: '', quoted_price_per_kg: null, is_purchase_source: false, product_url: '' },
         ]}
         onChange={onChange}
       />,
@@ -150,5 +150,30 @@ describe('SupplierSection', () => {
     await user.click(screen.getByRole('button', { name: /Remove/i }));
     expect(onChange).toHaveBeenLastCalledWith([]);
     expect(screen.queryByText('Filament24')).not.toBeInTheDocument();
+  });
+
+  // #2540: each assignment keeps the product's own page at that supplier.
+  const one: SupplierLinkDraft = {
+    supplier_id: 1, supplier_name: 'Filament24', supplier_article_number: '', quoted_price_per_kg: null,
+    is_purchase_source: true, product_url: '',
+  };
+
+  it('edits the product page of an assignment', async () => {
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    renderSection(<Harness initial={[one]} onChange={onChange} />);
+
+    await user.type(screen.getByPlaceholderText('Product page URL'), 'https://f24.example/pla');
+
+    const last = onChange.mock.calls.at(-1)?.[0] as SupplierLinkDraft[];
+    expect(last[0].product_url).toBe('https://f24.example/pla');
+    expect(screen.queryByText(/must be an http/)).not.toBeInTheDocument();
+  });
+
+  it('flags a product page that is not a web address', async () => {
+    renderSection(<Harness initial={[{ ...one, product_url: 'javascript:alert(1)' }]} />);
+
+    expect(screen.getByPlaceholderText('Product page URL')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText('Product page must be an http:// or https:// address')).toBeInTheDocument();
   });
 });

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.core.database import Base
@@ -21,3 +21,8 @@ class ShoppingListItem(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | purchased | received
     purchased_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     added_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    # Where to buy it (#2540), picked from the SKU's spools when it was added.
+    # The spools it becomes when received get it as their purchase source.
+    supplier_id: Mapped[int | None] = mapped_column(ForeignKey("suppliers.id", ondelete="SET NULL"), nullable=True)
+    supplier_article_number: Mapped[str | None] = mapped_column(String(100))
+    product_url: Mapped[str | None] = mapped_column(String(1000))

@@ -21,6 +21,7 @@ import { FilamentSection } from './spool-form/FilamentSection';
 import { ColorSection } from './spool-form/ColorSection';
 import { AdditionalSection } from './spool-form/AdditionalSection';
 import { SupplierSection, type SupplierLinkDraft } from './spool-form/SupplierSection';
+import { normalizeWebUrl, productUrlValid } from '../utils/productLinks';
 import { SpoolmanFilamentPicker } from './spool-form/SpoolmanFilamentPicker';
 import { PrinterProfilesSection } from './spool-form/PrinterProfilesSection';
 import { ProfileDefaultOption, type ProfileDefaultScope } from './spool-form/ProfileDefaultOption';
@@ -500,6 +501,8 @@ export function SpoolFormModal({
             quoted_price_per_kg: link.quoted_price_per_kg,
             // Where a COPY was bought is unknown — only a real edit keeps it.
             is_purchase_source: isCopying ? false : link.is_purchase_source,
+            // The product's page is the product's, so a copy keeps it (#2540).
+            product_url: link.product_url ?? '',
           }))
         );
       } else {
@@ -977,6 +980,7 @@ export function SpoolFormModal({
           supplier_article_number: link.supplier_article_number.trim() || null,
           quoted_price_per_kg: link.quoted_price_per_kg,
           is_purchase_source: link.is_purchase_source,
+          product_url: normalizeWebUrl(link.product_url) || null,
         })),
       );
       return true;
@@ -1117,6 +1121,13 @@ export function SpoolFormModal({
       if (validation.errors.slicer_filament || validation.errors.material || validation.errors.brand || validation.errors.subtype) {
         setActiveTab('filament');
       }
+      return;
+    }
+    // Checked before anything is written: the links are saved after the
+    // spool, so a refused product page would leave a new spool without them.
+    if (!supplierLinks.every((link) => productUrlValid(link.product_url))) {
+      setActiveTab('appearance');
+      showToast(t('inventory.suppliers.productUrlInvalid'), 'error');
       return;
     }
 

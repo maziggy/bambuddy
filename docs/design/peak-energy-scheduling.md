@@ -229,7 +229,7 @@ cost belong together, and the plugs are what most users meter peak hours with.
 The tab id changes from `plugs` to `energy`; `?tab=plugs` and the settings
 search entries keep working as aliases so old links don't break.
 
-![Energy tab, manual windows](peak-energy-scheduling/energy-tab-windows.png)
+![Energy tab, manual windows](peak-energy-scheduling/energy-tab-weekly-schedule.png)
 
 - One toggle to enable, and a source selector: **Time windows** or
   **Home Assistant**.
@@ -259,7 +259,7 @@ order changes; stored days stay 0 = Sunday.
 
 The mockups show an `en-US` user, so their chips start on Sunday.
 
-![Energy tab, Home Assistant source](peak-energy-scheduling/energy-tab-ha-entity.png)
+![Energy tab, Home Assistant source](peak-energy-scheduling/energy-tab-home-assistant-entity.png)
 
 - With the Home Assistant source, the window editor is replaced by an entity
   search that works like the one in the Add Smart Plug dialog (friendly name,

@@ -9,6 +9,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import mm
 
 from backend.app.services.label_renderer import (
+    FONT_BOLD,
     LabelData,
     SheetLayout,
     get_sheet_capacity,
@@ -300,7 +301,7 @@ def test_hex_color_code_skipped_when_rgba_invalid():
 
 
 def test_brand_rendered_in_bold_per_809_followup():
-    """#809 follow-up: brand should render in Helvetica-Bold (not regular).
+    """#809 follow-up: brand should render in the bold font (not regular).
     Uncompressed PDFs include font-name tokens like '/F2' tied to a font
     resource; we can grep for the bold font's basename in the resource block.
     """
@@ -315,10 +316,9 @@ def test_brand_rendered_in_bold_per_809_followup():
         )
     ]
     pdf = _render_uncompressed("box_62x29", data)
-    # ReportLab references the bold variant of Helvetica via /Helvetica-Bold
-    # in the font dictionary — both the spool ID (always bold) and the brand
-    # (now bold per #809 follow-up) cause the resource to be embedded.
-    assert b"Helvetica-Bold" in pdf, "label PDF must reference Helvetica-Bold for the brand line"
+    # Both the spool ID (always bold) and the brand (bold per #809 follow-up)
+    # embed the bold font, which the font dictionary names.
+    assert b"LiberationSans-Bold" in pdf, "label PDF must embed the bold font for the brand line"
 
 
 def test_box_template_does_not_truncate_normal_brand_or_name():
@@ -499,7 +499,7 @@ def test_the_smallest_label_has_room_for_a_full_size_spool_id(label_h_mm):
     swatch_w = min(inner_w * 0.18, inner_h, 16 * mm)
     qr = _roomy_qr_size(inner_w, inner_h)
     text_w = inner_w - swatch_w - qr - 2 * 1.5 * mm
-    assert text_w >= stringWidth("#9999", "Helvetica-Bold", 16)
+    assert text_w >= stringWidth("#9999", FONT_BOLD, 16)
     assert MIN_LABEL_H_MM >= 20.0  # the tight layout starts below 20 mm
 
 
@@ -581,3 +581,43 @@ def test_custom_layout_size_and_capacity():
     assert label_size_mm(layout) == (70.0, 36.0)
     assert get_sheet_capacity(layout) == 24
     assert render_labels(layout, [_sample()]).startswith(b"%PDF")
+
+
+# ── Non-Latin-1 text (#3553) ──
+
+
+def _page_texts(pdf: bytes) -> list[str]:
+    import pypdfium2 as pdfium  # noqa: PLC0415
+
+    doc = pdfium.PdfDocument(pdf)
+    try:
+        return [doc[i].get_textpage().get_text_range() for i in range(len(doc))]
+    finally:
+        doc.close()
+
+
+@pytest.mark.parametrize("template", ALL_TEMPLATES)
+def test_polish_and_cyrillic_text_prints_as_written(template):
+    """The PDF base fonts cover only Western European characters: Polish
+    ą ę ł ń ś ź ż and Cyrillic came out as empty boxes."""
+    data = [
+        _sample(
+            7,
+            brand="Żółć",
+            name="Brązowy",
+            material="PLA",
+            subtype="Мат",
+        )
+    ]
+    text = _page_texts(render_labels(template, data))[0]
+    for word in ("Żółć", "Brązowy", "Мат"):
+        assert word in text, f"{word!r} missing from {template}: {text!r}"
+
+
+@pytest.mark.parametrize("template", ALL_TEMPLATES)
+def test_labels_use_no_base_font(template):
+    import re  # noqa: PLC0415
+
+    pdf = render_labels(template, [_sample(3)])
+    fonts = set(re.findall(rb"/BaseFont /(?:[A-Z]{6}\+)?([^\s/>]+)", pdf))
+    assert fonts == {b"LiberationSans", b"LiberationSans-Bold"}, fonts

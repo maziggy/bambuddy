@@ -338,6 +338,15 @@ Small, reviewable PRs, each with tests and every locale updated:
   week strip renders overnight windows, the queue renders each reason code,
   and the 409 shows the confirm dialog.
 
+## Future work (not in this change)
+
+- **First day of the week setting:** a "First Day of the Week" drop-down in
+  Settings > General > General, in the same row as Date Format and Time
+  Format, defaulting to "System Default" like those (stored as `'system'`, as
+  `date_format` is). Any other choice would override the locale lookup in
+  `firstDayOfWeek()`, so the weekday chips and any later calendar views follow
+  it.
+
 ## Open questions for the maintainer
 
 1. **Home Assistant source in v1?** Manual windows cover most TOU plans and

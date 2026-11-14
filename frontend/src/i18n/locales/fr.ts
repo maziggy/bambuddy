@@ -2059,10 +2059,11 @@ export default {
     loadMore: 'Charger plus',
     exportCsv: 'Exporter en CSV',
     exportAll: 'Exporter le journal',
-    exportAllHint: 'Télécharger en CSV le journal de maintenance de toutes les imprimantes, y compris celles supprimées',
+    exportAllHint: 'Télécharger en CSV le journal de maintenance de toutes les imprimantes visibles, y compris les imprimantes supprimées si vous voyez toutes les imprimantes',
     performedBy: 'par {{user}}',
     atPrintHours: 'à {{hours}} h d\'impression',
     exportFailed: 'Échec de l\'export : {{error}}',
+    logLoadFailed: 'Impossible de charger le journal de maintenance : {{error}}',
   },
 
   // Settings page

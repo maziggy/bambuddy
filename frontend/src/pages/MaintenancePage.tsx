@@ -499,6 +499,8 @@ function ResetMaintenanceModal({
       message={t('maintenance.resetDialogMessage', { printer: item.printer_name })}
       confirmText={t('common.reset')}
       isLoading={isLoading}
+      // A stray click outside or Escape must not throw a typed comment away.
+      dismissible={notes.trim() === ''}
       onConfirm={() => onConfirm(notes)}
       onCancel={onCancel}
     >

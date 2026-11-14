@@ -2059,10 +2059,11 @@ export default {
     loadMore: 'さらに読み込む',
     exportCsv: 'CSV をエクスポート',
     exportAll: 'ログをエクスポート',
-    exportAllHint: '削除済みを含む全プリンターのメンテナンスログを CSV でダウンロード',
+    exportAllHint: '表示できるすべてのプリンターのメンテナンスログを CSV でダウンロード（すべてのプリンターを表示できる場合は削除済みのプリンターも含む）',
     performedBy: '実施者: {{user}}',
     atPrintHours: '印刷時間 {{hours}} h 時点',
     exportFailed: 'エクスポートに失敗しました: {{error}}',
+    logLoadFailed: 'メンテナンスログを読み込めませんでした: {{error}}',
   },
 
   // Settings page

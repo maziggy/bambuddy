@@ -2080,10 +2080,11 @@ export default {
     loadMore: 'Load more',
     exportCsv: 'Export CSV',
     exportAll: 'Export log',
-    exportAllHint: 'Download the maintenance log of all printers, including deleted ones, as CSV',
+    exportAllHint: 'Download the maintenance log of all printers you can see as CSV, including printers that were deleted if you can see every printer',
     performedBy: 'by {{user}}',
     atPrintHours: 'at {{hours}} h',
     exportFailed: 'Export failed: {{error}}',
+    logLoadFailed: 'Could not load the maintenance log: {{error}}',
   },
 
   // Settings page

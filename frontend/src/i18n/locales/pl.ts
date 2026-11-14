@@ -2080,10 +2080,11 @@ export default {
     loadMore: 'Wczytaj więcej',
     exportCsv: 'Eksportuj CSV',
     exportAll: 'Eksportuj dziennik',
-    exportAllHint: 'Pobierz jako CSV dziennik konserwacji wszystkich drukarek, także usuniętych',
+    exportAllHint: 'Pobierz jako CSV dziennik konserwacji wszystkich widocznych drukarek, także usuniętych, jeśli widzisz wszystkie drukarki',
     performedBy: 'wykonał(a): {{user}}',
     atPrintHours: 'przy {{hours}} h',
     exportFailed: 'Eksport nie powiódł się: {{error}}',
+    logLoadFailed: 'Nie udało się wczytać dziennika konserwacji: {{error}}',
   },
 
   // Settings page

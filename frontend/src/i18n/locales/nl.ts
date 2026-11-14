@@ -2078,10 +2078,11 @@ export default {
     loadMore: 'Meer laden',
     exportCsv: 'CSV exporteren',
     exportAll: 'Logboek exporteren',
-    exportAllHint: 'Het onderhoudslogboek van alle printers, ook verwijderde, als CSV downloaden',
+    exportAllHint: 'Het onderhoudslogboek van alle printers die je kunt zien als CSV downloaden, inclusief verwijderde printers als je alle printers kunt zien',
     performedBy: 'door {{user}}',
     atPrintHours: 'bij {{hours}} u',
     exportFailed: 'Exporteren mislukt: {{error}}',
+    logLoadFailed: 'Het onderhoudslogboek kon niet worden geladen: {{error}}',
   },
 
   // Settings page

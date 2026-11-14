@@ -2061,10 +2061,11 @@ export default {
     loadMore: 'Daha fazla yükle',
     exportCsv: 'CSV dışa aktar',
     exportAll: 'Günlüğü dışa aktar',
-    exportAllHint: 'Silinenler dahil tüm yazıcıların bakım günlüğünü CSV olarak indir',
+    exportAllHint: 'Görebildiğiniz tüm yazıcıların bakım günlüğünü CSV olarak indirin; tüm yazıcıları görebiliyorsanız silinen yazıcılar da dahil',
     performedBy: 'yapan: {{user}}',
     atPrintHours: '{{hours}} saatte',
     exportFailed: 'Dışa aktarma başarısız: {{error}}',
+    logLoadFailed: 'Bakım günlüğü yüklenemedi: {{error}}',
   },
 
   // Ayarlar sayfası

@@ -174,6 +174,27 @@ describe('MaintenancePage wiring: status tab', () => {
     expect(writes()[0]).toEqual({ method: 'POST', path: '/api/v1/maintenance/items/11/perform', search: '', body: {} });
   });
 
+  it('Escape keeps the reset dialog open while a comment is typed, and closes it when empty', async () => {
+    const user = userEvent.setup();
+    render(<MaintenancePage />);
+
+    const beta = await printerCard('Beta Printer');
+    await user.click(within(beta).getByRole('button', { name: /expand/i }));
+    await user.click(await within(beta).findByRole('button', { name: 'Reset' }));
+    const dialog = await resetDialog('Nozzle Task');
+    const comment = within(dialog).getByLabelText('Comment (optional)');
+    await user.type(comment, 'Half-written note');
+    await user.keyboard('{Escape}');
+
+    expect(screen.getByRole('heading', { name: 'Reset "Nozzle Task"?' })).toBeInTheDocument();
+    expect(comment).toHaveValue('Half-written note');
+
+    await user.clear(comment);
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Reset "Nozzle Task"?' })).not.toBeInTheDocument());
+    expect(writes()).toEqual([]);
+  });
+
   it('cancelling the reset dialog sends nothing', async () => {
     const user = userEvent.setup();
     render(<MaintenancePage />);
@@ -369,6 +390,52 @@ describe('MaintenancePage wiring: maintenance log', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Maintenance log: Alpha Printer' });
     expect(await within(dialog).findByText('No maintenance has been logged for this printer yet.')).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Export CSV' })).toBeDisabled();
+  });
+
+  it('Load more fetches the next page by offset, each row once', async () => {
+    const all = Array.from({ length: 75 }, (_, n) => ({ ...LOG_ENTRY, id: 1000 - n, notes: `reset ${n}` }));
+    server.use(
+      http.get('*/api/v1/maintenance/printers/:id/log', async ({ request }) => {
+        await record(request);
+        const url = new URL(request.url);
+        const limit = Number(url.searchParams.get('limit'));
+        const offset = Number(url.searchParams.get('offset'));
+        return HttpResponse.json({ items: all.slice(offset, offset + limit), total: all.length });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<MaintenancePage />);
+
+    await user.click(within(await printerCard('Beta Printer')).getByRole('button', { name: 'Log' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Maintenance log: Beta Printer' });
+    expect(await within(dialog).findByText('Showing 50 of 75')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Load more' }));
+
+    expect(await within(dialog).findByText('Showing 75 of 75')).toBeInTheDocument();
+    expect(within(dialog).getByText('reset 74')).toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument();
+    const logReads = sent.filter((s) => s.path === '/api/v1/maintenance/printers/2/log').map((s) => s.search);
+    expect(logReads).toEqual(['?limit=50&offset=0', '?limit=50&offset=50']);
+  });
+
+  it('a log that fails to load says so, offers a retry and still allows the export', async () => {
+    server.use(
+      http.get('*/api/v1/maintenance/printers/:id/log', () =>
+        HttpResponse.json({ detail: 'Database is locked' }, { status: 500 }),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<MaintenancePage />);
+
+    await user.click(within(await printerCard('Beta Printer')).getByRole('button', { name: 'Log' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Maintenance log: Beta Printer' });
+
+    expect(
+      await within(dialog).findByText('Could not load the maintenance log: Database is locked', {}, { timeout: 5000 }),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByText('No maintenance has been logged for this printer yet.')).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Export CSV' })).not.toBeDisabled();
   });
 
   it('Export CSV downloads that printer\'s log', async () => {

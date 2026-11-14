@@ -89,10 +89,29 @@ class TestLogging:
         printer = await printer_factory(name="Long Comment Printer")
         item = await _first_item(async_client, printer.id)
 
-        response = await _perform(async_client, item["id"], "x" * 1001)
+        response = await _perform(async_client, item["id"], "x" * 10001)
 
         assert response.status_code == 422
         assert (await _log(async_client, printer.id))["total"] == 0
+
+    async def test_a_long_report_fits(self, async_client, printer_factory):
+        """Automations post whole reports; the endpoint took any length before."""
+        printer = await printer_factory(name="Report Printer")
+        item = await _first_item(async_client, printer.id)
+
+        response = await _perform(async_client, item["id"], "x" * 10000)
+
+        assert response.status_code == 200, response.text
+        assert len((await _log(async_client, printer.id))["items"][0]["notes"]) == 10000
+
+    async def test_surrounding_whitespace_does_not_count_against_the_limit(self, async_client, printer_factory):
+        printer = await printer_factory(name="Padded Printer")
+        item = await _first_item(async_client, printer.id)
+
+        response = await _perform(async_client, item["id"], "x" * 9995 + " " * 20 + "\n")
+
+        assert response.status_code == 200, response.text
+        assert (await _log(async_client, printer.id))["items"][0]["notes"] == "x" * 9995
 
     async def test_the_log_is_newest_first_and_paged(self, async_client, printer_factory):
         printer = await printer_factory(name="Paged Printer")

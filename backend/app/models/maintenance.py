@@ -106,7 +106,7 @@ class MaintenanceLogEntry(Base):
     performed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
     # The maintenance_history row written with it; no key, as that row goes
     # with its printer task. The upgrade copies history rows not yet here.
-    history_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    history_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
 
 
 # Import at end to avoid circular imports

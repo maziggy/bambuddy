@@ -1972,10 +1972,11 @@ export default {
     loadMore: 'Загрузить ещё',
     exportCsv: 'Экспорт в CSV',
     exportAll: 'Экспорт журнала',
-    exportAllHint: 'Скачать журнал обслуживания всех принтеров, включая удалённые, в формате CSV',
+    exportAllHint: 'Скачать в формате CSV журнал обслуживания всех доступных вам принтеров, включая удалённые, если вам доступны все принтеры',
     performedBy: 'выполнил(а): {{user}}',
     atPrintHours: 'при {{hours}} ч',
     exportFailed: 'Ошибка экспорта: {{error}}',
+    logLoadFailed: 'Не удалось загрузить журнал обслуживания: {{error}}',
   },
   wled: {
     connectionSection: 'Подключение', mappingSection: 'Сопоставление состояний', testConnection: 'Проверить подключение', notTested: 'Не проверено', connected: 'Подключено к WLED{{name}}{{version}}', notReachable: 'Не удалось подключиться к WLED.', testPreset: 'Тест', presetTested: 'Пресет активирован', presetTestFailed: 'Не удалось активировать пресет', mappingSummary: 'Настроено состояний: {{configured}} · Отключено состояний: {{disabled}}',

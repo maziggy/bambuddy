@@ -2059,10 +2059,11 @@ export default {
     loadMore: '載入更多',
     exportCsv: '匯出 CSV',
     exportAll: '匯出日誌',
-    exportAllHint: '將所有印表機（包括已刪除的）的維護日誌下載為 CSV',
+    exportAllHint: '將你可見的所有印表機的維護日誌下載為 CSV（若你可見全部印表機，則包括已刪除的印表機）',
     performedBy: '執行者：{{user}}',
     atPrintHours: '列印 {{hours}} 小時時',
     exportFailed: '匯出失敗：{{error}}',
+    logLoadFailed: '無法載入維護日誌：{{error}}',
   },
 
   // Settings page

@@ -1,12 +1,10 @@
 """Maintenance tracking API routes."""
 
-import io
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
-from sqlalchemy import false, func, select
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -958,13 +956,12 @@ async def get_maintenance_history(
 def _actor_identity(actor: User | ApiKeyActor | None) -> tuple[int | None, str | None]:
     """Who to log a reset as: the user, an API key's owner, or a legacy key by its name.
 
-    Nobody (None, None) when authentication is off.
+    Nobody (None, None) when authentication is off. An ``ApiKeyActor`` has its
+    owner's id and username, both None for a key without an owner.
     """
     if actor is None:
         return None, None
-    if isinstance(actor, ApiKeyActor):
-        if actor.owner is not None:
-            return actor.owner.id, actor.owner.username
+    if isinstance(actor, ApiKeyActor) and actor.username is None:
         return None, f"API key: {actor.api_key.name}"[:100]
     return actor.id, actor.username
 
@@ -998,9 +995,9 @@ async def get_printer_maintenance_log(
     return MaintenanceLogPage(items=items, total=total)
 
 
-def _csv_response(file_bytes: bytes, filename: str) -> StreamingResponse:
-    return StreamingResponse(
-        io.BytesIO(file_bytes),
+def _csv_response(file_bytes: bytes, filename: str) -> Response:
+    return Response(
+        content=file_bytes,
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": build_content_disposition(filename)},
     )
@@ -1033,9 +1030,8 @@ async def export_maintenance_log(
     printer: a printer-scoped caller can't tell whose they were.
     """
     query = select(MaintenanceLogEntry).order_by(*_NEWEST_FIRST)
-    if printer_scope.printer_ids is not None:
-        allowed = list(printer_scope.printer_ids)
-        query = query.where(MaintenanceLogEntry.printer_id.in_(allowed) if allowed else false())
+    if (in_scope := printer_scope.where_strict(MaintenanceLogEntry.printer_id)) is not None:
+        query = query.where(in_scope)
     result = await db.execute(query)
     file_bytes, filename = ExportService.export_maintenance_log(result.scalars().all(), "all")
     return _csv_response(file_bytes, filename)

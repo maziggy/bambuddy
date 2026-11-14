@@ -4599,7 +4599,7 @@ export interface MaintenanceLogPage {
 }
 
 // Must match MAINTENANCE_NOTES_MAX_LENGTH in backend/app/schemas/maintenance.py.
-export const MAINTENANCE_NOTES_MAX_LENGTH = 1000;
+export const MAINTENANCE_NOTES_MAX_LENGTH = 10000;
 
 // External Links (sidebar)
 export interface ExternalLink {

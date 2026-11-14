@@ -2060,10 +2060,11 @@ export default {
     loadMore: 'Mehr laden',
     exportCsv: 'CSV exportieren',
     exportAll: 'Protokoll exportieren',
-    exportAllHint: 'Wartungsprotokoll aller Drucker, auch gelöschter, als CSV herunterladen',
+    exportAllHint: 'Wartungsprotokoll aller für Sie sichtbaren Drucker als CSV herunterladen – gelöschte Drucker inklusive, wenn Sie alle Drucker sehen',
     performedBy: 'von {{user}}',
     atPrintHours: 'bei {{hours}} h',
     exportFailed: 'Export fehlgeschlagen: {{error}}',
+    logLoadFailed: 'Wartungsprotokoll konnte nicht geladen werden: {{error}}',
   },
 
   // Settings page

@@ -128,7 +128,9 @@ class PrinterMaintenanceOverview(BaseModel):
     warning_count: int
 
 
-MAINTENANCE_NOTES_MAX_LENGTH = 1000
+# Generous: the endpoint took notes of any length before the maintenance log,
+# and automations (Home Assistant) post whole reports; this only bounds a row.
+MAINTENANCE_NOTES_MAX_LENGTH = 10000
 
 
 class PerformMaintenanceRequest(BaseModel):
@@ -137,13 +139,14 @@ class PerformMaintenanceRequest(BaseModel):
     # The optional comment logged with the reset.
     notes: str | None = Field(default=None, max_length=MAINTENANCE_NOTES_MAX_LENGTH)
 
-    @field_validator("notes")
+    @field_validator("notes", mode="before")
     @classmethod
-    def _blank_notes_are_none(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        value = value.strip()
-        return value or None
+    def _trim_notes(cls, value: object) -> object:
+        """Trimmed before the length check, so surrounding whitespace never
+        counts against the limit; blank is no comment."""
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
 
 
 class MaintenanceLogEntryResponse(BaseModel):

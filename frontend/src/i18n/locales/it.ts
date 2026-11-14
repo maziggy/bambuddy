@@ -2059,10 +2059,11 @@ export default {
     loadMore: 'Carica altro',
     exportCsv: 'Esporta CSV',
     exportAll: 'Esporta registro',
-    exportAllHint: 'Scarica in CSV il registro di manutenzione di tutte le stampanti, comprese quelle eliminate',
+    exportAllHint: 'Scarica in CSV il registro di manutenzione di tutte le stampanti visibili, comprese quelle eliminate se sono visibili tutte le stampanti',
     performedBy: 'da {{user}}',
     atPrintHours: 'a {{hours}} h di stampa',
     exportFailed: 'Esportazione non riuscita: {{error}}',
+    logLoadFailed: 'Impossibile caricare il registro di manutenzione: {{error}}',
   },
 
   // Settings page

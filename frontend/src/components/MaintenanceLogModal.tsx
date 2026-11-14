@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Download, History, Loader2, X } from 'lucide-react';
+import { useInfiniteQuery } from '@tanstack/react-query';
+import { AlertTriangle, Download, History, Loader2, X } from 'lucide-react';
 import { api } from '../api/client';
 import type { MaintenanceLogEntry } from '../api/client';
 import { formatDateTime, type TimeFormat } from '../utils/date';
@@ -23,7 +23,6 @@ export function MaintenanceLogModal({ printerId, printerName, onClose }: Mainten
   const { showToast } = useToast();
   const { data: settings } = useUiSettings();
   const timeFormat: TimeFormat = settings?.time_format || 'system';
-  const [limit, setLimit] = useState(PAGE_SIZE);
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
@@ -34,21 +33,27 @@ export function MaintenanceLogModal({ printerId, printerName, onClose }: Mainten
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  const { data, isLoading, isFetching } = useQuery({
-    queryKey: ['maintenanceLog', printerId, limit],
-    queryFn: () => api.getMaintenanceLog(printerId, { limit }),
-    placeholderData: keepPreviousData,
+  // One page per request, each fetched once: "Load more" asks for the next
+  // offset instead of a bigger first page (the API caps a page at 500).
+  const { data, isLoading, isError, error, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
+    queryKey: ['maintenanceLog', printerId],
+    queryFn: ({ pageParam }) => api.getMaintenanceLog(printerId, { limit: PAGE_SIZE, offset: pageParam }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, pages) => {
+      const loaded = pages.reduce((sum, page) => sum + page.items.length, 0);
+      return lastPage.items.length > 0 && loaded < lastPage.total ? loaded : undefined;
+    },
   });
 
-  const entries = data?.items ?? [];
-  const total = data?.total ?? 0;
+  const entries = data?.pages.flatMap((page) => page.items) ?? [];
+  const total = data?.pages.at(-1)?.total ?? 0;
 
   const handleExport = async () => {
     setExporting(true);
     try {
       await api.downloadMaintenanceLog(printerId);
-    } catch (error) {
-      showToast(t('maintenance.exportFailed', { error: (error as Error).message }), 'error');
+    } catch (err) {
+      showToast(t('maintenance.exportFailed', { error: (err as Error).message }), 'error');
     } finally {
       setExporting(false);
     }
@@ -72,7 +77,9 @@ export function MaintenanceLogModal({ printerId, printerName, onClose }: Mainten
             </h2>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <Button size="sm" variant="secondary" onClick={handleExport} disabled={exporting || total === 0}>
+            {/* Only an empty log has nothing to export; when the list failed to
+                load, the export may still work. */}
+            <Button size="sm" variant="secondary" onClick={handleExport} disabled={exporting || (!isError && total === 0)}>
               {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
               {t('maintenance.exportCsv')}
             </Button>
@@ -92,6 +99,16 @@ export function MaintenanceLogModal({ printerId, printerName, onClose }: Mainten
             <div className="flex justify-center py-12">
               <Loader2 className="w-6 h-6 text-bambu-green animate-spin" />
             </div>
+          ) : isError && entries.length === 0 ? (
+            <div role="alert" className="flex flex-col items-center gap-3 py-12 text-center">
+              <p className="flex items-center gap-2 text-red-700 dark:text-red-400">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                {t('maintenance.logLoadFailed', { error: (error as Error).message })}
+              </p>
+              <Button size="sm" variant="secondary" onClick={() => refetch()}>
+                {t('common.retry')}
+              </Button>
+            </div>
           ) : entries.length === 0 ? (
             <p className="text-center text-bambu-gray py-12">{t('maintenance.logEmpty')}</p>
           ) : (
@@ -109,11 +126,21 @@ export function MaintenanceLogModal({ printerId, printerName, onClose }: Mainten
             <span className="text-bambu-gray">
               {t('maintenance.logShowing', { shown: entries.length, total })}
             </span>
-            {entries.length < total && (
-              <Button size="sm" variant="secondary" onClick={() => setLimit(limit + PAGE_SIZE)} disabled={isFetching}>
-                {isFetching && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                {t('maintenance.loadMore')}
-              </Button>
+            {isError && entries.length > 0 ? (
+              <span role="alert" className="flex items-center gap-2 text-red-700 dark:text-red-400">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                {t('maintenance.logLoadFailed', { error: (error as Error).message })}
+                <Button size="sm" variant="secondary" onClick={() => fetchNextPage()}>
+                  {t('common.retry')}
+                </Button>
+              </span>
+            ) : (
+              hasNextPage && (
+                <Button size="sm" variant="secondary" onClick={() => fetchNextPage()} disabled={isFetchingNextPage}>
+                  {isFetchingNextPage && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  {t('maintenance.loadMore')}
+                </Button>
+              )
             )}
           </div>
         )}

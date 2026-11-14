@@ -1975,10 +1975,11 @@ export default {
     loadMore: '더 불러오기',
     exportCsv: 'CSV 내보내기',
     exportAll: '로그 내보내기',
-    exportAllHint: '삭제된 프린터를 포함한 모든 프린터의 유지보수 로그를 CSV로 다운로드',
+    exportAllHint: '볼 수 있는 모든 프린터의 유지보수 로그를 CSV로 다운로드 (모든 프린터를 볼 수 있으면 삭제된 프린터 포함)',
     performedBy: '작업자: {{user}}',
     atPrintHours: '출력 {{hours}}시간 시점',
     exportFailed: '내보내기 실패: {{error}}',
+    logLoadFailed: '유지보수 로그를 불러오지 못했습니다: {{error}}',
   },
   wled: {
     connectionSection: '연결', mappingSection: '상태 매핑', testConnection: '연결 테스트', notTested: '테스트하지 않음', connected: 'WLED에 연결됨{{name}}{{version}}', notReachable: 'WLED에 연결할 수 없습니다.', testPreset: '테스트', presetTested: '프리셋이 활성화되었습니다', presetTestFailed: '프리셋을 활성화할 수 없습니다', mappingSummary: '설정된 상태: {{configured}} · 비활성 상태: {{disabled}}',

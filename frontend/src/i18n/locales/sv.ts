@@ -2077,10 +2077,11 @@ export default {
     loadMore: 'Läs in fler',
     exportCsv: 'Exportera CSV',
     exportAll: 'Exportera logg',
-    exportAllHint: 'Ladda ner underhållsloggen för alla skrivare, även borttagna, som CSV',
+    exportAllHint: 'Ladda ner underhållsloggen för alla skrivare du kan se som CSV, inklusive borttagna skrivare om du kan se alla skrivare',
     performedBy: 'av {{user}}',
     atPrintHours: 'vid {{hours}} h',
     exportFailed: 'Exporten misslyckades: {{error}}',
+    logLoadFailed: 'Underhållsloggen kunde inte läsas in: {{error}}',
   },
 
   // Settings page

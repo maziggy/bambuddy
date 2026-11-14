@@ -193,6 +193,7 @@ _BOOL_SETTING_KEYS = frozenset(
         "ftp_retry_enabled",
         "mqtt_enabled",
         "mqtt_use_tls",
+        "panda_breath_enabled",
         "ha_enabled",
         "per_printer_mapping_expanded",
         "prometheus_enabled",
@@ -477,6 +478,7 @@ async def update_settings(
         "mqtt_password",
         "mqtt_topic_prefix",
         "mqtt_use_tls",
+        "panda_breath_enabled",
     }
     mqtt_updated = bool(mqtt_keys & set(update_data.keys()))
 
@@ -535,6 +537,7 @@ async def update_settings(
                 "mqtt_password": await get_setting(db, "mqtt_password") or "",
                 "mqtt_topic_prefix": await get_setting(db, "mqtt_topic_prefix") or "bambuddy",
                 "mqtt_use_tls": (await get_setting(db, "mqtt_use_tls") or "false") == "true",
+                "panda_breath_enabled": (await get_setting(db, "panda_breath_enabled") or "false") == "true",
             }
             await mqtt_relay.configure(mqtt_settings)
         except Exception:
@@ -1999,3 +2002,26 @@ async def get_mqtt_status(
     from backend.app.services.mqtt_relay import mqtt_relay
 
     return mqtt_relay.get_status()
+
+
+@router.get("/panda-breath/status")
+async def get_panda_breath_status(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
+    db: AsyncSession = Depends(get_db, scope="function"),
+):
+    """Panda Breath heaters heard on the MQTT broker and their printers (#1466).
+
+    A heater bound to a printer outside the caller's scope is listed without
+    naming the printer.
+    """
+    from backend.app.models.printer import Printer
+    from backend.app.services.panda_breath import panda_breath_service
+
+    query = select(Printer.id, Printer.name, Printer.serial_number)
+    in_scope = printer_scope.where_strict(Printer.id)
+    if in_scope is not None:
+        query = query.where(in_scope)
+    rows = await db.execute(query)
+    printers = {(serial or "").strip().upper(): (pid, name) for pid, name, serial in rows.all() if serial}
+    return panda_breath_service.get_status(printers)

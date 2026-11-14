@@ -53,6 +53,10 @@ class MQTTRelayService:
         """
         self.enabled = settings.get("mqtt_enabled", False)
         self._settings = settings  # Store for smart plug service
+        # Panda Breath heaters (#1466) use this broker too; it decides on its own
+        # whether to connect, so it is told on every path below, including a
+        # broker that was cleared.
+        await self._configure_panda_breath(settings)
 
         if not self.enabled:
             await self.disconnect()
@@ -99,6 +103,15 @@ class MQTTRelayService:
             await self._smart_plug_service.configure(settings)
         except Exception as e:
             logger.error("Failed to configure MQTT smart plug service: %s", e)
+
+    @staticmethod
+    async def _configure_panda_breath(settings: dict):
+        try:
+            from backend.app.services.panda_breath import panda_breath_service
+
+            await panda_breath_service.configure(settings)
+        except Exception as e:
+            logger.error("Failed to configure Panda Breath: %s", e)
 
     @property
     def smart_plug_service(self):

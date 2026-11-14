@@ -629,6 +629,17 @@ export default {
       homingStarted: 'Yazıcı otomatik sıfırlanıyor…',
     },
     // İzinler
+    pandaBreath: {
+      sent: 'Panda Breath\'e gönderildi',
+      offline: 'Çevrimdışı',
+      turnOn: 'Aç',
+      turnOff: 'Kapat',
+      modeAuto: 'Otomatik',
+      modeOn: 'Sürekli açık',
+      modeDrying: 'Kurutma',
+      dryingLeft: 'Kurutuluyor, {{minutes}} dk kaldı',
+      targetHint: 'Hedef sıcaklık (0-60 °C):',
+    },
     permission: {
       noAdd: 'Yazıcı eklemek için izniniz yok',
       noEdit: 'Yazıcıları düzenlemek için izniniz yok',
@@ -2392,6 +2403,13 @@ export default {
     urlFromEnvReadOnly: 'Değer HA_URL ortam değişkeniyle ayarlandı (salt okunur)',
     tokenFromEnvReadOnly: 'Değer HA_TOKEN ortam değişkeniyle ayarlandı (salt okunur)',
     // MQTT
+    pandaBreath: {
+      hint: 'Bu broker\'ı kullanan Panda Breath ısıtıcılarını göster ve kontrol et (ürün yazılımı 1.0.4 veya üstü, Home Assistant bağlantısı). Her biri bağlı olduğu yazıcıda görünür.',
+      noDevices: 'Henüz hiçbir Panda Breath bildirimde bulunmadı.',
+      boundTo: '{{printer}} yazıcısına bağlı',
+      unknownPrinter: 'burada gösterilmeyen bir yazıcıya bağlı',
+      notBound: 'bir yazıcıya bağlı değil',
+    },
     mqttConnectedTo: 'Bağlı',
     // Prometheus
     prometheusDescription: 'Yazıcı verisini Prometheus formatında sun',

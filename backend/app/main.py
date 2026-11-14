@@ -12599,6 +12599,7 @@ async def lifespan(app: FastAPI):
             "mqtt_password": await get_setting(db, "mqtt_password") or "",
             "mqtt_topic_prefix": await get_setting(db, "mqtt_topic_prefix") or "bambuddy",
             "mqtt_use_tls": (await get_setting(db, "mqtt_use_tls") or "false") == "true",
+            "panda_breath_enabled": (await get_setting(db, "panda_breath_enabled") or "false") == "true",
         }
         await mqtt_relay.configure(mqtt_settings)
 
@@ -12814,6 +12815,9 @@ async def lifespan(app: FastAPI):
     await virtual_printer_manager.stop_all()
 
     await mqtt_smart_plug_service.disconnect(timeout=2)
+    from backend.app.services.panda_breath import panda_breath_service
+
+    await panda_breath_service.disconnect(timeout=2)
 
     await mqtt_relay.disconnect(timeout=2)
 

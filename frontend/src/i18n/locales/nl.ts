@@ -632,6 +632,17 @@ export default {
       homingStarted: 'Printer automatisch homen…',
     },
     // Permissions
+    pandaBreath: {
+      sent: 'Naar de Panda Breath gestuurd',
+      offline: 'Offline',
+      turnOn: 'Aanzetten',
+      turnOff: 'Uitzetten',
+      modeAuto: 'Auto',
+      modeOn: 'Altijd aan',
+      modeDrying: 'Drogen',
+      dryingLeft: 'Droogt, nog {{minutes}} min',
+      targetHint: 'Doeltemperatuur (0-60 °C):',
+    },
     permission: {
       noAdd: 'Je hebt geen toestemming om printers toe te voegen',
       noEdit: 'Je hebt geen toestemming om printers te bewerken',
@@ -2408,6 +2419,13 @@ export default {
     urlFromEnvReadOnly: 'Waarde ingesteld door omgevingsvariabele HA_URL (alleen-lezen)',
     tokenFromEnvReadOnly: 'Waarde ingesteld door omgevingsvariabele HA_TOKEN (alleen-lezen)',
     // MQTT
+    pandaBreath: {
+      hint: 'Panda Breath-verwarmers tonen en bedienen die deze broker gebruiken (firmware 1.0.4 of nieuwer, Home Assistant-koppeling). Elke verschijnt bij de printer waaraan hij gekoppeld is.',
+      noDevices: 'Er heeft zich nog geen Panda Breath gemeld.',
+      boundTo: 'gekoppeld aan {{printer}}',
+      unknownPrinter: 'gekoppeld aan een printer die hier niet wordt getoond',
+      notBound: 'niet aan een printer gekoppeld',
+    },
     mqttConnectedTo: 'Verbonden met',
     // Prometheus
     prometheusDescription: 'Printergegevens beschikbaar stellen in Prometheus-formaat',

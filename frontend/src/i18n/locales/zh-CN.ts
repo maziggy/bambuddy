@@ -629,6 +629,17 @@ export default {
       homingStarted: '打印机自动归零中…',
     },
     // Permissions
+    pandaBreath: {
+      sent: '已发送到 Panda Breath',
+      offline: '离线',
+      turnOn: '开启',
+      turnOff: '关闭',
+      modeAuto: '自动',
+      modeOn: '常开',
+      modeDrying: '烘干',
+      dryingLeft: '烘干中，剩余 {{minutes}} 分钟',
+      targetHint: '目标温度 (0-60 °C)：',
+    },
     permission: {
       noAdd: '您没有添加打印机的权限',
       noEdit: '您没有编辑打印机的权限',
@@ -2388,6 +2399,13 @@ export default {
     urlFromEnvReadOnly: '值由 HA_URL 环境变量设置（只读）',
     tokenFromEnvReadOnly: '值由 HA_TOKEN 环境变量设置（只读）',
     // MQTT
+    pandaBreath: {
+      hint: '显示并控制使用此代理的 Panda Breath 加热器（固件 1.0.4 或更高版本，Home Assistant 绑定）。每台会显示在其绑定的打印机上。',
+      noDevices: '尚无 Panda Breath 上报。',
+      boundTo: '已绑定到 {{printer}}',
+      unknownPrinter: '已绑定到此处未显示的打印机',
+      notBound: '未绑定打印机',
+    },
     mqttConnectedTo: '已连接到',
     // Prometheus
     prometheusDescription: '以 Prometheus 格式暴露打印机数据',

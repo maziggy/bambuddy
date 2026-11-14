@@ -269,6 +269,9 @@ class AppSettings(BaseModel):
     mqtt_password: str = Field(default="", description="MQTT password for authentication (optional)")
     mqtt_topic_prefix: str = Field(default="bambuddy", description="Topic prefix for all published messages")
     mqtt_use_tls: bool = Field(default=False, description="Use TLS/SSL encryption for MQTT connection")
+    panda_breath_enabled: bool = Field(
+        default=False, description="Follow BIQU Panda Breath heaters on the MQTT broker above (#1466)"
+    )
 
     # External URL for notifications
     external_url: str = Field(
@@ -821,6 +824,7 @@ class AppSettingsUpdate(BaseModel):
     mqtt_password: str | None = None
     mqtt_topic_prefix: str | None = None
     mqtt_use_tls: bool | None = None
+    panda_breath_enabled: bool | None = None
     external_url: str | None = None
     docker_compose_dir: str | None = None
     ha_enabled: bool | None = None

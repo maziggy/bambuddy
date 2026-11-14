@@ -629,6 +629,17 @@ export default {
       homingStarted: '印表機自動歸零中…',
     },
     // Permissions
+    pandaBreath: {
+      sent: '已傳送到 Panda Breath',
+      offline: '離線',
+      turnOn: '開啟',
+      turnOff: '關閉',
+      modeAuto: '自動',
+      modeOn: '常開',
+      modeDrying: '烘乾',
+      dryingLeft: '烘乾中，剩餘 {{minutes}} 分鐘',
+      targetHint: '目標溫度 (0-60 °C)：',
+    },
     permission: {
       noAdd: '您沒有新增印表機的權限',
       noEdit: '您沒有編輯印表機的權限',
@@ -2388,6 +2399,13 @@ export default {
     urlFromEnvReadOnly: '值由 HA_URL 環境變數設定（只讀）',
     tokenFromEnvReadOnly: '值由 HA_TOKEN 環境變數設定（只讀）',
     // MQTT
+    pandaBreath: {
+      hint: '顯示並控制使用此代理的 Panda Breath 加熱器（韌體 1.0.4 或更新版本，Home Assistant 綁定）。每台會顯示在其綁定的印表機上。',
+      noDevices: '尚無 Panda Breath 回報。',
+      boundTo: '已綁定到 {{printer}}',
+      unknownPrinter: '已綁定到此處未顯示的印表機',
+      notBound: '未綁定印表機',
+    },
     mqttConnectedTo: '已連線到',
     // Prometheus
     prometheusDescription: '以 Prometheus 格式暴露印表機資料',

@@ -629,6 +629,17 @@ export default {
       homingStarted: 'Llevando la impresora al origen…',
     },
     // Permissions
+    pandaBreath: {
+      sent: 'Enviado al Panda Breath',
+      offline: 'Sin conexión',
+      turnOn: 'Encender',
+      turnOff: 'Apagar',
+      modeAuto: 'Automático',
+      modeOn: 'Siempre encendido',
+      modeDrying: 'Secado',
+      dryingLeft: 'Secando, quedan {{minutes}} min',
+      targetHint: 'Temperatura objetivo (0-60 °C):',
+    },
     permission: {
       noAdd: 'No tiene permiso para añadir impresoras',
       noEdit: 'No tiene permiso para editar impresoras',
@@ -2391,6 +2402,13 @@ export default {
     urlFromEnvReadOnly: 'Valor establecido por la variable de entorno HA_URL (solo lectura)',
     tokenFromEnvReadOnly: 'Valor establecido por la variable de entorno HA_TOKEN (solo lectura)',
     // MQTT
+    pandaBreath: {
+      hint: 'Muestra y controla los calefactores Panda Breath que usan este broker (firmware 1.0.4 o posterior, vinculación con Home Assistant). Cada uno aparece en la impresora a la que está vinculado.',
+      noDevices: 'Ningún Panda Breath ha informado todavía.',
+      boundTo: 'vinculado a {{printer}}',
+      unknownPrinter: 'vinculado a una impresora que no se muestra aquí',
+      notBound: 'no vinculado a ninguna impresora',
+    },
     mqttConnectedTo: 'Conectado a',
     // Prometheus
     prometheusDescription: 'Exponer los datos de la impresora en formato Prometheus',

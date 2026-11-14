@@ -634,6 +634,17 @@ export default {
       homingStarted: 'Automatyczne bazowanie drukarki…',
     },
     // Permissions
+    pandaBreath: {
+      sent: 'Wysłano do Panda Breath',
+      offline: 'Offline',
+      turnOn: 'Włącz',
+      turnOff: 'Wyłącz',
+      modeAuto: 'Auto',
+      modeOn: 'Zawsze włączony',
+      modeDrying: 'Suszenie',
+      dryingLeft: 'Suszenie, zostało {{minutes}} min',
+      targetHint: 'Temperatura docelowa (0-60 °C):',
+    },
     permission: {
       noAdd: 'Nie masz uprawnień do dodawania drukarek',
       noEdit: 'Nie masz uprawnień do edytowania drukarek',
@@ -2410,6 +2421,13 @@ export default {
     urlFromEnvReadOnly: 'Wartość ustawiona przez zmienną środowiskową HA_URL (tylko do odczytu)',
     tokenFromEnvReadOnly: 'Wartość ustawiona przez zmienną środowiskową HA_TOKEN (tylko do odczytu)',
     // MQTT
+    pandaBreath: {
+      hint: 'Pokazuj i steruj grzejnikami Panda Breath korzystającymi z tego brokera (firmware 1.0.4 lub nowszy, powiązanie z Home Assistant). Każdy pojawia się przy drukarce, z którą jest powiązany.',
+      noDevices: 'Żaden Panda Breath jeszcze się nie zgłosił.',
+      boundTo: 'powiązany z {{printer}}',
+      unknownPrinter: 'powiązany z drukarką niewidoczną tutaj',
+      notBound: 'niepowiązany z drukarką',
+    },
     mqttConnectedTo: 'Połączono z',
     // Prometheus
     prometheusDescription: 'Udostępniaj dane drukarek w formacie Prometheus',

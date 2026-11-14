@@ -634,6 +634,17 @@ export default {
       homingStarted: 'Auto-homing printer…',
     },
     // Permissions
+    pandaBreath: {
+      sent: 'Sent to the Panda Breath',
+      offline: 'Offline',
+      turnOn: 'Turn on',
+      turnOff: 'Turn off',
+      modeAuto: 'Auto',
+      modeOn: 'Always on',
+      modeDrying: 'Drying',
+      dryingLeft: 'Drying, {{minutes}} min left',
+      targetHint: 'Target temperature (0-60 °C):',
+    },
     permission: {
       noAdd: 'You do not have permission to add printers',
       noEdit: 'You do not have permission to edit printers',
@@ -2410,6 +2421,13 @@ export default {
     urlFromEnvReadOnly: 'Value set by HA_URL environment variable (read-only)',
     tokenFromEnvReadOnly: 'Value set by HA_TOKEN environment variable (read-only)',
     // MQTT
+    pandaBreath: {
+      hint: 'Show and control Panda Breath heaters that use this broker (firmware 1.0.4 or later, Home Assistant binding). Each one appears on the printer it is bound to.',
+      noDevices: 'No Panda Breath has reported yet.',
+      boundTo: 'bound to {{printer}}',
+      unknownPrinter: 'bound to a printer not shown here',
+      notBound: 'not bound to a printer',
+    },
     mqttConnectedTo: 'Connected to',
     // Prometheus
     prometheusDescription: 'Expose printer data in Prometheus format',

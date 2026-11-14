@@ -632,6 +632,17 @@ export default {
       homingStarted: 'Auto-riktning pågår…',
     },
     // Permissions
+    pandaBreath: {
+      sent: 'Skickat till Panda Breath',
+      offline: 'Offline',
+      turnOn: 'Slå på',
+      turnOff: 'Stäng av',
+      modeAuto: 'Auto',
+      modeOn: 'Alltid på',
+      modeDrying: 'Torkning',
+      dryingLeft: 'Torkar, {{minutes}} min kvar',
+      targetHint: 'Måltemperatur (0-60 °C):',
+    },
     permission: {
       noAdd: 'Du har inte behörighet att lägga till skrivare',
       noEdit: 'Du har inte behörighet att redigera skrivare',
@@ -2440,6 +2451,13 @@ export default {
     urlFromEnvReadOnly: 'Värde inställt av HA_URL-miljövariabel (skrivskyddad)',
     tokenFromEnvReadOnly: 'Värde inställt av HA_TOKEN-miljövariabel (skrivskyddad)',
     // MQTT
+    pandaBreath: {
+      hint: 'Visa och styr Panda Breath-värmare som använder den här brokern (firmware 1.0.4 eller senare, Home Assistant-koppling). Var och en visas på skrivaren den är kopplad till.',
+      noDevices: 'Ingen Panda Breath har rapporterat än.',
+      boundTo: 'kopplad till {{printer}}',
+      unknownPrinter: 'kopplad till en skrivare som inte visas här',
+      notBound: 'inte kopplad till någon skrivare',
+    },
     mqttConnectedTo: 'Ansluten till',
     // Prometheus
     prometheusDescription: 'Exponera skrivardata i Prometheus-format',

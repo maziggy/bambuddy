@@ -801,6 +801,34 @@ export interface PrinterStatus {
   drying_screen_only?: boolean;
   // Active chamber heater (responds to M141). True only for H2C/H2D/H2DPro/H2S/X2D.
   supports_chamber_heater?: boolean;
+  // BIQU Panda Breath bound to this printer (#1466), null without one.
+  panda_breath?: PandaBreathState | null;
+}
+
+export type PandaBreathMode = 'auto mode' | 'power on' | 'filament drying';
+
+export interface PandaBreathState {
+  device_id: string;
+  online: boolean | null;
+  chamber_temp: number | null;
+  target_temp: number | null;
+  work_on: boolean | null;
+  mode: string | null;
+  filament_drying_mode: string | null;
+  drying_running: boolean | null;
+  drying_remaining_min: number | null;
+}
+
+export interface PandaBreathCommand {
+  work_on?: boolean;
+  mode?: PandaBreathMode;
+  target_temp?: number;
+}
+
+export interface PandaBreathStatus {
+  enabled: boolean;
+  connected: boolean;
+  devices: (PandaBreathState & { bound: boolean; printer_id: number | null; printer_name: string | null })[];
 }
 
 export interface PrinterCreate {
@@ -1566,6 +1594,8 @@ export interface AppSettings {
   mqtt_password: string;
   mqtt_topic_prefix: string;
   mqtt_use_tls: boolean;
+  // BIQU Panda Breath heaters on the same broker (#1466)
+  panda_breath_enabled: boolean;
   // External URL for notifications
   external_url: string;
   // Directory holding docker-compose.yml, shown in the update instructions (#2664)
@@ -5556,6 +5586,12 @@ export const api = {
       method: 'POST',
     }),
 
+  sendPandaBreathCommand: (printerId: number, command: PandaBreathCommand) =>
+    request<{ success: boolean }>(`/printers/${printerId}/panda-breath`, {
+      method: 'POST',
+      body: JSON.stringify(command),
+    }),
+
   setFanSpeed: (printerId: number, fan: 'part' | 'aux' | 'aux2' | 'chamber', speed: number) =>
     request<{ success: boolean; message: string }>(`/printers/${printerId}/fan-speed?fan=${fan}&speed=${speed}`, {
       method: 'POST',
@@ -6571,6 +6607,7 @@ export const api = {
       body: JSON.stringify(data),
     }),
   getMQTTStatus: () => request<MQTTStatus>('/settings/mqtt/status'),
+  getPandaBreathStatus: () => request<PandaBreathStatus>('/settings/panda-breath/status'),
   exportBackup: async (): Promise<{ blob: Blob; filename: string }> => {
     // New simplified backup - complete database + all files
     const url = `${API_BASE}/settings/backup`;

@@ -42,6 +42,8 @@ from backend.app.schemas.printer import (
     NextPause,
     NozzleInfoResponse,
     NozzleRackSlot,
+    PandaBreathCommand,
+    PandaBreathState,
     PrinterCreate,
     PrinterDiagnosticResult,
     PrinterFilesDownloadRequest,
@@ -71,6 +73,7 @@ from backend.app.services.bambu_ftp import (
     list_files_result_async,
 )
 from backend.app.services.hms_actions import HMSAction
+from backend.app.services.panda_breath import panda_breath_service
 from backend.app.services.pause_eta import next_pause
 from backend.app.services.print_storage import ftp_probe_paths, print_file_reachable_over_ftp
 from backend.app.services.printer_diagnostic import run_connection_diagnostic
@@ -722,6 +725,18 @@ async def get_printer_status(
     return await _printer_status(db, printer)
 
 
+def _panda_breath_state(printer: Printer) -> PandaBreathState | None:
+    """The Panda Breath bound to this printer, for the status response (#1466).
+
+    By the stored serial number, so a printer that is off or not connected
+    still shows the heater, which keeps running without it.
+    """
+    if not panda_breath_service.enabled:
+        return None
+    state = panda_breath_service.state_for_serial(printer.serial_number)
+    return PandaBreathState(**state) if state else None
+
+
 async def _printer_status(db: AsyncSession, printer: Printer) -> PrinterStatus:
     """The live status of *printer*, as the status endpoints report it."""
     printer_id = printer.id
@@ -737,6 +752,7 @@ async def _printer_status(db: AsyncSession, printer: Printer) -> PrinterStatus:
             name=printer.name,
             connected=False,
             awaiting_plate_clear=printer_manager.is_awaiting_plate_clear(printer_id),
+            panda_breath=_panda_breath_state(printer),
         )
 
     # Determine cover URL if there's an active print (including paused)
@@ -963,6 +979,7 @@ async def _printer_status(db: AsyncSession, printer: Printer) -> PrinterStatus:
         supports_chamber_heater=supports_chamber_heater(printer.model),
         current_archive_id=current_archive_id,
         current_plate_id=current_plate_id,
+        panda_breath=_panda_breath_state(printer),
         fila_switch=(
             FilaSwitchResponse(
                 installed=state.fila_switch.installed,
@@ -3898,6 +3915,40 @@ async def set_chamber_temperature(
         raise HTTPException(500, "Failed to set chamber temperature")
 
     return {"success": True, "message": f"Chamber temperature set to {target}°C"}
+
+
+@router.post("/{printer_id}/panda-breath")
+async def send_panda_breath_command(
+    printer_id: int,
+    body: PandaBreathCommand,
+    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db, scope="function"),
+):
+    """Change one setting of the Panda Breath bound to this printer (#1466).
+
+    The device is found by the printer's serial number, never by an id the
+    caller sends, so a user can only reach the heater of a printer they may
+    control.
+    """
+    changes = body.model_dump(exclude_none=True)
+    if len(changes) != 1:
+        raise HTTPException(400, "Send exactly one of work_on, mode, target_temp")
+
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    device = panda_breath_service.device_for_serial(printer.serial_number)
+    if not device:
+        raise HTTPException(404, "No Panda Breath is bound to this printer")
+
+    key, value = next(iter(changes.items()))
+    if key == "work_on":
+        value = "ON" if value else "OFF"
+    if not panda_breath_service.send_command(device.device_id, key, value):
+        raise HTTPException(503, "The MQTT broker is not connected")
+    return {"success": True}
 
 
 @router.post("/{printer_id}/fan-speed")

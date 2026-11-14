@@ -832,6 +832,14 @@ export function SettingsPage() {
     refetchInterval: activeTab === 'network' ? 5000 : false, // Poll every 5s when on Network tab
   });
 
+  const pandaBreathOn = activeTab === 'network' && settings?.mqtt_enabled === true && settings?.panda_breath_enabled === true;
+  const { data: pandaBreathStatus } = useQuery({
+    queryKey: ['panda-breath-status'],
+    queryFn: api.getPandaBreathStatus,
+    enabled: pandaBreathOn,
+    refetchInterval: pandaBreathOn ? 5000 : false,
+  });
+
   // GitHub backup status for Backup tab indicator
   const { data: githubBackupStatus } = useQuery<GitHubBackupStatus>({
     queryKey: ['github-backup-status'],
@@ -1329,6 +1337,7 @@ export function SettingsPage() {
       baseline.mqtt_password !== localSettings.mqtt_password ||
       baseline.mqtt_topic_prefix !== localSettings.mqtt_topic_prefix ||
       baseline.mqtt_use_tls !== localSettings.mqtt_use_tls ||
+      baseline.panda_breath_enabled !== localSettings.panda_breath_enabled ||
       baseline.external_url !== localSettings.external_url ||
       baseline.ha_enabled !== localSettings.ha_enabled ||
       baseline.ha_url !== localSettings.ha_url ||
@@ -1459,6 +1468,7 @@ export function SettingsPage() {
         mqtt_password: localSettings.mqtt_password,
         mqtt_topic_prefix: localSettings.mqtt_topic_prefix,
         mqtt_use_tls: localSettings.mqtt_use_tls,
+        panda_breath_enabled: localSettings.panda_breath_enabled,
         external_url: localSettings.external_url,
         ha_enabled: localSettings.ha_enabled,
         ha_url: localSettings.ha_url,
@@ -3517,6 +3527,47 @@ export function SettingsPage() {
                       </div>
                     </div>
                   )}
+
+                  {/* BIQU Panda Breath heaters on this broker (#1466) */}
+                  <div className="pt-3 mt-3 border-t border-bambu-dark-tertiary space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-white text-sm">BIQU Panda Breath</p>
+                        <p className="text-xs text-bambu-gray">{t('settings.pandaBreath.hint')}</p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input
+                          type="checkbox"
+                          aria-label="BIQU Panda Breath"
+                          checked={localSettings.panda_breath_enabled ?? false}
+                          onChange={(e) => updateSetting('panda_breath_enabled', e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                      </label>
+                    </div>
+                    {pandaBreathOn && pandaBreathStatus && (
+                      pandaBreathStatus.devices.length === 0 ? (
+                        <p className="text-xs text-bambu-gray">{t('settings.pandaBreath.noDevices')}</p>
+                      ) : (
+                        <ul className="space-y-1">
+                          {pandaBreathStatus.devices.map((device) => (
+                            <li key={device.device_id} className="flex items-center gap-2 text-xs">
+                              <span className={`w-2 h-2 rounded-full shrink-0 ${device.online === false ? 'bg-red-400' : 'bg-green-400'}`} />
+                              <span className="text-white font-mono">{device.device_id}</span>
+                              <span className="text-bambu-gray truncate">
+                                {device.printer_name
+                                  ? t('settings.pandaBreath.boundTo', { printer: device.printer_name })
+                                  : device.bound
+                                    ? t('settings.pandaBreath.unknownPrinter')
+                                    : t('settings.pandaBreath.notBound')}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )
+                    )}
+                  </div>
                 </div>
               )}
             </CardContent>

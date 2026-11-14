@@ -632,6 +632,17 @@ export default {
       homingStarted: "Виконується автопозиціювання принтера…",
     },
     // Permissions
+    pandaBreath: {
+      sent: 'Надіслано на Panda Breath',
+      offline: 'Не в мережі',
+      turnOn: 'Увімкнути',
+      turnOff: 'Вимкнути',
+      modeAuto: 'Авто',
+      modeOn: 'Завжди увімкнено',
+      modeDrying: 'Сушіння',
+      dryingLeft: 'Сушіння, залишилось {{minutes}} хв',
+      targetHint: 'Цільова температура (0-60 °C):',
+    },
     permission: {
       noAdd: "Ви не маєте дозволу додавати принтери",
       noEdit: "Ви не маєте дозволу редагувати принтери",
@@ -2406,6 +2417,13 @@ export default {
     urlFromEnvReadOnly: "Значення, встановлене змінною середовища HA_URL (лише читання)",
     tokenFromEnvReadOnly: "Значення, установлене змінною середовища HA_TOKEN (лише читання)",
     // MQTT
+    pandaBreath: {
+      hint: 'Показувати та керувати обігрівачами Panda Breath, що використовують цей брокер (прошивка 1.0.4 або новіша, прив\'язка Home Assistant). Кожен з\'являється на принтері, до якого він прив\'язаний.',
+      noDevices: 'Жоден Panda Breath ще не відгукнувся.',
+      boundTo: 'прив\'язано до {{printer}}',
+      unknownPrinter: 'прив\'язано до принтера, який тут не показано',
+      notBound: 'не прив\'язано до принтера',
+    },
     mqttConnectedTo: "Підключено до",
     // Prometheus
     prometheusDescription: "Надавати дані принтерів у форматі Prometheus",

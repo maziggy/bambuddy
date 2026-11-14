@@ -628,6 +628,17 @@ export default {
       homingStarted: 'プリンターをオートホーミング中…',
     },
     // Permissions
+    pandaBreath: {
+      sent: 'Panda Breath に送信しました',
+      offline: 'オフライン',
+      turnOn: 'オンにする',
+      turnOff: 'オフにする',
+      modeAuto: '自動',
+      modeOn: '常時オン',
+      modeDrying: '乾燥',
+      dryingLeft: '乾燥中、残り {{minutes}} 分',
+      targetHint: '目標温度 (0-60 °C):',
+    },
     permission: {
       noAdd: 'プリンターを追加する権限がありません',
       noEdit: 'プリンターを編集する権限がありません',
@@ -2387,6 +2398,13 @@ export default {
     urlFromEnvReadOnly: 'HA_URL環境変数で設定された値（読み取り専用）',
     tokenFromEnvReadOnly: 'HA_TOKEN環境変数で設定された値（読み取り専用）',
     // MQTT
+    pandaBreath: {
+      hint: 'このブローカーを使う Panda Breath ヒーターを表示・操作します（ファームウェア 1.0.4 以降、Home Assistant 連携）。各ヒーターは紐付けられたプリンターに表示されます。',
+      noDevices: 'まだ Panda Breath から報告がありません。',
+      boundTo: '{{printer}} に紐付け',
+      unknownPrinter: 'ここに表示されていないプリンターに紐付け',
+      notBound: 'プリンター未紐付け',
+    },
     mqttConnectedTo: '接続先:',
     // Prometheus
     prometheusDescription: 'プリンターデータをPrometheus形式で公開',

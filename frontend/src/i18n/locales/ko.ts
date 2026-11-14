@@ -597,6 +597,17 @@ export default {
       moveAnyway: '그냥 이동',
       homingStarted: '프린터 자동 홈 설정 중…'
     },
+    pandaBreath: {
+      sent: 'Panda Breath로 전송했습니다',
+      offline: '오프라인',
+      turnOn: '켜기',
+      turnOff: '끄기',
+      modeAuto: '자동',
+      modeOn: '항상 켜짐',
+      modeDrying: '건조',
+      dryingLeft: '건조 중, {{minutes}}분 남음',
+      targetHint: '목표 온도 (0-60 °C):',
+    },
     permission: {
       noAdd: '프린터를 추가할 권한이 없습니다',
       noEdit: '프린터를 편집할 권한이 없습니다',
@@ -2283,6 +2294,13 @@ export default {
     autoEnabledViaEnv: '환경 변수를 통해 자동 활성화됨',
     urlFromEnvReadOnly: 'HA_URL 환경 변수에서 값 설정됨 (읽기 전용)',
     tokenFromEnvReadOnly: 'HA_TOKEN 환경 변수에서 값 설정됨 (읽기 전용)',
+    pandaBreath: {
+      hint: '이 브로커를 사용하는 Panda Breath 히터를 표시하고 제어합니다(펌웨어 1.0.4 이상, Home Assistant 연동). 각 히터는 연결된 프린터에 표시됩니다.',
+      noDevices: '아직 보고한 Panda Breath가 없습니다.',
+      boundTo: '{{printer}}에 연결됨',
+      unknownPrinter: '여기에 표시되지 않은 프린터에 연결됨',
+      notBound: '프린터에 연결되지 않음',
+    },
     mqttConnectedTo: '연결됨',
     prometheusDescription: 'Prometheus 형식으로 프린터 데이터 노출',
     noSmartPlugsTitle: '설정된 스마트 플러그 없음',

@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
@@ -450,6 +451,28 @@ class NextPause(BaseModel):
     minutes: int | None = None
 
 
+class PandaBreathState(BaseModel):
+    """What a Panda Breath reports, as the printer card shows it (#1466)."""
+
+    device_id: str
+    online: bool | None = None
+    chamber_temp: float | None = None
+    target_temp: float | None = None
+    work_on: bool | None = None
+    mode: str | None = None
+    filament_drying_mode: str | None = None
+    drying_running: bool | None = None
+    drying_remaining_min: float | None = None
+
+
+class PandaBreathCommand(BaseModel):
+    """One change for a printer's Panda Breath: exactly one field set."""
+
+    work_on: bool | None = None
+    mode: Literal["auto mode", "power on", "filament drying"] | None = None
+    target_temp: int | None = Field(default=None, ge=0, le=60)
+
+
 class PrinterStatus(BaseModel):
     id: int
     name: str
@@ -581,6 +604,8 @@ class PrinterStatus(BaseModel):
     # Set for every active print regardless of plate count; the frontend decides
     # whether to render it based on current_archive_id's is_multi_plate flag.
     current_plate_id: int | None = None
+    # BIQU Panda Breath bound to this printer (#1466), None without one.
+    panda_breath: PandaBreathState | None = None
 
 
 class DiagnosticCheck(BaseModel):

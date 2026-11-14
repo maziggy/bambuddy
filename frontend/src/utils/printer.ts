@@ -28,6 +28,9 @@ export function getPrinterImage(model: string | null | undefined): string {
 // at 60 and its firmware clamps anything higher.
 export const MAX_CHAMBER_TEMP_C = 65;
 
+/** Highest target a BIQU Panda Breath takes, from its firmware (#1466). */
+export const PANDA_BREATH_MAX_TARGET_C = 60;
+
 // G-code interchange families (#2578). Mirrors backend GCODE_COMPAT_FAMILIES
 // in backend/app/utils/printer_models.py — keep the two in sync. A sliced 3MF
 // may target a different model ONLY within its family; everything else is

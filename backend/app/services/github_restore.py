@@ -103,6 +103,7 @@ _MQTT_SETTING_KEYS = {
     "mqtt_password",
     "mqtt_topic_prefix",
     "mqtt_use_tls",
+    "panda_breath_enabled",
 }
 
 # Keys that decide *who can reach the instance* rather than how it behaves. The
@@ -2426,6 +2427,7 @@ class GitHubRestoreService:
                     "mqtt_password": stored.get("mqtt_password") or "",
                     "mqtt_topic_prefix": stored.get("mqtt_topic_prefix") or "bambuddy",
                     "mqtt_use_tls": (stored.get("mqtt_use_tls") or "false") == "true",
+                    "panda_breath_enabled": (stored.get("panda_breath_enabled") or "false") == "true",
                 }
             )
         except Exception:

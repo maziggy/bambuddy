@@ -629,6 +629,17 @@ export default {
       homingStarted: 'Drucker wird automatisch referenziert…',
     },
     // Permissions
+    pandaBreath: {
+      sent: 'An den Panda Breath gesendet',
+      offline: 'Offline',
+      turnOn: 'Einschalten',
+      turnOff: 'Ausschalten',
+      modeAuto: 'Auto',
+      modeOn: 'Dauerhaft an',
+      modeDrying: 'Trocknen',
+      dryingLeft: 'Trocknet, noch {{minutes}} Min.',
+      targetHint: 'Zieltemperatur (0-60 °C):',
+    },
     permission: {
       noAdd: 'Sie haben keine Berechtigung, Drucker hinzuzufügen',
       noEdit: 'Sie haben keine Berechtigung, Drucker zu bearbeiten',
@@ -2388,6 +2399,13 @@ export default {
     urlFromEnvReadOnly: 'Wert wird über HA_URL Umgebungsvariable gesetzt (schreibgeschützt)',
     tokenFromEnvReadOnly: 'Wert wird über HA_TOKEN Umgebungsvariable gesetzt (schreibgeschützt)',
     // MQTT
+    pandaBreath: {
+      hint: 'Panda-Breath-Heizungen anzeigen und steuern, die diesen Broker nutzen (Firmware 1.0.4 oder neuer, Home-Assistant-Anbindung). Jede erscheint bei dem Drucker, an den sie gebunden ist.',
+      noDevices: 'Noch hat sich kein Panda Breath gemeldet.',
+      boundTo: 'gebunden an {{printer}}',
+      unknownPrinter: 'an einen hier nicht angezeigten Drucker gebunden',
+      notBound: 'an keinen Drucker gebunden',
+    },
     mqttConnectedTo: 'Verbunden mit',
     // Prometheus
     prometheusDescription: 'Druckerdaten im Prometheus-Format bereitstellen',

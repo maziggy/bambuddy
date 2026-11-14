@@ -1586,6 +1586,10 @@ export interface AppSettings {
   ftp_retry_count: number;
   ftp_retry_delay: number;
   ftp_timeout: number;
+  // Automatic IP rediscovery for disconnected printers
+  printer_rediscovery_enabled: boolean;
+  printer_rediscovery_subnet_scan: boolean;
+  printer_rediscovery_scan_interval: number;
   // MQTT relay settings
   mqtt_enabled: boolean;
   mqtt_broker: string;

@@ -1965,17 +1965,16 @@ class VirtualPrinterManager:
             if vp_id not in enabled_ids:
                 await self.remove_instance(vp_id)
 
-        # Look up printer IPs for proxy VPs
-        proxy_vps = [vp for vp in enabled_vps if vp.mode == "proxy"]
+        # Look up target printer IPs/serials for VPs bound to a target printer
+        targeted_vps = [vp for vp in enabled_vps if vp.target_printer_id]
         proxy_ips: dict[int, tuple[str, str]] = {}
-        if proxy_vps:
+        if targeted_vps:
             async with self._session_factory() as db:
-                for pvp in proxy_vps:
-                    if pvp.target_printer_id:
-                        result = await db.execute(select(Printer).where(Printer.id == pvp.target_printer_id))
-                        printer = result.scalar_one_or_none()
-                        if printer:
-                            proxy_ips[pvp.id] = (printer.ip_address, printer.serial_number)
+                for tvp in targeted_vps:
+                    result = await db.execute(select(Printer).where(Printer.id == tvp.target_printer_id))
+                    printer = result.scalar_one_or_none()
+                    if printer:
+                        proxy_ips[tvp.id] = (printer.ip_address, printer.serial_number)
 
         # Detect config changes on running instances and restart if needed
         for vp in enabled_vps:
@@ -1989,15 +1988,14 @@ class VirtualPrinterManager:
             # forwarding to the stale IP until the user manually toggles the
             # VP. The same shape covers a target-side serial change.
             proxy_target_changed = False
-            if vp.mode == "proxy":
-                fresh = proxy_ips.get(vp.id)
-                if fresh is not None:
-                    fresh_ip, fresh_serial = fresh
-                    if (
-                        getattr(instance, "target_printer_ip", None) != fresh_ip
-                        or getattr(instance, "target_printer_serial", None) != fresh_serial
-                    ):
-                        proxy_target_changed = True
+            fresh = proxy_ips.get(vp.id)
+            if vp.mode == "proxy" and fresh is not None:
+                fresh_ip, fresh_serial = fresh
+                if (
+                    getattr(instance, "target_printer_ip", None) != fresh_ip
+                    or getattr(instance, "target_printer_serial", None) != fresh_serial
+                ):
+                    proxy_target_changed = True
 
             # Normalize the DB value before comparing — a legacy `immediate`
             # row read before the migration window finishes would otherwise
@@ -2031,6 +2029,10 @@ class VirtualPrinterManager:
                     vp.mode,
                 )
                 await self.remove_instance(vp.id)
+            elif fresh is not None:
+                rtsp_proxy = getattr(instance, "_rtsp_proxy", None)
+                if rtsp_proxy is not None and rtsp_proxy.target_host != fresh[0]:
+                    rtsp_proxy.target_host = fresh[0]
 
         # Start instances for all enabled VPs (skip already running)
         for vp in enabled_vps:

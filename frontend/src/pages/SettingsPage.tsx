@@ -109,6 +109,7 @@ registerSettingsSearch({ labelKey: 'settings.amsDisplayThresholds', tab: 'filame
 registerSettingsSearch({ labelKey: 'inventory.profileDefaults.title', tab: 'filament', keywords: 'profile default k-profile k factor pressure advance slicer preset new spool', anchor: 'card-profiledefaults' });
 registerSettingsSearch({ labelKey: 'settings.externalUrl', tab: 'network', keywords: 'external url reverse proxy public notification link', anchor: 'card-externalurl' });
 registerSettingsSearch({ labelKey: 'settings.ftpRetry', tab: 'network', keywords: 'ftp retry upload retries backoff', anchor: 'card-ftpretry' });
+registerSettingsSearch({ labelKey: 'settings.printerRediscovery', tab: 'network', keywords: 'printer rediscovery ip dhcp mesh ssdp subnet scan reconnect offline', anchor: 'card-rediscovery' });
 registerSettingsSearch({ labelKey: 'settings.homeAssistant', tab: 'network', keywords: 'home assistant ha hass mqtt integration', anchor: 'card-ha' });
 registerSettingsSearch({ labelKey: 'settings.mqttPublishing', tab: 'network', keywords: 'mqtt publish broker topic', anchor: 'card-mqtt' });
 registerSettingsSearch({ labelKey: 'settings.prometheusMetrics', tab: 'network', keywords: 'prometheus metrics grafana monitoring bearer token', anchor: 'card-prometheus' });
@@ -1330,6 +1331,9 @@ export function SettingsPage() {
       baseline.ftp_retry_count !== localSettings.ftp_retry_count ||
       baseline.ftp_retry_delay !== localSettings.ftp_retry_delay ||
       baseline.ftp_timeout !== localSettings.ftp_timeout ||
+      (baseline.printer_rediscovery_enabled ?? true) !== (localSettings.printer_rediscovery_enabled ?? true) ||
+      (baseline.printer_rediscovery_subnet_scan ?? true) !== (localSettings.printer_rediscovery_subnet_scan ?? true) ||
+      (baseline.printer_rediscovery_scan_interval ?? 10) !== (localSettings.printer_rediscovery_scan_interval ?? 10) ||
       baseline.mqtt_enabled !== localSettings.mqtt_enabled ||
       baseline.mqtt_broker !== localSettings.mqtt_broker ||
       baseline.mqtt_port !== localSettings.mqtt_port ||
@@ -1461,6 +1465,9 @@ export function SettingsPage() {
         ftp_retry_count: localSettings.ftp_retry_count,
         ftp_retry_delay: localSettings.ftp_retry_delay,
         ftp_timeout: localSettings.ftp_timeout,
+        printer_rediscovery_enabled: localSettings.printer_rediscovery_enabled ?? true,
+        printer_rediscovery_subnet_scan: localSettings.printer_rediscovery_subnet_scan ?? true,
+        printer_rediscovery_scan_interval: localSettings.printer_rediscovery_scan_interval ?? 10,
         mqtt_enabled: localSettings.mqtt_enabled,
         mqtt_broker: localSettings.mqtt_broker,
         mqtt_port: localSettings.mqtt_port,
@@ -3216,6 +3223,89 @@ export function SettingsPage() {
                       {t('settings.increaseForWeakWifi')}
                     </p>
                   </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card id="card-rediscovery">
+            <CardHeader>
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <Wifi className="w-5 h-5 text-bambu-green" />
+                {t('settings.printerRediscovery')}
+              </h2>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-bambu-gray">
+                {t('settings.printerRediscoveryDescription')}
+              </p>
+
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <label htmlFor="printer-rediscovery-enabled" className="text-white cursor-pointer">
+                    {t('settings.enablePrinterRediscovery')}
+                  </label>
+                  <p id="printer-rediscovery-enabled-desc" className="text-sm text-bambu-gray">
+                    {t('settings.printerRediscoverySsdpDescription')}
+                  </p>
+                </div>
+                <label htmlFor="printer-rediscovery-enabled" className="relative inline-flex items-center cursor-pointer shrink-0">
+                  <input
+                    id="printer-rediscovery-enabled"
+                    type="checkbox"
+                    aria-describedby="printer-rediscovery-enabled-desc"
+                    checked={localSettings.printer_rediscovery_enabled ?? true}
+                    onChange={(e) => updateSetting('printer_rediscovery_enabled', e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-bambu-green rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                </label>
+              </div>
+
+              {(localSettings.printer_rediscovery_enabled ?? true) && (
+                <div className="space-y-3 pt-2 border-t border-bambu-dark-tertiary">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <label htmlFor="printer-rediscovery-subnet-scan" className="text-white cursor-pointer">
+                        {t('settings.printerRediscoverySubnetScan')}
+                      </label>
+                      <p id="printer-rediscovery-subnet-desc" className="text-sm text-bambu-gray">
+                        {t('settings.printerRediscoverySubnetScanDescription')}
+                      </p>
+                    </div>
+                    <label htmlFor="printer-rediscovery-subnet-scan" className="relative inline-flex items-center cursor-pointer shrink-0">
+                      <input
+                        id="printer-rediscovery-subnet-scan"
+                        type="checkbox"
+                        aria-describedby="printer-rediscovery-subnet-desc"
+                        checked={localSettings.printer_rediscovery_subnet_scan ?? true}
+                        onChange={(e) => updateSetting('printer_rediscovery_subnet_scan', e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-bambu-green rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                    </label>
+                  </div>
+
+                  {(localSettings.printer_rediscovery_subnet_scan ?? true) && (
+                    <div>
+                      <label htmlFor="printer-rediscovery-scan-interval" className="block text-sm text-bambu-gray mb-1">
+                        {t('settings.printerRediscoveryScanInterval')}
+                      </label>
+                      <NumberInput
+                        id="printer-rediscovery-scan-interval"
+                        aria-describedby="printer-rediscovery-interval-desc"
+                        min={5}
+                        max={60}
+                        fallback={10}
+                        value={localSettings.printer_rediscovery_scan_interval ?? 10}
+                        onChange={(v) => updateSetting('printer_rediscovery_scan_interval', v)}
+                        className="w-44 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                      />
+                      <p id="printer-rediscovery-interval-desc" className="text-xs text-bambu-gray mt-1">
+                        {t('settings.printerRediscoveryScanIntervalHint')}
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>

@@ -3094,6 +3094,15 @@ export default {
     second_other: '{{count}} seconden',
     nSeconds: '{{count}} seconden',
     increaseForWeakWifi: 'Verhoog dit voor printers met zwakke wifi',
+    // Printer Rediscovery
+    printerRediscovery: 'Printerherontdekking',
+    printerRediscoveryDescription: 'Detecteer automatisch wanneer een offline printer een nieuw IP-adres krijgt en verbind opnieuw na controle van serienummer en toegangscode.',
+    enablePrinterRediscovery: 'Automatische herontdekking inschakelen',
+    printerRediscoverySsdpDescription: 'Luister naar Bambu SSDP-meldingen wanneer actieve printers ontbreken',
+    printerRediscoverySubnetScan: 'Fallback-subnetscan',
+    printerRediscoverySubnetScanDescription: 'Controleer rustig poort 8883 op het lokale subnet wanneer SSDP-multicast door routers wordt geblokkeerd',
+    printerRediscoveryScanInterval: 'Minimaal scaninterval (minuten)',
+    printerRediscoveryScanIntervalHint: 'Beperkt actieve subnetscans (5–60 min) zodat netwerkapparatuur het verkeer niet als verdacht markeert',
     // Home Assistant
     homeAssistant: 'Home Assistant',
     homeAssistantFullDescription: 'Verbind met Home Assistant om slimme stekkers via de REST-API van HA te bedienen. Ondersteunt switch-, light-, input_boolean- en script-entiteiten.',

@@ -3096,6 +3096,15 @@ export default {
     second_other: '{{count}} s',
     nSeconds: '{{count}} s',
     increaseForWeakWifi: 'Zwiększ dla drukarek ze słabym WiFi',
+    // Printer Rediscovery
+    printerRediscovery: 'Ponowne wykrywanie drukarek',
+    printerRediscoveryDescription: 'Automatycznie wykrywa zmianę adresu IP rozłączonej drukarki i łączy się ponownie po zweryfikowaniu numeru seryjnego oraz kodu dostępu.',
+    enablePrinterRediscovery: 'Włącz automatyczne wykrywanie',
+    printerRediscoverySsdpDescription: 'Nasłuchuj rozgłoszeń Bambu SSDP, gdy brakuje aktywnych drukarek',
+    printerRediscoverySubnetScan: 'Awaryjne skanowanie podsieci',
+    printerRediscoverySubnetScanDescription: 'Łagodnie sonduj port 8883 w lokalnej podsieci, gdy routery blokują multicast SSDP',
+    printerRediscoveryScanInterval: 'Minimalny odstęp skanowania (minuty)',
+    printerRediscoveryScanIntervalHint: 'Ogranicza częstość skanowania podsieci (5–60 min), aby sprzęt sieciowy nie uznał ruchu za podejrzany',
     // Home Assistant
     homeAssistant: 'Home Assistant',
     homeAssistantFullDescription: 'Połącz się z Home Assistant, aby sterować inteligentnymi gniazdkami przez REST API HA. Obsługuje encje switch, light, input_boolean i script.',

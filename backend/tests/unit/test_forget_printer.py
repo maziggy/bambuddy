@@ -186,12 +186,15 @@ async def test_forget_printer_clears_the_services():
     printers._cover_cache[GONE] = {("Cube", "front"): b"png"}
     printers._cover_404_cache[GONE] = {}
     from backend.app.services.printer_file_cache import printer_file_cache
+    from backend.app.services.printer_rediscovery import printer_rediscovery_service
 
     printer_file_cache._keep((GONE, "/cache/a.3mf"), b"3mf")
+    printer_rediscovery_service._disconnected_since[GONE] = 1.0
 
     await main.forget_printer(GONE)
 
     assert GONE not in printer_manager._current_print_user
+    assert GONE not in printer_rediscovery_service._disconnected_since
     assert GONE not in printer_manager._awaiting_plate_clear
     assert GONE not in printer_manager._last_trays
     assert not print_dispatch_context.adopt(GONE)

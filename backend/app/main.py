@@ -162,6 +162,7 @@ from backend.app.services.printer_manager import (
     printer_tray_layout,
     resolve_plate_id,
 )
+from backend.app.services.printer_rediscovery import printer_rediscovery_service
 from backend.app.services.slot_kprofile import find_slot_kprofile_for_extruder
 from backend.app.services.slot_nozzle import (
     nozzle_diameter_for_extruder,
@@ -1478,6 +1479,7 @@ async def forget_printer(printer_id: int) -> None:
     usage_tracker.forget_printer(printer_id)
     obico_detection_service.forget_printer(printer_id)
     octoeverywhere_detection_service.forget_printer(printer_id)
+    printer_rediscovery_service.forget_printer(printer_id)
     bambu_ftp.clear_3mf_cache(printer_id)
     await camera.forget_printer(printer_id)
     printers.clear_cover_cache(printer_id)
@@ -12728,6 +12730,7 @@ async def lifespan(app: FastAPI):
 
     # Start the backstop for MQTT sessions paho has stopped recovering (#2732)
     start_connection_watchdog()
+    await printer_rediscovery_service.start()
 
     # One-shot sweep for timelapse session directories orphaned by a crash
     # or restart that happened mid-print (in-memory session tracking can't
@@ -12797,6 +12800,7 @@ async def lifespan(app: FastAPI):
     stop_spoolbuddy_watchdog()
     stop_camera_cleanup()
     stop_connection_watchdog()
+    await printer_rediscovery_service.stop()
     from backend.app.services.loop_watchdog import stop_loop_watchdog
 
     stop_loop_watchdog()

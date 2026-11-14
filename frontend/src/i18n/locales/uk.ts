@@ -3091,6 +3091,15 @@ export default {
     second_other: "{{count}} секунд",
     nSeconds: "{{count}} секунд",
     increaseForWeakWifi: "Підвищення для принтерів із слабким WiFi",
+    // Printer Rediscovery
+    printerRediscovery: "Автопошук принтерів",
+    printerRediscoveryDescription: "Автоматично виявляє зміну IP-адреси відключеного принтера та перепідключається після перевірки серійного номера й коду доступу.",
+    enablePrinterRediscovery: "Увімкнути автоматичне виявлення",
+    printerRediscoverySsdpDescription: "Слухати SSDP-оголошення Bambu, коли активні принтери недоступні",
+    printerRediscoverySubnetScan: "Резервне сканування підмережі",
+    printerRediscoverySubnetScanDescription: "Обережно опитувати порт 8883 у локальній підмережі, якщо маршрутизатори блокують SSDP multicast",
+    printerRediscoveryScanInterval: "Мінімальний інтервал сканування (хвилини)",
+    printerRediscoveryScanIntervalHint: "Обмежує частоту активних сканувань підмережі (5–60 хв), щоб мережеве обладнання не вважало трафік підозрілим",
     // Home Assistant
     homeAssistant: "Home Assistant",
     homeAssistantFullDescription: "Підключіться до Home Assistant, щоб керувати розумними розетками через REST API HA. Підтримує об’єкти switch, light, input_boolean і script.",

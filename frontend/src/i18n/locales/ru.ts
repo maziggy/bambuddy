@@ -6753,6 +6753,8 @@ export default {
     onlyFromPrinter: "Отправлять уведомления только о событиях этого принтера",
     attachPhotoLabel: "Прикреплять фото",
     attachPhotoDescription: "Добавлять снимок с камеры к уведомлениям, если он был сделан для события",
+    attachPhotoEvents: "Прикреплять снимок к",
+    attachPhotoSkipped: "Без снимка: {{events}}",
     quietHoursDnd: "Тихие часы (не беспокоить)",
     quietStart: "Начало",
     quietEnd: "Окончание",

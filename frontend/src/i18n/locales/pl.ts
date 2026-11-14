@@ -7105,6 +7105,8 @@ export default {
     onlyFromPrinter: 'Wysyłaj powiadomienia tylko o zdarzeniach z tej drukarki',
     attachPhotoLabel: 'Dołącz zdjęcie',
     attachPhotoDescription: 'Dołączaj do powiadomień zdjęcie z kamery, jeśli zostało wykonane dla zdarzenia',
+    attachPhotoEvents: 'Dołączaj zdjęcie do',
+    attachPhotoSkipped: 'Bez zdjęcia: {{events}}',
     quietHoursDnd: 'Godziny ciszy (Nie przeszkadzać)',
     quietStart: 'Początek',
     quietEnd: 'Koniec',

@@ -7040,6 +7040,8 @@ export default {
     onlyFromPrinter: 'Envoyer uniquement les notifications pour les événements de cette imprimante',
     attachPhotoLabel: 'Joindre une photo',
     attachPhotoDescription: 'Inclure une capture de la caméra dans les notifications, lorsqu\'une capture a été prise pour l\'événement',
+    attachPhotoEvents: 'Joindre la photo pour',
+    attachPhotoSkipped: 'Pas de photo pour : {{events}}',
     quietHoursDnd: 'Heures silencieuses (Ne pas déranger)',
     quietStart: 'Début',
     quietEnd: 'Fin',

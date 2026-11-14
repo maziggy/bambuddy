@@ -7052,6 +7052,8 @@ export default {
     onlyFromPrinter: 'Nur Benachrichtigungen für Ereignisse von diesem Drucker senden',
     attachPhotoLabel: 'Foto anhängen',
     attachPhotoDescription: 'Einen Kamera-Schnappschuss mitsenden, sofern für das Ereignis einer aufgenommen wurde',
+    attachPhotoEvents: 'Foto anhängen bei',
+    attachPhotoSkipped: 'Kein Foto bei: {{events}}',
     quietHoursDnd: 'Ruhezeiten (Nicht stören)',
     quietStart: 'Start',
     quietEnd: 'Ende',

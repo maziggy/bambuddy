@@ -7134,6 +7134,8 @@ errors: {
     onlyFromPrinter: 'Skicka notiser endast för händelser från denna skrivare',
     attachPhotoLabel: 'Bifoga foto',
     attachPhotoDescription: 'Skicka med en kamerabild i notiser när en har tagits för händelsen',
+    attachPhotoEvents: 'Bifoga bilden vid',
+    attachPhotoSkipped: 'Ingen bild vid: {{events}}',
     quietHoursDnd: 'Tysta timmar (Stör ej)',
     quietStart: 'Start',
     quietEnd: 'Slut',

@@ -7053,6 +7053,8 @@ export default {
     onlyFromPrinter: 'このプリンターからのイベントのみ通知を送信',
     attachPhotoLabel: '写真を添付',
     attachPhotoDescription: 'イベントでカメラのスナップショットが撮影された場合、通知に添付します',
+    attachPhotoEvents: '写真を添付するイベント',
+    attachPhotoSkipped: '写真なし: {{events}}',
     quietHoursDnd: '静音時間（おやすみモード）',
     quietStart: '開始',
     quietEnd: '終了',

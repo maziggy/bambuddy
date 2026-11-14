@@ -7038,6 +7038,8 @@ export default {
     onlyFromPrinter: '仅发送来自此打印机的事件通知',
     attachPhotoLabel: '附加照片',
     attachPhotoDescription: '若事件拍摄了摄像头快照，则随通知一并发送',
+    attachPhotoEvents: '附加照片的事件',
+    attachPhotoSkipped: '不附照片：{{events}}',
     quietHoursDnd: '免打扰时段',
     quietStart: '开始',
     quietEnd: '结束',

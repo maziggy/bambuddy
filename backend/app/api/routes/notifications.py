@@ -118,6 +118,7 @@ def _provider_to_dict(provider: NotificationProvider) -> dict:
         "enabled": provider.enabled,
         "config": mask_config(_stored_config(provider)),
         "attach_photo": provider.attach_photo,
+        "photo_skip_events": provider.photo_skip_events or [],
         # Print lifecycle events
         "on_print_start": provider.on_print_start,
         "on_print_complete": provider.on_print_complete,
@@ -277,6 +278,7 @@ async def create_notification_provider(
         enabled=provider_data.enabled,
         config=json.dumps(provider_data.config),
         attach_photo=provider_data.attach_photo,
+        photo_skip_events=provider_data.photo_skip_events,
         # Print lifecycle events
         on_print_start=provider_data.on_print_start,
         on_print_complete=provider_data.on_print_complete,

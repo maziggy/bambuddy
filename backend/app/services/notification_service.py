@@ -1414,11 +1414,13 @@ class NotificationService:
 
         config = json.loads(provider.config) if isinstance(provider.config, str) else provider.config
 
-        # attach_photo is a per-provider opt-out. Clearing image_data covers
-        # the byte-upload providers below; HA/Bark/Slack get their own check
-        # further down too, since they could otherwise get the URL an earlier
-        # provider in the same send left in photo_cache.
-        if not provider.attach_photo:
+        # attach_photo is a per-provider opt-out, photo_skip_events narrows it
+        # to some events (#2877). Clearing image_data covers the byte-upload
+        # providers below; HA/Bark/Slack/Gotify/Notify! check attach_photo
+        # again further down, since they could otherwise get the URL an
+        # earlier provider in the same send left in photo_cache.
+        attach_photo = bool(provider.attach_photo) and event_type not in (provider.photo_skip_events or ())
+        if not attach_photo:
             image_data = None
 
         try:
@@ -1519,7 +1521,7 @@ class NotificationService:
                 # Only Slack format needs a URL — generic format gets the
                 # base64 image field instead.
                 photo_url = None
-                if provider.attach_photo and (config.get("payload_format") or "generic").strip() == "slack":
+                if attach_photo and (config.get("payload_format") or "generic").strip() == "slack":
                     photo_url = await self._get_or_build_photo_url(db, image_data, event_type, photo_cache)
                 return await self._send_webhook(
                     config,
@@ -1533,7 +1535,7 @@ class NotificationService:
             elif provider.provider_type == "homeassistant":
                 photo_url = (
                     await self._get_or_build_photo_url(db, image_data, event_type, photo_cache)
-                    if provider.attach_photo
+                    if attach_photo
                     else None
                 )
                 return await self._send_homeassistant(config, title, message, db=db, image_url=photo_url)
@@ -1546,14 +1548,14 @@ class NotificationService:
                     bark_url = _bark_confirm
                 photo_url = (
                     await self._get_or_build_photo_url(db, image_data, event_type, photo_cache)
-                    if provider.attach_photo
+                    if attach_photo
                     else None
                 )
                 return await self._send_bark(config, title, message, url=bark_url, image_url=photo_url)
             elif provider.provider_type == "notify":
                 photo_url = (
                     await self._get_or_build_photo_url(db, image_data, event_type, photo_cache)
-                    if provider.attach_photo and notify_supports_photos(config.get("device_id"))
+                    if attach_photo and notify_supports_photos(config.get("device_id"))
                     else None
                 )
                 return await self._send_notify(
@@ -1568,7 +1570,7 @@ class NotificationService:
                     gotify_url = _gotify_confirm
                 photo_url = (
                     await self._get_or_build_photo_url(db, image_data, event_type, photo_cache)
-                    if provider.attach_photo
+                    if attach_photo
                     else None
                 )
                 return await self._send_gotify(

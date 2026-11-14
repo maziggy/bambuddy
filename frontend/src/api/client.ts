@@ -3284,6 +3284,19 @@ export type ProviderType = 'callmebot' | 'ntfy' | 'pushover' | 'telegram' | 'ema
 // How a Telegram provider collects the outcome verdict (#3046)
 export type TelegramVerdictMode = 'buttons' | 'reactions' | 'both';
 
+// Events that can carry a camera snapshot; a provider can skip it per event (#2877).
+export type NotificationPhotoEvent =
+  | 'print_start'
+  | 'print_complete'
+  | 'print_failed'
+  | 'print_stopped'
+  | 'print_progress'
+  | 'first_layer_complete'
+  | 'printer_error'
+  | 'ai_failure_detection'
+  | 'plate_not_empty'
+  | 'print_confirm_request';
+
 export interface NotificationProvider {
   id: number;
   name: string;
@@ -3291,6 +3304,7 @@ export interface NotificationProvider {
   enabled: boolean;
   config: Record<string, unknown>;
   attach_photo: boolean;
+  photo_skip_events: NotificationPhotoEvent[];
   // Print lifecycle events
   on_print_start: boolean;
   on_print_complete: boolean;
@@ -3361,6 +3375,7 @@ export interface NotificationProviderCreate {
   enabled?: boolean;
   config: Record<string, unknown>;
   attach_photo?: boolean;
+  photo_skip_events?: NotificationPhotoEvent[];
   // Print lifecycle events
   on_print_start?: boolean;
   on_print_complete?: boolean;
@@ -3424,6 +3439,7 @@ export interface NotificationProviderUpdate {
   enabled?: boolean;
   config?: Record<string, unknown>;
   attach_photo?: boolean;
+  photo_skip_events?: NotificationPhotoEvent[];
   // Print lifecycle events
   on_print_start?: boolean;
   on_print_complete?: boolean;

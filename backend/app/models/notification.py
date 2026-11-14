@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, false, true
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, false, true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
@@ -77,6 +77,11 @@ class NotificationProvider(Base):
     # True so ntfy/Pushover/Telegram/Discord keep behaving as they always
     # did; this is the opt-out for whoever doesn't want it.
     attach_photo: Mapped[bool | None] = mapped_column(Boolean, default=True, server_default=true())
+    # Events that go out without the snapshot although attach_photo is on
+    # (#2877), as event types ("print_progress", ...). An opt-out list, so
+    # NULL/empty keeps every event's photo, and an event that starts carrying
+    # one later gets it here too.
+    photo_skip_events: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     # Event triggers - print lifecycle
     on_print_start: Mapped[bool | None] = mapped_column(Boolean, default=False)

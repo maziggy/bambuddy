@@ -7103,6 +7103,8 @@ export default {
     onlyFromPrinter: 'Alleen meldingen verzenden voor gebeurtenissen van deze printer',
     attachPhotoLabel: 'Foto bijvoegen',
     attachPhotoDescription: 'Een camera-momentopname meesturen met meldingen, als er een is gemaakt voor de gebeurtenis',
+    attachPhotoEvents: 'Foto meesturen bij',
+    attachPhotoSkipped: 'Geen foto bij: {{events}}',
     quietHoursDnd: 'Stille uren (Niet storen)',
     quietStart: 'Start',
     quietEnd: 'Einde',

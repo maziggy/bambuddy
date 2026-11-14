@@ -6766,6 +6766,8 @@ export default {
     onlyFromPrinter: '이 프린터의 이벤트에 대한 알림만 전송',
     attachPhotoLabel: '사진 첨부',
     attachPhotoDescription: '이벤트에 대해 카메라 스냅샷이 촬영된 경우 알림에 포함합니다',
+    attachPhotoEvents: '사진을 첨부할 이벤트',
+    attachPhotoSkipped: '사진 없음: {{events}}',
     quietHoursDnd: '방해 금지 시간',
     quietStart: '시작',
     quietEnd: '종료',

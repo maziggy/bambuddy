@@ -6174,6 +6174,11 @@ async def _run_migrations(conn):
     )
     await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN off_bed_temp_threshold INTEGER NOT NULL DEFAULT 35")
 
+    # Migration: the events a provider sends without its camera snapshot
+    # (#2877). Nullable, no backfill: NULL means no event is skipped, so every
+    # provider keeps attaching photos exactly as before.
+    await _safe_execute(conn, "ALTER TABLE notification_providers ADD COLUMN photo_skip_events JSON")
+
     await _backfill_archive_run_photos(conn)
     await _migrate_h3c_queue_tray_ids(conn)
 

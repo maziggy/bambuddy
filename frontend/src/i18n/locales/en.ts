@@ -7105,6 +7105,8 @@ export default {
     onlyFromPrinter: 'Only send notifications for events from this printer',
     attachPhotoLabel: 'Attach Photo',
     attachPhotoDescription: 'Include a camera snapshot with notifications, when one was captured for the event',
+    attachPhotoEvents: 'Attach the photo to',
+    attachPhotoSkipped: 'No photo for: {{events}}',
     quietHoursDnd: 'Quiet Hours (Do Not Disturb)',
     quietStart: 'Start',
     quietEnd: 'End',

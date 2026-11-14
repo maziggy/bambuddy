@@ -7002,6 +7002,8 @@ export default {
     onlyFromPrinter: 'Yalnızca bu yazıcının olayları için bildirim gönder',
     attachPhotoLabel: 'Fotoğraf ekle',
     attachPhotoDescription: 'Olay için bir kamera görüntüsü alındıysa bildirimlere ekle',
+    attachPhotoEvents: 'Fotoğrafın ekleneceği olaylar',
+    attachPhotoSkipped: 'Fotoğrafsız: {{events}}',
     quietHoursDnd: 'Sessiz Saatler (Rahatsız Etme)',
     quietStart: 'Başlangıç',
     quietEnd: 'Bitiş',

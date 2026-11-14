@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Bell, Trash2, Settings2, Edit2, Send, Loader2, CheckCircle, XCircle, Moon, Clock, ChevronDown, ChevronUp, Calendar, Camera, CameraOff } from 'lucide-react';
 import { api } from '../api/client';
 import { formatDateOnly, parseUTCDate } from '../utils/date';
+import { enabledPhotoEvents } from '../utils/notificationPhotoEvents';
 import type { NotificationProvider, NotificationProviderUpdate } from '../api/client';
 import { Card, CardContent } from './Card';
 import { Button } from './Button';
@@ -765,6 +766,18 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                   onChange={(checked) => updateMutation.mutate({ attach_photo: checked })}
                 />
               </div>
+              {!notifyPhotosUnsupported && (provider.attach_photo ?? true) && (() => {
+                // Per-event opt-out (#2877), edited in the provider dialog.
+                const skipped = enabledPhotoEvents(provider).filter(({ event }) =>
+                  (provider.photo_skip_events ?? []).includes(event)
+                );
+                if (skipped.length === 0) return null;
+                return (
+                  <p className="text-xs text-bambu-gray pl-6">
+                    {t('notifications.attachPhotoSkipped', { events: skipped.map(({ labelKey }) => t(labelKey)).join(', ') })}
+                  </p>
+                );
+              })()}
 
               {/* Action Buttons */}
               <div className="flex gap-2 pt-2">

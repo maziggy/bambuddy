@@ -502,6 +502,8 @@ class _ModelCandidate:
     required_filament_types: str | None
     filament_overrides: str | None
     variant: "PrintQueueVariant | None" = None
+    # Nozzle diameter (mm) the file was sliced for, None when unknown (#3536).
+    sliced_nozzle: float | None = None
 
 
 def _sliced_for_model(archive, library_file) -> str | None:
@@ -511,6 +513,26 @@ def _sliced_for_model(archive, library_file) -> str | None:
     if library_file is not None and library_file.file_metadata:
         return library_file.file_metadata.get("sliced_for_model")
     return None
+
+
+def _sliced_nozzle(archive, library_file) -> float | None:
+    """Nozzle diameter (mm) a 3MF was sliced for, None when unknown (#3536).
+
+    Fail-safe: a missing, unparsable or non-positive value means "unknown", and
+    unknown never excludes a printer. Not rounded here; the tolerance lives in
+    ``_nozzle_mismatch_message``.
+    """
+    if archive is not None:
+        raw = archive.nozzle_diameter
+    elif library_file is not None and library_file.file_metadata:
+        raw = library_file.file_metadata.get("nozzle_diameter")
+    else:
+        return None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
 
 
 def _filament_constraints(candidate: _ModelCandidate) -> tuple[list[str] | None, list[dict] | None]:
@@ -599,6 +621,7 @@ def _candidates_for(item: PrintQueueItem) -> list[_ModelCandidate]:
                 sliced_for=_sliced_for_model(item.archive, item.library_file),
                 required_filament_types=item.required_filament_types,
                 filament_overrides=item.filament_overrides,
+                sliced_nozzle=_sliced_nozzle(item.archive, item.library_file),
             )
         ]
 
@@ -617,6 +640,7 @@ def _candidates_for(item: PrintQueueItem) -> list[_ModelCandidate]:
             required_filament_types=v.required_filament_types,
             filament_overrides=v.filament_overrides,
             variant=v,
+            sliced_nozzle=_sliced_nozzle(None, v.library_file),
         )
         for v in ordered
     ]
@@ -1134,6 +1158,28 @@ def _nozzle_mismatch_message(
         f"{where}. Re-slice for an available nozzle, or fit the matching "
         f"nozzle before printing."
     )
+
+
+def _wrong_nozzle_label(printer_name: str, status, sliced_nozzle: float | None) -> str | None:
+    """Label of a printer that cannot print a *sliced_nozzle* file, else None (#3536).
+
+    Used by the "Any <model>" pick, which before #3536 ignored the nozzle and
+    handed a 0.6 file to a 0.4 printer that then failed in ``_start_print``.
+    None means "fits or unknown" (no status, no sliced diameter, no reported
+    nozzles), so a printer is only ever skipped on a POSITIVE mismatch. The
+    decision stays in ``_nozzle_mismatch_message`` (same tolerance, same rack
+    rule as the start guard); this only formats the name for the wait reason.
+    """
+    if status is None:
+        return None
+    installed = _installed_nozzle_diameters(status)
+    rack = _rack_nozzle_diameters(status)
+    if _nozzle_mismatch_message(sliced_nozzle, installed, rack) is None:
+        return None
+    where = _format_diameters(installed) if installed else "no nozzle mounted"
+    if rack:
+        where += f", rack {_format_diameters(rack)}"
+    return f"{printer_name} ({where})"
 
 
 def _describe_filament(entry: dict, nozzle_key: str) -> str:
@@ -2537,6 +2583,7 @@ class PrintScheduler:
                                 drying_ids=drying_held,
                                 unmatched_on=unmatched_on,
                                 refused_uploads={pid: self._upload_refusal_kind.get(pid) for pid in backoff_printers},
+                                sliced_nozzle=candidate.sliced_nozzle,
                             )
                             # "Only if the previous print succeeded" is about the
                             # printer the job lands on: one whose last print failed
@@ -3433,6 +3480,8 @@ class PrintScheduler:
         rather than woken (#2876): the colours are readable while it is off, so
         switching a farm on one machine at a time to discover them wakes
         printers that could never have taken the job.
+        A printer whose last known nozzle cannot print the file is passed over
+        the same way (#3536).
 
         Deliberately does NOT go on to match the job once a printer is up: AMS
         trays arrive with the first status push after connect, so a filament
@@ -3469,6 +3518,23 @@ class PrintScheduler:
                         "Not powering on printer %s for a %s job: it is awaiting plate-clear acknowledgment",
                         printer.id,
                         candidate.target_model,
+                    )
+                    continue
+
+                # #3536: the matcher rejects a printer whose nozzle cannot print
+                # the file, so waking one only spends this pass's single wake and
+                # the boot wait. A powered-off printer keeps its last status, so
+                # the nozzle is readable here. Fail-safe: no status or no reported
+                # nozzle means "fits" (None) and the printer is woken as before.
+                label = _wrong_nozzle_label(
+                    printer.name, printer_manager.get_status(printer.id), candidate.sliced_nozzle
+                )
+                if label:
+                    logger.info(
+                        "Not powering on printer %s for a %s job: its nozzle cannot print the file (%s)",
+                        printer.id,
+                        candidate.target_model,
+                        label,
                     )
                     continue
 
@@ -3536,6 +3602,7 @@ class PrintScheduler:
         drying_ids: set[int] | None = None,
         unmatched_on: Callable[[int], Awaitable[list[str]]] | None = None,
         refused_uploads: Mapping[int, FtpFailureKind | None] | None = None,
+        sliced_nozzle: float | None = None,
     ) -> tuple[int | None, str | None]:
         """Find an idle, connected printer matching the model with compatible filaments.
 
@@ -3568,6 +3635,9 @@ class PrintScheduler:
             refused_uploads: Excluded printers out of dispatch after a refused upload,
                              with why (#3409). Each is named with the reason its own
                              queue rows show, not as "Busy".
+            sliced_nozzle: Nozzle diameter the file was sliced for (#3536). A printer
+                           without that nozzle is passed over; None (unknown) passes
+                           every printer, as before.
 
         Returns:
             Tuple of (printer_id, waiting_reason):
@@ -3593,12 +3663,23 @@ class PrintScheduler:
         printers_offline = []
         printers_offline_no_plug = []
         printers_missing_filament: list[tuple[str, list[str]]] = []
+        printers_wrong_nozzle: list[str] = []
         candidates: list[tuple[int, int]] = []  # (printer_id, color_match_count)
         # The first eligible printer that is short on filament, kept in case
         # every eligible printer is (#3137).
         short_fallback: int | None = None
 
         for printer in printers:
+            # #3536: the pick ignored the nozzle, so a job sliced for 0.6 mm went to a
+            # 0.4 mm printer and the #1899 guard then failed it in _start_print instead
+            # of trying another printer. Fail-safe: no diameter or no reported nozzle
+            # fits (_wrong_nozzle_label returns None). Checked first on purpose: a
+            # wrong-nozzle printer that is busy, excluded or offline must not read as
+            # "Busy"/"Offline", which would hold the job silently forever.
+            wrong_nozzle = _wrong_nozzle_label(printer.name, printer_manager.get_status(printer.id), sliced_nozzle)
+            if wrong_nozzle:
+                printers_wrong_nozzle.append(wrong_nozzle)
+                continue
             if printer.id in exclude_ids and refused_uploads and printer.id in refused_uploads:
                 printers_refused.append(_refused_upload_hold_reason(printer.name, refused_uploads[printer.id]))
                 continue
@@ -3741,6 +3822,21 @@ class PrintScheduler:
 
         if short_fallback is not None:
             return short_fallback, None
+
+        # #3536: nothing else is in the way, so the nozzle is the whole reason. Named
+        # per printer; when something else also waits, the wrong ones stay out so
+        # that reason (e.g. "Busy") is not drowned by a printer that cannot help.
+        if printers_wrong_nozzle and not (
+            printers_busy
+            or printers_refused
+            or printers_offline
+            or printers_offline_no_plug
+            or printers_missing_filament
+        ):
+            return None, (
+                f"No {normalized_model}{location_suffix} has a {sliced_nozzle:g}mm nozzle: "
+                f"{', '.join(printers_wrong_nozzle)}"
+            )
 
         # Build waiting reason from what we found
         reasons = []
@@ -6215,7 +6311,10 @@ class PrintScheduler:
         of each of its candidate models, in its location, that its creator may use.
 
         ``cache`` holds one lookup per model, location and creator for the pass,
-        so a long queue of model jobs does not query once per job."""
+        so a long queue of model jobs does not query once per job.
+
+        A printer whose last known nozzle cannot print the file is left out
+        (#3536): the job stays pending there, so it must not hold drying off."""
         printer_ids: set[int] = set()
         for candidate in _candidates_for(item):
             if not candidate.target_model:
@@ -6224,7 +6323,16 @@ class PrintScheduler:
             if key not in cache:
                 printers = await self._printers_for_model(db, candidate.target_model, item.target_location, scope)
                 cache[key] = {printer.id for printer in printers}
-            printer_ids |= cache[key]
+            # #3536: a job with no fitting nozzle now stays pending instead of
+            # failing at once, so it must not count for a printer whose last
+            # known nozzle cannot print it (it would block or trigger drying
+            # there for good). Unknown nozzle fits (fail-safe). The cache stays
+            # per model; the filter runs per candidate, not per cache entry.
+            printer_ids |= {
+                pid
+                for pid in cache[key]
+                if _wrong_nozzle_label("", printer_manager.get_status(pid), candidate.sliced_nozzle) is None
+            }
         return printer_ids
 
     async def _check_auto_drying(
@@ -8670,6 +8778,7 @@ class PrintScheduler:
                 printer_scope=printer_scope,
                 is_short=is_short,
                 unmatched_on=unmatched_on,
+                sliced_nozzle=candidates[0].sliced_nozzle,
             )
             # Every idle printer short comes back as the first of them.
             if match_id is None or await is_short(match_id):

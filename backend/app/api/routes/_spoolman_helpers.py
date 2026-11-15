@@ -14,6 +14,7 @@ from typing import Any
 from typing_extensions import TypedDict
 
 from backend.app.api.routes._url_safety import assert_safe_lan_service_url
+from backend.app.utils.filament_finish import KNOWN_FINISHES, finishes
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +110,66 @@ def assert_safe_spoolman_url(url: str) -> None:
 # Six characters, or eight when the filament carries an alpha byte. The write
 # side stores eight only for genuinely translucent spools (#2912); rejecting
 # them here turned every clear spool into neutral grey on read.
+# Spoolman has no subtype or colour-name field, only the filament's name, so
+# both are read out of it. Finish phrases longest first, so "Dual Color" is
+# taken before anything inside it.
+_FINISH_PHRASES: tuple[tuple[str, ...], ...] = tuple(
+    sorted((tuple(f.split()) for f in KNOWN_FINISHES), key=len, reverse=True)
+)
+# Punctuation that only separates parts of a name: "Gold - Basic PLA".
+_NAME_PUNCT = "-\u2013\u2014,/|()[]:;"
+
+
+def split_spoolman_filament_name(material: str | None, name: str | None) -> tuple[str | None, str | None]:
+    """(subtype, colour name) from a Spoolman filament's name (#3561).
+
+    Bambuddy writes a filament as ``"<material> <subtype>"`` ("PLA Matte"), and
+    that is all this used to read: the material came off the front and the
+    rest was the subtype. Spoolman users name a filament after the product --
+    "Matte Scarlet Red", "Silk+ Baby Blue", "Gold - Basic PLA" -- and then the
+    whole name became the subtype and the colour was left unnamed.
+
+    The material is removed wherever it stands. The finishes Bambuddy knows
+    (``KNOWN_FINISHES``: Basic, Matte, Silk, ...) are the subtype, as written,
+    and the rest is the colour. A name with no finish keeps the old reading
+    when it starts with the material, so a subtype Bambuddy wrote that is no
+    finish ("PLA Engineering") still comes back as the subtype -- unless the
+    material already carries the finish ("PLA Matte" / "PLA Matte Grey"), where
+    what follows can only be the colour.
+    """
+    mat = (material or "").strip()
+    text = (name or "").strip()
+    starts_with_material = bool(mat) and bool(re.match(rf"{re.escape(mat)}(?![\w-])", text, flags=re.IGNORECASE))
+    if starts_with_material:
+        rest = text[len(mat) :]
+    elif mat:
+        rest = re.sub(rf"(?<![\w-]){re.escape(mat)}(?![\w-])", " ", text, count=1, flags=re.IGNORECASE)
+    else:
+        rest = text
+
+    tokens = [t.strip(_NAME_PUNCT) for t in rest.split()]
+    tokens = [t for t in tokens if t and any(ch.isalnum() for ch in t)]
+    finish_words: list[str] = []
+    colour_words: list[str] = []
+    i = 0
+    while i < len(tokens):
+        for phrase in _FINISH_PHRASES:
+            window = tokens[i : i + len(phrase)]
+            if tuple(t.lower().rstrip("+") for t in window) == phrase:
+                finish_words.extend(window)
+                i += len(phrase)
+                break
+        else:
+            colour_words.append(tokens[i])
+            i += 1
+
+    if finish_words:
+        return " ".join(finish_words), " ".join(colour_words) or None
+    if starts_with_material and not finishes(mat):
+        return rest.strip() or None, None
+    return None, " ".join(colour_words) or None
+
+
 _COLOR_HEX_RE = re.compile(r"^[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?$")
 _TAG_HEX_RE = re.compile(r"^[0-9A-F]+$")
 
@@ -400,13 +461,10 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
         elif 8 <= len(uid) <= 30:
             tag_uid = tag_uid or uid
 
-    # Subtype = filament name with material prefix stripped
+    # Subtype and colour from the filament's name (#3561).
     material: str = (filament.get("material") or "").strip()
     filament_name: str = (filament.get("name") or "").strip()
-    if material and filament_name.upper().startswith(material.upper()):
-        subtype: str | None = filament_name[len(material) :].strip() or None
-    else:
-        subtype = filament_name or None
+    subtype, name_color = split_spoolman_filament_name(material, filament_name)
 
     # Colour: validate as 6- or 8-char hex; fall back to neutral grey for invalid
     # values. An 8-char value already carries its alpha, so appending the opaque
@@ -487,14 +545,16 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
     #   2. filament.color_name (forward-compat — picks up the value if a
     #      future Spoolman release adds the field, or if an admin populated
     #      it via a custom extra-field they registered themselves)
-    #   3. subtype (synth fallback so the inventory list isn't a sea of
+    #   3. the colour named in the filament's name ("Matte Scarlet Red" ->
+    #      "Scarlet Red", #3561). The user wrote it, so it counts as set.
+    #   4. subtype (synth fallback so the inventory list isn't a sea of
     #      "Unknown color" entries on installs with neither field set)
     #
     # color_name_is_synthesized = True only when we fell back to subtype.
     # The edit form uses it to leave the input blank, so the user doesn't
     # round-trip the synth value back as if they had set it.
     extra_color_name = _extract_extra_str(extra, "bambu_color_name") or None
-    stored_color_name = extra_color_name or (filament.get("color_name") or None)
+    stored_color_name = extra_color_name or (filament.get("color_name") or None) or name_color
     color_name: str | None = stored_color_name or subtype or None
     color_name_is_synthesized: bool = stored_color_name is None and color_name is not None
 

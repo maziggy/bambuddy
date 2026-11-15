@@ -43,7 +43,12 @@ repos:
         # weighted at ~89 ms and the balance it exists to provide degrades.
         # It compresses to ~314 kB in the object store. Regenerate with
         # --store-durations; see the backend test job in .github/workflows/ci.yml.
-        exclude: ^(static/assets/|CHANGELOG\.md$|backend/tests/\.test_durations$)
+        #
+        # The label fonts in backend/app/data/fonts are embedded in label PDFs.
+        # The CJK fallbacks (#3560) cannot fit under the guard: Droid Sans
+        # Fallback is 4 MB of mostly Chinese, and Noto Sans KR is already cut
+        # down to Hangul alone (2.4 MB). A PDF embeds only the glyphs it uses.
+        exclude: ^(static/assets/|CHANGELOG\.md$|backend/tests/\.test_durations$|backend/app/data/fonts/[^/]+\.ttf$)
       - id: check-merge-conflict
       - id: debug-statements
       - id: detect-private-key

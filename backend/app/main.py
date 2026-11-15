@@ -2320,6 +2320,12 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
                 name=f"printer-offline-notify-{printer_id}",
             )
     elif state.connected:
+        if prev_connected is False:
+            # A printer back from a dropped connection, often a restart, may
+            # take files again: don't hold it to an upload backoff from
+            # before (#3563). Not on Bambuddy's own start (no previous state).
+            client = printer_manager.get_client(printer_id)
+            print_scheduler.printer_reconnected(printer_id, client.ip_address if client else None)
         # Kept until the relay can actually send online: with its broker down
         # now, the next status update after the reconnect sends it.
         if printer_id in _printer_offline_published and mqtt_relay.enabled and mqtt_relay.connected:

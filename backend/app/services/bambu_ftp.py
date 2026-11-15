@@ -705,6 +705,15 @@ class BambuFTPClient:
             return False
         return True
 
+    @classmethod
+    def clear_handshake_cooloff(cls, ip_address: str) -> None:
+        """End *ip_address*'s handshake cool-off early, for a printer that has
+        just reconnected (#3563): a cool-off from before a restart says nothing
+        about the printer now."""
+        cls._handshake_blocked_until.pop(ip_address, None)
+        cls._handshake_skip_logged.pop(ip_address, None)
+        cls._cleartext_reply.pop(ip_address, None)
+
     def _record_stall(self, what: str) -> None:
         if self.records_handshake_cooloff:
             _record_ftps_stall(self.ip_address, what)

@@ -105,7 +105,7 @@ from backend.app.utils.filament_ids import (
     filament_id_to_setting_id,
     normalize_slicer_filament,
 )
-from backend.app.utils.filament_types import nozzle_temp_range, printer_filament_type
+from backend.app.utils.filament_types import nozzle_temp_range, printer_filament_type, support_filament_type
 from backend.app.utils.local_time import day_zone, local_date_end, local_date_start
 from backend.app.utils.natural_sort import natural_sort_key
 from backend.app.utils.tag_normalization import normalize_tag_uid, normalize_tray_uuid
@@ -240,6 +240,9 @@ async def apply_spool_to_slot_via_mqtt(
     # the spool has a preset, its answer wins (issue #2902, @doncaruana).
     if type_override:
         tray_type = printer_filament_type(type_override)
+    # A support material keeps the slicer's suffix ("PLA-S"), which neither the
+    # material column nor most presets' type carries (#3559).
+    tray_type = support_filament_type(tray_type, tray_info_idx, f"{slot_slicer_filament_name or ''} {tray_sub_brands}")
 
     if not tray_info_idx:
         reused = reusable_slot_filament_id(

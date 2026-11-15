@@ -91,7 +91,7 @@ from backend.app.utils.filament_ids import (
     filament_id_to_setting_id,
     normalize_slicer_filament,
 )
-from backend.app.utils.filament_types import nozzle_temp_range, printer_filament_type
+from backend.app.utils.filament_types import nozzle_temp_range, printer_filament_type, support_filament_type
 from backend.app.utils.tray_ids import external_tray_id
 
 logger = logging.getLogger(__name__)
@@ -2114,6 +2114,10 @@ async def assign_spoolman_slot(
             # spool has one (issue #2902, @doncaruana).
             if type_override:
                 tray_type = printer_filament_type(type_override)
+            # A support material keeps the slicer's suffix ("PLA-S") (#3559).
+            tray_type = support_filament_type(
+                tray_type, tray_info_idx, f"{slot_slicer_filament_name or ''} {tray_sub_brands}"
+            )
 
             material_upper = material.upper().strip()
             # Without a preset, the slot's own filament id where it fits, as in

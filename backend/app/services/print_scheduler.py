@@ -35,6 +35,7 @@ from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 from backend.app.services import drying_preflight, kprofile_drift, print_dispatch_context, stock_forecast
 from backend.app.services.bambu_ftp import (
+    BambuFTPClient,
     FtpFailureKind,
     FtpFailureReport,
     UploadCancelled,
@@ -1764,6 +1765,25 @@ class PrintScheduler:
                 del keyed[key]
         for item_id in [i for i, sent in self._sent_unstarted_print.items() if sent[0] == printer_id]:
             del self._sent_unstarted_print[item_id]
+
+    def printer_reconnected(self, printer_id: int, ip_address: str | None) -> None:
+        """Let a printer that has just reconnected take an upload on the next pass (#3563).
+
+        A printer whose file service stopped answering is often fixed by a
+        restart, but its upload backoff ran on for up to an hour, and nothing
+        but the timer ended it. A reconnect ends the window. The refusal count
+        and the notified text stay: a printer that still refuses gets the next,
+        longer window and no second "job waiting", and a successful upload
+        resets them as before.
+
+        The FTP client's handshake cool-off for the printer goes too. It dates
+        from before the reconnect, and inside it the first retry would fail
+        without reaching the printer and count as another refusal.
+        """
+        if self._upload_backoff.pop(printer_id, None) is not None:
+            logger.info("Printer %s reconnected; retrying uploads to it without waiting for the backoff", printer_id)
+        if ip_address:
+            BambuFTPClient.clear_handshake_cooloff(ip_address)
 
     async def check_queue(self) -> bool:
         """Check for prints ready to start.

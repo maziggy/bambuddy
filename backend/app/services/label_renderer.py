@@ -61,10 +61,22 @@ from reportlab.pdfgen import canvas as rl_canvas
 # PDF base fonts (Helvetica) only cover Western European characters, so names
 # in Polish, Czech, Cyrillic or Greek lost letters. Liberation Sans has the
 # same letter widths as Helvetica, so the layout and truncation are unchanged.
+#
+# Liberation Sans has no Chinese, Japanese or Korean, so a name written in one
+# printed as empty boxes, in the PDF and in the preview rasterised from it
+# (#3560). A character the label font lacks is drawn in a fallback font
+# instead: Droid Sans Fallback for Chinese and Japanese, and Noto Sans KR --
+# cut down to Hangul, which Droid lacks -- for Korean. Only the characters a
+# label uses are embedded. Neither has a bold or italic face, so CJK text in a
+# bold or italic line prints regular.
 _FONT_DIR = Path(__file__).resolve().parent.parent / "data" / "fonts"
 FONT_REGULAR = "LabelSans"
 FONT_BOLD = "LabelSans-Bold"
 FONT_ITALIC = "LabelSans-Italic"
+FONT_CJK = "LabelCJK"
+FONT_HANGUL = "LabelHangul"
+# Tried in this order for a character the label font cannot draw.
+_FALLBACK_FONTS = (FONT_CJK, FONT_HANGUL)
 
 
 def _register_fonts() -> None:
@@ -73,12 +85,49 @@ def _register_fonts() -> None:
         (FONT_REGULAR, "LiberationSans-Regular.ttf"),
         (FONT_BOLD, "LiberationSans-Bold.ttf"),
         (FONT_ITALIC, "LiberationSans-Italic.ttf"),
+        (FONT_CJK, "DroidSansFallbackFull.ttf"),
+        (FONT_HANGUL, "NotoSansKR-Hangul.ttf"),
     ):
         if name not in registered:
             pdfmetrics.registerFont(TTFont(name, str(_FONT_DIR / filename)))
 
 
 _register_fonts()
+
+
+def _has_glyph(font: str, ch: str) -> bool:
+    # A TrueType font's character map, as reportlab parsed it on registration.
+    return ord(ch) in pdfmetrics.getFont(font).face.charToGlyph  # pyright: ignore[reportAttributeAccessIssue]
+
+
+def _font_runs(text: str, font: str) -> list[tuple[str, str]]:
+    """Split ``text`` into (font, piece) runs: ``font`` wherever it has the
+    character, else the first fallback that does (#3560). A character no font
+    has stays with ``font``, which draws its missing-glyph box as before."""
+    runs: list[tuple[str, str]] = []
+    for ch in text:
+        use = font
+        if not _has_glyph(font, ch):
+            use = next((f for f in _FALLBACK_FONTS if _has_glyph(f, ch)), font)
+        if runs and runs[-1][0] == use:
+            runs[-1] = (use, runs[-1][1] + ch)
+        else:
+            runs.append((use, ch))
+    return runs
+
+
+def _text_width(text: str, font: str, size: float) -> float:
+    return sum(pdfmetrics.stringWidth(piece, f, size) for f, piece in _font_runs(text, font))
+
+
+def _draw_text(c: rl_canvas.Canvas, x: float, y: float, text: str, font: str, size: float) -> None:
+    """``drawString`` that switches to a fallback font for the characters
+    ``font`` cannot draw, and leaves ``font`` set afterwards."""
+    for f, piece in _font_runs(text, font):
+        c.setFont(f, size)
+        c.drawString(x, y, piece)
+        x += pdfmetrics.stringWidth(piece, f, size)
+    c.setFont(font, size)
 
 
 def _new_canvas(buf: io.BytesIO, pagesize: tuple[float, float]) -> rl_canvas.Canvas:
@@ -307,11 +356,12 @@ def _draw_qr(c: rl_canvas.Canvas, x: float, y: float, size: float, payload: str)
 
 
 def _truncate_to_width(c: rl_canvas.Canvas, text: str, font: str, size: float, max_w: float) -> str:
-    """Truncate ``text`` with an ellipsis so it fits within ``max_w`` points."""
-    if c.stringWidth(text, font, size) <= max_w:
+    """Truncate ``text`` with an ellipsis so it fits within ``max_w`` points,
+    measured in the fonts it will be drawn in."""
+    if _text_width(text, font, size) <= max_w:
         return text
     ell = "…"
-    while text and c.stringWidth(text + ell, font, size) > max_w:
+    while text and _text_width(text + ell, font, size) > max_w:
         text = text[:-1]
     return text + ell if text else ell
 
@@ -401,7 +451,7 @@ def _draw_label_tight(
     if data.brand and "brand" in fields:
         c.setFont(FONT_BOLD, brand_size)
         brand = _truncate_to_width(c, data.brand, FONT_BOLD, brand_size, text_w)
-        c.drawString(text_x, y + h - pad - brand_size, brand)
+        _draw_text(c, text_x, y + h - pad - brand_size, brand, FONT_BOLD, brand_size)
 
     # Second line: material + subtype, small
     sub_size = 5
@@ -410,7 +460,7 @@ def _draw_label_tight(
     if sub_line:
         c.setFont(FONT_REGULAR, sub_size)
         sub_line = _truncate_to_width(c, sub_line, FONT_REGULAR, sub_size, text_w)
-        c.drawString(text_x, sub_y_baseline, sub_line)
+        _draw_text(c, text_x, sub_y_baseline, sub_line, FONT_REGULAR, sub_size)
 
     # Third line (when there's room): hex code, tiny — useful when the user
     # has multiple near-identical colours in the same material family.
@@ -516,7 +566,7 @@ def _draw_label_roomy(
             break
         c.setFont(font, size)
         cursor_y -= size
-        c.drawString(text_x, cursor_y, _truncate_to_width(c, text, font, size, text_w))
+        _draw_text(c, text_x, cursor_y, _truncate_to_width(c, text, font, size, text_w), font, size)
         cursor_y -= gap
 
     if show_id:

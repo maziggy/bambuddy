@@ -139,6 +139,24 @@ class TestQueueWithVariants:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_rejects_a_specific_build_plate(self, async_client, db_session, sliced_file_factory, printer_factory):
+        """Each alternative may be for a different plate type (#1306)."""
+        from backend.app.models.build_plate import BuildPlate
+
+        plate = BuildPlate(name="Carbon Fiber", base_type="smooth_pei")
+        db_session.add(plate)
+        await db_session.commit()
+        await printer_factory(model="H2S")
+        await printer_factory(model="H2C")
+        h2s = await sliced_file_factory("H2S")
+        h2c = await sliced_file_factory("H2C")
+
+        r = await _queue_variants(async_client, h2s.id, h2c.id, required_plate_id=plate.id)
+        assert r.status_code == 400
+        assert "build plate" in r.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_rejects_a_file_alongside_the_variants(self, async_client, sliced_file_factory, printer_factory):
         await printer_factory(model="H2S")
         await printer_factory(model="H2C")

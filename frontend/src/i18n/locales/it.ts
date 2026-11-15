@@ -242,6 +242,15 @@ export default {
 
   // Printers page
   printers: {
+    buildPlate: {
+      label: 'Piatto montato',
+      swap: 'Cambia il piatto montato',
+      notTracked: 'Piatto non tracciato',
+      swapFailed: 'Impossibile cambiare il piatto',
+      confirmMidPrintTitle: 'Stampa in corso',
+      confirmMidPrintMessage: '{{name}} sta stampando. Cambia il piatto solo dopo averlo sostituito davvero: la coda invierà il lavoro successivo per il nuovo piatto appena termina questa stampa.',
+      confirmMidPrintConfirm: 'Cambia piatto',
+    },
     locations: {
       title: 'Posizioni delle stampanti',
       backToPrinters: 'Torna alle stampanti',
@@ -2796,6 +2805,31 @@ export default {
       keepExistingSpoolWeightDesc: 'Le bobine già create con questo tipo di filamento mantengono il vecchio peso tara. Le nuove bobine usano il valore aggiornato.',
       applyToAllSpools: 'Applica a tutte le bobine',
       applyToAllSpoolsDesc: 'Tutti i calcoli del peso per questo tipo di filamento usano immediatamente il nuovo peso tara.',
+    },
+    buildPlates: {
+      title: 'Piatti di stampa',
+      enable: 'Attiva il tracciamento dei piatti',
+      enableDescription: 'Registra quale piatto è montato su ogni stampante e invia i lavori in coda solo a una stampante il cui piatto corrisponde a quello per cui il file è stato elaborato. Disattivato per impostazione predefinita: i piatti vengono ignorati.',
+      reEnabledNote: 'I piatti registrati prima di disattivare il tracciamento verranno cancellati al salvataggio: imposta il piatto sulla scheda di ogni stampante.',
+      ownedTitle: 'Quali piatti possiedi?',
+      ownedDescription: 'Seleziona i piatti che usi. Solo i piatti selezionati possono essere scelti per una stampante o un lavoro. I piatti con motivo, come i fogli 3D Effect, contano come il loro tipo base.',
+      addCustom: 'Aggiungi piatto personalizzato',
+      addTitle: 'Nuovo piatto',
+      name: 'Nome',
+      namePlaceholder: 'es. PEI oro',
+      baseType: 'Tipo di piatto nello slicer',
+      baseTypeHint: 'Il tipo di piatto che selezioni nello slicer per stampare su questo piatto.',
+      pattern: 'Motivo (facoltativo)',
+      patternPlaceholder: 'es. Fibra di carbonio',
+      image: 'URL della foto (facoltativo)',
+      add: 'Aggiungi piatto',
+      added: 'Piatto aggiunto',
+      saveFailed: 'Impossibile salvare il piatto',
+      deleteTitle: 'Elimina piatto',
+      deleteMessage: 'Eliminare {{name}}? Le stampanti che lo usano non saranno più tracciate e i lavori che lo richiedevano accetteranno qualsiasi piatto dello stesso tipo.',
+      untickTitle: 'Piatto in uso',
+      untickMessage: '{{name}} è montato su {{printers}} stampante/i e {{jobs}} lavoro/i in coda lo attendono. Deselezionarlo lo nasconde per i nuovi lavori; quei lavori continueranno ad attenderlo.',
+      untickConfirm: 'Deseleziona comunque',
     },
     colorCatalog: {
       title: 'Catalogo colori',
@@ -5696,6 +5730,13 @@ export default {
 
   // Print modal
   printModal: {
+    buildPlate: {
+      label: 'Piatto di stampa',
+      anyOfType: 'Qualsiasi {{type}}',
+      fromFile: 'Piatto dal file',
+      any: 'Qualsiasi piatto (ignora)',
+      hint: 'Il lavoro attende finché una stampante non ha montato un piatto compatibile.',
+    },
     multiFile: {
       groupLabel: 'Cosa diventano i file selezionati',
       alternatives: 'Alternative',

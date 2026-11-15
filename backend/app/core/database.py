@@ -667,6 +667,7 @@ async def init_db():
         archive,
         auth_ephemeral,
         bug_report,
+        build_plate,
         color_catalog,
         connected_app,
         external_link,
@@ -755,6 +756,7 @@ async def init_db():
     # Seed default catalog entries
     await seed_spool_catalog()
     await seed_color_catalog()
+    await seed_build_plates()
 
     await check_pool_fits_server()
 
@@ -5918,6 +5920,14 @@ async def _run_migrations(conn):
     # Spoolman and the location sync then imported as storage locations.
     await _migrate_drop_ams_slot_locations(conn)
 
+    # Migration: build plate tracking (#1306). The build_plates table is new,
+    # so create_all() builds it; these add the plate columns to existing tables.
+    # All nullable: NULL means "not tracked" / "no plate constraint", which is
+    # exactly today's behaviour for every existing printer and queued job.
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN installed_plate_id INTEGER")
+    await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN required_plate_type VARCHAR(32)")
+    await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN required_plate_id INTEGER")
+    await _safe_execute(conn, "ALTER TABLE print_queue_variants ADD COLUMN required_plate_type VARCHAR(32)")
     # Data migration: printer locations as the locations API stores them (#2962).
     await _migrate_normalize_printer_locations(conn)
 
@@ -8422,6 +8432,48 @@ async def seed_spool_catalog():
             session.add(SpoolCatalogEntry(name=name, weight=weight, is_default=True))
         await session.commit()
         logger.info("Seeded %d default spool catalog entries", len(DEFAULT_SPOOL_CATALOG))
+
+
+async def seed_build_plates():
+    """Insert any built-in build plates that are missing (#1306).
+
+    Keyed on ``builtin_key`` rather than "table is empty", so plates added in a
+    later release reach existing installs, while a user's edits to a seeded row
+    (renaming it, ticking a 3D Effect plate on) are never overwritten.
+    """
+    import logging
+
+    from sqlalchemy import select
+
+    from backend.app.models.build_plate import DEFAULT_BUILD_PLATES, BuildPlate
+
+    logger = logging.getLogger(__name__)
+
+    async with async_session() as session:
+        existing = set(
+            (await session.execute(select(BuildPlate.builtin_key).where(BuildPlate.builtin_key.is_not(None))))
+            .scalars()
+            .all()
+        )
+        added = 0
+        for key, name, base_type, pattern, image, enabled, sort_order in DEFAULT_BUILD_PLATES:
+            if key in existing:
+                continue
+            session.add(
+                BuildPlate(
+                    builtin_key=key,
+                    name=name,
+                    base_type=base_type,
+                    pattern=pattern,
+                    image=image,
+                    enabled=enabled,
+                    sort_order=sort_order,
+                )
+            )
+            added += 1
+        if added:
+            await session.commit()
+            logger.info("Seeded %d built-in build plates", added)
 
 
 async def seed_color_catalog():

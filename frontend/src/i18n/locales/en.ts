@@ -242,6 +242,15 @@ export default {
 
   // Printers page
   printers: {
+    buildPlate: {
+      label: 'Installed build plate',
+      swap: 'Change the installed build plate',
+      notTracked: 'Plate not tracked',
+      swapFailed: 'Could not change the plate',
+      confirmMidPrintTitle: 'A print is running',
+      confirmMidPrintMessage: '{{name}} is printing. Only change the plate after it has actually been swapped — the queue will send the next job for the new plate as soon as this print ends.',
+      confirmMidPrintConfirm: 'Change plate',
+    },
     // Printer Locations page (#2962). Counts are written as "label: N" so
     // they read correctly in every language without plural forms.
     locations: {
@@ -2863,6 +2872,31 @@ export default {
       keepExistingSpoolWeightDesc: 'Spools already created with this filament type retain the old tare weight. New spools use the updated value.',
       applyToAllSpools: 'Apply to all spools',
       applyToAllSpoolsDesc: 'All weight calculations for this filament type immediately use the new tare weight.',
+    },
+    buildPlates: {
+      title: 'Build Plates',
+      enable: 'Enable build plate tracking',
+      enableDescription: 'Record which build plate is on each printer and only send queued jobs to a printer whose plate matches the plate the file was sliced for. Off by default — when off, plates are ignored.',
+      reEnabledNote: 'Plates recorded before tracking was turned off will be cleared when you save — set the plate on each printer card.',
+      ownedTitle: 'Which plates do you own?',
+      ownedDescription: 'Tick the plates you use. Only ticked plates can be selected for a printer or a job. Patterned plates such as the 3D Effect sheets count as their base type.',
+      addCustom: 'Add custom plate',
+      addTitle: 'New plate',
+      name: 'Name',
+      namePlaceholder: 'e.g. Gold PEI',
+      baseType: 'Slicer plate type',
+      baseTypeHint: 'The plate type you select in the slicer when printing on this plate.',
+      pattern: 'Pattern (optional)',
+      patternPlaceholder: 'e.g. Carbon Fiber',
+      image: 'Photo URL (optional)',
+      add: 'Add plate',
+      added: 'Plate added',
+      saveFailed: 'Could not save the plate',
+      deleteTitle: 'Delete plate',
+      deleteMessage: 'Delete {{name}}? Printers using it will be set to not tracked, and queued jobs that asked for it will accept any plate of the same type.',
+      untickTitle: 'Plate in use',
+      untickMessage: '{{name}} is installed on {{printers}} printer(s) and {{jobs}} queued job(s) are waiting for it. Unticking hides it from new jobs; those jobs will keep waiting for it.',
+      untickConfirm: 'Untick anyway',
     },
     colorCatalog: {
       title: 'Color Catalog',
@@ -5757,6 +5791,13 @@ export default {
 
   // Print modal
   printModal: {
+    buildPlate: {
+      label: 'Build plate',
+      anyOfType: 'Any {{type}}',
+      fromFile: 'Plate from file',
+      any: 'Any plate (ignore plate)',
+      hint: 'The job waits until a printer has a matching plate installed.',
+    },
     multiFile: {
       groupLabel: 'What the selected files become',
       alternatives: 'Alternatives',

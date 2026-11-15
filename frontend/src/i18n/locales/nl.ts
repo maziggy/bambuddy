@@ -242,6 +242,15 @@ export default {
 
   // Printers page
   printers: {
+    buildPlate: {
+      label: 'Geplaatste bouwplaat',
+      swap: 'Geplaatste bouwplaat wijzigen',
+      notTracked: 'Plaat niet bijgehouden',
+      swapFailed: 'Plaat kon niet worden gewijzigd',
+      confirmMidPrintTitle: 'Er loopt een print',
+      confirmMidPrintMessage: '{{name}} is aan het printen. Wijzig de plaat pas als die echt is gewisseld — de wachtrij stuurt de volgende taak voor de nieuwe plaat zodra deze print klaar is.',
+      confirmMidPrintConfirm: 'Plaat wijzigen',
+    },
     locations: {
       title: 'Printerlocaties',
       backToPrinters: 'Terug naar printers',
@@ -2861,6 +2870,31 @@ export default {
       keepExistingSpoolWeightDesc: 'Spoelen die al met dit filamenttype zijn gemaakt behouden het oude taragewicht. Nieuwe spoelen gebruiken de bijgewerkte waarde.',
       applyToAllSpools: 'Toepassen op alle spoelen',
       applyToAllSpoolsDesc: 'Alle gewichtsberekeningen voor dit filamenttype gebruiken direct het nieuwe taragewicht.',
+    },
+    buildPlates: {
+      title: 'Bouwplaten',
+      enable: 'Bouwplaat-tracking inschakelen',
+      enableDescription: 'Houdt bij welke bouwplaat in elke printer ligt en stuurt wachtrijtaken alleen naar een printer waarvan de plaat overeenkomt met de plaat waarvoor het bestand is gesliced. Standaard uit — dan worden platen genegeerd.',
+      reEnabledNote: 'Platen die vóór het uitschakelen zijn vastgelegd, worden bij opslaan gewist — stel de plaat in op elke printerkaart.',
+      ownedTitle: 'Welke platen heb je?',
+      ownedDescription: 'Vink de platen aan die je gebruikt. Alleen aangevinkte platen kunnen voor een printer of taak worden gekozen. Platen met patroon, zoals de 3D Effect-folies, tellen als hun basistype.',
+      addCustom: 'Eigen plaat toevoegen',
+      addTitle: 'Nieuwe plaat',
+      name: 'Naam',
+      namePlaceholder: 'bijv. Goud-PEI',
+      baseType: 'Plaattype in de slicer',
+      baseTypeHint: 'Het plaattype dat je in de slicer kiest om op deze plaat te printen.',
+      pattern: 'Patroon (optioneel)',
+      patternPlaceholder: 'bijv. Koolstofvezel',
+      image: 'Foto-URL (optioneel)',
+      add: 'Plaat toevoegen',
+      added: 'Plaat toegevoegd',
+      saveFailed: 'Plaat kon niet worden opgeslagen',
+      deleteTitle: 'Plaat verwijderen',
+      deleteMessage: '{{name}} verwijderen? Printers die hem gebruiken worden niet meer bijgehouden, en taken die erom vroegen accepteren elke plaat van hetzelfde type.',
+      untickTitle: 'Plaat in gebruik',
+      untickMessage: '{{name}} ligt in {{printers}} printer(s) en {{jobs}} taak/taken in de wachtrij wachten erop. Uitvinken verbergt hem voor nieuwe taken; die taken blijven erop wachten.',
+      untickConfirm: 'Toch uitvinken',
     },
     colorCatalog: {
       title: 'Kleurcatalogus',
@@ -5755,6 +5789,13 @@ export default {
 
   // Print modal
   printModal: {
+    buildPlate: {
+      label: 'Bouwplaat',
+      anyOfType: 'Elke {{type}}',
+      fromFile: 'Plaat uit bestand',
+      any: 'Elke plaat (negeren)',
+      hint: 'De taak wacht tot een printer een passende plaat heeft.',
+    },
     multiFile: {
       groupLabel: 'Wat er van de geselecteerde bestanden wordt',
       alternatives: 'Alternatieven',

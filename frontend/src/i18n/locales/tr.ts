@@ -242,6 +242,15 @@ export default {
 
   // Yazıcılar sayfası
   printers: {
+    buildPlate: {
+      label: 'Takılı baskı plakası',
+      swap: 'Takılı baskı plakasını değiştir',
+      notTracked: 'Plaka takip edilmiyor',
+      swapFailed: 'Plaka değiştirilemedi',
+      confirmMidPrintTitle: 'Baskı sürüyor',
+      confirmMidPrintMessage: '{{name}} şu anda baskı yapıyor. Plakayı yalnızca gerçekten değiştirdikten sonra değiştirin — bu baskı biter bitmez kuyruk yeni plaka için sıradaki işi gönderir.',
+      confirmMidPrintConfirm: 'Plakayı değiştir',
+    },
     locations: {
       title: 'Yazıcı konumları',
       backToPrinters: 'Yazıcılara dön',
@@ -2844,6 +2853,31 @@ export default {
       keepExistingSpoolWeightDesc: 'Bu filament türüyle önceden oluşturulmuş makaralar eski boş ağırlığı korur. Yeni makaralar güncellenmiş değeri kullanır.',
       applyToAllSpools: 'Tüm makaralara uygula',
       applyToAllSpoolsDesc: 'Bu filament türü için tüm ağırlık hesaplamaları hemen yeni boş ağırlığı kullanır.',
+    },
+    buildPlates: {
+      title: 'Baskı plakaları',
+      enable: 'Baskı plakası takibini etkinleştir',
+      enableDescription: 'Her yazıcıda hangi plakanın takılı olduğunu kaydeder ve kuyruktaki işleri yalnızca plakası dosyanın dilimlendiği plakayla eşleşen yazıcıya gönderir. Varsayılan olarak kapalıdır; kapalıyken plakalar yok sayılır.',
+      reEnabledNote: 'Takip kapatılmadan önce kaydedilen plakalar kaydettiğinizde temizlenir — her yazıcı kartında plakayı ayarlayın.',
+      ownedTitle: 'Hangi plakalara sahipsiniz?',
+      ownedDescription: 'Kullandığınız plakaları işaretleyin. Yalnızca işaretli plakalar bir yazıcı veya iş için seçilebilir. 3D Effect levhaları gibi desenli plakalar temel türleri olarak sayılır.',
+      addCustom: 'Özel plaka ekle',
+      addTitle: 'Yeni plaka',
+      name: 'Ad',
+      namePlaceholder: 'ör. Altın PEI',
+      baseType: 'Dilimleyicideki plaka türü',
+      baseTypeHint: 'Bu plakada baskı yaparken dilimleyicide seçtiğiniz plaka türü.',
+      pattern: 'Desen (isteğe bağlı)',
+      patternPlaceholder: 'ör. Karbon fiber',
+      image: 'Fotoğraf URL\'si (isteğe bağlı)',
+      add: 'Plaka ekle',
+      added: 'Plaka eklendi',
+      saveFailed: 'Plaka kaydedilemedi',
+      deleteTitle: 'Plakayı sil',
+      deleteMessage: '{{name}} silinsin mi? Bu plakayı kullanan yazıcılar takip edilmiyor olarak ayarlanır ve onu isteyen işler aynı türdeki herhangi bir plakayı kabul eder.',
+      untickTitle: 'Plaka kullanımda',
+      untickMessage: '{{name}}, {{printers}} yazıcıda takılı ve kuyruktaki {{jobs}} iş onu bekliyor. İşareti kaldırmak onu yeni işlerde gizler; bu işler onu beklemeye devam eder.',
+      untickConfirm: 'Yine de kaldır',
     },
     colorCatalog: {
       title: 'Renk Kataloğu',
@@ -5686,6 +5720,13 @@ export default {
 
   // Baskı modali
   printModal: {
+    buildPlate: {
+      label: 'Baskı plakası',
+      anyOfType: 'Herhangi bir {{type}}',
+      fromFile: 'Dosyadaki plaka',
+      any: 'Herhangi bir plaka (yok say)',
+      hint: 'İş, eşleşen plakası takılı bir yazıcı olana kadar bekler.',
+    },
     multiFile: {
       groupLabel: 'Seçilen dosyalar neye dönüşür',
       alternatives: 'Alternatifler',

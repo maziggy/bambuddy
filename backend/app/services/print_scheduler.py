@@ -81,6 +81,7 @@ from backend.app.services.spool_assignment_notifications import (
 from backend.app.utils.ams_drying import is_countdown_parked
 from backend.app.utils.ams_humidity import ams_humidity_percent
 from backend.app.utils.archive_paths import archive_photos_dir
+from backend.app.utils.bed_types import PLATE_TYPE_ANY, InstalledPlate, normalize_bed_type, plate_mismatch
 from backend.app.utils.color_utils import perceptual_color_distance
 from backend.app.utils.filament_types import canonical_filament_type
 from backend.app.utils.filename import InvalidFilenameError, derive_remote_filename, validate_print_filename
@@ -94,6 +95,7 @@ from backend.app.utils.printer_models import (
 )
 from backend.app.utils.threemf_tools import (
     default_plate_number,
+    extract_plate_metadata_from_3mf,
     extract_rack_plan_from_3mf,
     extract_slot_extruders_from_3mf,
     plate_bed_temperature,
@@ -504,6 +506,8 @@ class _ModelCandidate:
     variant: "PrintQueueVariant | None" = None
     # Nozzle diameter (mm) the file was sliced for, None when unknown (#3536).
     sliced_nozzle: float | None = None
+    # Base plate type this candidate's slice needs (#1306); see PrintQueueItem.
+    required_plate_type: str | None = None
 
 
 def _sliced_for_model(archive, library_file) -> str | None:
@@ -622,6 +626,7 @@ def _candidates_for(item: PrintQueueItem) -> list[_ModelCandidate]:
                 required_filament_types=item.required_filament_types,
                 filament_overrides=item.filament_overrides,
                 sliced_nozzle=_sliced_nozzle(item.archive, item.library_file),
+                required_plate_type=item.required_plate_type,
             )
         ]
 
@@ -641,9 +646,63 @@ def _candidates_for(item: PrintQueueItem) -> list[_ModelCandidate]:
             filament_overrides=v.filament_overrides,
             variant=v,
             sliced_nozzle=_sliced_nozzle(None, v.library_file),
+            required_plate_type=v.required_plate_type,
         )
         for v in ordered
     ]
+
+
+def _source_path(archive, library_file) -> Path | None:
+    """The 3MF on disk behind an archive or library file, if either is set."""
+    if archive is not None and archive.file_path:
+        return settings.base_dir / archive.file_path
+    if library_file is not None and library_file.file_path:
+        lib_path = Path(library_file.file_path)
+        return lib_path if lib_path.is_absolute() else settings.base_dir / library_file.file_path
+    return None
+
+
+def _derive_plate_type(archive, library_file, plate_id: int | None) -> str:
+    """Plate type for a row created by a path that never read the file (#1306).
+
+    The queue route stores this at creation, but the virtual printer, library
+    bulk-add, webhook and pipeline paths build rows directly. Rather than teach
+    each of them, the scheduler works it out on first use and stores it. Falls
+    back to the ingest-time metadata, then to "any": an unreadable file must
+    never make a job impossible to dispatch.
+    """
+    path = _source_path(archive, library_file)
+    raw = None
+    if path is not None and path.exists():
+        try:
+            raw = extract_plate_metadata_from_3mf(path, plate_id).bed_type
+        except Exception as e:
+            logger.debug("Could not read bed type from %s: %s", path, e)
+    if raw is None:
+        if archive is not None:
+            raw = archive.bed_type
+        elif library_file is not None and library_file.file_metadata:
+            raw = library_file.file_metadata.get("bed_type")
+    return normalize_bed_type(raw) or PLATE_TYPE_ANY
+
+
+def _fill_plate_types(item: PrintQueueItem) -> bool:
+    """Derive and store any missing plate types on *item* and its variants.
+
+    Returns True if a column was written, so the caller knows to commit.
+    """
+    changed = False
+    if item.variants:
+        for v in item.variants:
+            if v.required_plate_type is None and v.library_file is not None:
+                v.required_plate_type = _derive_plate_type(None, v.library_file, v.plate_id)
+                changed = True
+    # The item's own column too: after a variant is resolved onto it (and the
+    # print bounced back to pending) the item points at that file directly.
+    if item.required_plate_type is None and (item.archive is not None or item.library_file is not None):
+        item.required_plate_type = _derive_plate_type(item.archive, item.library_file, item.plate_id)
+        changed = True
+    return changed
 
 
 # Why a job for any printer of a model waits when every free one's last print
@@ -2119,6 +2178,33 @@ class PrintScheduler:
             # the waiting reason and to decide what the wake step may switch on.
             wakeable_printer_ids = await self._wakeable_printer_ids(db)
 
+            # Build plate tracking (#1306), read once for the pass. Opt-in: while
+            # the setting is off, plate_check_for() returns None and nothing below
+            # looks at plates at all, so dispatch is exactly what it was before.
+            plate_tracking = await self._get_bool_setting(db, "build_plate_tracking_enabled")
+            installed_plates: dict[int, InstalledPlate] = {}
+            plate_names: dict[int, str] = {}
+            if plate_tracking:
+                installed_plates, plate_names = await self._load_installed_plates(db)
+
+            def plate_check_for(item: PrintQueueItem, required_type: str | None) -> Callable[[int], str | None] | None:
+                """Printer id -> why its plate cannot take this job, or None if it can."""
+                if not plate_tracking:
+                    return None
+                required_id = item.required_plate_id
+                if required_id is not None and required_id not in plate_names:
+                    # The plate was deleted under the job; fall back to its type
+                    # rather than wait for a plate that no longer exists.
+                    required_id = None
+                if required_id is None and (required_type is None or required_type == PLATE_TYPE_ANY):
+                    return None
+                required_name = plate_names.get(required_id) if required_id is not None else None
+
+                def check(printer_id: int) -> str | None:
+                    return plate_mismatch(installed_plates.get(printer_id), required_type, required_id, required_name)
+
+                return check
+
             # At most one power-on per queue check. Each one blocks this loop
             # for the boot wait, so a queue of ten class-targeted jobs must not
             # switch on ten printers inside a single pass — the next pass wakes
@@ -2215,6 +2301,7 @@ class PrintScheduler:
                         busy_printers | interlocked.keys() | drying_held,
                         require_plate_clear,
                         await _creator_scope(item.created_by_id),
+                        plate_check=plate_check_for(item, item.required_plate_type),
                     )
                 ):
                     # Waiting on the user, not on a printer. Cleared here because
@@ -2289,6 +2376,21 @@ class PrintScheduler:
                             notify=item.printer_id not in backoff_printers,
                         )
                         continue
+
+                    # Wrong build plate (#1306). Checked before the power-on
+                    # below: waking a printer to hand it a job its plate cannot
+                    # print is no use. The printer is NOT marked busy — a later
+                    # job for the plate that is on it may go ahead, which is the
+                    # point of tracking plates. The hold asks for the swap.
+                    if plate_tracking:
+                        if _fill_plate_types(item):
+                            await db.commit()
+                        plate_check = plate_check_for(item, item.required_plate_type)
+                        plate_problem = plate_check(item.printer_id) if plate_check else None
+                        if plate_problem:
+                            await hold_item(item, f"Wrong plate: {printer_label(item.printer_id)} ({plate_problem})")
+                            skip_reasons["wrong_plate"] = skip_reasons.get("wrong_plate", 0) + 1
+                            continue
 
                     # Check if printer is idle
                     printer_idle = self._is_printer_idle(item.printer_id, require_plate_clear)
@@ -2504,6 +2606,8 @@ class PrintScheduler:
                     # variant and takes the first that matches, walking them in the
                     # user's priority order so the pick is reproducible when more
                     # than one printer is free in the same pass.
+                    if plate_tracking and _fill_plate_types(item):
+                        await db.commit()
                     candidates = _candidates_for(item)
                     item_scope = await _creator_scope(item.created_by_id)
                     printer_id = None
@@ -2584,6 +2688,7 @@ class PrintScheduler:
                                 unmatched_on=unmatched_on,
                                 refused_uploads={pid: self._upload_refusal_kind.get(pid) for pid in backoff_printers},
                                 sliced_nozzle=candidate.sliced_nozzle,
+                                plate_check=plate_check_for(item, candidate.required_plate_type),
                             )
                             # "Only if the previous print succeeded" is about the
                             # printer the job lands on: one whose last print failed
@@ -2614,6 +2719,7 @@ class PrintScheduler:
                             busy_printers | interlocked.keys(),
                             wakeable_printer_ids,
                             require_plate_clear,
+                            plate_check_for=lambda c, it=item: plate_check_for(it, c.required_plate_type),
                             printer_scope=item_scope,
                         )
                         # An attempt spends the pass's one wake whether or not
@@ -2629,6 +2735,17 @@ class PrintScheduler:
                             # Hold this item back rather than dispatching onto a
                             # printer whose AMS has not reported yet.
                             skip_reasons["powered_on_printer"] = skip_reasons.get("powered_on_printer", 0) + 1
+                            # This skips the waiting-reason update below, so a
+                            # "Wrong plate" reason that no longer holds (the
+                            # plate was swapped, or tracking was turned off)
+                            # would outlive the pass. Replace just that one; the
+                            # rest keep their usual update and notification.
+                            fresh_reason = _collapse_waiting_reasons(per_model_reasons)
+                            if "Wrong plate:" in (item.waiting_reason or "") and "Wrong plate:" not in (
+                                fresh_reason or ""
+                            ):
+                                item.waiting_reason = fresh_reason
+                                await db.commit()
                             continue
 
                     if printer_id is None and gate_blocked:
@@ -3423,6 +3540,89 @@ class PrintScheduler:
             if printer_id is not None and finished is not None
         }
 
+    async def _load_installed_plates(self, db: AsyncSession) -> tuple[dict[int, InstalledPlate], dict[int, str]]:
+        """Plate on each tracked printer, plus every plate's name (#1306).
+
+        One query per pass instead of one per printer per item. A printer whose
+        installed_plate_id points at a deleted plate is treated as not tracked.
+        """
+        from backend.app.models.build_plate import BuildPlate
+
+        plates = {p.id: p for p in (await db.execute(select(BuildPlate))).scalars().all()}
+        rows = await db.execute(
+            select(Printer.id, Printer.installed_plate_id).where(Printer.installed_plate_id.is_not(None))
+        )
+        installed: dict[int, InstalledPlate] = {}
+        for printer_id, plate_id in rows.all():
+            plate = plates.get(plate_id) if plate_id is not None else None
+            if plate is not None:
+                installed[printer_id] = InstalledPlate(id=plate.id, name=plate.name, base_type=plate.base_type)
+        return installed, {pid: p.name for pid, p in plates.items()}
+
+    async def _late_plate_mismatch(self, db: AsyncSession, item: PrintQueueItem) -> str | None:
+        """Why the plate now on *item*'s printer cannot take it, or None (#1306).
+
+        The dispatch-time twin of the selection-time check in check_queue: reads
+        the printer's installed plate fresh from the database, so a swap made
+        after the item was selected is seen. None whenever tracking is off, the
+        printer is untracked, or the item has no plate constraint.
+        """
+        if item.printer_id is None or not await self._get_bool_setting(db, "build_plate_tracking_enabled"):
+            return None
+        from backend.app.models.build_plate import BuildPlate
+
+        installed_id = await db.scalar(select(Printer.installed_plate_id).where(Printer.id == item.printer_id))
+        if installed_id is None:
+            return None
+        plate = await db.get(BuildPlate, installed_id)
+        if plate is None:
+            return None
+        required_id = item.required_plate_id
+        required_name = None
+        if required_id is not None:
+            required = await db.get(BuildPlate, required_id)
+            if required is None:
+                required_id = None  # deleted: fall back to the type, as check_queue does
+            else:
+                required_name = required.name
+        return plate_mismatch(
+            InstalledPlate(id=plate.id, name=plate.name, base_type=plate.base_type),
+            item.required_plate_type,
+            required_id,
+            required_name,
+        )
+
+    async def _defer_on_wrong_plate(self, db: AsyncSession, item: PrintQueueItem) -> bool:
+        """Hand *item* back to the queue if its printer's plate no longer fits.
+
+        Returns True when the dispatch must stop. The item stays pending — a
+        swap can be undone — with a waiting reason that names the swap needed.
+        A model-based item also gives its printer back, so the next pass can
+        match it to any printer of the model rather than wait on this one.
+        `_dispatch_one` releases the claim and unwinds preheat on return.
+        """
+        problem = await self._late_plate_mismatch(db, item)
+        if problem is None:
+            return False
+        printer = await db.get(Printer, item.printer_id)
+        label = (printer.name if printer else None) or f"printer {item.printer_id}"
+        logger.info(
+            "Queue item %s: build plate on printer %s changed after selection (%s) — "
+            "deferring dispatch, leaving item pending (#1306)",
+            item.id,
+            item.printer_id,
+            problem,
+        )
+        item.waiting_reason = f"Wrong plate: {label} ({problem})"
+        # target_model is set for model-based items and for cross-model items
+        # once a variant is resolved; pinned items never have one. (Not
+        # item.variants: the relationship is not loaded here and a lazy load
+        # raises on an async session.)
+        if item.target_model:
+            item.printer_id = None
+        await db.commit()
+        return True
+
     async def _wakeable_printer_ids(self, db: AsyncSession) -> set[int]:
         """Printer IDs that at least one enabled ``auto_on`` plug can power on.
 
@@ -3458,6 +3658,7 @@ class PrintScheduler:
         exclude_ids: set[int],
         wakeable_ids: set[int],
         require_plate_clear: bool,
+        plate_check_for: Callable[["_ModelCandidate"], Callable[[int], str | None] | None] | None = None,
         printer_scope: PrinterScope = ALL_PRINTERS,
     ) -> tuple[int | None, int | None]:
         """Power on one offline printer a model-based item could run on (#2786).
@@ -3496,10 +3697,15 @@ class PrintScheduler:
             if not candidate.target_model:
                 continue
             required_types, filament_overrides = _filament_constraints(candidate)
+            plate_check = plate_check_for(candidate) if plate_check_for else None
             printers = await self._printers_for_model(db, candidate.target_model, target_location, printer_scope)
             # Fewest print hours first, as the matcher picks (#3480).
             for printer in printers:
                 if printer.id in exclude_ids or printer.id not in wakeable_ids:
+                    continue
+                if plate_check and plate_check(printer.id):
+                    # Its plate is readable while it is off (#1306), and waking a
+                    # printer that would then be held for a plate swap buys nothing.
                     continue
                 if printer_manager.is_connected(printer.id):
                     continue
@@ -3597,6 +3803,7 @@ class PrintScheduler:
         filament_overrides: list[dict] | None = None,
         require_plate_clear: bool = True,
         wakeable_ids: set[int] | None = None,
+        plate_check: Callable[[int], str | None] | None = None,
         printer_scope: PrinterScope = ALL_PRINTERS,
         is_short: Callable[[int], Awaitable[bool]] | None = None,
         drying_ids: set[int] | None = None,
@@ -3620,6 +3827,9 @@ class PrintScheduler:
             wakeable_ids: Printers a smart plug can power on (#2786). Only changes how an
                           offline printer is worded: one Bambuddy will switch on reads
                           differently from one the user has to go and switch on themselves.
+            plate_check: Build plate tracking (#1306). Given a printer id, returns why its
+                         installed plate cannot take this job, or None. None (the default,
+                         and whenever tracking is off) means plates are not considered.
             is_short: Says whether a printer's spools are too light for the job (#3137).
                       A printer it flags is passed over while another eligible one
                       is not. When every eligible printer is short, the first is
@@ -3664,6 +3874,7 @@ class PrintScheduler:
         printers_offline_no_plug = []
         printers_missing_filament: list[tuple[str, list[str]]] = []
         printers_wrong_nozzle: list[str] = []
+        printers_wrong_plate: list[str] = []
         candidates: list[tuple[int, int]] = []  # (printer_id, color_match_count)
         # The first eligible printer that is short on filament, kept in case
         # every eligible printer is (#3137).
@@ -3680,6 +3891,14 @@ class PrintScheduler:
             if wrong_nozzle:
                 printers_wrong_nozzle.append(wrong_nozzle)
                 continue
+            # Wrong build plate (#1306). First, because the plate is known whether
+            # the printer is busy, offline or idle, and "busy" would hide that the
+            # job cannot run there until someone swaps the plate.
+            plate_problem = plate_check(printer.id) if plate_check else None
+            if plate_problem:
+                printers_wrong_plate.append(f"{printer.name} ({plate_problem})")
+                continue
+
             if printer.id in exclude_ids and refused_uploads and printer.id in refused_uploads:
                 printers_refused.append(_refused_upload_hold_reason(printer.name, refused_uploads[printer.id]))
                 continue
@@ -3832,6 +4051,8 @@ class PrintScheduler:
             or printers_offline
             or printers_offline_no_plug
             or printers_missing_filament
+            # A printer that only needs its plate swapped can still take the job (#1306).
+            or printers_wrong_plate
         ):
             return None, (
                 f"No {normalized_model}{location_suffix} has a {sliced_nozzle:g}mm nozzle: "
@@ -3860,6 +4081,8 @@ class PrintScheduler:
                     f"{name} (needs {', '.join(missing)})" for name, missing in printers_missing_filament
                 ]
                 reasons.append(f"Waiting for filament: {'; '.join(names_and_missing)}")
+        if printers_wrong_plate:
+            reasons.append(f"Wrong plate: {'; '.join(printers_wrong_plate)}")
         reasons.extend(printers_refused)
         if printers_busy:
             reasons.append(f"Busy: {', '.join(printers_busy)}")
@@ -4154,6 +4377,10 @@ class PrintScheduler:
         item.nozzle_rack_choice = variant.nozzle_rack_choice
         item.filament_overrides = variant.filament_overrides
         item.required_filament_types = variant.required_filament_types
+        # Only when known: a variant not yet derived (tracking was off) must not
+        # blank the item's own value.
+        if variant.required_plate_type is not None:
+            item.required_plate_type = variant.required_plate_type
         if variant.print_time_seconds is not None:
             # The row carried the shortest candidate's estimate so SJF could order
             # it before a printer was known; now that one is chosen, record what is
@@ -8715,6 +8942,7 @@ class PrintScheduler:
         unavailable: set[int],
         require_plate_clear: bool,
         printer_scope: PrinterScope,
+        plate_check: Callable[[int], str | None] | None = None,
     ) -> bool:
         """Free an "any model" job held for low filament once a printer can run it (#3137).
 
@@ -8779,6 +9007,8 @@ class PrintScheduler:
                 is_short=is_short,
                 unmatched_on=unmatched_on,
                 sliced_nozzle=candidates[0].sliced_nozzle,
+                # Never move the job onto a printer whose plate cannot take it (#1306).
+                plate_check=plate_check,
             )
             # Every idle printer short comes back as the first of them.
             if match_id is None or await is_short(match_id):
@@ -9306,6 +9536,13 @@ class PrintScheduler:
                 item.printer_id,
                 pre_dispatch_state,
             )
+            return
+
+        # Build plate re-check (#1306). The plate was matched when this item was
+        # selected, but preheat and the upload can take minutes and the user can
+        # swap the plate on the printer card in that window. Checked here, before
+        # the upload, and again right before the print command below.
+        if await self._defer_on_wrong_plate(db, item):
             return
 
         # Determine source: archive or library file
@@ -9947,6 +10184,26 @@ class PrintScheduler:
         # — printer obeys, user sees "I pressed cancel and the print started".
         # rowcount==0 means the user won the race; bail out, best-effort delete
         # the file we just uploaded, do NOT send start_print.
+        # Last build plate check (#1306) before the command that makes the
+        # printer heat and print — see the first check above. The file is already
+        # on the printer, so remove it, as the cancelled-mid-dispatch path does.
+        if await self._defer_on_wrong_plate(db, item):
+            try:
+                await delete_file_async(
+                    printer.ip_address,
+                    printer.access_code,
+                    remote_path,
+                    socket_timeout=ftp_timeout,
+                    printer_model=printer.model,
+                )
+            except Exception as cleanup_err:
+                logger.debug(
+                    "Queue item %s: best-effort cleanup of uploaded file failed: %s",
+                    item.id,
+                    cleanup_err,
+                )
+            return
+
         now_utc = datetime.now(timezone.utc)
         billing_run_id = str(uuid.uuid4())
         # Written with the move to printing, so a retried send replaces the

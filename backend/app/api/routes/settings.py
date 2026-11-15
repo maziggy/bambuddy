@@ -200,6 +200,7 @@ _BOOL_SETTING_KEYS = frozenset(
         "user_notifications_enabled",
         "queue_drying_enabled",
         "queue_drying_block",
+        "build_plate_tracking_enabled",
         "ambient_drying_enabled",
         "print_drying_enabled",
         "require_plate_clear",
@@ -482,6 +483,29 @@ async def update_settings(
     }
     mqtt_updated = bool(mqtt_keys & set(update_data.keys()))
 
+    # Build plate tracking switched back on (#1306). Plates are swapped by hand
+    # while nobody is recording them, so whatever each printer had recorded
+    # when tracking went off may be wrong now. Start every printer from "not
+    # tracked" (accepts any job) rather than hold or route jobs against a stale
+    # plate; queued jobs keep their own plate requirements, which apply again as
+    # each printer's current plate is recorded.
+    if update_data.get("build_plate_tracking_enabled") is True and not setting_is_true(
+        await get_setting(db, "build_plate_tracking_enabled")
+    ):
+        from typing import cast
+
+        from sqlalchemy import update
+        from sqlalchemy.engine import CursorResult
+
+        from backend.app.models.printer import Printer
+
+        cleared = cast(
+            CursorResult,
+            await db.execute(
+                update(Printer).where(Printer.installed_plate_id.is_not(None)).values(installed_plate_id=None)
+            ),
+        )
+        logger.info("Build plate tracking re-enabled: cleared recorded plate on %d printer(s)", cleared.rowcount or 0)
     # The page saves every field it shows on each change, so compare against
     # what is stored: only a real change of price source is worth a read.
     price_source_changed = False
@@ -707,6 +731,9 @@ _UI_FLAG_FIELDS: tuple[str, ...] = (
     # all to their defaults (with billing on, the print dialog hid the cost
     # centre picker and the print was then refused for lacking one).
     "queue_shortest_first",
+    # Build plate tracking (#1306): the print dialog, queue and printer cards
+    # show and enforce plates only while it is on.
+    "build_plate_tracking_enabled",
     "use_slicer_api",
     "open_in_slicer",
     "preferred_slicer",

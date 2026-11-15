@@ -21,6 +21,7 @@ import { productLineOf, useFilamentNameByIdx } from './useFilamentLabels';
 import { isGcodeCompatible, isPrinterCurrentlyDispatchable } from '../../utils/printer';
 import { getCurrencySymbol } from '../../utils/currency';
 import { getBedTypeInfo } from '../../utils/bedType';
+import { BUILD_PLATES_QUERY_KEY, PLATE_TYPE_ANY, normalizeBedType } from '../../utils/buildPlates';
 import { toDateTimeLocalValue, parseUTCDate } from '../../utils/date';
 import { isPlaceholderDate, effectivePreferLowest, filamentTypesCompatible } from '../../utils/amsHelpers';
 import { resolveSlicerAmsMapping } from './archiveAmsMapping';
@@ -337,6 +338,18 @@ export function PrintModal({
     return resumedSettings?.targetLocation ?? null;
   });
 
+  // Build plate requirement (#1306). Only offered while build plate tracking is
+  // on. 'type' = any plate of the file's type (the default, derived server-side),
+  // 'any' = no plate constraint, or a specific build plate id.
+  const [initialPlateChoice] = useState<'type' | 'any' | number>(() => {
+    if (mode === 'edit-queue-item' && queueItem) {
+      if (queueItem.required_plate_id != null) return queueItem.required_plate_id;
+      if (queueItem.required_plate_type === PLATE_TYPE_ANY) return 'any';
+    }
+    return 'type';
+  });
+  const [plateChoice, setPlateChoice] = useState<'type' | 'any' | number>(initialPlateChoice);
+
   const [selectedCostCenterId, setSelectedCostCenterId] = useState<number | null>(() =>
     mode === 'edit-queue-item' ? queueItem?.cost_center_id ?? null : resumedSettings?.costCenterId ?? null
   );
@@ -388,6 +401,12 @@ export function PrintModal({
 
   // Queries
   const { data: settings } = useUiSettings();
+  const plateTracking = settings?.build_plate_tracking_enabled === true;
+  const { data: buildPlates = [] } = useQuery({
+    queryKey: BUILD_PLATES_QUERY_KEY,
+    queryFn: api.getBuildPlates,
+    enabled: plateTracking,
+  });
 
   // Sync print option defaults from settings once available
   const printDefaultsApplied = useRef(false);
@@ -1028,6 +1047,41 @@ export function PrintModal({
           })
           .join(', ')
       : '';
+
+  // Build plate requirement (#1306): the plate type the selected plate was
+  // sliced for, the plates of that type the user owns, and what to send.
+  const plateTarget = selectedPlate != null ? plates.find(p => p.index === selectedPlate) : plates[0];
+  const fileBaseType = normalizeBedType(plateTarget?.bed_type);
+  // The job's current plate stays listed in edit mode even if it has since
+  // been unticked, so the select never shows a value it has no option for.
+  const editingPlateId = mode === 'edit-queue-item' ? queueItem?.required_plate_id ?? null : null;
+  const matchingBuildPlates = buildPlates.filter(
+    (p) => (p.enabled || p.id === editingPlateId) && (fileBaseType == null || p.base_type === fileBaseType),
+  );
+  const showPlatePicker = plateTracking && !isCrossModel && !isMultiPlateSelection;
+
+  // A specific plate picked for one plate of the file may not fit another:
+  // once both lists have loaded, fall back to "any plate of the file's type"
+  // rather than submit a plate the server will reject.
+  useEffect(() => {
+    if (typeof plateChoice !== 'number' || !buildPlates.length || !plates.length) return;
+    if (!matchingBuildPlates.some((p) => p.id === plateChoice)) setPlateChoice('type');
+  }, [plateChoice, buildPlates.length, plates.length, matchingBuildPlates]);
+
+  const plateConstraint = (): Pick<PrintQueueItemCreate, 'required_plate_type' | 'required_plate_id'> => {
+    if (!plateTracking) return {};
+    // Editing a job without touching its plate must leave the stored
+    // constraint alone, whatever this dialog could or could not read.
+    if (mode === 'edit-queue-item' && plateChoice === initialPlateChoice) return {};
+    if (plateChoice === 'any') return { required_plate_type: PLATE_TYPE_ANY, required_plate_id: null };
+    if (typeof plateChoice === 'number' && !isMultiPlateSelection) return { required_plate_id: plateChoice };
+    if (mode !== 'edit-queue-item') return {};  // 'type' on create: the server derives it
+    // Switched back to 'type' on edit. Only name the type when this dialog
+    // actually knows it; otherwise clear the specific plate and keep the rest.
+    return fileBaseType
+      ? { required_plate_type: fileBaseType, required_plate_id: null }
+      : { required_plate_id: null };
+  };
 
   const filamentWarningMessage = useMemo(() => {
     if (!filamentWarningItems || filamentWarningItems.length === 0) return '';
@@ -1774,6 +1828,7 @@ export function PrintModal({
       estimated_cost: billingEnabled && selectedCostCenterId != null ? plateEstimatedCost : undefined,
       batch_id: autoBatchId ?? undefined,
       cleanup_library_after_dispatch: cleanupLibraryAfterDispatch,
+      ...plateConstraint(),
       };
     };
 
@@ -1790,6 +1845,7 @@ export function PrintModal({
             // Edit mode - update with target_model (only for single plate)
             const updateData: PrintQueueItemUpdate = {
               printer_id: null,
+              ...plateConstraint(),
               target_model: targetModel,
               target_location: targetLocation,
               filament_overrides: filamentOverridesArray || null,
@@ -1849,6 +1905,7 @@ export function PrintModal({
               const printerMapping = getMappingForPrinter(printerId, plateId);
               const updateData: PrintQueueItemUpdate = {
                 printer_id: printerId,
+                ...plateConstraint(),
                 target_model: null,
                 target_location: null,
                 // null, not undefined: omitting the field left a model job's
@@ -2172,6 +2229,37 @@ export function PrintModal({
                 </p>
               );
             })()}
+
+            {/* Build plate requirement (#1306) — only while plate tracking is on */}
+            {showPlatePicker && (
+              <div className="-mt-2">
+                <label className="block text-xs text-bambu-gray mb-1" htmlFor="print-modal-plate-choice">
+                  {t('printModal.buildPlate.label')}
+                </label>
+                <select
+                  id="print-modal-plate-choice"
+                  value={String(plateChoice)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setPlateChoice(v === 'type' || v === 'any' ? v : Number(v));
+                  }}
+                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:border-bambu-green focus:outline-none"
+                >
+                  <option value="type">
+                    {fileBaseType
+                      ? t('printModal.buildPlate.anyOfType', { type: getBedTypeInfo(plateTarget?.bed_type)?.label ?? plateTarget?.bed_type })
+                      : t('printModal.buildPlate.fromFile')}
+                  </option>
+                  {matchingBuildPlates.map((plate) => (
+                    <option key={plate.id} value={plate.id}>
+                      {plate.name}
+                    </option>
+                  ))}
+                  <option value="any">{t('printModal.buildPlate.any')}</option>
+                </select>
+                <p className="text-xs text-bambu-gray mt-1">{t('printModal.buildPlate.hint')}</p>
+              </div>
+            )}
 
             {/* Plate selection - first so users know filament requirements before
                 selecting printers. Cross-model has no use for it: the plate is

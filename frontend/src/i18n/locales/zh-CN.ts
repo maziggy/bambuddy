@@ -242,6 +242,15 @@ export default {
 
   // Printers page
   printers: {
+    buildPlate: {
+      label: '已安装的打印板',
+      swap: '更换已安装的打印板',
+      notTracked: '未跟踪打印板',
+      swapFailed: '无法更换打印板',
+      confirmMidPrintTitle: '正在打印',
+      confirmMidPrintMessage: '{{name}} 正在打印。请在实际更换打印板后再修改——本次打印一结束，队列就会为新打印板发送下一个任务。',
+      confirmMidPrintConfirm: '更换打印板',
+    },
     locations: {
       title: '打印机位置',
       backToPrinters: '返回打印机',
@@ -2841,6 +2850,31 @@ export default {
       keepExistingSpoolWeightDesc: '已使用此耗材类型创建的线轴保留旧的皮重。新线轴使用更新后的值。',
       applyToAllSpools: '应用到所有线轴',
       applyToAllSpoolsDesc: '此耗材类型的所有重量计算立即使用新的皮重。',
+    },
+    buildPlates: {
+      title: '打印板',
+      enable: '启用打印板跟踪',
+      enableDescription: '记录每台打印机上安装的打印板，并且只把队列任务发送到打印板与文件切片时所选打印板一致的打印机。默认关闭；关闭时忽略打印板。',
+      reEnabledNote: '关闭跟踪前记录的打印板将在保存时清除——请在每张打印机卡片上重新设置打印板。',
+      ownedTitle: '你拥有哪些打印板？',
+      ownedDescription: '勾选你使用的打印板。只有勾选的打印板才能分配给打印机或任务。3D Effect 纹理贴片等带图案的打印板按其基础类型计算。',
+      addCustom: '添加自定义打印板',
+      addTitle: '新打印板',
+      name: '名称',
+      namePlaceholder: '例如：金色 PEI',
+      baseType: '切片软件中的打印板类型',
+      baseTypeHint: '在此打印板上打印时，你在切片软件中选择的打印板类型。',
+      pattern: '图案（可选）',
+      patternPlaceholder: '例如：碳纤维',
+      image: '照片 URL（可选）',
+      add: '添加打印板',
+      added: '已添加打印板',
+      saveFailed: '无法保存打印板',
+      deleteTitle: '删除打印板',
+      deleteMessage: '删除 {{name}}？使用它的打印机将变为未跟踪，指定它的任务将接受同类型的任意打印板。',
+      untickTitle: '打印板正在使用',
+      untickMessage: '{{name}} 安装在 {{printers}} 台打印机上，队列中有 {{jobs}} 个任务在等待它。取消勾选后新任务将无法选择它，但这些任务会继续等待。',
+      untickConfirm: '仍然取消勾选',
     },
     colorCatalog: {
       title: '颜色目录',
@@ -5696,6 +5730,13 @@ export default {
 
   // Print modal
   printModal: {
+    buildPlate: {
+      label: '打印板',
+      anyOfType: '任意 {{type}}',
+      fromFile: '文件中的打印板',
+      any: '任意打印板（忽略）',
+      hint: '任务会等待，直到有打印机安装了匹配的打印板。',
+    },
     multiFile: {
       groupLabel: '所选文件的处理方式',
       alternatives: '备选',

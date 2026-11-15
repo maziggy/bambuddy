@@ -489,11 +489,46 @@ export interface Printer {
   camera_light_auto: boolean;  // picked for the chamber light when camera_light_mode is 'selected' (#1655)
   plate_detection_enabled: boolean;  // Check plate before print
   plate_detection_roi?: PlateDetectionROI;  // ROI for plate detection
+  // Build plate now on the printer (#1306); null = not tracked, accepts any job.
+  installed_plate_id?: number | null;
   wear_cost_per_hour: number | null;  // Wear cost per printing hour (#694)
   dispatch_priority: number | null;  // Place in the pick order of any-model jobs, lowest first (#2915)
   wled_config: WLEDConfig | null;
   created_at: string;
   updated_at: string;
+}
+
+// Build plate tracking (#1306). A plate belongs to one slicer base type; the
+// pattern only tells apart plates of the same type (3D Effect sheets).
+export interface BuildPlate {
+  id: number;
+  builtin_key: string | null;
+  is_builtin: boolean;
+  name: string;
+  base_type: string;
+  base_type_label: string;
+  pattern: string | null;
+  image: string | null;
+  notes: string | null;
+  enabled: boolean;
+  sort_order: number;
+  installed_on: number[];  // printer ids with this plate installed
+  required_by_pending: number;  // pending queue jobs waiting for this specific plate
+}
+
+export interface BuildPlateInput {
+  name?: string;
+  base_type?: string;
+  pattern?: string | null;
+  image?: string | null;
+  notes?: string | null;
+  enabled?: boolean;
+  sort_order?: number;
+}
+
+export interface BedTypeOption {
+  key: string;
+  label: string;
 }
 
 export interface HMSError {
@@ -1547,6 +1582,7 @@ export interface AppSettings {
   // Queue auto-drying settings
   queue_drying_enabled: boolean;  // Auto-dry AMS between queued prints
   queue_drying_block: boolean;  // Block queue until drying completes
+  build_plate_tracking_enabled?: boolean;  // Match queued jobs to printers by build plate (#1306)
   ambient_drying_enabled: boolean;  // Auto-dry idle printers based on humidity regardless of queue
   ambient_drying_sustained_minutes: number;  // Minutes humidity must stay above threshold before ambient auto-dry starts (0 = instant)
   print_drying_enabled: boolean;  // Continue drying while a print is running on capable hardware
@@ -2883,6 +2919,10 @@ export interface PrintQueueItem {
   target_location: string | null;  // Target location filter for model-based assignment
   required_filament_types: string[] | null;  // Required filament types for model-based assignment
   waiting_reason: string | null;  // Why this job hasn't started yet (empty once it can)
+  // Build plate constraint (#1306): a base-type key, "any", or null (not yet
+  // derived). required_plate_id narrows it to one specific plate.
+  required_plate_type?: string | null;
+  required_plate_id?: number | null;
   // Cross-model alternatives (#671), in priority order. Empty for ordinary
   // items. Present until dispatch resolves one, after which library_file_id and
   // target_model name the candidate that actually ran.
@@ -3068,6 +3108,9 @@ export interface PrintQueueItemCreate {
   skip_filament_check?: boolean;
   ams_mapping?: number[] | null;  // AMS slot mapping for multi-color prints
   plate_id?: number | null;  // Plate ID for multi-plate 3MF files
+  // Build plate constraint (#1306). Omit to derive from the file; "any" = none.
+  required_plate_type?: string | null;
+  required_plate_id?: number | null;
   // Print options
   bed_levelling?: CalibrationMode;
   flow_cali?: CalibrationMode;
@@ -3159,6 +3202,9 @@ export interface PrintQueueItemUpdate {
   auto_off_after?: boolean;
   manual_start?: boolean;
   ams_mapping?: number[];
+  // Build plate constraint (#1306). Omit to derive from the file; "any" = none.
+  required_plate_type?: string | null;
+  required_plate_id?: number | null;
   plate_id?: number | null;  // Plate ID for multi-plate 3MF files
   // Print options
   bed_levelling?: CalibrationMode;
@@ -5476,6 +5522,26 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),
+  setInstalledPlate: (printerId: number, plateId: number | null) =>
+    request<Printer>(`/printers/${printerId}/installed-plate`, {
+      method: 'PUT',
+      body: JSON.stringify({ plate_id: plateId }),
+    }),
+  // Build plates (#1306)
+  getBuildPlates: () => request<BuildPlate[]>('/build-plates'),
+  getBedTypes: () => request<BedTypeOption[]>('/build-plates/bed-types'),
+  createBuildPlate: (data: BuildPlateInput) =>
+    request<BuildPlate>('/build-plates', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateBuildPlate: (id: number, data: BuildPlateInput) =>
+    request<BuildPlate>(`/build-plates/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deleteBuildPlate: (id: number) =>
+    request<void>(`/build-plates/${id}`, { method: 'DELETE' }),
   getWledPresets: (id: number, baseUrl: string) =>
     request<WLEDPreset[]>(`/printers/${id}/wled/presets`, {
       method: 'POST',

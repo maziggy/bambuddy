@@ -57,6 +57,10 @@ class Printer(Base):
     # Queue: True after a print finishes/fails, until user acknowledges the plate is cleared.
     # Persisted so the gate survives crashes and power cycles (issue #961).
     awaiting_plate_clear: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Build plate currently on the printer (build_plates.id, #1306). NULL means
+    # "not tracked": the printer accepts jobs for any plate. No FK constraint so
+    # deleting a plate is handled explicitly by the build-plates route.
+    installed_plate_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Optional per-printer WLED preset mapping. WLED owns all visual effects.
     wled_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

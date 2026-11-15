@@ -51,6 +51,7 @@ def _fake_variant(*, vid, position, model, attempts=0, trashed=False, file_missi
         ),
         required_filament_types=None,
         filament_overrides=None,
+        required_plate_type=None,
     )
 
 
@@ -64,6 +65,7 @@ def _fake_item(variants):
         library_file_id=None,
         required_filament_types=None,
         filament_overrides=None,
+        required_plate_type=None,
     )
 
 
@@ -79,12 +81,14 @@ def test_no_variants_yields_the_items_own_columns():
         library_file=SimpleNamespace(file_metadata={"sliced_for_model": "H2D"}),
         required_filament_types='["PLA"]',
         filament_overrides=None,
+        required_plate_type="smooth_pei",
     )
     candidates = _candidates_for(item)
     assert len(candidates) == 1
     assert candidates[0].target_model == "H2D"
     assert candidates[0].sliced_for == "H2D"
     assert candidates[0].required_filament_types == '["PLA"]'
+    assert candidates[0].required_plate_type == "smooth_pei"
     assert candidates[0].variant is None
 
 

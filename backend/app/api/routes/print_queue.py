@@ -75,6 +75,7 @@ from backend.app.services.print_cost_estimate import estimate_queue_source_cost
 from backend.app.services.queue_announcements import announce_queue_jobs_added
 from backend.app.services.queue_item_printer import PRINTER_RESOLVED_DEFAULTS, drop_printer_resolved
 from backend.app.services.queue_position import lock_queue_positions, max_queue_position
+from backend.app.utils.bed_types import PLATE_TYPE_ANY, bed_type_label, normalize_bed_type
 from backend.app.utils.printer_models import (
     is_gcode_compatible,
 )
@@ -90,6 +91,55 @@ router = APIRouter(prefix="/queue", tags=["queue"])
 
 # Answer to a caller who may not start a job that waits for review (#1620)
 _AWAITING_REVIEW = "This job waits for review: someone who can manage all queue jobs has to start it"
+
+
+def _plate_type_from_3mf(file_path: Path | None, plate_id: int | None) -> str | None:
+    """The plate type to store for a 3MF's plate (#1306).
+
+    A base-type key when the file names a plate we recognise, PLATE_TYPE_ANY
+    when it does not (Default Plate, an unknown slicer string), and None only
+    when the file could not be read — the scheduler then derives it later.
+    """
+    if file_path is None or not file_path.exists():
+        return None
+    try:
+        return normalize_bed_type(extract_plate_metadata_from_3mf(file_path, plate_id).bed_type) or PLATE_TYPE_ANY
+    except Exception as e:  # a plate hint must never break queueing
+        logger.debug("Could not read bed type from %s: %s", file_path, e)
+        return None
+
+
+def _requested_plate_type(value: str | None) -> str:
+    """Validate an explicit ``required_plate_type``; "any"/null mean no constraint."""
+    if value is None or value.strip().lower() == PLATE_TYPE_ANY:
+        return PLATE_TYPE_ANY
+    normalized = normalize_bed_type(value)
+    if normalized is None:
+        raise HTTPException(400, f"Unknown build plate type: {value}")
+    return normalized
+
+
+async def _validate_required_plate(db: AsyncSession, plate_id: int | None, plate_type: str | None) -> None:
+    """A specific plate must exist and be of the plate type the file needs (#1306).
+
+    Checked at queue time so a job can never ask for a plate it could not print
+    on — otherwise it would wait forever for a swap that would not help.
+    """
+    if plate_id is None:
+        return
+    if plate_type == PLATE_TYPE_ANY:
+        plate_type = None
+    from backend.app.models.build_plate import BuildPlate
+
+    plate = (await db.execute(select(BuildPlate).where(BuildPlate.id == plate_id))).scalar_one_or_none()
+    if plate is None:
+        raise HTTPException(400, "Build plate not found")
+    if plate_type and plate.base_type != plate_type:
+        raise HTTPException(
+            400,
+            f"{plate.name} is a {bed_type_label(plate.base_type)} plate, "
+            f"but this job was sliced for {bed_type_label(plate_type)}",
+        )
 
 
 def _variant_summaries(item: PrintQueueItem) -> list[QueueVariantSummary]:
@@ -508,6 +558,8 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         "required_filament_types": required_filament_types_parsed,
         "filament_overrides": filament_overrides_parsed,
         "waiting_reason": item.waiting_reason,
+        "required_plate_type": item.required_plate_type,
+        "required_plate_id": item.required_plate_id,
         "archive_id": item.archive_id,
         "library_file_id": item.library_file_id,
         "cost_center_id": item.cost_center_id,
@@ -1189,6 +1241,7 @@ def _variant_values(
         "nozzle_rack_choice": json.dumps(spec.nozzle_rack_choice) if spec.nozzle_rack_choice else None,
         "filament_overrides": filament_overrides_json,
         "required_filament_types": required_types,
+        "required_plate_type": _plate_type_from_3mf(file_path, spec.plate_id),
         "print_time_seconds": print_time,
     }
 
@@ -1351,6 +1404,21 @@ async def add_to_queue(
                 # Replace types for overridden slots, keep others
                 all_types = existing_types | set(override_types)
                 required_filament_types = json.dumps(sorted(all_types))
+
+    # Build plate constraint (#1306). Derived from the file unless the caller
+    # set it; a cross-model item's plates live on its variants instead, since
+    # each candidate is a separate slice.
+    if "required_plate_type" in data.model_fields_set:
+        required_plate_type = _requested_plate_type(data.required_plate_type)
+    elif variant_specs:
+        required_plate_type = PLATE_TYPE_ANY
+    else:
+        required_plate_type = _plate_type_from_3mf(file_path, data.plate_id)
+    if variant_specs and data.required_plate_id is not None:
+        # Each alternative is its own slice and may be for a different plate
+        # type, so one specific plate cannot be valid for all of them.
+        raise HTTPException(400, "A specific build plate cannot be combined with printer alternatives")
+    await _validate_required_plate(db, data.required_plate_id, required_plate_type)
 
     # Validate quantity
     quantity = max(1, data.quantity)
@@ -1523,6 +1591,8 @@ async def add_to_queue(
             target_location=data.target_location,
             required_filament_types=required_filament_types,
             filament_overrides=filament_overrides_json,
+            required_plate_type=required_plate_type,
+            required_plate_id=data.required_plate_id,
             archive_id=data.archive_id,
             library_file_id=data.library_file_id,
             cost_center_id=data.cost_center_id,
@@ -2568,6 +2638,34 @@ async def update_queue_item(
     if "nozzle_rack_choice" in update_data:
         update_data["nozzle_rack_choice"] = (
             json.dumps(update_data["nozzle_rack_choice"]) if update_data["nozzle_rack_choice"] else None
+        )
+
+    # Build plate constraint (#1306). An explicit value wins; otherwise a change
+    # of plate re-reads the plate type from the file, since plates in one 3MF can
+    # be sliced for different beds.
+    if "required_plate_type" in update_data:
+        update_data["required_plate_type"] = _requested_plate_type(update_data["required_plate_type"])
+    elif "plate_id" in update_data and update_data["plate_id"] != item.plate_id and not item.variants:
+        update_data["required_plate_type"] = _plate_type_from_3mf(
+            await _resolve_source_path(db, item), update_data["plate_id"]
+        )
+        # A specific plate chosen for the old plate may not fit the new one.
+        # The caller did not ask about it, so drop it rather than reject an
+        # edit that only moved the job to another plate of the file.
+        if "required_plate_id" not in update_data and item.required_plate_id is not None:
+            from backend.app.models.build_plate import BuildPlate
+
+            new_type = update_data["required_plate_type"]
+            old_plate_type = await db.scalar(
+                select(BuildPlate.base_type).where(BuildPlate.id == item.required_plate_id)
+            )
+            if new_type and new_type != PLATE_TYPE_ANY and old_plate_type != new_type:
+                update_data["required_plate_id"] = None
+    if "required_plate_id" in update_data:
+        await _validate_required_plate(
+            db,
+            update_data.get("required_plate_id", item.required_plate_id),
+            update_data.get("required_plate_type", item.required_plate_type),
         )
 
     trusted_estimated_cost = await _trusted_item_estimated_cost(

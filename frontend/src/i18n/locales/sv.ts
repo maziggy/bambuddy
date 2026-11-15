@@ -242,6 +242,15 @@ export default {
 
   // Printers page
   printers: {
+    buildPlate: {
+      label: 'Monterad byggplatta',
+      swap: 'Byt monterad byggplatta',
+      notTracked: 'Platta spåras inte',
+      swapFailed: 'Kunde inte byta platta',
+      confirmMidPrintTitle: 'En utskrift pågår',
+      confirmMidPrintMessage: '{{name}} skriver ut. Byt platta här först när den verkligen har bytts — kön skickar nästa jobb för den nya plattan så snart den här utskriften är klar.',
+      confirmMidPrintConfirm: 'Byt platta',
+    },
     locations: {
       title: 'Skrivarplatser',
       backToPrinters: 'Tillbaka till skrivare',
@@ -2893,6 +2902,31 @@ export default {
       keepExistingSpoolWeightDesc: 'Rullar som redan skapats med denna filamenttyp behåller den gamla taravikten. Nya rullar använder den uppdaterade vikten.',
       applyToAllSpools: 'Tillämpa på alla rullar',
       applyToAllSpoolsDesc: 'Alla viktberäkningar för denna filamenttyp använder omedelbart den nya taravikten.',
+    },
+    buildPlates: {
+      title: 'Byggplattor',
+      enable: 'Aktivera spårning av byggplattor',
+      enableDescription: 'Registrerar vilken byggplatta som sitter i varje skrivare och skickar köade jobb bara till en skrivare vars platta matchar plattan filen slicades för. Av som standard — då ignoreras plattor.',
+      reEnabledNote: 'Plattor som registrerades innan spårningen stängdes av rensas när du sparar — ange plattan på varje skrivarkort.',
+      ownedTitle: 'Vilka plattor har du?',
+      ownedDescription: 'Bocka för plattorna du använder. Endast förbockade plattor kan väljas för en skrivare eller ett jobb. Mönstrade plattor, som 3D Effect-arken, räknas som sin bastyp.',
+      addCustom: 'Lägg till egen platta',
+      addTitle: 'Ny platta',
+      name: 'Namn',
+      namePlaceholder: 't.ex. Guld-PEI',
+      baseType: 'Plattyp i slicern',
+      baseTypeHint: 'Plattypen du väljer i slicern när du skriver ut på den här plattan.',
+      pattern: 'Mönster (valfritt)',
+      patternPlaceholder: 't.ex. Kolfiber',
+      image: 'Foto-URL (valfritt)',
+      add: 'Lägg till platta',
+      added: 'Platta tillagd',
+      saveFailed: 'Kunde inte spara plattan',
+      deleteTitle: 'Ta bort platta',
+      deleteMessage: 'Ta bort {{name}}? Skrivare som använder den sätts till ej spårad, och jobb som bad om den accepterar valfri platta av samma typ.',
+      untickTitle: 'Plattan används',
+      untickMessage: '{{name}} sitter i {{printers}} skrivare och {{jobs}} köade jobb väntar på den. Om du avmarkerar den döljs den för nya jobb; de jobben fortsätter att vänta på den.',
+      untickConfirm: 'Avmarkera ändå',
     },
     colorCatalog: {
       title: 'Färgkatalog',
@@ -5786,6 +5820,13 @@ errors: {
 
   // Print modal
   printModal: {
+    buildPlate: {
+      label: 'Byggplatta',
+      anyOfType: 'Valfri {{type}}',
+      fromFile: 'Platta från filen',
+      any: 'Valfri platta (ignorera)',
+      hint: 'Jobbet väntar tills en skrivare har en matchande platta monterad.',
+    },
     multiFile: {
       groupLabel: 'Vad de valda filerna blir',
       alternatives: 'Alternativ',

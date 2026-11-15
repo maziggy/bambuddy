@@ -166,6 +166,15 @@ class AppSettings(BaseModel):
         default=False,
         description="Block queue until drying completes (when disabled, prints take priority over drying)",
     )
+    # Build plate tracking (#1306). Opt-in: while off, the queue ignores plates
+    # entirely and no plate UI is shown, so existing workflows are unchanged.
+    build_plate_tracking_enabled: bool = Field(
+        default=False,
+        description=(
+            "Track which build plate is on each printer and only dispatch queued jobs to a "
+            "printer whose plate matches the plate the file was sliced for"
+        ),
+    )
     ambient_drying_enabled: bool = Field(
         default=False,
         description="Automatically dry AMS filament on idle printers when humidity exceeds threshold, regardless of queue",
@@ -796,6 +805,7 @@ class AppSettingsUpdate(BaseModel):
     printer_sensor_history_retention_days: int | None = Field(default=None, ge=1)
     queue_drying_enabled: bool | None = None
     queue_drying_block: bool | None = None
+    build_plate_tracking_enabled: bool | None = None
     ambient_drying_enabled: bool | None = None
     ambient_drying_sustained_minutes: int | None = Field(default=None, ge=0, le=240)
     print_drying_enabled: bool | None = None

@@ -193,6 +193,8 @@ class PrinterUpdate(IgnoresNullForRequiredColumns):
     camera_light_auto: bool | None = None  # #1655
     plate_detection_enabled: bool | None = None
     plate_detection_roi: PlateDetectionROI | None = None
+    # build_plates.id of the plate now on the printer; null = not tracked (#1306)
+    installed_plate_id: int | None = None
     wled_config: WLEDConfig | None = None
 
 
@@ -217,6 +219,7 @@ class PrinterResponse(PrinterBase):
     camera_light_auto: bool = False  # #1655
     plate_detection_enabled: bool = False
     plate_detection_roi: PlateDetectionROI | None = None
+    installed_plate_id: int | None = None  # #1306
     created_at: datetime
     updated_at: datetime
 

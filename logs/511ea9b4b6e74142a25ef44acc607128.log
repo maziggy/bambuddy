@@ -1,0 +1,200 @@
+2026-11-15 19:23:13,069 INFO [backend.app.main] [-] [#1752] Printer 5 reconnected before debounce; cancelling pending offline notification
+2026-11-15 19:23:13,128 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-11-15 19:23:43,196 DEBUG [backend.app.api.routes.printers] [a51a7f14] API returning ams_mapping: [], ams_extruder_map: {}
+2026-11-15 19:23:43,196 DEBUG [backend.app.api.routes.printers] [a51a7f14] Using tray_now directly as global ID: 255
+2026-11-15 19:24:13,222 WARNING [backend.app.services.bambu_mqtt] [503289cd] [[SERIAL]] Connection stale - no message for 60.1s, forcing reconnect
+2026-11-15 19:24:13,231 DEBUG [backend.app.api.routes.printers] [503289cd] API returning ams_mapping: [], ams_extruder_map: {}
+2026-11-15 19:24:13,231 DEBUG [backend.app.api.routes.printers] [503289cd] Using tray_now directly as global ID: 255
+2026-11-15 19:24:13,232 INFO [backend.app.main] [503289cd] [#1752] Printer 5 connected→disconnected edge; scheduling offline notification in 60s
+2026-11-15 19:24:14,012 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting firmware version info
+2026-11-15 19:24:14,012 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Sending K-profile priming request
+2026-11-15 19:24:14,012 INFO [backend.app.main] [-] [#1752] Printer 5 reconnected before debounce; cancelling pending offline notification
+2026-11-15 19:24:14,060 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-11-15 19:24:18,979 INFO [backend.app.services.bambu_mqtt] [7cd3e0c7] [[SERIAL]] Set chamber lights on (seq=14)
+2026-11-15 19:24:18,980 INFO [uvicorn.access] [-] [IP]:60030 - "POST /api/v1/printers/5/chamber-light?on=true HTTP/1.1" 200
+2026-11-15 19:24:21,564 DEBUG [backend.app.services.camera] [9b73337d] TLS proxy for [IP]:322 listening on [IP]:38449
+2026-11-15 19:24:21,564 INFO [backend.app.services.camera] [9b73337d] Found ffmpeg at: /usr/bin/ffmpeg
+2026-11-15 19:24:21,564 INFO [backend.app.services.camera] [9b73337d] Capturing camera frame bytes from [IP] using RTSP (model: P2S)
+2026-11-15 19:24:24,406 INFO [backend.app.services.camera] [9b73337d] Successfully captured camera frame bytes: 106752 bytes
+2026-11-15 19:24:24,407 INFO [backend.app.services.camera] [9b73337d] Saved camera frame to: /tmp/tmp5flxzrmc.jpg
+2026-11-15 19:24:24,407 DEBUG [backend.app.services.plate_detection] [9b73337d] Captured frame from built-in camera for printer 5
+2026-11-15 19:24:29,586 INFO [backend.app.services.bambu_mqtt] [4001e5f9] [[SERIAL]] Set chamber lights off (seq=16)
+2026-11-15 19:24:29,586 INFO [uvicorn.access] [-] [IP]:60030 - "POST /api/v1/printers/5/chamber-light?on=false HTTP/1.1" 200
+2026-11-15 19:24:35,634 INFO [backend.app.services.bambu_mqtt] [6534040b] [[SERIAL]] Set chamber lights on (seq=18)
+2026-11-15 19:24:35,635 INFO [uvicorn.access] [-] [IP]:60030 - "POST /api/v1/printers/5/chamber-light?on=true HTTP/1.1" 200
+2026-11-15 19:24:37,825 INFO [backend.app.services.bambu_mqtt] [faf44edd] [[SERIAL]] Set chamber lights off (seq=20)
+2026-11-15 19:24:37,826 INFO [uvicorn.access] [-] [IP]:60030 - "POST /api/v1/printers/5/chamber-light?on=false HTTP/1.1" 200
+2026-11-15 19:24:43,922 INFO [uvicorn.access] [-] [IP]:60030 - "POST /api/v1/printers/5/logging/enable HTTP/1.1" 200
+2026-11-15 19:25:07,835 DEBUG [backend.app.api.routes.printers] [67b79405] API returning ams_mapping: [], ams_extruder_map: {}
+2026-11-15 19:25:07,835 DEBUG [backend.app.api.routes.printers] [67b79405] Using tray_now directly as global ID: 255
+2026-11-15 19:25:37,860 DEBUG [backend.app.api.routes.printers] [82819aef] API returning ams_mapping: [], ams_extruder_map: {}
+2026-11-15 19:25:37,860 DEBUG [backend.app.api.routes.printers] [82819aef] Using tray_now directly as global ID: 255
+2026-11-15 19:25:39,189 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 61.3s, forcing reconnect
+2026-11-15 19:25:39,198 INFO [backend.app.main] [-] [#1752] Printer 5 connected→disconnected edge; scheduling offline notification in 60s
+2026-11-15 19:25:39,911 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting firmware version info
+2026-11-15 19:25:39,911 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Sending K-profile priming request
+2026-11-15 19:25:39,911 INFO [backend.app.main] [-] [#1752] Printer 5 reconnected before debounce; cancelling pending offline notification
+2026-11-15 19:25:39,974 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-11-15 19:26:10,036 DEBUG [backend.app.api.routes.printers] [c74cb025] API returning ams_mapping: [], ams_extruder_map: {}
+2026-11-15 19:26:10,036 DEBUG [backend.app.api.routes.printers] [c74cb025] Using tray_now directly as global ID: 255
+2026-11-15 19:26:40,060 WARNING [backend.app.services.bambu_mqtt] [b66d1ef0] [[SERIAL]] Connection stale - no message for 60.1s, forcing reconnect
+2026-11-15 19:26:40,069 DEBUG [backend.app.api.routes.printers] [b66d1ef0] API returning ams_mapping: [], ams_extruder_map: {}
+2026-11-15 19:26:40,069 DEBUG [backend.app.api.routes.printers] [b66d1ef0] Using tray_now directly as global ID: 255
+2026-11-15 19:26:40,069 INFO [backend.app.main] [b66d1ef0] [#1752] Printer 5 connected→disconnected edge; scheduling offline notification in 60s
+2026-11-15 19:26:40,752 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting firmware version info
+2026-11-15 19:26:40,752 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Sending K-profile priming request
+2026-11-15 19:26:40,752 INFO [backend.app.main] [-] [#1752] Printer 5 reconnected before debounce; cancelling pending offline notification
+2026-11-15 19:26:40,808 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-11-15 19:27:10,891 DEBUG [backend.app.api.routes.printers] [caf66d1b] API returning ams_mapping: [], ams_extruder_map: {}
+2026-11-15 19:27:10,891 DEBUG [backend.app.api.routes.printers] [caf66d1b] Using tray_now directly as global ID: 255
+2026-11-15 19:27:40,917 WARNING [backend.app.services.bambu_mqtt] [e0b85682] [[SERIAL]] Connection stale - no message for 60.1s, forcing reconnect
+2026-11-15 19:27:40,926 DEBUG [backend.app.api.routes.printers] [e0b85682] API returning ams_mapping: [], ams_extruder_map: {}
+2026-11-15 19:27:40,926 DEBUG [backend.app.api.routes.printers] [e0b85682] Using tray_now directly as global ID: 255
+2026-11-15 19:27:40,926 INFO [backend.app.main] [e0b85682] [#1752] Printer 5 connected→disconnected edge; scheduling offline notification in 60s
+2026-11-15 19:27:41,620 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting firmware version info
+2026-11-15 19:27:41,620 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Sending K-profile priming request
+2026-11-15 19:27:41,620 INFO [backend.app.main] [-] [#1752] Printer 5 reconnected before debounce; cancelling pending offline notification
+2026-11-15 19:27:41,671 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-11-15 19:28:11,747 DEBUG [backend.app.api.routes.printers] [7dcccc0d] API returning ams_mapping: [], ams_extruder_map: {}
+2026-11-15 19:28:11,747 DEBUG [backend.app.api.routes.printers] [7dcccc0d] Using tray_now directly as global ID: 255
+2026-11-15 19:28:41,772 WARNING [backend.app.services.bambu_mqtt] [2753db3e] [[SERIAL]] Connection stale - no message for 60.1s, forcing reconnect
+2026-11-15 19:28:41,781 DEBUG [backend.app.api.routes.printers] [2753db3e] API returning ams_mapping: [], ams_extruder_map: {}
+2026-11-15 19:28:41,781 DEBUG [backend.app.api.routes.printers] [2753db3e] Using tray_now directly as global ID: 255
+2026-11-15 19:28:41,781 INFO [backend.app.main] [2753db3e] [#1752] Printer 5 connected→disconnected edge; scheduling offline notification in 60s
+2026-11-15 19:28:42,553 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting firmware version info
+2026-11-15 19:28:42,553 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Sending K-profile priming request
+2026-11-15 19:28:42,553 INFO [backend.app.main] [-] [#1752] Printer 5 reconnected before debounce; cancelling pending offline notification
+2026-11-15 19:28:42,601 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-11-15 19:29:12,691 DEBUG [backend.app.api.routes.printers] [2fa0d354] API returning ams_mapping: [], ams_extruder_map: {}
+2026-11-15 19:29:12,691 DEBUG [backend.app.api.routes.printers] [2fa0d354] Using tray_now directly as global ID: 255
+2026-11-15 19:29:42,725 WARNING [backend.app.services.bambu_mqtt] [ae004e13] [[SERIAL]] Connection stale - no message for 60.1s, forcing reconnect
+2026-11-15 19:29:42,733 DEBUG [backend.app.api.routes.printers] [ae004e13] API returning ams_mapping: [], ams_extruder_map: {}
+2026-11-15 19:29:42,733 DEBUG [backend.app.api.routes.printers] [ae004e13] Using tray_now directly as global ID: 255
+2026-11-15 19:29:42,734 INFO [backend.app.main] [ae004e13] [#1752] Printer 5 connected→disconnected edge; scheduling offline notification in 60s
+2026-11-15 19:29:43,529 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting firmware version info
+2026-11-15 19:29:43,529 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Sending K-profile priming request
+2026-11-15 19:29:43,529 INFO [backend.app.main] [-] [#1752] Printer 5 reconnected before debounce; cancelling pending offline notification
+2026-11-15 19:29:43,582 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-11-15 19:30:13,658 DEBUG [backend.app.api.routes.printers] [2bf397a8] API returning ams_mapping: [], ams_extruder_map: {}
+2026-11-15 19:30:13,658 DEBUG [backend.app.api.routes.printers] [2bf397a8] Using tray_now directly as global ID: 255
+2026-11-15 19:30:43,687 WARNING [backend.app.services.bambu_mqtt] [2156ceb4] [[SERIAL]] Connection stale - no message for 60.1s, forcing reconnect
+2026-11-15 19:30:43,696 DEBUG [backend.app.api.routes.printers] [2156ceb4] API returning ams_mapping: [], ams_extruder_map: {}
+2026-11-15 19:30:43,697 DEBUG [backend.app.api.routes.printers] [2156ceb4] Using tray_now directly as global ID: 255
+2026-11-15 19:30:43,697 INFO [backend.app.main] [2156ceb4] [#1752] Printer 5 connected→disconnected edge; scheduling offline notification in 60s
+2026-11-15 19:30:44,466 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting firmware version info
+2026-11-15 19:30:44,467 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Sending K-profile priming request
+2026-11-15 19:30:44,467 INFO [backend.app.main] [-] [#1752] Printer 5 reconnected before debounce; cancelling pending offline notification
+2026-11-15 19:30:44,516 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-11-15 19:31:14,593 DEBUG [backend.app.api.routes.printers] [fce402c7] API returning ams_mapping: [], ams_extruder_map: {}
+2026-11-15 19:31:14,594 DEBUG [backend.app.api.routes.printers] [fce402c7] Using tray_now directly as global ID: 255
+2026-11-15 19:31:44,621 WARNING [backend.app.services.bambu_mqtt] [ef81a357] [[SERIAL]] Connection stale - no message for 60.1s, forcing reconnect
+2026-11-15 19:31:44,629 DEBUG [backend.app.api.routes.printers] [ef81a357] API returning ams_mapping: [], ams_extruder_map: {}
+2026-11-15 19:31:44,629 DEBUG [backend.app.api.routes.printers] [ef81a357] Using tray_now directly as global ID: 255
+2026-11-15 19:31:44,630 INFO [backend.app.main] [ef81a357] [#1752] Printer 5 connected→disconnected edge; scheduling offline notification in 60s
+2026-11-15 19:31:45,332 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting firmware version info
+2026-11-15 19:31:45,332 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Sending K-profile priming request
+2026-11-15 19:31:45,332 INFO [backend.app.main] [-] [#1752] Printer 5 reconnected before debounce; cancelling pending offline notification
+2026-11-15 19:31:45,384 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-11-15 19:32:15,457 DEBUG [backend.app.api.routes.printers] [94925dcc] API returning ams_mapping: [], ams_extruder_map: {}
+2026-11-15 19:32:15,457 DEBUG [backend.app.api.routes.printers] [94925dcc] Using tray_now directly as global ID: 255
+2026-11-15 19:32:45,484 WARNING [backend.app.services.bambu_mqtt] [ade3161a] [[SERIAL]] Connection stale - no message for 60.1s, forcing reconnect
+2026-11-15 19:32:45,492 DEBUG [backend.app.api.routes.printers] [ade3161a] API returning ams_mapping: [], ams_extruder_map: {}
+2026-11-15 19:32:45,492 DEBUG [backend.app.api.routes.printers] [ade3161a] Using tray_now directly as global ID: 255
+2026-11-15 19:32:45,493 INFO [backend.app.main] [ade3161a] [#1752] Printer 5 connected→disconnected edge; scheduling offline notification in 60s
+2026-11-15 19:32:46,184 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting firmware version info
+2026-11-15 19:32:46,184 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Sending K-profile priming request
+2026-11-15 19:32:46,184 INFO [backend.app.main] [-] [#1752] Printer 5 reconnected before debounce; cancelling pending offline notification
+2026-11-15 19:32:46,232 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-11-15 19:33:16,313 DEBUG [backend.app.api.routes.printers] [51634ae9] API returning ams_mapping: [], ams_extruder_map: {}
+2026-11-15 19:33:16,313 DEBUG [backend.app.api.routes.printers] [51634ae9] Using tray_now directly as global ID: 255
+2026-11-15 19:33:46,340 WARNING [backend.app.services.bambu_mqtt] [56a9cd4a] [[SERIAL]] Connection stale - no message for 60.1s, forcing reconnect
+2026-11-15 19:33:46,348 DEBUG [backend.app.api.routes.printers] [56a9cd4a] API returning ams_mapping: [], ams_extruder_map: {}
+2026-11-15 19:33:46,348 DEBUG [backend.app.api.routes.printers] [56a9cd4a] Using tray_now directly as global ID: 255
+2026-11-15 19:33:46,348 INFO [backend.app.main] [56a9cd4a] [#1752] Printer 5 connected→disconnected edge; scheduling offline notification in 60s
+2026-11-15 19:33:47,045 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting firmware version info
+2026-11-15 19:33:47,046 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Sending K-profile priming request
+2026-11-15 19:33:47,046 INFO [backend.app.main] [-] [#1752] Printer 5 reconnected before debounce; cancelling pending offline notification
+2026-11-15 19:33:47,077 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-11-15 19:34:54,099 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 67.0s, forcing reconnect
+2026-11-15 19:34:54,108 DEBUG [backend.app.main] [-] [[PRINTER]] Runtime tracking: not connected
+2026-11-15 19:34:54,108 INFO [backend.app.main] [-] [#1752] Printer 5 connected→disconnected edge; scheduling offline notification in 60s
+2026-11-15 19:34:54,826 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting firmware version info
+2026-11-15 19:34:54,826 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Sending K-profile priming request
+2026-11-15 19:34:54,826 INFO [backend.app.main] [-] [#1752] Printer 5 reconnected before debounce; cancelling pending offline notification
+2026-11-15 19:34:54,877 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-11-15 19:35:53,760 DEBUG [backend.app.api.routes.printers] [6f557192] API returning ams_mapping: [], ams_extruder_map: {}
+2026-11-15 19:35:53,760 DEBUG [backend.app.api.routes.printers] [6f557192] Using tray_now directly as global ID: 255
+2026-11-15 19:36:09,401 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 74.5s, forcing reconnect
+2026-11-15 19:36:09,410 INFO [backend.app.main] [-] [#1752] Printer 5 connected→disconnected edge; scheduling offline notification in 60s
+2026-11-15 19:36:10,735 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting firmware version info
+2026-11-15 19:36:10,735 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Sending K-profile priming request
+2026-11-15 19:36:10,736 INFO [backend.app.main] [-] [#1752] Printer 5 reconnected before debounce; cancelling pending offline notification
+2026-11-15 19:36:10,791 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-11-15 19:36:20,777 DEBUG [backend.app.services.bambu_mqtt] [fd070231] [[SERIAL]] Requesting status update (pushall)
+2026-11-15 19:36:20,777 INFO [uvicorn.access] [-] [IP]:60030 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-11-15 19:36:22,776 INFO [backend.app.services.bambu_mqtt] [7cbd4a82] [[SERIAL]] Set chamber lights on (seq=44)
+2026-11-15 19:36:22,776 INFO [uvicorn.access] [-] [IP]:60030 - "POST /api/v1/printers/5/chamber-light?on=true HTTP/1.1" 200
+2026-11-15 19:36:23,619 INFO [backend.app.services.bambu_mqtt] [38e9ea6e] [[SERIAL]] Set chamber lights off (seq=46)
+2026-11-15 19:36:23,620 INFO [uvicorn.access] [-] [IP]:60030 - "POST /api/v1/printers/5/chamber-light?on=false HTTP/1.1" 200
+2026-11-15 19:36:41,927 DEBUG [backend.app.services.bambu_ftp] [-] FTP connecting to [IP]:990 (timeout=30s, model=P2S, prot_c=False, cap_tls_v1_2=True)
+2026-11-15 19:36:41,928 DEBUG [backend.app.services.bambu_ftp] [-] FTP connecting to [IP]:990 (timeout=30s, model=P2S, prot_c=False, cap_tls_v1_2=True)
+2026-11-15 19:36:42,900 DEBUG [backend.app.services.bambu_ftp] [-] FTP connected, logging in as bblp
+2026-11-15 19:36:42,951 DEBUG [backend.app.services.bambu_ftp] [-] FTP logged in, setting prot_p (protected) and passive mode
+2026-11-15 19:36:42,966 DEBUG [backend.app.services.bambu_ftp] [-] FTP server welcome: 220 (vsFTPd 3.0.5)
+2026-11-15 19:36:42,966 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P2S, prot_c=False)
+2026-11-15 19:36:42,971 DEBUG [backend.app.services.bambu_ftp] [-] AVBL command not supported: 500 Unknown command.
+2026-11-15 19:36:42,994 DEBUG [backend.app.services.bambu_ftp] [-] STAT response: 211-FTP server status:
+     Connected to [IP]
+     Logged in as bblp
+     TYPE: ASCII
+     No session bandwidth limit
+     Session timeout in seconds is 300
+     Control connection is encrypted
+     Data connections will be encrypted
+     At session startup, client count was 2
+     vsFTPd 3.0.5 - secure, fast, stable
+211 End of status
+2026-11-15 19:36:43,167 DEBUG [backend.app.services.bambu_ftp] [-] FTP session to [IP] closed after QUIT, held 0.3s
+2026-11-15 19:36:44,086 DEBUG [backend.app.services.bambu_ftp] [-] FTP connected, logging in as bblp
+2026-11-15 19:36:44,125 DEBUG [backend.app.services.bambu_ftp] [-] FTP logged in, setting prot_p (protected) and passive mode
+2026-11-15 19:36:44,134 DEBUG [backend.app.services.bambu_ftp] [-] FTP server welcome: 220 (vsFTPd 3.0.5)
+2026-11-15 19:36:44,134 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P2S, prot_c=False)
+2026-11-15 19:36:44,167 DEBUG [backend.app.services.bambu_ftp] [-] Listed 2 files in /
+2026-11-15 19:36:44,170 DEBUG [backend.app.services.bambu_ftp] [-] FTP session to [IP] closed after QUIT, held 0.1s
+2026-11-15 19:36:44,993 DEBUG [backend.app.services.bambu_ftp] [-] FTP connecting to [IP]:990 (timeout=30s, model=P2S, prot_c=False, cap_tls_v1_2=True)
+2026-11-15 19:36:45,686 DEBUG [backend.app.services.bambu_ftp] [-] FTP connected, logging in as bblp
+2026-11-15 19:36:45,703 DEBUG [backend.app.services.bambu_ftp] [-] FTP logged in, setting prot_p (protected) and passive mode
+2026-11-15 19:36:45,725 DEBUG [backend.app.services.bambu_ftp] [-] FTP server welcome: 220 (vsFTPd 3.0.5)
+2026-11-15 19:36:45,726 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P2S, prot_c=False)
+2026-11-15 19:36:45,729 INFO [backend.app.services.bambu_ftp] [-] FTP list_files failed for /cache: 550 Failed to change directory.
+2026-11-15 19:36:45,732 DEBUG [backend.app.services.bambu_ftp] [-] FTP session to [IP] closed after QUIT, held 0.0s
+2026-11-15 19:36:46,264 DEBUG [backend.app.services.bambu_ftp] [-] FTP connecting to [IP]:990 (timeout=30s, model=P2S, prot_c=False, cap_tls_v1_2=True)
+2026-11-15 19:36:46,920 DEBUG [backend.app.services.bambu_ftp] [-] FTP connected, logging in as bblp
+2026-11-15 19:36:46,935 DEBUG [backend.app.services.bambu_ftp] [-] FTP logged in, setting prot_p (protected) and passive mode
+2026-11-15 19:36:46,964 DEBUG [backend.app.services.bambu_ftp] [-] FTP server welcome: 220 (vsFTPd 3.0.5)
+2026-11-15 19:36:46,964 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P2S, prot_c=False)
+2026-11-15 19:36:46,974 INFO [backend.app.services.bambu_ftp] [-] FTP list_files failed for /model: 550 Failed to change directory.
+2026-11-15 19:36:46,986 DEBUG [backend.app.services.bambu_ftp] [-] FTP session to [IP] closed after QUIT, held 0.1s
+2026-11-15 19:36:48,133 DEBUG [backend.app.services.bambu_ftp] [-] FTP connecting to [IP]:990 (timeout=30s, model=P2S, prot_c=False, cap_tls_v1_2=True)
+2026-11-15 19:36:48,865 DEBUG [backend.app.services.bambu_ftp] [-] FTP connected, logging in as bblp
+2026-11-15 19:36:48,952 DEBUG [backend.app.services.bambu_ftp] [-] FTP logged in, setting prot_p (protected) and passive mode
+2026-11-15 19:36:48,960 DEBUG [backend.app.services.bambu_ftp] [-] FTP server welcome: 220 (vsFTPd 3.0.5)
+2026-11-15 19:36:48,960 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P2S, prot_c=False)
+2026-11-15 19:36:48,965 INFO [backend.app.services.bambu_ftp] [-] FTP list_files failed for /model: 550 Failed to change directory.
+2026-11-15 19:36:48,969 DEBUG [backend.app.services.bambu_ftp] [-] FTP session to [IP] closed after QUIT, held 0.1s
+2026-11-15 19:36:49,067 DEBUG [backend.app.services.bambu_ftp] [-] FTP connecting to [IP]:990 (timeout=30s, model=P2S, prot_c=False, cap_tls_v1_2=True)
+2026-11-15 19:36:49,492 DEBUG [backend.app.services.bambu_ftp] [-] FTP connecting to [IP]:990 (timeout=30s, model=P2S, prot_c=False, cap_tls_v1_2=True)
+2026-11-15 19:36:49,931 DEBUG [backend.app.services.bambu_ftp] [-] FTP connected, logging in as bblp
+2026-11-15 19:36:49,977 DEBUG [backend.app.services.bambu_ftp] [-] FTP logged in, setting prot_p (protected) and passive mode
+2026-11-15 19:36:49,990 DEBUG [backend.app.services.bambu_ftp] [-] FTP server welcome: 220 (vsFTPd 3.0.5)
+2026-11-15 19:36:49,990 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P2S, prot_c=False)
+2026-11-15 19:36:49,993 INFO [backend.app.services.bambu_ftp] [-] FTP list_files failed for /model: 550 Failed to change directory.
+2026-11-15 19:36:50,001 DEBUG [backend.app.services.bambu_ftp] [-] FTP session to [IP] closed after QUIT, held 0.1s
+2026-11-15 19:36:50,780 DEBUG [backend.app.services.bambu_ftp] [-] FTP connected, logging in as bblp
+2026-11-15 19:36:50,799 DEBUG [backend.app.services.bambu_ftp] [-] FTP logged in, setting prot_p (protected) and passive mode
+2026-11-15 19:36:50,807 DEBUG [backend.app.services.bambu_ftp] [-] FTP server welcome: 220 (vsFTPd 3.0.5)
+2026-11-15 19:36:50,807 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P2S, prot_c=False)
+2026-11-15 19:36:50,874 DEBUG [backend.app.services.bambu_ftp] [-] Listed 0 files in /timelapse
+2026-11-15 19:36:50,877 DEBUG [backend.app.services.bambu_ftp] [-] FTP session to [IP] closed after QUIT, held 0.1s
+2026-11-15 19:36:53,627 DEBUG [backend.app.api.routes.printers] [5f288971] API returning ams_mapping: [], ams_extruder_map: {}
+2026-11-15 19:36:53,627 DEBUG [backend.app.api.routes.printers] [5f288971] Using tray_now directly as global ID: 255

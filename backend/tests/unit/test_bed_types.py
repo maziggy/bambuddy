@@ -2,13 +2,14 @@
 
 import pytest
 
-from backend.app.models.build_plate import DEFAULT_BUILD_PLATES
 from backend.app.utils.bed_types import (
     BED_TYPES,
     PLATE_TYPE_ANY,
     InstalledPlate,
     normalize_bed_type,
+    plate_label,
     plate_mismatch,
+    same_pattern,
 )
 
 
@@ -44,47 +45,53 @@ def test_normalize_unknown_is_no_constraint(raw):
     assert normalize_bed_type(raw) is None
 
 
-def test_every_seeded_plate_has_a_known_base_type():
-    for key, _name, base_type, *_rest in DEFAULT_BUILD_PLATES:
-        assert base_type in BED_TYPES, key
+def test_labels():
+    assert plate_label("smooth_pei") == "Smooth PEI Plate"
+    assert plate_label("smooth_pei", "Carbon Fiber") == "Smooth PEI Plate · Carbon Fiber"
+    assert plate_label(None) == ""
+    assert set(BED_TYPES) == {
+        "cool_plate",
+        "textured_cool_plate",
+        "supertack",
+        "engineering",
+        "smooth_pei",
+        "textured_pei",
+    }
 
 
-def test_3d_effect_plates_are_smooth_pei_and_off_by_default():
-    effect = [row for row in DEFAULT_BUILD_PLATES if row[0].startswith("3d_effect_")]
-    assert {row[3] for row in effect} == {"Carbon Fiber", "Starry", "Diamond", "Galaxy"}
-    for _key, _name, base_type, _pattern, _image, enabled, _order in effect:
-        assert base_type == "smooth_pei"
-        assert enabled is False
+def test_patterns_compare_ignoring_case_and_spacing():
+    assert same_pattern("Carbon Fiber", " carbon fiber ")
+    assert same_pattern(None, "")
+    assert not same_pattern("Carbon Fiber", "Starry")
 
 
-SMOOTH = InstalledPlate(id=1, name="Smooth PEI Plate", base_type="smooth_pei")
-CARBON = InstalledPlate(id=2, name="3D Effect – Carbon Fiber", base_type="smooth_pei")
+SMOOTH = InstalledPlate(base_type="smooth_pei")
+CARBON = InstalledPlate(base_type="smooth_pei", pattern="Carbon Fiber")
+TEXTURED = InstalledPlate(base_type="textured_pei")
 
 
 class TestPlateMismatch:
     def test_untracked_printer_takes_anything(self):
-        assert plate_mismatch(None, "textured_pei", 5) is None
+        assert plate_mismatch(None, "textured_pei", "Carbon Fiber") is None
 
     def test_no_requirement(self):
-        assert plate_mismatch(SMOOTH, None, None) is None
-        assert plate_mismatch(SMOOTH, PLATE_TYPE_ANY, None) is None
+        assert plate_mismatch(SMOOTH, None) is None
+        assert plate_mismatch(SMOOTH, PLATE_TYPE_ANY) is None
+        # A pattern means nothing without its type.
+        assert plate_mismatch(SMOOTH, PLATE_TYPE_ANY, "Carbon Fiber") is None
 
     def test_base_type(self):
-        assert plate_mismatch(SMOOTH, "smooth_pei", None) is None
-        assert plate_mismatch(SMOOTH, "textured_pei", None) == "needs Textured PEI Plate, has Smooth PEI Plate"
+        assert plate_mismatch(SMOOTH, "smooth_pei") is None
+        assert plate_mismatch(SMOOTH, "textured_pei") == "needs Textured PEI Plate, has Smooth PEI Plate"
 
     def test_pattern_counts_as_its_type(self):
-        assert plate_mismatch(CARBON, "smooth_pei", None) is None
+        assert plate_mismatch(CARBON, "smooth_pei") is None
 
-    def test_specific_plate(self):
-        assert plate_mismatch(CARBON, "smooth_pei", 2) is None
-        assert (
-            plate_mismatch(SMOOTH, "smooth_pei", 2, "3D Effect – Carbon Fiber")
-            == "needs 3D Effect – Carbon Fiber, has Smooth PEI Plate"
+    def test_pattern_requirement(self):
+        assert plate_mismatch(CARBON, "smooth_pei", "carbon fiber") is None
+        assert plate_mismatch(SMOOTH, "smooth_pei", "Carbon Fiber") == (
+            "needs Smooth PEI Plate · Carbon Fiber, has Smooth PEI Plate"
         )
-
-    def test_specific_plate_whose_type_was_edited_away(self):
-        """A custom plate re-typed after a job asked for it no longer fits."""
-        retyped = InstalledPlate(id=2, name="Custom", base_type="textured_pei")
-        assert plate_mismatch(retyped, "smooth_pei", 2) == "needs Smooth PEI / High Temp Plate, has Custom"
-        assert plate_mismatch(retyped, PLATE_TYPE_ANY, 2) is None
+        assert plate_mismatch(TEXTURED, "smooth_pei", "Carbon Fiber") == (
+            "needs Smooth PEI Plate · Carbon Fiber, has Textured PEI Plate"
+        )

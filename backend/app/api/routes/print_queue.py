@@ -119,27 +119,26 @@ def _requested_plate_type(value: str | None) -> str:
     return normalized
 
 
-async def _validate_required_plate(db: AsyncSession, plate_id: int | None, plate_type: str | None) -> None:
-    """A specific plate must exist and be of the plate type the file needs (#1306).
+async def _validate_plate_pattern(db: AsyncSession, pattern: str | None, plate_type: str | None) -> str | None:
+    """The stored spelling of a requested plate pattern, or None for no pattern (#1306).
 
-    Checked at queue time so a job can never ask for a plate it could not print
-    on — otherwise it would wait forever for a swap that would not help.
+    A pattern narrows the plate type the file was sliced for, so it must be one
+    set up under that type. Checked at queue time so a job can never ask for a
+    plate it could not print on, which would hold it for a swap that never helps.
     """
-    if plate_id is None:
-        return
-    if plate_type == PLATE_TYPE_ANY:
-        plate_type = None
-    from backend.app.models.build_plate import BuildPlate
+    pattern = " ".join((pattern or "").split()) or None
+    if pattern is None:
+        return None
+    if not plate_type or plate_type == PLATE_TYPE_ANY:
+        raise HTTPException(400, "A plate pattern needs the plate type the file was sliced for")
+    from backend.app.services.build_plate_config import load_plate_config
 
-    plate = (await db.execute(select(BuildPlate).where(BuildPlate.id == plate_id))).scalar_one_or_none()
-    if plate is None:
-        raise HTTPException(400, "Build plate not found")
-    if plate_type and plate.base_type != plate_type:
+    found = (await load_plate_config(db)).find_pattern(plate_type, pattern)
+    if found is None:
         raise HTTPException(
-            400,
-            f"{plate.name} is a {bed_type_label(plate.base_type)} plate, "
-            f"but this job was sliced for {bed_type_label(plate_type)}",
+            400, f"No {pattern} plate is set up for {bed_type_label(plate_type)}, the plate this job was sliced for"
         )
+    return found.name
 
 
 def _variant_summaries(item: PrintQueueItem) -> list[QueueVariantSummary]:
@@ -559,7 +558,7 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         "filament_overrides": filament_overrides_parsed,
         "waiting_reason": item.waiting_reason,
         "required_plate_type": item.required_plate_type,
-        "required_plate_id": item.required_plate_id,
+        "required_plate_pattern": item.required_plate_pattern,
         "archive_id": item.archive_id,
         "library_file_id": item.library_file_id,
         "cost_center_id": item.cost_center_id,
@@ -1414,11 +1413,11 @@ async def add_to_queue(
         required_plate_type = PLATE_TYPE_ANY
     else:
         required_plate_type = _plate_type_from_3mf(file_path, data.plate_id)
-    if variant_specs and data.required_plate_id is not None:
+    if variant_specs and data.required_plate_pattern:
         # Each alternative is its own slice and may be for a different plate
-        # type, so one specific plate cannot be valid for all of them.
-        raise HTTPException(400, "A specific build plate cannot be combined with printer alternatives")
-    await _validate_required_plate(db, data.required_plate_id, required_plate_type)
+        # type, so one pattern cannot be valid for all of them.
+        raise HTTPException(400, "A plate pattern cannot be combined with printer alternatives")
+    required_plate_pattern = await _validate_plate_pattern(db, data.required_plate_pattern, required_plate_type)
 
     # Validate quantity
     quantity = max(1, data.quantity)
@@ -1592,7 +1591,7 @@ async def add_to_queue(
             required_filament_types=required_filament_types,
             filament_overrides=filament_overrides_json,
             required_plate_type=required_plate_type,
-            required_plate_id=data.required_plate_id,
+            required_plate_pattern=required_plate_pattern,
             archive_id=data.archive_id,
             library_file_id=data.library_file_id,
             cost_center_id=data.cost_center_id,
@@ -2649,22 +2648,20 @@ async def update_queue_item(
         update_data["required_plate_type"] = _plate_type_from_3mf(
             await _resolve_source_path(db, item), update_data["plate_id"]
         )
-        # A specific plate chosen for the old plate may not fit the new one.
-        # The caller did not ask about it, so drop it rather than reject an
-        # edit that only moved the job to another plate of the file.
-        if "required_plate_id" not in update_data and item.required_plate_id is not None:
-            from backend.app.models.build_plate import BuildPlate
-
-            new_type = update_data["required_plate_type"]
-            old_plate_type = await db.scalar(
-                select(BuildPlate.base_type).where(BuildPlate.id == item.required_plate_id)
-            )
-            if new_type and new_type != PLATE_TYPE_ANY and old_plate_type != new_type:
-                update_data["required_plate_id"] = None
-    if "required_plate_id" in update_data:
-        await _validate_required_plate(
+    # A pattern belongs to one plate type. When the type changes and the caller
+    # did not say which pattern to use, drop it rather than reject an edit that
+    # only moved the job to another plate of the file.
+    if (
+        "required_plate_pattern" not in update_data
+        and item.required_plate_pattern
+        and "required_plate_type" in update_data
+        and update_data["required_plate_type"] != item.required_plate_type
+    ):
+        update_data["required_plate_pattern"] = None
+    if "required_plate_pattern" in update_data:
+        update_data["required_plate_pattern"] = await _validate_plate_pattern(
             db,
-            update_data.get("required_plate_id", item.required_plate_id),
+            update_data.get("required_plate_pattern", item.required_plate_pattern),
             update_data.get("required_plate_type", item.required_plate_type),
         )
 

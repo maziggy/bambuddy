@@ -7,10 +7,9 @@ Bambuddy code and third-party slicers use a few more spellings. Everything here
 funnels those strings onto one small set of *base types*.
 
 A base type is what G-code compatibility actually depends on: the bed
-temperature and first-layer settings the slicer baked in. Physical plates the
-user owns (``BuildPlate`` rows) each belong to exactly one base type — a
-Bambu 3D Effect "Carbon Fiber" plate is a Smooth PEI plate with a pattern
-sheet on it, not a new kind of plate.
+temperature and first-layer settings the slicer baked in. A printer's plate is a
+base type plus an optional *pattern* — a Bambu 3D Effect "Carbon Fiber" plate is
+a Smooth PEI plate with a pattern on it, not a new kind of plate.
 """
 
 from __future__ import annotations
@@ -28,7 +27,7 @@ BED_TYPES: dict[str, str] = {
     "textured_cool_plate": "Textured Cool Plate",
     "supertack": "Cool Plate SuperTack",
     "engineering": "Engineering Plate",
-    "smooth_pei": "Smooth PEI / High Temp Plate",
+    "smooth_pei": "Smooth PEI Plate",
     "textured_pei": "Textured PEI Plate",
 }
 
@@ -78,44 +77,47 @@ def bed_type_label(key: str | None) -> str:
     return BED_TYPES.get(key, key)
 
 
+def plate_label(base_type: str | None, pattern: str | None = None) -> str:
+    """ "Smooth PEI Plate", or "Smooth PEI Plate · Carbon Fiber" with a pattern."""
+    label = bed_type_label(base_type)
+    return f"{label} · {pattern}" if pattern else label
+
+
+def same_pattern(a: str | None, b: str | None) -> bool:
+    """Patterns are names the user typed, so compare them ignoring case and spacing."""
+    return (a or "").strip().casefold() == (b or "").strip().casefold()
+
+
 @dataclass(frozen=True)
 class InstalledPlate:
     """The plate currently on a printer, as the scheduler sees it."""
 
-    id: int
-    name: str
     base_type: str
+    pattern: str | None = None
 
 
 def plate_mismatch(
     installed: InstalledPlate | None,
     required_type: str | None,
-    required_plate_id: int | None,
-    required_plate_name: str | None = None,
+    required_pattern: str | None = None,
 ) -> str | None:
     """Why *installed* cannot take a job, or None if it can.
 
     * A printer with no plate recorded is "not tracked" and accepts anything,
       so turning the feature on never strands a printer the user has not set up.
-    * A job asking for one specific plate (``required_plate_id``) needs exactly
-      that plate — and, when the job also names a type, that plate must still be
-      of it (a custom plate's type can be edited after jobs asked for it).
-    * Otherwise a job needs any plate of its base type — a patterned plate is a
-      subset of its base type, so a Carbon Fiber plate takes Smooth PEI jobs.
-    * A job with no requirement (None or PLATE_TYPE_ANY) goes anywhere.
+    * A job needs a plate of its base type. Any pattern will do unless the job
+      asks for one (``required_pattern``): a Carbon Fiber plate is still a
+      Smooth PEI plate, so it takes plain Smooth PEI jobs.
+    * A job with no requirement (None or PLATE_TYPE_ANY) goes anywhere. A
+      pattern only means something together with its type.
 
-    The returned text is the "needs X" half of a waiting reason.
+    The returned text is the "needs X, has Y" part of a waiting reason.
     """
-    if installed is None:
+    if installed is None or not required_type or required_type == PLATE_TYPE_ANY:
         return None
-    if required_type == PLATE_TYPE_ANY:
-        required_type = None
-    if required_plate_id is not None:
-        if installed.id != required_plate_id:
-            return f"needs {required_plate_name or f'plate #{required_plate_id}'}, has {installed.name}"
-        if required_type and installed.base_type != required_type:
-            return f"needs {bed_type_label(required_type)}, has {installed.name}"
-        return None
-    if required_type and installed.base_type != required_type:
-        return f"needs {bed_type_label(required_type)}, has {installed.name}"
+    has = plate_label(installed.base_type, installed.pattern)
+    if installed.base_type != required_type:
+        return f"needs {plate_label(required_type, required_pattern)}, has {has}"
+    if required_pattern and not same_pattern(installed.pattern, required_pattern):
+        return f"needs {plate_label(required_type, required_pattern)}, has {has}"
     return None

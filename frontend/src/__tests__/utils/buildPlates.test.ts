@@ -3,24 +3,31 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { groupPlatesByBaseType, normalizeBedType, plateImage } from '../../utils/buildPlates';
-import type { BuildPlate } from '../../api/client';
+import {
+  findPlateOption,
+  normalizeBedType,
+  parsePlateValue,
+  plateLabel,
+  plateOptions,
+  plateValue,
+} from '../../utils/buildPlates';
+import type { BuildPlateConfig } from '../../api/client';
 
-const plate = (over: Partial<BuildPlate>): BuildPlate => ({
-  id: 1,
-  builtin_key: null,
-  is_builtin: false,
-  name: 'Plate',
-  base_type: 'smooth_pei',
-  base_type_label: 'Smooth PEI / High Temp Plate',
-  pattern: null,
-  image: null,
-  notes: null,
-  enabled: true,
-  sort_order: 0,
-  installed_on: [],
-  ...over,
-});
+const type = (key: string, label: string, owned: boolean) => ({ key, label, owned, installed_on: [], waiting_jobs: 0 });
+
+const config: BuildPlateConfig = {
+  types: [
+    type('cool_plate', 'Cool Plate', false),
+    type('smooth_pei', 'Smooth PEI Plate', true),
+    type('textured_pei', 'Textured PEI Plate', true),
+    type('engineering', 'Engineering Plate', false),
+  ],
+  patterns: [
+    { base_type: 'smooth_pei', name: 'Carbon Fiber', label: 'Smooth PEI Plate · Carbon Fiber', installed_on: [], waiting_jobs: 0 },
+    { base_type: 'engineering', name: 'Gold', label: 'Engineering Plate · Gold', installed_on: [], waiting_jobs: 0 },
+  ],
+  pattern_suggestions: ['Carbon Fiber'],
+};
 
 describe('normalizeBedType', () => {
   it('maps slicer names to the same base types as the backend', () => {
@@ -40,21 +47,52 @@ describe('normalizeBedType', () => {
   });
 });
 
-describe('plateImage', () => {
-  it('prefers the plate photo and falls back to the base type icon', () => {
-    expect(plateImage(plate({ image: '/img/plates/x.jpg' }))).toBe('/img/plates/x.jpg');
-    expect(plateImage(plate({ base_type: 'textured_pei' }))).toBe('/img/bed/bed_pei.png');
+describe('plate values', () => {
+  it('round-trips a type with and without a pattern', () => {
+    expect(parsePlateValue(plateValue('smooth_pei'))).toEqual({ baseType: 'smooth_pei', pattern: null });
+    expect(parsePlateValue(plateValue('smooth_pei', 'Carbon Fiber'))).toEqual({
+      baseType: 'smooth_pei',
+      pattern: 'Carbon Fiber',
+    });
+    expect(plateLabel('Smooth PEI Plate', 'Carbon Fiber')).toBe('Smooth PEI Plate · Carbon Fiber');
+    expect(plateLabel('Smooth PEI Plate', null)).toBe('Smooth PEI Plate');
   });
 });
 
-describe('groupPlatesByBaseType', () => {
-  it('groups patterned plates under their base type, keeping order', () => {
-    const groups = groupPlatesByBaseType([
-      plate({ id: 1, name: 'Textured', base_type: 'textured_pei', base_type_label: 'Textured PEI Plate' }),
-      plate({ id: 2, name: 'Smooth' }),
-      plate({ id: 3, name: 'Carbon Fiber', pattern: 'Carbon Fiber' }),
+describe('plateOptions', () => {
+  it('lists owned types, each followed by its patterns, in one flat list', () => {
+    expect(plateOptions(config).map((o) => o.label)).toEqual([
+      'Smooth PEI Plate',
+      'Smooth PEI Plate · Carbon Fiber',
+      'Textured PEI Plate',
     ]);
-    expect(groups.map((g) => g.baseType)).toEqual(['textured_pei', 'smooth_pei']);
-    expect(groups[1].plates.map((p) => p.name)).toEqual(['Smooth', 'Carbon Fiber']);
+  });
+
+  it('keeps the plate already chosen even when its type is unticked', () => {
+    expect(plateOptions(config, { keep: { baseType: 'engineering', pattern: 'gold' } }).map((o) => o.label)).toEqual([
+      'Smooth PEI Plate',
+      'Smooth PEI Plate · Carbon Fiber',
+      'Textured PEI Plate',
+      'Engineering Plate · Gold',
+    ]);
+    expect(plateOptions(config, { keep: { baseType: 'cool_plate', pattern: null } })[0].label).toBe('Cool Plate');
+  });
+
+  it('limits the list to one type, ticked or not', () => {
+    expect(plateOptions(config, { onlyType: 'engineering' }).map((o) => o.label)).toEqual([
+      'Engineering Plate',
+      'Engineering Plate · Gold',
+    ]);
+  });
+
+  it('finds the option for a stored plate, ignoring the pattern case', () => {
+    const options = plateOptions(config);
+    expect(findPlateOption(options, 'smooth_pei', 'carbon fiber')?.label).toBe('Smooth PEI Plate · Carbon Fiber');
+    expect(findPlateOption(options, 'smooth_pei', null)?.label).toBe('Smooth PEI Plate');
+    expect(findPlateOption(options, null, null)).toBeUndefined();
+  });
+
+  it('is empty before the plates load', () => {
+    expect(plateOptions(undefined)).toEqual([]);
   });
 });

@@ -70,8 +70,7 @@ import { api, ApiError } from '../api/client';
 import { PipelineRunsView } from './PipelineRunsPage';
 import { type TimeFormat, formatETA, formatDuration, formatRelativeTime, parseUTCDate } from '../utils/date';
 import { getBedTypeInfo } from '../utils/bedType';
-import { BUILD_PLATES_QUERY_KEY } from '../utils/buildPlates';
-import { PlateImage } from '../components/PlateImage';
+import { plateLabel } from '../utils/buildPlates';
 import { getColorName } from '../utils/colors';
 import { productLineOf, useFilamentNameByIdx } from '../components/PrintModal/useFilamentLabels';
 import type { PrintQueueItem, PrintQueueBulkUpdate, Permission, CalibrationMode, PrinterStatus, SlotSpoolIdentity } from '../api/client';
@@ -608,21 +607,12 @@ function SortableQueueItem({
   etaNow?: number;
   t: (key: string, options?: Record<string, unknown>) => string;
 }) {
-  // Specific build plate the job asked for (#1306), named on the plate badge —
+  // Build plate pattern the job asked for (#1306), named on the plate badge,
   // only while plate tracking is on. With it off the plate is not enforced, so
-  // the badge shows the file's plate type as it always has. Both queries share
-  // the page's cached data; the plate list is only fetched for rows that need it.
+  // the badge shows the file's plate type as it always has.
   const { data: appSettings } = useUiSettings();
   const plateTracking = appSettings?.build_plate_tracking_enabled === true;
-  const { data: buildPlates } = useQuery({
-    queryKey: BUILD_PLATES_QUERY_KEY,
-    queryFn: api.getBuildPlates,
-    enabled: plateTracking && item.required_plate_id != null,
-  });
-  const requiredPlate = plateTracking && item.required_plate_id != null
-    ? buildPlates?.find((p) => p.id === item.required_plate_id) ?? null
-    : null;
-  // Fetch printer status every 30 seconds while printing to monitor progress
+  const requiredPattern = plateTracking ? item.required_plate_pattern ?? null : null;
   const { hasAnyPermission } = useAuth();
   // Their waiting jobs are started by someone who manages the queue (#1620)
   const awaitingReview = !hasAnyPermission('queue:update_all', 'queue:start_unreviewed');
@@ -969,18 +959,13 @@ function SortableQueueItem({
               // carry curr_bed_type or the slicer used an unknown label.
               const bed = getBedTypeInfo(item.bed_type);
               if (!bed) return null;
-              // A job that asked for one specific plate (e.g. a 3D Effect
-              // sheet) names that plate instead of the generic type (#1306).
-              const label = requiredPlate ? requiredPlate.name : bed.label;
-              const iconClass = 'w-3.5 h-3.5 sm:w-4 sm:h-4 object-contain';
+              // A job that asked for a pattern (e.g. a 3D Effect sheet) names
+              // it after the plate type (#1306).
+              const label = plateLabel(bed.label, requiredPattern);
               return (
                 <span className="flex items-center gap-1 sm:gap-1.5" title={label}>
-                  {requiredPlate ? (
-                    <PlateImage plate={requiredPlate} className={iconClass} fallbackSrc={bed.icon} />
-                  ) : (
-                    <img src={bed.icon} alt="" className={iconClass} />
-                  )}
-                  <span className="truncate max-w-[120px]">{label}</span>
+                  <img src={bed.icon} alt="" className="w-3.5 h-3.5 sm:w-4 sm:h-4 object-contain" />
+                  <span className="truncate max-w-[220px]">{label}</span>
                 </span>
               );
             })()}

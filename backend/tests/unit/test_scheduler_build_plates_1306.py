@@ -10,7 +10,7 @@ wait for that plate. Rules exercised here:
   never held for a plate.
 - **A pattern is a subset of its type.** A Carbon Fiber plate is a Smooth PEI
   plate, so it takes Smooth PEI jobs; asking for Carbon Fiber specifically
-  needs exactly that plate.
+  needs a Smooth PEI plate with that pattern.
 - **A wrong plate waits, it does not fail**, and says which swap would help.
 """
 
@@ -24,19 +24,18 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import backend.app.models  # noqa: F401 - populate Base.metadata
 from backend.app.core.database import Base
-from backend.app.models.build_plate import BuildPlate
 from backend.app.models.library import LibraryFile
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.services.print_scheduler import PrintScheduler, _ModelCandidate
 
-TEXTURED, SMOOTH, CARBON = 1, 2, 3
+TEXTURED, SMOOTH, CARBON = ("textured_pei", None), ("smooth_pei", None), ("smooth_pei", "Carbon Fiber")
 
 
 @pytest.fixture
 async def ctx():
-    """Two idle X1Cs and three plates: textured, smooth, and a smooth-PEI pattern."""
+    """Two idle X1Cs, nothing fitted."""
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -55,9 +54,6 @@ async def ctx():
                     is_active=True,
                 )
             )
-        db.add(BuildPlate(id=TEXTURED, name="Textured PEI Plate", base_type="textured_pei"))
-        db.add(BuildPlate(id=SMOOTH, name="Smooth PEI Plate", base_type="smooth_pei"))
-        db.add(BuildPlate(id=CARBON, name="3D Effect – Carbon Fiber", base_type="smooth_pei", pattern="Carbon Fiber"))
         await db.commit()
 
     try:
@@ -72,10 +68,10 @@ async def _enable_tracking(ctx, on=True):
         await db.commit()
 
 
-async def _install(ctx, printer_id, plate_id):
+async def _install(ctx, printer_id, plate):
     async with ctx.session_maker() as db:
         printer = (await db.execute(select(Printer).where(Printer.id == printer_id))).scalar_one()
-        printer.installed_plate_id = plate_id
+        printer.installed_plate_type, printer.installed_plate_pattern = plate
         await db.commit()
 
 
@@ -85,7 +81,7 @@ async def _add_item(
     printer_id=None,
     target_model="X1C",
     plate_type="smooth_pei",
-    plate_id=None,
+    pattern=None,
     position=1,
     bed_type_meta=None,
 ):
@@ -109,7 +105,7 @@ async def _add_item(
             target_model=None if printer_id else target_model,
             library_file_id=lib.id,
             required_plate_type=plate_type,
-            required_plate_id=plate_id,
+            required_plate_pattern=pattern,
         )
         db.add(item)
         await db.commit()
@@ -205,7 +201,7 @@ class TestModelBasedJobs:
         await _enable_tracking(ctx)
         await _install(ctx, 1, TEXTURED)
         await _install(ctx, 2, SMOOTH)
-        item_id = await _add_item(ctx, plate_type="smooth_pei", plate_id=CARBON)
+        item_id = await _add_item(ctx, plate_type="smooth_pei", pattern="Carbon Fiber")
         waiting = AsyncMock()
 
         await _run(ctx, PrintScheduler(), waiting=waiting)
@@ -213,8 +209,8 @@ class TestModelBasedJobs:
         item = await _item(ctx, item_id)
         assert item.printer_id is None
         assert item.waiting_reason.startswith("Wrong plate:")
-        assert "needs 3D Effect – Carbon Fiber" in item.waiting_reason
-        assert "X1C-02 (needs 3D Effect – Carbon Fiber, has Smooth PEI Plate)" in item.waiting_reason
+        assert "needs Smooth PEI Plate · Carbon Fiber" in item.waiting_reason
+        assert "X1C-02 (needs Smooth PEI Plate · Carbon Fiber, has Smooth PEI Plate)" in item.waiting_reason
         # A plate swap needs a person, so it is not a silent busy-only wait.
         waiting.assert_awaited_once()
 
@@ -230,7 +226,7 @@ class TestModelBasedJobs:
         item = await _item(ctx, item_id)
         assert item.status == "pending"
         assert item.printer_id is None
-        assert "needs Smooth PEI / High Temp Plate, has Textured PEI Plate" in item.waiting_reason
+        assert "needs Smooth PEI Plate, has Textured PEI Plate" in item.waiting_reason
 
     @pytest.mark.asyncio
     async def test_untracked_printers_take_any_job(self, ctx):
@@ -267,17 +263,6 @@ class TestModelBasedJobs:
         assert item.required_plate_type == "smooth_pei"
         assert item.printer_id == 2
 
-    @pytest.mark.asyncio
-    async def test_a_deleted_specific_plate_falls_back_to_the_type(self, ctx):
-        """Waiting for a plate that no longer exists would be waiting forever."""
-        await _enable_tracking(ctx)
-        await _install(ctx, 1, SMOOTH)
-        item_id = await _add_item(ctx, plate_type="smooth_pei", plate_id=999)
-
-        await _run(ctx, PrintScheduler())
-
-        assert (await _item(ctx, item_id)).printer_id == 1
-
 
 class TestPinnedJobs:
     @pytest.mark.asyncio
@@ -291,9 +276,7 @@ class TestPinnedJobs:
         launched.assert_not_called()
         item = await _item(ctx, item_id)
         assert item.status == "pending"
-        assert item.waiting_reason == (
-            "Wrong plate: X1C-01 (needs Smooth PEI / High Temp Plate, has Textured PEI Plate)"
-        )
+        assert item.waiting_reason == ("Wrong plate: X1C-01 (needs Smooth PEI Plate, has Textured PEI Plate)")
 
     @pytest.mark.asyncio
     async def test_swapping_the_plate_releases_it(self, ctx):
@@ -351,8 +334,8 @@ class TestTurningTrackingOff:
         await _enable_tracking(ctx)
         await _install(ctx, 1, TEXTURED)
         await _install(ctx, 2, TEXTURED)
-        pinned_id = await _add_item(ctx, printer_id=2, plate_type="smooth_pei", plate_id=CARBON, position=1)
-        model_id = await _add_item(ctx, plate_type="smooth_pei", plate_id=CARBON, position=2)
+        pinned_id = await _add_item(ctx, printer_id=2, plate_type="smooth_pei", pattern="Carbon Fiber", position=1)
+        model_id = await _add_item(ctx, plate_type="smooth_pei", pattern="Carbon Fiber", position=2)
         scheduler = PrintScheduler()
 
         await _run(ctx, scheduler)
@@ -369,7 +352,7 @@ class TestTurningTrackingOff:
         assert model.waiting_reason is None
         assert model.printer_id == 1
         # The requirement itself is kept for if tracking comes back on.
-        assert pinned.required_plate_id == CARBON
+        assert pinned.required_plate_pattern == "Carbon Fiber"
 
     @pytest.mark.asyncio
     async def test_a_pass_that_wakes_a_printer_still_drops_the_plate_reason(self, ctx):
@@ -378,7 +361,7 @@ class TestTurningTrackingOff:
         item_id = await _add_item(ctx, plate_type="smooth_pei")
         async with ctx.session_maker() as db:
             item = await db.get(PrintQueueItem, item_id)
-            item.waiting_reason = "Wrong plate: X1C-01 (needs Smooth PEI / High Temp Plate, has Textured PEI Plate)"
+            item.waiting_reason = "Wrong plate: X1C-01 (needs Smooth PEI Plate, has Textured PEI Plate)"
             await db.commit()
         scheduler = PrintScheduler()
 

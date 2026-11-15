@@ -489,8 +489,10 @@ export interface Printer {
   camera_light_auto: boolean;  // picked for the chamber light when camera_light_mode is 'selected' (#1655)
   plate_detection_enabled: boolean;  // Check plate before print
   plate_detection_roi?: PlateDetectionROI;  // ROI for plate detection
-  // Build plate now on the printer (#1306); null = not tracked, accepts any job.
-  installed_plate_id?: number | null;
+  // Build plate on the printer (#1306): a base-type key plus an optional
+  // pattern. A null type means not tracked: the printer accepts any job.
+  installed_plate_type?: string | null;
+  installed_plate_pattern?: string | null;
   wear_cost_per_hour: number | null;  // Wear cost per printing hour (#694)
   dispatch_priority: number | null;  // Place in the pick order of any-model jobs, lowest first (#2915)
   wled_config: WLEDConfig | null;
@@ -498,37 +500,33 @@ export interface Printer {
   updated_at: string;
 }
 
-// Build plate tracking (#1306). A plate belongs to one slicer base type; the
-// pattern only tells apart plates of the same type (3D Effect sheets).
-export interface BuildPlate {
-  id: number;
-  builtin_key: string | null;
-  is_builtin: boolean;
-  name: string;
-  base_type: string;
-  base_type_label: string;
-  pattern: string | null;
-  image: string | null;
-  notes: string | null;
-  enabled: boolean;
-  sort_order: number;
-  installed_on: number[];  // printer ids with this plate installed
-  required_by_pending: number;  // pending queue jobs waiting for this specific plate
-}
-
-export interface BuildPlateInput {
-  name?: string;
-  base_type?: string;
-  pattern?: string | null;
-  image?: string | null;
-  notes?: string | null;
-  enabled?: boolean;
-  sort_order?: number;
-}
-
-export interface BedTypeOption {
+// Build plate tracking (#1306). A plate is a slicer base type (fixed list) plus
+// an optional pattern the user added, e.g. a 3D Effect "Carbon Fiber" sheet.
+export interface PlateTypeInfo {
   key: string;
   label: string;
+  owned: boolean;
+  installed_on: number[];  // printer ids with a plate of this type fitted
+  waiting_jobs: number;  // pending jobs whose file needs this type
+}
+
+export interface PlatePatternInfo {
+  base_type: string;
+  name: string;
+  label: string;  // "Smooth PEI Plate · Carbon Fiber"
+  installed_on: number[];
+  waiting_jobs: number;  // pending jobs that asked for this pattern
+}
+
+export interface BuildPlateConfig {
+  types: PlateTypeInfo[];
+  patterns: PlatePatternInfo[];
+  pattern_suggestions: string[];
+}
+
+export interface BuildPlateConfigInput {
+  types: string[];
+  patterns: { base_type: string; name: string }[];
 }
 
 export interface HMSError {
@@ -2920,9 +2918,9 @@ export interface PrintQueueItem {
   required_filament_types: string[] | null;  // Required filament types for model-based assignment
   waiting_reason: string | null;  // Why this job hasn't started yet (empty once it can)
   // Build plate constraint (#1306): a base-type key, "any", or null (not yet
-  // derived). required_plate_id narrows it to one specific plate.
+  // derived). required_plate_pattern narrows it to one pattern of that type.
   required_plate_type?: string | null;
-  required_plate_id?: number | null;
+  required_plate_pattern?: string | null;
   // Cross-model alternatives (#671), in priority order. Empty for ordinary
   // items. Present until dispatch resolves one, after which library_file_id and
   // target_model name the candidate that actually ran.
@@ -3110,7 +3108,7 @@ export interface PrintQueueItemCreate {
   plate_id?: number | null;  // Plate ID for multi-plate 3MF files
   // Build plate constraint (#1306). Omit to derive from the file; "any" = none.
   required_plate_type?: string | null;
-  required_plate_id?: number | null;
+  required_plate_pattern?: string | null;
   // Print options
   bed_levelling?: CalibrationMode;
   flow_cali?: CalibrationMode;
@@ -3204,7 +3202,7 @@ export interface PrintQueueItemUpdate {
   ams_mapping?: number[];
   // Build plate constraint (#1306). Omit to derive from the file; "any" = none.
   required_plate_type?: string | null;
-  required_plate_id?: number | null;
+  required_plate_pattern?: string | null;
   plate_id?: number | null;  // Plate ID for multi-plate 3MF files
   // Print options
   bed_levelling?: CalibrationMode;
@@ -5522,26 +5520,18 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),
-  setInstalledPlate: (printerId: number, plateId: number | null) =>
+  setInstalledPlate: (printerId: number, plateType: string | null, pattern: string | null = null) =>
     request<Printer>(`/printers/${printerId}/installed-plate`, {
       method: 'PUT',
-      body: JSON.stringify({ plate_id: plateId }),
+      body: JSON.stringify({ plate_type: plateType, pattern }),
     }),
   // Build plates (#1306)
-  getBuildPlates: () => request<BuildPlate[]>('/build-plates'),
-  getBedTypes: () => request<BedTypeOption[]>('/build-plates/bed-types'),
-  createBuildPlate: (data: BuildPlateInput) =>
-    request<BuildPlate>('/build-plates', {
-      method: 'POST',
+  getBuildPlates: () => request<BuildPlateConfig>('/build-plates'),
+  saveBuildPlates: (data: BuildPlateConfigInput) =>
+    request<BuildPlateConfig>('/build-plates', {
+      method: 'PUT',
       body: JSON.stringify(data),
     }),
-  updateBuildPlate: (id: number, data: BuildPlateInput) =>
-    request<BuildPlate>(`/build-plates/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    }),
-  deleteBuildPlate: (id: number) =>
-    request<void>(`/build-plates/${id}`, { method: 'DELETE' }),
   getWledPresets: (id: number, baseUrl: string) =>
     request<WLEDPreset[]>(`/printers/${id}/wled/presets`, {
       method: 'POST',

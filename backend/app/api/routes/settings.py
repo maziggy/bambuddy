@@ -502,7 +502,9 @@ async def update_settings(
         cleared = cast(
             CursorResult,
             await db.execute(
-                update(Printer).where(Printer.installed_plate_id.is_not(None)).values(installed_plate_id=None)
+                update(Printer)
+                .where(Printer.installed_plate_type.is_not(None))
+                .values(installed_plate_type=None, installed_plate_pattern=None)
             ),
         )
         logger.info("Build plate tracking re-enabled: cleared recorded plate on %d printer(s)", cleared.rowcount or 0)

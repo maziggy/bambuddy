@@ -93,9 +93,9 @@ class PrintQueueItemCreate(BaseModel):
     # (utils/bed_types.BED_TYPES) or slicer plate name. Only enforced while
     # build plate tracking is enabled.
     required_plate_type: str | None = None
-    # A specific build plate (build_plates.id), e.g. a 3D Effect Carbon Fiber
-    # plate. Must be of the file's plate type.
-    required_plate_id: int | None = None
+    # A plate pattern set up under the file's plate type, e.g. "Carbon Fiber"
+    # for a 3D Effect sheet. Null = any plate of that type.
+    required_plate_pattern: str | None = None
     # Either archive_id OR library_file_id must be provided
     archive_id: int | None = None
     library_file_id: int | None = None
@@ -167,7 +167,7 @@ class PrintQueueItemUpdate(IgnoresNullForRequiredColumns):
     target_location: str | None = None  # Target location filter (only used with target_model)
     filament_overrides: list[dict] | None = None  # Filament overrides for model-based assignment
     required_plate_type: str | None = None  # Build plate constraint (#1306); "any"/null clears it
-    required_plate_id: int | None = None  # Specific build plate (#1306); null clears it
+    required_plate_pattern: str | None = None  # Build plate pattern (#1306); null clears it
     position: int | None = None
     scheduled_time: NaiveUTCDatetime = None
     require_previous_success: bool | None = None
@@ -231,7 +231,7 @@ class PrintQueueItemResponse(BaseModel):
     filament_overrides: list[dict] | None = None  # Filament overrides for model-based assignment
     waiting_reason: str | None = None  # Why this job hasn't started yet (empty once it can)
     required_plate_type: str | None = None  # Build plate base type the job needs (#1306)
-    required_plate_id: int | None = None  # Specific build plate the job asked for (#1306)
+    required_plate_pattern: str | None = None  # Build plate pattern the job asked for (#1306)
     archive_id: int | None  # None if library_file_id is set (archive created at print start)
     library_file_id: int | None  # For queue items from library files
     cost_center_id: int | None = None

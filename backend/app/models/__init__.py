@@ -5,7 +5,6 @@ from backend.app.models.api_key import APIKey
 from backend.app.models.archive import PrintArchive
 from backend.app.models.archive_alias import ArchiveAlias
 from backend.app.models.auth_ephemeral import AuthEphemeralToken, AuthRateLimitEvent
-from backend.app.models.build_plate import BuildPlate
 from backend.app.models.color_catalog import ColorCatalogEntry
 from backend.app.models.connected_app import ConnectedApp, ConnectedAppGrant
 from backend.app.models.filament import Filament
@@ -127,7 +126,6 @@ __all__ = [
     "UserOTPCode",
     "UserTOTP",
     "AuthEphemeralToken",
-    "BuildPlate",
     "AuthRateLimitEvent",
     "LongLivedToken",
     "ConnectedApp",

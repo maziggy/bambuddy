@@ -54,7 +54,7 @@ CLONED_SETTING_COLUMNS = (
     "target_location",
     "required_filament_types",
     "required_plate_type",
-    "required_plate_id",
+    "required_plate_pattern",
     "archive_id",
     "library_file_id",
     "project_id",

@@ -21,7 +21,7 @@ import { productLineOf, useFilamentNameByIdx } from './useFilamentLabels';
 import { isGcodeCompatible, isPrinterCurrentlyDispatchable } from '../../utils/printer';
 import { getCurrencySymbol } from '../../utils/currency';
 import { getBedTypeInfo } from '../../utils/bedType';
-import { BUILD_PLATES_QUERY_KEY, PLATE_TYPE_ANY, normalizeBedType } from '../../utils/buildPlates';
+import { BUILD_PLATES_QUERY_KEY, PLATE_TYPE_ANY, normalizeBedType, plateOptions } from '../../utils/buildPlates';
 import { toDateTimeLocalValue, parseUTCDate } from '../../utils/date';
 import { isPlaceholderDate, effectivePreferLowest, filamentTypesCompatible } from '../../utils/amsHelpers';
 import { resolveSlicerAmsMapping } from './archiveAmsMapping';
@@ -56,6 +56,9 @@ import { NumberInput } from '../NumberInput';
 import { hasGcodeSnippets, useUiSettings } from '../../hooks/useUiSettings';
 
 /** Same filament: type ignoring case, colour as RRGGBB ignoring `#`, case and alpha. */
+// Prefix of a plate-choice value naming a build plate pattern (#1306).
+const PATTERN_CHOICE = 'pattern:';
+
 function isSameFilament(a: { type: string; color: string }, b: { type: string; color: string }): boolean {
   const hex = (c: string) => (c || '').replace('#', '').toLowerCase().slice(0, 6);
   return (a.type || '').toUpperCase() === (b.type || '').toUpperCase() && hex(a.color) === hex(b.color);
@@ -340,15 +343,16 @@ export function PrintModal({
 
   // Build plate requirement (#1306). Only offered while build plate tracking is
   // on. 'type' = any plate of the file's type (the default, derived server-side),
-  // 'any' = no plate constraint, or a specific build plate id.
-  const [initialPlateChoice] = useState<'type' | 'any' | number>(() => {
+  // 'any' = no plate constraint, or PATTERN_CHOICE + the name of a pattern set up
+  // under the file's type.
+  const [initialPlateChoice] = useState<string>(() => {
     if (mode === 'edit-queue-item' && queueItem) {
-      if (queueItem.required_plate_id != null) return queueItem.required_plate_id;
+      if (queueItem.required_plate_pattern) return PATTERN_CHOICE + queueItem.required_plate_pattern;
       if (queueItem.required_plate_type === PLATE_TYPE_ANY) return 'any';
     }
     return 'type';
   });
-  const [plateChoice, setPlateChoice] = useState<'type' | 'any' | number>(initialPlateChoice);
+  const [plateChoice, setPlateChoice] = useState<string>(initialPlateChoice);
 
   const [selectedCostCenterId, setSelectedCostCenterId] = useState<number | null>(() =>
     mode === 'edit-queue-item' ? queueItem?.cost_center_id ?? null : resumedSettings?.costCenterId ?? null
@@ -402,7 +406,7 @@ export function PrintModal({
   // Queries
   const { data: settings } = useUiSettings();
   const plateTracking = settings?.build_plate_tracking_enabled === true;
-  const { data: buildPlates = [] } = useQuery({
+  const { data: buildPlates } = useQuery({
     queryKey: BUILD_PLATES_QUERY_KEY,
     queryFn: api.getBuildPlates,
     enabled: plateTracking,
@@ -1049,38 +1053,61 @@ export function PrintModal({
       : '';
 
   // Build plate requirement (#1306): the plate type the selected plate was
-  // sliced for, the plates of that type the user owns, and what to send.
+  // sliced for, the patterns set up under it, and what to send.
   const plateTarget = selectedPlate != null ? plates.find(p => p.index === selectedPlate) : plates[0];
   const fileBaseType = normalizeBedType(plateTarget?.bed_type);
-  // The job's current plate stays listed in edit mode even if it has since
-  // been unticked, so the select never shows a value it has no option for.
-  const editingPlateId = mode === 'edit-queue-item' ? queueItem?.required_plate_id ?? null : null;
-  const matchingBuildPlates = buildPlates.filter(
-    (p) => (p.enabled || p.id === editingPlateId) && (fileBaseType == null || p.base_type === fileBaseType),
+  const editingPattern = mode === 'edit-queue-item' ? queueItem?.required_plate_pattern ?? null : null;
+  // When the dialog cannot read the file's plates, an edited job's stored type stands in.
+  const storedPlateType =
+    mode === 'edit-queue-item' && queueItem?.required_plate_type && queueItem.required_plate_type !== PLATE_TYPE_ANY
+      ? queueItem.required_plate_type
+      : null;
+  const patternType = fileBaseType ?? storedPlateType;
+  const patternTypeLabel = fileBaseType
+    ? getBedTypeInfo(plateTarget?.bed_type)?.label ?? plateTarget?.bed_type
+    : buildPlates?.types.find((type) => type.key === patternType)?.label;
+  // Patterns only narrow a known type. The job's current pattern stays listed
+  // in edit mode, so the select never shows a value it has no option for.
+  const patternOptions = useMemo(
+    () =>
+      patternType
+        ? plateOptions(buildPlates, {
+            onlyType: patternType,
+            keep: editingPattern ? { baseType: patternType, pattern: editingPattern } : null,
+          }).filter((option) => option.pattern)
+        : [],
+    [buildPlates, patternType, editingPattern],
   );
+  const choicePattern = plateChoice.startsWith(PATTERN_CHOICE) ? plateChoice.slice(PATTERN_CHOICE.length) : null;
   const showPlatePicker = plateTracking && !isCrossModel && !isMultiPlateSelection;
 
-  // A specific plate picked for one plate of the file may not fit another:
-  // once both lists have loaded, fall back to "any plate of the file's type"
-  // rather than submit a plate the server will reject.
+  // A pattern picked for one plate of the file may not exist for another's
+  // type: once both lists have loaded, fall back to "any plate of the file's
+  // type" rather than submit a pattern the server will reject.
   useEffect(() => {
-    if (typeof plateChoice !== 'number' || !buildPlates.length || !plates.length) return;
-    if (!matchingBuildPlates.some((p) => p.id === plateChoice)) setPlateChoice('type');
-  }, [plateChoice, buildPlates.length, plates.length, matchingBuildPlates]);
+    if (!choicePattern || !buildPlates || !plates.length) return;
+    if (!patternOptions.some((option) => option.pattern === choicePattern)) setPlateChoice('type');
+  }, [choicePattern, buildPlates, plates.length, patternOptions]);
 
-  const plateConstraint = (): Pick<PrintQueueItemCreate, 'required_plate_type' | 'required_plate_id'> => {
+  const plateConstraint = (): Pick<PrintQueueItemCreate, 'required_plate_type' | 'required_plate_pattern'> => {
     if (!plateTracking) return {};
     // Editing a job without touching its plate must leave the stored
     // constraint alone, whatever this dialog could or could not read.
     if (mode === 'edit-queue-item' && plateChoice === initialPlateChoice) return {};
-    if (plateChoice === 'any') return { required_plate_type: PLATE_TYPE_ANY, required_plate_id: null };
-    if (typeof plateChoice === 'number' && !isMultiPlateSelection) return { required_plate_id: plateChoice };
+    if (plateChoice === 'any') return { required_plate_type: PLATE_TYPE_ANY, required_plate_pattern: null };
+    if (choicePattern && !isMultiPlateSelection) {
+      // On create the server derives the type from the file; on edit name it,
+      // since the job may have been set to "any plate" before.
+      return mode === 'edit-queue-item' && patternType
+        ? { required_plate_type: patternType, required_plate_pattern: choicePattern }
+        : { required_plate_pattern: choicePattern };
+    }
     if (mode !== 'edit-queue-item') return {};  // 'type' on create: the server derives it
     // Switched back to 'type' on edit. Only name the type when this dialog
-    // actually knows it; otherwise clear the specific plate and keep the rest.
-    return fileBaseType
-      ? { required_plate_type: fileBaseType, required_plate_id: null }
-      : { required_plate_id: null };
+    // actually knows it; otherwise clear the pattern and keep the rest.
+    return patternType
+      ? { required_plate_type: patternType, required_plate_pattern: null }
+      : { required_plate_pattern: null };
   };
 
   const filamentWarningMessage = useMemo(() => {
@@ -2238,21 +2265,18 @@ export function PrintModal({
                 </label>
                 <select
                   id="print-modal-plate-choice"
-                  value={String(plateChoice)}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setPlateChoice(v === 'type' || v === 'any' ? v : Number(v));
-                  }}
+                  value={plateChoice}
+                  onChange={(e) => setPlateChoice(e.target.value)}
                   className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:border-bambu-green focus:outline-none"
                 >
                   <option value="type">
-                    {fileBaseType
-                      ? t('printModal.buildPlate.anyOfType', { type: getBedTypeInfo(plateTarget?.bed_type)?.label ?? plateTarget?.bed_type })
+                    {patternTypeLabel
+                      ? t('printModal.buildPlate.anyOfType', { type: patternTypeLabel })
                       : t('printModal.buildPlate.fromFile')}
                   </option>
-                  {matchingBuildPlates.map((plate) => (
-                    <option key={plate.id} value={plate.id}>
-                      {plate.name}
+                  {patternOptions.map((option) => (
+                    <option key={option.value} value={PATTERN_CHOICE + option.pattern}>
+                      {option.label}
                     </option>
                   ))}
                   <option value="any">{t('printModal.buildPlate.any')}</option>

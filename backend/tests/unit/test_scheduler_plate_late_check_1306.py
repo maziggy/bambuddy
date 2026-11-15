@@ -19,14 +19,13 @@ import backend.app.models  # noqa: F401 - populate Base.metadata
 import backend.app.services.print_scheduler as scheduler_module
 from backend.app.core.database import Base
 from backend.app.models.archive import PrintArchive
-from backend.app.models.build_plate import BuildPlate
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.services.print_scheduler import PrintScheduler
 from backend.tests._fixtures.background_tasks import discarding_spawn_patch
 
-TEXTURED, SMOOTH = 1, 2
+TEXTURED, SMOOTH = "textured_pei", "smooth_pei"
 
 
 @pytest.fixture
@@ -45,8 +44,6 @@ async def plate_case(tmp_path):
         archive_abs.write_bytes(b"sliced 3mf")
 
         async with session_maker() as db:
-            db.add(BuildPlate(id=TEXTURED, name="Textured PEI Plate", base_type="textured_pei"))
-            db.add(BuildPlate(id=SMOOTH, name="Smooth PEI Plate", base_type="smooth_pei"))
             db.add(Settings(key="build_plate_tracking_enabled", value="true" if tracking else "false"))
             printer = Printer(
                 name="X1C-01",
@@ -54,7 +51,7 @@ async def plate_case(tmp_path):
                 ip_address="127.0.0.1",
                 access_code="ac",
                 model="X1C",
-                installed_plate_id=installed,
+                installed_plate_type=installed,
             )
             db.add(printer)
             await db.flush()
@@ -92,10 +89,10 @@ async def plate_case(tmp_path):
         await engine.dispose()
 
 
-async def _swap_plate(ctx, plate_id):
+async def _swap_plate(ctx, plate_type):
     async with ctx.session_maker() as db:
         printer = await db.get(Printer, ctx.printer_id)
-        printer.installed_plate_id = plate_id
+        printer.installed_plate_type = plate_type
         await db.commit()
 
 
@@ -145,7 +142,7 @@ async def test_plate_swapped_before_upload_defers_without_uploading(plate_case):
 
     item = await _item(ctx)
     assert item.status == "pending"
-    assert item.waiting_reason == ("Wrong plate: X1C-01 (needs Smooth PEI / High Temp Plate, has Textured PEI Plate)")
+    assert item.waiting_reason == ("Wrong plate: X1C-01 (needs Smooth PEI Plate, has Textured PEI Plate)")
     ctx.upload.assert_not_called()
     ctx.start_print.assert_not_called()
 

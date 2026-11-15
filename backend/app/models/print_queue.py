@@ -29,9 +29,9 @@ class PrintQueueItem(Base):
     # when queued; NULL = no plate constraint. Only enforced while build plate
     # tracking is enabled in settings.
     required_plate_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    # A specific BuildPlate the user asked for ("print on the Carbon Fiber
-    # plate"). Narrower than required_plate_type; NULL = any plate of that type.
-    required_plate_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # A pattern the job asked for ("print on the Carbon Fiber plate"), within
+    # required_plate_type. NULL = any plate of that type.
+    required_plate_pattern: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Waiting reason - explains why a model-based job hasn't started yet
     # Set by scheduler when no matching printer is available
     waiting_reason: Mapped[str | None] = mapped_column(Text, nullable=True)

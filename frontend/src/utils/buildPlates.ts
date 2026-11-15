@@ -1,6 +1,6 @@
-import type { BuildPlate } from '../api/client';
+import type { BuildPlateConfig } from '../api/client';
 
-// Base-type key -> fallback icon, used until a plate has its own photo (#1306).
+// Base-type key -> plate icon (#1306).
 const BASE_TYPE_ICONS: Record<string, string> = {
   cool_plate: '/img/bed/bed_cool.png',
   textured_cool_plate: '/img/bed/bed_cool.png',
@@ -12,29 +12,87 @@ const BASE_TYPE_ICONS: Record<string, string> = {
 
 export const PLATE_TYPE_ANY = 'any';
 
-// Shared react-query key for the build plate catalog.
+// Shared react-query key for the owned build plates.
 export const BUILD_PLATES_QUERY_KEY = ['build-plates'];
 
 export function baseTypeIcon(baseType: string | null | undefined): string | null {
   return (baseType && BASE_TYPE_ICONS[baseType]) || null;
 }
 
-export function plateImage(plate: Pick<BuildPlate, 'image' | 'base_type'>): string | null {
-  return plate.image || baseTypeIcon(plate.base_type);
+/** "Smooth PEI Plate", or "Smooth PEI Plate · Carbon Fiber" with a pattern. */
+export function plateLabel(typeLabel: string, pattern?: string | null): string {
+  return pattern ? `${typeLabel} · ${pattern}` : typeLabel;
 }
 
-/** Plates grouped by base type, in the order the backend returns them. */
-export function groupPlatesByBaseType(plates: BuildPlate[]): Array<{ baseType: string; label: string; plates: BuildPlate[] }> {
-  const groups = new Map<string, { baseType: string; label: string; plates: BuildPlate[] }>();
-  for (const plate of plates) {
-    let group = groups.get(plate.base_type);
-    if (!group) {
-      group = { baseType: plate.base_type, label: plate.base_type_label, plates: [] };
-      groups.set(plate.base_type, group);
+export interface PlateOption {
+  value: string;  // for a <select>: see plateValue()
+  baseType: string;
+  pattern: string | null;
+  label: string;
+}
+
+// A plate as one <select> value. The separator cannot appear in a type key.
+const SEPARATOR = '::';
+
+export function plateValue(baseType: string, pattern?: string | null): string {
+  return pattern ? `${baseType}${SEPARATOR}${pattern}` : baseType;
+}
+
+export function parsePlateValue(value: string): { baseType: string; pattern: string | null } {
+  const at = value.indexOf(SEPARATOR);
+  return at < 0
+    ? { baseType: value, pattern: null }
+    : { baseType: value.slice(0, at), pattern: value.slice(at + SEPARATOR.length) };
+}
+
+const samePattern = (a: string | null | undefined, b: string | null | undefined) =>
+  (a ?? '').trim().toLowerCase() === (b ?? '').trim().toLowerCase();
+
+/**
+ * The plates to offer in a picker, as one flat list: each owned type, followed
+ * by the patterns under it.
+ *
+ * `onlyType` limits the list to one type (the print dialog offers only the
+ * patterns of the plate the file was sliced for). `keep` is the value already
+ * chosen: it stays listed even when its type has been unticked since, so a
+ * select never shows a value it has no option for.
+ */
+export function plateOptions(
+  config: BuildPlateConfig | undefined,
+  { onlyType, keep }: { onlyType?: string | null; keep?: { baseType: string; pattern: string | null } | null } = {},
+): PlateOption[] {
+  if (!config) return [];
+  const options: PlateOption[] = [];
+  for (const type of config.types) {
+    if (onlyType && type.key !== onlyType) continue;
+    // With onlyType the file decides the type, so whether it is ticked does not matter.
+    const offered = Boolean(onlyType) || type.owned;
+    const kept = (pattern: string | null) =>
+      keep?.baseType === type.key && (pattern ? samePattern(keep.pattern, pattern) : !keep.pattern);
+    if (offered || kept(null)) {
+      options.push({ value: plateValue(type.key), baseType: type.key, pattern: null, label: type.label });
     }
-    group.plates.push(plate);
+    for (const pattern of config.patterns) {
+      if (pattern.base_type !== type.key || !(offered || kept(pattern.name))) continue;
+      options.push({
+        value: plateValue(type.key, pattern.name),
+        baseType: type.key,
+        pattern: pattern.name,
+        label: plateLabel(type.label, pattern.name),
+      });
+    }
   }
-  return [...groups.values()];
+  return options;
+}
+
+/** The option matching a stored plate (pattern compared ignoring case), if listed. */
+export function findPlateOption(
+  options: PlateOption[],
+  baseType: string | null | undefined,
+  pattern: string | null | undefined,
+): PlateOption | undefined {
+  if (!baseType) return undefined;
+  return options.find((o) => o.baseType === baseType && samePattern(o.pattern, pattern));
 }
 
 // Mirrors backend/app/utils/bed_types.py: every curr_bed_type spelling -> base type.

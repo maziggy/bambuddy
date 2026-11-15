@@ -492,13 +492,6 @@ async def update_printer(
 
     update_data = printer_data.model_dump(exclude_unset=True)
 
-    # Installed build plate (#1306) must name a real plate; null = not tracked.
-    if update_data.get("installed_plate_id") is not None:
-        from backend.app.models.build_plate import BuildPlate
-
-        plate_exists = await db.scalar(select(BuildPlate.id).where(BuildPlate.id == update_data["installed_plate_id"]))
-        if not plate_exists:
-            raise HTTPException(400, "Build plate not found")
     # Groups can be given a location (#1727), so moving a printer between
     # locations changes who can reach it. That is an access change and only an
     # admin may make it; an API key never counts as one.

@@ -1,97 +1,145 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Layers, Plus, Trash2, Loader2 } from 'lucide-react';
+import { Layers, Loader2, Plus, X } from 'lucide-react';
 import { api } from '../api/client';
-import type { BuildPlate } from '../api/client';
+import type { BuildPlateConfig, PlatePatternInfo, PlateTypeInfo } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { Card, CardContent, CardHeader } from './Card';
 import { ConfirmModal } from './ConfirmModal';
-import { BUILD_PLATES_QUERY_KEY, groupPlatesByBaseType, plateImage } from '../utils/buildPlates';
-import { PlateImage } from './PlateImage';
+import { BUILD_PLATES_QUERY_KEY, baseTypeIcon } from '../utils/buildPlates';
 
 interface BuildPlateSettingsProps {
   enabled: boolean;
   onToggle: (enabled: boolean) => void;
 }
 
-/** Plate photo, or a generic icon for a plate with no photo and no known type. */
-function PlatePhoto({ plate }: { plate: BuildPlate }) {
-  if (!plateImage(plate)) {
-    return <Layers className="w-8 h-8 text-bambu-gray" />;
+type Draft = { types: string[]; patterns: { base_type: string; name: string }[] };
+
+function toDraft(config: BuildPlateConfig): Draft {
+  return {
+    types: config.types.filter((type) => type.owned).map((type) => type.key),
+    patterns: config.patterns.map((p) => ({ base_type: p.base_type, name: p.name })),
+  };
+}
+
+const inUse = (plate: { installed_on: number[]; waiting_jobs: number }) =>
+  plate.installed_on.length > 0 || plate.waiting_jobs > 0;
+
+/** Text field and button that add a pattern under one plate type. */
+function AddPattern({
+  suggestions,
+  onAdd,
+  disabled,
+}: {
+  suggestions: string[];
+  onAdd: (name: string) => void;
+  disabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const listId = `plate-pattern-suggestions-${suggestions.length}`;
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-1 text-xs text-bambu-green hover:underline"
+      >
+        <Plus className="w-3.5 h-3.5" />
+        {t('settings.buildPlates.addPattern')}
+      </button>
+    );
   }
-  return <PlateImage plate={plate} className="w-full h-full object-cover" />;
+  const submit = () => {
+    const value = name.trim();
+    if (value) onAdd(value);
+    setName('');
+    setOpen(false);
+  };
+  return (
+    <form
+      className="flex items-center gap-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        submit();
+      }}
+    >
+      <input
+        autoFocus
+        list={listId}
+        value={name}
+        maxLength={64}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}
+        placeholder={t('settings.buildPlates.patternPlaceholder')}
+        aria-label={t('settings.buildPlates.addPattern')}
+        className="min-w-0 flex-1 px-2 py-1 text-xs bg-bambu-dark border border-bambu-dark-tertiary rounded text-white focus:border-bambu-green focus:outline-none"
+      />
+      <datalist id={listId}>
+        {suggestions.map((s) => (
+          <option key={s} value={s} />
+        ))}
+      </datalist>
+      <button
+        type="submit"
+        disabled={disabled || !name.trim()}
+        className="px-2 py-1 text-xs rounded bg-bambu-green text-white disabled:opacity-50"
+      >
+        {t('settings.buildPlates.patternAdd')}
+      </button>
+    </form>
+  );
 }
 
 /**
- * Settings → Queue → Build Plates (#1306).
+ * Settings → Workflow → Build Plates (#1306).
  *
- * Opt-in: the toggle is an ordinary app setting saved with the rest of the
- * page. The plate list below it saves as the user ticks, like the other
- * catalog editors, so it works whether or not tracking is switched on yet.
+ * Opt-in: the toggle is an ordinary app setting saved with the rest of the page.
+ * Below it, the user ticks the plate types they own and adds patterns (such as
+ * 3D Effect sheets) under them. That list saves as it changes, like the other
+ * catalog editors, and only narrows what the plate pickers offer.
  */
 export function BuildPlateSettings({ enabled, onToggle }: BuildPlateSettingsProps) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: plates = [], isLoading } = useQuery({
+  const { data: config, isLoading } = useQuery({
     queryKey: BUILD_PLATES_QUERY_KEY,
     queryFn: api.getBuildPlates,
     enabled,
   });
-  const { data: bedTypes = [] } = useQuery({
-    queryKey: ['build-plates', 'bed-types'],
-    queryFn: api.getBedTypes,
-    enabled,
-    staleTime: Infinity,
-  });
 
-  const [showAdd, setShowAdd] = useState(false);
-  const [name, setName] = useState('');
-  const [baseType, setBaseType] = useState('smooth_pei');
-  const [pattern, setPattern] = useState('');
-  const [image, setImage] = useState('');
-  const [toDelete, setToDelete] = useState<BuildPlate | null>(null);
-  const [toUntick, setToUntick] = useState<BuildPlate | null>(null);
+  const [toUntick, setToUntick] = useState<PlateTypeInfo | null>(null);
+  const [toRemove, setToRemove] = useState<PlatePatternInfo | null>(null);
   const [showResetNote, setShowResetNote] = useState(false);
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: BUILD_PLATES_QUERY_KEY });
-
-  const toggleMutation = useMutation({
-    mutationFn: ({ id, value }: { id: number; value: boolean }) => api.updateBuildPlate(id, { enabled: value }),
-    onSuccess: invalidate,
-    onError: (e: Error) => showToast(e.message || t('settings.buildPlates.saveFailed'), 'error'),
-  });
-
-  const createMutation = useMutation({
-    mutationFn: () =>
-      api.createBuildPlate({
-        name: name.trim(),
-        base_type: baseType,
-        pattern: pattern.trim() || null,
-        image: image.trim() || null,
-      }),
-    onSuccess: () => {
-      invalidate();
-      setShowAdd(false);
-      setName('');
-      setPattern('');
-      setImage('');
-      showToast(t('settings.buildPlates.added'), 'success');
-    },
-    onError: (e: Error) => showToast(e.message || t('settings.buildPlates.saveFailed'), 'error'),
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) => api.deleteBuildPlate(id),
-    onSuccess: () => {
-      invalidate();
+  const saveMutation = useMutation({
+    mutationFn: (draft: Draft) => api.saveBuildPlates(draft),
+    onSuccess: (saved) => {
+      queryClient.setQueryData(BUILD_PLATES_QUERY_KEY, saved);
+      // Removing a pattern can change printers and queued jobs.
       queryClient.invalidateQueries({ queryKey: ['printers'] });
-      setToDelete(null);
+      queryClient.invalidateQueries({ queryKey: ['queue'] });
     },
     onError: (e: Error) => showToast(e.message || t('settings.buildPlates.saveFailed'), 'error'),
   });
+
+  const save = (change: (draft: Draft) => Draft) => {
+    if (config) saveMutation.mutate(change(toDraft(config)));
+  };
+  const setOwned = (key: string, owned: boolean) =>
+    save((d) => ({ ...d, types: owned ? [...d.types, key] : d.types.filter((k) => k !== key) }));
+  const addPattern = (baseType: string, name: string) =>
+    save((d) => ({ ...d, patterns: [...d.patterns, { base_type: baseType, name }] }));
+  const removePattern = (pattern: PlatePatternInfo) =>
+    save((d) => ({
+      ...d,
+      patterns: d.patterns.filter((p) => !(p.base_type === pattern.base_type && p.name === pattern.name)),
+    }));
 
   return (
     <Card>
@@ -129,187 +177,106 @@ export function BuildPlateSettings({ enabled, onToggle }: BuildPlateSettingsProp
         )}
 
         {enabled && (
-          <>
+          <div className="space-y-2">
             <div>
               <p className="text-sm text-white">{t('settings.buildPlates.ownedTitle')}</p>
               <p className="text-xs text-bambu-gray mt-0.5">{t('settings.buildPlates.ownedDescription')}</p>
             </div>
-
-            {isLoading ? (
+            {isLoading || !config ? (
               <div className="flex justify-center py-4">
                 <Loader2 className="w-5 h-5 animate-spin text-bambu-gray" />
               </div>
             ) : (
-              groupPlatesByBaseType(plates).map((group) => (
-                <div key={group.baseType} className="space-y-2">
-                  <p className="text-xs font-medium uppercase tracking-wide text-bambu-gray">{group.label}</p>
-                  <div className="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-3">
-                    {group.plates.map((plate) => (
-                      <label
-                        key={plate.id}
-                        className={`relative flex flex-col rounded-lg border cursor-pointer overflow-hidden transition-colors ${
-                          plate.enabled
-                            ? 'border-bambu-green bg-bambu-dark'
-                            : 'border-bambu-dark-tertiary bg-bambu-dark/50 opacity-70 hover:opacity-100'
-                        }`}
-                      >
-                        <div className="aspect-[4/3] bg-bambu-dark-tertiary flex items-center justify-center overflow-hidden">
-                          <PlatePhoto plate={plate} />
-                        </div>
-                        <div className="flex items-start gap-2 p-2">
-                          <input
-                            type="checkbox"
-                            checked={plate.enabled}
-                            disabled={toggleMutation.isPending}
-                            onChange={(e) => {
-                              const value = e.target.checked;
-                              // Unticking a plate in use hides it from new jobs,
-                              // but jobs already waiting for it keep waiting.
-                              if (!value && (plate.installed_on.length > 0 || plate.required_by_pending > 0)) {
-                                setToUntick(plate);
-                              } else {
-                                toggleMutation.mutate({ id: plate.id, value });
-                              }
-                            }}
-                            className="mt-0.5 accent-bambu-green"
-                          />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm text-white leading-tight break-words">{plate.name}</p>
-                            {plate.pattern && <p className="text-xs text-bambu-gray">{plate.pattern}</p>}
-                          </div>
-                          {!plate.is_builtin && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                setToDelete(plate);
-                              }}
-                              className="text-bambu-gray hover:text-red-400"
-                              title={t('common.delete')}
-                              aria-label={t('common.delete')}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
+              <ul className="divide-y divide-bambu-dark-tertiary rounded-lg border border-bambu-dark-tertiary">
+                {config.types.map((type) => {
+                  const icon = baseTypeIcon(type.key);
+                  const patterns = config.patterns.filter((p) => p.base_type === type.key);
+                  return (
+                    <li key={type.key} className="px-3 py-2 space-y-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={type.owned}
+                          disabled={saveMutation.isPending}
+                          onChange={(e) => {
+                            if (!e.target.checked && inUse(type)) setToUntick(type);
+                            else setOwned(type.key, e.target.checked);
+                          }}
+                          className="accent-bambu-green"
+                        />
+                        {icon && <img src={icon} alt="" className="w-5 h-5 object-contain" />}
+                        <span className="text-sm text-white">{type.label}</span>
                       </label>
-                    ))}
-                  </div>
-                </div>
-              ))
+                      {type.owned && (
+                        <div className="pl-6 flex flex-wrap items-center gap-2">
+                          {patterns.map((pattern) => (
+                            <span
+                              key={pattern.name}
+                              className="flex items-center gap-1 rounded-full bg-bambu-dark-tertiary pl-2 pr-1 py-0.5 text-xs text-white"
+                            >
+                              {pattern.name}
+                              <button
+                                type="button"
+                                disabled={saveMutation.isPending}
+                                onClick={() => (inUse(pattern) ? setToRemove(pattern) : removePattern(pattern))}
+                                aria-label={t('settings.buildPlates.removePattern', { name: pattern.label })}
+                                className="text-bambu-gray hover:text-red-400"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </span>
+                          ))}
+                          <AddPattern
+                            // The suggestions are the Bambu 3D Effect sheets, all sliced as Smooth PEI.
+                            suggestions={type.key === 'smooth_pei' ? config.pattern_suggestions : []}
+                            onAdd={(name) => addPattern(type.key, name)}
+                            disabled={saveMutation.isPending}
+                          />
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
             )}
+          </div>
+        )}
 
-            {showAdd ? (
-              <div className="space-y-3 rounded-lg border border-bambu-dark-tertiary p-3">
-                <p className="text-sm text-white">{t('settings.buildPlates.addTitle')}</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-bambu-gray mb-1">{t('settings.buildPlates.name')}</label>
-                    <input
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      maxLength={100}
-                      placeholder={t('settings.buildPlates.namePlaceholder')}
-                      className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-bambu-gray mb-1">{t('settings.buildPlates.baseType')}</label>
-                    <select
-                      value={baseType}
-                      onChange={(e) => setBaseType(e.target.value)}
-                      className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                    >
-                      {bedTypes.map((bt) => (
-                        <option key={bt.key} value={bt.key}>
-                          {bt.label}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="text-xs text-bambu-gray mt-1">{t('settings.buildPlates.baseTypeHint')}</p>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-bambu-gray mb-1">{t('settings.buildPlates.pattern')}</label>
-                    <input
-                      value={pattern}
-                      onChange={(e) => setPattern(e.target.value)}
-                      maxLength={100}
-                      placeholder={t('settings.buildPlates.patternPlaceholder')}
-                      className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-bambu-gray mb-1">{t('settings.buildPlates.image')}</label>
-                    <input
-                      value={image}
-                      onChange={(e) => setImage(e.target.value)}
-                      maxLength={500}
-                      placeholder="https://…"
-                      className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                    />
-                  </div>
-                </div>
-                <div className="flex justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowAdd(false)}
-                    className="px-3 py-1.5 text-sm text-bambu-gray hover:text-white"
-                  >
-                    {t('common.cancel')}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!name.trim() || createMutation.isPending}
-                    onClick={() => createMutation.mutate()}
-                    className="px-3 py-1.5 text-sm rounded-lg bg-bambu-green text-white disabled:opacity-50"
-                  >
-                    {t('settings.buildPlates.add')}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setShowAdd(true)}
-                className="flex items-center gap-1.5 text-sm text-bambu-green hover:underline"
-              >
-                <Plus className="w-4 h-4" />
-                {t('settings.buildPlates.addCustom')}
-              </button>
-            )}
-          </>
+        {toUntick && (
+          <ConfirmModal
+            title={t('settings.buildPlates.untickTitle')}
+            message={t('settings.buildPlates.untickMessage', {
+              name: toUntick.label,
+              printers: toUntick.installed_on.length,
+              jobs: toUntick.waiting_jobs,
+            })}
+            confirmText={t('settings.buildPlates.untickConfirm')}
+            variant="warning"
+            onConfirm={() => {
+              setOwned(toUntick.key, false);
+              setToUntick(null);
+            }}
+            onCancel={() => setToUntick(null)}
+          />
+        )}
+        {toRemove && (
+          <ConfirmModal
+            title={t('settings.buildPlates.removePatternTitle')}
+            message={t('settings.buildPlates.removePatternMessage', {
+              name: toRemove.label,
+              printers: toRemove.installed_on.length,
+              jobs: toRemove.waiting_jobs,
+            })}
+            confirmText={t('settings.buildPlates.removePatternConfirm')}
+            variant="danger"
+            onConfirm={() => {
+              removePattern(toRemove);
+              setToRemove(null);
+            }}
+            onCancel={() => setToRemove(null)}
+          />
         )}
       </CardContent>
-
-      {toUntick && (
-        <ConfirmModal
-          title={t('settings.buildPlates.untickTitle')}
-          message={t('settings.buildPlates.untickMessage', {
-            name: toUntick.name,
-            printers: toUntick.installed_on.length,
-            jobs: toUntick.required_by_pending,
-          })}
-          confirmText={t('settings.buildPlates.untickConfirm')}
-          variant="warning"
-          onConfirm={() => {
-            toggleMutation.mutate({ id: toUntick.id, value: false });
-            setToUntick(null);
-          }}
-          onCancel={() => setToUntick(null)}
-        />
-      )}
-
-      {toDelete && (
-        <ConfirmModal
-          title={t('settings.buildPlates.deleteTitle')}
-          message={t('settings.buildPlates.deleteMessage', { name: toDelete.name })}
-          confirmText={t('common.delete')}
-          variant="danger"
-          isLoading={deleteMutation.isPending}
-          onConfirm={() => deleteMutation.mutate(toDelete.id)}
-          onCancel={() => setToDelete(null)}
-        />
-      )}
     </Card>
   );
 }

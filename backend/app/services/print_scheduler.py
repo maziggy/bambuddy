@@ -2183,25 +2183,19 @@ class PrintScheduler:
             # looks at plates at all, so dispatch is exactly what it was before.
             plate_tracking = await self._get_bool_setting(db, "build_plate_tracking_enabled")
             installed_plates: dict[int, InstalledPlate] = {}
-            plate_names: dict[int, str] = {}
             if plate_tracking:
-                installed_plates, plate_names = await self._load_installed_plates(db)
+                installed_plates = await self._load_installed_plates(db)
 
             def plate_check_for(item: PrintQueueItem, required_type: str | None) -> Callable[[int], str | None] | None:
                 """Printer id -> why its plate cannot take this job, or None if it can."""
-                if not plate_tracking:
+                if not plate_tracking or not required_type or required_type == PLATE_TYPE_ANY:
                     return None
-                required_id = item.required_plate_id
-                if required_id is not None and required_id not in plate_names:
-                    # The plate was deleted under the job; fall back to its type
-                    # rather than wait for a plate that no longer exists.
-                    required_id = None
-                if required_id is None and (required_type is None or required_type == PLATE_TYPE_ANY):
-                    return None
-                required_name = plate_names.get(required_id) if required_id is not None else None
+                # A pattern was chosen for the item's own file; a cross-model
+                # candidate's type may differ, and then the pattern means nothing.
+                required_pattern = item.required_plate_pattern if required_type == item.required_plate_type else None
 
                 def check(printer_id: int) -> str | None:
-                    return plate_mismatch(installed_plates.get(printer_id), required_type, required_id, required_name)
+                    return plate_mismatch(installed_plates.get(printer_id), required_type, required_pattern)
 
                 return check
 
@@ -3540,24 +3534,18 @@ class PrintScheduler:
             if printer_id is not None and finished is not None
         }
 
-    async def _load_installed_plates(self, db: AsyncSession) -> tuple[dict[int, InstalledPlate], dict[int, str]]:
-        """Plate on each tracked printer, plus every plate's name (#1306).
-
-        One query per pass instead of one per printer per item. A printer whose
-        installed_plate_id points at a deleted plate is treated as not tracked.
-        """
-        from backend.app.models.build_plate import BuildPlate
-
-        plates = {p.id: p for p in (await db.execute(select(BuildPlate))).scalars().all()}
+    async def _load_installed_plates(self, db: AsyncSession) -> dict[int, InstalledPlate]:
+        """Plate on each tracked printer (#1306), read once per pass."""
         rows = await db.execute(
-            select(Printer.id, Printer.installed_plate_id).where(Printer.installed_plate_id.is_not(None))
+            select(Printer.id, Printer.installed_plate_type, Printer.installed_plate_pattern).where(
+                Printer.installed_plate_type.is_not(None)
+            )
         )
-        installed: dict[int, InstalledPlate] = {}
-        for printer_id, plate_id in rows.all():
-            plate = plates.get(plate_id) if plate_id is not None else None
-            if plate is not None:
-                installed[printer_id] = InstalledPlate(id=plate.id, name=plate.name, base_type=plate.base_type)
-        return installed, {pid: p.name for pid, p in plates.items()}
+        return {
+            printer_id: InstalledPlate(base_type=base_type, pattern=pattern)
+            for printer_id, base_type, pattern in rows.all()
+            if base_type is not None
+        }
 
     async def _late_plate_mismatch(self, db: AsyncSession, item: PrintQueueItem) -> str | None:
         """Why the plate now on *item*'s printer cannot take it, or None (#1306).
@@ -3569,27 +3557,20 @@ class PrintScheduler:
         """
         if item.printer_id is None or not await self._get_bool_setting(db, "build_plate_tracking_enabled"):
             return None
-        from backend.app.models.build_plate import BuildPlate
-
-        installed_id = await db.scalar(select(Printer.installed_plate_id).where(Printer.id == item.printer_id))
-        if installed_id is None:
+        row = (
+            await db.execute(
+                select(Printer.installed_plate_type, Printer.installed_plate_pattern).where(
+                    Printer.id == item.printer_id
+                )
+            )
+        ).first()
+        installed_type = row[0] if row is not None else None
+        if installed_type is None:
             return None
-        plate = await db.get(BuildPlate, installed_id)
-        if plate is None:
-            return None
-        required_id = item.required_plate_id
-        required_name = None
-        if required_id is not None:
-            required = await db.get(BuildPlate, required_id)
-            if required is None:
-                required_id = None  # deleted: fall back to the type, as check_queue does
-            else:
-                required_name = required.name
         return plate_mismatch(
-            InstalledPlate(id=plate.id, name=plate.name, base_type=plate.base_type),
+            InstalledPlate(base_type=installed_type, pattern=row[1] if row is not None else None),
             item.required_plate_type,
-            required_id,
-            required_name,
+            item.required_plate_pattern,
         )
 
     async def _defer_on_wrong_plate(self, db: AsyncSession, item: PrintQueueItem) -> bool:

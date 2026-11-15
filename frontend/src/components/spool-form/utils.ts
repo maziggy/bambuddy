@@ -64,25 +64,27 @@ export async function fetchPrinterCalibrations(
   return calibrations;
 }
 
-// Fallback filament presets when cloud is not available
+// Fallback filament presets when cloud is not available. Each code is the
+// filament id Bambu gives that name (the table in backend/app/api/routes/cloud.py).
+// Most of them used to be wrong -- Bambu PLA-CF was filed under GFS00, which is
+// Support W, and the slot it configured would now come out as support (#3559).
 const FALLBACK_PRESETS: FilamentOption[] = [
-  { code: 'GFL00', name: 'Bambu PLA Basic', displayName: 'Bambu PLA Basic', isCustom: false, allCodes: ['GFL00'], source: 'builtin' },
-  { code: 'GFL01', name: 'Bambu PLA Matte', displayName: 'Bambu PLA Matte', isCustom: false, allCodes: ['GFL01'], source: 'builtin' },
-  { code: 'GFL05', name: 'Generic PLA', displayName: 'Generic PLA', isCustom: false, allCodes: ['GFL05'], source: 'builtin' },
+  { code: 'GFA00', name: 'Bambu PLA Basic', displayName: 'Bambu PLA Basic', isCustom: false, allCodes: ['GFA00'], source: 'builtin' },
+  { code: 'GFA01', name: 'Bambu PLA Matte', displayName: 'Bambu PLA Matte', isCustom: false, allCodes: ['GFA01'], source: 'builtin' },
+  { code: 'GFL99', name: 'Generic PLA', displayName: 'Generic PLA', isCustom: false, allCodes: ['GFL99'], source: 'builtin' },
   { code: 'GFG00', name: 'Bambu PETG Basic', displayName: 'Bambu PETG Basic', isCustom: false, allCodes: ['GFG00'], source: 'builtin' },
-  { code: 'GFG05', name: 'Generic PETG', displayName: 'Generic PETG', isCustom: false, allCodes: ['GFG05'], source: 'builtin' },
-  { code: 'GFB00', name: 'Bambu ABS Basic', displayName: 'Bambu ABS Basic', isCustom: false, allCodes: ['GFB00'], source: 'builtin' },
-  { code: 'GFB05', name: 'Generic ABS', displayName: 'Generic ABS', isCustom: false, allCodes: ['GFB05'], source: 'builtin' },
-  { code: 'GFA00', name: 'Bambu ASA Basic', displayName: 'Bambu ASA Basic', isCustom: false, allCodes: ['GFA00'], source: 'builtin' },
-  { code: 'GFU00', name: 'Bambu TPU 95A', displayName: 'Bambu TPU 95A', isCustom: false, allCodes: ['GFU00'], source: 'builtin' },
-  { code: 'GFU05', name: 'Generic TPU', displayName: 'Generic TPU', isCustom: false, allCodes: ['GFU05'], source: 'builtin' },
-  { code: 'GFC00', name: 'Bambu PC Basic', displayName: 'Bambu PC Basic', isCustom: false, allCodes: ['GFC00'], source: 'builtin' },
-  { code: 'GFN00', name: 'Bambu PA Basic', displayName: 'Bambu PA Basic', isCustom: false, allCodes: ['GFN00'], source: 'builtin' },
-  { code: 'GFN05', name: 'Generic PA', displayName: 'Generic PA', isCustom: false, allCodes: ['GFN05'], source: 'builtin' },
-  { code: 'GFS00', name: 'Bambu PLA-CF', displayName: 'Bambu PLA-CF', isCustom: false, allCodes: ['GFS00'], source: 'builtin' },
-  { code: 'GFT00', name: 'Bambu PETG-CF', displayName: 'Bambu PETG-CF', isCustom: false, allCodes: ['GFT00'], source: 'builtin' },
-  { code: 'GFNC0', name: 'Bambu PA-CF', displayName: 'Bambu PA-CF', isCustom: false, allCodes: ['GFNC0'], source: 'builtin' },
-  { code: 'GFV00', name: 'Bambu PVA', displayName: 'Bambu PVA', isCustom: false, allCodes: ['GFV00'], source: 'builtin' },
+  { code: 'GFG99', name: 'Generic PETG', displayName: 'Generic PETG', isCustom: false, allCodes: ['GFG99'], source: 'builtin' },
+  { code: 'GFB00', name: 'Bambu ABS', displayName: 'Bambu ABS', isCustom: false, allCodes: ['GFB00'], source: 'builtin' },
+  { code: 'GFB99', name: 'Generic ABS', displayName: 'Generic ABS', isCustom: false, allCodes: ['GFB99'], source: 'builtin' },
+  { code: 'GFB01', name: 'Bambu ASA', displayName: 'Bambu ASA', isCustom: false, allCodes: ['GFB01'], source: 'builtin' },
+  { code: 'GFU01', name: 'Bambu TPU 95A', displayName: 'Bambu TPU 95A', isCustom: false, allCodes: ['GFU01'], source: 'builtin' },
+  { code: 'GFU99', name: 'Generic TPU', displayName: 'Generic TPU', isCustom: false, allCodes: ['GFU99'], source: 'builtin' },
+  { code: 'GFC00', name: 'Bambu PC', displayName: 'Bambu PC', isCustom: false, allCodes: ['GFC00'], source: 'builtin' },
+  { code: 'GFN99', name: 'Generic PA', displayName: 'Generic PA', isCustom: false, allCodes: ['GFN99'], source: 'builtin' },
+  { code: 'GFA50', name: 'Bambu PLA-CF', displayName: 'Bambu PLA-CF', isCustom: false, allCodes: ['GFA50'], source: 'builtin' },
+  { code: 'GFG50', name: 'Bambu PETG-CF', displayName: 'Bambu PETG-CF', isCustom: false, allCodes: ['GFG50'], source: 'builtin' },
+  { code: 'GFN03', name: 'Bambu PA-CF', displayName: 'Bambu PA-CF', isCustom: false, allCodes: ['GFN03'], source: 'builtin' },
+  { code: 'GFS04', name: 'Bambu PVA', displayName: 'Bambu PVA', isCustom: false, allCodes: ['GFS04'], source: 'builtin' },
 ];
 
 // Parse a slicer preset name to extract brand, material, and variant

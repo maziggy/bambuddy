@@ -116,6 +116,14 @@ _PRINTER_TYPES: tuple[str, ...] = (
     "PP-CF",
     "PP-GF",
     "PE-CF",
+    # Bambu's support materials. BambuStudio writes a support preset's type
+    # with this suffix (see ``support_filament_type``) and the 3MF declares it
+    # the same way, so the suffix is part of the type, not decoration to strip:
+    # a slot reduced to "PLA" offers Support for PLA to every plain PLA part
+    # and to nothing that asks for support (#3559).
+    "PLA-S",
+    "ABS-S",
+    "PA-S",
     "PCTG",
     "PETG",
     "BVOH",
@@ -223,6 +231,50 @@ def printer_filament_type(material: str | None) -> str:
             return _TYPE_ALIASES.get(candidate, candidate)
 
     return text
+
+
+# Bambu's own support filaments, by id, and the type BambuStudio's
+# ``get_filament_type`` (libslic3r/PrintConfig.cpp) gives each: Support W and
+# Support G by their id, the rest by adding the suffix to the preset's base
+# type -- For PLA and For PLA/PETG are PLA presets, For PA/PET a PA one, and
+# Support for ABS is the one left as it is. The id decides on its own because
+# the wording cannot: "Support for PLA/PETG" reads as PETG.
+_SUPPORT_TYPE_BY_ID: dict[str, str] = {
+    "GFS00": "PLA-S",
+    "GFS01": "PA-S",
+    "GFS02": "PLA-S",
+    "GFS03": "PA-S",
+    "GFS05": "PLA-S",
+    "GFS06": "ABS",
+}
+# Without a Bambu id, BambuStudio adds the suffix to these two types only.
+_SUPPORT_SUFFIXED = {"PLA": "PLA-S", "PA": "PA-S"}
+_SUPPORT_WORD = re.compile(r"\bSUPPORT\b", re.IGNORECASE)
+
+
+def support_filament_type(tray_type: str | None, filament_id: str | None, preset_name: str | None) -> str:
+    """The slot type for ``tray_type`` when the filament is a support material.
+
+    BambuStudio writes a support preset into a slot as "PLA-S" or "PA-S", and
+    a plate sliced with one declares the same, so the slot has to say so for a
+    print to find it (#3559). Every path that configures a slot reaches this
+    point holding a plain "PLA": the Configure dialog reads the type from the
+    preset name, and a spool's material column rarely says more.
+
+    The rule is BambuStudio's. A Bambu support id decides the type outright.
+    Otherwise -- a third-party or user preset with an id of its own -- a PLA
+    or PA filament whose preset name says "Support" gets the suffix. Any other
+    type is returned unchanged: "PLA Support for PETG" is a PETG preset and
+    stays PETG, as it does in the slicer.
+    """
+    fid = (filament_id or "").strip().upper()
+    if fid in _SUPPORT_TYPE_BY_ID:
+        return _SUPPORT_TYPE_BY_ID[fid]
+    text = (tray_type or "").strip()
+    suffixed = _SUPPORT_SUFFIXED.get(text.upper())
+    if suffixed and _SUPPORT_WORD.search(preset_name or ""):
+        return suffixed
+    return tray_type or ""
 
 
 def nozzle_temp_range(material: str | None, tray_type: str | None) -> tuple[int, int]:

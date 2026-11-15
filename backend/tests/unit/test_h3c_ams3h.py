@@ -18,6 +18,8 @@ import copy
 import json
 from unittest.mock import MagicMock
 
+import pytest
+
 from backend.app.services.bambu_mqtt import (
     BambuMQTTClient,
     ams3h_drying_cooling_temp,
@@ -649,6 +651,104 @@ class TestExternalInputs:
         from backend.app.services.slot_nozzle import reports_two_nozzles
 
         assert reports_two_nozzles(self._with_inputs().state) is False
+
+
+class TestToolheadTray:
+    """tray_now names what the toolhead holds, from its snow where tray_now's bare slot can't tell (#3532).
+
+    The H3C sends ams.tray_now and the toolhead's extruder.info[0].snow in every
+    push. An external input reports tray_now "0", like AMS 3H slot 0; its snow
+    (v << 8) names it. Captured: TPU fed through the AMS 3H bypass at position 8
+    reports tray_now "0" with snow 0xF800, input 248.
+    """
+
+    @staticmethod
+    def _frame(tray_now: str, snow: int | None, rack: tuple[int, int] | None = None) -> dict:
+        frame = _frame()
+        frame["ams"].update(tray_now=tray_now, tray_pre=tray_now, tray_tar=tray_now)
+        if snow is None:
+            del frame["device"]["extruder"]["info"]
+        else:
+            frame["device"]["extruder"]["info"][0].update(snow=snow, spre=snow, star=snow)
+        if rack is not None:
+            frame["device"]["nozzle"].update(src_id=rack[0], tar_id=rack[1])
+        frame["vir_slot"] = copy.deepcopy(TestExternalInputs.VIR_SLOT)
+        return frame
+
+    def _swap(self, client: BambuMQTTClient, tray_now: str, snow: int, rack: tuple[int, int]) -> int:
+        client._process_message({"print": self._frame(tray_now, snow, rack)})
+        return client.state.tray_now
+
+    # 255 (input 255, hotend 0) is also what "nothing loaded" reads: still not slot 1.
+    @pytest.mark.parametrize("ext", range(247, 256))
+    def test_an_external_input_is_the_input_not_ams3h_slot_1(self, ext):
+        assert _ingested(frame=self._frame("0", ext << 8)).state.tray_now == ext
+
+    def test_unload_does_not_retract_slot_1s_hotend_for_an_input(self):
+        client = _wired(_ingested(frame=self._frame("0", 0xF800)))
+        assert client.state.tray_now == 248
+        assert client.ams_unload_filament() is False
+        client._client.publish.assert_not_called()
+
+    @pytest.mark.parametrize("slot", range(9))
+    def test_an_ams3h_slot_is_28_plus_the_slot(self, slot):
+        assert _ingested(frame=self._frame(str(slot), (32 << 8) | slot)).state.tray_now == 28 + slot
+
+    def test_mid_swap_tray_now_decides(self):
+        # Captured swaps: snow names the next slot before tray_now changes, and
+        # still names one while tray_now is 255.
+        assert _ingested(frame=self._frame("6", 32 << 8)).state.tray_now == 34
+        assert _ingested(frame=self._frame("255", (32 << 8) | 2)).state.tray_now == 255
+        assert _ingested(frame=self._frame("3", 0xF800)).state.tray_now == 31
+
+    def test_snow_0xffff_leaves_the_slot(self):
+        assert _ingested(frame=self._frame("2", 0xFFFF)).state.tray_now == 30
+        assert _ingested(frame=self._frame("255", 0xFFFF)).state.tray_now == 255
+
+    def test_a_frame_without_extruder_info(self):
+        # No snow yet: the slot is an AMS 3H slot.
+        assert _ingested(frame=self._frame("0", None)).state.tray_now == 28
+        # An earlier snow counts while it agrees with the slot, not once the slot moves on.
+        client = _ingested(frame=self._frame("0", 0xF800))
+        client._process_message({"print": {"ams": {"tray_now": "0"}}})
+        assert client.state.tray_now == 248
+        client._process_message({"print": {"ams": {"tray_now": "2"}}})
+        assert client.state.tray_now == 30
+
+    # Captured swaps: src_id names the next PrintTool's rack id (16 + position)
+    # first, snow follows while tar_id is 255 or 253, and tar_id = src_id once
+    # that PrintTool is mounted. Ext-n is on position n - 1 (Studio's hotend 255 - v).
+    @pytest.mark.parametrize(
+        ("before", "after"),
+        [
+            ((0xF800, 248, 23), (32 << 8, 28, 16)),  # Ext-8 -> AMS 3H slot 1
+            ((32 << 8, 28, 16), (0xF800, 248, 23)),  # AMS 3H slot 1 -> Ext-8
+            ((0xF800, 248, 23), (0xFD00, 253, 18)),  # Ext-8 -> Ext-3
+        ],
+    )
+    def test_a_swap_to_the_same_slot_waits_for_the_printtool(self, before, after):
+        # tray_now reports "0" all through, so only the rack says when the swap is done.
+        (old_snow, old_tray, old_rack), (new_snow, new_tray, new_rack) = before, after
+        client = _wired(_ingested(frame=self._frame("0", old_snow, (old_rack, old_rack))))
+        assert client.state.tray_now == old_tray
+        assert self._swap(client, "0", old_snow, (new_rack, old_rack)) == old_tray
+        assert self._swap(client, "0", new_snow, (new_rack, 255)) == old_tray
+        assert self._swap(client, "0", new_snow, (new_rack, 253)) == old_tray
+        assert self._swap(client, "0", new_snow, (new_rack, new_rack)) == new_tray
+
+    def test_an_unload_mid_swap_does_not_retract_slot_1s_hotend(self):
+        client = _wired(_ingested(frame=self._frame("0", 0xF800, (23, 23))))
+        assert self._swap(client, "0", 32 << 8, (16, 255)) == 248
+        assert client.ams_unload_filament() is False
+        client._client.publish.assert_not_called()
+
+    def test_an_input_is_kept_until_tray_now_moves_on(self):
+        # Ext-8 -> AMS 3H slot 3: snow names slot 2 while tray_now still reports
+        # "0", which is the input still, not AMS 3H slot 1.
+        client = _ingested(frame=self._frame("0", 0xF800, (23, 23)))
+        assert self._swap(client, "0", (32 << 8) | 2, (18, 255)) == 248
+        assert self._swap(client, "255", (32 << 8) | 2, (18, 18)) == 255
+        assert self._swap(client, "2", (32 << 8) | 2, (18, 18)) == 30
 
 
 class TestChamberHeater:

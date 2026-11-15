@@ -1819,6 +1819,8 @@ class BambuMQTTClient:
         # Whether the frame being handled carried the nozzles' snow: only then
         # may snow overrule the slot the same frame reports as tray_now.
         self._snow_in_frame = False
+        # Whether the frame being handled has a rack printer mid tool change (#3532).
+        self._rack_swapping = False
 
         # The captured ams_mapping lives on the state (print_ams_mapping), so
         # the status the card reads carries it; see _captured_ams_mapping.
@@ -2636,6 +2638,7 @@ class BambuMQTTClient:
         if "ams" in payload:
             try:
                 self._snow_in_frame = False  # a bare AMS frame carries no extruder data
+                self._rack_swapping = self._rack_swap_in_frame({})  # nor nozzle ids: the last ones
                 self._handle_ams_data(payload["ams"])
             except Exception as e:
                 logger.error("[%s] Error handling AMS data: %s", self.serial_number, e)
@@ -2778,6 +2781,7 @@ class BambuMQTTClient:
             # this frame's extruder data places (which nozzle, which AMS).
             self._snow_in_frame = self._parse_extruder_position(print_data)
             self._parse_extruder_slots(print_data)
+            self._rack_swapping = self._rack_swap_in_frame(print_data)
 
             # Handle AMS data that comes inside print key
             if "ams" in print_data:
@@ -3510,6 +3514,70 @@ class BambuMQTTClient:
                 global_tray_id(ams_id, RACK_SLOT_COUNT - 1, kind),
             )
 
+    def _rack_tray_now(self, raw: int, layout: TrayLayout) -> int:
+        """The global tray on a rack printer's toolhead, from its ``ams.tray_now`` (#3532).
+
+        ``tray_now`` is a bare slot, and an external input reports slot 0 like
+        AMS 3H slot 0. The toolhead's ``extruder.info[0].snow`` also names the
+        unit (0xF800 is input 248), so it decides whenever its slot agrees with
+        ``tray_now``.
+
+        During a tool change snow names the next tray before that PrintTool is
+        mounted. A next tray with another slot disagrees with ``tray_now``, but
+        one with the same slot (an input and AMS 3H slot 0) agrees. So while the
+        rack is mid-swap, and whenever snow doesn't settle it, the tray shown is
+        kept as long as ``tray_now`` still reports its slot. Otherwise tray_now
+        is read as an AMS 3H slot. 255 (nothing on the toolhead) and any other
+        id outside 0-8 are kept as reported.
+        """
+        if raw == 255:
+            return raw
+        shown = self.state.tray_now
+        keep = self._rack_raw_slot(shown, layout) == raw
+        head = self.state.extruder_slots.get(0)
+        if head is not None and head.ams_id is not None and head.slot_id == raw:
+            tray = decode_wire_slot((head.ams_id << 8) | raw, layout)
+            if tray is not None and not (keep and self._rack_swapping):
+                return tray
+        if keep:
+            return shown
+        rack_tray = layout.raw_slot_to_global(raw)
+        return rack_tray if rack_tray is not None else raw
+
+    @staticmethod
+    def _rack_raw_slot(tray: int, layout: TrayLayout) -> int | None:
+        """The bare slot a rack printer's ``tray_now`` reports for global tray ``tray``.
+
+        The AMS 3H slot, or 0 for an external input. None for anything else,
+        including 255, which also means nothing is loaded.
+        """
+        rack = layout.rack_slot(tray)
+        if rack is not None:
+            return rack[1]
+        return 0 if layout.is_external(tray) and tray != 255 else None
+
+    def _rack_swap_in_frame(self, data: dict) -> bool:
+        """Whether a print frame has a rack printer mid tool change (#3532).
+
+        Read from the frame's ``device.nozzle`` (the state's copy is updated
+        after the AMS block). When the H3C starts a swap, ``src_id`` becomes the
+        next PrintTool's rack id, and ``tar_id`` follows once that PrintTool is
+        mounted; until then they differ. A frame without them keeps the last
+        ones.
+        """
+        device = data.get("device")
+        nozzle = device.get("nozzle") if isinstance(device, dict) else None
+        if not isinstance(nozzle, dict):
+            nozzle = {}
+        ids: list[int | None] = []
+        for key, last in (("src_id", self.state.nozzle_rack_src_id), ("tar_id", self.state.nozzle_rack_tar_id)):
+            try:
+                ids.append(int(nozzle[key]) if key in nozzle else last)
+            except (TypeError, ValueError):
+                ids.append(last)
+        src, tar = ids
+        return src is not None and tar is not None and src != tar
+
     def _ams3h_unit_id(self) -> int:
         """The unit id of this printer's AMS 3H (32 on the H3C)."""
         return next((uid for uid, kind in self.tray_layout.rack_units if kind == AmsType.ZMULTI_A), AMS3H_UNIT_ID)
@@ -3736,10 +3804,7 @@ class BambuMQTTClient:
                 rack_layout = self._layout_with(ams_list)
                 self._note_rack_ams(rack_layout)
                 if rack_layout.rack_units and not self._is_dual_nozzle:
-                    rack_tray = rack_layout.raw_slot_to_global(parsed_tray_now)
-                    # 255 (nothing on the toolhead, also mid-swap) and any
-                    # external input id are kept as reported.
-                    self.state.tray_now = rack_tray if rack_tray is not None else parsed_tray_now
+                    self.state.tray_now = self._rack_tray_now(parsed_tray_now, rack_layout)
                 elif self._is_dual_nozzle and 0 <= parsed_tray_now <= 3:
                     # First, check if we have a pending target that matches this slot
                     pending_target = self.state.pending_tray_target

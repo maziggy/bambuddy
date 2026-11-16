@@ -5865,7 +5865,7 @@ export default {
     askForOutcome: '詢問列印結果',
     askForOutcomeTitle: '列印完成後詢問列印效果如何',
     clearsPlate: '自動清空熱床',
-    clearsPlateTitle: '檔案會自行清空熱床(換板器或推出模型)。列印成功後,除非印表機設定為「一律需要」,否則佇列會直接開始下一個任務,無需等待熱床清空確認。',
+    clearsPlateTitle: '檔案會自行清空熱床（換板器或推出模型）。列印成功後，除非印表機設定為「一律需要」，否則佇列會直接開始下一個任務,無需等待熱床清空確認。',
   },
 
   // Backup

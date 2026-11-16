@@ -13,7 +13,14 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse, delay } from 'msw';
 import type { ComponentProps } from 'react';
 
+import { render as renderPlain } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { BrowserRouter } from 'react-router-dom';
 import { render } from '../utils';
+import { ThemeProvider } from '../../contexts/ThemeContext';
+import { ToastProvider } from '../../contexts/ToastContext';
+import { AuthProvider } from '../../contexts/AuthContext';
+import { EmbeddedCameraProvider } from '../../contexts/EmbeddedCameraContext';
 import { server } from '../mocks/server';
 import { PrintModal } from '../../components/PrintModal';
 import type { PrintQueueItem } from '../../api/client';
@@ -353,5 +360,76 @@ describe('PrintModal clears-plate pill in edit mode (#3576)', () => {
 
     await new Promise((r) => setTimeout(r, 200));
     expect(pill()).toHaveAttribute('aria-pressed', 'false');
+  });
+});
+
+// The app's QueryClient serves cached data for 60 s without a fetch; a file's
+// details already in the cache (Reprint from the archive modal, a file just
+// viewed) must still show and send the file's flag (#3576).
+describe('PrintModal clears-plate pill with fresh cached details (#3576)', () => {
+  beforeEach(() => {
+    posted = [];
+    patched = [];
+  });
+
+  const renderCached = (key: unknown[], data: Record<string, unknown>, props: Partial<ComponentProps<typeof PrintModal>>) => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: 60_000 }, mutations: { retry: false } },
+    });
+    client.setQueryData(key, data);
+    return renderPlain(
+      <QueryClientProvider client={client}>
+        <BrowserRouter>
+          <AuthProvider>
+            <ThemeProvider>
+              <ToastProvider>
+                <EmbeddedCameraProvider>
+                  <PrintModal
+                    mode="create"
+                    archiveName="Benchy"
+                    initialSelectedPrinterIds={[1]}
+                    onClose={() => {}}
+                    {...props}
+                  />
+                </EmbeddedCameraProvider>
+              </ToastProvider>
+            </ThemeProvider>
+          </AuthProvider>
+        </BrowserRouter>
+      </QueryClientProvider>,
+    );
+  };
+
+  it('shows a flagged cached archive as on and one click sends explicit false', async () => {
+    mockBackend({ archiveClears: true });
+    const user = userEvent.setup();
+    renderCached(['archive', 1], { id: 1, sliced_for_model: null, clears_plate: true }, { archiveId: 1 });
+
+    expect(pill()).toHaveAttribute('aria-pressed', 'true');
+    await user.click(pill());
+    expect(pill()).toHaveAttribute('aria-pressed', 'false');
+    await user.click(submit());
+
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]).toHaveProperty('clears_plate', false);
+  });
+
+  it('sends true for a flagged cached library file left as is', async () => {
+    mockBackend({ libraryClears: true });
+    const user = userEvent.setup();
+    renderCached(
+      ['library-file', 5],
+      { id: 5, filename: 'f5.gcode.3mf', file_type: 'gcode.3mf', sliced_for_model: null, clears_plate: true },
+      { libraryFileId: 5 },
+    );
+
+    expect(pill()).toHaveAttribute('aria-pressed', 'true');
+    await waitFor(() => expect(submit()).toBeEnabled());
+    await new Promise((r) => setTimeout(r, 200));
+    expect(pill()).toHaveAttribute('aria-pressed', 'true');
+    await user.click(submit());
+
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0].clears_plate ?? true).toBe(true);
   });
 });

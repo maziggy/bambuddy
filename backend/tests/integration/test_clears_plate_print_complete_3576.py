@@ -234,7 +234,6 @@ class TestFailSafe:
         with patch.object(main_module, "async_session", MagicMock(side_effect=RuntimeError("db gone"))):
             assert await main_module._finishing_job_clears_plate(queued_print["printer"], {}) is False
             assert await main_module._job_skips_plate_confirmation(queued_print["printer"]) is False
-            assert await main_module._is_internal_completion(queued_print["printer"], {"subtask_name": "x"}) is False
 
     async def test_policy_read_failure_keeps_the_gate(self, test_engine, db_session, queued_print, gate):
         await _setup(db_session, queued_print)
@@ -262,52 +261,68 @@ class TestFailSafe:
         assert (await db_session.get(PrintQueueItem, queued_print["item"])).status == "completed"
 
 
-class TestInternalCompletion:
-    """A calibration run ending beside a printing queue row must not raise the gate (#3576)."""
+class TestCalibrationCompletionAndMidRunGate:
+    """Upstream behaviour is kept for every non-flagged completion; a flagged success ends with the gate down (#3576)."""
 
-    async def test_pa_line_completion_while_a_row_prints(self, test_engine, db_session, queued_print, gate):
+    @pytest.mark.parametrize("status", ["failed", "cancelled", "aborted"])
+    async def test_internal_subtask_failure_while_a_row_prints_raises(
+        self, test_engine, db_session, queued_print, gate, status
+    ):
         await _setup(db_session, queued_print)
 
-        await _complete(test_engine, queued_print["printer"], "completed", name="auto_pa_line_calib_mode")
+        await _complete(test_engine, queued_print["printer"], status, name="auto_pa_line_calib_mode")
 
-        assert not _raised(gate, queued_print["printer"])
+        assert _raised(gate, queued_print["printer"])
+        assert printer_manager.is_awaiting_plate_clear(queued_print["printer"])
 
-    async def test_usr_path_completion_while_a_row_prints(self, test_engine, db_session, queued_print, gate):
+    async def test_flagged_success_after_a_mid_run_raise_ends_with_the_gate_down(
+        self, test_engine, db_session, queued_print, gate
+    ):
+        await _setup(db_session, queued_print)
+        printer_manager._awaiting_plate_clear.add(queued_print["printer"])
+
+        await _complete(test_engine, queued_print["printer"], "completed")
+
+        assert any(call.args == (queued_print["printer"], False) for call in gate.call_args_list)
+        assert not printer_manager.is_awaiting_plate_clear(queued_print["printer"])
+
+    async def test_unflagged_success_keeps_a_mid_run_raise(self, test_engine, db_session, queued_print, gate):
+        await _setup(db_session, queued_print, flag=False)
+        printer_manager._awaiting_plate_clear.add(queued_print["printer"])
+
+        await _complete(test_engine, queued_print["printer"], "completed")
+
+        assert printer_manager.is_awaiting_plate_clear(queued_print["printer"])
+
+    async def test_reconciled_archive_id_match_beats_a_differing_name(
+        self, test_engine, db_session, queued_print, gate
+    ):
         await _setup(db_session, queued_print)
 
         await _complete(
             test_engine,
             queued_print["printer"],
             "completed",
-            name="x",
-            extra={"filename": "/usr/etc/print/auto_cali_for_user.gcode"},
+            name="a_different_print_name",
+            extra={"_reconciled": True, "_reconciled_archive_id": queued_print["archive"]},
         )
 
         assert not _raised(gate, queued_print["printer"])
+        assert not printer_manager.is_awaiting_plate_clear(queued_print["printer"])
 
-    async def test_pa_line_completion_without_a_queue_row_raises(self, test_engine, db_session, queued_print, gate):
-        await _setup(db_session, queued_print)
-        item = await db_session.get(PrintQueueItem, queued_print["item"])
-        item.status = "cancelled"
-        await db_session.commit()
-        main_module._active_prints.clear()
-
-        await _complete(test_engine, queued_print["printer"], "completed", name="auto_pa_line_calib_mode")
-
-        assert _raised(gate, queued_print["printer"])
-
-    async def test_a_dispatched_job_named_like_an_internal_job_is_not_internal(
+    async def test_reconciled_archive_id_mismatch_raises_even_with_a_matching_name(
         self, test_engine, db_session, queued_print, gate
     ):
         await _setup(db_session, queued_print)
-        archive = await db_session.get(PrintArchive, queued_print["archive"])
-        archive.filename = "auto_pa_line_calib_mode.3mf"
-        await db_session.commit()
 
-        data = {"filename": "auto_pa_line_calib_mode.gcode", "subtask_name": "auto_pa_line_calib_mode"}
-        maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
-        with patch("backend.app.main.async_session", maker):
-            assert await main_module._is_internal_completion(queued_print["printer"], data) is False
+        await _complete(
+            test_engine,
+            queued_print["printer"],
+            "completed",
+            extra={"_reconciled": True, "_reconciled_archive_id": queued_print["archive"] + 1000},
+        )
+
+        assert _raised(gate, queued_print["printer"])
 
 
 class TestPolicyHelper:

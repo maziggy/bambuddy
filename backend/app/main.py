@@ -9338,8 +9338,10 @@ async def _finishing_job_clears_plate(printer_id: int, data: dict) -> bool:
             if not item.clears_plate:
                 return False
             reconciled_id = data.get("_reconciled_archive_id")
-            if reconciled_id is not None and item.archive_id != reconciled_id:
-                return False
+            if reconciled_id is not None:
+                # The archive id is a stronger match than the name (reconciled payloads carry
+                # archive.print_name, which need not equal the file stem).
+                return item.archive_id == reconciled_id
             observed = (data.get("subtask_name") or "").strip()
             expected = await _queue_item_dispatched_name(db, item)
             if not observed or not expected:
@@ -9349,38 +9351,6 @@ async def _finishing_job_clears_plate(printer_id: int, data: dict) -> bool:
         logging.getLogger(__name__).warning(
             "Could not tell whether the job on printer %s clears its plate: %s", printer_id, e
         )
-        return False
-
-
-async def _is_internal_completion(printer_id: int, data: dict) -> bool:
-    """Whether this completion is the printer's own job (calibration) while a queue row prints (#3576).
-
-    Same rule as the print-start skip: a /usr/ path, or an internal-looking
-    name Bambuddy did not dispatch. Only counts while a queue row is printing,
-    so the plate-clear gate of a calibration run beside a queue job is not
-    raised. Fail-safe False.
-    """
-    try:
-        from backend.app.models.print_queue import PrintQueueItem
-
-        filename = data.get("filename", "")
-        subtask_name = data.get("subtask_name", "")
-        if not is_internal_printer_job(filename, subtask_name):
-            return False
-        async with async_session() as db:
-            if not (filename or "").startswith("/usr/") and await _dispatched_by_bambuddy(
-                db, printer_id, filename, subtask_name
-            ):
-                return False
-            printing = await db.execute(
-                select(PrintQueueItem.id)
-                .where(PrintQueueItem.printer_id == printer_id)
-                .where(PrintQueueItem.status == "printing")
-                .limit(1)
-            )
-            return printing.first() is not None
-    except Exception as e:
-        logging.getLogger(__name__).warning("Could not classify the completion on printer %s: %s", printer_id, e)
         return False
 
 
@@ -9651,16 +9621,16 @@ async def _close_out_print(printer_id: int, data: dict):
         logger.exception("Notify Live Activity completion hook failed for printer %s", printer_id)
     _final_status = data.get("status", "completed")
     # A successful job whose file clears its own plate leaves nothing to confirm (#3576);
-    # a failure or cancel still raises the gate, and an "Always require" printer still waits.
+    # a failure or cancel still raises the gate, and a printer set to always require it (#2860) still waits.
     _job_clears_plate = _final_status == "completed" and await _finishing_job_clears_plate(printer_id, data)
-    # The printer's own calibration job ending beside a printing queue row is not that row's
-    # finish; raising here would leave the gate set past a later flagged success (#3576).
-    if (
-        _final_status in ("completed", "failed", "aborted", "cancelled")
-        and not (_job_clears_plate and await _job_skips_plate_confirmation(printer_id))
-        and not await _is_internal_completion(printer_id, data)
-    ):
-        printer_manager.set_awaiting_plate_clear(printer_id, True)
+    if _final_status in ("completed", "failed", "aborted", "cancelled"):
+        if _job_clears_plate and await _job_skips_plate_confirmation(printer_id):
+            # (#3576) Dispatch clears the gate at start, so a gate that is up at a positively
+            # matched flagged success was raised during this same run (e.g. by the printer's own
+            # calibration run); this run's successful end cleared the plate.
+            printer_manager.set_awaiting_plate_clear(printer_id, False)
+        else:
+            printer_manager.set_awaiting_plate_clear(printer_id, True)
 
     # MQTT relay - publish print complete
     try:

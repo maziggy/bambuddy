@@ -513,6 +513,9 @@ export function PrintModal({
     queryKey: ['archive', archiveId],
     queryFn: () => api.getArchive(archiveId!),
     enabled: !!archiveId && !isLibraryFile,
+    // Always refetch on mount: the "clears plate" seed needs fresh data, and the
+    // app-wide staleTime would otherwise serve a cached copy without a fetch.
+    refetchOnMount: 'always',
   });
 
   // Fetch library file details to get sliced_for_model
@@ -520,6 +523,7 @@ export function PrintModal({
     queryKey: ['library-file', libraryFileId],
     queryFn: () => api.getLibraryFile(libraryFileId!),
     enabled: isLibraryFile && !!libraryFileId,
+    refetchOnMount: 'always',
   });
 
   // "Clears plate automatically" is decided once it was seeded from the single
@@ -539,6 +543,11 @@ export function PrintModal({
     }
   }, [clearsPlateDecided, isMultiFile, mode, resumedSettings, isLibraryFile, libraryFileDetails, archiveDetails, libraryDetailsFresh, archiveDetailsFresh]);
   // Sent explicitly only when decided; otherwise the backend decides per file.
+  // Until decided, show what the backend will apply (the file's own flag).
+  const clearsPlateShown =
+    clearsPlateDecided || isMultiFile
+      ? printOptions.clears_plate
+      : ((isLibraryFile ? libraryFileDetails : archiveDetails)?.clears_plate ?? printOptions.clears_plate);
   const clearsPlatePayload = clearsPlateDecided && !isMultiFile ? printOptions.clears_plate : undefined;
 
   // Get sliced_for_model from archive or library file
@@ -2667,14 +2676,14 @@ export function PrintModal({
               {!isMultiFile && (
               <button
                 type="button"
-                aria-pressed={printOptions.clears_plate}
+                aria-pressed={clearsPlateShown}
                 title={t('printModal.clearsPlateTitle')}
                 onClick={() => {
                   setClearsPlateDecided(true);
-                  setPrintOptions((prev) => ({ ...prev, clears_plate: !prev.clears_plate }));
+                  setPrintOptions((prev) => ({ ...prev, clears_plate: !clearsPlateShown }));
                 }}
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm transition-colors ${
-                  printOptions.clears_plate
+                  clearsPlateShown
                     ? 'bg-bambu-green/20 border-bambu-green text-bambu-green'
                     : 'bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:text-white'
                 }`}

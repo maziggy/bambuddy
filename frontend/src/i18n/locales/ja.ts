@@ -1651,7 +1651,7 @@ export default {
       confirmOutcome: '結果確認',
       confirmOutcomeTitle: '完了後に印刷の仕上がりを確認します',
       clearsPlate: 'プレート自動クリア',
-      clearsPlateTitle: '自動でプレートをクリア：印刷成功後のプレート確認は不要(プリンターが「常に必須」に設定されている場合を除く)',
+      clearsPlateTitle: '自動でプレートをクリア：印刷成功後のプレート確認は不要（プリンターが「常に必須」に設定されている場合を除く）',
     },
     // Empty state
     empty: {
@@ -4339,7 +4339,7 @@ export default {
     subtitle: '印刷ファイルの整理と管理',
     uploadFiles: 'ファイルをアップロード',
     clearsPlateOnUpload: 'ファイルがプレートを自動でクリア',
-    clearsPlateOnUploadHelp: 'このアップロードのすべてのファイルに適用されます。プレート交換またはプッシュオフで終了するスライス済みファイル専用です。印刷が成功しても、キューはプレート確認を待ちません。',
+    clearsPlateOnUploadHelp: 'このアップロードのすべてのファイルに適用されます。プレート交換またはプッシュオフで終了するスライス済みファイル専用です。印刷が成功すると、キューはプレート確認を待ちません。',
     newFolder: '新しいフォルダ',
     folderName: 'フォルダ名',
     folderNamePlaceholder: '例: 機能パーツ',
@@ -5879,7 +5879,7 @@ export default {
     askForOutcome: '結果を確認する',
     askForOutcomeTitle: '完了後に印刷の仕上がりを尋ねます',
     clearsPlate: 'プレートを自動でクリア',
-    clearsPlateTitle: 'このファイルはプレートを自分でクリアします(プレートチェンジャーまたはプッシュオフ)。印刷が成功すると、プリンターが「常に必須」に設定されていない限り、キューはプレート確認を待たずに次のジョブを開始します。',
+    clearsPlateTitle: 'このファイルはプレートを自分でクリアします（プレートチェンジャーまたはプッシュオフ）。印刷が成功すると、プリンターが「常に必須」に設定されていない限り、キューはプレート確認を待たずに次のジョブを開始します。',
   },
 
   // Backup

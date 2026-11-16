@@ -1422,6 +1422,7 @@ export default {
     failed: {
       generic: 'Dispatch failed',
       upload_failed: 'Upload to printer failed',
+      plate_changer_empty: 'Plate changer empty, the job stays in the queue',
       start_command_failed: 'Printer rejected start command',
     },
     dismiss: 'Dismiss',

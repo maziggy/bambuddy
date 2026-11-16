@@ -10603,8 +10603,9 @@ class PrintScheduler:
             if item.target_model:
                 await self._release_model_assignment(db, item, printer.id)
             try:
-                # Closes the upload toast; "plate_changer_empty" has no text of
-                # its own in the frontend, so it reads "Dispatch failed".
+                # Closes the upload toast; the frontend shows
+                # dispatchToast.failed.plate_changer_empty ("Plate changer
+                # empty, the job stays in the queue").
                 await ws_manager.send_queue_item_failed(
                     user_id=toast_uid,
                     queue_item_id=item.id,

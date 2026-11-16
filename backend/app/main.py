@@ -144,7 +144,7 @@ from backend.app.services.notify_live_activities import notify_live_activities
 from backend.app.services.notify_widgets import notify_widgets
 from backend.app.services.obico_detection import obico_detection_service
 from backend.app.services.octoeverywhere_detection import octoeverywhere_detection_service
-from backend.app.services.plate_changer import consume_auto_cleared_plate
+from backend.app.services.plate_changer import clear_count_pending, consume_auto_cleared_plate
 from backend.app.services.plug_energy import get_plug_energy as _get_plug_energy
 from backend.app.services.print_cost_estimate import plate_scoped_run_estimate as _plate_scoped_run_estimate
 from backend.app.services.print_scheduler import scheduler as print_scheduler
@@ -9592,8 +9592,6 @@ async def _close_out_print(printer_id: int, data: dict):
             logger.exception("internal-job check failed for printer %s; counting the plate", printer_id)
             _internal = False
         if _internal:
-            from backend.app.services.plate_changer import clear_count_pending
-
             clear_count_pending(printer_id)
         else:
             await consume_auto_cleared_plate(printer_id)

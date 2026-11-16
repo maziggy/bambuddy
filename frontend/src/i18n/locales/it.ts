@@ -1413,6 +1413,7 @@ export default {
     failed: {
       generic: 'Invio fallito',
       upload_failed: 'Caricamento sulla stampante fallito',
+      plate_changer_empty: 'Cambio piatto vuoto, il lavoro resta in coda',
       start_command_failed: 'La stampante ha rifiutato il comando di avvio',
     },
     dismiss: 'Chiudi',

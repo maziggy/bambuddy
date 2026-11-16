@@ -1413,6 +1413,7 @@ export default {
     failed: {
       generic: '派发失败',
       upload_failed: '上传到打印机失败',
+      plate_changer_empty: '换板器已空，任务保留在队列中',
       start_command_failed: '打印机拒绝了开始命令',
     },
     dismiss: '关闭',

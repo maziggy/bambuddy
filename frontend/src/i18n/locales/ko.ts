@@ -1367,6 +1367,7 @@ export default {
     failed: {
       generic: '디스패치 실패',
       upload_failed: '프린터로 업로드 실패',
+      plate_changer_empty: '플레이트 체인저가 비어 있습니다. 작업은 대기열에 남습니다',
       start_command_failed: '프린터가 시작 명령을 거부했습니다',
     },
     dismiss: '닫기',

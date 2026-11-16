@@ -1420,6 +1420,7 @@ export default {
     failed: {
       generic: 'Verzenden mislukt',
       upload_failed: 'Uploaden naar printer mislukt',
+      plate_changer_empty: 'Plaatwisselaar leeg, de taak blijft in de wachtrij',
       start_command_failed: 'Printer heeft startopdracht geweigerd',
     },
     dismiss: 'Negeren',

@@ -1413,6 +1413,7 @@ export default {
     failed: {
       generic: 'Versand fehlgeschlagen',
       upload_failed: 'Upload zum Drucker fehlgeschlagen',
+      plate_changer_empty: 'Plattenwechsler leer, der Auftrag bleibt in der Warteschlange',
       start_command_failed: 'Drucker hat Startbefehl abgelehnt',
     },
     dismiss: 'Schließen',

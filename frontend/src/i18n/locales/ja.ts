@@ -1412,6 +1412,7 @@ export default {
     failed: {
       generic: '送信に失敗しました',
       upload_failed: 'プリンターへのアップロードに失敗しました',
+      plate_changer_empty: 'プレートチェンジャーが空です。ジョブはキューに残ります',
       start_command_failed: 'プリンターが開始コマンドを拒否しました',
     },
     dismiss: '閉じる',

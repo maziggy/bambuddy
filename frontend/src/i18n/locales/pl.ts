@@ -1422,6 +1422,7 @@ export default {
     failed: {
       generic: 'Wysyłanie nie powiodło się',
       upload_failed: 'Przesyłanie do drukarki nie powiodło się',
+      plate_changer_empty: 'Zmieniarka płyt pusta, zadanie pozostaje w kolejce',
       start_command_failed: 'Drukarka odrzuciła polecenie startu',
     },
     dismiss: 'Zamknij',

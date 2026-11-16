@@ -1413,6 +1413,7 @@ export default {
     failed: {
       generic: '派發失敗',
       upload_failed: '上傳到印表機失敗',
+      plate_changer_empty: '換板器已空，任務保留在佇列中',
       start_command_failed: '印表機拒絕了開始命令',
     },
     dismiss: '關閉',

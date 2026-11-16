@@ -1420,6 +1420,7 @@ export default {
     failed: {
       generic: 'Utskick misslyckades',
       upload_failed: 'Kunde inte ladda upp till skrivare',
+      plate_changer_empty: 'Plattbytaren är tom, jobbet ligger kvar i kön',
       start_command_failed: 'Skrivaren avvisade startkommandot',
     },
     dismiss: 'Avfärda',

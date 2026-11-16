@@ -1413,6 +1413,7 @@ export default {
     failed: {
       generic: 'Falha no envio',
       upload_failed: 'Falha ao enviar para a impressora',
+      plate_changer_empty: 'Trocador de placas vazio, o trabalho permanece na fila',
       start_command_failed: 'Impressora rejeitou o comando de início',
     },
     dismiss: 'Fechar',

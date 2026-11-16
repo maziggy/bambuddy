@@ -221,7 +221,7 @@ async def test_ssdp_rediscovery_verifies_credentials_updates_ip_and_skips_subnet
     monkeypatch.setattr(mod.ws_manager, "broadcast", ws_mock)
 
     with (
-        patch("backend.app.api.routes.camera.stop_printer_streams", new=AsyncMock(return_value=0)) as cam_stop,
+        patch("backend.app.api.routes.camera._stop_printer_streams", new=AsyncMock(return_value=0)) as cam_stop,
         patch("backend.app.services.virtual_printer.virtual_printer_manager.sync_from_db", new=AsyncMock()) as vp_sync,
     ):
         updated = await service.run_once()
@@ -450,7 +450,7 @@ async def test_dhcp_lease_swap_and_hostname_preservation(test_engine, monkeypatc
     monkeypatch.setattr(mod.ws_manager, "broadcast", AsyncMock())
 
     with (
-        patch("backend.app.api.routes.camera.stop_printer_streams", new=AsyncMock(return_value=0)),
+        patch("backend.app.api.routes.camera._stop_printer_streams", new=AsyncMock(return_value=0)),
         patch("backend.app.services.virtual_printer.virtual_printer_manager.sync_from_db", new=AsyncMock()),
     ):
         updated = await service.run_once()

@@ -682,11 +682,11 @@ class PrinterRediscoveryService:
         # Reconnect the physical MQTT client first (connect_printer disconnects any stale client)
         await printer_manager.connect_printer(printer)
 
-        from backend.app.api.routes.camera import stop_printer_streams
+        from backend.app.api.routes.camera import _stop_printer_streams
         from backend.app.services.virtual_printer import virtual_printer_manager
 
         try:
-            await stop_printer_streams(printer.id)
+            await _stop_printer_streams(printer.id)
         except Exception as exc:
             logger.warning("Failed to reset camera streams after IP rediscovery for printer %s: %s", printer.id, exc)
 

@@ -1516,11 +1516,6 @@ async def forget_printer(printer_id: int) -> None:
     _external_live_readers.pop(printer_id, None)
 
 
-async def stop_printer_streams(printer_id: int) -> int:
-    """Stop active camera broadcasters and stream processes for ``printer_id``."""
-    return await _stop_printer_streams(printer_id)
-
-
 async def _stop_printer_streams(printer_id: int) -> int:
     """Stop the fan-out broadcasters and the stream processes of a printer."""
     stopped = 0

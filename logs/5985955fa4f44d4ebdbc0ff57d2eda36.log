@@ -1,0 +1,200 @@
+2026-11-16 05:14:13,750 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:14:13,763 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:14:43,841 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:14:43,865 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:15:13,963 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:15:13,983 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:15:44,058 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:15:44,084 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:16:14,152 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:16:14,165 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:16:44,236 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:16:44,249 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:17:14,300 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:17:14,317 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:17:22,416 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-16 05:17:44,366 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:17:44,381 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:18:14,431 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:18:14,444 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:18:44,497 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:18:44,511 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:19:14,565 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:19:14,582 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:19:44,642 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:19:44,654 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:20:14,703 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:20:14,718 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:20:44,768 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:20:44,784 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:21:14,835 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:21:14,849 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:21:44,899 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:21:44,912 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:22:14,963 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:22:14,976 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:22:22,459 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-16 05:22:45,029 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:22:45,043 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:23:15,094 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:23:15,107 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:23:45,158 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:23:45,172 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:24:15,223 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:24:15,238 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:24:45,288 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:24:45,301 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:25:15,355 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:25:15,367 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:25:45,417 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:25:45,430 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:26:15,480 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:26:15,493 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:26:45,545 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:26:45,559 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:27:15,609 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:27:15,622 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:27:22,480 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-16 05:27:45,672 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:27:45,685 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:28:15,735 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:28:15,748 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:28:45,802 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:28:45,815 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:29:15,869 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:29:15,882 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:29:45,934 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:29:45,946 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:30:16,026 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:30:16,050 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:30:46,118 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:30:46,131 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:30:48,119 INFO [uvicorn.access] [-] [IP]:43240 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-11-16 05:30:48,562 INFO [uvicorn.access] [-] [IP]:43294 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-16 05:30:48,605 INFO [uvicorn.access] [-] [IP]:43312 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-16 05:30:49,088 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-11-16 05:30:49,167 INFO [uvicorn.error] [-] [IP]:43376 - "WebSocket /api/v1/ws?token=[REDACTED]" [accepted]
+2026-11-16 05:30:49,168 INFO [uvicorn.error] [-] connection open
+2026-11-16 05:30:49,308 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-11-16 05:30:49,309 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-11-16 05:30:49,422 INFO [backend.app.api.routes.cloud] [24259c1a] get_filament_info called with 1 IDs: ['GFL99']
+2026-11-16 05:30:49,720 INFO [uvicorn.access] [-] [IP]:43120 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-16 05:31:16,212 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:31:16,234 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:31:21,295 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-11-16 05:31:36,553 INFO [uvicorn.access] [-] [IP]:54524 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-16 05:31:36,707 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-11-16 05:31:36,713 INFO [uvicorn.error] [-] [IP]:54572 - "WebSocket /api/v1/ws?token=[REDACTED]" [accepted]
+2026-11-16 05:31:36,713 INFO [uvicorn.error] [-] connection open
+2026-11-16 05:31:36,732 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-11-16 05:31:36,734 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-11-16 05:31:46,297 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:31:46,311 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:31:56,304 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Keep alive timeout, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-11-16 05:31:56,305 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Keep alive timeout, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-11-16 05:31:56,305 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-11-16 05:32:09,363 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-11-16 05:32:10,078 INFO [uvicorn.access] [-] [IP]:35816 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-11-16 05:32:10,474 INFO [uvicorn.access] [-] [IP]:35828 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-16 05:32:10,900 INFO [uvicorn.access] [-] [IP]:35808 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-16 05:32:11,105 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-11-16 05:32:11,137 INFO [uvicorn.error] [-] [IP]:35896 - "WebSocket /api/v1/ws?token=[REDACTED]" [accepted]
+2026-11-16 05:32:11,138 INFO [uvicorn.error] [-] connection open
+2026-11-16 05:32:11,322 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-11-16 05:32:11,323 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-11-16 05:32:11,359 INFO [backend.app.api.routes.cloud] [9cb735d6] get_filament_info called with 1 IDs: ['GFL99']
+2026-11-16 05:32:11,362 INFO [uvicorn.access] [-] [IP]:35848 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-16 05:32:16,423 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:32:16,437 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:32:16,510 INFO [backend.app.services.homeassistant] [724a5445] Turned ON HA entity '3D Printer' (switch.bedroom_rail_zasuvka_3)
+2026-11-16 05:32:16,520 INFO [uvicorn.access] [-] [IP]:35694 - "POST /api/v1/smart-plugs/1/control HTTP/1.1" 200
+2026-11-16 05:32:39,287 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Dropped 4 command(s) queued on the previous MQTT connection
+2026-11-16 05:32:39,288 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-11-16 05:32:39,291 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 92.0s, forcing reconnect
+2026-11-16 05:32:39,324 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-11-16 05:32:40,101 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-11-16 05:32:40,105 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/2, seq_id=118)
+2026-11-16 05:32:40,192 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=117, 0 profiles, matched=True
+2026-11-16 05:32:40,193 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-11-16 05:32:40,193 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-11-16 05:32:40,194 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=118, 0 profiles, matched=True
+2026-11-16 05:32:40,194 INFO [backend.app.main] [-] [Printer 1] Primed K-profile table for nozzle 0.4: 0 profiles
+2026-11-16 05:32:40,195 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-11-16 05:32:46,517 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:32:46,533 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:33:16,584 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:33:16,597 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:33:35,477 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-11-16 05:33:46,650 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:33:46,664 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:34:16,717 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:34:16,731 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:34:46,794 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:34:46,807 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:35:09,512 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-11-16 05:35:09,512 INFO [uvicorn.error] [-] [IP]:58734 - "WebSocket /api/v1/ws" 403
+2026-11-16 05:35:09,513 INFO [uvicorn.error] [-] connection rejected (403 Forbidden)
+2026-11-16 05:35:12,609 INFO [uvicorn.access] [-] [IP]:58540 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-16 05:35:12,770 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-11-16 05:35:12,774 INFO [uvicorn.error] [-] [IP]:58744 - "WebSocket /api/v1/ws?token=[REDACTED]" [accepted]
+2026-11-16 05:35:12,775 INFO [uvicorn.error] [-] connection open
+2026-11-16 05:35:12,793 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-11-16 05:35:12,795 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-11-16 05:35:16,857 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:35:16,870 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:35:42,873 INFO [backend.app.api.routes.print_queue] [9e2fc34f] Updated queue item 165
+2026-11-16 05:35:42,877 INFO [uvicorn.access] [-] [IP]:58540 - "PATCH /api/v1/queue/165 HTTP/1.1" 200
+2026-11-16 05:35:46,927 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:35:46,945 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 1}
+2026-11-16 05:36:17,014 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:36:17,031 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:36:34,186 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-11-16 05:36:34,811 INFO [uvicorn.access] [-] [IP]:54862 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-11-16 05:36:35,099 INFO [uvicorn.access] [-] [IP]:54896 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-16 05:36:35,217 INFO [uvicorn.access] [-] [IP]:54824 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-16 05:36:35,430 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-11-16 05:36:35,440 INFO [uvicorn.error] [-] [IP]:54932 - "WebSocket /api/v1/ws?token=[REDACTED]" [accepted]
+2026-11-16 05:36:35,441 INFO [uvicorn.error] [-] connection open
+2026-11-16 05:36:35,470 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-11-16 05:36:35,472 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-11-16 05:36:47,091 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:36:47,105 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:37:08,700 INFO [backend.app.api.routes.cloud] [9b9c1ef5] get_filament_info called with 1 IDs: ['GFL99']
+2026-11-16 05:37:09,034 INFO [uvicorn.access] [-] [IP]:40698 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-16 05:37:17,158 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:37:17,172 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:37:22,554 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-16 05:37:47,224 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:37:47,237 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:38:17,291 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:38:17,304 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:38:47,356 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:38:47,370 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:39:15,340 INFO [backend.app.api.routes.support] [a88c164f] Log level changed to DEBUG
+2026-11-16 05:39:15,341 INFO [backend.app.api.routes.bug_report] [a88c164f] Bug report: enabled debug logging
+2026-11-16 05:39:15,341 DEBUG [backend.app.services.bambu_mqtt] [a88c164f] [[SERIAL]] Requesting status update (pushall)
+2026-11-16 05:39:15,343 INFO [uvicorn.access] [-] [IP]:43150 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-11-16 05:39:15,533 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-11-16 05:39:15,534 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-11-16 05:39:15,534 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-11-16 05:39:15,534 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': '0', 'tray_is_bbl_bits': '0', 'tray_tar': '255', 'tray_now': '254', 'tray_pre': '254', 'tray_read_done_bits': '0', 'tray_reading_bits': '0', 'version': 4, 'insert_flag': False, 'power_on_flag': False}
+2026-11-16 05:39:15,535 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 254
+2026-11-16 05:39:15,535 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-11-16 05:39:15,535 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-11-16 05:39:15,536 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-11-16 05:39:15,536 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-11-16 05:39:15,536 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-16 05:39:15,537 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-11-16 05:39:15,537 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-11-16 05:39:15,537 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-11-16 05:39:15,538 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-11-16 05:39:15,538 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: [{'attr': 83887104, 'code': 65604, 'action': 0, 'timestamp': 1780415089}]
+2026-11-16 05:39:15,539 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'disable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-11-16 05:39:15,539 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -47dBm
+2026-11-16 05:39:15,539 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-11-16 05:39:15,540 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-11-16 05:39:17,435 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(165, 1, 138, None)]
+2026-11-16 05:39:17,455 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-16 05:39:17,559 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-16 05:39:19,572 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-16 05:39:19,573 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -48dBm

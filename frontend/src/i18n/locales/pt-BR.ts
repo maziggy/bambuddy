@@ -680,6 +680,8 @@ export default {
       plateCapacityLabel: 'Capacidade do trocador de placas',
       plateCapacityPlaceholder: 'Desativado',
       plateCapacityHelp: 'Quantas impressões esta impressora consegue liberar sozinha antes que alguém precise reabastecer o trocador de placas ou esvaziar sua caixa. Cada impressão bem-sucedida que não exige confirmação de placa consome uma placa. Quando não sobra nenhuma, a fila não envia nada a esta impressora até que alguém toque em "Reabastecido / Esvaziado" no cartão da impressora. Deixe vazio ou digite 0 para desativar a contagem.',
+      plateChangerShowCount: 'Mostrar a contagem de placas no cartão da impressora',
+      plateChangerShowCountHelp: 'Quando o trocador de placas está vazio, o cartão mostra isso mesmo assim.',
       fromPrinterSettings: 'A partir das configurações da impressora',
       modelOptional: 'Modelo (opcional)',
       saveChanges: 'Salvar alterações',

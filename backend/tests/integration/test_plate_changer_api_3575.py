@@ -24,6 +24,29 @@ async def _patch(async_client, printer_id, body, **kwargs):
     return await async_client.patch(f"/api/v1/printers/{printer_id}", json=body, **kwargs)
 
 
+class TestShowCount:
+    async def test_defaults_to_true(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory()
+        data = (await async_client.get(f"/api/v1/printers/{printer.id}")).json()
+        assert data["plate_changer_show_count"] is True
+
+    async def test_round_trip(self, async_client, printer_factory, ws):
+        printer = await printer_factory(plate_capacity=5, plates_remaining=3)
+        response = await _patch(async_client, printer.id, {"plate_changer_show_count": False})
+        assert response.status_code == 200
+        assert response.json()["plate_changer_show_count"] is False
+        got = (await async_client.get(f"/api/v1/printers/{printer.id}")).json()
+        assert got["plate_changer_show_count"] is False
+        assert (got["plate_capacity"], got["plates_remaining"]) == (5, 3)
+
+    async def test_null_leaves_it_unchanged(self, async_client, printer_factory, ws):
+        printer = await printer_factory()
+        await _patch(async_client, printer.id, {"plate_changer_show_count": False})
+        response = await _patch(async_client, printer.id, {"plate_changer_show_count": None})
+        assert response.status_code == 200
+        assert response.json()["plate_changer_show_count"] is False
+
+
 class TestPatchCapacity:
     async def test_new_printers_have_counting_off(self, async_client: AsyncClient, printer_factory):
         printer = await printer_factory()

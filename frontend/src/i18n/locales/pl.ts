@@ -685,6 +685,8 @@ export default {
       plateCapacityLabel: 'Pojemność zmieniarki płyt',
       plateCapacityPlaceholder: 'Wyłączone',
       plateCapacityHelp: 'Ile wydruków ta drukarka może sama uprzątnąć, zanim ktoś będzie musiał uzupełnić zmieniarkę płyt lub opróżnić jej pojemnik. Każdy udany wydruk niewymagający potwierdzenia płyty zużywa jedną płytę. Gdy żadnej nie zostanie, kolejka nie wysyła do tej drukarki niczego, dopóki ktoś nie naciśnie „Uzupełniono / Opróżniono” na karcie drukarki. Zostaw puste lub wpisz 0, aby wyłączyć liczenie.',
+      plateChangerShowCount: 'Pokaż liczbę płyt na karcie drukarki',
+      plateChangerShowCountHelp: 'Gdy zmieniarka płyt jest pusta, karta i tak to pokazuje.',
       fromPrinterSettings: 'Z ustawień drukarki',
       modelOptional: 'Model (opcjonalnie)',
       saveChanges: 'Zapisz zmiany',

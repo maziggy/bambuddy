@@ -680,6 +680,8 @@ export default {
       plateCapacityLabel: 'Kapazität des Plattenwechslers',
       plateCapacityPlaceholder: 'Aus',
       plateCapacityHelp: 'Wie viele Drucke dieser Drucker selbst räumen kann, bevor jemand den Plattenwechsler nachfüllen oder seinen Behälter leeren muss. Jeder erfolgreiche Druck ohne Plattenbestätigung verbraucht eine Platte. Sind keine mehr übrig, schickt die Warteschlange diesem Drucker nichts, bis jemand auf der Druckerkarte „Nachgefüllt / Geleert“ drückt. Leer lassen oder 0 eingeben, um das Zählen abzuschalten.',
+      plateChangerShowCount: 'Plattenanzahl auf der Druckerkarte anzeigen',
+      plateChangerShowCountHelp: 'Ist der Plattenwechsler leer, zeigt die Karte das trotzdem an.',
       fromPrinterSettings: 'Aus Druckereinstellungen',
       modelOptional: 'Modell (optional)',
       saveChanges: 'Änderungen speichern',

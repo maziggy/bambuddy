@@ -680,6 +680,8 @@ export default {
       plateCapacityLabel: 'Capacidad del cambiador de placas',
       plateCapacityPlaceholder: 'Desactivado',
       plateCapacityHelp: 'Cuántas impresiones puede despejar esta impresora por sí sola antes de que alguien tenga que rellenar el cambiador de placas o vaciar su depósito. Cada impresión correcta que no necesita confirmación de cama consume una placa. Cuando no queda ninguna, la cola no envía nada a esta impresora hasta que alguien pulse «Rellenado / Vaciado» en la tarjeta de la impresora. Déjalo vacío o introduce 0 para desactivar el recuento.',
+      plateChangerShowCount: 'Mostrar el recuento de placas en la tarjeta de la impresora',
+      plateChangerShowCountHelp: 'Cuando el cambiador de placas está vacío, la tarjeta lo muestra de todos modos.',
       fromPrinterSettings: 'Desde los ajustes de la impresora',
       modelOptional: 'Modelo (opcional)',
       saveChanges: 'Guardar cambios',

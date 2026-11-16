@@ -99,6 +99,7 @@ import {
   Trash2,
   RefreshCw,
   PackagePlus,
+  SquareStack,
   RotateCw,
   Box,
   HardDrive,
@@ -3029,64 +3030,75 @@ function PrinterCard({
   const plateChangerText = plateChangerEmpty
     ? t('printers.plateChanger.empty')
     : t('printers.plateChanger.count', { remaining: platesRemaining, capacity: plateCapacity });
+  // Same colour scheme as the sibling status chips: green with plates to spare,
+  // amber at the last one, red when empty (#3575).
   const plateChangerPillClass = plateChangerEmpty
-    ? 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400'
-    : 'bg-bambu-dark-tertiary text-bambu-gray';
-  // Not gated on `connected`: the count is Bambuddy-side state, like the plate-clear gate (#2864).
-  const plateChangerPill = plateCapacity != null ? (
-    <span
-      className={`inline-flex min-w-0 flex-shrink-0 items-center rounded-full px-2 py-0.5 text-[length:var(--pc-t10,10px)] font-medium ${plateChangerPillClass}`}
-      title={t('printers.plateChanger.countTitle')}
-    >
-      {plateChangerText}
-    </span>
-  ) : null;
-  const refillDisabled = refillPlatesMutation.isPending || !hasPermission('printers:clear_plate');
-  const refillTitle = !hasPermission('printers:clear_plate')
+    ? 'bg-status-error/20 text-status-error'
+    : platesRemaining === 1
+      ? 'bg-status-warning/20 text-status-warning'
+      : 'bg-status-ok/20 text-status-ok';
+  // Per-printer display setting; an empty changer shows regardless, the queue is blocked on it.
+  const showPlateChangerCount = plateCapacity != null && (printer.plate_changer_show_count !== false || plateChangerEmpty);
+  const canRefillPlates = hasPermission('printers:clear_plate');
+  const refillDisabled = refillPlatesMutation.isPending || !canRefillPlates;
+  const refillTitle = !canRefillPlates
     ? t('printers.permission.noControl')
     : t('printers.plateChanger.refillTitle', { capacity: plateCapacity });
   // At 0 the queue holds all jobs for this printer; resetting the count releases them,
   // so it always goes through a confirmation, never a single tap.
   const plateChangerAction = `${plateChangerText}: ${t('printers.plateChanger.refill')}`;
-  // Compact: icon and bare numbers only, so the printer name keeps its room; the
-  // full text lives in the title and aria-label.
-  const compactPlateChangerButton = plateCapacity != null ? (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        setShowRefillConfirm(true);
-      }}
-      disabled={refillDisabled}
-      className={`inline-flex flex-shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[length:var(--pc-t10,10px)] font-medium transition-colors disabled:opacity-50 ${plateChangerPillClass} ${
-        plateChangerEmpty ? 'hover:bg-red-500/30' : 'hover:text-white'
-      }`}
-      title={`${plateChangerAction} (${refillTitle})`}
-      aria-label={plateChangerAction}
-    >
-      {refillPlatesMutation.isPending ? (
-        <Loader2 className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)] flex-shrink-0 animate-spin" />
-      ) : (
-        <PackagePlus className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)] flex-shrink-0" />
-      )}
-      <span>{`${platesRemaining}/${plateCapacity}`}</span>
-    </button>
-  ) : null;
-  // Expanded view, one row (pill left, refill right): next to expandedClearPlateButton in
-  // the live-status block, and in the slot for a powered-down or maintenance printer.
-  // The button is prominent only at 0.
-  const expandedRefillPlatesButton = plateCapacity != null ? (
-    <div className="mt-2 flex items-center justify-between gap-2">
-      {plateChangerPill}
+  // Chip for the header status row (expanded) and the compact header: icon and bare
+  // numbers, the full text lives in the title and aria-label. Not gated on `connected`:
+  // the count is Bambuddy-side state, like the plate-clear gate (#2864).
+  const plateChangerChip = (compact: boolean) => {
+    if (!showPlateChangerCount) return null;
+    const chipClass = compact
+      ? `inline-flex flex-shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[length:var(--pc-t10,10px)] font-medium ${plateChangerPillClass}`
+      : `flex items-center gap-1 px-2 py-1 rounded-full text-xs ${plateChangerPillClass}`;
+    const content = (
+      <>
+        {refillPlatesMutation.isPending ? (
+          <Loader2 className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)] flex-shrink-0 animate-spin" />
+        ) : (
+          <SquareStack className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)] flex-shrink-0" />
+        )}
+        <span>{`${platesRemaining}/${plateCapacity}`}</span>
+      </>
+    );
+    // Without the permission it only shows the count.
+    if (!canRefillPlates) {
+      return (
+        <span className={chipClass} title={plateChangerText} aria-label={plateChangerText}>
+          {content}
+        </span>
+      );
+    }
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setShowRefillConfirm(true);
+        }}
+        disabled={refillPlatesMutation.isPending}
+        className={`${chipClass} cursor-pointer hover:opacity-80 transition-opacity disabled:opacity-50`}
+        title={`${plateChangerAction} (${refillTitle})`}
+        aria-label={plateChangerAction}
+      >
+        {content}
+      </button>
+    );
+  };
+  // Expanded view: the count lives in the header chip; only an empty changer gets the
+  // prominent full-width button, next to expandedClearPlateButton in the live-status
+  // block and in the slot for a powered-down or maintenance printer.
+  const expandedRefillPlatesButton = plateChangerEmpty ? (
+    <div className="mt-2">
       <button
         type="button"
         onClick={() => setShowRefillConfirm(true)}
         disabled={refillDisabled}
-        className={
-          plateChangerEmpty
-            ? 'flex-1 inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg bg-red-100 dark:bg-red-500/20 border border-red-300 dark:border-red-400/40 text-red-700 dark:text-red-400 hover:bg-red-500/30 transition-colors text-xs font-medium disabled:opacity-50'
-            : 'inline-flex items-center justify-center gap-1.5 px-2 py-1 rounded-lg border border-bambu-dark-tertiary text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary transition-colors text-xs disabled:opacity-50'
-        }
+        className="w-full inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg bg-red-100 dark:bg-red-500/20 border border-red-300 dark:border-red-400/40 text-red-700 dark:text-red-400 hover:bg-red-500/30 transition-colors text-xs font-medium disabled:opacity-50"
         title={refillTitle}
       >
         {refillPlatesMutation.isPending ? (
@@ -4226,7 +4238,7 @@ function PrinterCard({
                       );
                     })()}
                   </div>
-                  {viewMode === 'compact' && compactPlateChangerButton}
+                  {viewMode === 'compact' && plateChangerChip(true)}
                   {viewMode === 'compact' && showClearPlateButton && (
                     <button
                       type="button"
@@ -4449,6 +4461,8 @@ function PrinterCard({
                   {queueCount}
                 </button>
               )}
+              {/* Plate changer count (#3575) */}
+              {plateChangerChip(false)}
               {/* Firmware Version Badge */}
               {checkPrinterFirmware && firmwareInfo?.current_version && firmwareInfo?.latest_version ? (
                 <button
@@ -8930,6 +8944,7 @@ function EditPrinterModal({
     // '' follows the app setting (#2860)
     require_plate_clear: printer.require_plate_clear == null ? '' : printer.require_plate_clear ? 'on' : 'off',
     plate_capacity: printer.plate_capacity != null ? String(printer.plate_capacity) : '',
+    plate_changer_show_count: printer.plate_changer_show_count ?? true,
   });
   const { data: settings } = useUiSettings();
   const currency = getCurrencySymbol(settings?.currency || 'USD');
@@ -8999,6 +9014,10 @@ function EditPrinterModal({
     const plateCapacityValue = form.plate_capacity.trim() === '' || !(capacityRaw > 0) ? null : Math.min(999, capacityRaw);
     if (plateCapacityValue !== (printer.plate_capacity ?? null)) {
       data.plate_capacity = plateCapacityValue;
+    }
+    // Display setting (#3575): only sent when changed
+    if (form.plate_changer_show_count !== (printer.plate_changer_show_count ?? true)) {
+      data.plate_changer_show_count = form.plate_changer_show_count;
     }
     // Only include access_code if it was changed
     if (form.access_code) {
@@ -9220,6 +9239,23 @@ function EditPrinterModal({
                 placeholder={t('printers.modal.plateCapacityPlaceholder')}
               />
               <p className="text-xs text-bambu-gray mt-1">{t('printers.modal.plateCapacityHelp')}</p>
+              {form.plate_capacity.trim() !== '' && Number(form.plate_capacity) > 0 && (
+                <div className="mt-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="edit_plate_changer_show_count"
+                      checked={form.plate_changer_show_count}
+                      onChange={(e) => setForm({ ...form, plate_changer_show_count: e.target.checked })}
+                      className="rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
+                    />
+                    <label htmlFor="edit_plate_changer_show_count" className="text-sm text-bambu-gray">
+                      {t('printers.modal.plateChangerShowCount')}
+                    </label>
+                  </div>
+                  <p className="text-xs text-bambu-gray mt-1">{t('printers.modal.plateChangerShowCountHelp')}</p>
+                </div>
+              )}
             </div>
             {/* Maintenance Mode toggle (#1476) — checkbox is the inverse of
                 is_active because the user-facing concept is "is this printer

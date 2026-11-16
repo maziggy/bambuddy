@@ -647,6 +647,8 @@ export default {
       plateCapacityLabel: '플레이트 체인저 용량',
       plateCapacityPlaceholder: '끄기',
       plateCapacityHelp: '누군가 플레이트 체인저를 다시 채우거나 수거함을 비워야 하기 전까지 이 프린터가 스스로 정리할 수 있는 출력 횟수입니다. 플레이트 확인이 필요 없는 출력이 성공할 때마다 플레이트 하나가 소모됩니다. 남은 플레이트가 없으면 프린터 카드에서 "채움 / 비움 완료"을(를) 누를 때까지 대기열은 이 프린터에 아무것도 보내지 않습니다. 비워 두거나 0을 입력하면 카운트를 끕니다.',
+      plateChangerShowCount: '프린터 카드에 플레이트 수 표시',
+      plateChangerShowCountHelp: '플레이트 체인저가 비어 있으면 카드에 항상 표시됩니다.',
       fromPrinterSettings: '프린터 설정에서',
       modelOptional: '모델 (선택사항)',
       saveChanges: '변경사항 저장'

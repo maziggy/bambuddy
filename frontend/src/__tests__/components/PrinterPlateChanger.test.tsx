@@ -20,6 +20,7 @@ type PlatePrinter = {
   name: string;
   plate_capacity: number | null;
   plates_remaining: number | null;
+  plate_changer_show_count?: boolean;
   [key: string]: unknown;
 };
 
@@ -40,6 +41,7 @@ const basePrinter: PlatePrinter = {
   require_plate_clear: null,
   plate_capacity: null,
   plates_remaining: null,
+  plate_changer_show_count: true,
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z',
 };
@@ -145,59 +147,73 @@ afterEach(() => {
   vi.mocked(localStorage.setItem).mockReset();
 });
 
+// The chip in the header status row: icon plus "remaining/capacity".
+const chip = (name: string | RegExp) => screen.findByRole('button', { name });
+
 describe('printer card plate changer', () => {
-  it('shows neither pill nor button without a capacity', async () => {
+  it('shows neither chip nor button without a capacity', async () => {
     mockPrinter(basePrinter);
     await renderCard();
     // Let the status arrive, or the absence below proves nothing.
     await screen.findAllByText(/idle|ready/i);
 
-    expect(screen.queryByText(/^Plates \d+ \/ \d+$/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^\d+\/\d+$/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Refilled \/ Emptied/)).not.toBeInTheDocument();
   });
 
-  it('shows the remaining count and a small refill button with plates left', async () => {
+  it('shows the count as a header chip and no refill row with plates left', async () => {
     mockPrinter({ ...basePrinter, plate_capacity: 5, plates_remaining: 3 });
     await renderCard();
 
     await screen.findAllByText(/idle|ready/i);
-    expect(await screen.findByText('Plates 3 / 5')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Refilled / Emptied' })).toBeInTheDocument();
-    expect(screen.queryByText(/Plate changer empty/)).not.toBeInTheDocument();
+    const button = await chip('Plates 3 / 5: Refilled / Emptied');
+    expect(button).toHaveTextContent('3/5');
+    expect(button.className).toContain('bg-status-ok/20');
+    expect(button).toHaveAttribute('title', expect.stringContaining('Plates 3 / 5'));
+    // No second control: the old pill + small button row is gone.
+    expect(screen.queryByText('Plates 3 / 5')).not.toBeInTheDocument();
+    expect(screen.queryByText('Refilled / Emptied')).not.toBeInTheDocument();
+    expect(screen.getAllByText('3/5')).toHaveLength(1);
   });
 
-  it('shows the control exactly once while printing', async () => {
+  it('turns amber at the last plate', async () => {
+    mockPrinter({ ...basePrinter, plate_capacity: 5, plates_remaining: 1 });
+    await renderCard();
+
+    const button = await chip('Plates 1 / 5: Refilled / Emptied');
+    expect(button.className).toContain('bg-status-warning/20');
+  });
+
+  it('shows the count exactly once while printing', async () => {
     mockPrinter(
       { ...basePrinter, plate_capacity: 5, plates_remaining: 3 },
       { ...idleStatus, state: 'RUNNING', progress: 42, layer_num: 10, total_layers: 100, subtask_name: 'Benchy' },
     );
     await renderCard();
 
-    await screen.findByText('Plates 3 / 5');
+    await screen.findByText('3/5');
     await screen.findAllByText(/running|printing/i);
-    expect(screen.getAllByText('Plates 3 / 5')).toHaveLength(1);
-    expect(screen.getAllByRole('button', { name: 'Refilled / Emptied' })).toHaveLength(1);
+    expect(screen.getAllByText('3/5')).toHaveLength(1);
   });
 
-  it('shows the control exactly once for a printer in maintenance', async () => {
+  it('shows the chip for a printer in maintenance', async () => {
     mockPrinter({ ...basePrinter, is_active: false, plate_capacity: 5, plates_remaining: 3 });
     await renderCard();
 
-    expect(await screen.findByText('Plates 3 / 5')).toBeInTheDocument();
-    expect(screen.getAllByText('Plates 3 / 5')).toHaveLength(1);
-    expect(screen.getAllByRole('button', { name: 'Refilled / Emptied' })).toHaveLength(1);
+    expect(await screen.findByText('3/5')).toBeInTheDocument();
+    expect(screen.getAllByText('3/5')).toHaveLength(1);
   });
 
-  it('shows the empty state and a prominent button at 0', async () => {
+  it('shows a red chip and the prominent button at 0', async () => {
     mockPrinter({ ...basePrinter, plate_capacity: 5, plates_remaining: 0 });
     await renderCard();
 
     const button = await screen.findByRole('button', { name: 'Refilled / Emptied' });
-    expect(button.className).toContain('flex-1');
-    // The pill says "empty"; the button never repeats it.
+    expect(button.className).toContain('w-full');
     expect(button).not.toHaveTextContent(/Plate changer empty/);
-    expect(screen.getByText('Plate changer empty')).toBeInTheDocument();
-    expect(screen.queryByText('Plates 0 / 5')).not.toBeInTheDocument();
+    const red = await chip('Plate changer empty: Refilled / Emptied');
+    expect(red).toHaveTextContent('0/5');
+    expect(red.className).toContain('bg-status-error/20');
   });
 
   it('reads a missing count with a capacity set as empty', async () => {
@@ -205,7 +221,7 @@ describe('printer card plate changer', () => {
     await renderCard();
 
     await screen.findAllByText(/idle|ready/i);
-    expect(await screen.findByText('Plate changer empty')).toBeInTheDocument();
+    expect(await chip('Plate changer empty: Refilled / Emptied')).toHaveTextContent('0/5');
     expect(screen.getByRole('button', { name: 'Refilled / Emptied' })).toBeInTheDocument();
   });
 
@@ -222,21 +238,19 @@ describe('printer card plate changer', () => {
     expect(refillCalls).toBe(0);
   });
 
-  it('resets the count through the refill endpoint and refetches the printers', async () => {
-    mockPrinter({ ...basePrinter, plate_capacity: 5, plates_remaining: 0 });
+  it('resets the count from the chip through the refill endpoint and refetches the printers', async () => {
+    mockPrinter({ ...basePrinter, plate_capacity: 5, plates_remaining: 3 });
     await renderCard();
 
     const fetchesBefore = listFetches;
-    await confirmRefill();
+    await userEvent.click(await chip('Plates 3 / 5: Refilled / Emptied'));
     await screen.findByText('Reset plate changer count?');
-    // The modal renders after the card, so its confirm button is the last match.
-    const buttons = screen.getAllByRole('button', { name: 'Refilled / Emptied' });
     expect(refillCalls).toBe(0);
-    await userEvent.click(buttons[buttons.length - 1]);
+    await userEvent.click(screen.getByRole('button', { name: 'Refilled / Emptied' }));
 
     await waitFor(() => expect(refillCalls).toBe(1));
     await waitFor(() => expect(listFetches).toBeGreaterThan(fetchesBefore));
-    expect(await screen.findByText('Plates 5 / 5')).toBeInTheDocument();
+    expect(await screen.findByText('5/5')).toBeInTheDocument();
   });
 
   it('is still shown while the printer is disconnected', async () => {
@@ -246,12 +260,49 @@ describe('printer card plate changer', () => {
     );
     await renderCard();
 
-    expect(await screen.findByText('Plates 2 / 5')).toBeInTheDocument();
-    const button = screen.getByRole('button', { name: 'Refilled / Emptied' });
-    expect(button).toBeEnabled();
+    expect(await chip('Plates 2 / 5: Refilled / Emptied')).toBeEnabled();
   });
 
-  it('disables the button without the clear-plate permission when auth is on', async () => {
+  it('keeps the prominent button for an empty printer that is disconnected', async () => {
+    mockPrinter(
+      { ...basePrinter, plate_capacity: 5, plates_remaining: 0 },
+      { ...idleStatus, connected: false, state: 'unknown' },
+    );
+    await renderCard();
+
+    expect(await screen.findByRole('button', { name: 'Refilled / Emptied' })).toBeEnabled();
+    expect(screen.getAllByText('0/5')).toHaveLength(1);
+  });
+
+  it('is hidden when the display setting is off', async () => {
+    mockPrinter({ ...basePrinter, plate_capacity: 5, plates_remaining: 3, plate_changer_show_count: false });
+    await renderCard();
+    await screen.findAllByText(/idle|ready/i);
+
+    expect(screen.queryByText('3/5')).not.toBeInTheDocument();
+    expect(screen.queryByText('Refilled / Emptied')).not.toBeInTheDocument();
+  });
+
+  it('still shows the red button at 0 when the display setting is off', async () => {
+    mockPrinter({ ...basePrinter, plate_capacity: 5, plates_remaining: 0, plate_changer_show_count: false });
+    await renderCard();
+    // Wait for the live status: the button moves out of the offline slot once it arrives.
+    await screen.findAllByText(/idle|ready/i);
+
+    expect(await screen.findByRole('button', { name: 'Refilled / Emptied' })).toBeInTheDocument();
+  });
+
+  it('shows the chip without a click target when the clear-plate permission is missing', async () => {
+    mockWithoutClearPlatePermission();
+    mockPrinter({ ...basePrinter, plate_capacity: 5, plates_remaining: 3 });
+    await renderCard();
+
+    const text = await screen.findByText('3/5');
+    await waitFor(() => expect(text.closest('button')).toBeNull());
+    expect(text.parentElement).toHaveAttribute('title', 'Plates 3 / 5');
+  });
+
+  it('disables the prominent button without the clear-plate permission when auth is on', async () => {
     mockWithoutClearPlatePermission();
     mockPrinter({ ...basePrinter, plate_capacity: 5, plates_remaining: 0 });
     await renderCard();
@@ -288,7 +339,7 @@ describe('printer card plate changer', () => {
       await renderCard();
 
       const button = (await screen.findByText('0/5')).closest('button')!;
-      expect(button.className).toContain('text-red-700');
+      expect(button.className).toContain('text-status-error');
       expect(button).toHaveAttribute('aria-label', 'Plate changer empty: Refilled / Emptied');
       expect(screen.getAllByText('0/5')).toHaveLength(1);
     });
@@ -314,12 +365,33 @@ describe('printer card plate changer', () => {
       expect(refillCalls).toBe(0);
     });
 
+    it('turns amber at the last plate', async () => {
+      mockPrinter({ ...basePrinter, plate_capacity: 5, plates_remaining: 1 });
+      await renderCard();
+
+      expect((await screen.findByText('1/5')).closest('button')!.className).toContain('bg-status-warning/20');
+    });
+
+    it('follows the display setting but shows an empty changer anyway', async () => {
+      mockPrinter({ ...basePrinter, plate_capacity: 5, plates_remaining: 3, plate_changer_show_count: false });
+      await renderCard();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(screen.queryByText('3/5')).not.toBeInTheDocument();
+    });
+
+    it('shows an empty changer even when the display setting is off', async () => {
+      mockPrinter({ ...basePrinter, plate_capacity: 5, plates_remaining: 0, plate_changer_show_count: false });
+      await renderCard();
+
+      expect(await screen.findByText('0/5')).toBeInTheDocument();
+    });
+
     it('shows nothing without a capacity', async () => {
       mockPrinter(basePrinter);
       await renderCard();
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      expect(screen.queryByText(/Plates \d+ \/ \d+/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/\d+\/\d+/)).not.toBeInTheDocument();
       expect(screen.queryByText('Plate changer empty')).not.toBeInTheDocument();
     });
   });
@@ -398,5 +470,33 @@ describe('EditPrinterModal plate changer capacity', () => {
 
     await waitFor(() => expect(saved).not.toBeNull());
     expect(saved!.plate_capacity).toBeNull();
+  });
+
+  it('shows the display checkbox only with a capacity and sends the field only when changed', async () => {
+    mockPrinter(basePrinter);
+    await openEditModal();
+
+    expect(screen.queryByLabelText('Show the plate count on the printer card')).not.toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText('Plate changer capacity'), '5');
+    const box = screen.getByLabelText('Show the plate count on the printer card');
+    expect(box).toBeChecked();
+    expect(screen.getByText('When the plate changer is empty, the card shows it anyway.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+
+    await waitFor(() => expect(saved).not.toBeNull());
+    expect(saved!.plate_capacity).toBe(5);
+    expect(saved).not.toHaveProperty('plate_changer_show_count');
+  });
+
+  it('sends plate_changer_show_count when the checkbox is switched off', async () => {
+    mockPrinter({ ...basePrinter, plate_capacity: 4, plates_remaining: 2 });
+    await openEditModal();
+
+    await userEvent.click(screen.getByLabelText('Show the plate count on the printer card'));
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+
+    await waitFor(() => expect(saved).not.toBeNull());
+    expect(saved!.plate_changer_show_count).toBe(false);
+    expect(saved).not.toHaveProperty('plate_capacity');
   });
 });

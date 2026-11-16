@@ -680,6 +680,8 @@ export default {
       plateCapacityLabel: 'Plaka değiştirici kapasitesi',
       plateCapacityPlaceholder: 'Kapalı',
       plateCapacityHelp: 'Birisi plaka değiştiriciyi yeniden doldurmak veya haznesini boşaltmak zorunda kalmadan önce bu yazıcının kendi başına kaç baskıyı temizleyebileceği. Plaka onayı gerektirmeyen her başarılı baskı bir plaka tüketir. Hiç plaka kalmadığında, yazıcı kartında biri "Dolduruldu / Boşaltıldı" düğmesine basana kadar kuyruk bu yazıcıya hiçbir şey göndermez. Saymayı kapatmak için boş bırakın veya 0 girin.',
+      plateChangerShowCount: 'Plaka sayısını yazıcı kartında göster',
+      plateChangerShowCountHelp: 'Plaka değiştirici boşken kart bunu yine de gösterir.',
       fromPrinterSettings: 'Yazıcı ayarlarından',
       modelOptional: 'Model (isteğe bağlı)',
       saveChanges: 'Değişiklikleri Kaydet',

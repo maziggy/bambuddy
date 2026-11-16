@@ -683,6 +683,8 @@ export default {
       plateCapacityLabel: 'Capaciteit van de plaatwisselaar',
       plateCapacityPlaceholder: 'Uit',
       plateCapacityHelp: 'Hoeveel prints deze printer zelf kan opruimen voordat iemand de plaatwisselaar moet bijvullen of de bak moet legen. Elke geslaagde print waarvoor geen plaatbevestiging nodig is, verbruikt één plaat. Als er geen meer over zijn, stuurt de wachtrij deze printer niets totdat iemand op de printerkaart op "Bijgevuld / Geleegd" drukt. Laat leeg of vul 0 in om het tellen uit te schakelen.',
+      plateChangerShowCount: 'Toon het aantal platen op de printerkaart',
+      plateChangerShowCountHelp: 'Als de plaatwisselaar leeg is, toont de kaart dat toch.',
       fromPrinterSettings: 'Uit printerinstellingen',
       modelOptional: 'Model (optioneel)',
       saveChanges: 'Wijzigingen opslaan',

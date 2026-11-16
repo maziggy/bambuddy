@@ -680,6 +680,8 @@ export default {
       plateCapacityLabel: 'Capacità del cambio piatto',
       plateCapacityPlaceholder: 'Disattivato',
       plateCapacityHelp: 'Quante stampe questa stampante può liberare da sola prima che qualcuno debba ricaricare il cambio piatto o svuotarne il contenitore. Ogni stampa riuscita che non richiede conferma del piatto consuma un piatto. Quando non ne restano, la coda non invia nulla a questa stampante finché qualcuno non preme «Ricaricato / Svuotato» sulla scheda della stampante. Lascia vuoto o inserisci 0 per disattivare il conteggio.',
+      plateChangerShowCount: 'Mostra il conteggio dei piatti sulla scheda della stampante',
+      plateChangerShowCountHelp: 'Quando il cambio piatto è vuoto, la scheda lo mostra comunque.',
       fromPrinterSettings: 'Dalle impostazioni della stampante',
       modelOptional: 'Modello (opzionale)',
       saveChanges: 'Salva modifiche',

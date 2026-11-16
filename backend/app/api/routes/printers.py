@@ -522,6 +522,10 @@ async def update_printer(
 
     ip_changed = "ip_address" in update_data and update_data["ip_address"] != printer.ip_address
 
+    # The display flag is NOT NULL; an explicit null means "unchanged" (#3575)
+    if update_data.get("plate_changer_show_count", True) is None:
+        update_data.pop("plate_changer_show_count")
+
     # Plate changer count (#3575): keep plates_remaining consistent with the capacity.
     plates_before = (printer.plate_capacity, printer.plates_remaining)
     clamp_plates_to: int | None = None

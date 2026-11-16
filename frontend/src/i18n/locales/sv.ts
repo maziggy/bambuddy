@@ -683,6 +683,8 @@ export default {
       plateCapacityLabel: 'Kapacitet för plattbytaren',
       plateCapacityPlaceholder: 'Av',
       plateCapacityHelp: 'Hur många utskrifter den här skrivaren kan rensa själv innan någon måste fylla på plattbytaren eller tömma dess behållare. Varje lyckad utskrift som inte kräver plattbekräftelse förbrukar en platta. När inga finns kvar skickar kön inget till den här skrivaren förrän någon trycker på "Påfylld / Tömd" på skrivarkortet. Lämna tomt eller ange 0 för att stänga av räkningen.',
+      plateChangerShowCount: 'Visa antalet plattor på skrivarkortet',
+      plateChangerShowCountHelp: 'När plattbytaren är tom visar kortet det ändå.',
       fromPrinterSettings: 'Från skrivarens inställningar',
       modelOptional: 'Modell (valfritt)',
       saveChanges: 'Spara ändringar',

@@ -6214,6 +6214,8 @@ async def _run_migrations(conn):
     # counting off, so existing printers behave as before.
     await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN plate_capacity INTEGER")
     await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN plates_remaining INTEGER")
+    # Show the count on the printer card (#3575); on by default, so nothing changes on upgrade.
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN plate_changer_show_count BOOLEAN DEFAULT TRUE NOT NULL")
     await _safe_execute(
         conn, "ALTER TABLE notification_providers ADD COLUMN on_plate_changer_empty BOOLEAN DEFAULT TRUE"
     )

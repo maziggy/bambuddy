@@ -680,6 +680,8 @@ export default {
       plateCapacityLabel: '换板器容量',
       plateCapacityPlaceholder: '关闭',
       plateCapacityHelp: '在需要有人补充换板器或清空其收集箱之前，这台打印机可以自行清板的打印次数。每次无需确认打印板的成功打印会消耗一块打印板。用完后，在打印机卡片上有人点击“已补充 / 已清空”之前，队列不会向这台打印机派发任何任务。留空或输入 0 则关闭计数。',
+      plateChangerShowCount: '在打印机卡片上显示打印板数量',
+      plateChangerShowCountHelp: '换板器为空时，卡片仍会显示。',
       fromPrinterSettings: '来自打印机设置',
       modelOptional: '型号（可选）',
       saveChanges: '保存更改',

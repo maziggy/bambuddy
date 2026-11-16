@@ -197,6 +197,7 @@ class PrinterUpdate(IgnoresNullForRequiredColumns):
     # is normally reset through POST /printers/{id}/refill-plates.
     plate_capacity: int | None = Field(default=None, ge=1, le=999)
     plates_remaining: int | None = Field(default=None, ge=0, le=999)
+    plate_changer_show_count: bool | None = None  # #3575
     plate_detection_enabled: bool | None = None
     plate_detection_roi: PlateDetectionROI | None = None
     wled_config: WLEDConfig | None = None
@@ -237,6 +238,7 @@ class PrinterResponse(PrinterBase):
     plate_detection_roi: PlateDetectionROI | None = None
     plate_capacity: int | None = None  # #3575
     plates_remaining: int | None = None  # #3575
+    plate_changer_show_count: bool = True  # #3575
     created_at: datetime
     updated_at: datetime
 

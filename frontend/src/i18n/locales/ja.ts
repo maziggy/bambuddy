@@ -679,6 +679,8 @@ export default {
       plateCapacityLabel: 'プレートチェンジャーの容量',
       plateCapacityPlaceholder: 'オフ',
       plateCapacityHelp: 'プレートチェンジャーの補充やビンの空け作業が必要になるまでに、このプリンターが自動でプレートを片付けられる印刷回数です。プレート確認が不要な印刷が成功するたびにプレートを1枚消費します。残りがなくなると、プリンターカードの「補充済み / 排出済み」が押されるまで、キューはこのプリンターにジョブを送りません。空欄または0にするとカウントをオフにします。',
+      plateChangerShowCount: 'プリンターカードにプレート数を表示する',
+      plateChangerShowCountHelp: 'プレートチェンジャーが空のときは、この設定に関係なくカードに表示されます。',
       fromPrinterSettings: 'プリンターの設定から取得',
       modelOptional: 'モデル（任意）',
       saveChanges: '変更を保存',

@@ -685,6 +685,8 @@ export default {
       plateCapacityLabel: 'Plate changer capacity',
       plateCapacityPlaceholder: 'Off',
       plateCapacityHelp: 'How many prints this printer can clear by itself before someone has to refill the plate changer or empty its bin. Each successful print that needs no plate confirmation uses one plate. When none are left, the queue sends this printer nothing until someone presses "Refilled / Emptied" on the printer card. Leave empty or enter 0 to turn counting off.',
+      plateChangerShowCount: 'Show the plate count on the printer card',
+      plateChangerShowCountHelp: 'When the plate changer is empty, the card shows it anyway.',
       fromPrinterSettings: 'From printer settings',
       modelOptional: 'Model (optional)',
       saveChanges: 'Save Changes',

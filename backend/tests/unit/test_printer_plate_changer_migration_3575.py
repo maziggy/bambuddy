@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from backend.app.core.database import load_all_models, run_migrations
 
 PRINTER_COLUMNS = ("plate_capacity", "plates_remaining")
+SHOW_COUNT_COLUMN = ("plate_changer_show_count",)
 
 
 @pytest.fixture(autouse=True)
@@ -62,6 +63,7 @@ async def legacy_engine():
         )
         await conn.execute(text("ALTER TABLE printers DROP COLUMN plate_capacity"))
         await conn.execute(text("ALTER TABLE printers DROP COLUMN plates_remaining"))
+        await conn.execute(text("ALTER TABLE printers DROP COLUMN plate_changer_show_count"))
         await conn.execute(text("ALTER TABLE notification_providers DROP COLUMN on_plate_changer_empty"))
     yield engine
     await engine.dispose()
@@ -81,6 +83,31 @@ async def test_existing_printer_has_counting_off(legacy_engine):
     async with legacy_engine.begin() as conn:
         row = (await conn.execute(text("SELECT plate_capacity, plates_remaining FROM printers WHERE id = 1"))).one()
     assert tuple(row) == (None, None)
+
+
+async def test_existing_printer_shows_the_count(legacy_engine):
+    async with legacy_engine.begin() as conn:
+        assert await _columns(conn, "printers", SHOW_COUNT_COLUMN) == {}
+        await run_migrations(conn)
+
+    async with legacy_engine.begin() as conn:
+        value = (await conn.execute(text("SELECT plate_changer_show_count FROM printers WHERE id = 1"))).scalar_one()
+    assert bool(value) is True
+
+
+async def test_show_count_column_matches_a_fresh_install(legacy_engine, fresh_engine):
+    async with legacy_engine.begin() as conn:
+        await run_migrations(conn)
+        upgraded = await _columns(conn, "printers", SHOW_COUNT_COLUMN)
+    async with fresh_engine.begin() as conn:
+        fresh = await _columns(conn, "printers", SHOW_COUNT_COLUMN)
+
+    up_type, up_notnull, up_default = upgraded["plate_changer_show_count"]
+    fresh_type, fresh_notnull, fresh_default = fresh["plate_changer_show_count"]
+    assert (up_type, up_notnull) == (fresh_type, fresh_notnull)
+    assert up_notnull == 1
+    # SQLite spells the same TRUE default "TRUE" (ALTER) and "1" (create_all).
+    assert {up_default, fresh_default} <= {"TRUE", "1"}
 
 
 async def test_existing_provider_gets_the_event_on(legacy_engine):

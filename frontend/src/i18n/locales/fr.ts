@@ -680,6 +680,8 @@ export default {
       plateCapacityLabel: 'Capacité du changeur de plateaux',
       plateCapacityPlaceholder: 'Désactivé',
       plateCapacityHelp: 'Nombre d\'impressions que cette imprimante peut dégager seule avant que quelqu\'un doive recharger le changeur de plateaux ou vider son bac. Chaque impression réussie sans confirmation de plateau consomme un plateau. Quand il n\'en reste plus, la file n\'envoie rien à cette imprimante tant que personne n\'a appuyé sur « Rechargé / Vidé » sur la carte de l\'imprimante. Laissez vide ou saisissez 0 pour désactiver le comptage.',
+      plateChangerShowCount: 'Afficher le nombre de plateaux sur la carte de l\'imprimante',
+      plateChangerShowCountHelp: 'Lorsque le changeur de plateaux est vide, la carte l\'affiche quand même.',
       fromPrinterSettings: 'Depuis les paramètres imprimante',
       modelOptional: 'Modèle (optionnel)',
       saveChanges: 'Enregistrer les modifications',

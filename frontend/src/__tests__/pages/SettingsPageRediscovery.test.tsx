@@ -22,7 +22,7 @@ const baseSettings = {
   ftp_retry_delay: 2,
   ftp_timeout: 30,
   printer_rediscovery_enabled: true,
-  printer_rediscovery_subnet_scan: true,
+  printer_rediscovery_subnet_scan: false,
   printer_rediscovery_scan_interval: 10,
 };
 
@@ -55,17 +55,18 @@ describe('SettingsPage Printer Rediscovery under Network tab', () => {
 
     expect(await screen.findByText('Printer Rediscovery')).toBeInTheDocument();
 
+    const subnetCheckbox = document.getElementById('printer-rediscovery-subnet-scan') as HTMLInputElement;
+    expect(subnetCheckbox.checked).toBe(false);
+    await user.click(subnetCheckbox);
+
+    await waitFor(() => expect(saves.at(-1)).toMatchObject({ printer_rediscovery_subnet_scan: true }), {
+      timeout: 3000,
+    });
+
     const intervalInput = await screen.findByLabelText('Minimum Scan Interval (minutes)');
     fireEvent.change(intervalInput, { target: { value: '25' } });
 
     await waitFor(() => expect(saves.at(-1)).toMatchObject({ printer_rediscovery_scan_interval: 25 }), {
-      timeout: 3000,
-    });
-
-    const subnetCheckbox = document.getElementById('printer-rediscovery-subnet-scan') as HTMLInputElement;
-    await user.click(subnetCheckbox);
-
-    await waitFor(() => expect(saves.at(-1)).toMatchObject({ printer_rediscovery_subnet_scan: false }), {
       timeout: 3000,
     });
   });

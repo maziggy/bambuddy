@@ -1332,7 +1332,7 @@ export function SettingsPage() {
       baseline.ftp_retry_delay !== localSettings.ftp_retry_delay ||
       baseline.ftp_timeout !== localSettings.ftp_timeout ||
       (baseline.printer_rediscovery_enabled ?? true) !== (localSettings.printer_rediscovery_enabled ?? true) ||
-      (baseline.printer_rediscovery_subnet_scan ?? true) !== (localSettings.printer_rediscovery_subnet_scan ?? true) ||
+      (baseline.printer_rediscovery_subnet_scan ?? false) !== (localSettings.printer_rediscovery_subnet_scan ?? false) ||
       (baseline.printer_rediscovery_scan_interval ?? 10) !== (localSettings.printer_rediscovery_scan_interval ?? 10) ||
       baseline.mqtt_enabled !== localSettings.mqtt_enabled ||
       baseline.mqtt_broker !== localSettings.mqtt_broker ||
@@ -1466,7 +1466,7 @@ export function SettingsPage() {
         ftp_retry_delay: localSettings.ftp_retry_delay,
         ftp_timeout: localSettings.ftp_timeout,
         printer_rediscovery_enabled: localSettings.printer_rediscovery_enabled ?? true,
-        printer_rediscovery_subnet_scan: localSettings.printer_rediscovery_subnet_scan ?? true,
+        printer_rediscovery_subnet_scan: localSettings.printer_rediscovery_subnet_scan ?? false,
         printer_rediscovery_scan_interval: localSettings.printer_rediscovery_scan_interval ?? 10,
         mqtt_enabled: localSettings.mqtt_enabled,
         mqtt_broker: localSettings.mqtt_broker,
@@ -3278,7 +3278,7 @@ export function SettingsPage() {
                         id="printer-rediscovery-subnet-scan"
                         type="checkbox"
                         aria-describedby="printer-rediscovery-subnet-desc"
-                        checked={localSettings.printer_rediscovery_subnet_scan ?? true}
+                        checked={localSettings.printer_rediscovery_subnet_scan ?? false}
                         onChange={(e) => updateSetting('printer_rediscovery_subnet_scan', e.target.checked)}
                         className="sr-only peer"
                       />
@@ -3286,7 +3286,7 @@ export function SettingsPage() {
                     </label>
                   </div>
 
-                  {(localSettings.printer_rediscovery_subnet_scan ?? true) && (
+                  {(localSettings.printer_rediscovery_subnet_scan ?? false) && (
                     <div>
                       <label htmlFor="printer-rediscovery-scan-interval" className="block text-sm text-bambu-gray mb-1">
                         {t('settings.printerRediscoveryScanInterval')}

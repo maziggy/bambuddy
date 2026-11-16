@@ -267,7 +267,7 @@ class AppSettings(BaseModel):
         description="Automatically rediscover active printers whose IP address changed while offline",
     )
     printer_rediscovery_subnet_scan: bool = Field(
-        default=True,
+        default=False,
         description="Fall back to a rate-limited subnet scan on port 8883 when SSDP does not locate missing printers",
     )
     printer_rediscovery_scan_interval: int = Field(

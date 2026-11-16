@@ -311,7 +311,7 @@ class PrinterRediscoveryService:
                 return False, False, DEFAULT_SCAN_INTERVAL_MINUTES, [], set()
 
             subnet_raw = await get_setting(db, "printer_rediscovery_subnet_scan")
-            subnet_enabled = True if not subnet_raw else setting_is_true(subnet_raw)
+            subnet_enabled = bool(subnet_raw) and setting_is_true(subnet_raw)
 
             interval_raw = await get_setting(db, "printer_rediscovery_scan_interval")
             try:

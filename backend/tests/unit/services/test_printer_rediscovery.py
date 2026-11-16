@@ -315,6 +315,7 @@ async def test_subnet_fallback_rate_limit_cooldown_and_early_stop(test_engine, m
             is_active=True,
         )
         db.add(printer)
+        db.add(Settings(key="printer_rediscovery_subnet_scan", value="true"))
         db.add(Settings(key="printer_rediscovery_scan_interval", value="15"))
         await db.commit()
         printer_id = printer.id
@@ -357,7 +358,7 @@ async def test_settings_api_persists_and_validates_rediscovery_fields(async_clie
     assert resp.status_code == 200
     body = resp.json()
     assert body["printer_rediscovery_enabled"] is True
-    assert body["printer_rediscovery_subnet_scan"] is True
+    assert body["printer_rediscovery_subnet_scan"] is False
     assert body["printer_rediscovery_scan_interval"] == 10
 
     # Valid update
@@ -365,14 +366,14 @@ async def test_settings_api_persists_and_validates_rediscovery_fields(async_clie
         "/api/v1/settings/",
         json={
             "printer_rediscovery_enabled": False,
-            "printer_rediscovery_subnet_scan": False,
+            "printer_rediscovery_subnet_scan": True,
             "printer_rediscovery_scan_interval": 20,
         },
     )
     assert put_resp.status_code == 200
     updated = put_resp.json()
     assert updated["printer_rediscovery_enabled"] is False
-    assert updated["printer_rediscovery_subnet_scan"] is False
+    assert updated["printer_rediscovery_subnet_scan"] is True
     assert updated["printer_rediscovery_scan_interval"] == 20
 
     # Out-of-range scan interval (< 5) rejected with 422

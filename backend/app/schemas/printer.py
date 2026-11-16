@@ -193,9 +193,24 @@ class PrinterUpdate(IgnoresNullForRequiredColumns):
     external_camera_snapshot_url: str | None = None  # #1177
     camera_rotation: int | None = None  # 0, 90, 180, 270 degrees
     camera_light_auto: bool | None = None  # #1655
+    # Plate changer capacity (#3575); null capacity turns counting off. The count
+    # is normally reset through POST /printers/{id}/refill-plates.
+    plate_capacity: int | None = Field(default=None, ge=1, le=999)
+    plates_remaining: int | None = Field(default=None, ge=0, le=999)
     plate_detection_enabled: bool | None = None
     plate_detection_roi: PlateDetectionROI | None = None
     wled_config: WLEDConfig | None = None
+
+    @model_validator(mode="after")
+    def _remaining_within_capacity(self):
+        """Plates left can't exceed the capacity sent with it (#3575)."""
+        if (
+            self.plate_capacity is not None
+            and self.plates_remaining is not None
+            and self.plates_remaining > self.plate_capacity
+        ):
+            raise ValueError("plates_remaining cannot exceed plate_capacity")
+        return self
 
 
 class PrinterResponse(PrinterBase):
@@ -220,6 +235,8 @@ class PrinterResponse(PrinterBase):
     camera_light_auto: bool = False  # #1655
     plate_detection_enabled: bool = False
     plate_detection_roi: PlateDetectionROI | None = None
+    plate_capacity: int | None = None  # #3575
+    plates_remaining: int | None = None  # #3575
     created_at: datetime
     updated_at: datetime
 

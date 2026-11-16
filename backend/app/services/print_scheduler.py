@@ -73,6 +73,7 @@ from backend.app.services.finance_budget import (
 from backend.app.services.ha_sensor_manager import ha_sensor_manager
 from backend.app.services.mqtt_relay import mqtt_relay
 from backend.app.services.notification_service import notification_service
+from backend.app.services.plate_changer import is_count_pending, is_count_unknown
 from backend.app.services.print_cost_estimate import estimate_queue_source_cost
 from backend.app.services.printer_manager import (
     printer_manager,
@@ -1603,6 +1604,11 @@ class PrintScheduler:
         # when a gate setting toggles off mid-hold — the release publishes
         # bed → 0 first).
         self._keep_warm: dict[int, _KeepWarmEntry] = {}
+        # Printers with a plate changer capacity set (#3575), and the ones among
+        # them that have no plate left: printer id -> name. Refreshed once per
+        # queue check; both stay empty while no printer has a capacity.
+        self._plate_changer_ids: set[int] = set()
+        self._plate_changer_empty: dict[int, str] = {}
         # Preheat rollback registry: printer_id -> subset of
         # {"bed", "chamber", "airduct"} listing which preheat commands
         # actually fired for the in-flight dispatch. `_dispatch_one` unwinds
@@ -2146,6 +2152,18 @@ class PrintScheduler:
             # generalises that workaround instead of repeating it per case.
             dispatching_printers: set[int] = set(busy_printers)
 
+            # Plate changer counts (#3575). Read after the busy seed on purpose:
+            # the completion path books the used plate before it closes the
+            # printing row, so a printer that no longer reads as printing
+            # already has its count. Its print may still be being closed out
+            # though (the count is not booked yet), so it sits this pass out.
+            # After the #2801 snapshot: that print is over, so auto-drying must
+            # not treat the close-out as mid-print.
+            await self._load_plate_changers(db)
+            for changer_pid in self._plate_changer_ids:
+                if is_count_pending(changer_pid):
+                    mark_busy(changer_pid, "its last print is still being closed out")
+
             # Printers whose last upload never reached them (#3210). After the
             # snapshot above on purpose: such a printer is idle, not about to
             # print, and auto-drying must keep treating it as idle.
@@ -2352,6 +2370,19 @@ class PrintScheduler:
                         # turn every open door into a notification.
                         await hold_item(item, f"Waiting on {interlock_reason}", notify=False)
                         skip_reasons["sensor_interlock"] = skip_reasons.get("sensor_interlock", 0) + 1
+                        continue
+
+                    # A plate changer with no plate left gets nothing (#3575).
+                    # Before the busy test and the smart-plug power-on: waking
+                    # a printer that cannot take work buys nothing.
+                    if item.printer_id in self._plate_changer_empty:
+                        await hold_for_printer(
+                            item,
+                            item.printer_id,
+                            "its plate changer is empty",
+                            f"Plate changer empty: {printer_label(item.printer_id)}",
+                        )
+                        skip_reasons["plate_changer_empty"] = skip_reasons.get("plate_changer_empty", 0) + 1
                         continue
 
                     # Specific printer assignment (existing behavior)
@@ -3177,6 +3208,27 @@ class PrintScheduler:
                 # dispatchable again on the next tick.
                 await self._clear_dispatch_claim(item_db, item_id)
 
+    @staticmethod
+    async def _release_model_assignment(db: AsyncSession, item: PrintQueueItem, printer_id: int) -> bool:
+        """Hand a model-matched item back to the pool so a sibling printer can take it.
+
+        Only while it is still pending on this printer: a cancel, or a move the
+        user made during the upload, stands. Returns whether the row was released.
+        """
+        result = cast(
+            CursorResult,
+            await db.execute(
+                update(PrintQueueItem)
+                .where(PrintQueueItem.id == item.id)
+                .where(PrintQueueItem.status == "pending")
+                .where(PrintQueueItem.printer_id == printer_id)
+                .values(printer_id=None, error_message=None)
+                .execution_options(synchronize_session=False)
+            ),
+        )
+        await db.commit()
+        return result.rowcount > 0
+
     async def _requeue_after_upload_refused(
         self,
         db: AsyncSession,
@@ -3214,21 +3266,7 @@ class PrintScheduler:
         self._upload_backoff[printer.id] = time.monotonic() + backoff
         released = False
         if item.target_model:
-            # Only while it is still pending on this printer: a cancel, or a
-            # move the user made during the upload, stands.
-            result = cast(
-                CursorResult,
-                await db.execute(
-                    update(PrintQueueItem)
-                    .where(PrintQueueItem.id == item.id)
-                    .where(PrintQueueItem.status == "pending")
-                    .where(PrintQueueItem.printer_id == printer.id)
-                    .values(printer_id=None, error_message=None)
-                    .execution_options(synchronize_session=False)
-                ),
-            )
-            await db.commit()
-            released = result.rowcount > 0
+            released = await self._release_model_assignment(db, item, printer.id)
         elif item.error_message:
             # The row is still `pending` -- it only moves to `printing` after a
             # successful upload -- so there is no status to write back. Writing
@@ -3671,6 +3709,14 @@ class PrintScheduler:
                     continue
                 if printer_manager.is_connected(printer.id):
                     continue
+                if printer.id in self._plate_changer_empty:
+                    # Waking it buys nothing: its plate changer has no plate left (#3575).
+                    logger.info(
+                        "Not powering on printer %s for a %s job: its plate changer is empty",
+                        printer.id,
+                        candidate.target_model,
+                    )
+                    continue
                 if self._wake_recently_failed(printer.id):
                     # Its plug did not bring it back a moment ago. Move on to a
                     # sibling instead of spending this pass — and every pass —
@@ -3832,6 +3878,8 @@ class PrintScheduler:
         printers_offline_no_plug = []
         printers_missing_filament: list[tuple[str, list[str]]] = []
         printers_wrong_nozzle: list[str] = []
+        # Plate changers with no plate left (#3575): out of dispatch until refilled.
+        printers_plate_empty: list[str] = []
         candidates: list[tuple[int, int]] = []  # (printer_id, color_match_count)
         # The first eligible printer that is short on filament, kept in case
         # every eligible printer is (#3137).
@@ -3847,6 +3895,9 @@ class PrintScheduler:
             wrong_nozzle = _wrong_nozzle_label(printer.name, printer_manager.get_status(printer.id), sliced_nozzle)
             if wrong_nozzle:
                 printers_wrong_nozzle.append(wrong_nozzle)
+                continue
+            if printer.id in self._plate_changer_empty:
+                printers_plate_empty.append(printer.name)
                 continue
             if printer.id in exclude_ids and refused_uploads and printer.id in refused_uploads:
                 printers_refused.append(_refused_upload_hold_reason(printer.name, refused_uploads[printer.id]))
@@ -3997,6 +4048,7 @@ class PrintScheduler:
         if printers_wrong_nozzle and not (
             printers_busy
             or printers_refused
+            or printers_plate_empty
             or printers_offline
             or printers_offline_no_plug
             or printers_missing_filament
@@ -4019,7 +4071,7 @@ class PrintScheduler:
                 # by itself, so the job is not actually waiting on anybody to change a
                 # spool (#2876 — offline printers reach this list now that a switched-off
                 # printer's own filament is read).
-                if not printers_busy and not printers_offline and not printers_refused:
+                if not printers_busy and not printers_offline and not printers_refused and not printers_plate_empty:
                     all_missing = sorted({c for _, cols in printers_missing_filament for c in cols})
                     return None, f"No matching material/color. Waiting on {', '.join(all_missing)}"
                 # else: fall through — the self-resolving entries are appended below
@@ -4029,6 +4081,9 @@ class PrintScheduler:
                 ]
                 reasons.append(f"Waiting for filament: {'; '.join(names_and_missing)}")
         reasons.extend(printers_refused)
+        if printers_plate_empty:
+            # Needs a person to refill the plate changer, so it never reads as "Busy".
+            reasons.append(f"Plate changer empty: {', '.join(printers_plate_empty)}")
         if printers_busy:
             reasons.append(f"Busy: {', '.join(printers_busy)}")
         if printers_offline:
@@ -6025,6 +6080,46 @@ class PrintScheduler:
             return False
 
         return True
+
+    async def _load_plate_changers(self, db: AsyncSession) -> None:
+        """Read which printers count plates and which of them have none left (#3575).
+
+        A capacity with no remaining count, or one whose count could not be
+        booked, reads as empty: the safe side, since a plate changer with no
+        plate left can damage the printer.
+        """
+        result = await db.execute(
+            select(Printer.id, Printer.name, Printer.plates_remaining).where(Printer.plate_capacity.is_not(None))
+        )
+        rows = result.all()
+        self._plate_changer_ids = {pid for pid, _name, _remaining in rows}
+        self._plate_changer_empty = {
+            pid: name or f"printer {pid}"
+            for pid, name, remaining in rows
+            if remaining is None or remaining <= 0 or is_count_unknown(pid)
+        }
+
+    async def _plate_changer_blocks_dispatch(self, db: AsyncSession, printer_id: int) -> bool:
+        """Check, between the upload and the print command, that a plate changer can take the job (#3575).
+
+        Reads the count fresh: the session is committed before the upload, and
+        pysqlite does not open a transaction for a SELECT, so there is no stale
+        snapshot to worry about. True when the
+        printer counts plates and has none left (or its count could not be
+        booked), or when its last print is still being closed out and the count
+        may not include it yet.
+        """
+        row = (
+            await db.execute(select(Printer.plate_capacity, Printer.plates_remaining).where(Printer.id == printer_id))
+        ).first()
+        if row is None or row.plate_capacity is None:
+            return False
+        return (
+            row.plates_remaining is None
+            or row.plates_remaining <= 0
+            or is_count_unknown(printer_id)
+            or is_count_pending(printer_id)
+        )
 
     def _is_printer_idle(
         self, printer_id: int, require_plate_clear: bool = True, *, ignore_plate_clear: bool = False
@@ -8127,7 +8222,7 @@ class PrintScheduler:
         warm_candidates = {
             pid
             for pid in (pending_printer_ids & busy_printers) - dispatched_printers
-            if plate_clear.applies(pid, require_plate_clear)
+            if plate_clear.applies(pid, require_plate_clear) and pid not in self._plate_changer_empty
         }
 
         keep_warm_enabled = await self._get_bool_setting(db, "queue_keep_bed_warm", default=False)
@@ -9879,6 +9974,23 @@ class PrintScheduler:
             )
             return
 
+        # Plate changer guard (#3575). The queue pass already keeps an empty
+        # plate changer out, but its count is read once per pass and the upload
+        # below is slow: read it again before committing to the dispatch. Leaves
+        # the item pending, like the guard above.
+        if item.printer_id in self._plate_changer_ids and await self._plate_changer_blocks_dispatch(
+            db, item.printer_id
+        ):
+            logger.info(
+                "Queue item %s: printer %s has no plate left in its plate changer — "
+                "deferring dispatch, leaving item pending (#3575)",
+                item.id,
+                item.printer_id,
+            )
+            if item.target_model:
+                await self._release_model_assignment(db, item, item.printer_id)
+            return
+
         # Determine source: archive or library file
         archive = None
         library_file = None
@@ -10461,6 +10573,47 @@ class PrintScheduler:
         self._upload_refusals.pop(printer.id, None)
         self._upload_refusal_kind.pop(printer.id, None)
         self._upload_refusal_notified.pop(printer.id, None)
+
+        # Plate changer guard again (#3575): the upload took a while, and the
+        # count may have run out meanwhile. Leave the item pending and take the
+        # file off the printer again.
+        if item.printer_id in self._plate_changer_ids and await self._plate_changer_blocks_dispatch(
+            db, item.printer_id
+        ):
+            logger.info(
+                "Queue item %s: printer %s ran out of plates during the upload — "
+                "deferring dispatch, leaving item pending (#3575)",
+                item.id,
+                item.printer_id,
+            )
+            try:
+                await delete_file_async(
+                    printer.ip_address,
+                    printer.access_code,
+                    remote_path,
+                    socket_timeout=ftp_timeout,
+                    printer_model=printer.model,
+                )
+            except Exception as cleanup_err:
+                logger.debug(
+                    "Queue item %s: best-effort cleanup of uploaded file failed: %s",
+                    item.id,
+                    cleanup_err,
+                )
+            if item.target_model:
+                await self._release_model_assignment(db, item, printer.id)
+            try:
+                # Closes the upload toast; "plate_changer_empty" has no text of
+                # its own in the frontend, so it reads "Dispatch failed".
+                await ws_manager.send_queue_item_failed(
+                    user_id=toast_uid,
+                    queue_item_id=item.id,
+                    printer_id=printer.id,
+                    reason="plate_changer_empty",
+                )
+            except Exception:
+                pass  # toast is best-effort
+            return
 
         # Parse AMS mapping if stored
         ams_mapping = None

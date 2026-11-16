@@ -110,6 +110,7 @@ EVENT_VARIABLES: dict[str, list[str]] = {
     ],
     "plate_not_empty": ["printer", "difference_percent", "timestamp", "app_name"],
     "plate_clear_required": ["printer", "timestamp", "app_name"],
+    "plate_changer_empty": ["printer", "capacity", "timestamp", "app_name"],
     "filament_low": ["printer", "slot", "remaining_percent", "color", "timestamp", "app_name"],
     "maintenance_due": ["printer", "items", "timestamp", "app_name"],
     "ams_humidity_high": ["printer", "ams_label", "humidity", "threshold", "timestamp", "app_name"],
@@ -321,6 +322,12 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
     },
     "plate_clear_required": {
         "printer": "Bambu X1C",
+        "timestamp": "2024-01-15 15:48",
+        "app_name": "Bambuddy",
+    },
+    "plate_changer_empty": {
+        "printer": "Bambu X1C",
+        "capacity": "5",
         "timestamp": "2024-01-15 15:48",
         "app_name": "Bambuddy",
     },

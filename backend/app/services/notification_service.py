@@ -2296,6 +2296,36 @@ class NotificationService:
             variables=variables,
         )
 
+    async def on_plate_changer_empty(
+        self,
+        printer_id: int,
+        printer_name: str,
+        capacity: int,
+        db: AsyncSession,
+    ):
+        """Handle plate-changer-empty event — the last plate was used (#3575).
+
+        Fires once, on the edge to zero: from then on the queue sends the printer
+        nothing until someone refills the plate changer and empties its bin.
+        """
+        providers = await self._get_providers_for_event(db, "on_plate_changer_empty", printer_id)
+        if not providers:
+            return
+
+        variables = {"printer": printer_name, "capacity": str(capacity)}
+
+        title, message = await self._build_message_from_template(db, "plate_changer_empty", variables)
+        await self._send_to_providers(
+            providers,
+            title,
+            message,
+            db,
+            "plate_changer_empty",
+            printer_id,
+            printer_name,
+            variables=variables,
+        )
+
     async def on_filament_low(
         self,
         printer_id: int,

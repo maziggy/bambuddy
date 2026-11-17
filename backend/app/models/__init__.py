@@ -22,7 +22,7 @@ from backend.app.models.local_preset import LocalPreset
 from backend.app.models.location import Location
 from backend.app.models.location_ha_sensor import LocationHASensor
 from backend.app.models.long_lived_token import LongLivedToken
-from backend.app.models.maintenance import MaintenanceHistory, MaintenanceType, PrinterMaintenance
+from backend.app.models.maintenance import MaintenanceHistory, MaintenanceLogEntry, MaintenanceType, PrinterMaintenance
 from backend.app.models.notification import NotificationLog
 from backend.app.models.notification_live_activity import NotificationLiveActivity
 from backend.app.models.notification_lock_screen_widget import NotificationLockScreenWidget
@@ -68,6 +68,7 @@ __all__ = [
     "MaintenanceType",
     "PrinterMaintenance",
     "MaintenanceHistory",
+    "MaintenanceLogEntry",
     "KProfileNote",
     "NotificationTemplate",
     "NotificationLog",

@@ -174,6 +174,46 @@ class TestSyncSpoolmanAmsWeights:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    @pytest.mark.parametrize(
+        ("spool", "tray", "remain"),
+        [
+            pytest.param({"remaining_weight": 965.4}, {}, 96, id="truncated"),
+            # Sent to the slot as 560 g, which the printer reports as 56 %.
+            pytest.param({"remaining_weight": 559.56}, {}, 56, id="sent-in-whole-grams"),
+            # A Bambu Lab spool's is sent capped at 1000 g: 80 % of 1250 g.
+            pytest.param(
+                {"remaining_weight": 1100.0, "initial_weight": 1250},
+                {"tray_uuid": "EB335968299543078925C71D83DA3864"},
+                80,
+                id="rfid-capped",
+            ),
+        ],
+    )
+    async def test_spoolmans_figure_stays_when_it_reads_as_the_printers_percentage(
+        self, async_client: AsyncClient, sync_settings, test_printer, slot_assignment, spool, tray, remain
+    ):
+        """965.4 g of 1000 g, sent to the slot as its weight, comes back as 96 %;
+        writing 960 g would only lose Spoolman's precision."""
+        spoolman_client = _make_spoolman_client(spools=[{**SAMPLE_SPOOL, **spool}])
+        printer_state = _make_printer_state(remain=remain)
+        printer_state.raw_data["ams"][0]["tray"][0].update(tray)
+
+        with (
+            patch(
+                "backend.app.api.routes.spoolman_inventory._get_client",
+                AsyncMock(return_value=spoolman_client),
+            ),
+            patch("backend.app.api.routes.spoolman_inventory.printer_manager") as pm_mock,
+        ):
+            pm_mock.get_status = MagicMock(return_value=printer_state)
+
+            response = await async_client.post("/api/v1/spoolman/inventory/sync-ams-weights")
+
+        assert response.json()["synced"] == 1
+        spoolman_client.update_spool_full.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_printer_offline_skipped(
         self, async_client: AsyncClient, sync_settings, test_printer, slot_assignment
     ):

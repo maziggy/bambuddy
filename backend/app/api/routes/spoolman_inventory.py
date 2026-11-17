@@ -73,6 +73,14 @@ from backend.app.services.location_service import (
 )
 from backend.app.services.printer_manager import PrinterManager, printer_manager
 from backend.app.services.slicer_filament_resolver import resolve_slicer_filament, reusable_slot_filament_id
+from backend.app.services.slot_filament_weight import (
+    filament_weight,
+    is_rfid_tray,
+    spool_tags,
+    tag_holder,
+    tray_tags,
+    weight_handled,
+)
 from backend.app.services.slot_nozzle import resolve_slot_nozzle
 from backend.app.services.spool_filament_preset import forget_spoolman_spool_own_preset, resolve_spoolman_preset
 from backend.app.services.spoolman import (
@@ -1753,7 +1761,8 @@ async def sync_spoolman_ams_weights(
     """Sync remaining weight back to Spoolman for all slot-assigned spools.
 
     Reads live AMS remain% from connected printers, computes
-    remaining = label_weight * remain% / 100, and PATCHes Spoolman.
+    remaining = label_weight * remain% / 100, and PATCHes Spoolman. A spool
+    whose Spoolman weight already reads as that remain% keeps it.
     """
     client = await _get_client(db)
 
@@ -1864,6 +1873,28 @@ async def sync_spoolman_ams_weights(
         if remain_val < 0 or remain_val > 100:
             logger.debug("Spoolman AMS sync: invalid remain=%s for spool %d", remain_raw, assignment.spoolman_spool_id)
             skipped += 1
+            continue
+
+        # The printer reports a slot weight as a truncated percentage: 965 g
+        # of 1000 g, sent with the slot assignment, comes back as 96 %. When
+        # Spoolman's own figure already reads as that percentage it is the
+        # precise one, and 960 g would only lose the difference. The weight
+        # sent is in whole grams (559.6 g goes as 560 g, so 56 %), and a Bambu
+        # Lab spool's is capped at 1000 g.
+        spoolman_remaining = _safe_optional_float(spool_dict.get("remaining_weight"))
+        sent = filament_weight(spoolman_net_weight(spool_dict), spoolman_remaining, rfid=is_rfid_tray(tray))
+        if (
+            spoolman_remaining is not None
+            and 0 <= spoolman_remaining <= label_weight
+            and int(spoolman_remaining * 100 // label_weight) == remain_val
+        ) or (sent is not None and sent.percent == remain_val):
+            logger.info(
+                "Spoolman AMS sync: spool %d keeps %s g, which already reads as remain=%d%%",
+                assignment.spoolman_spool_id,
+                spoolman_remaining,
+                remain_val,
+            )
+            synced += 1
             continue
 
         remaining = round(label_weight * remain_val / 100.0, 1)
@@ -2237,6 +2268,36 @@ async def assign_spoolman_slot(
                     "printer" if printer_kp else "stored",
                 )
 
+            # The spool's weight follows the setting, so the printer shows
+            # Spoolman's remaining amount instead of none. A Bambu Lab spool's
+            # remaining weight is capped at 1000 g, as in Bambu Studio.
+            live_tray = _live_slot_tray(state, body.ams_id, body.tray_id)
+            then_weight = filament_weight(
+                spoolman_net_weight(spool),
+                spool.get("remaining_weight"),
+                rfid=is_rfid_tray(live_tray),
+            )
+            # Not to a tray whose tag says another spool is in it: those grams
+            # are not that spool's. A tag Spoolman doesn't know yet is no such
+            # sign, and this assignment says which spool it is.
+            tags = tray_tags(live_tray)
+            if then_weight is not None and tags and not spool_tags(spool) & tags:
+                try:
+                    holder = tag_holder(await client.get_spools(), tags)
+                except Exception as exc:
+                    logger.warning("Could not search Spoolman for the tag in the assigned slot: %s", exc)
+                    holder = None
+                if holder is not None and holder.get("id") != body.spoolman_spool_id:
+                    logger.info(
+                        "Not sending spool %d's weight to printer %d AMS%d-T%d: the tag in the tray is spool %s's",
+                        body.spoolman_spool_id,
+                        body.printer_id,
+                        body.ams_id,
+                        body.tray_id,
+                        holder.get("id"),
+                    )
+                    then_weight = None
+
             mqtt_client.ams_set_filament_setting(
                 ams_id=body.ams_id,
                 tray_id=body.tray_id,
@@ -2247,7 +2308,10 @@ async def assign_spoolman_slot(
                 nozzle_temp_min=temp_min,
                 nozzle_temp_max=temp_max,
                 setting_id=effective_setting_id,
+                then_weight=then_weight,
             )
+            # This fill has its weight; the AMS sync doesn't send it again.
+            weight_handled((body.printer_id, body.ams_id, body.tray_id), body.spoolman_spool_id)
 
             if matching_kp and matching_kp.cali_idx is not None:
                 # Use printer-reported filament_id when available, otherwise

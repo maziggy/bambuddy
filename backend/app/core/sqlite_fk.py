@@ -115,6 +115,10 @@ APPLIED: frozenset[tuple[str, str]] = frozenset(
         # maintenance_types: the log keeps a deleted custom task's entries; the
         # next task given the id would take them over.
         ("maintenance_log_entries", "maintenance_type_id"),
+        # maintenance_history goes with its printer task; the next reset given
+        # the id, maybe on another printer, would have its history deleted
+        # with this entry.
+        ("maintenance_log_entries", "history_id"),
         # external_links: the next link given the id would show the count an
         # app reported for the deleted one.
         ("external_link_badges", "link_id"),

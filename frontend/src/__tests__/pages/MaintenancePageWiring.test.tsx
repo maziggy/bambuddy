@@ -213,6 +213,28 @@ describe('MaintenancePage wiring: status tab', () => {
     expect(writes()).toEqual([]);
   });
 
+  it('a click beside the reset dialog keeps it open while a comment is typed, and closes it when empty', async () => {
+    const user = userEvent.setup();
+    render(<MaintenancePage />);
+
+    const beta = await printerCard('Beta Printer');
+    await user.click(within(beta).getByRole('button', { name: /expand/i }));
+    await user.click(await within(beta).findByRole('button', { name: 'Reset' }));
+    const dialog = await resetDialog('Nozzle Task');
+    const comment = within(dialog).getByLabelText('Comment (optional)');
+    const backdrop = screen.getByRole('heading', { name: 'Reset "Nozzle Task"?' }).closest('.fixed') as HTMLElement;
+    await user.type(comment, 'Half-written note');
+    await user.click(backdrop);
+
+    expect(screen.getByRole('heading', { name: 'Reset "Nozzle Task"?' })).toBeInTheDocument();
+    expect(comment).toHaveValue('Half-written note');
+
+    await user.clear(comment);
+    await user.click(backdrop);
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Reset "Nozzle Task"?' })).not.toBeInTheDocument());
+    expect(writes()).toEqual([]);
+  });
+
   it('cancelling the reset dialog sends nothing', async () => {
     const user = userEvent.setup();
     render(<MaintenancePage />);

@@ -1055,8 +1055,17 @@ async def _delete_log_entries(db: AsyncSession, *conditions) -> int:
     Each reset is written to maintenance_history too, comment included; left
     there, a deleted entry would still be in the database and its backups.
     """
-    copied_from = select(MaintenanceLogEntry.history_id).where(*conditions, MaintenanceLogEntry.history_id.is_not(None))
-    await db.execute(delete(MaintenanceHistory).where(MaintenanceHistory.id.in_(copied_from)))
+    # Read first: on SQLite the history delete clears the entries' history_id
+    # before it runs (sqlite_fk), and a subquery would then find nothing.
+    copied_from = list(
+        await db.scalars(
+            select(MaintenanceLogEntry.history_id).where(*conditions, MaintenanceLogEntry.history_id.is_not(None))
+        )
+    )
+    # In chunks: a fleet cleanup may match more ids than one statement can bind.
+    for start in range(0, len(copied_from), 500):
+        chunk = copied_from[start : start + 500]
+        await db.execute(delete(MaintenanceHistory).where(MaintenanceHistory.id.in_(chunk)))
     result = cast(CursorResult, await db.execute(delete(MaintenanceLogEntry).where(*conditions)))
     await db.commit()
     return result.rowcount

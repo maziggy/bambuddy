@@ -304,6 +304,32 @@ class TestCleanup:
         # Deleting the entry does not undo the reset.
         assert (await _first_item(async_client, printer_id))["last_performed_at"] == before["last_performed_at"]
 
+    async def test_an_entry_whose_history_is_gone_leaves_a_later_reset_s_history_alone(
+        self, async_client, printer_factory, db_session
+    ):
+        # The deleted printer's history row had the highest id, so on SQLite the
+        # next reset is given it. Deleting the old entry must not take that
+        # reset's history with it.
+        doomed = (await printer_factory(name="Doomed")).id
+        await _perform(async_client, (await _first_item(async_client, doomed))["id"], "before the end")
+        old_entry = (await _log(async_client, doomed))["items"][0]["id"]
+        old_history = (await _entry(db_session, old_entry)).history_id
+        assert (await async_client.delete(f"/api/v1/printers/{doomed}")).status_code == 200
+        assert (await _entry(db_session, old_entry)).history_id is None
+
+        survivor_id, (new_entry,) = await _logged(async_client, printer_factory, "Survivor", "after")
+        new_history = (await _entry(db_session, new_entry)).history_id
+        assert new_history is not None
+
+        assert (await async_client.delete(f"{BASE}/log/{old_entry}")).status_code == 200
+
+        assert await _history_exists(db_session, new_history)
+        assert (await _log(async_client, survivor_id))["total"] == 1
+        if db_session.bind.dialect.name == "sqlite":
+            # The case this is about: SQLite gave the later reset the freed id.
+            # PostgreSQL never reuses one, so there it can only pass.
+            assert new_history == old_history
+
     async def test_deleting_an_unknown_entry_is_not_found(self, async_client):
         assert (await async_client.delete(f"{BASE}/log/999999")).status_code == 404
 

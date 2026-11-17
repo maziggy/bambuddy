@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
@@ -104,9 +104,14 @@ class MaintenanceLogEntry(Base):
     # NULL when authentication is off.
     performed_by_username: Mapped[str | None] = mapped_column(String(100), nullable=True)
     performed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
-    # The maintenance_history row written with it; no key, as that row goes
-    # with its printer task. The upgrade copies history rows not yet here.
-    history_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # The maintenance_history row written with it. That row goes with its
+    # printer task, so the link is SET NULL: left dangling, SQLite would give
+    # its id to the next reset, possibly another printer's, and deleting this
+    # entry would delete that reset's history. The upgrade copies history rows
+    # not yet here.
+    history_id: Mapped[int | None] = mapped_column(
+        ForeignKey("maintenance_history.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
 
 # Import at end to avoid circular imports

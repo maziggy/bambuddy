@@ -296,6 +296,10 @@ export interface FilamentMappingProps {
   printerId: number;
   /** Pre-fetched filament requirements data */
   filamentReqs: FilamentReqsData | undefined;
+  /** Filaments the file needs that the user's group may not use, as the
+   *  dialog's submit check sees them (#3522). `filamentReqs` can carry a
+   *  colour override in their place, so the banner must not judge those. */
+  blockedFilaments: string[];
   manualMappings: Record<number, number>;
   onManualMappingChange: (mappings: Record<number, number>) => void;
   onEstimatedCostChange?: (estimatedCost: number | null) => void;

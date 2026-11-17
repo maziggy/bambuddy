@@ -40,6 +40,8 @@ from backend.app.utils.tray_ids import (
     is_rack_ams,
     legacy_tray_index,
     mapped_trays_with_slot,
+    reconcile_use_ams,
+    reports_no_ams,
     tray_flag_bit,
     unit_ams_type,
     unit_label,
@@ -6721,6 +6723,10 @@ class BambuMQTTClient:
             from backend.app.utils.printer_models import is_dual_nozzle_model, is_nozzle_rack_model
 
             is_dual_nozzle = self._is_dual_nozzle or is_dual_nozzle_model(self.model)
+            # The scheduler's filament check (#3522) reads the feed with the
+            # same `reconcile_use_ams`, but its dual-nozzle test
+            # (`_might_be_dual_nozzle`) is more generous: it also counts a
+            # populated `ams_extruder_map` or more than one external feed.
 
             # Build ams_mapping2 from ams_mapping (detailed format with ams_id/slot_id)
             ams_mapping2 = []
@@ -6811,26 +6817,28 @@ class BambuMQTTClient:
             #     0-253. Keeping them distinct means an unresolved mapping fails loudly
             #     (or is recomputed upstream) instead of silently going external, and
             #     never gets force-enabled by (a) either.
+            #
+            # The rule lives in `reconcile_use_ams`, which the scheduler's
+            # filament-permission check (#3522) shares, so what it judges is
+            # what is sent here. (Not when the scheduler worked out from the
+            # plate's own filament list that it prints only from the spool
+            # holder: a real tray here is then one another plate of the file
+            # uses.)
             if ams_mapping and not is_dual_nozzle:
-                has_real_tray = any(
-                    t is not None and 0 <= int(t) <= 253 and not layout.is_external(int(t)) for t in ams_mapping
+                reconciled = reconcile_use_ams(
+                    ams_mapping, use_ams, layout, plate_uses_only_external=plate_uses_only_external
                 )
-                all_external = all(t is None or int(t) >= 254 or layout.is_external(int(t)) for t in ams_mapping)
-                # (Not when the scheduler worked out from the plate's own
-                # filament list that it prints only from the spool holder: a
-                # real tray here is then one another plate of the file uses.)
-                if has_real_tray and not use_ams and not plate_uses_only_external:
-                    use_ams = True
+                if reconciled and not use_ams:
                     logger.info(
                         "[%s] AMS mapping resolved a real slot — setting use_ams=True (#2595)",
                         self.serial_number,
                     )
-                elif use_ams and all_external:
-                    use_ams = False
+                elif use_ams and not reconciled:
                     logger.info(
                         "[%s] All filament slots use external spool — setting use_ams=False",
                         self.serial_number,
                     )
+                use_ams = reconciled
 
             # (c) A single-nozzle printer that reported no AMS at all can only
             #     print from the spool holder, whatever the mapping says. With
@@ -6840,7 +6848,7 @@ class BambuMQTTClient:
             #     mapping table" (#3356). An empty raw_data["ams"] is the
             #     printer's own report of no AMS; a missing key means no AMS
             #     push has been handled yet (a reconnect), which changes nothing.
-            if use_ams and not is_dual_nozzle and self.state.raw_data.get("ams") == []:
+            if use_ams and not is_dual_nozzle and reports_no_ams(self.state.raw_data):
                 use_ams = False
                 logger.info("[%s] Printer has no AMS — setting use_ams=False (#3356)", self.serial_number)
 

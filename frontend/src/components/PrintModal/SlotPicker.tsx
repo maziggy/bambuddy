@@ -51,6 +51,10 @@ export interface SlotPickerOption {
    *  every printer of a model, so two spools of the same type and colour
    *  collapse to one `TYPE|COLOR` value while still being two rows. */
   key?: string;
+  /** Shown but not selectable, e.g. a filament the user's group may not use (#3522). */
+  disabled?: boolean;
+  /** Tooltip saying why the row is disabled. */
+  disabledReason?: string;
 }
 
 interface SlotPickerProps {
@@ -178,6 +182,9 @@ export function SlotPicker({
   }, [open, place]);
 
   const choose = (index: number) => {
+    // A disabled row is listed so the user can see why the slot is not used,
+    // not to be picked; the list stays open for another choice (#3522).
+    if (rows[index].disabled) return;
     onChange(rows[index].value);
     setOpen(false);
     triggerRef.current?.focus();
@@ -288,6 +295,8 @@ export function SlotPicker({
                 // identity of the choice, separate from how it reads.
                 data-value={row.value}
                 aria-selected={index === selectedIndex}
+                aria-disabled={row.disabled || undefined}
+                title={row.disabled ? row.disabledReason : undefined}
                 onMouseEnter={() => setActiveIndex(index)}
                 onClick={() => choose(index)}
                 className={`w-full flex items-center gap-1.5 text-left px-2 py-1.5 rounded-md text-xs ${
@@ -296,10 +305,12 @@ export function SlotPicker({
                     : index === activeIndex
                       ? 'bg-bambu-dark text-white'
                       : 'text-white'
-                }`}
+                }${row.disabled ? ' opacity-40 cursor-not-allowed' : ''}`}
               >
                 {renderSwatch(row)}
-                <span className="flex-1 min-w-0 truncate" title={row.label}>
+                {/* No title of its own on a disabled row: the label fills most
+                    of the row, and its title would hide the row's reason. */}
+                <span className="flex-1 min-w-0 truncate" title={row.disabled ? undefined : row.label}>
                   {row.label}
                   {row.meta ? <span className="text-bambu-gray">{row.meta}</span> : null}
                 </span>

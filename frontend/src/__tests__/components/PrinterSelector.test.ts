@@ -179,6 +179,18 @@ describe('autoMatchFilament', () => {
     expect(result!.globalTrayId).toBe(5);
   });
 
+  // #3522: InlineMappingEditor's loaded list comes from the multi-printer
+  // hook, which flags the trays the user's groups block.
+  it('never picks a blocked filament, even the only exact colour match', () => {
+    const filaments: LoadedFilament[] = [
+      makeFilament({ globalTrayId: 0, type: 'PETG', color: '#FFFFFF', blocked: true }),
+      makeFilament({ globalTrayId: 1, type: 'PETG', color: '#000000', colorName: 'Black' }),
+    ];
+    const req = makeReq({ type: 'PETG', color: '#FFFFFF' });
+    expect(autoMatchFilament(req, filaments, new Set())?.globalTrayId).toBe(1);
+    expect(autoMatchFilament(req, filaments.slice(0, 1), new Set())).toBeUndefined();
+  });
+
   it('matches PA-CF requirement to PA12-CF filament — #688', () => {
     const filaments: LoadedFilament[] = [
       makeFilament({ globalTrayId: 0, type: 'PA12-CF', color: '#000000', colorName: 'Black' }),

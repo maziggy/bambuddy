@@ -146,6 +146,7 @@ class TestUnmatchedOn:
             "archive_id": None,
             "library_file_id": 3,
             "plate_id": 1,
+            "created_by_id": None,  # no creator: unrestricted filament scope (#3522)
         }
         values.update(fields)
         return SimpleNamespace(**values)
@@ -230,6 +231,7 @@ class TestDualNozzleEndToEnd:
         item = MagicMock()
         item.id = 9
         item.printer_id = 4
+        item.created_by_id = None  # no creator: unrestricted filament scope (#3522)
         item.archive_id = None
         item.library_file_id = 3
         item.plate_id = 1

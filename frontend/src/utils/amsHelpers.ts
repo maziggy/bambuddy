@@ -638,12 +638,13 @@ export function effectivePreferLowest(
  */
 export function autoMatchFilament(
   req: { type?: string; color?: string; nozzle_id?: number | null },
-  loadedFilaments: { globalTrayId: number; amsId?: number; trayId?: number; type?: string; color?: string; extruderId?: number; remain?: number }[],
+  loadedFilaments: { globalTrayId: number; amsId?: number; trayId?: number; type?: string; color?: string; extruderId?: number; remain?: number; blocked?: boolean }[],
   usedTrayIds: Set<number>,
   preferLowest?: boolean,
   inventoryByTrayId?: Map<number, number>,
 ): typeof loadedFilaments[number] | undefined {
-  let nozzleFilaments = filterFilamentsByNozzle(loadedFilaments, req.nozzle_id);
+  // A tray the user's groups block is never auto-picked (#3522).
+  let nozzleFilaments = filterFilamentsByNozzle(loadedFilaments.filter((f) => !f.blocked), req.nozzle_id);
 
   if (preferLowest) {
     nozzleFilaments = [...nozzleFilaments].sort((a, b) =>

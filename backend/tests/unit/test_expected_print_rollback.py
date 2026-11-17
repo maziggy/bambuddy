@@ -195,7 +195,7 @@ async def test_dispatch_withdraws_the_expectation_when_start_print_raises(expect
         raise RuntimeError("remaining connection slots are reserved for roles with the SUPERUSER attribute")
 
     db = MagicMock()
-    db.get = AsyncMock(return_value=MagicMock(id=597))
+    db.get = AsyncMock(return_value=MagicMock(id=597, created_by_id=None))
     ctx = MagicMock()
     ctx.__aenter__ = AsyncMock(return_value=db)
     ctx.__aexit__ = AsyncMock(return_value=False)
@@ -234,7 +234,7 @@ async def test_dispatch_keeps_the_expectation_when_the_print_was_sent(expected_p
         sched._unconfirmed_expected_print.pop(597, None)  # start_print() returned True
 
     db = MagicMock()
-    db.get = AsyncMock(return_value=MagicMock(id=597))
+    db.get = AsyncMock(return_value=MagicMock(id=597, created_by_id=None))
     ctx = MagicMock()
     ctx.__aenter__ = AsyncMock(return_value=db)
     ctx.__aexit__ = AsyncMock(return_value=False)

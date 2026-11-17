@@ -280,6 +280,78 @@ describe('GroupEditPage', () => {
       expect(cached!.permissions).toContain('archives:read');
     });
   });
+
+  describe('filament rules (#3522)', () => {
+    let patched: Record<string, unknown> | null;
+
+    const renderEdit = async (filamentFields: Record<string, unknown>) => {
+      patched = null;
+      server.use(
+        // Registered first: the :id handler below would otherwise match /permissions too
+        http.get('/api/v1/groups/permissions', () => HttpResponse.json(mockPermissions)),
+        http.get('/api/v1/groups/:id', () =>
+          HttpResponse.json({ ...mockGroup, id: 5, name: 'Friends', is_system: false, ...filamentFields }),
+        ),
+        http.patch('/api/v1/groups/:id', async ({ request }) => {
+          patched = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ ...mockGroup, ...patched });
+        }),
+      );
+      const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
+      const { MemoryRouter, Routes, Route } = await import('react-router-dom');
+      const { AuthProvider } = await import('../../contexts/AuthContext');
+      const { ToastProvider } = await import('../../contexts/ToastContext');
+      const { ThemeProvider } = await import('../../contexts/ThemeContext');
+      const { render: rtlRender } = await import('@testing-library/react');
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      rtlRender(
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            <ThemeProvider>
+              <ToastProvider>
+                <MemoryRouter initialEntries={['/groups/5/edit']}>
+                  <Routes>
+                    <Route path="/groups/:id/edit" element={<GroupEditPage />} />
+                    <Route path="/settings" element={<div>Settings</div>} />
+                  </Routes>
+                </MemoryRouter>
+              </ToastProvider>
+            </ThemeProvider>
+          </AuthProvider>
+        </QueryClientProvider>
+      );
+    };
+
+    it('sends filament rules on save', async () => {
+      await renderEdit({ restrict_filaments: false, filament_rule_mode: 'block', filament_rules: [] });
+
+      await userEvent.click(await screen.findByRole('checkbox', { name: /limit filaments/i }));
+      await userEvent.type(screen.getByLabelText(/rule value/i), 'PAHT-CF');
+      await userEvent.click(screen.getByRole('button', { name: /add rule/i }));
+      await userEvent.click(screen.getByRole('button', { name: /save/i }));
+      await waitFor(() => expect(patched).not.toBeNull());
+      expect(patched).toMatchObject({
+        restrict_filaments: true,
+        filament_rule_mode: 'block',
+        filament_rules: [{ match: 'material', value: 'PAHT-CF' }],
+      });
+    });
+
+    it('saves a rule that was typed but not added', async () => {
+      // In "allow" mode an empty list blocks everyone, so losing the typed
+      // value on Save would lock the group out (#3522).
+      await renderEdit({ restrict_filaments: true, filament_rule_mode: 'allow', filament_rules: [] });
+
+      await userEvent.type(await screen.findByLabelText(/rule value/i), 'pla');
+      await userEvent.click(screen.getByRole('button', { name: /save/i }));
+      await waitFor(() => expect(patched).not.toBeNull());
+      expect(patched).toMatchObject({
+        restrict_filaments: true,
+        filament_rule_mode: 'allow',
+        filament_rules: [{ match: 'material', value: 'PLA' }],
+      });
+    });
+  });
 });
 
 describe('GroupEditPage printer access (#1727)', () => {

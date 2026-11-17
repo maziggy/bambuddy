@@ -3,6 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from backend.app.schemas.group import FilamentRuleSchema
 from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
 
 
@@ -80,6 +81,14 @@ class UserUpdate(IgnoresNullForRequiredColumns):
         return v
 
 
+class FilamentPolicyBrief(BaseModel):
+    """One restricted group's filament rules, as the print dialog applies them (#3522)."""
+
+    group: str
+    mode: Literal["allow", "block"]
+    rules: list[FilamentRuleSchema] = []
+
+
 class UserResponse(BaseModel):
     id: int
     username: str
@@ -90,6 +99,9 @@ class UserResponse(BaseModel):
     auth_source: str = "local"  # "local" or "ldap"
     groups: list[GroupBrief] = []
     permissions: list[str] = []  # All permissions from groups
+    # None: may print with every filament. Otherwise a filament is allowed when
+    # any of these policies allows it (#3522); the server enforces the same.
+    filament_policies: list[FilamentPolicyBrief] | None = None
     created_at: str
 
     class Config:

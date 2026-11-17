@@ -4,9 +4,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, Save, Loader2, Search, Check, Minus, Shield, AlertTriangle, Printer as PrinterIcon } from 'lucide-react';
 import { api } from '../api/client';
-import type { GroupCreate, GroupUpdate, Permission, PermissionCategory } from '../api/client';
+import type { FilamentRule, FilamentRuleMode, GroupCreate, GroupUpdate, Permission, PermissionCategory } from '../api/client';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
+import { FilamentAccessCard } from '../components/FilamentAccessCard';
 import { useToast } from '../contexts/ToastContext';
 
 export function GroupEditPage() {
@@ -22,6 +23,11 @@ export function GroupEditPage() {
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [search, setSearch] = useState('');
   const [initialized, setInitialized] = useState(false);
+  const [restrictFilaments, setRestrictFilaments] = useState(false);
+  const [filamentMode, setFilamentMode] = useState<FilamentRuleMode>('block');
+  const [filamentRules, setFilamentRules] = useState<FilamentRule[]>([]);
+  // The rules plus one typed in the card but not added yet, which Save keeps (#3522).
+  const [filamentRulesToSave, setFilamentRulesToSave] = useState<FilamentRule[] | null>(null);
 
   const { data: groupData, isLoading: groupLoading } = useQuery({
     queryKey: ['group', id],
@@ -39,6 +45,9 @@ export function GroupEditPage() {
     setName(groupData.name);
     setDescription(groupData.description || '');
     setPermissions(groupData.permissions);
+    setRestrictFilaments(groupData.restrict_filaments ?? false);
+    setFilamentMode(groupData.filament_rule_mode ?? 'block');
+    setFilamentRules(groupData.filament_rules ?? []);
     setInitialized(true);
   }
 
@@ -98,12 +107,22 @@ export function GroupEditPage() {
         name: name !== groupData?.name ? name : undefined,
         description,
         permissions: groupData?.is_system && !permissionsChanged ? undefined : permissions,
+        ...(isAdministrators
+          ? {}
+          : {
+              restrict_filaments: restrictFilaments,
+              filament_rule_mode: filamentMode,
+              filament_rules: filamentRulesToSave ?? filamentRules,
+            }),
       });
     } else {
       createMutation.mutate({
         name,
         description: description || undefined,
         permissions,
+        restrict_filaments: restrictFilaments,
+        filament_rule_mode: filamentMode,
+        filament_rules: filamentRulesToSave ?? filamentRules,
       });
     }
   };
@@ -242,6 +261,20 @@ export function GroupEditPage() {
           )}
         </div>
       </Card>
+
+      {/* Filament access (#3522) */}
+      <FilamentAccessCard
+        enabled={restrictFilaments}
+        mode={filamentMode}
+        rules={filamentRules}
+        disabled={isAdministrators}
+        onChange={({ enabled, mode, rules }) => {
+          setRestrictFilaments(enabled);
+          setFilamentMode(mode);
+          setFilamentRules(rules);
+        }}
+        onPendingRulesChange={setFilamentRulesToSave}
+      />
 
       {/* Toolbar */}
       <div className="flex items-center justify-between flex-wrap gap-3">

@@ -53,6 +53,7 @@ function renderWith(cost: number | null) {
   render(
     <FilamentMapping
       printerId={1}
+      blockedFilaments={[]}
       filamentReqs={{ filaments: [{ slot_id: 1, type: 'PLA', color: '#FF0000', used_grams: 100, used_meters: 30 }] }}
       manualMappings={{}}
       onManualMappingChange={() => {}}

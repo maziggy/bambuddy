@@ -1,6 +1,6 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, AlertTriangle, Layers, Loader2, Pencil, Printer, ThumbsUp, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { CostCenterSummary, PrintQueueItemCreate, PrintQueueItemUpdate, SlotMaterial } from '../../api/client';
 import { api } from '../../api/client';
@@ -16,6 +16,8 @@ import {
   useFilamentMapping,
 } from '../../hooks/useFilamentMapping';
 import { useMultiPrinterFilamentMapping, type PerPrinterConfig } from '../../hooks/useMultiPrinterFilamentMapping';
+import { useFilamentPolicies } from '../../hooks/useFilamentPolicies';
+import { blockedFilamentNames, judgedFilaments } from '../../utils/filamentScope';
 import { getColorName } from '../../utils/colors';
 import { productLineOf, useFilamentNameByIdx } from './useFilamentLabels';
 import { isGcodeCompatible, isPrinterCurrentlyDispatchable } from '../../utils/printer';
@@ -116,6 +118,7 @@ export function PrintModal({
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { hasPermission, hasAnyPermission, user } = useAuth();
+  const filamentPolicies = useFilamentPolicies();
   // Their jobs wait for someone to start them (#1620); the server enforces it,
   // this keeps the request and the dialog honest about it.
   const needsReview = !hasAnyPermission('queue:start_unreviewed', 'queue:update_all');
@@ -723,6 +726,8 @@ export function PrintModal({
     manualMappings,
     singlePrinterPreferLowest,
     effectivePrinterId ? inventoryByTrayIdPerPrinter.get(effectivePrinterId) : undefined,
+    undefined,
+    filamentPolicies,
   );
 
   // --- Per-plate filament mapping (multi-plate submissions) ---------------
@@ -812,7 +817,7 @@ export function PrintModal({
     const byPlate = new Map<number, number[] | undefined>();
     if (!isMultiPlateSelection || !effectivePrinterId || selectedPrinters.length !== 1) return byPlate;
 
-    const loaded = buildLoadedFilaments(printerStatus);
+    const loaded = buildLoadedFilaments(printerStatus, undefined, filamentPolicies);
     const ftsActive = printerStatus?.fila_switch?.installed === true;
     const inventoryByTrayId = inventoryByTrayIdPerPrinter.get(effectivePrinterId);
 
@@ -840,6 +845,7 @@ export function PrintModal({
     manualMappingsByPlate,
     singlePrinterPreferLowest,
     selectedPrinters.length,
+    filamentPolicies,
   ]);
 
   // Multi-printer filament mapping (for per-printer configuration)
@@ -853,6 +859,7 @@ export function PrintModal({
     settings?.prefer_lowest_filament,
     inventoryByTrayIdPerPrinter,
     sharedMappingPrinterId,
+    filamentPolicies,
   );
 
   // Auto-select first plate when plates load (single or multi-plate). A plate
@@ -1944,6 +1951,56 @@ export function PrintModal({
   const waitingForAmsStatus =
     !isSeparateJobs && assignmentMode === 'printer' && selectedPrinters.length === 1 && printerStatusLoading;
 
+  // Filaments the file needs that the user's group may not print with (#3522).
+  // The server refuses the job (403) on the file's filaments with the job's
+  // overrides applied (`judgedFilaments`, as the scheduler applies them), so
+  // this reads the plate's requirements, or each selected plate's, with the
+  // overrides the job will be sent with: a changed slot, and a ticked "Force
+  // color match" wherever the box is saved, carrying the preset id a stored
+  // entry kept (see `buildFilamentOverridesArray`). The mapping panels are
+  // handed these same lists for their banner, so a disabled Print always has
+  // its reason on screen. Separate jobs skip it, as the spool check does: these
+  // are the first file's filaments only, and the server judges each job by its
+  // own file.
+  const sentOverrides = useCallback(
+    (reqs: FilamentReqsData | undefined) => {
+      const stored = new Map(
+        (mode === 'edit-queue-item' ? queueItem?.filament_overrides ?? [] : []).map((o) => [o.slot_id, o]),
+      );
+      const ticksSaved = assignmentMode === 'model' || selectedPrinters.length === 1;
+      return (reqs?.filaments ?? []).flatMap((req) => {
+        const swap = filamentOverrides[req.slot_id];
+        const forced = forceColorMatch[req.slot_id] ?? false;
+        if (!swap && !(forced && ticksSaved)) return [];
+        const filament = { type: swap?.type ?? req.type, color: swap?.color ?? req.color };
+        const kept = stored.get(req.slot_id);
+        const variant = kept?.tray_info_idx && isSameFilament(kept, filament) ? kept.tray_info_idx : undefined;
+        return [{ slot_id: req.slot_id, type: filament.type, tray_info_idx: variant, force_color_match: forced }];
+      });
+    },
+    [mode, queueItem, assignmentMode, selectedPrinters.length, filamentOverrides, forceColorMatch],
+  );
+  const blockedFilamentsSinglePlate = useMemo(
+    () =>
+      blockedFilamentNames(
+        judgedFilaments(effectiveFilamentReqs?.filaments, sentOverrides(effectiveFilamentReqs)),
+        filamentPolicies,
+      ),
+    [effectiveFilamentReqs, sentOverrides, filamentPolicies],
+  );
+  const blockedFilamentsByPlate = useMemo(() => {
+    const byPlate = new Map<number, string[]>();
+    for (const [plateId, reqs] of perPlateReqs) {
+      byPlate.set(plateId, blockedFilamentNames(judgedFilaments(reqs.filaments, sentOverrides(reqs)), filamentPolicies));
+    }
+    return byPlate;
+  }, [perPlateReqs, sentOverrides, filamentPolicies]);
+  const blockedFileFilaments = useMemo(() => {
+    if (isSeparateJobs) return [];
+    if (!isMultiPlateSelection) return blockedFilamentsSinglePlate;
+    return [...new Set([...blockedFilamentsByPlate.values()].flat())];
+  }, [isSeparateJobs, isMultiPlateSelection, blockedFilamentsSinglePlate, blockedFilamentsByPlate]);
+
   const canSubmit = useMemo(() => {
     if (isPending) return false;
 
@@ -1976,8 +2033,12 @@ export function PrintModal({
     // The printer's live status first (#2589, see waitingForAmsStatus).
     if (waitingForAmsStatus) return false;
 
+    // Saves the round-trip to a 403 (#3522); the banner says which filament.
+    if (blockedFileFilaments.length > 0) return false;
+
     return true;
   }, [
+    blockedFileFilaments,
     selectedPrinters.length,
     assignmentMode,
     targetModel,
@@ -2086,6 +2147,12 @@ export function PrintModal({
   // computes one per plate when it picks the printer.
   const showPerPlateFilamentMapping =
     !isSeparateJobs && !!effectivePrinterId && isMultiPlateSelection && selectedPrinters.length === 1;
+  // The two FilamentMapping render sites below, decided once: whether a panel
+  // is on screen is also whether a blocked filament already has its banner
+  // there (#3522).
+  const singleMappingPanelShown = !!showFilamentMapping && !archiveDataMissing && selectedPrinters.length === 1;
+  const perPlateMappingPanelsShown = showPerPlateFilamentMapping && !archiveDataMissing;
+  const mappingPanelShown = singleMappingPanelShown || perPlateMappingPanelsShown;
 
   // Model mode has no printer and so no trays to map onto; what it offers instead
   // is the filament each slot must be printed in, which the scheduler matches
@@ -2415,10 +2482,11 @@ export function PrintModal({
             )}
 
             {/* Filament mapping - only show when single printer selected */}
-            {showFilamentMapping && !archiveDataMissing && selectedPrinters.length === 1 && (
+            {singleMappingPanelShown && (
               <FilamentMapping
                 printerId={effectivePrinterId!}
                 filamentReqs={mappingFilamentReqs}
+                blockedFilaments={blockedFilamentsSinglePlate}
                 manualMappings={manualMappings}
                 onManualMappingChange={(next) => {
                   // This panel only renders for a single selected printer, so
@@ -2444,7 +2512,7 @@ export function PrintModal({
 
             {/* Filament mapping, one panel per selected plate — each plate is its
                 own print with its own slots, so it gets its own AMS mapping. */}
-            {showPerPlateFilamentMapping && !archiveDataMissing && selectedPlateIds.map((plateId) => {
+            {perPlateMappingPanelsShown && selectedPlateIds.map((plateId) => {
               const plate = plates.find((p) => p.index === plateId);
               const plateReqs = mappingPerPlateReqs.get(plateId);
               if (!plateReqs) return null;
@@ -2454,6 +2522,7 @@ export function PrintModal({
                   printerId={effectivePrinterId!}
                   plateLabel={plate?.name || t('printModal.plateN', 'Plate {{n}}', { n: plateId })}
                   filamentReqs={plateReqs}
+                  blockedFilaments={blockedFilamentsByPlate.get(plateId) ?? []}
                   manualMappings={manualMappingsByPlate[plateId] ?? {}}
                   onManualMappingChange={(mappings) =>
                     setManualMappingsByPlate((prev) => ({ ...prev, [plateId]: mappings }))
@@ -2581,6 +2650,16 @@ export function PrintModal({
                 {t('printModal.waitingForAmsStatus', {
                   printer: printers?.find((p) => p.id === effectivePrinterId)?.name ?? '',
                 })}
+              </div>
+            )}
+
+            {/* The mapping panel names a blocked filament when it is shown. Model
+                mode and several printers have no panel, and the disabled
+                button still needs a reason (#3522). */}
+            {blockedFileFilaments.length > 0 && !mappingPanelShown && (
+              <div role="alert" className="mb-4 p-3 bg-red-100 dark:bg-red-500/20 border border-red-500/50 rounded-lg text-sm text-red-700 dark:text-red-400 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                {t('printModal.filamentBlockedFile', { filaments: blockedFileFilaments.join(', ') })}
               </div>
             )}
 

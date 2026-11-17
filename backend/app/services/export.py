@@ -11,6 +11,33 @@ from backend.app.core.printer_scope import PrinterScope
 from backend.app.models.archive import PrintArchive
 from backend.app.models.print_log import INCLUDE_OPEN_RUNS, PrintLogEntry
 
+# A cell starting with one of these is read as a formula by spreadsheet apps,
+# including the full-width forms (＝ ＋ － ＠) some normalise to ASCII.
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "＝", "＋", "－", "＠")
+
+
+def _spreadsheet_text(value: Any) -> Any:
+    """A CSV cell as typed: text that starts like a formula gets a leading quote, so it stays text.
+
+    Leading whitespace is looked past (spreadsheets trim it on import), and a
+    value starting with a tab or line break is quoted too. Anything that isn't
+    text is left alone.
+    """
+    if not isinstance(value, str) or not value:
+        return value
+    if value[0] in "\t\r\n" or value.lstrip().startswith(_FORMULA_PREFIXES):
+        return f"'{value}"
+    return value
+
+
+def _xlsx_cell(ws: Any, row: int, column: int, value: Any) -> Any:
+    """Write a worksheet cell; text that starts with "=" is stored as text, not as a formula."""
+    cell = ws.cell(row=row, column=column, value=value)
+    if isinstance(value, str) and cell.data_type == "f":
+        cell.data_type = "s"
+    return cell
+
+
 # What one print of an archive has of its own (archive redesign): in the
 # export, its run's. Everything else is the file's, the archive's.
 _PER_PRINT_FIELDS = frozenset(
@@ -368,14 +395,14 @@ class ExportService:
         output = io.StringIO()
         writer = csv.writer(output)
         writer.writerow(headers)
-        writer.writerows(rows)
+        writer.writerows([[_spreadsheet_text(value) for value in row] for row in rows])
         return output.getvalue().encode("utf-8")
 
     def _generate_csv_simple(self, rows: list[list]) -> bytes:
         """Generate CSV file content from simple rows (no separate headers)."""
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerows(rows)
+        writer.writerows([[_spreadsheet_text(value) for value in row] for row in rows])
         return output.getvalue().encode("utf-8")
 
     def _generate_xlsx(self, headers: list[str], rows: list[list], fields: list[str]) -> bytes:
@@ -406,7 +433,7 @@ class ExportService:
         # Write data
         for row_idx, row in enumerate(rows, 2):
             for col_idx, value in enumerate(row, 1):
-                ws.cell(row=row_idx, column=col_idx, value=value)
+                _xlsx_cell(ws, row_idx, col_idx, value)
 
         # Auto-adjust column widths
         for col_idx, _field in enumerate(fields, 1):
@@ -441,7 +468,7 @@ class ExportService:
 
         for row_idx, row in enumerate(rows, 1):
             for col_idx, value in enumerate(row, 1):
-                cell = ws.cell(row=row_idx, column=col_idx, value=value)
+                cell = _xlsx_cell(ws, row_idx, col_idx, value)
                 # Bold section headers
                 if col_idx == 1 and value and isinstance(value, str) and value.endswith(":"):
                     cell.font = bold_font

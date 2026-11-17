@@ -6785,6 +6785,9 @@ export default {
     onValue: 'ON值',
     mqttPowerHint: 'JSON路徑從JSON負載中提取值（例如"power_l1"）。如果主題發布原始數值，請留空。\n乘數：mW→W使用0.001，kW→W使用1000。',
     mqttEnergyHint: 'JSON路徑從JSON負載中提取值。原始值請留空。\n乘數：Wh→kWh使用0.001，MWh→kWh使用1000。',
+    mqttEnergyTotalPathHint: "例如 ENERGY.Total",
+    mqttEnergyTotalHint:
+      "來自同一主題、永不重置的累計計數器（Tasmota：ENERGY.Total）。每次列印的能耗需要它：每日計數器在午夜歸零，因此跨越午夜的列印會遺失能耗。留空則像以前一樣，將上方的能耗值同時用於兩者。",
     mqttStateHint: 'JSON路徑從JSON負載中提取值。原始值請留空。\nON值：表示"ON"的確切字串。留空以自動檢測（ON、true、1）。',
     // REST smart plug
     restControl: '控制',

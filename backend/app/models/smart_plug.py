@@ -39,6 +39,13 @@ class SmartPlug(Base):
     mqtt_energy_topic: Mapped[str | None] = mapped_column(String(200), nullable=True)  # Topic for energy data
     mqtt_energy_path: Mapped[str | None] = mapped_column(String(100), nullable=True)  # e.g., "energy_l1"
     mqtt_energy_multiplier: Mapped[float] = mapped_column(Float, default=1.0)  # Unit conversion for energy
+    # Lifetime counter that never resets, read from the energy topic (#3582).
+    # A Tasmota publishes ENERGY.Today and ENERGY.Total in the same SENSOR
+    # message. Per-print energy is the difference of two readings, so it needs
+    # this counter: a daily one drops back to zero at midnight and loses the
+    # print. Unset, the energy path is still used as both, as before.
+    mqtt_energy_total_path: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    mqtt_energy_total_multiplier: Mapped[float] = mapped_column(Float, nullable=False, server_default="1.0")
 
     # State monitoring
     mqtt_state_topic: Mapped[str | None] = mapped_column(String(200), nullable=True)  # Topic for state data

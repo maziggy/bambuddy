@@ -6787,6 +6787,9 @@ export default {
     onValue: 'Valeur ON',
     mqttPowerHint: 'Le chemin JSON extrait la valeur du payload JSON (ex: "power_l1"). Laisser vide si le topic publie des valeurs numériques brutes.\nUtiliser le multiplicateur 0.001 pour mW→W, 1000 pour kW→W.',
     mqttEnergyHint: 'Le chemin JSON extrait la valeur du payload JSON. Laisser vide pour les valeurs brutes.\nUtiliser le multiplicateur 0.001 pour Wh→kWh, 1000 pour MWh→kWh.',
+    mqttEnergyTotalPathHint: "ex. ENERGY.Total",
+    mqttEnergyTotalHint:
+      "Un compteur cumulé qui ne se remet jamais à zéro, sur le même topic (Tasmota : ENERGY.Total). L'énergie par impression en a besoin : un compteur journalier repart de zéro à minuit, donc une impression passant minuit perdait son énergie. Laissez vide pour utiliser la valeur d'énergie ci-dessus pour les deux, comme avant.",
     mqttStateHint: 'Le chemin JSON extrait la valeur du payload JSON. Laisser vide pour les valeurs brutes.\nValeur ON : la chaîne exacte signifiant "ON". Laisser vide pour la détection auto (ON, true, 1).',
     // REST smart plug
     restControl: 'Contrôle',

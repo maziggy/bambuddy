@@ -184,6 +184,44 @@ describe('AddSmartPlugModal wiring: create', () => {
     });
   });
 
+  it('MQTT: sends the lifetime energy path and its multiplier (#3582)', async () => {
+    const user = userEvent.setup();
+    render(<AddSmartPlugModal onClose={() => undefined} />);
+
+    await user.click(screen.getByRole('button', { name: 'MQTT' }));
+    await user.type((await screen.findAllByPlaceholderText('Same as power topic, or different'))[0], 'tele/wiring/SENSOR');
+    await user.type(screen.getByPlaceholderText('energy_l1'), 'ENERGY.Today');
+    await user.type(screen.getByLabelText('Energy JSON Path (lifetime)'), 'ENERGY.Total');
+    const multiplier = screen.getByLabelText('Lifetime Multiplier');
+    await user.clear(multiplier);
+    await user.type(multiplier, '0.001');
+    await user.type(nameInput(), 'Tasmota');
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+
+    await waitFor(() => expect(writes()).toHaveLength(1));
+    expect(writes()[0].body).toMatchObject({
+      plug_type: 'mqtt',
+      mqtt_energy_topic: 'tele/wiring/SENSOR',
+      mqtt_energy_path: 'ENERGY.Today',
+      mqtt_energy_total_path: 'ENERGY.Total',
+      mqtt_energy_total_multiplier: 0.001,
+    });
+  });
+
+  it('MQTT: no lifetime path sends null, and other types never send one', async () => {
+    const user = userEvent.setup();
+    render(<AddSmartPlugModal onClose={() => undefined} />);
+
+    await user.click(screen.getByRole('button', { name: 'MQTT' }));
+    await user.type((await screen.findAllByPlaceholderText('Same as power topic, or different'))[0], 'tele/wiring/SENSOR');
+    await user.type(screen.getByLabelText('Energy JSON Path (lifetime)'), '   ');
+    await user.type(nameInput(), 'Daily');
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+
+    await waitFor(() => expect(writes()).toHaveLength(1));
+    expect(writes()[0].body).toMatchObject({ mqtt_energy_total_path: null, mqtt_energy_total_multiplier: 1 });
+  });
+
   it('REST: sends the REST URLs and method only', async () => {
     const user = userEvent.setup();
     render(<AddSmartPlugModal onClose={() => undefined} />);

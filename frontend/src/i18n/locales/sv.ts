@@ -6881,6 +6881,9 @@ errors: {
     onValue: 'PÅ-värde',
     mqttPowerHint: 'JSON-sökväg extraherar värde från JSON-nyttolast (t.ex. "power_l1"). Lämna tomt om ämnet publicerar råa numeriska värden.\nAnvänd multiplikator 0,001 för mW→W, 1000 för kW→W.',
     mqttEnergyHint: 'JSON-sökväg extraherar värde från JSON-nyttolast. Lämna tomt för råa värden.\nAnvänd multiplikator 0,001 för Wh→kWh, 1000 för MWh→kWh.',
+    mqttEnergyTotalPathHint: "t.ex. ENERGY.Total",
+    mqttEnergyTotalHint:
+      "En totalräknare som aldrig nollställs, från samma topic (Tasmota: ENERGY.Total). Energi per utskrift behöver den: en dagsräknare går tillbaka till noll vid midnatt, så en utskrift över midnatt förlorade sin energi. Lämna tomt för att använda energivärdet ovan för båda, som tidigare.",
     mqttStateHint: 'JSON-sökväg extraherar värde från JSON-nyttolast. Lämna tomt för råa värden.\nPÅ-värde: den exakta strängen som betyder "PÅ". Lämna tomt för auto-upptäckt (PÅ, true, 1).',
     // REST kontakt
     restControl: 'Kontroll',

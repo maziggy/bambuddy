@@ -6799,6 +6799,9 @@ export default {
     onValue: 'EIN-Wert',
     mqttPowerHint: 'JSON-Pfad extrahiert Wert aus JSON-Payload (z.B. "power_l1"). Leer lassen wenn Topic rohe numerische Werte sendet.\nMultiplikator 0.001 für mW→W, 1000 für kW→W verwenden.',
     mqttEnergyHint: 'JSON-Pfad extrahiert Wert aus JSON-Payload. Leer lassen für rohe Werte.\nMultiplikator 0.001 für Wh→kWh, 1000 für MWh→kWh verwenden.',
+    mqttEnergyTotalPathHint: "z.B. ENERGY.Total",
+    mqttEnergyTotalHint:
+      "Ein Gesamtzähler, der nie zurückgesetzt wird, aus demselben Topic (Tasmota: ENERGY.Total). Die Energie pro Druck braucht ihn: Ein Tageszähler springt um Mitternacht auf null, sodass ein Druck über Mitternacht seine Energie verlor. Leer lassen, um den Energiewert oben wie bisher für beides zu verwenden.",
     mqttStateHint: 'JSON-Pfad extrahiert Wert aus JSON-Payload. Leer lassen für rohe Werte.\nEIN-Wert: der genaue String der "EIN" bedeutet. Leer lassen für Auto-Erkennung (ON, true, 1).',
     // REST smart plug
     restControl: 'Steuerung',

@@ -6126,6 +6126,18 @@ async def _run_migrations(conn):
         "ALTER TABLE spool_assignment ADD COLUMN assigned_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL",
     )
 
+    # Migration: an MQTT plug's lifetime energy counter, separate from its daily
+    # one (#3582). A print's energy is the difference of two readings, so a
+    # daily counter that resets at midnight lost any print running across it.
+    # Nullable path, no backfill: existing plugs read their one energy value as
+    # before. The multiplier is NOT NULL with the model's server default, and
+    # gets the model's float type on Postgres from the start.
+    float_type = "REAL" if is_sqlite() else "DOUBLE PRECISION"
+    await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN mqtt_energy_total_path VARCHAR(100)")
+    await _safe_execute(
+        conn, f"ALTER TABLE smart_plugs ADD COLUMN mqtt_energy_total_multiplier {float_type} NOT NULL DEFAULT '1.0'"
+    )
+
     await _backfill_archive_run_photos(conn)
     await _migrate_h3c_queue_tray_ids(conn)
 

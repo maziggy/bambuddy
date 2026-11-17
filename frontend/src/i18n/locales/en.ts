@@ -6852,6 +6852,9 @@ export default {
     onValue: 'ON Value',
     mqttPowerHint: 'JSON path extracts value from JSON payload (e.g., "power_l1"). Leave empty if topic publishes raw numeric values.\nUse multiplier 0.001 for mW→W, 1000 for kW→W.',
     mqttEnergyHint: 'JSON path extracts value from JSON payload. Leave empty for raw values.\nUse multiplier 0.001 for Wh→kWh, 1000 for MWh→kWh.',
+    mqttEnergyTotalPathHint: "e.g. ENERGY.Total",
+    mqttEnergyTotalHint:
+      "A lifetime counter that never resets, from the same topic (Tasmota: ENERGY.Total). Per-print energy needs it: a daily counter drops back to zero at midnight, so a print running past midnight lost its energy. Leave it empty to use the energy value above for both, as before.",
     mqttStateHint: 'JSON path extracts value from JSON payload. Leave empty for raw values.\nON value: the exact string that means "ON". Leave empty for auto-detect (ON, true, 1).',
     // REST smart plug
     restControl: 'Control',

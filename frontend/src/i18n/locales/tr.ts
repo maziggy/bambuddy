@@ -6761,6 +6761,9 @@ export default {
     onValue: 'ON Değeri',
     mqttPowerHint: 'JSON yolu JSON yükten değer çıkarır (örn., "power_l1"). Konu ham sayısal değerler yayınlıyorsa boş bırakın.\nmW→W için 0.001, kW→W için 1000 çarpanı kullanın.',
     mqttEnergyHint: 'JSON yolu JSON yükten değer çıkarır. Ham değerler için boş bırakın.\nWh→kWh için 0.001, MWh→kWh için 1000 çarpanı kullanın.',
+    mqttEnergyTotalPathHint: "örn. ENERGY.Total",
+    mqttEnergyTotalHint:
+      "Aynı konudan, hiç sıfırlanmayan toplam sayaç (Tasmota: ENERGY.Total). Baskı başına enerji için gereklidir: günlük sayaç gece yarısı sıfıra döner, bu yüzden gece yarısını geçen bir baskı enerjisini kaybediyordu. Daha önce olduğu gibi yukarıdaki enerji değerini her ikisi için kullanmak için boş bırakın.",
     mqttStateHint: 'JSON yolu JSON yükten değer çıkarır. Ham değerler için boş bırakın.\nON değeri: "ON" anlamına gelen tam string. Otomatik algılama için boş bırakın (ON, true, 1).',
     // REST akıllı priz
     restControl: 'Kontrol',

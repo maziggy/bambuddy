@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.tasks import spawn_background_task
 from backend.app.services.homeassistant import homeassistant_service
 from backend.app.services.mqtt_relay import mqtt_relay
-from backend.app.services.plug_energy import get_plug_energy
+from backend.app.services.plug_energy import get_plug_energy, mqtt_has_lifetime_counter
 from backend.app.services.printer_manager import printer_manager
 from backend.app.services.rest_smart_plug import rest_smart_plug_service
 from backend.app.services.tasmota import tasmota_service
@@ -329,14 +329,18 @@ class SmartPlugManager:
             price = await current_price(db, remember=True)
             captured = 0
             for plug in plugs:
-                # MQTT plugs only publish a "today" counter that resets at midnight —
-                # they can never feed cumulative snapshots, so skip them outright to
-                # avoid a noisy tasmota-service fallback attempt on an IP-less plug.
-                if plug.plug_type == "mqtt":
+                # An MQTT plug feeds the snapshots only with its lifetime counter
+                # (#3582); its one legacy energy value may be a daily counter that
+                # resets at midnight. Read through get_plug_energy, not the
+                # service lookup, which would fall back to Tasmota on an IP-less plug.
+                if plug.plug_type == "mqtt" and not mqtt_has_lifetime_counter(plug):
                     continue
                 try:
-                    service = await self.get_service_for_plug(plug, db)
-                    energy = await service.get_energy(plug)
+                    if plug.plug_type == "mqtt":
+                        energy = await get_plug_energy(plug, db)
+                    else:
+                        service = await self.get_service_for_plug(plug, db)
+                        energy = await service.get_energy(plug)
                 except Exception as e:
                     logger.debug("Snapshot: failed to read energy from plug %s: %s", plug.id, e)
                     continue

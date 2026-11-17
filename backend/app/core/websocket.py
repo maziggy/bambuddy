@@ -313,6 +313,21 @@ class ConnectionManager:
             }
         )
 
+    async def send_run_completed(self, printer_id: int, archive_id: int, run_id: int, user_ids: set[int] | None):
+        """Name the run a print's end just wrote, which ``print_complete`` predates (#3578).
+
+        ``user_ids`` are the run's readers; None is everyone who can see the printer.
+        """
+        message = {
+            "type": "run_completed",
+            "printer_id": printer_id,
+            "data": {"archive_id": archive_id, "run_id": run_id},
+        }
+        if user_ids is None:
+            await self.broadcast(message)
+        else:
+            await self.broadcast_to_users(user_ids, message)
+
     async def send_print_confirm_request(self, printer_id: int, data: dict, user_ids: set[int] | None = None):
         """Ask connected clients for a post-print outcome verdict (#1898).
 

@@ -142,3 +142,18 @@ async def test_send_queue_item_failed_carries_reason_key():
         "printer_id": 2,
         "reason": "upload_failed",
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("user_ids", [None, {7}])
+async def test_run_completed_reaches_only_the_runs_readers(user_ids):
+    """#3578: the frame names an archive, so with readers given it goes to them only."""
+    mgr = ConnectionManager()
+    reader, bystander = _mock_conn(7), _mock_conn(8)
+    mgr.active_connections = [reader, bystander]
+
+    await mgr.send_run_completed(3, 11, 42, user_ids)
+
+    sent = json.loads(reader.send_text.await_args.args[0])
+    assert sent == {"type": "run_completed", "printer_id": 3, "data": {"archive_id": 11, "run_id": 42}}
+    assert bystander.send_text.await_count == (1 if user_ids is None else 0)

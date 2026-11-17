@@ -10,7 +10,7 @@ printer's SD card) is mocked; the printer manager knows no printer.
 
 import asyncio
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from sqlalchemy import select
@@ -87,13 +87,20 @@ async def queued_print(db_session, printer_factory):
     return {"printer": printer.id, "user": user.id, "center": center.id, "archive": archive.id, "item": item.id}
 
 
-async def _complete(test_engine, printer_id: int, status: str, name: str = "part", extra: dict | None = None):
+async def _complete(
+    test_engine,
+    printer_id: int,
+    status: str,
+    name: str = "part",
+    extra: dict | None = None,
+    ws_manager: MagicMock | None = None,
+):
     maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     tasks_before = set(asyncio.all_tasks())
     with (
         patch("backend.app.main.async_session", maker),
         patch("backend.app.core.database.async_session", maker),
-        patch("backend.app.main.ws_manager") as ws,
+        patch("backend.app.main.ws_manager", ws_manager or MagicMock()) as ws,
         patch("backend.app.main.mqtt_relay") as relay,
         patch("backend.app.main.notification_service") as notif,
         patch("backend.app.main.smart_plug_manager") as plug,
@@ -104,6 +111,7 @@ async def _complete(test_engine, printer_id: int, status: str, name: str = "part
     ):
         ws.send_print_complete = AsyncMock()
         ws.send_archive_updated = AsyncMock()
+        ws.send_run_completed = AsyncMock()
         ws.broadcast = AsyncMock()
         relay.on_print_complete = AsyncMock()
         notif.on_print_complete = AsyncMock()
@@ -153,6 +161,78 @@ async def test_a_completed_print(test_engine, db_session, queued_print):
         RUN,
     )
     assert abs(charge.amount) == pytest.approx(5.0)
+
+
+async def test_the_run_that_ended_is_named_to_clients(test_engine, db_session, queued_print):
+    """#3578: a client matches the run's photos by this id, not by the printer's clock."""
+    ws = MagicMock()
+    await _complete(test_engine, queued_print["printer"], "completed", ws_manager=ws)
+
+    _archive, _item, logs, _charges = await _rows(db_session, queued_print["archive"], queued_print["item"])
+    ws.send_run_completed.assert_awaited_once_with(queued_print["printer"], queued_print["archive"], logs[0].id, None)
+
+
+async def test_with_auth_on_only_the_runs_readers_are_told(test_engine, db_session, queued_print):
+    from backend.app.models.group import Group
+
+    db_session.add(Settings(key="auth_enabled", value="true"))
+    payer = await db_session.get(User, queued_print["user"])
+    payer.groups = [Group(name="readers", permissions=["archives:read_own"])]
+    await db_session.commit()
+    ws = MagicMock()
+    await _complete(test_engine, queued_print["printer"], "completed", ws_manager=ws)
+
+    assert ws.send_run_completed.await_args.args[3] == {queued_print["user"]}
+
+
+@pytest.mark.parametrize(
+    ("owner_kind", "expected"),
+    [
+        ("reads_own", {"owner", "manager"}),
+        ("cannot_read", {"manager"}),
+        ("inactive", {"manager"}),
+        (None, {"manager"}),
+    ],
+)
+async def test_a_runs_readers_are_who_the_print_log_shows_it_to(db_session, owner_kind, expected):
+    """Its owner if they may read their own, and anyone who may read everyone's."""
+    from backend.app.models.group import Group
+
+    db_session.add(Settings(key="auth_enabled", value="true"))
+    staff = Group(name="staff", permissions=["archives:read_all"])
+    others = Group(name="others", permissions=["archives:read_own"])
+    blind = Group(name="blind", permissions=["queue:create"])
+    owner = User(
+        username="owner",
+        password_hash="x",
+        role="user",
+        groups=[blind if owner_kind == "cannot_read" else others],
+        is_active=owner_kind != "inactive",
+    )
+    manager = User(username="manager", password_hash="x", role="user", groups=[staff])
+    bystander = User(username="bystander", password_hash="x", role="user", groups=[others])
+    gone = User(username="gone", password_hash="x", role="user", groups=[staff], is_active=False)
+    db_session.add_all([staff, others, blind, owner, manager, bystander, gone])
+    await db_session.commit()
+    ids = {"owner": owner.id, "manager": manager.id}
+
+    readers = await main_module._run_readers(db_session, owner.id if owner_kind else None)
+
+    assert readers == {ids[name] for name in expected}
+
+
+async def test_with_auth_off_everyone_on_the_printer_is_told(db_session):
+    assert await main_module._run_readers(db_session, None) is None
+
+
+async def test_no_run_is_named_when_the_archive_was_deleted_while_printing(test_engine, db_session, queued_print):
+    archive = await db_session.get(PrintArchive, queued_print["archive"])
+    await db_session.delete(archive)
+    await db_session.commit()
+    ws = MagicMock()
+    await _complete(test_engine, queued_print["printer"], "completed", ws_manager=ws)
+
+    ws.send_run_completed.assert_not_awaited()
 
 
 async def test_a_completion_reconciled_at_reconnect_has_no_actual_duration(test_engine, db_session, queued_print):

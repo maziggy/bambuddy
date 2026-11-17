@@ -18,12 +18,15 @@ import copy
 import json
 from unittest.mock import MagicMock
 
+import pytest
+
 from backend.app.services.bambu_mqtt import (
     BambuMQTTClient,
     ams3h_drying_cooling_temp,
     resolve_external_spools_in_mapping,
 )
 from backend.app.services.printer_manager import ams_units_to_dicts, resolve_expected_tray
+from backend.app.services.slot_filament_weight import FilamentWeight
 from backend.app.utils.tray_ids import AmsType, TrayLayout
 
 FRAME = {
@@ -780,3 +783,96 @@ class TestDrying:
         (card,) = ams_units_to_dicts(_ingested().state.raw_data["ams"], lambda *a: None)
         assert (card["dryer_slots"], card["dryer_humidity"], card["dryer_temp"]) == ([], None, None)
         assert card["humidity"] is None
+
+
+class TestFilamentWeight:
+    """set_filament_weight: a slot's total and remaining grams, as Bambu Studio sends them.
+
+    Verified on an H3C: 965 g of 1000 g set on an untagged slot made the tray
+    report remain 96 instead of -1. Studio sends it only once the printer has
+    accepted the slot's ams_filament_setting (CtrlSetFilamentWeightAfter).
+    """
+
+    WEIGHT = FilamentWeight(total=1000, remain=965)
+
+    def _set(self, client: BambuMQTTClient, weight: FilamentWeight | None = WEIGHT, ams_id: int = 32) -> str:
+        assert client.ams_set_filament_setting(
+            ams_id=ams_id,
+            tray_id=4,
+            tray_info_idx="GFL99",
+            tray_type="PLA",
+            tray_sub_brands="",
+            tray_color="F7D959FF",
+            nozzle_temp_min=190,
+            nozzle_temp_max=230,
+            then_weight=weight,
+        )
+        return _last_payload(client)["sequence_id"]
+
+    def _answer(self, client: BambuMQTTClient, seq: str, **answer) -> None:
+        client._process_message({"print": {"command": "ams_filament_setting", "sequence_id": seq, **answer}})
+
+    def test_the_weight_follows_an_accepted_setting(self):
+        client = _wired(_ingested())
+        seq = self._set(client)
+        assert seq != "0", "the answer is matched by a sequence_id of the setting's own"
+        assert client._client.publish.call_count == 1
+
+        self._answer(client, seq, result="success")
+
+        sent = _last_payload(client)
+        assert {k: v for k, v in sent.items() if k != "sequence_id"} == {
+            "command": "set_filament_weight",
+            "ams_id": 32,
+            "slot_id": 4,
+            "total": 1000,
+            "remain": 965,
+            "src_id": 1,
+        }
+        assert sent["sequence_id"] != seq
+
+    def test_a_bambu_spools_weight_is_taken_too(self):
+        client = _wired(_ingested())
+        self._answer(client, self._set(client, FilamentWeight(1000, 1000, rfid=True)), result="success")
+        assert _last_payload(client)["command"] == "set_filament_weight"
+
+    @pytest.mark.parametrize("answer", [{"result": "fail", "reason": "no filament"}, {}])
+    def test_a_refused_or_bare_answer_drops_the_weight(self, answer):
+        client = _wired(_ingested())
+        self._answer(client, self._set(client), **answer)
+        assert client._client.publish.call_count == 1
+
+    def test_another_commands_answer_leaves_it_waiting(self):
+        client = _wired(_ingested())
+        seq = self._set(client)
+        self._answer(client, "0", result="success")
+        assert client._client.publish.call_count == 1
+        self._answer(client, seq, result="success")
+        assert _last_payload(client)["command"] == "set_filament_weight"
+
+    def test_a_late_answer_drops_the_weight(self):
+        client = _wired(_ingested())
+        client._weight_after_setting_timeout = -1.0
+        self._answer(client, self._set(client), result="success")
+        assert client._client.publish.call_count == 1
+
+    def test_without_a_weight_the_setting_is_sent_as_before(self):
+        client = _wired(_ingested())
+        assert self._set(client, weight=None) == "0"
+        assert client._weights_after_setting == {}
+
+    @pytest.mark.parametrize(
+        ("model", "ams_id", "weight"),
+        [
+            ("X1C", 0, WEIGHT),  # Studio offers no weight editing there
+            ("H3C", 255, WEIGHT),  # the external spool's addressing is not captured
+            ("H3C", 32, FilamentWeight(1000, 1001)),  # more left than the spool holds
+            ("H3C", 32, FilamentWeight(2000, 1500, rfid=True)),  # over Studio's 1000 g for a Bambu spool
+        ],
+    )
+    def test_a_weight_the_printer_does_not_take_is_not_sent(self, model, ams_id, weight):
+        client = _wired(_ingested(model=model))
+        seq = self._set(client, weight, ams_id=ams_id)
+        assert seq == "0"
+        assert not client.ams_set_filament_weight(ams_id, 4, weight)
+        assert client._client.publish.call_count == 1

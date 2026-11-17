@@ -1193,3 +1193,87 @@ class TestSpoolWithoutPresetKeepsTheSlotsFilament:
             client=mock_spoolman_client,
         )
         assert tray_info_idx == "GFA01"
+
+
+class TestAssignSendsTheSpoolsWeight:
+    """The spool's Spoolman weight goes with the slot's filament setting, so the
+    printer stops reporting remain -1 for it (set_filament_weight)."""
+
+    BAMBU_TRAY_UUID = "EB335968299543078925C71D83DA3864"
+
+    async def _assign(self, async_client, printer, client, *, spool, tray=None):
+        client.get_spool = AsyncMock(return_value=spool)
+        mqtt_mock = MagicMock()
+        state = MagicMock()
+        state.raw_data = {"ams": [{"id": "32", "tray": [{"id": "4", "tray_type": "PLA", **(tray or {})}]}]}
+        with patch("backend.app.api.routes.spoolman_inventory.printer_manager") as pm_mock:
+            pm_mock.get_client = MagicMock(return_value=mqtt_mock)
+            pm_mock.get_status = MagicMock(return_value=state)
+            pm_mock.get_model = MagicMock(return_value="H3C")
+            response = await async_client.post(
+                "/api/v1/spoolman/inventory/slot-assignments",
+                json={"spoolman_spool_id": 10, "printer_id": printer.id, "ams_id": 32, "tray_id": 4},
+            )
+        assert response.status_code == 200
+        return mqtt_mock.ams_set_filament_setting.call_args[1]["then_weight"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_an_untagged_spool_sends_its_remaining_weight(
+        self, async_client: AsyncClient, slot_settings, test_printer, mock_spoolman_client
+    ):
+        from backend.app.services.slot_filament_weight import FilamentWeight
+
+        weight = await self._assign(async_client, test_printer, mock_spoolman_client, spool=SAMPLE_SPOOL)
+        assert weight == FilamentWeight(total=1000, remain=800, rfid=False)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_the_total_is_the_spools_own_size(
+        self, async_client: AsyncClient, slot_settings, test_printer, mock_spoolman_client
+    ):
+        from backend.app.services.slot_filament_weight import FilamentWeight
+
+        quarter = {**SAMPLE_SPOOL, "initial_weight": 250.0, "remaining_weight": 120.4}
+        weight = await self._assign(async_client, test_printer, mock_spoolman_client, spool=quarter)
+        assert weight == FilamentWeight(total=250, remain=120, rfid=False)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_bambu_spool_is_capped_at_1000_g(
+        self, async_client: AsyncClient, slot_settings, test_printer, mock_spoolman_client
+    ):
+        from backend.app.services.slot_filament_weight import FilamentWeight
+
+        big = {**SAMPLE_SPOOL, "initial_weight": 3000.0, "remaining_weight": 2500.0}
+        weight = await self._assign(
+            async_client, test_printer, mock_spoolman_client, spool=big, tray={"tray_uuid": self.BAMBU_TRAY_UUID}
+        )
+        # The tag is in no spool in Spoolman yet: the assignment says which spool it is.
+        assert weight == FilamentWeight(total=3000, remain=1000, rfid=True)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_no_weight_to_a_tray_holding_another_spools_tag(
+        self, async_client: AsyncClient, slot_settings, test_printer, mock_spoolman_client
+    ):
+        """Spool 10 is assigned, but the AMS reads spool 11's tag in the slot."""
+        mock_spoolman_client.get_spools = AsyncMock(
+            return_value=[{**SAMPLE_SPOOL, "id": 11, "extra": {"tag": json.dumps(self.BAMBU_TRAY_UUID)}}]
+        )
+        weight = await self._assign(
+            async_client,
+            test_printer,
+            mock_spoolman_client,
+            spool=SAMPLE_SPOOL,
+            tray={"tray_uuid": self.BAMBU_TRAY_UUID},
+        )
+        assert weight is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_no_weight_without_one_in_spoolman(
+        self, async_client: AsyncClient, slot_settings, test_printer, mock_spoolman_client
+    ):
+        bare = {**SAMPLE_SPOOL, "remaining_weight": None}
+        assert await self._assign(async_client, test_printer, mock_spoolman_client, spool=bare) is None

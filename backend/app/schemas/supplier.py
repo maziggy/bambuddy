@@ -1,6 +1,8 @@
 """Pydantic schemas for the supplier master list (#2988)."""
 
+import re
 from datetime import datetime
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -17,6 +19,43 @@ def validate_supplier_name(value: str) -> str:
         raise ValueError("name must not be empty")
     if SUPPLIER_NAME_SEPARATOR in trimmed:
         raise ValueError("name must not contain ';' — it separates suppliers in the CSV export")
+    return trimmed
+
+
+# Long enough for a shop's product page with its tracking and variant query.
+PRODUCT_URL_MAX = 1000
+
+
+# One rule for every address field, mirrored by normalizeWebUrl in the frontend's
+# utils/productLinks.ts (keep them in step; both have tests on the same inputs).
+_HTTP_PREFIX = re.compile(r"https?://", re.IGNORECASE)
+# Another scheme, or a malformed http one ("http:example.com", "https:/x"). A colon
+# followed by a port ("example.com:8080/x") is a host, not a scheme.
+_OTHER_SCHEME = re.compile(r"[a-z][a-z0-9+.-]*:(?!\d+(?:[/?#]|$))", re.IGNORECASE)
+# A host right after "//", ended by a path, query, fragment or the end. A backslash
+# ends nothing: browsers read it as a slash, urlsplit does not.
+_HTTP_AUTHORITY = re.compile(r"https?://[^\s/?#\\]+(?:[/?#]|$)", re.IGNORECASE)
+
+
+def validate_http_url(value: object) -> object:
+    """A web address, or None for an empty one (#2540).
+
+    These addresses become links in the UI, so only http and https get
+    through: a ``javascript:`` or ``data:`` address would run in the page
+    of whoever clicks it. Trimmed first; an address without a scheme
+    ("3djake.de") gets ``https://``. Non-strings pass through to the type check.
+    """
+    if not isinstance(value, str):
+        return value
+    trimmed = value.strip()
+    if not trimmed:
+        return None
+    if not _HTTP_PREFIX.match(trimmed):
+        if _OTHER_SCHEME.match(trimmed):
+            raise ValueError("must be an http:// or https:// address")
+        trimmed = f"https://{trimmed}"
+    if not _HTTP_AUTHORITY.match(trimmed) or not urlsplit(trimmed).hostname:
+        raise ValueError("must be an http:// or https:// address")
     return trimmed
 
 
@@ -39,6 +78,11 @@ class SupplierCreate(SupplierBase):
     def _normalize_name(cls, value: object) -> object:
         return validate_supplier_name(value) if isinstance(value, str) else value
 
+    @field_validator("website", mode="before")
+    @classmethod
+    def _check_website(cls, value: object) -> object:
+        return validate_http_url(value)
+
 
 class SupplierUpdate(BaseModel):
     # Optional so a PATCH can leave the name alone. An explicit null is a 422
@@ -54,6 +98,11 @@ class SupplierUpdate(BaseModel):
         if value is None:
             raise ValueError("name must not be null")
         return validate_supplier_name(value) if isinstance(value, str) else value
+
+    @field_validator("website", mode="before")
+    @classmethod
+    def _check_website(cls, value: object) -> object:
+        return validate_http_url(value)
 
 
 class SupplierResponse(SupplierBase):
@@ -82,6 +131,28 @@ class SpoolSupplierLinkInput(BaseModel):
     # Marks where this concrete spool was actually bought; the other
     # assignments are alternative sources.
     is_purchase_source: bool = False
+    # The product's own page at this supplier (#2540), what the buy buttons
+    # open. Not the supplier's storefront (``Supplier.website``).
+    product_url: str | None = Field(default=None, max_length=PRODUCT_URL_MAX)
+
+    @field_validator("product_url", mode="before")
+    @classmethod
+    def _check_product_url(cls, value: object) -> object:
+        return validate_http_url(value)
+
+
+class SpoolPurchaseSource(BaseModel):
+    """Where a batch of new spools was bought (#2540): a shopping list item
+    received. Becomes their purchase-source assignment."""
+
+    supplier_id: int = Field(..., gt=0)
+    supplier_article_number: str | None = Field(default=None, max_length=100)
+    product_url: str | None = Field(default=None, max_length=PRODUCT_URL_MAX)
+
+    @field_validator("product_url", mode="before")
+    @classmethod
+    def _check_product_url(cls, value: object) -> object:
+        return validate_http_url(value)
 
 
 class SpoolSupplierResponse(BaseModel):
@@ -91,6 +162,7 @@ class SpoolSupplierResponse(BaseModel):
     supplier_article_number: str | None = None
     quoted_price_per_kg: float | None = None
     is_purchase_source: bool = False
+    product_url: str | None = None
 
     class Config:
         from_attributes = True

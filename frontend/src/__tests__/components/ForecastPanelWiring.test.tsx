@@ -93,6 +93,22 @@ const listItem = (over: Partial<ShoppingListItem> = {}): ShoppingListItem => ({
   status: 'purchased',
   purchased_at: null,
   added_at: '2025-01-01T00:00:00Z',
+  supplier_id: null,
+  supplier_name: null,
+  supplier_article_number: null,
+  product_url: null,
+  ...over,
+});
+
+// A supplier assignment with a product page (#2540).
+const link = (supplier_id: number, supplier_name: string, over: Record<string, unknown> = {}) => ({
+  id: supplier_id * 10,
+  supplier_id,
+  supplier_name,
+  supplier_article_number: null,
+  quoted_price_per_kg: null,
+  is_purchase_source: false,
+  product_url: `https://${supplier_name.toLowerCase()}.example/pla-red`,
   ...over,
 });
 
@@ -143,6 +159,50 @@ describe('ForecastPanel wiring', () => {
       data_origin: 'manual',
     });
     await waitFor(() => expect(mocked.removeFromShoppingList).toHaveBeenCalledWith(61));
+  });
+
+  it('a received item bought at a supplier gives the new spools that purchase source (#2540)', async () => {
+    mocked.getShoppingList.mockResolvedValue([
+      listItem({ supplier_id: 4, supplier_name: 'ShopA', supplier_article_number: 'A-1', product_url: 'https://shopa.example/p' }),
+    ]);
+    const user = userEvent.setup();
+    render(<ForecastPanel spools={spools} />);
+    await openShoppingList(user);
+
+    await user.click(screen.getByTitle(/Mark as received/));
+
+    await waitFor(() => expect(mocked.bulkCreateSpools).toHaveBeenCalledTimes(1));
+    expect(mocked.bulkCreateSpools.mock.calls[0][2]).toEqual({
+      supplier_id: 4,
+      supplier_article_number: 'A-1',
+      product_url: 'https://shopa.example/p',
+    });
+  });
+
+  it('a received item without a supplier names no purchase source', async () => {
+    const user = userEvent.setup();
+    render(<ForecastPanel spools={spools} />);
+    await openShoppingList(user);
+
+    await user.click(screen.getByTitle(/Mark as received/));
+
+    await waitFor(() => expect(mocked.bulkCreateSpools).toHaveBeenCalledTimes(1));
+    expect(mocked.bulkCreateSpools.mock.calls[0][2]).toBeNull();
+  });
+
+  it('a cart item links to its product page and names its supplier', async () => {
+    mocked.getShoppingList.mockResolvedValue([
+      listItem({ supplier_id: 4, supplier_name: 'ShopA', product_url: 'https://shopa.example/p' }),
+    ]);
+    const user = userEvent.setup();
+    render(<ForecastPanel spools={spools} />);
+    await openShoppingList(user);
+
+    expect(screen.getByText('ShopA')).toBeInTheDocument();
+    const buy = screen.getByRole('link', { name: 'Buy at ShopA' });
+    expect(buy).toHaveAttribute('href', 'https://shopa.example/p');
+    expect(buy).toHaveAttribute('target', '_blank');
+    expect(buy).toHaveAttribute('rel', 'noopener noreferrer');
   });
 
   it('marking a pending item purchased only updates its status (no spools created)', async () => {
@@ -230,7 +290,50 @@ describe('ForecastPanel wiring', () => {
       color_name: 'Red',
       quantity_spools: 4,
       note: 'for project X',
+      // The row's SKU has no supplier page, so nothing to buy it from (#2540).
+      supplier_id: null,
+      supplier_article_number: null,
+      product_url: null,
     });
+  });
+
+  it('add to shopping list offers where the SKU was bought and sends the pick (#2540)', async () => {
+    mocked.getShoppingList.mockResolvedValue([]);
+    const bought = [
+      spool(1, { suppliers: [link(4, 'ShopA', { is_purchase_source: true, supplier_article_number: 'A-1' })] }),
+      spool(2, { suppliers: [link(5, 'ShopB', { quoted_price_per_kg: 19.5 })] }),
+    ];
+    const user = userEvent.setup();
+    render(<ForecastPanel spools={bought} />);
+
+    await user.click(await screen.findByTitle('Add to shopping list'));
+    const from = await screen.findByLabelText('Buy from');
+    // Where it was bought comes first and is picked.
+    expect((from as HTMLSelectElement).value).toBe('4');
+    await user.selectOptions(from, '5');
+    await user.click(screen.getByRole('button', { name: /^Add \d+ spools?$/ }));
+
+    await waitFor(() => expect(mocked.addToShoppingList).toHaveBeenCalledTimes(1));
+    expect(mocked.addToShoppingList.mock.calls[0][0]).toMatchObject({
+      supplier_id: 5,
+      supplier_article_number: null,
+      product_url: 'https://shopb.example/pla-red',
+    });
+  });
+
+  it('a SKU row offers every supplier page of its spools, its purchase source first', async () => {
+    const bought = [
+      spool(1, { suppliers: [link(5, 'ShopB')] }),
+      spool(2, { archived_at: '2025-01-01T00:00:00Z', suppliers: [link(4, 'ShopA', { is_purchase_source: true })] }),
+    ];
+    const user = userEvent.setup();
+    render(<ForecastPanel spools={bought} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Buy' }));
+
+    const items = screen.getAllByRole('menuitem');
+    expect(items.map((a) => a.textContent)).toEqual(['ShopA', 'ShopB']);
+    expect(items[0]).toHaveAttribute('href', 'https://shopa.example/pla-red');
   });
 
   it('cancelling the add-to-list dialog sends nothing', async () => {

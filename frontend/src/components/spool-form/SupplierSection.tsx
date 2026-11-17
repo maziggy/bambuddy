@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, ChevronDown, Loader2, Plus, Store, X } from 'lucide-react';
+import { AlertTriangle, ChevronDown, Link2, Loader2, Plus, Store, X } from 'lucide-react';
 import { api, ApiError } from '../../api/client';
 import type { Supplier } from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
 import { inventorySuppliersQueryKey, invalidateInventorySuppliers } from '../../utils/inventoryQueries';
+import { productUrlValid } from '../../utils/productLinks';
 
 // One editable supplier assignment as the form holds it (#2988). Mirrors
 // SpoolSupplierLinkInput but keeps the name so chips render without lookups.
@@ -16,6 +17,8 @@ export interface SupplierLinkDraft {
   /** Quoted price for comparison — never the cost basis (spool.cost_per_kg). */
   quoted_price_per_kg: number | null;
   is_purchase_source: boolean;
+  /** The product's own page at this supplier (#2540); '' when none. */
+  product_url: string;
 }
 
 interface SupplierSectionProps {
@@ -74,6 +77,7 @@ export function SupplierSection({ links, onChange, currencySymbol }: SupplierSec
         supplier_article_number: '',
         quoted_price_per_kg: null,
         is_purchase_source: false,
+        product_url: '',
       },
     ]);
     setOpen(false);
@@ -178,6 +182,27 @@ export function SupplierSection({ links, onChange, currencySymbol }: SupplierSec
                   />
                 </div>
               </div>
+              <div className="relative mt-2">
+                <Link2 className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-bambu-gray pointer-events-none" />
+                <input
+                  type="url"
+                  inputMode="url"
+                  className={`w-full pl-7 pr-2 py-1.5 bg-bambu-dark-secondary border rounded text-white text-xs placeholder:text-bambu-gray/50 focus:outline-none ${
+                    productUrlValid(link.product_url)
+                      ? 'border-bambu-dark-tertiary focus:border-bambu-green'
+                      : 'border-red-500 focus:border-red-500'
+                  }`}
+                  placeholder={t('inventory.suppliers.productUrlPlaceholder')}
+                  title={t('inventory.suppliers.productUrlHelp')}
+                  aria-invalid={!productUrlValid(link.product_url)}
+                  value={link.product_url}
+                  maxLength={1000}
+                  onChange={(e) => updateLink(link.supplier_id, { product_url: e.target.value })}
+                />
+              </div>
+              {!productUrlValid(link.product_url) && (
+                <p className="text-xs text-red-400 mt-1">{t('inventory.suppliers.productUrlInvalid')}</p>
+              )}
             </div>
           ))}
         </div>

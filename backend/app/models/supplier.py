@@ -94,6 +94,9 @@ class SpoolSupplier(Base):
     quoted_price_per_kg: Mapped[float | None] = mapped_column(Float)
     # True on the assignment this spool was actually purchased from.
     is_purchase_source: Mapped[bool] = mapped_column(Boolean, default=False)
+    # The product's own page at this supplier (#2540): what "Buy" opens.
+    # ``Supplier.website`` is the storefront.
+    product_url: Mapped[str | None] = mapped_column(String(1000))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     supplier: Mapped[Supplier] = relationship(back_populates="spool_links")
@@ -124,6 +127,7 @@ class SpoolmanSpoolSupplier(Base):
     supplier_article_number: Mapped[str | None] = mapped_column(String(100))
     quoted_price_per_kg: Mapped[float | None] = mapped_column(Float)
     is_purchase_source: Mapped[bool] = mapped_column(Boolean, default=False)
+    product_url: Mapped[str | None] = mapped_column(String(1000))  # #2540, as on SpoolSupplier
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     supplier: Mapped[Supplier] = relationship()

@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from pydantic import BaseModel, Field, field_validator
 
 from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
-from backend.app.schemas.supplier import SpoolSupplierResponse
+from backend.app.schemas.supplier import SpoolPurchaseSource, SpoolSupplierResponse
 
 # Visual variant applied to a spool's swatch — purely cosmetic, does not
 # affect MQTT/firmware. Kept independent of `subtype` so users can override
@@ -176,6 +176,8 @@ class SpoolCreate(SpoolBase):
 class SpoolBulkCreate(BaseModel):
     spool: SpoolCreate
     quantity: int = Field(default=1, ge=1, le=100)
+    # Where they were bought, when known: a shopping list item received (#2540).
+    purchase_source: SpoolPurchaseSource | None = None
 
 
 class SpoolUpdate(IgnoresNullForRequiredColumns):

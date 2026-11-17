@@ -663,3 +663,275 @@ describe('FilamentOverride — filament rules of the user\'s group (#3522)', () 
     expect(mockOnChange).not.toHaveBeenCalled();
   });
 });
+
+describe('FilamentOverride inventory group (#3590)', () => {
+  const inv = (over: Record<string, unknown> = {}) => ({
+    type: 'PLA',
+    color: '#0000FF',
+    tray_info_idx: 'GFA05',
+    subtype: 'Matte',
+    color_name: 'Blue',
+    rgba: '0000FFFF',
+    extra_colors: null,
+    effect_type: null,
+    spool_count: 2,
+    remaining_grams: 1400,
+    ...over,
+  });
+
+  const renderInv = (
+    inventory: ReturnType<typeof inv>[],
+    extra: Partial<React.ComponentProps<typeof FilamentOverride>> = {},
+  ) => {
+    const onForce = vi.fn();
+    render(
+      <FilamentOverride
+        filamentReqs={defaultFilamentReqs}
+        availableFilaments={defaultAvailable}
+        inventoryFilaments={inventory}
+        overrides={{}}
+        onChange={mockOnChange}
+        onForceColorMatchChange={onForce}
+        {...extra}
+      />,
+    );
+    return { onForce };
+  };
+
+  it('offers the loaded and the inventory group with the stock hint', () => {
+    renderInv([inv()]);
+    const rows = openPicker();
+    const texts = rows.map((r) => r.textContent ?? '');
+    expect(rows.map((r) => r.getAttribute('data-value'))).toContain('PLA|#0000FF|GFA05');
+    expect(texts.some((t) => t.includes('Matte PLA (Blue)') && t.includes('2 spools · 1.4 kg'))).toBe(true);
+    expect(screen.getAllByRole('group').map((g) => g.getAttribute('aria-label'))).toEqual([
+      'Loaded now',
+      'In inventory, not loaded',
+    ]);
+  });
+
+  it('formats grams below a kilogram and the singular / none hints', () => {
+    renderInv([
+      inv({ color: '#111111', remaining_grams: 350, spool_count: 1, tray_info_idx: '' }),
+      inv({ color: '#222222', remaining_grams: 0, spool_count: 0, tray_info_idx: '' }),
+    ]);
+    const texts = openPicker().map((r) => r.textContent ?? '');
+    expect(texts.some((t) => t.includes('1 spool · 350 g'))).toBe(true);
+    expect(texts.some((t) => t.includes('none left in inventory'))).toBe(true);
+  });
+
+  it('leaves out inventory entries whose type and colour are already loaded', () => {
+    renderInv([inv({ color: '#FF0000', tray_info_idx: 'GFA09' }), inv()]);
+    const values = optionValues();
+    expect(values).not.toContain('PLA|#FF0000|GFA09');
+    expect(values).toContain('PLA|#0000FF|GFA05');
+  });
+
+  it('only offers entries of the slot type and shows no headers without inventory rows', () => {
+    renderInv([inv({ type: 'PETG' })]);
+    openPicker();
+    expect(screen.queryAllByRole('group')).toHaveLength(0);
+  });
+
+  it('shows the panel when nothing is loaded but the inventory has entries', () => {
+    renderInv([inv()], { availableFilaments: [] });
+    expect(screen.getByText('Filament Override')).toBeInTheDocument();
+    expect(optionValues()).toContain('PLA|#0000FF|GFA05');
+  });
+
+  it('is hidden when neither loaded nor inventory entries exist', () => {
+    renderInv([], { availableFilaments: [] });
+    expect(screen.queryByText('Filament Override')).not.toBeInTheDocument();
+  });
+
+  it('picking an inventory entry carries the variant and turns force colour on', () => {
+    const { onForce } = renderInv([inv()]);
+    fireEvent.click(openPicker().find((r) => r.getAttribute('data-value') === 'PLA|#0000FF|GFA05')!);
+    expect(mockOnChange).toHaveBeenCalledWith({
+      1: { type: 'PLA', color: '#0000FF', tray_info_idx: 'GFA05', fromInventory: true },
+    });
+    expect(onForce).toHaveBeenCalledWith(1, true, true);
+  });
+
+  it('an inventory entry without a variant sends no idx', () => {
+    renderInv([inv({ tray_info_idx: '' })]);
+    fireEvent.click(openPicker().find((r) => r.getAttribute('data-value') === 'PLA|#0000FF|')!);
+    expect(mockOnChange).toHaveBeenCalledWith({ 1: { type: 'PLA', color: '#0000FF', fromInventory: true } });
+  });
+
+  it('picking a loaded row neither sets an idx nor touches force colour', () => {
+    const { onForce } = renderInv([inv()]);
+    fireEvent.click(openPicker().find((r) => r.getAttribute('data-value') === 'PLA|#00FF00')!);
+    expect(mockOnChange).toHaveBeenCalledWith({ 1: { type: 'PLA', color: '#00FF00' } });
+    expect(onForce).not.toHaveBeenCalled();
+  });
+
+  it('shows the stored inventory override on the trigger', () => {
+    renderInv([inv()], { overrides: { 1: { type: 'PLA', color: '#0000FF', tray_info_idx: 'GFA05' } } });
+    expect(triggerText()).toContain('Matte PLA (Blue)');
+  });
+
+  it('still shows a stored override whose inventory entry is gone', () => {
+    renderInv([], {
+      availableFilaments: defaultAvailable,
+      overrides: { 1: { type: 'PLA', color: '#123456', tray_info_idx: 'GFA05' } },
+    });
+    expect(triggerText()).toContain('PLA');
+    expect(triggerText()).not.toContain('Original filament');
+  });
+
+  it('parses a legacy TYPE|COLOR loaded value as before', () => {
+    renderInv([inv()], { overrides: { 1: { type: 'PLA', color: '#00FF00' } } });
+    expect(triggerText()).toContain('PLA Basic');
+  });
+
+  it('warns when the stock is short for the job times the copies', () => {
+    renderInv([inv({ remaining_grams: 60 })], {
+      quantity: 3, // 25 g x 3 = 75 g
+      overrides: { 1: { type: 'PLA', color: '#0000FF', tray_info_idx: 'GFA05' } },
+    });
+    expect(screen.getByRole('alert').textContent).toContain('75 g');
+    expect(screen.getByRole('alert').textContent).toContain('60 g');
+  });
+
+  it('does not warn when there is enough', () => {
+    renderInv([inv({ remaining_grams: 100 })], {
+      quantity: 3,
+      overrides: { 1: { type: 'PLA', color: '#0000FF', tray_info_idx: 'GFA05' } },
+    });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('says only that none is left when the colour is not forced', () => {
+    renderInv([inv({ remaining_grams: 0, spool_count: 0 })], {
+      overrides: { 1: { type: 'PLA', color: '#0000FF', tray_info_idx: 'GFA05' } },
+    });
+    const text = screen.getByRole('alert').textContent ?? '';
+    expect(text).toMatch(/None of this filament is left/);
+    expect(text).not.toMatch(/wait/);
+  });
+
+  it('adds that the job will wait when none is left and the colour is forced', () => {
+    renderInv([inv({ remaining_grams: 0, spool_count: 0 })], {
+      forceColorMatch: { 1: true },
+      overrides: { 1: { type: 'PLA', color: '#0000FF', tray_info_idx: 'GFA05' } },
+    });
+    expect(screen.getByRole('alert').textContent).toMatch(/None of this filament is left.*will wait/);
+  });
+
+  it('shows only the spool count, and no warning, when the weight is unknown', () => {
+    renderInv([inv({ remaining_grams: 0, spool_count: 2, tray_info_idx: '' })], {
+      quantity: 5,
+      overrides: { 1: { type: 'PLA', color: '#0000FF' } },
+    });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    const texts = openPicker().map((r) => r.textContent ?? '');
+    expect(texts.some((t) => t.includes('2 spools') && !t.includes(' g') && !t.includes('kg'))).toBe(true);
+  });
+
+  it('shows "1 spool" for a single spool of unknown weight', () => {
+    renderInv([inv({ remaining_grams: 0, spool_count: 1, tray_info_idx: '' })]);
+    const texts = openPicker().map((r) => r.textContent ?? '');
+    expect(texts.some((t) => t.includes('1 spool') && !t.includes('kg'))).toBe(true);
+  });
+
+  it('warns against the total demand handed in, not only this slot', () => {
+    renderInv([inv({ remaining_grams: 60 })], {
+      inventoryDemand: { 'PLA|#0000FF|GFA05': 90 },
+      overrides: { 1: { type: 'PLA', color: '#0000FF', tray_info_idx: 'GFA05' } },
+    });
+    expect(screen.getByRole('alert').textContent).toContain('90 g');
+  });
+
+  it('shows the stored override on the picker when colours carry an alpha byte', () => {
+    renderInv([inv({ color: '#0000FF' })], {
+      overrides: { 1: { type: 'PLA', color: '#0000FFFF', tray_info_idx: 'GFA05' } },
+    });
+    expect(triggerText()).toContain('Matte PLA (Blue)');
+  });
+
+  it('lands a stored 8-digit colour on the loaded row, not the placeholder', () => {
+    renderInv([], {
+      availableFilaments: [{ type: 'PLA', color: '#00FF00FF', tray_info_idx: 'GFA01', tray_sub_brands: 'PLA Basic', extruder_id: null }],
+      overrides: { 1: { type: 'pla', color: '#00ff00' } },
+    });
+    expect(triggerText()).toContain('PLA Basic');
+    expect(triggerText()).not.toContain('Original filament');
+  });
+
+  it('puts a vanished stored override in its own group, without an inventory header', () => {
+    renderInv([], {
+      overrides: { 1: { type: 'PLA', color: '#123456' } },
+    });
+    openPicker();
+    expect(screen.getAllByRole('group').map((g) => g.getAttribute('aria-label'))).toEqual([
+      'Loaded now',
+      'Saved with this job',
+    ]);
+  });
+
+  it('a stored variant never lands on a loaded row of another idx (#3590)', () => {
+    renderInv([], {
+      overrides: { 1: { type: 'PLA', color: '#00FF00', tray_info_idx: 'GFA09' } },
+    });
+    expect(triggerText()).not.toContain('PLA Basic');
+    openPicker();
+    expect(screen.getAllByRole('group').map((g) => g.getAttribute('aria-label'))).toEqual([
+      'Loaded now',
+      'Saved with this job',
+    ]);
+  });
+
+  it('a stored variant does not land on an idx-less inventory entry', () => {
+    renderInv([inv({ tray_info_idx: '' })], {
+      overrides: { 1: { type: 'PLA', color: '#0000FF', tray_info_idx: 'GFA05' } },
+    });
+    expect(triggerText()).not.toContain('Matte');
+    openPicker();
+    expect(screen.getAllByRole('group').map((g) => g.getAttribute('aria-label'))).toContain('Saved with this job');
+  });
+
+  it('a stored 8-digit colour with a variant lands on the loaded row with that idx', () => {
+    renderInv([], {
+      availableFilaments: [{ type: 'PLA', color: '#00FF00FF', tray_info_idx: 'GFA01', tray_sub_brands: 'PLA Basic', extruder_id: null }],
+      overrides: { 1: { type: 'PLA', color: '#00ff00ff', tray_info_idx: 'GFA01' } },
+    });
+    expect(triggerText()).toContain('PLA Basic');
+  });
+
+  it('releases an automatic force-colour tick on reset and on a loaded pick', () => {
+    const onRelease = vi.fn();
+    renderInv([inv()], {
+      onAutoForceColorRelease: onRelease,
+      overrides: { 1: { type: 'PLA', color: '#0000FF', tray_info_idx: 'GFA05' } },
+    });
+    fireEvent.click(screen.getByTitle('Reset to original'));
+    expect(onRelease).toHaveBeenCalledWith(1);
+    onRelease.mockClear();
+    fireEvent.click(openPicker().find((r) => r.getAttribute('data-value') === 'PLA|#00FF00')!);
+    expect(onRelease).toHaveBeenCalledWith(1);
+  });
+
+  it('does not tick again, or mark it automatic, when the box is already ticked', () => {
+    const { onForce } = renderInv([inv()], { forceColorMatch: { 1: true } });
+    fireEvent.click(openPicker().find((r) => r.getAttribute('data-value') === 'PLA|#0000FF|GFA05')!);
+    expect(onForce).not.toHaveBeenCalled();
+  });
+
+  it('formats the stock hint in the UI language', async () => {
+    const { default: i18n } = await import('../../i18n');
+    await i18n.changeLanguage('de');
+    try {
+      renderInv([inv()]);
+      expect(openPicker().some((r) => (r.textContent ?? '').includes('1,4 kg'))).toBe(true);
+    } finally {
+      await i18n.changeLanguage('en');
+    }
+  });
+
+  it('shows only the loaded list without inventory entries (Spoolman mode)', () => {
+    renderInv([]);
+    openPicker();
+    expect(screen.queryAllByRole('group')).toHaveLength(0);
+  });
+});

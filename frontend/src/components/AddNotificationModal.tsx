@@ -74,6 +74,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
   // Post-print outcome confirmation (#1898). Defaults ON — it only fires for
   // prints that opted in per-job, so the toggle exists to mute a channel.
   const [onPrintConfirmRequest, setOnPrintConfirmRequest] = useState(provider?.on_print_confirm_request ?? true);
+  const [onFilamentOutOfStock, setOnFilamentOutOfStock] = useState(provider?.on_filament_out_of_stock ?? false);
   // Telegram only (#3046): inline link buttons, a thumbs reaction, or both.
   const [telegramVerdictMode, setTelegramVerdictMode] = useState<TelegramVerdictMode>(
     provider?.telegram_verdict_mode ?? 'buttons'
@@ -285,6 +286,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
       on_stock_break_alert: onStockBreakAlert,
       on_plate_clear_required: onPlateClearRequired,
       on_print_confirm_request: onPrintConfirmRequest,
+      on_filament_out_of_stock: onFilamentOutOfStock,
       telegram_verdict_mode: providerType === 'telegram' ? telegramVerdictMode : 'buttons',
       on_bed_cooled: onBedCooled,
       on_ha_sensor_alert: onHaSensorAlert,
@@ -968,6 +970,13 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
                   <span className="text-sm text-white">{t('notifications.lowFilament')}</span>
                   <Toggle checked={onFilamentLow} onChange={setOnFilamentLow} />
                 </div>
+                <div className="flex items-center justify-between col-span-2">
+                  <div>
+                    <span className="text-sm text-white">{t('notifications.filamentOutOfStock')}</span>
+                    <span className="text-xs text-bambu-gray ml-1">{t('notifications.filamentOutOfStockDescription')}</span>
+                  </div>
+                  <Toggle checked={onFilamentOutOfStock} onChange={setOnFilamentOutOfStock} />
+                </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-white">{t('notifications.maintenance')}</span>
                   <Toggle checked={onMaintenanceDue} onChange={setOnMaintenanceDue} />
@@ -1019,6 +1028,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
               if (onBillingChargeFailed) enabledEvents.push({ key: 'on_billing_charge_failed', label: t('notifications.billingChargeFailedLabel') });
               if (onPlateClearRequired) enabledEvents.push({ key: 'on_plate_clear_required', label: t('notifications.plateClearRequired') });
               if (onPrintConfirmRequest) enabledEvents.push({ key: 'on_print_confirm_request', label: t('notifications.printConfirmRequest') });
+              if (onFilamentOutOfStock) enabledEvents.push({ key: 'on_filament_out_of_stock', label: t('notifications.filamentOutOfStock') });
               if (onBedCooled) enabledEvents.push({ key: 'on_bed_cooled', label: t('notifications.bedCooled') });
               if (onFirstLayerComplete) enabledEvents.push({ key: 'on_first_layer_complete', label: t('notifications.firstLayerCompleteLabel') });
               if (onPrintPauseUpcoming) enabledEvents.push({ key: 'on_print_pause_upcoming', label: t('notifications.pauseUpcomingLabel') });

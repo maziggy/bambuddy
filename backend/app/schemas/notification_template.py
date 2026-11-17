@@ -18,6 +18,7 @@ class EventType(StrEnum):
     PRINT_PROGRESS = "print_progress"
     PRINT_MISSING_SPOOL_ASSIGNMENT = "print_missing_spool_assignment"
     BILLING_CHARGE_FAILED = "billing_charge_failed"
+    FILAMENT_OUT_OF_STOCK = "filament_out_of_stock"
     PRINTER_OFFLINE = "printer_offline"
     PRINTER_ERROR = "printer_error"
     AI_FAILURE_DETECTION = "ai_failure_detection"
@@ -110,6 +111,7 @@ EVENT_VARIABLES: dict[str, list[str]] = {
     ],
     "plate_not_empty": ["printer", "difference_percent", "timestamp", "app_name"],
     "plate_clear_required": ["printer", "timestamp", "app_name"],
+    "filament_out_of_stock": ["job_name", "target_model", "filament", "timestamp", "app_name"],
     "filament_low": ["printer", "slot", "remaining_percent", "color", "timestamp", "app_name"],
     "maintenance_due": ["printer", "items", "timestamp", "app_name"],
     "ams_humidity_high": ["printer", "ams_label", "humidity", "threshold", "timestamp", "app_name"],
@@ -321,6 +323,13 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
     },
     "plate_clear_required": {
         "printer": "Bambu X1C",
+        "timestamp": "2024-01-15 15:48",
+        "app_name": "Bambuddy",
+    },
+    "filament_out_of_stock": {
+        "job_name": "Benchy",
+        "target_model": "X1C",
+        "filament": "PLA (Earth Brown)",
         "timestamp": "2024-01-15 15:48",
         "app_name": "Bambuddy",
     },

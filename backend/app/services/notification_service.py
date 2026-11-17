@@ -2144,6 +2144,38 @@ class NotificationService:
             variables=variables,
         )
 
+    async def on_filament_out_of_stock(
+        self,
+        job_name: str,
+        target_model: str | None,
+        filament: str,
+        db: AsyncSession,
+        printer_id: int | None = None,
+    ) -> None:
+        """A queued job waits for a forced filament with none left in the inventory (#3590)."""
+        providers = await self._get_providers_for_event(
+            db, "on_filament_out_of_stock", printer_id, fleet_wide=printer_id is None
+        )
+        if not providers:
+            return
+
+        variables = {
+            "job_name": job_name,
+            "target_model": target_model or "",
+            "filament": filament,
+        }
+        title, message = await self._build_message_from_template(db, "filament_out_of_stock", variables)
+        await self._send_to_providers(
+            providers,
+            title,
+            message,
+            db,
+            "filament_out_of_stock",
+            printer_id,
+            None,
+            variables=variables,
+        )
+
     async def on_printer_offline(self, printer_id: int, printer_name: str, db: AsyncSession):
         """Handle printer offline event."""
         providers = await self._get_providers_for_event(db, "on_printer_offline", printer_id)

@@ -416,6 +416,30 @@ export interface OverlayStatus {
 }
 
 // Printer types
+
+// Built-in inventory entries offered as filament overrides (#3590).
+/** One inventory entry (type + colour + variant). */
+export interface InventoryFilament {
+  type: string;
+  /** "#RRGGBB" */
+  color: string;
+  /** Specific Bambu variant id, '' when the spool's preset resolves to none. */
+  tray_info_idx: string;
+  subtype: string;
+  color_name: string;
+  rgba: string | null;
+  extra_colors: string | null;
+  effect_type: string | null;
+  spool_count: number;
+  remaining_grams: number;
+}
+
+export interface InventoryFilamentsResponse {
+  /** False in Spoolman mode, where there is no built-in inventory. */
+  inventory_available: boolean;
+  filaments: InventoryFilament[];
+}
+
 // Printer locations (groups) and their appearance (#2962). `id` is null for a
 // location only printers carry, with no row of its own yet.
 export interface PrinterLocation {
@@ -3378,6 +3402,7 @@ export interface NotificationProvider {
   on_plate_clear_required: boolean;
   // Post-print outcome confirmation (#1898)
   on_print_confirm_request: boolean;
+  on_filament_out_of_stock: boolean;
   telegram_verdict_mode: TelegramVerdictMode;
   // Bed cooled
   on_bed_cooled: boolean;
@@ -3449,6 +3474,7 @@ export interface NotificationProviderCreate {
   on_plate_clear_required?: boolean;
   // Post-print outcome confirmation (#1898)
   on_print_confirm_request?: boolean;
+  on_filament_out_of_stock?: boolean;
   telegram_verdict_mode?: TelegramVerdictMode;
   // Bed cooled
   on_bed_cooled?: boolean;
@@ -3513,6 +3539,7 @@ export interface NotificationProviderUpdate {
   on_plate_clear_required?: boolean;
   // Post-print outcome confirmation (#1898)
   on_print_confirm_request?: boolean;
+  on_filament_out_of_stock?: boolean;
   telegram_verdict_mode?: TelegramVerdictMode;
   // Bed cooled
   on_bed_cooled?: boolean;
@@ -5570,6 +5597,8 @@ export const api = {
     if (location) params.set('location', location);
     return request<Array<{ type: string; color: string; tray_info_idx: string; tray_sub_brands: string; extruder_id: number | null }>>(`/printers/available-filaments?${params}`);
   },
+  // Built-in inventory grouped by type + colour (+ variant) for the override picker (#3590).
+  getInventoryFilaments: () => request<InventoryFilamentsResponse>('/printers/inventory-filaments'),
   getPrinterLocations: () => request<PrinterLocation[]>('/printer-locations/'),
   createPrinterLocation: (data: { name: string; icon?: string | null; color?: string | null }) =>
     request<PrinterLocation>('/printer-locations/', { method: 'POST', body: JSON.stringify(data) }),

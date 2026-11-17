@@ -5375,6 +5375,7 @@ export default {
     slicerFilamentName: "Назва профілю слайсера",
     slicerPreset: "Попереднє налаштування слайсера",
     searchPresets: "Шукати профілі філаменту...",
+    clearPreset: "Прибрати профіль",
     selectedPreset: "Вибране",
     noPresetsFound: "Попередніх налаштувань не знайдено",
     tempOverrides: "Перевизначення температури",

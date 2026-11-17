@@ -5379,6 +5379,7 @@ export default {
     slicerFilamentName: 'Naam slicerpreset',
     slicerPreset: 'Slicer-preset',
     searchPresets: 'Filamentpresets zoeken...',
+    clearPreset: 'Preset verwijderen',
     selectedPreset: 'Geselecteerd',
     noPresetsFound: 'Geen presets gevonden',
     tempOverrides: 'Temperatuuroverschrijvingen',

@@ -5345,6 +5345,7 @@ export default {
     slicerFilamentName: 'Nombre del preajuste del laminador',
     slicerPreset: 'Preajuste del laminador',
     searchPresets: 'Buscar preajustes de filamento...',
+    clearPreset: 'Quitar preajuste',
     selectedPreset: 'Seleccionado',
     noPresetsFound: 'No se encontraron preajustes',
     tempOverrides: 'Anulaciones de temperatura',

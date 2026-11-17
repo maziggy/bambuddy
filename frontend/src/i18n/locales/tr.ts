@@ -5332,6 +5332,7 @@ export default {
     slicerFilamentName: 'Dilimleyici Ön Ayar Adı',
     slicerPreset: 'Dilimleyici Ön Ayarı',
     searchPresets: 'Filament ön ayarlarında ara...',
+    clearPreset: 'Ön ayarı kaldır',
     selectedPreset: 'Seçildi',
     noPresetsFound: 'Ön ayar bulunamadı',
     tempOverrides: 'Sıcaklık Geçersiz Kılmaları',

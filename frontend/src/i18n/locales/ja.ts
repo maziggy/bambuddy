@@ -5343,6 +5343,7 @@ export default {
     slicerFilamentName: 'スライサープリセット名',
     slicerPreset: 'スライサープリセット',
     searchPresets: 'フィラメントプリセットを検索...',
+    clearPreset: 'プリセットを解除',
     selectedPreset: '選択済み',
     noPresetsFound: 'プリセットが見つかりません',
     tempOverrides: '温度オーバーライド',

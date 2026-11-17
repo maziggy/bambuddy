@@ -1,1 +1,0 @@
-import{C as e}from"./client-MyvT0tak.js";var t=e(`minus`,[[`path`,{d:`M5 12h14`,key:`1ays0h`}]]);export{t};

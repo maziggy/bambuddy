@@ -5131,6 +5131,7 @@ export default {
     slicerFilamentName: '슬라이서 프리셋 이름',
     slicerPreset: '슬라이서 프리셋',
     searchPresets: '필라멘트 프리셋 검색...',
+    clearPreset: '프리셋 제거',
     selectedPreset: '선택됨',
     noPresetsFound: '프리셋을 찾을 수 없음',
     tempOverrides: '온도 재정의',

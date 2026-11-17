@@ -5330,6 +5330,7 @@ export default {
     slicerFilamentName: 'Nome do Predefinido do Fatiador',
     slicerPreset: 'Predefinido do Fatiador',
     searchPresets: 'Pesquisar predefinições de filamento...',
+    clearPreset: 'Remover predefinição',
     selectedPreset: 'Selecionado',
     noPresetsFound: 'Nenhuma predefinição encontrada',
     tempOverrides: 'Substituições de Temperatura',

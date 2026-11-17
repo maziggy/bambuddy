@@ -5330,6 +5330,7 @@ export default {
     slicerFilamentName: '切片預設名稱',
     slicerPreset: '切片預設',
     searchPresets: '搜尋耗材預設...',
+    clearPreset: '移除預設',
     selectedPreset: '已選擇',
     noPresetsFound: '未找到預設',
     tempOverrides: '溫度覆蓋',

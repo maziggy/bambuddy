@@ -5121,6 +5121,7 @@ export default {
     slicerFilamentName: "Название пресета слайсера",
     slicerPreset: "Пресет слайсера",
     searchPresets: "Поиск пресетов филамента…",
+    clearPreset: "Убрать пресет",
     selectedPreset: "Выбрано",
     noPresetsFound: "Пресеты не найдены",
     tempOverrides: "Переопределение температур",

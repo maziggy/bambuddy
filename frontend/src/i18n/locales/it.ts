@@ -1457,6 +1457,12 @@ export default {
 
   // Queue page
   queue: {
+    waiting: {
+      filament: 'In attesa di filamento: {{what}}',
+      noMatch: 'Nessun materiale/colore corrispondente. In attesa di {{what}}',
+      priorityIn: 'priorità tra {{hours}} h',
+      hasPriority: 'ha la priorità',
+    },
     filamentShort: {
       rowBadge: 'Filamento insufficiente per la bobina assegnata',
       rowTooltip: 'Lo scheduler ha segnalato questo elemento. Premi Play per vedere il deficit per slot e decidere se stampare comunque.',
@@ -2561,6 +2567,13 @@ export default {
     concurrentUploadsDescription: "Quante stampanti possono ricevere file dalla coda contemporaneamente. Le stampanti ricevono i file lentamente (una stampa grande può richiedere diversi minuti) e ognuna aspetta il proprio turno: su un parco macchine ampio, aumentare questo valore evita che l'ultima stampante di un lotto debba attendere la fine di tutti i trasferimenti precedenti. Riducilo se la rete o l'host Bambuddy fatica con i trasferimenti paralleli.",
     concurrentUploadsLabel: 'Stampanti servite contemporaneamente',
     concurrentUploadsHelp: '1 invia a una stampante alla volta (il comportamento precedente). Il valore predefinito è 4.',
+    loadedFilamentFirstTitle: 'Prima il filamento caricato',
+    loadedFilamentFirst: 'Esegui prima i lavori il cui filamento è caricato',
+    loadedFilamentFirstDescription: 'Un lavoro il cui filamento non è sulla sua stampante viene saltato invece di essere trattenuto e parte da solo appena la bobina è caricata; i lavori successivi che vanno bene vengono eseguiti prima. L\'ordine della coda non viene mai modificato.',
+    maxWaitHours: 'Attesa massima (ore)',
+    maxWaitHoursHelp: 'Quando un lavoro è in coda da questo tempo (conteggiato da quando è stato messo in coda o dal suo avvio programmato), ottiene la priorità: la prossima stampante che potrebbe usare viene tenuta libera per lui finché il suo filamento non è caricato, e ricevi una notifica. Lascia vuoto per nessun limite; riceverai quindi una notifica quando un lavoro inizia ad attendere.',
+    maxWaitHoursInvalid: 'Inserisci un numero intero di ore da 1 a 8760 oppure lascia vuoto per nessun limite.',
+    maxWaitHoursPlaceholder: 'Nessun limite',
     dispatchOrderTitle: 'Ordine delle stampanti per i lavori di qualsiasi modello',
     dispatchOrderDescription: "Quando un lavoro è in coda per una qualsiasi stampante di un modello, questa impostazione decide quale tra quelle che possono prenderlo lo riceve. Una stampante occupata, offline o a corto di filamento viene saltata, qualunque sia l'ordine.",
     dispatchOrderLabel: 'Scegli la stampante',

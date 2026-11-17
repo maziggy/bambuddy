@@ -1471,6 +1471,12 @@ export default {
   queue: {
     title: 'Print Queue',
     subtitle: 'Schedule and manage your print jobs',
+    waiting: {
+      filament: 'Waiting for filament: {{what}}',
+      noMatch: 'No matching material/color. Waiting on {{what}}',
+      priorityIn: 'priority in {{hours}} h',
+      hasPriority: 'has priority',
+    },
     filamentShort: {
       rowBadge: 'Insufficient filament for the assigned spool',
       rowTooltip: 'The dispatch scheduler flagged this item. Click Play to see the per-slot deficit and decide whether to print anyway.',
@@ -2628,6 +2634,13 @@ export default {
     concurrentUploadsDescription: 'How many printers the queue may send files to at the same time. Printers receive files slowly (a large print can take several minutes), and each one waits its turn — so on a bigger fleet, raising this is what stops the last printer in a batch from waiting out every transfer before it. Lower it if your network or Bambuddy host struggles with parallel transfers.',
     concurrentUploadsLabel: 'Printers uploaded to at once',
     concurrentUploadsHelp: '1 sends to one printer at a time (the old behaviour). Default is 4.',
+    loadedFilamentFirstTitle: 'Loaded Filament First',
+    loadedFilamentFirst: 'Run jobs whose filament is loaded first',
+    loadedFilamentFirstDescription: 'A job whose filament is not on its printer is skipped instead of held and starts by itself once the spool is loaded; jobs behind it that fit run first. The queue order is never changed.',
+    maxWaitHours: 'Maximum wait (hours)',
+    maxWaitHoursHelp: 'Once a job has been in the queue this long (counted from when it was queued or its scheduled start), it gets priority: the next printer it could use is kept free for it until its filament is loaded, and you get one notification. Leave empty for no limit; you are then notified once when a job starts waiting.',
+    maxWaitHoursInvalid: 'Enter a whole number of hours from 1 to 8760, or leave it empty for no limit.',
+    maxWaitHoursPlaceholder: 'No limit',
     dispatchOrderTitle: 'Printer Order for Any-Model Jobs',
     dispatchOrderDescription: 'When a job is queued for any printer of a model, this decides which of the printers that can take it gets it. A printer that is busy, offline or short of filament is passed over, whatever the order.',
     dispatchOrderLabel: 'Pick the printer',

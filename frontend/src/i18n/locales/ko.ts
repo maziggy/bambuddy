@@ -1717,6 +1717,12 @@ export default {
       noEditItems: '대기열 항목을 편집할 권한이 없습니다',
       noCancelItems: '대기열 항목을 취소할 권한이 없습니다'
     },
+    waiting: {
+      filament: '필라멘트 대기 중: {{what}}',
+      noMatch: '일치하는 소재/색상이 없습니다. {{what}} 대기 중',
+      priorityIn: '{{hours}}시간 후 우선',
+      hasPriority: '우선권 있음',
+    },
     filamentShort: {
       rowBadge: '할당된 스풀의 필라멘트가 부족합니다',
       rowTooltip: '디스패치 스케줄러가 이 항목을 표시했습니다. 재생 버튼을 클릭하여 슬롯별 부족량을 확인하고 인쇄 여부를 결정하세요.',
@@ -2483,6 +2489,13 @@ export default {
     concurrentUploadsDescription: '대기열이 동시에 파일을 보낼 수 있는 프린터 수입니다. 프린터는 파일을 느리게 받으며(큰 출력물은 몇 분이 걸릴 수 있습니다) 각 프린터는 자기 차례를 기다립니다. 따라서 프린터가 많은 환경에서는 이 값을 높이면 배치의 마지막 프린터가 앞선 모든 전송이 끝나기를 기다리지 않아도 됩니다. 네트워크나 Bambuddy 호스트가 병렬 전송을 버거워하면 값을 낮추세요.',
     concurrentUploadsLabel: '동시에 전송할 프린터 수',
     concurrentUploadsHelp: '1이면 한 번에 한 대씩 전송합니다(기존 동작). 기본값은 4입니다.',
+    loadedFilamentFirstTitle: '장착된 필라멘트 우선',
+    loadedFilamentFirst: '필라멘트가 장착된 작업을 먼저 실행',
+    loadedFilamentFirstDescription: '필라멘트가 프린터에 장착되지 않은 작업은 보류되는 대신 건너뛰며, 스풀이 장착되면 자동으로 시작됩니다. 뒤에 있는 조건에 맞는 작업이 먼저 실행됩니다. 대기열 순서는 바뀌지 않습니다.',
+    maxWaitHours: '최대 대기 시간(시간)',
+    maxWaitHoursHelp: '작업이 대기열에 이 시간만큼 머물면(대기열에 들어간 시점 또는 예약된 시작 시점부터 계산) 우선권을 얻습니다. 사용할 수 있는 다음 프린터가 필라멘트가 장착될 때까지 해당 작업을 위해 비워지고, 알림이 한 번 전송됩니다. 비워 두면 제한이 없으며, 이 경우 작업이 대기하기 시작할 때 알림이 한 번 전송됩니다.',
+    maxWaitHoursInvalid: '1에서 8760 사이의 정수 시간을 입력하거나, 제한이 없으면 비워 두세요.',
+    maxWaitHoursPlaceholder: '제한 없음',
     dispatchOrderTitle: '모델 지정 작업의 프린터 순서',
     dispatchOrderDescription: '어느 프린터든 상관없는 모델 지정 작업이 대기열에 들어갈 때, 받을 수 있는 프린터 중 어느 것이 맡을지 이 설정이 정합니다. 사용 중이거나 오프라인이거나 필라멘트가 부족한 프린터는 순서와 관계없이 건너뜁니다.',
     dispatchOrderLabel: '프린터 선택 기준',

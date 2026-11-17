@@ -56,7 +56,12 @@ from backend.app.services.secret_fields import (
     reject_placeholder,
     same_value,
 )
-from backend.app.services.smart_plug_manager import publish_plug_state, run_linked_scripts, smart_plug_manager
+from backend.app.services.smart_plug_manager import (
+    can_turn_off,
+    publish_plug_state,
+    run_linked_scripts,
+    smart_plug_manager,
+)
 from backend.app.services.tasmota import tasmota_service
 from backend.app.utils.local_time import utcnow_naive
 
@@ -219,7 +224,7 @@ def _can_be_switched(plug: SmartPlug) -> bool:
       is exactly the kind that reports watts, so without this it would win the
       power tiebreak below and take the row off a plug that can be switched.
     """
-    return not _is_script_plug(plug) and plug.plug_type != "mqtt"
+    return can_turn_off(plug)
 
 
 def _reports_power(plug: SmartPlug) -> bool:

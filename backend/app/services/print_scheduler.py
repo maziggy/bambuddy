@@ -74,7 +74,7 @@ from backend.app.services.printer_manager import (
 )
 from backend.app.services.queue_item_printer import drop_printer_resolved
 from backend.app.services.slot_nozzle import reports_two_nozzles
-from backend.app.services.smart_plug_manager import publish_plug_state, smart_plug_manager
+from backend.app.services.smart_plug_manager import is_monitor_only, publish_plug_state, smart_plug_manager
 from backend.app.services.spool_assignment_notifications import (
     _global_tray_from_assignment,
     _slot_label_from_global_tray,
@@ -2317,7 +2317,7 @@ class PrintScheduler:
                     # If printer not connected, try to power on via smart plug
                     if not printer_connected:
                         plugs = await self._get_smart_plugs(db, item.printer_id)
-                        auto_on_plugs = [p for p in plugs if p.auto_on and p.enabled]
+                        auto_on_plugs = self._auto_on_plugs(plugs)
                         if auto_on_plugs:
                             logger.info("Printer %s offline, attempting to power on via smart plug(s)", item.printer_id)
                             # Power on using the plug that actually feeds the printer, and
@@ -3457,6 +3457,8 @@ class PrintScheduler:
             .where(SmartPlug.printer_id.is_not(None))
             .where(SmartPlug.enabled == True)  # noqa: E712
             .where(SmartPlug.auto_on == True)  # noqa: E712
+            # Same rule as _auto_on_plugs: an MQTT plug cannot power a printer on (#3583).
+            .where(SmartPlug.plug_type != "mqtt")
         )
         return {pid for (pid,) in result.all() if pid is not None}
 
@@ -3569,7 +3571,7 @@ class PrintScheduler:
                     continue
 
                 plugs = await self._get_smart_plugs(db, printer.id)
-                auto_on_plugs = [p for p in plugs if p.auto_on and p.enabled]
+                auto_on_plugs = self._auto_on_plugs(plugs)
                 if not auto_on_plugs:
                     # wakeable_ids said otherwise — the plug changed under us
                     # mid-pass. Nothing to do but move on.
@@ -7276,6 +7278,13 @@ class PrintScheduler:
         """Get all smart plugs associated with a printer."""
         result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
         return list(result.scalars().all())
+
+    @staticmethod
+    def _auto_on_plugs(plugs: list[SmartPlug]) -> list[SmartPlug]:
+        """The plugs that may power a printer on: enabled, auto on, and not a
+        monitor-only MQTT plug, which Bambuddy cannot switch (#3583). Must
+        match the query in :meth:`_wakeable_printer_ids`."""
+        return [p for p in plugs if p.auto_on and p.enabled and not is_monitor_only(p)]
 
     @staticmethod
     def _pick_power_plug(auto_on_plugs: list[SmartPlug]) -> SmartPlug:

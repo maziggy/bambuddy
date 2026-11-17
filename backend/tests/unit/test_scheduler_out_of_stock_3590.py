@@ -9,8 +9,9 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import select, text
 
+from backend.app.models.settings import Settings
 from backend.app.services.inventory_stock import StockEntry
 from backend.app.services.print_scheduler import _NO_STOCK_SUFFIX, PrintScheduler, _is_unmatched_hold_reason
 from backend.tests.unit.test_scheduler_model_filament_short_3137 import (
@@ -25,6 +26,31 @@ MISSING = ["PLA (Earth Brown)"]
 ENTRIES = "backend.app.services.print_scheduler.PrintScheduler._stock_entries"
 INVENTORY = "backend.app.services.print_scheduler.inventory_stock"
 NOTIFY = "backend.app.services.notification_service.notification_service.on_filament_out_of_stock"
+
+
+def _sched(on: bool = True) -> PrintScheduler:
+    """A scheduler with the inventory hints switched on (as a pass would set them) or off (#3590)."""
+    scheduler = PrintScheduler()
+    scheduler._inventory_hints = on
+    return scheduler
+
+
+async def _setting(ctx, on: bool) -> None:
+    """The install-wide setting a queue pass reads."""
+    async with ctx.session_maker() as db:
+        value = "true" if on else "false"
+        row = (
+            await db.execute(select(Settings).where(Settings.key == "filament_override_inventory"))
+        ).scalar_one_or_none()
+        if row is None:
+            db.add(Settings(key="filament_override_inventory", value=value))
+        else:
+            row.value = value
+        await db.commit()
+
+
+async def _set_on(ctx) -> None:
+    await _setting(ctx, True)
 
 
 def _stock(stock):
@@ -45,7 +71,7 @@ def _pairs():
 
 class TestMatcherReason:
     async def _find(self, ctx, stock, overrides=FORCED, out=None):
-        scheduler = PrintScheduler()
+        scheduler = _sched()
         with (
             patch("backend.app.services.print_scheduler.printer_manager.is_connected", MagicMock(return_value=True)),
             patch.object(scheduler, "_is_printer_idle", MagicMock(return_value=True)),
@@ -79,7 +105,7 @@ class TestMatcherReason:
 
     @pytest.mark.asyncio
     async def test_no_overrides_never_asks_the_inventory(self, queue_db):
-        scheduler = PrintScheduler()
+        scheduler = _sched()
         stock = AsyncMock(return_value=_stock((0, 0.0)))
         with (
             patch("backend.app.services.print_scheduler.printer_manager.is_connected", MagicMock(return_value=False)),
@@ -100,7 +126,7 @@ class TestMatcherReason:
 
     @pytest.mark.asyncio
     async def test_a_failing_lookup_is_unknown_and_read_once(self, queue_db):
-        scheduler = PrintScheduler()
+        scheduler = _sched()
         boom = AsyncMock(side_effect=RuntimeError("boom"))
         with patch(INVENTORY, boom):
             async with queue_db.session_maker() as db:
@@ -112,7 +138,7 @@ class TestMatcherReason:
 
     @pytest.mark.asyncio
     async def test_suffix_goes_to_the_exact_entry_despite_case_and_duplicates(self, queue_db):
-        scheduler = PrintScheduler()
+        scheduler = _sched()
         other = {**FORCED[0], "color": "#00FF00", "color_name": "Green"}
         entries = [
             StockEntry("PLA", "#8B5A2B", "", "", "", None, None, None, 0, 0.0, 1),
@@ -131,6 +157,7 @@ class TestMatcherReason:
 
 class TestQueuePass:
     async def _pass(self, ctx, scheduler, stock):
+        await _set_on(ctx)
         with (
             patch.object(scheduler, "_missing_force_color_pairs", _pairs()),
             _entries(stock),
@@ -142,7 +169,7 @@ class TestQueuePass:
     @pytest.mark.asyncio
     async def test_fires_once_on_the_transition_and_not_again(self, queue_db):
         item_id = await _add_item(queue_db, filament_overrides=json.dumps(FORCED))
-        scheduler = PrintScheduler()
+        scheduler = _sched()
 
         notify = await self._pass(queue_db, scheduler, (0, 0.0))
         item = await _get_item(queue_db, item_id)
@@ -154,13 +181,13 @@ class TestQueuePass:
 
         # Same reason next pass, and after a restart (a new scheduler): the reason is persisted.
         assert (await self._pass(queue_db, scheduler, (0, 0.0))).await_count == 0
-        assert (await self._pass(queue_db, PrintScheduler(), (0, 0.0))).await_count == 0
+        assert (await self._pass(queue_db, _sched(), (0, 0.0))).await_count == 0
 
     @pytest.mark.asyncio
     async def test_no_event_with_stock_or_unknown(self, queue_db):
         item_id = await _add_item(queue_db, filament_overrides=json.dumps(FORCED))
         for stock in ((3, 500.0), None):
-            notify = await self._pass(queue_db, PrintScheduler(), stock)
+            notify = await self._pass(queue_db, _sched(), stock)
             assert notify.await_count == 0
         item = await _get_item(queue_db, item_id)
         assert _NO_STOCK_SUFFIX not in item.waiting_reason
@@ -168,7 +195,7 @@ class TestQueuePass:
     @pytest.mark.asyncio
     async def test_fires_when_stock_runs_out_while_waiting(self, queue_db):
         item_id = await _add_item(queue_db, filament_overrides=json.dumps(FORCED))
-        scheduler = PrintScheduler()
+        scheduler = _sched()
         assert (await self._pass(queue_db, scheduler, (1, 100.0))).await_count == 0
         assert (await self._pass(queue_db, scheduler, (0, 0.0))).await_count == 1
         item = await _get_item(queue_db, item_id)
@@ -177,12 +204,13 @@ class TestQueuePass:
     @pytest.mark.asyncio
     async def test_a_notification_failure_does_not_stop_the_queue(self, queue_db):
         item_id = await _add_item(queue_db, filament_overrides=json.dumps(FORCED))
+        await _set_on(queue_db)
         with (
             patch.object(PrintScheduler, "_missing_force_color_pairs", _pairs()),
             _entries((0, 0.0)),
             patch(NOTIFY, AsyncMock(side_effect=RuntimeError("down"))),
         ):
-            await _run(queue_db, PrintScheduler(), short=set(), launched=MagicMock())
+            await _run(queue_db, _sched(), short=set(), launched=MagicMock())
         assert _NO_STOCK_SUFFIX in (await _get_item(queue_db, item_id)).waiting_reason
 
 
@@ -198,8 +226,8 @@ def _pinned_item(overrides):
     return item
 
 
-def _pinned_scheduler():
-    scheduler = PrintScheduler()
+def _pinned_scheduler(on: bool = True):
+    scheduler = _sched(on)
     scheduler._get_filament_requirements = AsyncMock(
         return_value=[{"slot_id": 1, "type": "PLA", "color": "#FFFFFF", "tray_info_idx": ""}]
     )
@@ -294,7 +322,7 @@ class TestPoweredOffPrinters:
     @pytest.mark.asyncio
     async def test_all_candidates_off_still_get_the_suffix(self, queue_db):
         out: list[str] = []
-        pid, reason = await self._find(queue_db, PrintScheduler(), out)
+        pid, reason = await self._find(queue_db, _sched(), out)
         assert pid is None
         assert _NO_STOCK_SUFFIX in reason
         assert out == ["PLA (Earth Brown)"]
@@ -302,7 +330,8 @@ class TestPoweredOffPrinters:
     @pytest.mark.asyncio
     async def test_event_fires_once_across_a_power_cycle(self, queue_db):
         item_id = await _add_item(queue_db, filament_overrides=json.dumps(FORCED))
-        scheduler = PrintScheduler()
+        await _set_on(queue_db)
+        scheduler = _sched()
         fired = 0
         for connected in (False, True, False, True, False):
             with (
@@ -320,3 +349,77 @@ class TestPoweredOffPrinters:
             fired += notify.await_count
         assert fired == 1
         assert _NO_STOCK_SUFFIX in (await _get_item(queue_db, item_id)).waiting_reason
+
+
+class TestSettingOff:
+    """With the setting off (the default) the #3590 behaviour is skipped entirely."""
+
+    @pytest.mark.asyncio
+    async def test_model_path_reason_is_plain_and_stock_is_never_read(self, queue_db):
+        scheduler = _sched(False)
+        stock, inventory = AsyncMock(return_value=_stock((0, 0.0))), AsyncMock(return_value=_stock((0, 0.0)))
+        out: list[str] = []
+        with (
+            patch("backend.app.services.print_scheduler.printer_manager.is_connected", MagicMock(return_value=True)),
+            patch.object(scheduler, "_is_printer_idle", MagicMock(return_value=True)),
+            patch.object(scheduler, "_missing_force_color_pairs", _pairs()),
+            patch(ENTRIES, stock),
+            patch(INVENTORY, inventory),
+        ):
+            async with queue_db.session_maker() as db:
+                pid, reason = await scheduler._find_idle_printer_for_model(
+                    db, "X1C", set(), filament_overrides=FORCED, out_of_stock=out
+                )
+        assert pid is None
+        assert reason == "No matching material/color. Waiting on PLA (Earth Brown)"
+        assert out == []
+        stock.assert_not_awaited()
+        inventory.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_powered_off_path_is_plain(self, queue_db):
+        scheduler = _sched(False)
+        stock = AsyncMock(return_value=_stock((0, 0.0)))
+        with (
+            patch("backend.app.services.print_scheduler.printer_manager.is_connected", MagicMock(return_value=False)),
+            patch.object(scheduler, "_tray_reading", MagicMock(return_value=TestPoweredOffPrinters.RAW)),
+            patch(ENTRIES, stock),
+        ):
+            async with queue_db.session_maker() as db:
+                _, reason = await scheduler._find_idle_printer_for_model(
+                    db, "X1C", set(), filament_overrides=FORCED, out_of_stock=[]
+                )
+        assert _NO_STOCK_SUFFIX not in reason
+        stock.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_pinned_path_is_plain_and_silent(self):
+        scheduler = _pinned_scheduler(False)
+        item = _pinned_item(FORCED)
+        stock = AsyncMock(return_value=_stock((0, 0.0)))
+        with (
+            patch(ENTRIES, stock),
+            patch(NOTIFY, AsyncMock()) as notify,
+            patch("backend.app.services.print_scheduler.notification_service.on_queue_job_waiting", AsyncMock()),
+        ):
+            assert await scheduler._block_on_unmatched_filament(AsyncMock(), item) is True
+        assert item.waiting_reason == "Needs PLA #8B5A2B"
+        stock.assert_not_awaited()
+        notify.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_queue_pass_with_the_setting_unset_or_false(self, queue_db):
+        item_id = await _add_item(queue_db, filament_overrides=json.dumps(FORCED))
+        stock = AsyncMock(return_value=_stock((0, 0.0)))
+        for value in (None, False):
+            if value is not None:
+                await _setting(queue_db, value)
+            with (
+                patch.object(PrintScheduler, "_missing_force_color_pairs", _pairs()),
+                patch(ENTRIES, stock),
+                patch(NOTIFY, AsyncMock()) as notify,
+            ):
+                await _run(queue_db, PrintScheduler(), short=set(), launched=MagicMock())
+            notify.assert_not_awaited()
+            assert _NO_STOCK_SUFFIX not in (await _get_item(queue_db, item_id)).waiting_reason
+        stock.assert_not_awaited()

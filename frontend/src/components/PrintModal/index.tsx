@@ -2,7 +2,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import { AlertCircle, AlertTriangle, Layers, Loader2, Pencil, Printer, ThumbsUp, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { CostCenterSummary, PrintQueueItemCreate, PrintQueueItemUpdate, SlotMaterial } from '../../api/client';
+import type { CostCenterSummary, PrintQueueItemCreate, PrintQueueItemUpdate, SlotMaterial, UiSettings } from '../../api/client';
 import { api } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
 import { Card, CardContent } from '../Card';
@@ -689,17 +689,48 @@ export function PrintModal({
   const effectiveAvailableFilaments = isCrossModel ? crossModelFilaments : availableFilaments;
 
   // Built-in inventory, offered next to the loaded filaments as override choices
-  // with a stock hint (#3590). Spoolman mode answers inventory_available=false
-  // and the picker then shows "Loaded now" only.
+  // with a stock hint (#3590). Only while the install-wide setting is on: off
+  // (the default) the dialog is as before, with no request and loaded rows only.
+  // Spoolman mode answers inventory_available=false and the picker then shows
+  // "Loaded now" only.
+  const spoolmanMode = !!settings?.spoolman_enabled;
+  const inventoryEnabled = !!settings?.filament_override_inventory && !spoolmanMode;
   const { data: inventoryFilamentsData } = useQuery({
     queryKey: ['inventory-filaments'],
     queryFn: () => api.getInventoryFilaments(),
-    enabled: assignmentMode === 'model',
+    enabled: assignmentMode === 'model' && inventoryEnabled,
   });
   const inventoryFilaments = useMemo(
-    () => (inventoryFilamentsData?.inventory_available ? inventoryFilamentsData.filaments : []),
-    [inventoryFilamentsData],
+    () => (inventoryEnabled && inventoryFilamentsData?.inventory_available ? inventoryFilamentsData.filaments : []),
+    [inventoryEnabled, inventoryFilamentsData],
   );
+
+  // The switch lives here at the maintainer's request (#3590); the Settings card
+  // is the other way in. Optimistic, so the list reacts at once; both settings
+  // caches (full and ui-only) follow, and a reopened dialog reads the saved value.
+  const canChangeSettings = hasPermission('settings:update');
+  const inventoryColoursMutation = useMutation({
+    mutationFn: (value: boolean) => api.updateSettings({ filament_override_inventory: value }),
+    onMutate: async (value) => {
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: ['settings'] }),
+        queryClient.cancelQueries({ queryKey: ['ui-settings'] }),
+      ]);
+      const previous = (['settings', 'ui-settings'] as const).map((key) => [key, queryClient.getQueryData<UiSettings>([key])] as const);
+      for (const [key, data] of previous) {
+        if (data) queryClient.setQueryData<UiSettings>([key], { ...data, filament_override_inventory: value });
+      }
+      return { previous };
+    },
+    onError: (_err, _value, context) => {
+      for (const [key, data] of context?.previous ?? []) queryClient.setQueryData([key], data);
+      showToast(t('errors.saveFailed', 'Failed to save changes'), 'error');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+      queryClient.invalidateQueries({ queryKey: ['ui-settings'] });
+    },
+  });
 
   // Only fetch printer status when single printer selected (for filament mapping)
   const { data: printerStatus, isLoading: printerStatusLoading } = useQuery({
@@ -2204,7 +2235,20 @@ export function PrintModal({
     assignmentMode === 'model'
     && !isSeparateJobs
     && (isCrossModel || !!targetModel)
-    && (((effectiveAvailableFilaments?.length ?? 0) > 0) || inventoryFilaments.length > 0);
+    && (((effectiveAvailableFilaments?.length ?? 0) > 0) || (inventoryEnabled && inventoryFilaments.length > 0));
+
+  // Only once the settings are known: before that the box would flash unchecked and enabled
+  // (and show up for a Spoolman install).
+  const inventoryOption = !settings || spoolmanMode
+    ? undefined
+    : {
+        checked: inventoryEnabled,
+        disabled: !canChangeSettings || inventoryColoursMutation.isPending,
+        title: canChangeSettings
+          ? undefined
+          : t('printModal.showInventoryColoursNoPermission', 'Only users who may change settings can switch this.'),
+        onChange: (value: boolean) => inventoryColoursMutation.mutate(value),
+      };
 
   // Total grams needed per inventory entry: every selected plate x its copies,
   // over all slots that picked the same entry, so two slots (or plates) drawing
@@ -2435,6 +2479,8 @@ export function PrintModal({
                 inventoryFilaments={inventoryFilaments}
                 quantity={effectiveQuantity}
                 inventoryDemand={inventoryDemand}
+                inventoryEnabled={inventoryEnabled}
+                inventoryOption={inventoryOption}
                 overrides={filamentOverrides}
                 onChange={setFilamentOverrides}
                 forceColorMatch={forceColorMatch}
@@ -2450,21 +2496,25 @@ export function PrintModal({
                 plate's filaments, or nothing at all once the plates query was warm and
                 the whole-file query therefore never ran, which is why the section
                 vanished on the second open of the dialog (#2552). */}
-            {showFilamentOverride && isMultiPlateSelection && selectedPlateIds.map((plateId, idx) => {
+            {showFilamentOverride && isMultiPlateSelection && selectedPlateIds.map((plateId) => {
               const plate = plates.find((p) => p.index === plateId);
               const plateReqs = perPlateReqs.get(plateId);
               if (!plateReqs) return null;
+              // The checkbox and hint go in the first panel that actually renders.
+              const isFirstPanel = selectedPlateIds.find((id) => perPlateReqs.has(id)) === plateId;
               return (
                 <FilamentOverride
                   key={plateId}
                   plateLabel={plate?.name || t('printModal.plateN', 'Plate {{n}}', { n: plateId })}
-                  showHint={idx === 0}
+                  showHint={isFirstPanel}
                   filamentReqs={plateReqs}
                   // `?? []` is deliberate: the list can be undefined while the panel shows from inventory alone.
                   availableFilaments={effectiveAvailableFilaments ?? []}
                   inventoryFilaments={inventoryFilaments}
                   quantity={quantityForPlate(plateId)}
                   inventoryDemand={inventoryDemand}
+                  inventoryEnabled={inventoryEnabled}
+                  inventoryOption={inventoryOption}
                   overrides={filamentOverrides}
                   onChange={setFilamentOverrides}
                   forceColorMatch={forceColorMatch}

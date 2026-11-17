@@ -659,6 +659,8 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                   <div>
                     <p className="text-sm text-white">{t('notifications.filamentOutOfStock')}</p>
                     <p className="text-xs text-bambu-gray">{t('notifications.filamentOutOfStockDescription')}</p>
+                    {/* Sent by the scheduler only while the inventory-colours setting is on (#3590). */}
+                    <p className="text-xs text-bambu-gray">{t('notifications.filamentOutOfStockNeedsSetting')}</p>
                   </div>
                   <Toggle
                     checked={provider.on_filament_out_of_stock ?? false}

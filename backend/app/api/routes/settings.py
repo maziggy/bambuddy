@@ -204,6 +204,7 @@ _BOOL_SETTING_KEYS = frozenset(
         "print_drying_enabled",
         "require_plate_clear",
         "queue_shortest_first",
+        "filament_override_inventory",
         # default_bed_levelling / default_flow_cali / default_nozzle_offset_cali
         # are tri-state strings (off/on/auto) — parsed via the raw-string else
         # branch; the TriState validator coerces legacy "true"/"false" rows.
@@ -707,6 +708,7 @@ _UI_FLAG_FIELDS: tuple[str, ...] = (
     # all to their defaults (with billing on, the print dialog hid the cost
     # centre picker and the print was then refused for lacking one).
     "queue_shortest_first",
+    "filament_override_inventory",
     "use_slicer_api",
     "open_in_slicer",
     "preferred_slicer",

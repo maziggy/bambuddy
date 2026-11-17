@@ -1652,6 +1652,9 @@ class PrintScheduler:
         # Inventory stock for this pass (#3590), read lazily by `_stock_entries`;
         # a one-tuple so "not read yet" and "unknown" (None) differ.
         self._stock_memo: tuple[list[StockEntry] | None] | None = None
+        # Install-wide opt-in (#3590): when False the whole inventory hint
+        # (stock read, suffix, out-of-stock event) is skipped. Set per pass.
+        self._inventory_hints: bool = False
         # When each "any model" job held for low filament last looked for
         # another printer (#3137), by queue item id.
         self._short_hold_checked_at: dict[int, float] = {}
@@ -1873,6 +1876,8 @@ class PrintScheduler:
         async with async_session() as db:
             # Check if shortest-job-first scheduling is enabled
             sjf_enabled = await self._get_bool_setting(db, "queue_shortest_first")
+            # Read once per pass; the inventory hints are off unless enabled (#3590).
+            self._inventory_hints = await self._get_bool_setting(db, "filament_override_inventory")
 
             # Get all pending items in the one order the queue page shows them
             # in (#3200). The first eligible item takes a printer, so this order
@@ -4118,7 +4123,7 @@ class PrintScheduler:
         when none of them has stock. Entries without an override, unknown stock
         (Spoolman, never stocked, an error) and any stock left stay as they were.
         """
-        if not entries or not entry_overrides:
+        if not self._inventory_hints or not entries or not entry_overrides:
             return entries
         folded = {text.casefold(): overrides for text, overrides in entry_overrides.items()}
         marked: list[str] = []
@@ -4163,6 +4168,10 @@ class PrintScheduler:
         Unknown is not zero: Spoolman mode, a failed read, and a filament the
         inventory never held all read as "don't know".
         """
+        # Gate lives here and in `_mark_out_of_stock` only (#3590): the scheduler
+        # is the single caller, so the notification service is not gated again.
+        if not self._inventory_hints:
+            return False
         entries = await self._stock_entries(db)
         if entries is None:
             return False

@@ -99,6 +99,7 @@ registerSettingsSearch({ labelKey: 'settings.tempFanPresetsTitle', labelFallback
 registerSettingsSearch({ labelKey: 'settings.staggeredStart', labelFallback: 'Staggered Start', tab: 'queue', keywords: 'staggered batch delay start queue group', anchor: 'card-staggered' });
 registerSettingsSearch({ labelKey: 'settings.plateClear', labelFallback: 'Plate-Clear Confirmation', tab: 'queue', keywords: 'plate clear confirm auto queue', anchor: 'card-plate' });
 registerSettingsSearch({ labelKey: 'settings.dispatchOrderTitle', labelFallback: 'Printer Order for Any-Model Jobs', tab: 'queue', keywords: 'printer order any model dispatch pick wear hours least recently used idle priority farm balance', anchor: 'card-dispatch-order' });
+registerSettingsSearch({ labelKey: 'settings.inventoryColoursTitle', labelFallback: 'Inventory Colours in the Filament Override', tab: 'queue', keywords: 'inventory colours colors filament override stock spool print dialog out of stock', anchor: 'card-inventory-colours' }); // (#3590)
 registerSettingsSearch({ labelKey: 'settings.concurrentUploadsTitle', labelFallback: 'Concurrent Uploads', tab: 'queue', keywords: 'concurrent parallel upload transfer ftp queue slow farm simultaneous', anchor: 'card-concurrent-uploads' });
 registerSettingsSearch({ labelKey: 'settings.gcodeInjection', labelFallback: 'G-code Injection', tab: 'queue', keywords: 'gcode injection start end autoprint farmloop swapmod autoclear printflow', anchor: 'card-gcode' });
 registerSettingsSearch({ labelKey: 'settings.slicerCard', labelFallback: 'Slicer', tab: 'queue', keywords: 'slicer orcaslicer bambustudio orca bambu api sidecar url docker preferred', anchor: 'card-slicer' });
@@ -1370,6 +1371,7 @@ export function SettingsPage() {
       (baseline.require_plate_clear ?? false) !== (localSettings.require_plate_clear ?? false) ||
       (baseline.queue_max_concurrent_uploads ?? 4) !== (localSettings.queue_max_concurrent_uploads ?? 4) ||
       (baseline.model_dispatch_order ?? 'fewest_hours') !== (localSettings.model_dispatch_order ?? 'fewest_hours') ||
+      (baseline.filament_override_inventory ?? false) !== (localSettings.filament_override_inventory ?? false) ||
       (baseline.preheat_enabled ?? false) !== (localSettings.preheat_enabled ?? false) ||
       (baseline.preheat_filament_targets ?? '') !== (localSettings.preheat_filament_targets ?? '') ||
       (baseline.preheat_max_wait_seconds ?? 900) !== (localSettings.preheat_max_wait_seconds ?? 900) ||
@@ -1501,6 +1503,7 @@ export function SettingsPage() {
         require_plate_clear: localSettings.require_plate_clear,
         queue_max_concurrent_uploads: localSettings.queue_max_concurrent_uploads,
         model_dispatch_order: localSettings.model_dispatch_order,
+        filament_override_inventory: localSettings.filament_override_inventory,
         preheat_enabled: localSettings.preheat_enabled,
         preheat_filament_targets: localSettings.preheat_filament_targets,
         preheat_max_wait_seconds: localSettings.preheat_max_wait_seconds,
@@ -6394,6 +6397,42 @@ export function SettingsPage() {
               </p>
             </CardContent>
           </Card>
+
+          {/* Inventory colours in the print dialog's filament override (#3590).
+              The print dialog has the same switch; this card is the other way in.
+              Not offered in Spoolman mode: the built-in inventory is not used there. */}
+          {!localSettings.spoolman_enabled && (
+          <Card id="card-inventory-colours">
+            <CardHeader>
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <Palette className="w-4 h-4 text-bambu-green" />
+                {t('settings.inventoryColoursTitle', 'Inventory Colours in the Filament Override')}
+              </h3>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex-1 mr-4">
+                  <p className="text-sm text-white">
+                    {t('settings.inventoryColours', 'Show inventory colours')}
+                  </p>
+                  <p className="text-xs text-bambu-gray mt-1">
+                    {t('settings.inventoryColoursDescription', 'Offers colours from the built-in inventory that no printer has loaded, with their stock. A job waiting for such a colour says when none is left, and the "Filament Out of Stock" notification can be sent.')}
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.filament_override_inventory ?? false}
+                    onChange={(e) => updateSetting('filament_override_inventory', e.target.checked)}
+                    aria-label={t('settings.inventoryColours', 'Show inventory colours')}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                </label>
+              </div>
+            </CardContent>
+          </Card>
+          )}
 
           {/* Concurrent queue uploads (#2555) */}
           <Card id="card-concurrent-uploads">

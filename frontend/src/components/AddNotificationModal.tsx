@@ -974,6 +974,8 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
                   <div>
                     <span className="text-sm text-white">{t('notifications.filamentOutOfStock')}</span>
                     <span className="text-xs text-bambu-gray ml-1">{t('notifications.filamentOutOfStockDescription')}</span>
+                    {/* Sent by the scheduler only while the inventory-colours setting is on (#3590). */}
+                    <p className="text-xs text-bambu-gray">{t('notifications.filamentOutOfStockNeedsSetting')}</p>
                   </div>
                   <Toggle checked={onFilamentOutOfStock} onChange={setOnFilamentOutOfStock} />
                 </div>

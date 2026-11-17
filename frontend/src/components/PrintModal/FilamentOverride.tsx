@@ -46,6 +46,13 @@ interface FilamentOverrideProps {
    *  over all plates, copies and slots that picked it. Falls back to this
    *  panel's own slot x quantity when absent (#3590). */
   inventoryDemand?: Record<string, number>;
+  /** The "Show inventory colours" setting is on. Off = the picker is exactly as before
+   *  #3590: loaded rows only, no group headers (a stored inventory override still shows
+   *  as "Saved with this job"). */
+  inventoryEnabled?: boolean;
+  /** The "Show inventory colours" checkbox. Omitted (Spoolman mode) = not shown. Drawn once,
+   *  above the first panel (`showHint`) (#3590). */
+  inventoryOption?: { checked: boolean; disabled: boolean; title?: string; onChange: (value: boolean) => void };
 
   /** Per-slot force color match flags. Defaults to false (opt-in) when not provided. */
   forceColorMatch?: Record<number, boolean>;
@@ -76,6 +83,8 @@ export function FilamentOverride({
   inventoryFilaments,
   quantity = 1,
   inventoryDemand,
+  inventoryEnabled = false,
+  inventoryOption,
   forceColorMatch,
   onForceColorMatchChange,
   onAutoForceColorRelease,
@@ -144,7 +153,7 @@ export function FilamentOverride({
       });
       // Stock is about a colour, so an inventory pick forces it by default; the box can be unticked (#3590).
       // Only when the box is not ticked already: a manual tick must survive a later reset.
-      if (inventoryEntry) {
+      if (inventoryEntry && inventoryEnabled) {
         if (!forceColorMatch?.[slotId]) onForceColorMatchChange?.(slotId, true, true);
       } else {
         onAutoForceColorRelease?.(slotId);
@@ -189,6 +198,23 @@ export function FilamentOverride({
         </span>
       </div>
       {showHint && <p className="text-xs text-bambu-gray mb-2">{t('printModal.filamentOverrideHint')}</p>}
+      {/* Asked for in #3590; the Settings card (Queue & Dispatch) is the other way to
+          switch it, so this checkbox can be removed without losing the setting. */}
+      {showHint && inventoryOption && (
+        <label
+          className={`inline-flex items-center gap-1.5 text-xs text-bambu-gray mb-2 select-none ${inventoryOption.disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+          title={inventoryOption.title}
+        >
+          <input
+            type="checkbox"
+            checked={inventoryOption.checked}
+            disabled={inventoryOption.disabled}
+            onChange={(e) => inventoryOption.onChange(e.target.checked)}
+            className="accent-bambu-green w-3 h-3"
+          />
+          {t('printModal.showInventoryColours', 'Show inventory colours')}
+        </label>
+      )}
       <div className="bg-bambu-dark rounded-lg p-3 space-y-2">
         {filaments.map((req, slotIdx) => {
           const override = overrides[req.slot_id];
@@ -213,7 +239,7 @@ export function FilamentOverride({
           // Inventory group (#3590): entries of this slot's type that are not
           // already loaded (type + colour; the variant is ignored for that).
           const loadedKeys = new Set(compatible.map((f) => `${canonicalFilamentType(f.type)}|${normalizeColorForCompare(f.color)}`));
-          const inventoryRows = (inventoryByType[canonicalFilamentType(req.type)] ?? []).filter(
+          const inventoryRows = (inventoryEnabled ? inventoryByType[canonicalFilamentType(req.type)] ?? [] : []).filter(
             (f) => !loadedKeys.has(`${canonicalFilamentType(f.type)}|${normalizeColorForCompare(f.color)}`),
           );
           const inventoryGroup = t('printModal.overrideGroupInventory', 'In inventory, not loaded');
@@ -246,7 +272,9 @@ export function FilamentOverride({
               }
             }
           }
-          const grouped = inventoryRows.length > 0 || !!syntheticRow;
+          // Group headers only while inventory colours are offered; a stored colour that is
+          // no longer in the list keeps its "Saved with this job" header either way.
+          const grouped = inventoryEnabled && (inventoryRows.length > 0 || !!syntheticRow);
           const loadedGroup = grouped ? t('printModal.overrideGroupLoaded', 'Loaded now') : undefined;
           const savedGroup = t('printModal.overrideGroupSaved', 'Saved with this job');
           const required = selectedInventory

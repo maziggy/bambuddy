@@ -4,13 +4,14 @@
  * existing one survives an edit; Spoolman mode offers "Loaded now" only.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { screen, waitFor, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { render } from '../utils';
 import { server } from '../mocks/server';
 import { PrintModal } from '../../components/PrintModal';
+import { setAuthToken } from '../../api/client';
 
 const INVENTORY = {
   inventory_available: true,
@@ -32,10 +33,28 @@ const INVENTORY = {
 
 type Patched = { filament_overrides?: Array<Record<string, unknown>> | null };
 let patched: Patched[];
+// The install-wide "Show inventory colours" setting as the mocked backend stores it (#3590).
+let settingsStore: { filament_override_inventory: boolean; spoolman_enabled?: boolean };
+let settingsWrites: Array<Record<string, unknown>>;
+let inventoryRequests: number;
 
-function mockBackend(opts: { loaded?: unknown[]; inventory?: unknown; reqs?: unknown[] } = {}) {
+function mockBackend(
+  opts: { loaded?: unknown[]; inventory?: unknown; reqs?: unknown[]; flag?: boolean; spoolman?: boolean } = {},
+) {
   patched = [];
+  settingsWrites = [];
+  inventoryRequests = 0;
+  settingsStore = { filament_override_inventory: opts.flag ?? true, spoolman_enabled: opts.spoolman ?? false };
+  const save = async ({ request }: { request: Request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    settingsWrites.push(body);
+    settingsStore = { ...settingsStore, ...body } as typeof settingsStore;
+    return HttpResponse.json(settingsStore);
+  };
   server.use(
+    http.get('/api/v1/settings/', () => HttpResponse.json(settingsStore)),
+    http.put('/api/v1/settings/', save),
+    http.patch('/api/v1/settings/', save),
     http.get('/api/v1/printers/', () =>
       HttpResponse.json([{ id: 1, name: 'X1C-1', model: 'X1C', ip_address: '10.0.0.1', is_active: true, enabled: true }]),
     ),
@@ -46,7 +65,10 @@ function mockBackend(opts: { loaded?: unknown[]; inventory?: unknown; reqs?: unk
         ],
       ),
     ),
-    http.get('/api/v1/printers/inventory-filaments', () => HttpResponse.json(opts.inventory ?? INVENTORY)),
+    http.get('/api/v1/printers/inventory-filaments', () => {
+      inventoryRequests += 1;
+      return HttpResponse.json(opts.inventory ?? INVENTORY);
+    }),
     http.get('/api/v1/archives/:id/plates', () => HttpResponse.json({ is_multi_plate: false, plates: [] })),
     http.get('/api/v1/archives/:id/filament-requirements', () =>
       HttpResponse.json({
@@ -173,12 +195,16 @@ describe('PrintModal inventory override (#3590)', () => {
 
   const pickInventory = async (index = 0) => {
     const trigger = (await screen.findAllByRole('combobox', { name: /filament override for/i }))[index];
+    // The inventory row only exists once the setting and the inventory have loaded.
     fireEvent.click(trigger);
-    fireEvent.click(
-      within(screen.getByRole('listbox'))
+    const row = await waitFor(() => {
+      const el = within(screen.getByRole('listbox'))
         .getAllByRole('option')
-        .find((o) => o.getAttribute('data-value') === 'PLA|#0000FF|GFA05')!,
-    );
+        .find((o) => o.getAttribute('data-value') === 'PLA|#0000FF|GFA05');
+      if (!el) throw new Error('inventory row missing');
+      return el;
+    });
+    fireEvent.click(row);
   };
   const forceBox = (index = 0) => screen.getAllByRole('checkbox', { name: /force color match/i })[index] as HTMLInputElement;
 
@@ -236,5 +262,118 @@ describe('PrintModal inventory override (#3590)', () => {
     await pickInventory(1);
     await waitFor(() => expect(screen.getAllByRole('alert').length).toBeGreaterThan(0));
     expect(screen.getAllByRole('alert')[0].textContent).toContain('50 g');
+  });
+});
+
+describe('PrintModal "Show inventory colours" setting (#3590)', () => {
+  afterEach(() => setAuthToken(null));
+
+  const optionValues = () =>
+    within(screen.getByRole('listbox'))
+      .getAllByRole('option')
+      .map((o) => o.getAttribute('data-value'));
+  const checkbox = () => screen.findByRole('checkbox', { name: /show inventory colours/i });
+  const openPicker = async () => {
+    fireEvent.click(await screen.findByRole('combobox', { name: /filament override for/i }));
+  };
+
+  it('off: no inventory request, loaded rows only, no headers, hints or warnings', async () => {
+    mockBackend({ flag: false });
+    renderEdit();
+    await openPicker();
+    expect(optionValues().filter(Boolean)).toEqual(['PLA|#FF0000']);
+    expect(screen.queryAllByRole('group')).toHaveLength(0);
+    expect(screen.queryByText(/spools/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(inventoryRequests).toBe(0);
+    expect(await checkbox()).not.toBeChecked();
+  });
+
+  it('on: the inventory is requested and offered in its own group', async () => {
+    mockBackend({ flag: true });
+    renderEdit();
+    await openPicker();
+    await waitFor(() => expect(optionValues()).toContain('PLA|#0000FF|GFA05'));
+    expect(screen.getAllByRole('group').map((g) => g.getAttribute('aria-label'))).toEqual([
+      'Loaded now',
+      'In inventory, not loaded',
+    ]);
+    expect(inventoryRequests).toBeGreaterThan(0);
+    expect(await checkbox()).toBeChecked();
+  });
+
+  it('toggling saves the setting and the saved value is there when the dialog is reopened', async () => {
+    mockBackend({ flag: false });
+    const user = userEvent.setup();
+    const first = renderEdit();
+    await user.click(await checkbox());
+    await waitFor(() => expect(settingsWrites).toEqual([{ filament_override_inventory: true }]));
+    // The list reacts at once.
+    await openPicker();
+    await waitFor(() => expect(optionValues()).toContain('PLA|#0000FF|GFA05'));
+    first.unmount();
+
+    renderEdit();
+    expect(await checkbox()).toBeChecked();
+    await openPicker();
+    await waitFor(() => expect(optionValues()).toContain('PLA|#0000FF|GFA05'));
+  });
+
+  it('a user without settings:update sees a disabled checkbox and sends nothing', async () => {
+    mockBackend({ flag: false });
+    setAuthToken('test-token', 'session');
+    server.use(
+      http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+      http.get('*/api/v1/auth/me', () =>
+        HttpResponse.json({
+          id: 2,
+          username: 'operator',
+          is_admin: false,
+          permissions: ['settings:read', 'queue:read', 'queue:create', 'queue:update', 'printers:read'],
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    renderEdit();
+    const box = await checkbox();
+    await waitFor(() => expect(box).toBeDisabled());
+    expect(box.closest('label')).toHaveAttribute('title', 'Only users who may change settings can switch this.');
+    await user.click(box);
+    expect(settingsWrites).toEqual([]);
+  });
+
+  it('off: a stored inventory override stays as "Saved with this job" and in the payload', async () => {
+    mockBackend({ flag: false });
+    const user = userEvent.setup();
+    renderEdit([{ slot_id: 1, type: 'PLA', color: '#0000FF', tray_info_idx: 'GFA05', force_color_match: true }]);
+    const trigger = await screen.findByRole('combobox', { name: /filament override for/i });
+    await waitFor(() => expect(trigger.textContent).not.toMatch(/original filament/i));
+    fireEvent.click(trigger);
+    const selected = within(screen.getByRole('listbox'))
+      .getAllByRole('option')
+      .find((o) => o.getAttribute('data-value') === 'PLA|#0000FF|GFA05');
+    expect(selected).toBeDefined();
+    expect(selected).toHaveAttribute('aria-selected', 'true');
+    expect(
+      within(screen.getByRole('listbox'))
+        .getAllByRole('group')
+        .map((g) => g.getAttribute('aria-label')),
+    ).toEqual(['Saved with this job']);
+    expect(inventoryRequests).toBe(0);
+    fireEvent.keyDown(screen.getByRole('listbox'), { key: 'Escape' });
+    await submit(user);
+
+    await waitFor(() => expect(patched).toHaveLength(1));
+    expect(patched[0].filament_overrides).toEqual([
+      expect.objectContaining({ slot_id: 1, color: '#0000FF', tray_info_idx: 'GFA05', force_color_match: true }),
+    ]);
+  });
+
+  it('Spoolman mode hides the checkbox and requests no inventory', async () => {
+    mockBackend({ flag: true, spoolman: true });
+    renderEdit();
+    await screen.findByRole('combobox', { name: /filament override for/i });
+    expect(screen.queryByRole('checkbox', { name: /show inventory colours/i })).not.toBeInTheDocument();
+    expect(inventoryRequests).toBe(0);
   });
 });

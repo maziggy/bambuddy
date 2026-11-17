@@ -47,6 +47,20 @@ async def test_response_shape(async_client: AsyncClient, db_session):
     }
 
 
+async def test_works_with_the_override_setting_off(async_client: AsyncClient, db_session):
+    """The endpoint does not depend on `filament_override_inventory` (#3590)."""
+    db_session.add_all(
+        [
+            Settings(key="filament_override_inventory", value="false"),
+            Spool(material="PLA", rgba="FF0000FF", label_weight=1000, weight_used=0),
+        ]
+    )
+    await db_session.commit()
+    body = (await async_client.get(URL)).json()
+    assert body["inventory_available"] is True
+    assert [f["type"] for f in body["filaments"]] == ["PLA"]
+
+
 async def test_spoolman_mode(async_client: AsyncClient, db_session):
     db_session.add_all([Settings(key="spoolman_enabled", value="true"), Spool(material="PLA", rgba="FF0000FF")])
     await db_session.commit()

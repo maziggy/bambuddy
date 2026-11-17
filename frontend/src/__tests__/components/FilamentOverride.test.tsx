@@ -689,6 +689,7 @@ describe('FilamentOverride inventory group (#3590)', () => {
         filamentReqs={defaultFilamentReqs}
         availableFilaments={defaultAvailable}
         inventoryFilaments={inventory}
+        inventoryEnabled
         overrides={{}}
         onChange={mockOnChange}
         onForceColorMatchChange={onForce}
@@ -708,6 +709,45 @@ describe('FilamentOverride inventory group (#3590)', () => {
       'Loaded now',
       'In inventory, not loaded',
     ]);
+  });
+
+  it('without the setting a stored inventory override still sits under "Saved with this job", and nothing else is grouped', () => {
+    render(
+      <FilamentOverride
+        filamentReqs={defaultFilamentReqs}
+        availableFilaments={defaultAvailable}
+        inventoryFilaments={[]}
+        overrides={{ 1: { type: 'PLA', color: '#0000FF', tray_info_idx: 'GFA05' } }}
+        onChange={mockOnChange}
+      />,
+    );
+    expect(optionValues()).toContain('PLA|#0000FF|GFA05');
+    expect(screen.getAllByRole('group').map((g) => g.getAttribute('aria-label'))).toEqual(['Saved with this job']);
+  });
+
+  it('draws the inventory checkbox only when asked to, and reports a change', () => {
+    const onChange = vi.fn();
+    const { unmount } = render(
+      <FilamentOverride
+        filamentReqs={defaultFilamentReqs}
+        availableFilaments={defaultAvailable}
+        overrides={{}}
+        onChange={mockOnChange}
+      />,
+    );
+    expect(screen.queryByRole('checkbox', { name: /show inventory colours/i })).not.toBeInTheDocument();
+    unmount();
+    render(
+      <FilamentOverride
+        filamentReqs={defaultFilamentReqs}
+        availableFilaments={defaultAvailable}
+        overrides={{}}
+        onChange={mockOnChange}
+        inventoryOption={{ checked: false, disabled: false, onChange }}
+      />,
+    );
+    fireEvent.click(screen.getByRole('checkbox', { name: /show inventory colours/i }));
+    expect(onChange).toHaveBeenCalledWith(true);
   });
 
   it('formats grams below a kilogram and the singular / none hints', () => {

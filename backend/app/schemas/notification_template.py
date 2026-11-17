@@ -47,10 +47,21 @@ EVENT_VARIABLES: dict[str, list[str]] = {
         "timestamp",
         "app_name",
     ],
-    "print_start": ["printer", "filename", "estimated_time", "eta", "timestamp", "app_name"],
+    "print_start": [
+        "printer",
+        "filename",
+        "submitted_by",
+        "submitted_by_email",
+        "estimated_time",
+        "eta",
+        "timestamp",
+        "app_name",
+    ],
     "print_complete": [
         "printer",
         "filename",
+        "submitted_by",
+        "submitted_by_email",
         "duration",
         "filament_grams",
         "filament_details",
@@ -63,6 +74,8 @@ EVENT_VARIABLES: dict[str, list[str]] = {
     "print_failed": [
         "printer",
         "filename",
+        "submitted_by",
+        "submitted_by_email",
         "duration",
         "filament_grams",
         "filament_details",
@@ -77,6 +90,8 @@ EVENT_VARIABLES: dict[str, list[str]] = {
     "print_stopped": [
         "printer",
         "filename",
+        "submitted_by",
+        "submitted_by_email",
         "duration",
         "filament_grams",
         "filament_details",
@@ -212,6 +227,8 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
     "print_start": {
         "printer": "Bambu X1C",
         "filename": "Benchy.3mf",
+        "submitted_by": "alice",
+        "submitted_by_email": "alice@example.com",
         "estimated_time": "1h 23m",
         "eta": "15:53",
         "timestamp": "2024-01-15 14:30",
@@ -220,6 +237,8 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
     "print_complete": {
         "printer": "Bambu X1C",
         "filename": "Benchy.3mf",
+        "submitted_by": "alice",
+        "submitted_by_email": "alice@example.com",
         "duration": "1h 18m",
         "filament_grams": "15.2",
         "filament_details": "AMS-A T1 PLA: 12.4g | AMS-A T3 PETG: 2.8g",
@@ -232,6 +251,8 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
     "print_failed": {
         "printer": "Bambu X1C",
         "filename": "Benchy.3mf",
+        "submitted_by": "alice",
+        "submitted_by_email": "alice@example.com",
         "duration": "0h 45m",
         "filament_grams": "7.6",
         "filament_details": "AMS-A T1 PLA: 7.6g",
@@ -246,6 +267,8 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
     "print_stopped": {
         "printer": "Bambu X1C",
         "filename": "Benchy.3mf",
+        "submitted_by": "alice",
+        "submitted_by_email": "alice@example.com",
         "duration": "0h 30m",
         "filament_grams": "4.6",
         "filament_details": "AMS-A T2 PLA: 4.6g",

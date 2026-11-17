@@ -314,6 +314,31 @@ class NotificationService:
         # Default to 24h for "24h", "system", or unset
         return eta_time.strftime("%H:%M")
 
+    async def _add_submitter(self, db: AsyncSession, variables: dict, archive_data: dict | None) -> None:
+        """Set {submitted_by} / {submitted_by_email} from ``archive_data["created_by_id"]``.
+
+        The user who sent the job, from the web UI or from a slicer signed in to a
+        virtual printer with their own access code. Left unset, so empty in the
+        message, when nobody is known, the user is gone or has no email. The email
+        lets a webhook bridge turn the user into a chat mention.
+        """
+        user_id = archive_data.get("created_by_id") if archive_data else None
+        if user_id is None:
+            return
+        from backend.app.models.user import User
+
+        try:
+            result = await db.execute(select(User.username, User.email).where(User.id == user_id))
+            row = result.one_or_none()
+        except Exception as e:
+            logger.warning("Could not look up submitter %s for notification: %s", user_id, e)
+            return
+        if row is None:
+            return
+        variables["submitted_by"] = row.username
+        if row.email:
+            variables["submitted_by_email"] = row.email
+
     def _format_duration(self, seconds: int | None) -> str:
         """Format duration in seconds to human-readable string."""
         if seconds is None:
@@ -1838,6 +1863,7 @@ class NotificationService:
             "estimated_time": time_str,
             "eta": eta_str,
         }
+        await self._add_submitter(db, variables, archive_data)
 
         # Extract image data for providers that support attachments (e.g. Pushover)
         image_data = None
@@ -1923,6 +1949,7 @@ class NotificationService:
             for key in ("archive_id", "run_id"):
                 if archive_data.get(key) is not None:
                     variables[key] = str(archive_data[key])
+            await self._add_submitter(db, variables, archive_data)
 
             # Build per-slot breakdown string with AMS info when available
             if archive_data.get("usage_results"):

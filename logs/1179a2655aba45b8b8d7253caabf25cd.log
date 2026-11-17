@@ -1,0 +1,200 @@
+2026-11-17 22:03:40,944 INFO [backend.app.api.routes.cloud] [69528c08] get_filament_info called with 4 IDs: ['Pb44e19f', 'GFL99', 'GFSNL03', 'GFU99']
+2026-11-17 22:03:41,685 INFO [uvicorn.access] [-] [IP]:53821 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-17 22:05:01,564 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-17 22:10:01,578 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-17 22:15:01,589 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-17 22:20:01,601 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-17 22:21:28,691 INFO [backend.app.api.routes.cloud] [1c78aa74] get_filament_info called with 4 IDs: ['Pb44e19f', 'GFL99', 'GFSNL03', 'GFU99']
+2026-11-17 22:21:29,343 INFO [uvicorn.access] [-] [IP]:51125 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-17 22:24:45,147 INFO [backend.app.services.discovery] [2ba2d3b7] Starting subnet scan of [IP]/24 (254 hosts)
+2026-11-17 22:24:45,156 INFO [uvicorn.access] [-] [IP]:61119 - "POST /api/v1/discovery/scan HTTP/1.1" 200
+2026-11-17 22:24:47,192 INFO [backend.app.services.discovery] [2ba2d3b7] Found potential Bambu printer at [IP]
+2026-11-17 22:24:51,209 INFO [backend.app.services.discovery] [2ba2d3b7] Subnet scan complete. Found 1 printers.
+2026-11-17 22:24:54,837 INFO [backend.app.services.discovery] [67d962f7] Starting subnet scan of [IP]/24 (254 hosts)
+2026-11-17 22:24:54,845 INFO [uvicorn.access] [-] [IP]:55834 - "POST /api/v1/discovery/scan HTTP/1.1" 200
+2026-11-17 22:24:56,888 INFO [backend.app.services.discovery] [67d962f7] Found potential Bambu printer at [IP]
+2026-11-17 22:25:00,903 INFO [backend.app.services.discovery] [67d962f7] Subnet scan complete. Found 1 printers.
+2026-11-17 22:25:01,612 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-17 22:25:05,671 INFO [uvicorn.access] [-] [IP]:51413 - "POST /api/v1/discovery/scan/stop HTTP/1.1" 200
+2026-11-17 22:25:05,672 INFO [uvicorn.access] [-] [IP]:55834 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-11-17 22:30:01,625 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-17 22:35:01,637 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-17 22:36:10,665 INFO [backend.app.api.routes.cloud] [b1c6f90c] get_filament_info called with 4 IDs: ['Pb44e19f', 'GFL99', 'GFSNL03', 'GFU99']
+2026-11-17 22:36:11,415 INFO [uvicorn.access] [-] [IP]:60247 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-17 22:36:28,386 INFO [backend.app.services.discovery] [81749597] Starting subnet scan of [IP]/24 (254 hosts)
+2026-11-17 22:36:28,394 INFO [uvicorn.access] [-] [IP]:62093 - "POST /api/v1/discovery/scan HTTP/1.1" 200
+2026-11-17 22:36:30,468 INFO [backend.app.services.discovery] [81749597] Found potential Bambu printer at [IP]
+2026-11-17 22:36:31,571 INFO [backend.app.services.discovery] [81749597] Found potential Bambu printer at [IP]
+2026-11-17 22:36:34,582 INFO [backend.app.services.discovery] [81749597] Subnet scan complete. Found 2 printers.
+2026-11-17 22:38:18,006 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-11-17 22:38:18,007 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnected shortly after request topic subscription (1/2). Retrying it on the next connection before giving up.
+2026-11-17 22:38:19,795 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Dropped 3 command(s) queued on the previous MQTT connection
+2026-11-17 22:38:19,806 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-11-17 22:38:19,806 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnected shortly after request topic subscription 2 times. Disabling request topic for this printer — ams_mapping capture from slicer-initiated prints is unavailable, and their filament will be attributed from the printer's own tray reporting instead.
+2026-11-17 22:38:21,581 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Dropped 3 command(s) queued on the previous MQTT connection
+2026-11-17 22:38:21,614 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Firmware version: 01.04.00.00
+2026-11-17 22:38:21,651 INFO [uvicorn.access] [-] [IP]:56008 - "POST /api/v1/printers/diagnostic HTTP/1.1" 200
+2026-11-17 22:39:38,400 INFO [uvicorn.access] [-] [IP]:54226 - "POST /api/v1/printers/diagnostic HTTP/1.1" 200
+2026-11-17 22:39:39,233 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Firmware version: 01.04.00.00
+2026-11-17 22:39:40,078 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Firmware version: 01.04.00.00
+2026-11-17 22:39:40,189 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS Filament Backup: ON
+2026-11-17 22:39:40,190 INFO [backend.app.main] [-] [Printer 2] Broadcasting AMS change via WebSocket
+2026-11-17 22:39:40,192 INFO [backend.app.main] [-] [Printer 2] Broadcasting AMS change via WebSocket
+2026-11-17 22:39:40,194 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/2, seq_id=3)
+2026-11-17 22:39:40,259 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=3, 16 profiles, matched=True
+2026-11-17 22:39:40,260 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 16 K-profiles for nozzle=0.4
+2026-11-17 22:39:40,260 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 16 K-profiles for nozzle=0.4 on attempt 1
+2026-11-17 22:39:40,260 INFO [backend.app.main] [-] [Printer 2] Primed K-profile table for nozzle 0.4: 16 profiles
+2026-11-17 22:39:40,281 INFO [uvicorn.access] [-] [IP]:54226 - "POST /api/v1/printers/ HTTP/1.1" 200
+2026-11-17 22:39:40,425 INFO [uvicorn.access] [-] [IP]:54690 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-11-17 22:39:40,438 INFO [uvicorn.access] [-] [IP]:54226 - "POST /api/v1/discovery/scan/stop HTTP/1.1" 200
+2026-11-17 22:39:40,448 INFO [backend.app.api.routes.cloud] [f1c6e101] get_filament_info called with 1 IDs: ['GFU99']
+2026-11-17 22:39:40,449 INFO [uvicorn.access] [-] [IP]:52455 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-17 22:39:46,222 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Probing developer mode via ams_filament_setting (seq=4)
+2026-11-17 22:39:46,235 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Developer mode probe: ENABLED (result='success')
+2026-11-17 22:39:48,154 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1 Mini, prot_c=False)
+2026-11-17 22:39:57,428 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1 Mini, prot_c=False)
+2026-11-17 22:40:01,649 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-17 22:40:25,344 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1 Mini, prot_c=False)
+2026-11-17 22:40:44,506 INFO [backend.app.services.firmware_check] [94c3439f] Downloading firmware from https://public-cdn.bblmw.com/upgrade/device/offline/N1/01.08.01.00/1aaa9dbd35/offline-ota-n1_v01.08.01.00-20260603094908.zip
+2026-11-17 22:40:44,509 INFO [uvicorn.access] [-] [IP]:61988 - "POST /api/v1/firmware/updates/2/upload?version=01.08.01.00 HTTP/1.1" 200
+2026-11-17 22:40:46,406 INFO [backend.app.services.firmware_check] [94c3439f] Firmware downloaded successfully: /app/data/firmware/offline-ota-n1_v01.08.01.00-20260603094908.zip
+2026-11-17 22:40:46,406 INFO [backend.app.services.firmware_update] [94c3439f] Uploading firmware to printer 2: /offline-ota-n1_v01.08.01.00-20260603094908.zip
+2026-11-17 22:40:46,412 INFO [backend.app.services.bambu_ftp] [-] FTP connecting to [IP] for upload (model=A1 Mini, mode=prot_p, socket_timeout=30.0s, deadline=679s)...
+2026-11-17 22:40:47,302 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1 Mini, prot_c=False)
+2026-11-17 22:40:47,303 INFO [backend.app.services.bambu_ftp] [-] FTP connected to [IP]
+2026-11-17 22:40:47,303 INFO [backend.app.services.bambu_ftp] [-] FTP uploading /app/data/firmware/offline-ota-n1_v01.08.01.00-20260603094908.zip (17376515 bytes) to /offline-ota-n1_v01.08.01.00-20260603094908.zip
+2026-11-17 22:40:47,368 INFO [backend.app.services.bambu_ftp] [-] FTP data channel ready in 0.1s (PASV + TLS handshake)
+2026-11-17 22:41:15,638 INFO [backend.app.api.routes.cloud] [ee868524] get_filament_info called with 4 IDs: ['Pb44e19f', 'GFL99', 'GFSNL03', 'GFU99']
+2026-11-17 22:41:17,260 INFO [uvicorn.access] [-] [IP]:51918 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-17 22:42:29,636 INFO [backend.app.services.bambu_ftp] [-] FTP STOR confirmed for /offline-ota-n1_v01.08.01.00-20260603094908.zip: 226
+2026-11-17 22:42:29,636 INFO [backend.app.services.bambu_ftp] [-] FTP upload complete: /offline-ota-n1_v01.08.01.00-20260603094908.zip (17376515 bytes in 102.3s, 166 KB/s)
+2026-11-17 22:42:29,636 INFO [backend.app.services.bambu_ftp] [-] FTP mode cached for [IP]: prot_p
+2026-11-17 22:42:29,650 INFO [backend.app.services.firmware_update] [94c3439f] Firmware upload complete for printer 2
+2026-11-17 22:42:31,389 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1 Mini, prot_c=False)
+2026-11-17 22:45:01,661 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-17 22:45:07,592 INFO [backend.app.api.routes.cloud] [7c7fbf1c] get_filament_info called with 1 IDs: ['GFU99']
+2026-11-17 22:45:07,597 INFO [uvicorn.access] [-] [IP]:61553 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-17 22:45:11,740 INFO [backend.app.services.bambu_mqtt] [62ca7924] [[SERIAL]] Set chamber lights off (seq=9)
+2026-11-17 22:45:11,742 INFO [uvicorn.access] [-] [IP]:62629 - "POST /api/v1/printers/1/chamber-light?on=false HTTP/1.1" 200
+2026-11-17 22:45:25,123 INFO [backend.app.services.bambu_mqtt] [22b7244d] [[SERIAL]] Unload requested, tray_now=255, tray_id=254
+2026-11-17 22:45:25,123 INFO [backend.app.services.bambu_mqtt] [22b7244d] [[SERIAL]] Publishing ams_change_filament (unload) command: {"print": {"command": "ams_change_filament", "sequence_id": "5", "ams_id": 255, "slot_id": 255, "target": 255, "curr_temp": 210, "tar_temp": 210}}
+2026-11-17 22:45:25,124 INFO [backend.app.services.bambu_mqtt] [22b7244d] [[SERIAL]] Unloading filament (tray_now was 255)
+2026-11-17 22:45:25,124 INFO [backend.app.services.bambu_mqtt] [22b7244d] [[SERIAL]] Cleared pending_tray_target (unload)
+2026-11-17 22:45:25,125 INFO [uvicorn.access] [-] [IP]:51361 - "POST /api/v1/printers/2/ams/unload?tray_id=254 HTTP/1.1" 200
+2026-11-17 22:45:28,272 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 2
+2026-11-17 22:45:28,272 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1 Mini)
+2026-11-17 22:45:28,292 ERROR [backend.app.services.camera] [-] Chamber image: connection refused by [IP]:6000
+2026-11-17 22:45:28,297 INFO [backend.app.main] [-] [HMS] Sent notification for 1 error(s) on printer 2
+2026-11-17 22:47:52,837 INFO [backend.app.api.routes.cloud] [d81954ef] get_filament_info called with 4 IDs: ['Pb44e19f', 'GFL99', 'GFSNL03', 'GFU99']
+2026-11-17 22:47:53,382 INFO [uvicorn.access] [-] [IP]:50945 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-17 22:48:22,145 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-11-17 22:48:23,175 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-11-17 22:48:29,909 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-11-17 22:48:38,203 INFO [uvicorn.access] [-] [IP]:61790 - "POST /api/v1/printers/1/files/download-job HTTP/1.1" 200
+2026-11-17 22:48:39,084 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-11-17 22:48:43,141 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-11-17 22:48:43,142 INFO [backend.app.main] [-] [#1752] Printer 2 connected→disconnected edge; scheduling offline notification in 60s
+2026-11-17 22:48:45,142 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Dropped 6 command(s) queued on the previous MQTT connection
+2026-11-17 22:48:45,143 INFO [backend.app.main] [-] [#1752] Printer 2 reconnected before debounce; cancelling pending offline notification
+2026-11-17 22:48:45,145 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/2, seq_id=8)
+2026-11-17 22:48:45,191 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=7, 0 profiles, matched=True
+2026-11-17 22:48:45,191 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-11-17 22:48:45,192 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Firmware version: 01.08.01.00
+2026-11-17 22:48:45,192 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-11-17 22:48:45,192 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=8, 0 profiles, matched=True
+2026-11-17 22:48:45,192 INFO [backend.app.main] [-] [Printer 2] Primed K-profile table for nozzle 0.4: 0 profiles
+2026-11-17 22:48:45,192 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-11-17 22:49:07,762 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-11-17 22:49:09,587 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Printer reported HMS 0500050000010007 (MQTT command verification failed): it is rejecting control commands, so prints, temperature changes and filament loads will be ignored. Enable Developer Mode on the printer and restart it.
+2026-11-17 22:49:09,598 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 2
+2026-11-17 22:49:09,598 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1 Mini)
+2026-11-17 22:49:12,904 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 186844 bytes
+2026-11-17 22:49:12,907 INFO [backend.app.main] [-] [HMS] Sent notification for 1 error(s) on printer 2
+2026-11-17 22:49:29,475 INFO [uvicorn.access] [-] [IP]:63781 - "DELETE /api/v1/printers/1/files/download-jobs/0feKEnAPtvIFAGuiQTds4JhvrGNzVryk HTTP/1.1" 200
+2026-11-17 22:50:01,674 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-17 22:52:04,423 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS 0500050000010007 cleared — re-probing developer mode
+2026-11-17 22:52:18,524 INFO [backend.app.api.routes.cloud] [32a31fe5] get_filament_info called with 1 IDs: ['GFU99']
+2026-11-17 22:52:18,525 INFO [uvicorn.access] [-] [IP]:60212 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-17 22:52:24,186 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1 Mini, prot_c=False)
+2026-11-17 22:52:38,412 INFO [uvicorn.access] [-] [IP]:60465 - "POST /api/v1/printers/2/refresh-status HTTP/1.1" 200
+2026-11-17 22:52:45,788 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Probing developer mode via ams_filament_setting (seq=9)
+2026-11-17 22:52:45,828 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Developer mode probe: ENABLED (result='success')
+2026-11-17 22:53:40,522 INFO [uvicorn.access] [-] [IP]:55688 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-17 22:53:40,532 INFO [uvicorn.access] [-] [IP]:62874 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-11-17 22:53:53,278 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1 Mini, prot_c=False)
+2026-11-17 22:55:01,685 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-17 22:55:49,372 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Keep alive timeout, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-11-17 22:55:49,372 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Keep alive timeout, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-11-17 22:55:49,373 INFO [backend.app.main] [-] [#1752] Printer 2 connected→disconnected edge; scheduling offline notification in 60s
+2026-11-17 22:55:54,617 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Dropped 6 command(s) queued on the previous MQTT connection
+2026-11-17 22:55:54,618 INFO [backend.app.main] [-] [#1752] Printer 2 reconnected before debounce; cancelling pending offline notification
+2026-11-17 22:55:54,620 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/2, seq_id=12)
+2026-11-17 22:55:54,666 INFO [backend.app.main] [-] [Printer 2] Broadcasting AMS change via WebSocket
+2026-11-17 22:55:54,738 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=11, 16 profiles, matched=True
+2026-11-17 22:55:54,738 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 16 K-profiles for nozzle=0.4
+2026-11-17 22:55:54,738 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 16 K-profiles for nozzle=0.4 on attempt 1
+2026-11-17 22:55:54,739 INFO [backend.app.main] [-] [Printer 2] Primed K-profile table for nozzle 0.4: 16 profiles
+2026-11-17 22:55:58,831 INFO [backend.app.main] [-] [Printer 2] Broadcasting AMS change via WebSocket
+2026-11-17 22:55:58,895 INFO [backend.app.api.routes.cloud] [1e8fa1d6] get_filament_info called with 2 IDs: ['GFL99', 'GFU99']
+2026-11-17 22:55:59,289 INFO [uvicorn.access] [-] [IP]:63999 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-17 23:00:01,698 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-11-17 23:00:47,468 INFO [uvicorn.access] [-] [IP]:49954 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-11-17 23:00:47,475 INFO [uvicorn.access] [-] [IP]:62921 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-17 23:00:47,652 INFO [uvicorn.access] [-] [IP]:54865 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-17 23:00:47,681 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-11-17 23:00:47,681 INFO [uvicorn.error] [-] [IP]:61928 - "WebSocket /api/v1/ws?token=[REDACTED]" [accepted]
+2026-11-17 23:00:47,681 INFO [uvicorn.error] [-] connection open
+2026-11-17 23:00:47,686 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-11-17 23:00:47,688 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 2 printers
+2026-11-17 23:00:48,012 INFO [backend.app.api.routes.cloud] [83e2c0c6] get_filament_info called with 2 IDs: ['GFL99', 'GFU99']
+2026-11-17 23:00:48,016 INFO [uvicorn.access] [-] [IP]:49954 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-17 23:00:48,048 INFO [backend.app.api.routes.cloud] [7839f7ba] get_filament_info called with 4 IDs: ['Pb44e19f', 'GFL99', 'GFSNL03', 'GFU99']
+2026-11-17 23:00:48,450 INFO [uvicorn.access] [-] [IP]:49990 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-17 23:01:23,450 INFO [uvicorn.access] [-] [IP]:50061 - "PUT /api/v1/library/files/3 HTTP/1.1" 200
+2026-11-17 23:04:10,417 INFO [uvicorn.access] [-] [IP]:52034 - "PATCH /api/v1/maintenance/items/6 HTTP/1.1" 200
+2026-11-17 23:04:11,353 INFO [uvicorn.access] [-] [IP]:52034 - "PATCH /api/v1/maintenance/items/6 HTTP/1.1" 200
+2026-11-17 23:05:01,712 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-11-17 23:05:29,242 INFO [backend.app.api.routes.support] [50d7bb36] Log level changed to DEBUG
+2026-11-17 23:05:29,242 INFO [backend.app.api.routes.bug_report] [50d7bb36] Bug report: enabled debug logging
+2026-11-17 23:05:29,242 DEBUG [backend.app.services.bambu_mqtt] [50d7bb36] [[SERIAL]] Requesting status update (pushall)
+2026-11-17 23:05:29,243 DEBUG [backend.app.services.bambu_mqtt] [50d7bb36] [[SERIAL]] Requesting status update (pushall)
+2026-11-17 23:05:29,244 INFO [uvicorn.access] [-] [IP]:51200 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-11-17 23:05:29,278 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: , subtask_name: gummy_quadrant_cutter%20x1(1)
+2026-11-17 23:05:29,278 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'e', 'tray_is_bbl_bits': 'e', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'e', 'tray_reading_bits': '0', 'version': 282, 'insert_flag': True, 'power_on_flag': True}
+2026-11-17 23:05:29,278 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-11-17 23:05:29,278 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-11-17 23:05:29,279 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-11-17 23:05:29,279 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-11-17 23:05:29,279 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-11-17 23:05:29,279 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-17 23:05:29,279 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-11-17 23:05:29,279 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-11-17 23:05:29,280 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-11-17 23:05:29,280 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-11-17 23:05:29,280 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-11-17 23:05:29,280 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'disable', 'timelapse': 'disable', 'resolution': '', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-11-17 23:05:29,280 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -60dBm
+2026-11-17 23:05:29,281 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-11-17 23:05:29,281 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: , subtask: gummy_quadrant_cutter%20x1(1)
+2026-11-17 23:05:29,511 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-11-17 23:05:29,511 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-11-17 23:05:29,511 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-11-17 23:05:29,511 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': '1', 'tray_is_bbl_bits': '1', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': '1', 'tray_reading_bits': '0', 'version': 4, 'insert_flag': True, 'power_on_flag': True}
+2026-11-17 23:05:29,512 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-11-17 23:05:29,512 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-11-17 23:05:29,512 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1002 -> extruder 0
+2026-11-17 23:05:29,512 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-11-17 23:05:29,512 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-11-17 23:05:29,513 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-17 23:05:29,513 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-11-17 23:05:29,513 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-11-17 23:05:29,513 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-11-17 23:05:29,513 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-11-17 23:05:29,513 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-11-17 23:05:29,514 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-11-17 23:05:29,514 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -47dBm
+2026-11-17 23:05:29,514 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-11-17 23:05:29,514 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-11-17 23:05:31,319 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-17 23:05:31,319 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -61dBm

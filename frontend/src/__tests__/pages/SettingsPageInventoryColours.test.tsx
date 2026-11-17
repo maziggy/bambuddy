@@ -5,6 +5,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { SettingsPage } from '../../pages/SettingsPage';
 import { http, HttpResponse } from 'msw';
@@ -75,5 +76,26 @@ describe('SettingsPage - inventory colours (#3590)', () => {
     fireEvent.click(await toggle());
 
     await waitFor(() => expect(saved.at(-1)?.filament_override_inventory).toBe(true), { timeout: 3000 });
+  });
+
+  it('is found by the settings search', async () => {
+    serve(settings);
+    render(<SettingsPage />);
+    await toggle();
+
+    await userEvent.type(screen.getByPlaceholderText(/Search settings/), 'inventory colours');
+    expect(await screen.findByText('Inventory Colours in the Filament Override', { selector: 'button *, button' })).toBeInTheDocument();
+  });
+
+  it('is neither shown nor found in Spoolman mode', async () => {
+    serve({ ...settings, spoolman_enabled: true });
+    render(<SettingsPage />);
+    await screen.findByRole('heading', { name: 'Settings' });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    expect(document.getElementById('card-inventory-colours')).toBeNull();
+    await userEvent.type(screen.getByPlaceholderText(/Search settings/), 'inventory colours');
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(screen.queryByText('Inventory Colours in the Filament Override')).toBeNull();
   });
 });

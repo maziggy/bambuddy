@@ -6855,6 +6855,9 @@ export default {
     onValue: 'Valor de ON',
     mqttPowerHint: 'La ruta JSON extrae el valor de la carga útil JSON (p. ej., "power_l1"). Déjelo vacío si el tema publica valores numéricos sin procesar.\nUse el multiplicador 0,001 para mW→W, 1000 para kW→W.',
     mqttEnergyHint: 'La ruta JSON extrae el valor de la carga útil JSON. Déjelo vacío para valores sin procesar.\nUse el multiplicador 0,001 para Wh→kWh, 1000 para MWh→kWh.',
+    mqttEnergyTotalPathHint: "p. ej. ENERGY.Total",
+    mqttEnergyTotalHint:
+      "Un contador total que nunca se reinicia, del mismo topic (Tasmota: ENERGY.Total). La energía por impresión lo necesita: un contador diario vuelve a cero a medianoche, así que una impresión que pasaba la medianoche perdía su energía. Déjalo vacío para usar el valor de energía de arriba para ambos, como antes.",
     mqttStateHint: 'La ruta JSON extrae el valor de la carga útil JSON. Déjelo vacío para valores sin procesar.\nValor de ON: la cadena exacta que significa «ON». Déjelo vacío para la detección automática (ON, true, 1).',
     // REST smart plug
     restControl: 'Control',

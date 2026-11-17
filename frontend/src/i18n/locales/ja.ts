@@ -6848,6 +6848,9 @@ export default {
     onValue: 'ON値',
     mqttPowerHint: 'JSONパスはJSONペイロードから値を抽出します（例: "power_l1"）。トピックが生の数値を送信する場合は空のままにしてください。\n乗数: mW→Wは0.001、kW→Wは1000を使用。',
     mqttEnergyHint: 'JSONパスはJSONペイロードから値を抽出します。生の値の場合は空のままにしてください。\n乗数: Wh→kWhは0.001、MWh→kWhは1000を使用。',
+    mqttEnergyTotalPathHint: "例: ENERGY.Total",
+    mqttEnergyTotalHint:
+      "同じトピックの、リセットされない累計カウンター（Tasmota: ENERGY.Total）。印刷ごとの電力量に必要です。日次カウンターは深夜0時にゼロに戻るため、0時をまたぐ印刷の電力量が失われていました。空欄の場合は、従来どおり上の電力量の値を両方に使用します。",
     mqttStateHint: 'JSONパスはJSONペイロードから値を抽出します。生の値の場合は空のままにしてください。\nON値: "ON"を意味する正確な文字列。自動検出（ON、true、1）の場合は空のままにしてください。',
     // REST smart plug
     restControl: 'コントロール',

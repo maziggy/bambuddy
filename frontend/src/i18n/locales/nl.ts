@@ -6898,6 +6898,9 @@ export default {
     onValue: 'AAN-waarde',
     mqttPowerHint: 'JSON-pad haalt de waarde uit een JSON-payload (bijv. "power_l1"). Laat leeg als het topic ruwe numerieke waarden publiceert.\nGebruik vermenigvuldigingsfactor 0.001 voor mW→W, 1000 voor kW→W.',
     mqttEnergyHint: 'JSON-pad haalt de waarde uit een JSON-payload. Laat leeg voor ruwe waarden.\nGebruik vermenigvuldigingsfactor 0.001 voor Wh→kWh, 1000 voor MWh→kWh.',
+    mqttEnergyTotalPathHint: "bijv. ENERGY.Total",
+    mqttEnergyTotalHint:
+      "Een totaalteller die nooit wordt gereset, uit hetzelfde topic (Tasmota: ENERGY.Total). Energie per print heeft hem nodig: een dagteller gaat om middernacht terug naar nul, waardoor een print over middernacht zijn energie kwijtraakte. Laat leeg om de energiewaarde hierboven zoals voorheen voor beide te gebruiken.",
     mqttStateHint: 'JSON-pad haalt de waarde uit een JSON-payload. Laat leeg voor ruwe waarden.\nAAN-waarde: de exacte tekenreeks die "AAN" betekent. Laat leeg voor automatische detectie (ON, true, 1).',
     // REST smart plug
     restControl: 'Bedienen',

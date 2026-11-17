@@ -2478,6 +2478,8 @@ export interface SmartPlug {
   mqtt_energy_topic: string | null;  // Topic for energy data
   mqtt_energy_path: string | null;  // e.g., "energy_l1"
   mqtt_energy_multiplier: number;  // Unit conversion for energy
+  mqtt_energy_total_path: string | null;  // Lifetime counter on the energy topic (#3582)
+  mqtt_energy_total_multiplier: number;
   // State monitoring
   mqtt_state_topic: string | null;  // Topic for state data
   mqtt_state_path: string | null;  // e.g., "state_l1" for ON/OFF
@@ -2562,6 +2564,8 @@ export interface SmartPlugCreate {
   mqtt_energy_topic?: string | null;
   mqtt_energy_path?: string | null;
   mqtt_energy_multiplier?: number;
+  mqtt_energy_total_path?: string | null;
+  mqtt_energy_total_multiplier?: number;
   // State monitoring
   mqtt_state_topic?: string | null;
   mqtt_state_path?: string | null;
@@ -2635,6 +2639,8 @@ export interface SmartPlugUpdate {
   mqtt_energy_topic?: string | null;
   mqtt_energy_path?: string | null;
   mqtt_energy_multiplier?: number;
+  mqtt_energy_total_path?: string | null;
+  mqtt_energy_total_multiplier?: number;
   // MQTT state fields
   mqtt_state_topic?: string | null;
   mqtt_state_path?: string | null;

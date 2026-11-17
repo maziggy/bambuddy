@@ -35,6 +35,8 @@ const createMockPlug = (overrides: Partial<SmartPlug> = {}): SmartPlug => ({
   mqtt_energy_topic: null,
   mqtt_energy_path: null,
   mqtt_energy_multiplier: 1.0,
+  mqtt_energy_total_path: null,
+  mqtt_energy_total_multiplier: 1.0,
   // MQTT state fields
   mqtt_state_topic: null,
   mqtt_state_path: null,

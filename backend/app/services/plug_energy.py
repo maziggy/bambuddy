@@ -17,6 +17,11 @@ async def _configured_homeassistant(db: AsyncSession):
     return homeassistant_service
 
 
+def mqtt_has_lifetime_counter(plug: SmartPlug) -> bool:
+    """Whether an MQTT plug reads a lifetime counter beside its daily one (#3582)."""
+    return bool((plug.mqtt_energy_total_path or "").strip())
+
+
 async def get_plug_energy(plug: SmartPlug, db: AsyncSession) -> dict | None:
     """Get energy from plug regardless of type (Tasmota, Home Assistant, MQTT, or REST).
 
@@ -27,16 +32,26 @@ async def get_plug_energy(plug: SmartPlug, db: AsyncSession) -> dict | None:
     if plug.plug_type == "homeassistant":
         return await (await _configured_homeassistant(db)).get_energy(plug)
     elif plug.plug_type == "mqtt":
-        # MQTT plugs report "today" energy, not lifetime total
-        # For per-print tracking, we use "today" as the counter (resets at midnight)
         mqtt_data = mqtt_relay.smart_plug_service.get_plug_data(plug.id)
-        if mqtt_data:
+        if not mqtt_data:
+            return None
+        if mqtt_has_lifetime_counter(plug):
+            # Per-print energy is the difference of two "total" readings, so it
+            # must come from the counter that never resets (#3582). None until
+            # the first message, so the plug is not picked as the counter.
             return {
                 "power": mqtt_data.power,
                 "today": mqtt_data.energy,
-                "total": mqtt_data.energy,  # Use today as total for per-print calculations
+                "total": mqtt_data.energy_total,
             }
-        return None
+        # One energy value and no telling which counter it is: used as both,
+        # as always. Right for a lifetime counter; a daily one loses a print
+        # across midnight, which is what the lifetime path is for.
+        return {
+            "power": mqtt_data.power,
+            "today": mqtt_data.energy,
+            "total": mqtt_data.energy,
+        }
     elif plug.plug_type == "rest":
         return await rest_smart_plug_service.get_energy(plug)
     else:

@@ -59,6 +59,8 @@ const mockSmartPlug = {
   mqtt_power_multiplier: 1,
   mqtt_energy_topic: null,
   mqtt_energy_multiplier: 1,
+  mqtt_energy_total_path: null,
+  mqtt_energy_total_multiplier: 1,
   mqtt_state_topic: null,
   rest_on_url: null,
   rest_off_url: null,

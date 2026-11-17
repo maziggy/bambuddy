@@ -6900,6 +6900,9 @@ export default {
     onValue: 'Wartość ON',
     mqttPowerHint: 'Ścieżka JSON wyodrębnia wartość z ładunku JSON (np. „power_l1”). Pozostaw puste, jeśli temat publikuje surowe wartości liczbowe.\nUżyj mnożnika 0.001 dla mW→W, 1000 dla kW→W.',
     mqttEnergyHint: 'Ścieżka JSON wyodrębnia wartość z ładunku JSON. Pozostaw puste dla surowych wartości.\nUżyj mnożnika 0.001 dla Wh→kWh, 1000 dla MWh→kWh.',
+    mqttEnergyTotalPathHint: "np. ENERGY.Total",
+    mqttEnergyTotalHint:
+      "Licznik całkowity, który nigdy się nie zeruje, z tego samego tematu (Tasmota: ENERGY.Total). Energia na wydruk go potrzebuje: licznik dzienny wraca do zera o północy, więc wydruk trwający po północy tracił swoją energię. Pozostaw puste, aby jak dotąd używać powyższej wartości energii dla obu.",
     mqttStateHint: 'Ścieżka JSON wyodrębnia wartość z ładunku JSON. Pozostaw puste dla surowych wartości.\nWartość ON: dokładny ciąg oznaczający „ON”. Pozostaw puste, aby wykrywać automatycznie (ON, true, 1).',
     // REST smart plug
     restControl: 'Sterowanie',

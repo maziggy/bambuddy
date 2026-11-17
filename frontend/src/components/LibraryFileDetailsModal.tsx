@@ -67,6 +67,8 @@ export function LibraryFileDetailsModal({ file, canEdit, onClose }: LibraryFileD
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['library-files'] });
     queryClient.invalidateQueries({ queryKey: ['library-file', file.id] });
+    // Print-modal alternatives prefill clears_plate from the group (#3576).
+    queryClient.invalidateQueries({ queryKey: ['variant-group'] });
   };
 
   const saveMutation = useMutation({

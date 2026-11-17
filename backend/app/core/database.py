@@ -1123,6 +1123,23 @@ async def _safe_execute(conn, sql):
             raise
 
 
+async def _table_column_exists(conn, table: str, column_name: str) -> bool:
+    """Return True if ``column_name`` exists on ``table`` (table is a trusted literal)."""
+    from sqlalchemy import text
+
+    if is_sqlite():
+        result = await conn.execute(text(f"PRAGMA table_info({table})"))
+        return any(row[1] == column_name for row in result)
+    result = await conn.execute(
+        text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_schema = current_schema() AND table_name = :tbl AND column_name = :col"
+        ),
+        {"tbl": table, "col": column_name},
+    )
+    return result.scalar_one_or_none() is not None
+
+
 async def _api_keys_column_exists(conn, column_name: str) -> bool:
     """Return True if the named column exists on ``api_keys``.
 
@@ -1131,16 +1148,7 @@ async def _api_keys_column_exists(conn, column_name: str) -> bool:
     would silently overwrite values the user later edited in the UI.
     Dialect-specific because SQLite has no information_schema.
     """
-    from sqlalchemy import text
-
-    if is_sqlite():
-        result = await conn.execute(text("PRAGMA table_info(api_keys)"))
-        return any(row[1] == column_name for row in result)
-    result = await conn.execute(
-        text("SELECT 1 FROM information_schema.columns WHERE table_name = 'api_keys' AND column_name = :col"),
-        {"col": column_name},
-    )
-    return result.scalar_one_or_none() is not None
+    return await _table_column_exists(conn, "api_keys", column_name)
 
 
 async def _migrate_scope_force_color_overrides_to_plate(conn) -> None:
@@ -6214,6 +6222,21 @@ async def _run_migrations(conn):
     # keeps every existing row waiting for the plate confirmation as before.
     for _table in ("library_files", "print_queue", "print_archives"):
         await _safe_execute(conn, f"ALTER TABLE {_table} ADD COLUMN clears_plate BOOLEAN DEFAULT FALSE NOT NULL")
+    # ...and per printer alternative of a cross-model job, so one alternative
+    # can clear its plate while another of the same job waits for it.
+    variant_column_existed = await _table_column_exists(conn, "print_queue_variants", "clears_plate")
+    await _safe_execute(conn, "ALTER TABLE print_queue_variants ADD COLUMN clears_plate BOOLEAN DEFAULT FALSE NOT NULL")
+    if not variant_column_existed:
+        # One-shot, only on the migration that adds the column: pending jobs the
+        # first build flagged from "all alternatives clear" keep that per
+        # alternative. Later boots must not touch user-edited values.
+        async with conn.begin_nested():
+            await conn.execute(
+                text(
+                    "UPDATE print_queue_variants SET clears_plate = TRUE WHERE queue_item_id IN "
+                    "(SELECT id FROM print_queue WHERE clears_plate = TRUE AND status = 'pending')"
+                )
+            )
 
     await _backfill_archive_run_photos(conn)
     await _migrate_h3c_queue_tray_ids(conn)

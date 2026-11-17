@@ -4344,6 +4344,8 @@ class PrintScheduler:
         item.nozzle_rack_choice = variant.nozzle_rack_choice
         item.filament_overrides = variant.filament_overrides
         item.required_filament_types = variant.required_filament_types
+        # The chosen printer's slice decides whether its plate clears itself (#3576).
+        item.clears_plate = variant.clears_plate
         if variant.print_time_seconds is not None:
             # The row carried the shortest candidate's estimate so SJF could order
             # it before a printer was known; now that one is chosen, record what is

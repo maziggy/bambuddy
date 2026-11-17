@@ -1669,6 +1669,8 @@ export default {
       confirmOutcomeTitle: 'Frågar hur utskriften blev när den är klar',
       clearsPlate: 'Tömmer plattan',
       clearsPlateTitle: 'Tömmer sin egen platta: ingen plattbekräftelse efter en lyckad utskrift, om inte skrivaren är inställd på "Kräv alltid"',
+      clearsPlatePartial: 'Tömmer plattan (vissa skrivare)',
+      clearsPlatePartialTitle: 'Endast dessa alternativ tömmer sin egen platta: {{models}}',
     },
     // Empty state
     empty: {
@@ -1712,6 +1714,7 @@ export default {
       useAms: 'Använd AMS',
       confirmOutcome: 'Fråga efter resultat',
       clearsPlate: 'Töm plattan automatiskt',
+      clearsPlateHint: 'Gäller varje alternativ skrivare för ett jobb',
       nozzleOffsetCali: 'Munstyckesoffsetskalibrering',
       applyChanges: 'Tillämpa ändringar',
       selectAll: 'Markera alla',
@@ -5864,6 +5867,10 @@ errors: {
       help: 'Ett jobb, en köplats. Den första matchande skrivaren som blir ledig kör sin fil.',
       unknownModel: 'Okänd modell',
       plateFor: 'Platta för {{filename}}',
+      clearsPlateFor: 'Rensar plattan: {{filename}}',
+      clearsPlateLegend: 'Ikryssad: den här skrivarens fil tömmer plattan själv',
+      clearsPlate: 'Tömmer plattan',
+      clearsPlateTitle: 'Filen för den här skrivaren tömmer plattan själv. Efter en lyckad utskrift på den här skrivaren startar kön nästa jobb utan plattbekräftelse, om inte skrivaren är inställd på "Kräv alltid".',
       moveUp: 'Flytta upp',
       moveDown: 'Flytta ner',
       queued: 'Köat med {{count}} alternativ',

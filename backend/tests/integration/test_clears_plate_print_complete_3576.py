@@ -502,3 +502,52 @@ class TestTheNextJobDispatches:
         launched = await self._pass(test_engine, PrintScheduler())
 
         launched.assert_not_called()
+
+
+class TestAlternativesJob:
+    """One job, [A1 file flagged, P1S file unflagged]: the printer that wins decides."""
+
+    async def _resolve_to(self, db_session, qp, winner_flag: bool):
+        """Resolve the printing row to an alternative with the given flag, as the scheduler does."""
+        from types import SimpleNamespace
+
+        from backend.app.models.print_queue import PrintQueueVariant
+
+        a1 = LibraryFile(filename="a1.3mf", file_path="/l/a1.3mf", file_size=1, file_type="3mf", clears_plate=True)
+        p1s = LibraryFile(filename="p1s.3mf", file_path="/l/p1s.3mf", file_size=1, file_type="3mf", clears_plate=False)
+        db_session.add_all([a1, p1s])
+        await db_session.flush()
+        item = await db_session.get(PrintQueueItem, qp["item"])
+        variants = [
+            PrintQueueVariant(
+                queue_item_id=item.id, position=0, library_file_id=a1.id, target_model="A1", clears_plate=True
+            ),
+            PrintQueueVariant(
+                queue_item_id=item.id, position=1, library_file_id=p1s.id, target_model="P1S", clears_plate=False
+            ),
+        ]
+        db_session.add_all(variants)
+        await db_session.flush()
+        winner = variants[0] if winner_flag else variants[1]
+        PrintScheduler()._resolve_variant(item, SimpleNamespace(variant=winner))
+        # Dispatch keeps the archive; resolution is the only part under test.
+        item.archive = await db_session.get(PrintArchive, qp["archive"])
+        await db_session.commit()
+
+    async def test_the_flagged_alternative_skips_the_gate(self, test_engine, db_session, queued_print, gate):
+        await _setup(db_session, queued_print, flag=False)
+        await self._resolve_to(db_session, queued_print, winner_flag=True)
+
+        await _complete(test_engine, queued_print["printer"], "completed")
+
+        assert not _raised(gate, queued_print["printer"])
+        assert printer_manager.is_awaiting_plate_clear(queued_print["printer"]) is False
+
+    async def test_the_unflagged_alternative_raises_the_gate(self, test_engine, db_session, queued_print, gate):
+        await _setup(db_session, queued_print, flag=True)
+        await self._resolve_to(db_session, queued_print, winner_flag=False)
+
+        await _complete(test_engine, queued_print["printer"], "completed")
+
+        assert _raised(gate, queued_print["printer"])
+        assert printer_manager.is_awaiting_plate_clear(queued_print["printer"]) is True

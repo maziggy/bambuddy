@@ -1653,6 +1653,8 @@ export default {
       confirmOutcomeTitle: 'Pregunta cómo salió la impresión al terminar',
       clearsPlate: 'Despeja la cama',
       clearsPlateTitle: 'Despeja su propia cama: sin confirmación de cama tras una impresión correcta, salvo que la impresora esté configurada como «Requerir siempre»',
+      clearsPlatePartial: 'Despeja la cama (algunas impresoras)',
+      clearsPlatePartialTitle: 'Solo estas alternativas despejan su propia cama: {{models}}',
     },
     // Empty state
     empty: {
@@ -1696,6 +1698,7 @@ export default {
       useAms: 'Usar AMS',
       confirmOutcome: 'Preguntar el resultado',
       clearsPlate: 'Despejar la cama automáticamente',
+      clearsPlateHint: 'Se aplica a cada impresora alternativa de un trabajo',
       nozzleOffsetCali: 'Calibración del offset de boquillas',
       applyChanges: 'Aplicar cambios',
       selectAll: 'Seleccionar todo',
@@ -5795,6 +5798,10 @@ export default {
       help: 'Un trabajo, un puesto en la cola. La primera impresora compatible que quede libre imprime su archivo.',
       unknownModel: 'Modelo desconocido',
       plateFor: 'Placa para {{filename}}',
+      clearsPlateFor: 'Despeja la placa: {{filename}}',
+      clearsPlateLegend: 'Marcado: el archivo de esta impresora despeja la cama por sí mismo',
+      clearsPlate: 'Despeja la cama',
+      clearsPlateTitle: 'El archivo de esta impresora despeja la cama por sí mismo. Tras una impresión correcta en esta impresora, la cola inicia el siguiente trabajo sin confirmación de cama, salvo que la impresora esté configurada como «Requerir siempre».',
       moveUp: 'Subir',
       moveDown: 'Bajar',
       queued: 'En cola con {{count}} alternativas',

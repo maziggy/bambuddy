@@ -270,6 +270,9 @@ class PrintQueueVariant(Base):
     filament_overrides: Mapped[str | None] = mapped_column(Text, nullable=True)
     required_filament_types: Mapped[str | None] = mapped_column(Text, nullable=True)
     print_time_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # This printer's slice clears its own plate (#3576); copied onto the item
+    # when this candidate wins, so each alternative decides on its own.
+    clears_plate: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
     # How many times this candidate has been dispatched and bounced back to
     # pending by the start-watchdog. The resolver tries least-attempted first, so

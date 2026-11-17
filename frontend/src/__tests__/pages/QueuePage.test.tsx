@@ -1764,6 +1764,42 @@ describe('QueuePage', () => {
     });
   });
 
+  describe('clears-plate badge on alternatives (#3576)', () => {
+    const variant = (id: number, model: string, clears: boolean, position: number) => ({
+      library_file_id: id, filename: `${model}.gcode.3mf`, target_model: model, position, clears_plate: clears,
+    });
+    const alt = (clears: boolean[], itemClears = false) => ({
+      ...mockQueueItems[0],
+      printer_id: null,
+      clears_plate: itemClears,
+      variants: [variant(1, 'A1', clears[0], 0), variant(2, 'P1S', clears[1], 1)],
+    });
+
+    it('shows the plain badge when every alternative clears its plate', async () => {
+      server.use(...serveQueue([alt([true, true], true)] as MockItem[]));
+      render(<QueuePage />);
+      expect(await screen.findByText('Clears plate')).toBeInTheDocument();
+      expect(screen.queryByText('Clears plate (some printers)')).not.toBeInTheDocument();
+    });
+
+    it('shows the partial badge, listing the flagged models, when only some do', async () => {
+      server.use(...serveQueue([alt([true, false])] as MockItem[]));
+      render(<QueuePage />);
+      const badge = await screen.findByText('Clears plate (some printers)');
+      expect(badge.closest('span[title]')).toHaveAttribute(
+        'title',
+        'Only these alternatives clear their own plate: A1',
+      );
+    });
+
+    it('shows no badge when none do', async () => {
+      server.use(...serveQueue([alt([false, false])] as MockItem[]));
+      render(<QueuePage />);
+      await screen.findByText('Test Print 1');
+      expect(screen.queryByText(/^Clears plate/)).not.toBeInTheDocument();
+    });
+  });
+
   describe('staged items', () => {
     it('shows staged badge for manual_start items', async () => {
       server.use(

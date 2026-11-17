@@ -1671,6 +1671,8 @@ export default {
       confirmOutcomeTitle: 'Asks how the print came out after it completes',
       clearsPlate: 'Clears plate',
       clearsPlateTitle: 'Clears its own plate: no plate confirmation after a successful print, unless the printer is set to "Always require"',
+      clearsPlatePartial: 'Clears plate (some printers)',
+      clearsPlatePartialTitle: 'Only these alternatives clear their own plate: {{models}}',
     },
     // Empty state
     empty: {
@@ -1714,6 +1716,7 @@ export default {
       useAms: 'Use AMS',
       confirmOutcome: 'Ask for outcome',
       clearsPlate: 'Clears plate automatically',
+      clearsPlateHint: 'Applies to every printer alternative of a job',
       nozzleOffsetCali: 'Nozzle offset calibration',
       applyChanges: 'Apply Changes',
       selectAll: 'Select All',
@@ -5835,6 +5838,10 @@ export default {
       help: 'One job, one queue slot. The first matching printer to free up runs its file.',
       unknownModel: 'Unknown model',
       plateFor: 'Plate for {{filename}}',
+      clearsPlateFor: 'Clears plate: {{filename}}',
+      clearsPlateLegend: 'Checked: this printer\'s file clears the plate itself',
+      clearsPlate: 'Clears plate',
+      clearsPlateTitle: 'This printer\'s file clears the plate itself. After a successful print on this printer the queue starts the next job without a plate confirmation, unless the printer is set to "Always require".',
       moveUp: 'Move up',
       moveDown: 'Move down',
       queued: 'Queued with {{count}} alternatives',

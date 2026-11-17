@@ -1653,6 +1653,8 @@ export default {
       confirmOutcomeTitle: 'Tamamlandığında baskının nasıl çıktığını sorar',
       clearsPlate: 'Plakayı boşaltır',
       clearsPlateTitle: 'Kendi plakasını boşaltır: yazıcı "Her zaman gerektir" olarak ayarlanmadıkça başarılı baskıdan sonra plaka onayı yok',
+      clearsPlatePartial: 'Plakayı boşaltır (bazı yazıcılar)',
+      clearsPlatePartialTitle: 'Yalnızca bu alternatifler kendi plakasını boşaltır: {{models}}',
     },
     // Boş durum
     empty: {
@@ -1696,6 +1698,7 @@ export default {
       useAms: "AMS Kullan",
       confirmOutcome: 'Sonucu sor',
       clearsPlate: 'Plakayı otomatik boşalt',
+      clearsPlateHint: 'Bir işin her alternatif yazıcısına uygulanır',
       nozzleOffsetCali: 'Nozül ofset kalibrasyonu',
       applyChanges: 'Değişiklikleri Uygula',
       selectAll: 'Tümünü Seç',
@@ -5764,6 +5767,10 @@ export default {
       help: 'Tek iş, tek kuyruk yeri. Uygun olan ilk boşalan yazıcı kendi dosyasını yazdırır.',
       unknownModel: 'Bilinmeyen model',
       plateFor: '{{filename}} için tabla',
+      clearsPlateFor: 'Tablayı temizler: {{filename}}',
+      clearsPlateLegend: 'İşaretli: bu yazıcının dosyası plakayı kendisi boşaltır',
+      clearsPlate: 'Plakayı boşaltır',
+      clearsPlateTitle: 'Bu yazıcının dosyası plakayı kendisi boşaltır. Bu yazıcıda başarılı bir baskıdan sonra, yazıcı "Her zaman gerektir" olarak ayarlanmadıkça kuyruk plaka onayı olmadan sıradaki işi başlatır.',
       moveUp: 'Yukarı taşı',
       moveDown: 'Aşağı taşı',
       queued: '{{count}} alternatifle kuyruğa alındı',

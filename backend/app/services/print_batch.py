@@ -98,6 +98,7 @@ CLONED_VARIANT_COLUMNS = (
     "filament_overrides",
     "required_filament_types",
     "print_time_seconds",
+    "clears_plate",  # #3576
 )
 
 

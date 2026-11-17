@@ -114,6 +114,7 @@ def _variant_summaries(item: PrintQueueItem) -> list[QueueVariantSummary]:
             filename=v.library_file.filename if v.library_file else "",
             target_model=v.target_model,
             position=v.position,
+            clears_plate=bool(v.clears_plate),
         )
         for v in item.variants
     ]
@@ -441,6 +442,39 @@ async def _trusted_item_estimated_cost(
     return max(cost for cost in estimates if cost is not None)
 
 
+def _effective_clears_plate(item: PrintQueueItem) -> bool:
+    """What a pending job's plate clearing reads as (#3576).
+
+    A job with printer alternatives carries the flag per alternative; the item
+    column only holds whatever the last resolve (even a merely tried candidate)
+    folded onto the row, so it is not a reliable value until the job runs. A
+    pending job therefore reports "all alternatives clear" -- the strict reading
+    the create path stores. Printing / finished jobs keep the column, which holds
+    the winner's value.
+    """
+    if item.status == "pending" and "variants" not in inspect(item).unloaded and item.variants:
+        return all(bool(v.clears_plate) for v in item.variants)
+    return bool(item.clears_plate)
+
+
+def _apply_clears_plate_update(item: PrintQueueItem, update_data: dict) -> None:
+    """Take ``clears_plate`` out of ``update_data``; set every alternative unless all already match.
+
+    A value every alternative already has is a no-op, so nothing is rewritten.
+    Any other explicit value (including "off" on a mixed job) is applied to the
+    item column and to every alternative. Without alternatives the field stays
+    in ``update_data`` and is written as usual.
+    """
+    if not item.variants or "clears_plate" not in update_data:
+        return
+    sent = update_data.pop("clears_plate")
+    if sent is None or all(bool(v.clears_plate) == bool(sent) for v in item.variants):
+        return
+    item.clears_plate = bool(sent)
+    for variant in item.variants:
+        variant.clears_plate = bool(sent)
+
+
 def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
     """Add nested archive/printer/library_file info to response."""
     # Parse ams_mapping from JSON string BEFORE model_validate
@@ -535,7 +569,7 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         "use_ams": item.use_ams,
         "nozzle_offset_cali": item.nozzle_offset_cali,
         "confirm_outcome": item.confirm_outcome,
-        "clears_plate": bool(item.clears_plate),
+        "clears_plate": _effective_clears_plate(item),
         "preheat_override": item.preheat_override,
         "preheat_chamber_target_override": item.preheat_chamber_target_override,
         "status": item.status,
@@ -1186,8 +1220,14 @@ def _variant_values(
                     existing = set(json.loads(required_types)) if required_types else set()
                     required_types = json.dumps(sorted(existing | set(override_types)))
 
+    # Whether this printer's slice clears its own plate (#3576): an explicit
+    # per-candidate value wins, else the candidate file's flag. A push-off that
+    # one model has and another lacks makes it differ between alternatives.
+    clears_plate = spec.clears_plate if spec.clears_plate is not None else bool(library_file.clears_plate)
+
     return {
         "position": position,
+        "clears_plate": clears_plate,
         "library_file_id": library_file.id,
         "target_model": model,
         "plate_id": spec.plate_id,
@@ -1554,7 +1594,12 @@ async def add_to_queue(
         if library_file:
             clears_plate = bool(library_file.clears_plate)
         elif variant_specs:
-            clears_plate = all(variant_file.clears_plate for _spec, variant_file, _model in variant_specs)
+            # Display only: each alternative carries its own value, and the one
+            # that wins the printer decides at dispatch (_resolve_variant).
+            clears_plate = all(
+                spec.clears_plate if spec.clears_plate is not None else bool(variant_file.clears_plate)
+                for spec, variant_file, _model in variant_specs
+            )
         elif archive:
             clears_plate = bool(archive.clears_plate)
         else:
@@ -1609,6 +1654,10 @@ async def add_to_queue(
             _variant_values(spec, library_file, model, position)
             for position, (spec, library_file, model) in enumerate(variant_specs)
         ]
+        if data.clears_plate is not None:
+            # An explicit job-level value applies to every alternative (#3576).
+            for values in variant_values:
+                values["clears_plate"] = data.clears_plate
         # SJF orders pending items before any printer is known, so the row carries
         # the shortest candidate's estimate. Resolution replaces it with the one
         # that actually runs.
@@ -1771,6 +1820,7 @@ async def bulk_update_queue_items(
             item.target_model = None
             item.target_location = None
             drop_printer_resolved(item)
+        _apply_clears_plate_update(item, item_update_data)
         for field, value in item_update_data.items():
             setattr(item, field, value)
         updated_count += 1
@@ -2651,6 +2701,7 @@ async def update_queue_item(
     if claimed is not None:
         raise HTTPException(409, "Item is being dispatched — cancel it first to make changes")
 
+    _apply_clears_plate_update(item, update_data)
     for field, value in update_data.items():
         setattr(item, field, value)
 

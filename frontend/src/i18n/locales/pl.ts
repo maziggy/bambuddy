@@ -1671,6 +1671,8 @@ export default {
       confirmOutcomeTitle: 'Po zakończeniu pyta, jak wyszedł wydruk',
       clearsPlate: 'Opróżnia płytę',
       clearsPlateTitle: 'Sam opróżnia płytę: brak potwierdzenia płyty po udanym wydruku, chyba że drukarka jest ustawiona na „Zawsze wymagaj”',
+      clearsPlatePartial: 'Opróżnia płytę (niektóre drukarki)',
+      clearsPlatePartialTitle: 'Tylko te alternatywy same opróżniają płytę: {{models}}',
     },
     // Empty state
     empty: {
@@ -1714,6 +1716,7 @@ export default {
       useAms: 'Użyj AMS',
       confirmOutcome: 'Pytaj o wynik',
       clearsPlate: 'Automatycznie opróżnia płytę',
+      clearsPlateHint: 'Dotyczy każdej alternatywnej drukarki zadania',
       nozzleOffsetCali: 'Kalibracja przesunięcia dyszy',
       applyChanges: 'Zastosuj zmiany',
       selectAll: 'Zaznacz wszystkie',
@@ -5835,6 +5838,10 @@ export default {
       help: 'Jedno zadanie, jedno miejsce w kolejce. Plik zostanie wydrukowany na pierwszej pasującej drukarce, która się zwolni.',
       unknownModel: 'Nieznany model',
       plateFor: 'Płyta dla {{filename}}',
+      clearsPlateFor: 'Czyści płytę: {{filename}}',
+      clearsPlateLegend: 'Zaznaczone: plik tej drukarki sam opróżnia płytę',
+      clearsPlate: 'Opróżnia płytę',
+      clearsPlateTitle: 'Plik dla tej drukarki sam opróżnia płytę. Po udanym wydruku na tej drukarce kolejka uruchamia następne zadanie bez potwierdzenia płyty, chyba że drukarka jest ustawiona na „Zawsze wymagaj”.',
       moveUp: 'Przenieś w górę',
       moveDown: 'Przenieś w dół',
       queued: 'Dodano do kolejki, alternatywy: {{count}}',

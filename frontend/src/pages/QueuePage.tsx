@@ -459,7 +459,10 @@ function BulkEditModal({
               <TriStateToggle label={t('queue.bulkEdit.timelapse')} value={timelapse} onChange={setTimelapse} t={t} />
               <TriStateToggle label={t('queue.bulkEdit.useAms')} value={useAms} onChange={setUseAms} t={t} />
               <TriStateToggle label={t('queue.bulkEdit.confirmOutcome')} value={confirmOutcome} onChange={setConfirmOutcome} t={t} />
-              <TriStateToggle label={t('queue.bulkEdit.clearsPlate')} value={clearsPlate} onChange={setClearsPlate} t={t} />
+              <div title={t('queue.bulkEdit.clearsPlateHint')}>
+                <TriStateToggle label={t('queue.bulkEdit.clearsPlate')} value={clearsPlate} onChange={setClearsPlate} t={t} />
+                <p className="text-[11px] text-bambu-gray mt-0.5">{t('queue.bulkEdit.clearsPlateHint')}</p>
+              </div>
               {hasDualNozzlePrinter && (
                 <CalibrationModeToggle label={t('queue.bulkEdit.nozzleOffsetCali')} value={nozzleOffsetCali} onChange={setNozzleOffsetCali} t={t} />
               )}
@@ -1022,15 +1025,28 @@ function SortableQueueItem({
                 {t('queue.badges.confirmOutcome')}
               </span>
             )}
-            {item.clears_plate && (
-              <span
-                title={t('queue.badges.clearsPlateTitle')}
-                className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 rounded-full border border-cyan-200 dark:border-cyan-500/20 flex items-center gap-1"
-              >
-                <Eraser className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-                {t('queue.badges.clearsPlate')}
-              </span>
-            )}
+            {(() => {
+              // Alternatives decide per slice which printer clears its own plate (#3576).
+              // Only a pending job still has an open choice; once it runs or ends, the
+              // item's own flag is the winner's value.
+              const variants = item.status === 'pending' ? (item.variants ?? []) : [];
+              const flagged = variants.filter((v) => v.clears_plate);
+              const partial = variants.length > 1 && flagged.length > 0 && flagged.length < variants.length;
+              if (!partial && !item.clears_plate) return null;
+              return (
+                <span
+                  title={
+                    partial
+                      ? t('queue.badges.clearsPlatePartialTitle', { models: flagged.map((v) => v.target_model).join(' / ') })
+                      : t('queue.badges.clearsPlateTitle')
+                  }
+                  className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 rounded-full border border-cyan-200 dark:border-cyan-500/20 flex items-center gap-1"
+                >
+                  <Eraser className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                  {partial ? t('queue.badges.clearsPlatePartial') : t('queue.badges.clearsPlate')}
+                </span>
+              );
+            })()}
           </div>
 
           {/* Progress bar for printing items - TODO: integrate with WebSocket */}

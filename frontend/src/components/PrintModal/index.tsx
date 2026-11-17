@@ -180,10 +180,13 @@ export function PrintModal({
           id: v.library_file_id,
           filename: v.filename,
           sliced_for_model: v.target_model,
+          clears_plate: v.clears_plate,
         }))
       : [];
   const hasEditingVariants = editingVariants.length > 0;
   const [candidates, setCandidates] = useState<VariantCandidate[]>(variantFiles ?? []);
+  // file id -> clears_plate the user toggled on that alternative (#3576).
+  const [candidateClearsPlate, setCandidateClearsPlate] = useState<Record<number, boolean>>({});
   const [candidatePlates, setCandidatePlates] = useState<Record<number, number | null>>(
     () => resumedSettings?.plateByFile ?? {},
   );
@@ -1517,6 +1520,8 @@ export function PrintModal({
             library_file_id: c.id,
             plate_id: candidatePlates[c.id] ?? null,
             filament_overrides: filamentOverridesArray,
+            // The displayed value, always explicit: what the checkbox shows is what the backend applies (#3576).
+            clears_plate: candidateClearsPlate[c.id] ?? !!c.clears_plate,
           })),
           target_location: targetLocation,
           require_previous_success: scheduleOptions.requirePreviousSuccess,
@@ -1847,6 +1852,7 @@ export function PrintModal({
               cost_center_id: billingEnabled ? selectedCostCenterId : undefined,
               estimated_cost: billingEnabled && selectedCostCenterId != null ? estimatedCost : undefined,
             };
+            if (hasEditingVariants) delete updateData.clears_plate;
             await updateQueueMutation.mutateAsync(updateData);
           } else {
             // Add-to-queue mode with model-based assignment
@@ -1921,6 +1927,7 @@ export function PrintModal({
                     : estimatedCost)
                   : undefined,
               };
+              if (hasEditingVariants) delete updateData.clears_plate;
               await updateQueueMutation.mutateAsync(updateData);
             } else {
               // New print mode, staggered print, or edit mode with additional entries
@@ -2340,6 +2347,12 @@ export function PrintModal({
                   setCandidatePlates((prev) => ({ ...prev, [fileId]: plateId }))
                 }
                 onPlatesReadyChange={setCandidatePlatesReady}
+                clearsPlateByFile={candidateClearsPlate}
+                onClearsPlateChange={
+                  isSeparateJobs
+                    ? undefined
+                    : (fileId, value) => setCandidateClearsPlate((prev) => ({ ...prev, [fileId]: value }))
+                }
                 title={isSeparateJobs ? t('printModal.multiFile.orderTitle') : undefined}
                 help={showModeToggle ? '' : isSeparateJobs ? t('printModal.multiFile.separateHint') : undefined}
               />
@@ -2671,9 +2684,9 @@ export function PrintModal({
                 {t('printModal.askForOutcome')}
               </button>
 
-              {/* The file clears its own plate (#3576). Hidden for several files:
-                  one switch cannot speak for files with different flags. */}
-              {!isMultiFile && (
+              {/* The file clears its own plate (#3576). Hidden for several files or
+                  alternatives: one switch cannot speak for files with different flags. */}
+              {!isMultiFile && !hasEditingVariants && (
               <button
                 type="button"
                 aria-pressed={clearsPlateShown}

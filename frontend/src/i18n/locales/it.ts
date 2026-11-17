@@ -1653,6 +1653,8 @@ export default {
       confirmOutcomeTitle: 'Chiede com’è venuta la stampa una volta completata',
       clearsPlate: 'Libera il piatto',
       clearsPlateTitle: 'Libera il proprio piatto: nessuna conferma del piatto dopo una stampa riuscita, a meno che la stampante non sia impostata su «Richiedi sempre»',
+      clearsPlatePartial: 'Libera il piatto (alcune stampanti)',
+      clearsPlatePartialTitle: 'Solo queste alternative liberano il proprio piatto: {{models}}',
     },
     // Empty state
     empty: {
@@ -1696,6 +1698,7 @@ export default {
       useAms: 'Usa AMS',
       confirmOutcome: 'Chiedi l’esito',
       clearsPlate: 'Libera il piatto automaticamente',
+      clearsPlateHint: 'Si applica a ogni stampante alternativa di un lavoro',
       nozzleOffsetCali: 'Calibrazione offset ugelli',
       applyChanges: 'Applica modifiche',
       selectAll: 'Seleziona tutto',
@@ -5774,6 +5777,10 @@ export default {
       help: 'Un lavoro, un posto in coda. La prima stampante compatibile che si libera stampa il suo file.',
       unknownModel: 'Modello sconosciuto',
       plateFor: 'Piatto per {{filename}}',
+      clearsPlateFor: 'Libera il piatto: {{filename}}',
+      clearsPlateLegend: 'Selezionato: il file di questa stampante libera il piatto da solo',
+      clearsPlate: 'Libera il piatto',
+      clearsPlateTitle: 'Il file di questa stampante libera da solo il piatto. Dopo una stampa riuscita su questa stampante la coda avvia il lavoro successivo senza conferma del piatto, a meno che la stampante non sia impostata su «Richiedi sempre».',
       moveUp: 'Sposta su',
       moveDown: 'Sposta giù',
       queued: 'In coda con {{count}} alternative',

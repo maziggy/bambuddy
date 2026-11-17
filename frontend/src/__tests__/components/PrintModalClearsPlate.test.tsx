@@ -297,6 +297,77 @@ describe('PrintModal clears-plate pill (#3576)', () => {
   });
 });
 
+describe('PrintModal per-alternative clears plate (#3576)', () => {
+  beforeEach(() => {
+    posted = [];
+    patched = [];
+  });
+
+  const files = [
+    { id: 5, filename: 'a1.gcode.3mf', sliced_for_model: 'A1', clears_plate: true },
+    { id: 6, filename: 'p1s.gcode.3mf', sliced_for_model: 'P1S', clears_plate: false },
+  ];
+  const printButton = () => screen.getByRole('button', { name: /^Print$/i });
+  const rowBox = (i: number) => screen.getAllByRole('checkbox', { name: /Clears plate/ })[i] as HTMLInputElement;
+  const open = () =>
+    renderCreate({ libraryFileId: 5, variantFiles: files as never, initialSelectedPrinterIds: undefined });
+
+  it('prefills each row from its own file', async () => {
+    mockBackend({ slicedFor: { 5: 'A1', 6: 'P1S' } });
+    open();
+    await screen.findByText('Printer alternatives');
+    expect(screen.getAllByRole('checkbox', { name: /Clears plate/ })).toHaveLength(2);
+    expect(rowBox(0)).toBeChecked();
+    expect(rowBox(1)).not.toBeChecked();
+  });
+
+  it('sends the displayed clears_plate for every row', async () => {
+    mockBackend({ slicedFor: { 5: 'A1', 6: 'P1S' } });
+    const user = userEvent.setup();
+    open();
+    await screen.findByText('Printer alternatives');
+    await user.click(rowBox(1));
+    expect(rowBox(1)).toBeChecked();
+    await waitFor(() => expect(printButton()).toBeEnabled());
+    await user.click(printButton());
+
+    await waitFor(() => expect(posted).toHaveLength(1));
+    const variants = posted[0].variants as Body[];
+    expect(variants[0]).toMatchObject({ library_file_id: 5, clears_plate: true });
+    expect(variants[1]).toMatchObject({ library_file_id: 6, clears_plate: true });
+    expect(posted[0]).not.toHaveProperty('clears_plate');
+  });
+
+  it('sends every row\'s prefilled value explicitly when none was toggled', async () => {
+    mockBackend({ slicedFor: { 5: 'A1', 6: 'P1S' } });
+    const user = userEvent.setup();
+    open();
+    await screen.findByText('Printer alternatives');
+    await waitFor(() => expect(printButton()).toBeEnabled());
+    await user.click(printButton());
+
+    await waitFor(() => expect(posted).toHaveLength(1));
+    const variants = posted[0].variants as Body[];
+    expect(variants[0]).toMatchObject({ clears_plate: true });
+    expect(variants[1]).toMatchObject({ clears_plate: false });
+  });
+
+  it('sends an explicit false when a flagged row is switched off', async () => {
+    mockBackend({ slicedFor: { 5: 'A1', 6: 'P1S' } });
+    const user = userEvent.setup();
+    open();
+    await screen.findByText('Printer alternatives');
+    await user.click(rowBox(0));
+    await waitFor(() => expect(printButton()).toBeEnabled());
+    await user.click(printButton());
+
+    await waitFor(() => expect(posted).toHaveLength(1));
+    const variants = posted[0].variants as Body[];
+    expect(variants[0]).toMatchObject({ clears_plate: false });
+    expect(variants[1]).toMatchObject({ clears_plate: false });
+  });
+});
+
 describe('PrintModal clears-plate pill in edit mode (#3576)', () => {
   beforeEach(() => {
     posted = [];
@@ -352,6 +423,26 @@ describe('PrintModal clears-plate pill in edit mode (#3576)', () => {
 
     await waitFor(() => expect(patched).toHaveLength(1));
     expect(patched[0].clears_plate).toBe(true);
+  });
+
+  it('hides the pill and never sends clears_plate for an alternatives item', async () => {
+    mockBackend();
+    const user = userEvent.setup();
+    renderEdit(
+      queueItem({
+        clears_plate: true,
+        variants: [
+          { library_file_id: 5, filename: 'a1.gcode.3mf', target_model: 'A1', clears_plate: true },
+          { library_file_id: 6, filename: 'p1s.gcode.3mf', target_model: 'P1S', clears_plate: false },
+        ],
+      } as never),
+    );
+    await new Promise((r) => setTimeout(r, 100));
+    expect(screen.queryByRole('button', { name: /Clears plate/i })).toBeNull();
+    await user.click(screen.getByRole('button', { name: /save/i }));
+
+    await waitFor(() => expect(patched).toHaveLength(1));
+    expect(patched[0]).not.toHaveProperty('clears_plate');
   });
 
   it('is not overwritten by a flagged archive in edit mode', async () => {

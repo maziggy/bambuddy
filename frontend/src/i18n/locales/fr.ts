@@ -1653,6 +1653,8 @@ export default {
       confirmOutcomeTitle: 'Demande comment l’impression s’est déroulée une fois terminée',
       clearsPlate: 'Libère le plateau',
       clearsPlateTitle: 'Libère son propre plateau : pas de confirmation de plateau après une impression réussie, sauf si l\'imprimante est réglée sur « Toujours exiger »',
+      clearsPlatePartial: 'Libère le plateau (certaines imprimantes)',
+      clearsPlatePartialTitle: 'Seules ces alternatives libèrent leur propre plateau : {{models}}',
     },
     // Empty state
     empty: {
@@ -1696,6 +1698,7 @@ export default {
       useAms: 'Utiliser AMS',
       confirmOutcome: 'Demander le résultat',
       clearsPlate: 'Libérer le plateau automatiquement',
+      clearsPlateHint: 'S\'applique à chaque imprimante alternative d\'un travail',
       nozzleOffsetCali: 'Calibration du décalage des buses',
       applyChanges: 'Appliquer',
       selectAll: 'Tout sélectionner',
@@ -5775,6 +5778,10 @@ export default {
       help: 'Un travail, une place dans la file. La première imprimante compatible qui se libère imprime son fichier.',
       unknownModel: 'Modèle inconnu',
       plateFor: 'Plateau pour {{filename}}',
+      clearsPlateFor: 'Libère le plateau : {{filename}}',
+      clearsPlateLegend: 'Coché : le fichier de cette imprimante libère le plateau lui-même',
+      clearsPlate: 'Libère le plateau',
+      clearsPlateTitle: 'Le fichier de cette imprimante libère lui-même le plateau. Après une impression réussie sur cette imprimante, la file lance le travail suivant sans confirmation de plateau, sauf si l\'imprimante est réglée sur « Toujours exiger ».',
       moveUp: 'Monter',
       moveDown: 'Descendre',
       queued: 'Mis en file avec {{count}} alternatives',

@@ -1653,6 +1653,8 @@ export default {
       confirmOutcomeTitle: 'Fragt nach Abschluss, wie der Druck geworden ist',
       clearsPlate: 'Räumt Platte',
       clearsPlateTitle: 'Räumt die Platte selbst: keine Plattenbestätigung nach erfolgreichem Druck, es sei denn, der Drucker ist auf „Immer verlangen“ gestellt',
+      clearsPlatePartial: 'Räumt Platte (einige Drucker)',
+      clearsPlatePartialTitle: 'Nur diese Alternativen räumen ihre Platte selbst: {{models}}',
     },
     // Empty state
     empty: {
@@ -1696,6 +1698,7 @@ export default {
       useAms: 'AMS verwenden',
       confirmOutcome: 'Nach Ergebnis fragen',
       clearsPlate: 'Räumt die Platte automatisch',
+      clearsPlateHint: 'Gilt für jede Drucker-Alternative eines Auftrags',
       nozzleOffsetCali: 'Düsenversatz-Kalibrierung',
       applyChanges: 'Änderungen übernehmen',
       selectAll: 'Alle auswählen',
@@ -5788,6 +5791,10 @@ export default {
       help: 'Ein Auftrag, ein Warteschlangenplatz. Der erste passende Drucker, der frei wird, druckt seine Datei.',
       unknownModel: 'Unbekanntes Modell',
       plateFor: 'Platte für {{filename}}',
+      clearsPlateFor: 'Räumt Platte: {{filename}}',
+      clearsPlateLegend: 'Aktiviert: Die Datei dieses Druckers räumt die Platte selbst',
+      clearsPlate: 'Räumt Platte',
+      clearsPlateTitle: 'Die Datei für diesen Drucker räumt die Platte selbst. Nach einem erfolgreichen Druck auf diesem Drucker startet die Warteschlange den nächsten Auftrag ohne Plattenbestätigung, es sei denn, der Drucker ist auf „Immer verlangen“ gestellt.',
       moveUp: 'Nach oben',
       moveDown: 'Nach unten',
       queued: 'Mit {{count}} Alternativen eingereiht',

@@ -296,6 +296,157 @@ class TestQueueUpdate:
         assert (await _stored_item(test_engine, a["id"])).clears_plate is True
 
 
+# --------------------------------------------------------------------------- stale item column (variants)
+
+
+class TestVariantJobDerivedFlag:
+    """A trial resolve can leave TRUE in the item column; the alternatives are the truth."""
+
+    async def _job(self, async_client, test_engine, printer_factory, file_factory, *, column=True):
+        from sqlalchemy import update
+
+        await printer_factory(model="A1")
+        await printer_factory(model="P1S")
+        a = await file_factory("A1", clears_plate=True)
+        b = await file_factory("P1S", clears_plate=False)
+        job = await _queue(async_client, variants=[{"library_file_id": a.id}, {"library_file_id": b.id}])
+        maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+        async with maker() as s:
+            await s.execute(update(PrintQueueItem).where(PrintQueueItem.id == job["id"]).values(clears_plate=column))
+            await s.commit()
+        return job
+
+    async def _flags(self, test_engine, item_id):
+        from backend.app.models.print_queue import PrintQueueVariant
+
+        maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+        async with maker() as s:
+            rows = (
+                (
+                    await s.execute(
+                        select(PrintQueueVariant)
+                        .where(PrintQueueVariant.queue_item_id == item_id)
+                        .order_by(PrintQueueVariant.position)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            return [bool(v.clears_plate) for v in rows]
+
+    async def test_get_and_list_report_the_derived_value(
+        self, async_client, test_engine, printer_factory, file_factory
+    ):
+        job = await self._job(async_client, test_engine, printer_factory, file_factory)
+
+        assert (await async_client.get(f"/api/v1/queue/{job['id']}")).json()["clears_plate"] is False
+        listed = (await async_client.get("/api/v1/queue/")).json()
+        assert [i["clears_plate"] for i in listed if i["id"] == job["id"]] == [False]
+
+    async def _set_flags(self, test_engine, item_id, value):
+        from sqlalchemy import update
+
+        from backend.app.models.print_queue import PrintQueueVariant
+
+        maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+        async with maker() as s:
+            await s.execute(
+                update(PrintQueueVariant).where(PrintQueueVariant.queue_item_id == item_id).values(clears_plate=value)
+            )
+            await s.commit()
+
+    async def test_patch_explicit_false_on_mixed_job_sets_all_false(
+        self, async_client, test_engine, printer_factory, file_factory
+    ):
+        job = await self._job(async_client, test_engine, printer_factory, file_factory)
+
+        echoed = (await async_client.get(f"/api/v1/queue/{job['id']}")).json()["clears_plate"]
+        assert echoed is False
+        response = await async_client.patch(
+            f"/api/v1/queue/{job['id']}", json={"bed_levelling": "off", "clears_plate": echoed}
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["clears_plate"] is False
+        assert await self._flags(test_engine, job["id"]) == [False, False]
+
+    async def test_bulk_explicit_false_on_mixed_job_sets_all_false(
+        self, async_client, test_engine, printer_factory, file_factory
+    ):
+        job = await self._job(async_client, test_engine, printer_factory, file_factory)
+
+        response = await async_client.patch(
+            "/api/v1/queue/bulk", json={"item_ids": [job["id"]], "bed_levelling": "off", "clears_plate": False}
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["updated_count"] == 1
+        assert await self._flags(test_engine, job["id"]) == [False, False]
+
+    async def test_patch_true_on_all_true_job_is_noop(self, async_client, test_engine, printer_factory, file_factory):
+        job = await self._job(async_client, test_engine, printer_factory, file_factory)
+        await self._set_flags(test_engine, job["id"], True)
+
+        response = await async_client.patch(f"/api/v1/queue/{job['id']}", json={"clears_plate": True})
+
+        assert response.status_code == 200, response.text
+        assert await self._flags(test_engine, job["id"]) == [True, True]
+
+    async def test_bulk_true_on_all_true_job_is_noop(self, async_client, test_engine, printer_factory, file_factory):
+        job = await self._job(async_client, test_engine, printer_factory, file_factory)
+        await self._set_flags(test_engine, job["id"], True)
+
+        response = await async_client.patch("/api/v1/queue/bulk", json={"item_ids": [job["id"]], "clears_plate": True})
+
+        assert response.json()["updated_count"] == 1
+        assert await self._flags(test_engine, job["id"]) == [True, True]
+
+    async def test_true_on_mixed_job_sets_all_true(self, async_client, test_engine, printer_factory, file_factory):
+        job = await self._job(async_client, test_engine, printer_factory, file_factory)
+
+        response = await async_client.patch(f"/api/v1/queue/{job['id']}", json={"clears_plate": True})
+        assert response.status_code == 200, response.text
+        assert await self._flags(test_engine, job["id"]) == [True, True]
+
+    async def test_bulk_true_on_mixed_job_sets_all_true(self, async_client, test_engine, printer_factory, file_factory):
+        job = await self._job(async_client, test_engine, printer_factory, file_factory)
+
+        await async_client.patch("/api/v1/queue/bulk", json={"item_ids": [job["id"]], "clears_plate": True})
+        assert await self._flags(test_engine, job["id"]) == [True, True]
+
+    async def test_explicit_change_sets_every_alternative(
+        self, async_client, test_engine, printer_factory, file_factory
+    ):
+        job = await self._job(async_client, test_engine, printer_factory, file_factory, column=False)
+
+        response = await async_client.patch(f"/api/v1/queue/{job['id']}", json={"clears_plate": True})
+
+        assert response.status_code == 200, response.text
+        assert response.json()["clears_plate"] is True
+        assert await self._flags(test_engine, job["id"]) == [True, True]
+
+    async def test_explicit_bulk_change_sets_every_alternative(
+        self, async_client, test_engine, printer_factory, file_factory
+    ):
+        job = await self._job(async_client, test_engine, printer_factory, file_factory, column=False)
+
+        response = await async_client.patch("/api/v1/queue/bulk", json={"item_ids": [job["id"]], "clears_plate": True})
+
+        assert response.json()["updated_count"] == 1
+        assert await self._flags(test_engine, job["id"]) == [True, True]
+
+    async def test_printing_item_reports_the_column(self, async_client, test_engine, printer_factory, file_factory):
+        from sqlalchemy import update
+
+        job = await self._job(async_client, test_engine, printer_factory, file_factory)
+        maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+        async with maker() as s:
+            await s.execute(update(PrintQueueItem).where(PrintQueueItem.id == job["id"]).values(status="printing"))
+            await s.commit()
+
+        assert (await async_client.get(f"/api/v1/queue/{job['id']}")).json()["clears_plate"] is True
+
+
 # --------------------------------------------------------------------------- batch clone
 
 
@@ -657,3 +808,206 @@ async def test_webhook_reprint_inherits_clears_plate_from_the_archive(
     assert response.status_code == 200, response.text
     item = await db_session.scalar(select(PrintQueueItem).where(PrintQueueItem.id == response.json()["id"]))
     assert item.clears_plate is flag
+
+
+# --------------------------------------------------------------------------- per printer alternative
+
+
+async def _stored_variants(test_engine, item_id: int):
+    from backend.app.models.print_queue import PrintQueueVariant
+
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with maker() as fresh:
+        rows = await fresh.execute(
+            select(PrintQueueVariant)
+            .where(PrintQueueVariant.queue_item_id == item_id)
+            .order_by(PrintQueueVariant.position)
+        )
+        return list(rows.scalars().all())
+
+
+async def _summaries(client: AsyncClient, item_id: int) -> list[dict]:
+    """The create response leaves ``variants`` unloaded, so read them back."""
+    return (await client.get(f"/api/v1/queue/{item_id}")).json()["variants"]
+
+
+class TestVariantAlternatives:
+    """Each printer alternative of a cross-model job clears (or not) on its own."""
+
+    async def _files(self, printer_factory, file_factory, a1_flag=True, p1s_flag=False):
+        await printer_factory(model="A1")
+        await printer_factory(model="P1S")
+        a1 = await file_factory("A1", clears_plate=a1_flag)
+        p1s = await file_factory("P1S", clears_plate=p1s_flag)
+        return a1, p1s
+
+    async def test_each_variant_takes_its_files_value(self, async_client, test_engine, printer_factory, file_factory):
+        a1, p1s = await self._files(printer_factory, file_factory)
+
+        item = await _queue(async_client, variants=[{"library_file_id": a1.id}, {"library_file_id": p1s.id}])
+
+        assert [v.clears_plate for v in await _stored_variants(test_engine, item["id"])] == [True, False]
+        # The item row is display only: all alternatives clear, or it does not.
+        assert item["clears_plate"] is False
+        assert [(v["target_model"], v["clears_plate"]) for v in await _summaries(async_client, item["id"])] == [
+            ("A1", True),
+            ("P1S", False),
+        ]
+
+    async def test_all_flagged_files_flag_the_item(self, async_client, printer_factory, file_factory):
+        a1, p1s = await self._files(printer_factory, file_factory, p1s_flag=True)
+
+        item = await _queue(async_client, variants=[{"library_file_id": a1.id}, {"library_file_id": p1s.id}])
+
+        assert item["clears_plate"] is True
+        assert [v["clears_plate"] for v in await _summaries(async_client, item["id"])] == [True, True]
+
+    async def test_explicit_variant_value_wins_over_the_file(
+        self, async_client, test_engine, printer_factory, file_factory
+    ):
+        a1, p1s = await self._files(printer_factory, file_factory)
+
+        item = await _queue(
+            async_client,
+            variants=[
+                {"library_file_id": a1.id, "clears_plate": False},
+                {"library_file_id": p1s.id, "clears_plate": True},
+            ],
+        )
+
+        assert [v.clears_plate for v in await _stored_variants(test_engine, item["id"])] == [False, True]
+        assert [v["clears_plate"] for v in await _summaries(async_client, item["id"])] == [False, True]
+        assert item["clears_plate"] is False
+
+    async def test_explicit_null_variant_value_takes_the_file(
+        self, async_client, test_engine, printer_factory, file_factory
+    ):
+        a1, p1s = await self._files(printer_factory, file_factory)
+
+        item = await _queue(
+            async_client,
+            variants=[{"library_file_id": a1.id, "clears_plate": None}, {"library_file_id": p1s.id}],
+        )
+
+        assert [v.clears_plate for v in await _stored_variants(test_engine, item["id"])] == [True, False]
+
+    @pytest.mark.parametrize("value", [True, False])
+    async def test_explicit_item_value_overrides_every_variant(
+        self, async_client, test_engine, printer_factory, file_factory, value
+    ):
+        a1, p1s = await self._files(printer_factory, file_factory)
+
+        item = await _queue(
+            async_client,
+            clears_plate=value,
+            variants=[
+                {"library_file_id": a1.id, "clears_plate": not value},
+                {"library_file_id": p1s.id},
+            ],
+        )
+
+        assert item["clears_plate"] is value
+        assert [v.clears_plate for v in await _stored_variants(test_engine, item["id"])] == [value, value]
+        assert [v["clears_plate"] for v in await _summaries(async_client, item["id"])] == [value, value]
+
+    async def test_quantity_copies_each_carry_the_values(
+        self, async_client, test_engine, printer_factory, file_factory
+    ):
+        a1, p1s = await self._files(printer_factory, file_factory)
+
+        item = await _queue(
+            async_client, quantity=2, variants=[{"library_file_id": a1.id}, {"library_file_id": p1s.id}]
+        )
+
+        listed = [i for i in (await async_client.get("/api/v1/queue/")).json() if i["variants"]]
+        assert len(listed) == 2
+        for entry in listed:
+            assert [v["clears_plate"] for v in entry["variants"]] == [True, False]
+        assert item["id"] in [e["id"] for e in listed]
+
+    async def test_get_and_list_carry_the_summary_field(self, async_client, printer_factory, file_factory):
+        a1, p1s = await self._files(printer_factory, file_factory)
+        item = await _queue(async_client, variants=[{"library_file_id": a1.id}, {"library_file_id": p1s.id}])
+
+        single = (await async_client.get(f"/api/v1/queue/{item['id']}")).json()
+        assert [v["clears_plate"] for v in single["variants"]] == [True, False]
+
+    async def test_patch_sets_every_variant(self, async_client, test_engine, printer_factory, file_factory):
+        a1, p1s = await self._files(printer_factory, file_factory)
+        item = await _queue(async_client, variants=[{"library_file_id": a1.id}, {"library_file_id": p1s.id}])
+
+        response = await async_client.patch(f"/api/v1/queue/{item['id']}", json={"clears_plate": True})
+        assert response.status_code == 200, response.text
+        assert [v["clears_plate"] for v in response.json()["variants"]] == [True, True]
+        assert [v.clears_plate for v in await _stored_variants(test_engine, item["id"])] == [True, True]
+
+        response = await async_client.patch(f"/api/v1/queue/{item['id']}", json={"clears_plate": False})
+        assert [v.clears_plate for v in await _stored_variants(test_engine, item["id"])] == [False, False]
+
+    async def test_patch_without_the_field_or_null_leaves_the_variants(
+        self, async_client, test_engine, printer_factory, file_factory
+    ):
+        a1, p1s = await self._files(printer_factory, file_factory)
+        item = await _queue(async_client, variants=[{"library_file_id": a1.id}, {"library_file_id": p1s.id}])
+
+        await async_client.patch(f"/api/v1/queue/{item['id']}", json={"bed_levelling": "off"})
+        await async_client.patch(f"/api/v1/queue/{item['id']}", json={"clears_plate": None})
+
+        assert [v.clears_plate for v in await _stored_variants(test_engine, item["id"])] == [True, False]
+
+    async def test_bulk_update_sets_every_variant(self, async_client, test_engine, printer_factory, file_factory):
+        a1, p1s = await self._files(printer_factory, file_factory)
+        item = await _queue(async_client, variants=[{"library_file_id": a1.id}, {"library_file_id": p1s.id}])
+
+        response = await async_client.patch("/api/v1/queue/bulk", json={"item_ids": [item["id"]], "clears_plate": True})
+
+        assert response.status_code == 200, response.text
+        assert response.json()["updated_count"] == 1
+        assert [v.clears_plate for v in await _stored_variants(test_engine, item["id"])] == [True, True]
+
+    async def test_bulk_update_of_another_field_leaves_the_variants(
+        self, async_client, test_engine, printer_factory, file_factory
+    ):
+        a1, p1s = await self._files(printer_factory, file_factory)
+        item = await _queue(async_client, variants=[{"library_file_id": a1.id}, {"library_file_id": p1s.id}])
+
+        await async_client.patch("/api/v1/queue/bulk", json={"item_ids": [item["id"]], "bed_levelling": "off"})
+
+        assert [v.clears_plate for v in await _stored_variants(test_engine, item["id"])] == [True, False]
+
+
+class TestVariantsResolveAndClone:
+    async def test_the_column_is_cloned(self):
+        from backend.app.services.print_batch import CLONED_VARIANT_COLUMNS
+
+        assert "clears_plate" in CLONED_VARIANT_COLUMNS
+
+    @pytest.mark.parametrize(("winner", "expected"), [(0, True), (1, False)])
+    async def test_resolve_variant_sets_the_items_flag(self, db_session, file_factory, winner, expected):
+        """The chosen printer's slice decides, in both directions."""
+        from backend.app.models.print_queue import PrintQueueVariant
+
+        a1 = await file_factory("A1", clears_plate=True)
+        p1s = await file_factory("P1S", clears_plate=False)
+        # The item starts with the opposite of what the winner will say.
+        item = PrintQueueItem(status="pending", position=1, clears_plate=not expected)
+        item.variants.extend(
+            [
+                PrintQueueVariant(position=0, library_file_id=a1.id, target_model="A1", clears_plate=True),
+                PrintQueueVariant(position=1, library_file_id=p1s.id, target_model="P1S", clears_plate=False),
+            ]
+        )
+        db_session.add(item)
+        await db_session.commit()
+        await db_session.refresh(item, ["variants"])
+
+        PrintScheduler()._resolve_variant(item, SimpleNamespace(variant=item.variants[winner]))
+
+        assert item.clears_plate is expected
+
+    async def test_a_non_variant_candidate_leaves_the_flag(self, db_session):
+        item = PrintQueueItem(status="pending", position=1, clears_plate=True)
+
+        PrintScheduler()._resolve_variant(item, SimpleNamespace(variant=None))
+
+        assert item.clears_plate is True

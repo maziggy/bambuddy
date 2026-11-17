@@ -1652,6 +1652,8 @@ export default {
       confirmOutcomeTitle: '完了後に印刷の仕上がりを確認します',
       clearsPlate: 'プレート自動クリア',
       clearsPlateTitle: '自動でプレートをクリア：印刷成功後のプレート確認は不要（プリンターが「常に必須」に設定されている場合を除く）',
+      clearsPlatePartial: 'プレート自動クリア（一部のプリンター）',
+      clearsPlatePartialTitle: 'プレートを自動クリアするのはこれらの候補のみ：{{models}}',
     },
     // Empty state
     empty: {
@@ -1695,6 +1697,7 @@ export default {
       useAms: 'AMS使用',
       confirmOutcome: '結果を確認する',
       clearsPlate: 'プレートを自動でクリア',
+      clearsPlateHint: 'ジョブのすべての代替プリンターに適用されます',
       nozzleOffsetCali: 'ノズルオフセットキャリブレーション',
       applyChanges: '変更を適用',
       selectAll: 'すべて選択',
@@ -5788,6 +5791,10 @@ export default {
       help: '1つのジョブ、キューは1枠。条件に合う最初に空いたプリンターがそのファイルを印刷します。',
       unknownModel: '不明なモデル',
       plateFor: '{{filename}} のプレート',
+      clearsPlateFor: 'プレートを自動クリア：{{filename}}',
+      clearsPlateLegend: 'チェック済み: このプリンターのファイルは自らプレートをクリアします',
+      clearsPlate: 'プレート自動クリア',
+      clearsPlateTitle: 'このプリンター用のファイルはプレートを自分でクリアします。このプリンターで印刷が成功すると、プリンターが「常に必須」に設定されていない限り、キューはプレート確認なしで次のジョブを開始します。',
       moveUp: '上へ',
       moveDown: '下へ',
       queued: '{{count}}件の候補付きでキューに追加しました',

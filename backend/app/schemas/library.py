@@ -531,6 +531,7 @@ class VariantGroupMemberResponse(BaseModel):
     filename: str
     target_model: str
     position: int
+    clears_plate: bool = False  # the file's own flag (#3576)
 
 
 class VariantGroupResponse(BaseModel):

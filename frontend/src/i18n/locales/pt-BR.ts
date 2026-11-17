@@ -1653,6 +1653,8 @@ export default {
       confirmOutcomeTitle: 'Pergunta como a impressão ficou depois de concluída',
       clearsPlate: 'Libera a placa',
       clearsPlateTitle: 'Libera a própria placa: sem confirmação de placa após uma impressão bem-sucedida, a menos que a impressora esteja definida como "Sempre exigir"',
+      clearsPlatePartial: 'Libera a placa (algumas impressoras)',
+      clearsPlatePartialTitle: 'Somente estas alternativas liberam a própria placa: {{models}}',
     },
     // Empty state
     empty: {
@@ -1696,6 +1698,7 @@ export default {
       useAms: 'Usar AMS',
       confirmOutcome: 'Perguntar o resultado',
       clearsPlate: 'Liberar a placa automaticamente',
+      clearsPlateHint: 'Aplica-se a cada impressora alternativa de um trabalho',
       nozzleOffsetCali: 'Calibração de offset dos bicos',
       applyChanges: 'Aplicar Alterações',
       selectAll: 'Selecionar Todos',
@@ -5774,6 +5777,10 @@ export default {
       help: 'Um trabalho, uma vaga na fila. A primeira impressora compatível que ficar livre imprime o arquivo dela.',
       unknownModel: 'Modelo desconhecido',
       plateFor: 'Mesa para {{filename}}',
+      clearsPlateFor: 'Limpa a mesa: {{filename}}',
+      clearsPlateLegend: 'Marcado: o arquivo desta impressora libera a placa sozinho',
+      clearsPlate: 'Libera a placa',
+      clearsPlateTitle: 'O arquivo desta impressora libera a placa sozinho. Após uma impressão bem-sucedida nesta impressora, a fila inicia o próximo trabalho sem confirmação de placa, a menos que a impressora esteja definida como "Sempre exigir".',
       moveUp: 'Mover para cima',
       moveDown: 'Mover para baixo',
       queued: 'Na fila com {{count}} alternativas',

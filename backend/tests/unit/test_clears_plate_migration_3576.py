@@ -1,4 +1,4 @@
-"""Migration test for #3576 - clears_plate on library_files / print_queue / print_archives.
+"""Migration test for #3576 - clears_plate on library_files / print_queue / print_archives / print_queue_variants.
 
 Each column is BOOLEAN NOT NULL DEFAULT FALSE: an existing row reads False and
 keeps waiting for the plate confirmation as before. The added columns must come
@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from backend.app.core.database import load_all_models, run_migrations
 
-TABLES = ("library_files", "print_queue", "print_archives")
+TABLES = ("library_files", "print_queue", "print_archives", "print_queue_variants")
 
 
 @pytest.fixture(autouse=True)
@@ -47,7 +47,7 @@ async def fresh_engine():
 
 @pytest.fixture
 async def legacy_engine():
-    """A current schema whose three tables predate #3576, one row each."""
+    """A current schema whose four tables predate #3576, one row each."""
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
     async with engine.begin() as conn:
         metadata = load_all_models()
@@ -71,6 +71,11 @@ async def legacy_engine():
             metadata.tables["print_queue"]
             .insert()
             .values(id=1, printer_id=1, archive_id=1, status="pending", position=1)
+        )
+        await conn.execute(
+            metadata.tables["print_queue_variants"]
+            .insert()
+            .values(id=1, queue_item_id=1, position=0, library_file_id=1, target_model="A1")
         )
         for table in TABLES:
             await conn.execute(text(f"ALTER TABLE {table} DROP COLUMN clears_plate"))
@@ -141,3 +146,45 @@ async def test_migration_is_idempotent(legacy_engine):
         for table in TABLES:
             value = (await conn.execute(text(f"SELECT clears_plate FROM {table} WHERE id = 1"))).scalar_one()
             assert bool(value) is True, table
+
+
+async def _flag_pending_item(conn):
+    await conn.execute(text("UPDATE print_queue SET clears_plate = TRUE WHERE id = 1"))
+
+
+async def _variant_flag(engine) -> bool:
+    async with engine.begin() as conn:
+        return bool(
+            (await conn.execute(text("SELECT clears_plate FROM print_queue_variants WHERE id = 1"))).scalar_one()
+        )
+
+
+async def test_backfill_flags_variants_of_a_flagged_pending_item(legacy_engine):
+    """Rows from the first build: item column TRUE from all(), variants defaulted to FALSE."""
+    async with legacy_engine.begin() as conn:
+        # Only the variants column is new; the item column was already there.
+        await conn.execute(text("ALTER TABLE print_queue ADD COLUMN clears_plate BOOLEAN DEFAULT FALSE NOT NULL"))
+        await _flag_pending_item(conn)
+        await run_migrations(conn)
+
+    assert await _variant_flag(legacy_engine) is True
+
+
+async def test_backfill_skips_an_unflagged_item(legacy_engine):
+    async with legacy_engine.begin() as conn:
+        await run_migrations(conn)
+
+    assert await _variant_flag(legacy_engine) is False
+
+
+async def test_backfill_runs_once(legacy_engine):
+    async with legacy_engine.begin() as conn:
+        await conn.execute(text("ALTER TABLE print_queue ADD COLUMN clears_plate BOOLEAN DEFAULT FALSE NOT NULL"))
+        await _flag_pending_item(conn)
+        await run_migrations(conn)
+    async with legacy_engine.begin() as conn:
+        await conn.execute(text("UPDATE print_queue_variants SET clears_plate = FALSE WHERE id = 1"))
+    async with legacy_engine.begin() as conn:
+        await run_migrations(conn)
+
+    assert await _variant_flag(legacy_engine) is False

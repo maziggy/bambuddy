@@ -1669,6 +1669,8 @@ export default {
       confirmOutcomeTitle: 'Vraagt na afloop hoe de print is geworden',
       clearsPlate: 'Maakt plaat vrij',
       clearsPlateTitle: 'Maakt zijn eigen plaat vrij: geen platenbevestiging na een geslaagde print, tenzij de printer op "Altijd vereisen" staat',
+      clearsPlatePartial: 'Maakt plaat vrij (sommige printers)',
+      clearsPlatePartialTitle: 'Alleen deze alternatieven maken hun eigen plaat vrij: {{models}}',
     },
     // Empty state
     empty: {
@@ -1712,6 +1714,7 @@ export default {
       useAms: 'AMS gebruiken',
       confirmOutcome: 'Vragen naar resultaat',
       clearsPlate: 'Maakt de plaat automatisch vrij',
+      clearsPlateHint: 'Geldt voor elk alternatief van een opdracht',
       nozzleOffsetCali: 'Nozzle-offsetkalibratie',
       applyChanges: 'Wijzigingen toepassen',
       selectAll: 'Alles selecteren',
@@ -5833,6 +5836,10 @@ export default {
       help: 'Eén taak, één wachtrijpositie. De eerste passende printer die vrijkomt voert zijn bestand uit.',
       unknownModel: 'Onbekend model',
       plateFor: 'Plaat voor {{filename}}',
+      clearsPlateFor: 'Ruimt plaat: {{filename}}',
+      clearsPlateLegend: 'Aangevinkt: het bestand van deze printer maakt de plaat zelf vrij',
+      clearsPlate: 'Maakt plaat vrij',
+      clearsPlateTitle: 'Het bestand voor deze printer maakt de plaat zelf vrij. Na een geslaagde print op deze printer start de wachtrij de volgende taak zonder platenbevestiging, tenzij de printer op "Altijd vereisen" staat.',
       moveUp: 'Omhoog verplaatsen',
       moveDown: 'Omlaag verplaatsen',
       queued: 'In wachtrij met {{count}} alternatieven',

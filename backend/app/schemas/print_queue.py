@@ -80,6 +80,9 @@ class QueueVariantCreate(BaseModel):
     # live rack at dispatch; null means "assign them for me".
     nozzle_rack_choice: dict[int, int] | None = None
     filament_overrides: list[dict] | None = None
+    # Whether this printer's slice clears its own plate (#3576); null takes the
+    # candidate file's flag.
+    clears_plate: bool | None = None
 
 
 class PrintQueueItemCreate(BaseModel):
@@ -204,6 +207,7 @@ class QueueVariantSummary(BaseModel):
     filename: str
     target_model: str
     position: int
+    clears_plate: bool = False
 
 
 class ColorSubstitution(BaseModel):

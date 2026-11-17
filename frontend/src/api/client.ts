@@ -2910,6 +2910,8 @@ export interface PrintQueueItem {
     filename: string;
     target_model: string;
     position: number;
+    // This alternative's slice clears its own plate (#3576)
+    clears_plate: boolean;
   }>;
   // Either archive_id OR library_file_id must be set (archive created at print start)
   archive_id: number | null;
@@ -3135,6 +3137,8 @@ export interface QueueVariantCreate {
   ams_mapping?: number[] | null;
   nozzle_mapping?: number[] | null;
   filament_overrides?: Array<{ slot_id: number; type: string; color: string; color_name?: string; tray_info_idx?: string; force_color_match?: boolean }> | null;
+  /** This alternative's slice clears its own plate (#3576); omit to take the file's flag. */
+  clears_plate?: boolean;
 }
 
 export interface PrintBatchCreate {
@@ -9175,6 +9179,8 @@ export interface VariantGroupMember {
   filename: string;
   target_model: string;
   position: number;
+  // The member file clears its own plate (#3576)
+  clears_plate: boolean;
 }
 
 export interface VariantGroup {

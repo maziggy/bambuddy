@@ -1653,6 +1653,8 @@ export default {
       confirmOutcomeTitle: '打印完成后询问打印效果如何',
       clearsPlate: '自动清空热床',
       clearsPlateTitle: '自行清空热床：打印成功后无需热床确认，除非打印机设置为“始终需要”',
+      clearsPlatePartial: '自动清空热床(部分打印机)',
+      clearsPlatePartialTitle: '仅这些备选会自行清空热床:{{models}}',
     },
     // Empty state
     empty: {
@@ -1696,6 +1698,7 @@ export default {
       useAms: '使用 AMS',
       confirmOutcome: '询问打印结果',
       clearsPlate: '自动清空热床',
+      clearsPlateHint: '适用于作业的每个备选打印机',
       nozzleOffsetCali: '喷嘴偏移校准',
       applyChanges: '应用更改',
       selectAll: '全选',
@@ -5774,6 +5777,10 @@ export default {
       help: '一个任务，占一个队列位。第一台空闲且匹配的打印机会打印它对应的文件。',
       unknownModel: '未知型号',
       plateFor: '{{filename}} 的盘',
+      clearsPlateFor: '自动清盘：{{filename}}',
+      clearsPlateLegend: '已勾选：此打印机的文件会自行清空热床',
+      clearsPlate: '自动清空热床',
+      clearsPlateTitle: '此打印机对应的文件会自行清空热床。在该打印机上打印成功后,除非打印机设置为“始终需要”,否则队列会直接开始下一个任务,无需热床确认。',
       moveUp: '上移',
       moveDown: '下移',
       queued: '已加入队列，含 {{count}} 个备选',

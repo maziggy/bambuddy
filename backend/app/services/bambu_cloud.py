@@ -272,6 +272,30 @@ def _cloud_json(response: httpx.Response):
         ) from None
 
 
+# The preset types in the cloud's listing, under the names it uses for them.
+_SLICER_SETTING_TYPES = ("filament", "printer", "print")
+
+
+def _slicer_settings_listing(data: object) -> dict:
+    """The cloud's preset listing with every type a dict and its ``private``
+    and ``public`` lists always lists of dicts (#3593).
+
+    The cloud sends ``null`` for a type, or for one of its lists, when the
+    account has nothing there. Every caller reads the listing as nested dicts,
+    so a null here took down the Slice dialog's preset list for an account
+    with no presets of one type.
+    """
+    listing = dict(data) if isinstance(data, dict) else {}
+    for key in _SLICER_SETTING_TYPES:
+        section = listing.get(key)
+        section = dict(section) if isinstance(section, dict) else {}
+        for tier in ("private", "public"):
+            entries = section.get(tier)
+            section[tier] = [e for e in entries if isinstance(e, dict)] if isinstance(entries, list) else []
+        listing[key] = section
+    return listing
+
+
 _shared_http_client: httpx.AsyncClient | None = None
 
 
@@ -836,7 +860,7 @@ class BambuCloudService:
             if await self._note_response(response):
                 raise BambuCloudAuthError("Bambu Cloud session expired")
             if response.status_code == 200:
-                return data
+                return _slicer_settings_listing(data)
 
             raise BambuCloudError(f"Failed to get settings: {response.status_code}")
 

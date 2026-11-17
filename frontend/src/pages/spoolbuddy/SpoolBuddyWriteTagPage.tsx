@@ -805,7 +805,9 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
       return;
     }
 
-    const presetName = selectedPresetOption?.displayName || presetInputValue || null;
+    const presetName = formData.slicer_filament
+      ? selectedPresetOption?.displayName || presetInputValue || null
+      : null;
     const payload: Record<string, unknown> = {
       material: formData.material,
       subtype: formData.subtype || null,

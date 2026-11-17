@@ -5399,6 +5399,7 @@ export default {
     slicerFilamentName: 'Slicer Preset Name',
     slicerPreset: 'Slicer Preset',
     searchPresets: 'Search filament presets...',
+    clearPreset: 'Remove preset',
     selectedPreset: 'Selected',
     noPresetsFound: 'No presets found',
     tempOverrides: 'Temperature Overrides',

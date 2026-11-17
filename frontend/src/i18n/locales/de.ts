@@ -5361,6 +5361,7 @@ export default {
     slicerFilamentName: 'Slicer-Preset-Name',
     slicerPreset: 'Slicer-Preset',
     searchPresets: 'Filament-Presets suchen...',
+    clearPreset: 'Preset entfernen',
     selectedPreset: 'Ausgewählt',
     noPresetsFound: 'Keine Presets gefunden',
     tempOverrides: 'Temperatur-Überschreibungen',

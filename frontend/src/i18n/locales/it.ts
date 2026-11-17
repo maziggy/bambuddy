@@ -5348,6 +5348,7 @@ export default {
     slicerFilamentName: 'Nome Preset Slicer',
     slicerPreset: 'Preset Slicer',
     searchPresets: 'Cerca preset filamento...',
+    clearPreset: 'Rimuovi preset',
     selectedPreset: 'Selezionato',
     noPresetsFound: 'Nessun preset trovato',
     tempOverrides: 'Override Temperatura',

@@ -5429,6 +5429,7 @@ errors: {
     slicerFilamentName: 'Slicer-förinställningsnamn',
     slicerPreset: 'Slicer-förinställning',
     searchPresets: 'Sök filamentförinställningar...',
+    clearPreset: 'Ta bort förinställning',
     selectedPreset: 'Vald',
     noPresetsFound: 'Inga förinställningar hittade',
     tempOverrides: 'Temperaturåsidosättningar',

@@ -5399,6 +5399,7 @@ export default {
     slicerFilamentName: 'Nazwa profilu slicera',
     slicerPreset: 'Profil slicera',
     searchPresets: 'Szukaj profili filamentu...',
+    clearPreset: 'Usuń profil',
     selectedPreset: 'Wybrany',
     noPresetsFound: 'Nie znaleziono profili',
     tempOverrides: 'Nadpisania temperatur',

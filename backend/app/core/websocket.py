@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from collections.abc import Collection
 from typing import Any
 
 from fastapi import WebSocket
@@ -162,9 +163,11 @@ class ConnectionManager:
                 if conn in self.active_connections:
                     self.active_connections.remove(conn)
 
-    async def broadcast_to_users(self, user_ids: set[int], message: dict[str, Any]):
+    async def broadcast_to_users(
+        self, user_ids: set[int], message: dict[str, Any], api_key_ids: Collection[int] = frozenset()
+    ):
         """Send a message to every connection of any of ``user_ids``, as
-        ``broadcast_to_user`` does for one."""
+        ``broadcast_to_user`` does for one, and of any of ``api_key_ids``."""
         if not self.active_connections:
             return
 
@@ -174,7 +177,11 @@ class ConnectionManager:
             disconnected = []
             for connection in self.active_connections:
                 conn_uid = getattr(connection.state, "bambuddy_principal_user_id", None)
-                if conn_uid is None or conn_uid not in user_ids or not _may_receive(connection, printer_id):
+                key_id = getattr(connection.state, "bambuddy_scope_principal", (None, None))[1]
+                addressed = (conn_uid is not None and conn_uid in user_ids) or (
+                    key_id is not None and key_id in api_key_ids
+                )
+                if not addressed or not _may_receive(connection, printer_id):
                     continue
                 try:
                     await connection.send_text(data)
@@ -313,10 +320,18 @@ class ConnectionManager:
             }
         )
 
-    async def send_run_completed(self, printer_id: int, archive_id: int, run_id: int, user_ids: set[int] | None):
+    async def send_run_completed(
+        self,
+        printer_id: int,
+        archive_id: int,
+        run_id: int,
+        user_ids: set[int] | None,
+        api_key_ids: Collection[int] = frozenset(),
+    ):
         """Name the run a print's end just wrote, which ``print_complete`` predates (#3578).
 
-        ``user_ids`` are the run's readers; None is everyone who can see the printer.
+        ``user_ids`` and ``api_key_ids`` are the run's readers; None is everyone
+        who can see the printer.
         """
         message = {
             "type": "run_completed",
@@ -326,7 +341,7 @@ class ConnectionManager:
         if user_ids is None:
             await self.broadcast(message)
         else:
-            await self.broadcast_to_users(user_ids, message)
+            await self.broadcast_to_users(user_ids, message, api_key_ids)
 
     async def send_print_confirm_request(self, printer_id: int, data: dict, user_ids: set[int] | None = None):
         """Ask connected clients for a post-print outcome verdict (#1898).

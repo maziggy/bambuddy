@@ -169,7 +169,9 @@ async def test_the_run_that_ended_is_named_to_clients(test_engine, db_session, q
     await _complete(test_engine, queued_print["printer"], "completed", ws_manager=ws)
 
     _archive, _item, logs, _charges = await _rows(db_session, queued_print["archive"], queued_print["item"])
-    ws.send_run_completed.assert_awaited_once_with(queued_print["printer"], queued_print["archive"], logs[0].id, None)
+    ws.send_run_completed.assert_awaited_once_with(
+        queued_print["printer"], queued_print["archive"], logs[0].id, None, set()
+    )
 
 
 async def test_with_auth_on_only_the_runs_readers_are_told(test_engine, db_session, queued_print):
@@ -223,6 +225,90 @@ async def test_a_runs_readers_are_who_the_print_log_shows_it_to(db_session, owne
 
 async def test_with_auth_off_everyone_on_the_printer_is_told(db_session):
     assert await main_module._run_readers(db_session, None) is None
+
+
+async def _announce(test_engine, run_id: int, printer_id: int) -> MagicMock:
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    ws = MagicMock()
+    ws.send_run_completed = AsyncMock()
+    with patch("backend.app.main.async_session", maker), patch("backend.app.main.ws_manager", ws):
+        await main_module._announce_run_completed(run_id, printer_id)
+    return ws
+
+
+async def _reprint(db_session, printer_factory, *, deleted: bool = False):
+    """An archive of one user's file, printed again by another."""
+    from backend.app.models.group import Group
+
+    printer = await printer_factory(name="R")
+    db_session.add(Settings(key="auth_enabled", value="true"))
+    own = Group(name="own", permissions=["archives:read_own"])
+    uploader = User(username="uploader", password_hash="x", role="user", groups=[own])
+    reprinter = User(username="reprinter", password_hash="x", role="user", groups=[own])
+    db_session.add_all([own, uploader, reprinter])
+    await db_session.flush()
+    archive = PrintArchive(
+        printer_id=printer.id,
+        filename="part.3mf",
+        print_name="part",
+        file_path="archives/test/part.3mf",
+        file_size=1,
+        status="completed",
+        created_by_id=uploader.id,
+        deleted_at=datetime(2026, 11, 1) if deleted else None,
+    )
+    db_session.add(archive)
+    await db_session.flush()
+    run = PrintLogEntry(archive_id=archive.id, printer_id=printer.id, status="completed", created_by_id=reprinter.id)
+    db_session.add(run)
+    await db_session.commit()
+    return printer.id, archive.id, run.id, uploader.id
+
+
+async def test_the_runs_readers_are_the_archive_owners_as_its_runs_route(test_engine, db_session, printer_factory):
+    """GET /archives/{id}/runs checks the archive's owner, not the run's: who is told can load it."""
+    printer_id, archive_id, run_id, uploader_id = await _reprint(db_session, printer_factory)
+
+    ws = await _announce(test_engine, run_id, printer_id)
+
+    ws.send_run_completed.assert_awaited_once_with(printer_id, archive_id, run_id, {uploader_id}, set())
+
+
+async def test_no_run_is_named_on_an_archive_in_the_trash(test_engine, db_session, printer_factory):
+    printer_id, _archive_id, run_id, _uploader_id = await _reprint(db_session, printer_factory, deleted=True)
+
+    ws = await _announce(test_engine, run_id, printer_id)
+
+    ws.send_run_completed.assert_not_awaited()
+
+
+async def test_a_runs_reader_keys_are_the_keys_that_may_read_it(db_session):
+    """As /archives/{id}/runs admits a key: it reads status, may be used, and
+    acts as an owner who is a reader, or has no owner and reads everything."""
+    from backend.app.models.api_key import APIKey
+
+    reader = User(username="reader", password_hash="x", role="user")
+    other = User(username="other", password_hash="x", role="user")
+    db_session.add_all([reader, other])
+    await db_session.flush()
+
+    def key(name: str, **fields) -> APIKey:
+        return APIKey(name=name, key_hash="x", key_prefix=f"bb_{name}", **fields)
+
+    keys = {
+        "legacy": key("legacy"),
+        "legacy_blind": key("legacy_blind", can_read_status=False),
+        "readers": key("readers", user_id=reader.id),
+        "others": key("others", user_id=other.id),
+        "disabled": key("disabled", user_id=reader.id, enabled=False),
+        "expired": key("expired", user_id=reader.id, expires_at=datetime(2020, 1, 1)),
+    }
+    db_session.add_all(keys.values())
+    await db_session.commit()
+
+    told = await main_module._run_reader_keys(db_session, {reader.id})
+
+    assert told == {keys["legacy"].id, keys["readers"].id}
 
 
 async def test_no_run_is_named_when_the_archive_was_deleted_while_printing(test_engine, db_session, queued_print):

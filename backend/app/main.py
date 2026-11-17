@@ -1038,7 +1038,8 @@ async def _publish_run_completed(run_id: int | None, printer_id: int) -> None:
 
 
 async def _run_readers(db, owner_id: int | None) -> set[int] | None:
-    """Who may read a run, as the print log lets them: its owner and anyone who
+    """Who may load a run of an archive owned by ``owner_id``, as
+    ``GET /archives/{id}/runs`` lets them: the archive's owner and anyone who
     may read everyone's archives. None (everyone on the printer) with auth off."""
     from sqlalchemy.orm import selectinload
 
@@ -1057,20 +1058,37 @@ async def _run_readers(db, owner_id: int | None) -> set[int] | None:
     }
 
 
+async def _run_reader_keys(db, readers: set[int]) -> set[int]:
+    """The API keys that may load a run ``readers`` may: a key acts as its
+    owner, and one without an owner reads every archive."""
+    from backend.app.core.auth import usable_api_key_prefix
+    from backend.app.models.api_key import APIKey
+
+    keys = (await db.execute(select(APIKey).where(APIKey.can_read_status))).scalars().all()
+    return {
+        k.id
+        for k in keys
+        if (k.user_id is None or k.user_id in readers) and await usable_api_key_prefix(db, k.id) is not None
+    }
+
+
 async def _announce_run_completed(run_id: int | None, printer_id: int) -> None:
     """Tell the run's readers which run a print's end wrote (#3578); nothing
     without one. Never in the way of the completion."""
     if run_id is None:
         return
     try:
+        from backend.app.models.archive import PrintArchive
         from backend.app.models.print_log import PrintLogEntry
 
         async with async_session() as db:
             run = await db.get(PrintLogEntry, run_id)
-            if run is None or run.archive_id is None:
+            archive = await db.get(PrintArchive, run.archive_id) if run is not None and run.archive_id else None
+            if archive is None or archive.deleted_at is not None:
                 return
-            readers = await _run_readers(db, run.created_by_id)
-        await ws_manager.send_run_completed(printer_id, run.archive_id, run.id, readers)
+            readers = await _run_readers(db, archive.created_by_id)
+            keys = await _run_reader_keys(db, readers) if readers is not None else set()
+        await ws_manager.send_run_completed(printer_id, archive.id, run.id, readers, keys)
     except Exception as e:
         logging.getLogger(__name__).warning("[RUN] Could not announce the end of run %s: %s", run_id, e)
 

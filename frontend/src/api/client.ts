@@ -4578,6 +4578,29 @@ export interface PrinterMaintenanceOverview {
   warning_count: number;
 }
 
+// One reset in a printer's maintenance log. The names are as they were at the
+// reset; the ids are null once the printer or custom task is deleted.
+export interface MaintenanceLogEntry {
+  id: number;
+  printer_id: number | null;
+  printer_name: string;
+  maintenance_type_id: number | null;
+  maintenance_type_name: string;
+  hours_at_maintenance: number;
+  notes: string | null;
+  performed_by_id: number | null;
+  performed_by_username: string | null;  // null when authentication was off
+  performed_at: string;
+}
+
+export interface MaintenanceLogPage {
+  items: MaintenanceLogEntry[];
+  total: number;
+}
+
+// Must match MAINTENANCE_NOTES_MAX_LENGTH in backend/app/schemas/maintenance.py.
+export const MAINTENANCE_NOTES_MAX_LENGTH = 10000;
+
 // External Links (sidebar)
 export interface ExternalLink {
   id: number;
@@ -7785,6 +7808,45 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ notes }),
     }),
+  getMaintenanceLog: (printerId: number, options?: { limit?: number; offset?: number }) => {
+    const params = new URLSearchParams();
+    if (options?.limit !== undefined) params.set('limit', String(options.limit));
+    if (options?.offset !== undefined) params.set('offset', String(options.offset));
+    const query = params.toString();
+    return request<MaintenanceLogPage>(`/maintenance/printers/${printerId}/log${query ? `?${query}` : ''}`);
+  },
+  // One printer's log, or with no printer the whole fleet's (deleted printers included).
+  downloadMaintenanceLog: async (printerId?: number): Promise<void> => {
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+    const path = printerId === undefined ? '/maintenance/log/export' : `/maintenance/printers/${printerId}/log/export`;
+    const response = await fetch(`${API_BASE}${path}`, { headers });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    const disposition = response.headers.get('Content-Disposition');
+    const filename = parseContentDispositionFilename(disposition) || 'maintenance_log.csv';
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  },
+  // Deletes the entries older than the given days: one printer's, or with no
+  // printer the whole fleet's (deleted printers included for an unscoped caller).
+  cleanUpMaintenanceLog: (olderThanDays: number, printerId?: number) => {
+    const path = printerId === undefined ? '/maintenance/log' : `/maintenance/printers/${printerId}/log`;
+    return request<{ deleted: number }>(`${path}?older_than_days=${olderThanDays}`, { method: 'DELETE' });
+  },
+  deleteMaintenanceLogEntry: (entryId: number) =>
+    request<{ status: string; id: number }>(`/maintenance/log/${entryId}`, { method: 'DELETE' }),
   setPrinterHours: (printerId: number, totalHours: number) =>
     request<{ printer_id: number; total_hours: number; archive_hours: number; offset_hours: number }>(
       `/maintenance/printers/${printerId}/hours?total_hours=${totalHours}`,

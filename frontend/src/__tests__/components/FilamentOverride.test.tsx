@@ -662,6 +662,42 @@ describe('FilamentOverride — filament rules of the user\'s group (#3522)', () 
     fireEvent.click(blocked);
     expect(mockOnChange).not.toHaveBeenCalled();
   });
+
+  it('greys out an inventory filament the group may not use (#3590)', async () => {
+    render(
+      <FilamentOverride
+        filamentReqs={{ filaments: [{ slot_id: 1, type: 'PETG', color: '#FFFFFF', used_grams: 10, used_meters: 3 }] }}
+        availableFilaments={[
+          { type: 'PETG', color: '#0000FF', tray_info_idx: 'GFG99', tray_sub_brands: 'PETG Other', extruder_id: null },
+        ]}
+        inventoryFilaments={[
+          {
+            type: 'PETG',
+            color: '#000000',
+            tray_info_idx: 'GFG03',
+            subtype: 'Matte',
+            color_name: 'Black',
+            rgba: '000000FF',
+            extra_colors: null,
+            effect_type: null,
+            spool_count: 1,
+            remaining_grams: 800,
+          },
+        ]}
+        inventoryEnabled
+        overrides={{}}
+        onChange={mockOnChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('combobox'));
+    const listbox = await screen.findByRole('listbox');
+    await waitFor(() =>
+      expect(within(listbox).getByRole('option', { name: /Matte PETG/ })).toHaveAttribute('aria-disabled', 'true'),
+    );
+    fireEvent.click(within(listbox).getByRole('option', { name: /Matte PETG/ }));
+    expect(mockOnChange).not.toHaveBeenCalled();
+  });
 });
 
 describe('FilamentOverride inventory group (#3590)', () => {

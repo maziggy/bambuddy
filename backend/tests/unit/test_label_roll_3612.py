@@ -33,20 +33,35 @@ def data(i: int = 1) -> LabelData:
     )
 
 
-def test_size_is_length_by_printable_width():
-    w, h = label_size_mm(RollLayout("50", 40))
-    assert w == 40
+def test_long_label_reads_along_the_tape():
+    layout = RollLayout("50", 60)
+    w, h = label_size_mm(layout)
+    assert not layout.across_tape
+    assert w == 60
     assert h == pytest.approx(554 / 300 * 25.4)
+
+
+def test_short_label_reads_across_the_tape():
+    """A 20 mm cut of 50 mm tape is a landscape 47 x 20 mm label whose page
+    already has the tape width as its width, so it is printed unturned."""
+    layout = RollLayout("50", 20)
+    w, h = label_size_mm(layout)
+    assert layout.across_tape
+    assert w == pytest.approx(554 / 300 * 25.4)
+    assert h == 20
+    image = next(iter_pdf_images(render_labels(layout, [data()], monochrome=True), 300))
+    assert abs(image.width - 554) <= 1
+    assert abs(image.height - round(20 / 25.4 * 300)) <= 1
 
 
 @pytest.mark.parametrize("tape", list(TAPES))
 def test_every_tape_renders_at_exact_dots(tape):
-    layout = RollLayout(tape, 40)  # type: ignore[arg-type]
+    layout = RollLayout(tape, 80)  # type: ignore[arg-type]
     images = list(iter_pdf_images(render_labels(layout, [data(1), data(2)], monochrome=True), 300))
     assert len(images) == 2
     # Landscape: width = length, height = printable dots (rendering may be a pixel off).
     assert abs(images[0].height - TAPES[tape].printable_dots) <= 1
-    assert abs(images[0].width - round(40 / 25.4 * 300)) <= 1
+    assert abs(images[0].width - round(80 / 25.4 * 300)) <= 1
 
 
 def test_no_sheet_capacity():
@@ -55,7 +70,7 @@ def test_no_sheet_capacity():
 
 def test_preview_page_size():
     images = list(iter_pdf_images(render_label_preview_pdf(RollLayout("62", 50), data()), 72))
-    assert images[0].width == pytest.approx(50 * mm, abs=1)
+    assert images[0].height == pytest.approx(50 * mm, abs=1)
 
 
 def test_limits():

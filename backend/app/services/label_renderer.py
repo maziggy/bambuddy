@@ -716,15 +716,24 @@ ROLL_MAX_LENGTH_MM = 200.0
 class RollLayout:
     """One label per page on a label printer's continuous tape (#3612).
 
-    Drawn landscape: ``length_mm`` along the tape, and the tape's printable
-    width as the height, so what is rendered is what the printer prints."""
+    Always drawn landscape, so what is rendered is what the printer prints. A
+    label at least as long as the tape is wide reads along the tape
+    (``length_mm`` wide, the printable width tall). A shorter one reads across
+    the tape (the printable width wide, ``length_mm`` tall): a 20 mm cut of
+    50 mm tape is a 47 x 20 mm label, not a 20 x 47 mm strip."""
 
     tape: TapeId
     length_mm: float
 
     @property
+    def across_tape(self) -> bool:
+        """The text runs across the tape: the page is printed as drawn, not turned."""
+        return self.length_mm < printable_width_mm(self.tape)
+
+    @property
     def label_size_mm(self) -> tuple[float, float]:
-        return self.length_mm, printable_width_mm(self.tape)
+        width = printable_width_mm(self.tape)
+        return (width, self.length_mm) if self.across_tape else (self.length_mm, width)
 
     def problem(self) -> str | None:
         """Why this roll can't be printed, or ``None`` when it can."""

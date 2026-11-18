@@ -86,9 +86,10 @@ MAX_PRINT_LABELS_PER_REQUEST = 100
 # 100 labels of 40 mm fit.
 MAX_PRINT_TAPE_MM = 4000
 PRINT_DPI = 300
-# The label is drawn landscape, along the tape. The printer wants the tape
-# width as the image width, so the page is turned a quarter; flip this one
-# constant if the text comes out upside down on a printer.
+# A label that reads along the tape is drawn with the tape width as its height.
+# The printer wants the tape width as the image width, so that page is turned a
+# quarter; flip this one constant if the text comes out upside down on a printer.
+# A label that reads across the tape (RollLayout.across_tape) is printed as drawn.
 TAPE_ROTATION = Image.Transpose.ROTATE_90
 
 # Preview resolution. High enough that the browser's downscale stays sharp on
@@ -391,7 +392,8 @@ def _enqueue_print(body: LabelPrintRequest, data_list: list[LabelData], config: 
         pdf = render_labels(roll, data_list, monochrome=True, fields=fields)
         # One page at a time: the driver takes the images lazily and drops each
         # one once it is rasterised, so memory stays at about a single label.
-        pages = (im.transpose(TAPE_ROTATION) for im in iter_pdf_images(pdf, PRINT_DPI, grayscale=True))
+        images = iter_pdf_images(pdf, PRINT_DPI, grayscale=True)
+        pages = images if roll.across_tape else (im.transpose(TAPE_ROTATION) for im in images)
         return driver.prepare(pages, config)
 
     async def work(job: PrintJob) -> None:

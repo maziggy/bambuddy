@@ -1212,6 +1212,8 @@ export default {
       project: '專案：{{name}}',
       runsBadge: '{{count}} 次列印',
       runsBadgeTitle: '共 {{count}} 次列印 — 成功 {{successful}} 次，失敗 {{failed}} 次。點擊查看完整列印記錄。',
+      // The card's figures for an archive printed more than once (#3609).
+      totalOfRuns: '{{count}} 次列印的合計',
       estimated: '預計：{{time}}',
       actual: '實際：{{time}}',
       accuracy: '準確度：{{percent}}%',

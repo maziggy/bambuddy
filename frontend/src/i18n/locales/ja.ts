@@ -1211,6 +1211,8 @@ export default {
       project: 'プロジェクト: {{name}}',
       runsBadge: '{{count}} 回印刷',
       runsBadgeTitle: '合計 {{count}} 回 — 成功 {{successful}} 回、失敗 {{failed}} 回。クリックして印刷ログを開きます。',
+      // The card's figures for an archive printed more than once (#3609).
+      totalOfRuns: '{{count}} 回の印刷の合計',
       estimated: '推定: {{time}}',
       actual: '実際: {{time}}',
       accuracy: '精度: {{percent}}%',

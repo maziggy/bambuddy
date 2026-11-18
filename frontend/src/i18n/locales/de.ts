@@ -1212,6 +1212,8 @@ export default {
       project: 'Projekt: {{name}}',
       runsBadge: '{{count}} Drucke',
       runsBadgeTitle: 'Insgesamt {{count}} Drucke — {{successful}} erfolgreich, {{failed}} fehlgeschlagen. Klicken, um das vollständige Druckprotokoll zu öffnen.',
+      // The card's figures for an archive printed more than once (#3609).
+      totalOfRuns: 'Summe aus {{count}} Drucken',
       estimated: 'Geschätzt: {{time}}',
       actual: 'Tatsächlich: {{time}}',
       accuracy: 'Genauigkeit: {{percent}}%',

@@ -1216,6 +1216,8 @@ export default {
       project: "Проєкт: {{name}}",
       runsBadge: "Друків: {{count}}",
       runsBadgeTitle: "Усього друків: {{count}} — успішних: {{successful}}, невдалих: {{failed}}. Натисніть, щоб переглянути повний журнал друку.",
+      // The card's figures for an archive printed more than once (#3609).
+      totalOfRuns: "Разом за друки: {{count}}",
       estimated: "Приблизно: {{time}}",
       actual: "Фактично: {{time}}",
       accuracy: "Точність: {{percent}}%",

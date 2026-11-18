@@ -1217,6 +1217,8 @@ export default {
       project: 'Projekt: {{name}}',
       runsBadge: '{{count}} utskrifter',
       runsBadgeTitle: '{{count}} utskrifter totalt — {{successful}} lyckade, {{failed}} misslyckade. Klicka för att se hela utskriftsloggen.',
+      // The card's figures for an archive printed more than once (#3609).
+      totalOfRuns: 'Totalt för {{count}} utskrifter',
       estimated: 'Uppskattad: {{time}}',
       actual: 'Faktisk: {{time}}',
       accuracy: 'Noggrannhet: {{percent}}%',

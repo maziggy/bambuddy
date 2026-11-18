@@ -1212,6 +1212,8 @@ export default {
       project: 'Proyecto: {{name}}',
       runsBadge: '{{count}} impresiones',
       runsBadgeTitle: '{{count}} impresiones en total — {{successful}} con éxito, {{failed}} fallidas. Haga clic para ver el registro completo de impresión.',
+      // The card's figures for an archive printed more than once (#3609).
+      totalOfRuns: 'Total de {{count}} impresiones',
       estimated: 'Estimado: {{time}}',
       actual: 'Real: {{time}}',
       accuracy: 'Precisión: {{percent}}%',

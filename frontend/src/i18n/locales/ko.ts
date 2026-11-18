@@ -1197,7 +1197,9 @@ export default {
       edit: '편집',
       delete: '삭제',
       runsBadge: '{{count}}회 인쇄',
-      runsBadgeTitle: '총 {{count}}회 인쇄 — {{successful}}회 성공, {{failed}}회 실패. 전체 인쇄 기록을 보려면 클릭하세요.'
+      runsBadgeTitle: '총 {{count}}회 인쇄 — {{successful}}회 성공, {{failed}}회 실패. 전체 인쇄 기록을 보려면 클릭하세요.',
+      // The card's figures for an archive printed more than once (#3609).
+      totalOfRuns: '{{count}}회 인쇄 합계',
     },
     modal: {
       deleteArchive: '아카이브 삭제',

@@ -1012,6 +1012,13 @@ export interface Archive {
   total_filament_actual_grams: number | null;
   successful_run_count: number;
   failed_run_count: number;
+  // What all its runs cost, summed as Statistics does (#3609); null where no
+  // run has the figure. The archive's own cost and energy stay the file's and
+  // the first run's.
+  total_cost?: number | null;
+  total_energy_kwh?: number | null;
+  total_energy_cost?: number | null;
+  total_wear_cost?: number | null;
 }
 
 export interface ArchiveSlim {

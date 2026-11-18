@@ -1219,6 +1219,8 @@ export default {
       project: 'Project: {{name}}',
       runsBadge: '{{count}} prints',
       runsBadgeTitle: '{{count}} prints total — {{successful}} successful, {{failed}} failed. Click to see the full print log.',
+      // The card's figures for an archive printed more than once (#3609).
+      totalOfRuns: 'Total of {{count}} prints',
       estimated: 'Estimated: {{time}}',
       actual: 'Actual: {{time}}',
       accuracy: 'Accuracy: {{percent}}%',

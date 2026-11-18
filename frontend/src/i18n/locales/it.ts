@@ -1652,7 +1652,7 @@ export default {
       confirmOutcome: 'Richiesta esito',
       confirmOutcomeTitle: 'Chiede com’è venuta la stampa una volta completata',
       clearsPlate: 'Libera il piatto',
-      clearsPlateTitle: 'Libera il proprio piatto: nessuna conferma del piatto dopo una stampa riuscita, a meno che la stampante non sia impostata su «Richiedi sempre»',
+      clearsPlateTitle: 'Libera il proprio piatto: nessuna conferma del piatto dopo una stampa riuscita, a meno che la conferma del piatto non sia attivata per quella stampante',
       clearsPlatePartial: 'Libera il piatto (alcune stampanti)',
       clearsPlatePartialTitle: 'Solo queste alternative liberano il proprio piatto: {{models}}',
     },
@@ -4518,7 +4518,7 @@ export default {
     },
     details: {
       clearsPlate: 'Libera il piatto automaticamente',
-      clearsPlateHelp: 'Il file termina con un cambio piatto o un\'espulsione del pezzo. Dopo una stampa riuscita la coda avvia il lavoro successivo senza attendere la conferma del piatto, a meno che la stampante non sia impostata su «Richiedi sempre». I nuovi lavori di stampa da questo file partono con questa impostazione.',
+      clearsPlateHelp: 'Il file termina con un cambio piatto o un\'espulsione del pezzo. Dopo una stampa riuscita la coda avvia il lavoro successivo senza attendere la conferma del piatto, a meno che la conferma del piatto non sia attivata per quella stampante. I nuovi lavori di stampa da questo file partono con questa impostazione.',
       title: 'Dettagli del file',
       size: 'Dimensione',
       type: 'Tipo',
@@ -5780,7 +5780,7 @@ export default {
       clearsPlateFor: 'Libera il piatto: {{filename}}',
       clearsPlateLegend: 'Selezionato: il file di questa stampante libera il piatto da solo',
       clearsPlate: 'Libera il piatto',
-      clearsPlateTitle: 'Il file di questa stampante libera da solo il piatto. Dopo una stampa riuscita su questa stampante la coda avvia il lavoro successivo senza conferma del piatto, a meno che la stampante non sia impostata su «Richiedi sempre».',
+      clearsPlateTitle: 'Il file di questa stampante libera da solo il piatto. Dopo una stampa riuscita su questa stampante la coda avvia il lavoro successivo senza conferma del piatto, a meno che la conferma del piatto non sia attivata per quella stampante.',
       moveUp: 'Sposta su',
       moveDown: 'Sposta giù',
       queued: 'In coda con {{count}} alternative',
@@ -5872,7 +5872,7 @@ export default {
     askForOutcome: 'Chiedi l’esito',
     askForOutcomeTitle: 'Chiedi com’è venuta la stampa una volta completata',
     clearsPlate: 'Libera il piatto automaticamente',
-    clearsPlateTitle: 'Il file libera da solo il piatto (cambio piatto o espulsione del pezzo). Dopo una stampa riuscita la coda avvia il lavoro successivo senza attendere la conferma di piatto libero, a meno che la stampante non sia impostata su «Richiedi sempre».',
+    clearsPlateTitle: 'Il file libera da solo il piatto (cambio piatto o espulsione del pezzo). Dopo una stampa riuscita la coda avvia il lavoro successivo senza attendere la conferma di piatto libero, a meno che la conferma del piatto non sia attivata per quella stampante.',
   },
 
   // Backup

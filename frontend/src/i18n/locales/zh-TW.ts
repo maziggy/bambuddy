@@ -1652,7 +1652,7 @@ export default {
       confirmOutcome: '結果確認',
       confirmOutcomeTitle: '列印完成後詢問列印效果如何',
       clearsPlate: '自動清空熱床',
-      clearsPlateTitle: '自行清空熱床：列印成功後無需熱床確認，除非印表機設定為「一律需要」',
+      clearsPlateTitle: '自行清空熱床：列印成功後無需熱床確認，除非該印表機已開啟熱床確認',
       clearsPlatePartial: '自動清空熱床（部分印表機）',
       clearsPlatePartialTitle: '僅這些備選會自行清空熱床：{{models}}',
     },
@@ -4518,7 +4518,7 @@ export default {
     },
     details: {
       clearsPlate: '自動清空熱床',
-      clearsPlateHelp: '檔案以換板或推出模型結束。列印成功後，除非印表機設定為「一律需要」，否則佇列會直接開始下一個任務，無需等待熱床確認。此檔案的新列印任務將採用此設定。',
+      clearsPlateHelp: '檔案以換板或推出模型結束。列印成功後，除非該印表機已開啟熱床確認，否則佇列會直接開始下一個任務，無需等待熱床確認。此檔案的新列印任務將採用此設定。',
       title: '檔案詳細資料',
       size: '大小',
       type: '類型',
@@ -5780,7 +5780,7 @@ export default {
       clearsPlateFor: '自動清板：{{filename}}',
       clearsPlateLegend: '已勾選：此列印機的檔案會自行清空熱床',
       clearsPlate: '自動清空熱床',
-      clearsPlateTitle: '此印表機對應的檔案會自行清空熱床。在該印表機上列印成功後，除非印表機設定為「一律需要」，否則佇列會直接開始下一個任務，無需熱床確認。',
+      clearsPlateTitle: '此印表機對應的檔案會自行清空熱床。在該印表機上列印成功後，除非該印表機已開啟熱床確認，否則佇列會直接開始下一個任務，無需熱床確認。',
       moveUp: '上移',
       moveDown: '下移',
       queued: '已加入佇列，含 {{count}} 個備選',
@@ -5872,7 +5872,7 @@ export default {
     askForOutcome: '詢問列印結果',
     askForOutcomeTitle: '列印完成後詢問列印效果如何',
     clearsPlate: '自動清空熱床',
-    clearsPlateTitle: '檔案會自行清空熱床（換板器或推出模型）。列印成功後，除非印表機設定為「一律需要」，否則佇列會直接開始下一個任務,無需等待熱床清空確認。',
+    clearsPlateTitle: '檔案會自行清空熱床（換板器或推出模型）。列印成功後，除非該印表機已開啟熱床確認，否則佇列會直接開始下一個任務,無需等待熱床清空確認。',
   },
 
   // Backup

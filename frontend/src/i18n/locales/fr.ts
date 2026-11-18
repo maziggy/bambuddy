@@ -1652,7 +1652,7 @@ export default {
       confirmOutcome: 'Demande de résultat',
       confirmOutcomeTitle: 'Demande comment l’impression s’est déroulée une fois terminée',
       clearsPlate: 'Libère le plateau',
-      clearsPlateTitle: 'Libère son propre plateau : pas de confirmation de plateau après une impression réussie, sauf si l\'imprimante est réglée sur « Toujours exiger »',
+      clearsPlateTitle: 'Libère son propre plateau : pas de confirmation de plateau après une impression réussie, sauf si la confirmation de plateau est activée pour cette imprimante',
       clearsPlatePartial: 'Libère le plateau (certaines imprimantes)',
       clearsPlatePartialTitle: 'Seules ces alternatives libèrent leur propre plateau : {{models}}',
     },
@@ -4519,7 +4519,7 @@ export default {
     },
     details: {
       clearsPlate: 'Libère le plateau automatiquement',
-      clearsPlateHelp: 'Le fichier se termine par un changement de plateau ou une éjection de la pièce. Après une impression réussie, la file lance le travail suivant sans attendre de confirmation de plateau, sauf si l\'imprimante est réglée sur « Toujours exiger ». Les nouveaux travaux d\'impression de ce fichier reprennent ce réglage.',
+      clearsPlateHelp: 'Le fichier se termine par un changement de plateau ou une éjection de la pièce. Après une impression réussie, la file lance le travail suivant sans attendre de confirmation de plateau, sauf si la confirmation de plateau est activée pour cette imprimante. Les nouveaux travaux d\'impression de ce fichier reprennent ce réglage.',
       title: 'Détails du fichier',
       size: 'Taille',
       type: 'Type',
@@ -5781,7 +5781,7 @@ export default {
       clearsPlateFor: 'Libère le plateau : {{filename}}',
       clearsPlateLegend: 'Coché : le fichier de cette imprimante libère le plateau lui-même',
       clearsPlate: 'Libère le plateau',
-      clearsPlateTitle: 'Le fichier de cette imprimante libère lui-même le plateau. Après une impression réussie sur cette imprimante, la file lance le travail suivant sans confirmation de plateau, sauf si l\'imprimante est réglée sur « Toujours exiger ».',
+      clearsPlateTitle: 'Le fichier de cette imprimante libère lui-même le plateau. Après une impression réussie sur cette imprimante, la file lance le travail suivant sans confirmation de plateau, sauf si la confirmation de plateau est activée pour cette imprimante.',
       moveUp: 'Monter',
       moveDown: 'Descendre',
       queued: 'Mis en file avec {{count}} alternatives',
@@ -5873,7 +5873,7 @@ export default {
     askForOutcome: 'Demander le résultat',
     askForOutcomeTitle: 'Demander comment l’impression s’est déroulée une fois terminée',
     clearsPlate: 'Libère le plateau automatiquement',
-    clearsPlateTitle: 'Le fichier libère lui-même le plateau (changeur de plateaux ou éjection de la pièce). Après une impression réussie, la file lance le travail suivant sans attendre de confirmation de plateau libre, sauf si l\'imprimante est réglée sur « Toujours exiger ».',
+    clearsPlateTitle: 'Le fichier libère lui-même le plateau (changeur de plateaux ou éjection de la pièce). Après une impression réussie, la file lance le travail suivant sans attendre de confirmation de plateau libre, sauf si la confirmation de plateau est activée pour cette imprimante.',
   },
 
   // Backup

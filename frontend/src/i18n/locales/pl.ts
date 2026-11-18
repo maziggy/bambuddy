@@ -1670,7 +1670,7 @@ export default {
       confirmOutcome: 'Pytanie o wynik',
       confirmOutcomeTitle: 'Po zakończeniu pyta, jak wyszedł wydruk',
       clearsPlate: 'Opróżnia płytę',
-      clearsPlateTitle: 'Sam opróżnia płytę: brak potwierdzenia płyty po udanym wydruku, chyba że drukarka jest ustawiona na „Zawsze wymagaj”',
+      clearsPlateTitle: 'Sam opróżnia płytę: brak potwierdzenia płyty po udanym wydruku, chyba że potwierdzenie płyty jest włączone dla tej drukarki',
       clearsPlatePartial: 'Opróżnia płytę (niektóre drukarki)',
       clearsPlatePartialTitle: 'Tylko te alternatywy same opróżniają płytę: {{models}}',
     },
@@ -4563,7 +4563,7 @@ export default {
     },
     details: {
       clearsPlate: 'Automatycznie opróżnia płytę',
-      clearsPlateHelp: 'Plik kończy się wymianą płyty lub zepchnięciem wydruku. Po udanym wydruku kolejka uruchamia następne zadanie bez czekania na potwierdzenie płyty, chyba że drukarka jest ustawiona na „Zawsze wymagaj”. Nowe zadania wydruku z tego pliku zaczynają z tym ustawieniem.',
+      clearsPlateHelp: 'Plik kończy się wymianą płyty lub zepchnięciem wydruku. Po udanym wydruku kolejka uruchamia następne zadanie bez czekania na potwierdzenie płyty, chyba że potwierdzenie płyty jest włączone dla tej drukarki. Nowe zadania wydruku z tego pliku zaczynają z tym ustawieniem.',
       title: 'Szczegóły pliku',
       size: 'Rozmiar',
       type: 'Typ',
@@ -5841,7 +5841,7 @@ export default {
       clearsPlateFor: 'Czyści płytę: {{filename}}',
       clearsPlateLegend: 'Zaznaczone: plik tej drukarki sam opróżnia płytę',
       clearsPlate: 'Opróżnia płytę',
-      clearsPlateTitle: 'Plik dla tej drukarki sam opróżnia płytę. Po udanym wydruku na tej drukarce kolejka uruchamia następne zadanie bez potwierdzenia płyty, chyba że drukarka jest ustawiona na „Zawsze wymagaj”.',
+      clearsPlateTitle: 'Plik dla tej drukarki sam opróżnia płytę. Po udanym wydruku na tej drukarce kolejka uruchamia następne zadanie bez potwierdzenia płyty, chyba że potwierdzenie płyty jest włączone dla tej drukarki.',
       moveUp: 'Przenieś w górę',
       moveDown: 'Przenieś w dół',
       queued: 'Dodano do kolejki, alternatywy: {{count}}',
@@ -5933,7 +5933,7 @@ export default {
     askForOutcome: 'Zapytaj o wynik',
     askForOutcomeTitle: 'Zapytaj po zakończeniu, jak wyszedł wydruk',
     clearsPlate: 'Automatycznie opróżnia płytę',
-    clearsPlateTitle: 'Plik sam opróżnia płytę (zmieniacz płyt lub zepchnięcie wydruku). Po udanym wydruku kolejka uruchamia następne zadanie bez czekania na potwierdzenie opróżnienia płyty, chyba że drukarka jest ustawiona na „Zawsze wymagaj”.',
+    clearsPlateTitle: 'Plik sam opróżnia płytę (zmieniacz płyt lub zepchnięcie wydruku). Po udanym wydruku kolejka uruchamia następne zadanie bez czekania na potwierdzenie opróżnienia płyty, chyba że potwierdzenie płyty jest włączone dla tej drukarki.',
   },
 
   // Backup

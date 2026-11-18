@@ -1928,7 +1928,7 @@ describe('QueuePage', () => {
       expect(badges).toHaveLength(1);
       expect(badges[0].closest('span')).toHaveAttribute(
         'title',
-        'Clears its own plate: no plate confirmation after a successful print, unless the printer is set to "Always require"'
+        'Clears its own plate: no plate confirmation after a successful print, unless plate-clear confirmation is switched on for that printer'
       );
     });
 

@@ -1652,7 +1652,7 @@ export default {
       confirmOutcome: 'Sonuç sorgusu',
       confirmOutcomeTitle: 'Tamamlandığında baskının nasıl çıktığını sorar',
       clearsPlate: 'Plakayı boşaltır',
-      clearsPlateTitle: 'Kendi plakasını boşaltır: yazıcı "Her zaman gerektir" olarak ayarlanmadıkça başarılı baskıdan sonra plaka onayı yok',
+      clearsPlateTitle: 'Kendi plakasını boşaltır: o yazıcı için plaka onayı açık olmadıkça başarılı baskıdan sonra plaka onayı yok',
       clearsPlatePartial: 'Plakayı boşaltır (bazı yazıcılar)',
       clearsPlatePartialTitle: 'Yalnızca bu alternatifler kendi plakasını boşaltır: {{models}}',
     },
@@ -4526,7 +4526,7 @@ export default {
     },
     details: {
       clearsPlate: 'Plakayı otomatik boşaltır',
-      clearsPlateHelp: 'Dosya bir plaka değişimi veya baskıyı itme ile biter. Başarılı bir baskıdan sonra, yazıcı "Her zaman gerektir" olarak ayarlanmadıkça kuyruk plaka onayını beklemeden sıradaki işi başlatır. Bu dosyadan oluşturulan yeni baskı işleri bu ayarla başlar.',
+      clearsPlateHelp: 'Dosya bir plaka değişimi veya baskıyı itme ile biter. Başarılı bir baskıdan sonra, o yazıcı için plaka onayı açık olmadıkça kuyruk plaka onayını beklemeden sıradaki işi başlatır. Bu dosyadan oluşturulan yeni baskı işleri bu ayarla başlar.',
       title: 'Dosya ayrıntıları',
       size: 'Boyut',
       type: 'Tür',
@@ -5770,7 +5770,7 @@ export default {
       clearsPlateFor: 'Tablayı temizler: {{filename}}',
       clearsPlateLegend: 'İşaretli: bu yazıcının dosyası plakayı kendisi boşaltır',
       clearsPlate: 'Plakayı boşaltır',
-      clearsPlateTitle: 'Bu yazıcının dosyası plakayı kendisi boşaltır. Bu yazıcıda başarılı bir baskıdan sonra, yazıcı "Her zaman gerektir" olarak ayarlanmadıkça kuyruk plaka onayı olmadan sıradaki işi başlatır.',
+      clearsPlateTitle: 'Bu yazıcının dosyası plakayı kendisi boşaltır. Bu yazıcıda başarılı bir baskıdan sonra, o yazıcı için plaka onayı açık olmadıkça kuyruk plaka onayı olmadan sıradaki işi başlatır.',
       moveUp: 'Yukarı taşı',
       moveDown: 'Aşağı taşı',
       queued: '{{count}} alternatifle kuyruğa alındı',
@@ -5862,7 +5862,7 @@ export default {
     askForOutcome: 'Sonucu sor',
     askForOutcomeTitle: 'Tamamlandığında baskının nasıl çıktığını sor',
     clearsPlate: 'Plakayı otomatik boşaltır',
-    clearsPlateTitle: 'Dosya plakayı kendisi boşaltır (plaka değiştirici veya baskıyı itme). Başarılı bir baskıdan sonra, yazıcı "Her zaman gerektir" olarak ayarlanmadıkça kuyruk plaka onayını beklemeden sıradaki işi başlatır.',
+    clearsPlateTitle: 'Dosya plakayı kendisi boşaltır (plaka değiştirici veya baskıyı itme). Başarılı bir baskıdan sonra, o yazıcı için plaka onayı açık olmadıkça kuyruk plaka onayını beklemeden sıradaki işi başlatır.',
   },
 
   // Yedekleme

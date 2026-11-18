@@ -1652,7 +1652,7 @@ export default {
       confirmOutcome: 'Ergebnisabfrage',
       confirmOutcomeTitle: 'Fragt nach Abschluss, wie der Druck geworden ist',
       clearsPlate: 'Räumt Platte',
-      clearsPlateTitle: 'Räumt die Platte selbst: keine Plattenbestätigung nach erfolgreichem Druck, es sei denn, der Drucker ist auf „Immer verlangen“ gestellt',
+      clearsPlateTitle: 'Räumt die Platte selbst: keine Plattenbestätigung nach erfolgreichem Druck, es sei denn, die Plattenbestätigung ist für diesen Drucker eingeschaltet',
       clearsPlatePartial: 'Räumt Platte (einige Drucker)',
       clearsPlatePartialTitle: 'Nur diese Alternativen räumen ihre Platte selbst: {{models}}',
     },
@@ -4531,7 +4531,7 @@ export default {
     },
     details: {
       clearsPlate: 'Räumt die Platte automatisch',
-      clearsPlateHelp: 'Die Datei endet mit einem Plattenwechsel oder Push-off. Nach einem erfolgreichen Druck startet die Warteschlange den nächsten Auftrag ohne Plattenbestätigung, es sei denn, der Drucker ist auf „Immer verlangen“ gestellt. Neue Druckaufträge aus dieser Datei übernehmen diese Einstellung.',
+      clearsPlateHelp: 'Die Datei endet mit einem Plattenwechsel oder Push-off. Nach einem erfolgreichen Druck startet die Warteschlange den nächsten Auftrag ohne Plattenbestätigung, es sei denn, die Plattenbestätigung ist für diesen Drucker eingeschaltet. Neue Druckaufträge aus dieser Datei übernehmen diese Einstellung.',
       title: 'Dateidetails',
       size: 'Größe',
       type: 'Typ',
@@ -5794,7 +5794,7 @@ export default {
       clearsPlateFor: 'Räumt Platte: {{filename}}',
       clearsPlateLegend: 'Aktiviert: Die Datei dieses Druckers räumt die Platte selbst',
       clearsPlate: 'Räumt Platte',
-      clearsPlateTitle: 'Die Datei für diesen Drucker räumt die Platte selbst. Nach einem erfolgreichen Druck auf diesem Drucker startet die Warteschlange den nächsten Auftrag ohne Plattenbestätigung, es sei denn, der Drucker ist auf „Immer verlangen“ gestellt.',
+      clearsPlateTitle: 'Die Datei für diesen Drucker räumt die Platte selbst. Nach einem erfolgreichen Druck auf diesem Drucker startet die Warteschlange den nächsten Auftrag ohne Plattenbestätigung, es sei denn, die Plattenbestätigung ist für diesen Drucker eingeschaltet.',
       moveUp: 'Nach oben',
       moveDown: 'Nach unten',
       queued: 'Mit {{count}} Alternativen eingereiht',
@@ -5886,7 +5886,7 @@ export default {
     askForOutcome: 'Nach Ergebnis fragen',
     askForOutcomeTitle: 'Nach Abschluss fragen, wie der Druck geworden ist',
     clearsPlate: 'Räumt die Platte automatisch',
-    clearsPlateTitle: 'Die Datei räumt die Platte selbst (Plattenwechsler oder Push-off). Nach einem erfolgreichen Druck startet die Warteschlange den nächsten Auftrag ohne Plattenbestätigung, es sei denn, der Drucker ist auf „Immer verlangen“ gestellt.',
+    clearsPlateTitle: 'Die Datei räumt die Platte selbst (Plattenwechsler oder Push-off). Nach einem erfolgreichen Druck startet die Warteschlange den nächsten Auftrag ohne Plattenbestätigung, es sei denn, die Plattenbestätigung ist für diesen Drucker eingeschaltet.',
   },
 
   // Backup

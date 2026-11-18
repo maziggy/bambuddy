@@ -1652,7 +1652,7 @@ export default {
       confirmOutcome: 'Consulta de resultado',
       confirmOutcomeTitle: 'Pregunta cómo salió la impresión al terminar',
       clearsPlate: 'Despeja la cama',
-      clearsPlateTitle: 'Despeja su propia cama: sin confirmación de cama tras una impresión correcta, salvo que la impresora esté configurada como «Requerir siempre»',
+      clearsPlateTitle: 'Despeja su propia cama: sin confirmación de cama tras una impresión correcta, salvo que la confirmación de cama esté activada para esa impresora',
       clearsPlatePartial: 'Despeja la cama (algunas impresoras)',
       clearsPlatePartialTitle: 'Solo estas alternativas despejan su propia cama: {{models}}',
     },
@@ -4533,7 +4533,7 @@ export default {
     },
     details: {
       clearsPlate: 'Despeja la cama automáticamente',
-      clearsPlateHelp: 'El archivo termina con un cambio de placa o un empuje del objeto. Tras una impresión correcta, la cola inicia el siguiente trabajo sin esperar la confirmación de la cama, salvo que la impresora esté configurada como «Requerir siempre». Los nuevos trabajos de impresión de este archivo empiezan con este ajuste.',
+      clearsPlateHelp: 'El archivo termina con un cambio de placa o un empuje del objeto. Tras una impresión correcta, la cola inicia el siguiente trabajo sin esperar la confirmación de la cama, salvo que la confirmación de cama esté activada para esa impresora. Los nuevos trabajos de impresión de este archivo empiezan con este ajuste.',
       title: 'Detalles del archivo',
       size: 'Tamaño',
       type: 'Tipo',
@@ -5801,7 +5801,7 @@ export default {
       clearsPlateFor: 'Despeja la placa: {{filename}}',
       clearsPlateLegend: 'Marcado: el archivo de esta impresora despeja la cama por sí mismo',
       clearsPlate: 'Despeja la cama',
-      clearsPlateTitle: 'El archivo de esta impresora despeja la cama por sí mismo. Tras una impresión correcta en esta impresora, la cola inicia el siguiente trabajo sin confirmación de cama, salvo que la impresora esté configurada como «Requerir siempre».',
+      clearsPlateTitle: 'El archivo de esta impresora despeja la cama por sí mismo. Tras una impresión correcta en esta impresora, la cola inicia el siguiente trabajo sin confirmación de cama, salvo que la confirmación de cama esté activada para esa impresora.',
       moveUp: 'Subir',
       moveDown: 'Bajar',
       queued: 'En cola con {{count}} alternativas',
@@ -5893,7 +5893,7 @@ export default {
     askForOutcome: 'Preguntar el resultado',
     askForOutcomeTitle: 'Preguntar cómo salió la impresión al terminar',
     clearsPlate: 'Despeja la cama automáticamente',
-    clearsPlateTitle: 'El archivo despeja la cama por sí mismo (cambiador de placas o empuje del objeto). Tras una impresión correcta, la cola inicia el siguiente trabajo sin esperar la confirmación de cama despejada, salvo que la impresora esté configurada como «Requerir siempre».',
+    clearsPlateTitle: 'El archivo despeja la cama por sí mismo (cambiador de placas o empuje del objeto). Tras una impresión correcta, la cola inicia el siguiente trabajo sin esperar la confirmación de cama despejada, salvo que la confirmación de cama esté activada para esa impresora.',
   },
 
   // Backup

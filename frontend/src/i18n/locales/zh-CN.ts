@@ -1652,7 +1652,7 @@ export default {
       confirmOutcome: '结果确认',
       confirmOutcomeTitle: '打印完成后询问打印效果如何',
       clearsPlate: '自动清空热床',
-      clearsPlateTitle: '自行清空热床：打印成功后无需热床确认，除非打印机设置为“始终需要”',
+      clearsPlateTitle: '自行清空热床：打印成功后无需热床确认，除非该打印机已开启热床确认',
       clearsPlatePartial: '自动清空热床(部分打印机)',
       clearsPlatePartialTitle: '仅这些备选会自行清空热床:{{models}}',
     },
@@ -4518,7 +4518,7 @@ export default {
     },
     details: {
       clearsPlate: '自动清空热床',
-      clearsPlateHelp: '文件以换板或推出模型结束。打印成功后，除非打印机设置为“始终需要”，否则队列会直接开始下一个任务，无需等待热床确认。此文件的新打印任务将采用此设置。',
+      clearsPlateHelp: '文件以换板或推出模型结束。打印成功后，除非该打印机已开启热床确认，否则队列会直接开始下一个任务，无需等待热床确认。此文件的新打印任务将采用此设置。',
       title: '文件详情',
       size: '大小',
       type: '类型',
@@ -5780,7 +5780,7 @@ export default {
       clearsPlateFor: '自动清盘：{{filename}}',
       clearsPlateLegend: '已勾选：此打印机的文件会自行清空热床',
       clearsPlate: '自动清空热床',
-      clearsPlateTitle: '此打印机对应的文件会自行清空热床。在该打印机上打印成功后,除非打印机设置为“始终需要”,否则队列会直接开始下一个任务,无需热床确认。',
+      clearsPlateTitle: '此打印机对应的文件会自行清空热床。在该打印机上打印成功后,除非该打印机已开启热床确认,否则队列会直接开始下一个任务,无需热床确认。',
       moveUp: '上移',
       moveDown: '下移',
       queued: '已加入队列，含 {{count}} 个备选',
@@ -5872,7 +5872,7 @@ export default {
     askForOutcome: '询问打印结果',
     askForOutcomeTitle: '打印完成后询问打印效果如何',
     clearsPlate: '自动清空热床',
-    clearsPlateTitle: '文件会自行清空热床(换板器或推出模型)。打印成功后,除非打印机设置为“始终需要”,否则队列会直接开始下一个任务,无需等待热床清空确认。',
+    clearsPlateTitle: '文件会自行清空热床(换板器或推出模型)。打印成功后,除非该打印机已开启热床确认,否则队列会直接开始下一个任务,无需等待热床清空确认。',
   },
 
   // Backup

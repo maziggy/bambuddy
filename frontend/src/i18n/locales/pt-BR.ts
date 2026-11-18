@@ -1652,7 +1652,7 @@ export default {
       confirmOutcome: 'Consulta de resultado',
       confirmOutcomeTitle: 'Pergunta como a impressão ficou depois de concluída',
       clearsPlate: 'Libera a placa',
-      clearsPlateTitle: 'Libera a própria placa: sem confirmação de placa após uma impressão bem-sucedida, a menos que a impressora esteja definida como "Sempre exigir"',
+      clearsPlateTitle: 'Libera a própria placa: sem confirmação de placa após uma impressão bem-sucedida, a menos que a confirmação de placa esteja ativada para essa impressora',
       clearsPlatePartial: 'Libera a placa (algumas impressoras)',
       clearsPlatePartialTitle: 'Somente estas alternativas liberam a própria placa: {{models}}',
     },
@@ -4518,7 +4518,7 @@ export default {
     },
     details: {
       clearsPlate: 'Libera a placa automaticamente',
-      clearsPlateHelp: 'O arquivo termina com uma troca de placa ou empurrar a peça para fora. Após uma impressão bem-sucedida, a fila inicia o próximo trabalho sem esperar a confirmação da placa, a menos que a impressora esteja definida como "Sempre exigir". Novos trabalhos de impressão deste arquivo começam com esta configuração.',
+      clearsPlateHelp: 'O arquivo termina com uma troca de placa ou empurrar a peça para fora. Após uma impressão bem-sucedida, a fila inicia o próximo trabalho sem esperar a confirmação da placa, a menos que a confirmação de placa esteja ativada para essa impressora. Novos trabalhos de impressão deste arquivo começam com esta configuração.',
       title: 'Detalhes do arquivo',
       size: 'Tamanho',
       type: 'Tipo',
@@ -5780,7 +5780,7 @@ export default {
       clearsPlateFor: 'Limpa a mesa: {{filename}}',
       clearsPlateLegend: 'Marcado: o arquivo desta impressora libera a placa sozinho',
       clearsPlate: 'Libera a placa',
-      clearsPlateTitle: 'O arquivo desta impressora libera a placa sozinho. Após uma impressão bem-sucedida nesta impressora, a fila inicia o próximo trabalho sem confirmação de placa, a menos que a impressora esteja definida como "Sempre exigir".',
+      clearsPlateTitle: 'O arquivo desta impressora libera a placa sozinho. Após uma impressão bem-sucedida nesta impressora, a fila inicia o próximo trabalho sem confirmação de placa, a menos que a confirmação de placa esteja ativada para essa impressora.',
       moveUp: 'Mover para cima',
       moveDown: 'Mover para baixo',
       queued: 'Na fila com {{count}} alternativas',
@@ -5872,7 +5872,7 @@ export default {
     askForOutcome: 'Perguntar o resultado',
     askForOutcomeTitle: 'Perguntar como a impressão ficou depois de concluída',
     clearsPlate: 'Libera a placa automaticamente',
-    clearsPlateTitle: 'O arquivo libera a placa sozinho (trocador de placas ou empurrar a peça para fora). Após uma impressão bem-sucedida, a fila inicia o próximo trabalho sem esperar a confirmação de placa livre, a menos que a impressora esteja definida como "Sempre exigir".',
+    clearsPlateTitle: 'O arquivo libera a placa sozinho (trocador de placas ou empurrar a peça para fora). Após uma impressão bem-sucedida, a fila inicia o próximo trabalho sem esperar a confirmação de placa livre, a menos que a confirmação de placa esteja ativada para essa impressora.',
   },
 
   // Backup

@@ -1668,7 +1668,7 @@ export default {
       confirmOutcome: 'Resultaatvraag',
       confirmOutcomeTitle: 'Vraagt na afloop hoe de print is geworden',
       clearsPlate: 'Maakt plaat vrij',
-      clearsPlateTitle: 'Maakt zijn eigen plaat vrij: geen platenbevestiging na een geslaagde print, tenzij de printer op "Altijd vereisen" staat',
+      clearsPlateTitle: 'Maakt zijn eigen plaat vrij: geen platenbevestiging na een geslaagde print, tenzij de platenbevestiging voor die printer is ingeschakeld',
       clearsPlatePartial: 'Maakt plaat vrij (sommige printers)',
       clearsPlatePartialTitle: 'Alleen deze alternatieven maken hun eigen plaat vrij: {{models}}',
     },
@@ -4561,7 +4561,7 @@ export default {
     },
     details: {
       clearsPlate: 'Maakt de plaat automatisch vrij',
-      clearsPlateHelp: 'Het bestand eindigt met een plaatwissel of push-off. Na een geslaagde print start de wachtrij de volgende taak zonder te wachten op een platenbevestiging, tenzij de printer op "Altijd vereisen" staat. Nieuwe printtaken van dit bestand starten met deze instelling.',
+      clearsPlateHelp: 'Het bestand eindigt met een plaatwissel of push-off. Na een geslaagde print start de wachtrij de volgende taak zonder te wachten op een platenbevestiging, tenzij de platenbevestiging voor die printer is ingeschakeld. Nieuwe printtaken van dit bestand starten met deze instelling.',
       title: 'Bestandsdetails',
       size: 'Grootte',
       type: 'Type',
@@ -5839,7 +5839,7 @@ export default {
       clearsPlateFor: 'Ruimt plaat: {{filename}}',
       clearsPlateLegend: 'Aangevinkt: het bestand van deze printer maakt de plaat zelf vrij',
       clearsPlate: 'Maakt plaat vrij',
-      clearsPlateTitle: 'Het bestand voor deze printer maakt de plaat zelf vrij. Na een geslaagde print op deze printer start de wachtrij de volgende taak zonder platenbevestiging, tenzij de printer op "Altijd vereisen" staat.',
+      clearsPlateTitle: 'Het bestand voor deze printer maakt de plaat zelf vrij. Na een geslaagde print op deze printer start de wachtrij de volgende taak zonder platenbevestiging, tenzij de platenbevestiging voor die printer is ingeschakeld.',
       moveUp: 'Omhoog verplaatsen',
       moveDown: 'Omlaag verplaatsen',
       queued: 'In wachtrij met {{count}} alternatieven',
@@ -5931,7 +5931,7 @@ export default {
     askForOutcome: 'Vragen naar resultaat',
     askForOutcomeTitle: 'Na afloop vragen hoe de print is geworden',
     clearsPlate: 'Maakt de plaat automatisch vrij',
-    clearsPlateTitle: 'Het bestand maakt de plaat zelf vrij (plaatwisselaar of push-off). Na een geslaagde print start de wachtrij de volgende taak zonder te wachten op bevestiging dat de plaat vrij is, tenzij de printer op "Altijd vereisen" staat.',
+    clearsPlateTitle: 'Het bestand maakt de plaat zelf vrij (plaatwisselaar of push-off). Na een geslaagde print start de wachtrij de volgende taak zonder te wachten op bevestiging dat de plaat vrij is, tenzij de platenbevestiging voor die printer is ingeschakeld.',
   },
 
   // Backup

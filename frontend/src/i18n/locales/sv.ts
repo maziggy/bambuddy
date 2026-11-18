@@ -1668,7 +1668,7 @@ export default {
       confirmOutcome: 'Resultatfråga',
       confirmOutcomeTitle: 'Frågar hur utskriften blev när den är klar',
       clearsPlate: 'Tömmer plattan',
-      clearsPlateTitle: 'Tömmer sin egen platta: ingen plattbekräftelse efter en lyckad utskrift, om inte skrivaren är inställd på "Kräv alltid"',
+      clearsPlateTitle: 'Tömmer sin egen platta: ingen plattbekräftelse efter en lyckad utskrift, om inte plattbekräftelse är påslagen för den skrivaren',
       clearsPlatePartial: 'Tömmer plattan (vissa skrivare)',
       clearsPlatePartialTitle: 'Endast dessa alternativ tömmer sin egen platta: {{models}}',
     },
@@ -4593,7 +4593,7 @@ errors: {
     },
     details: {
       clearsPlate: 'Tömmer plattan automatiskt',
-      clearsPlateHelp: 'Filen slutar med ett plattbyte eller push-off. Efter en lyckad utskrift startar kön nästa jobb utan att vänta på plattbekräftelse, om inte skrivaren är inställd på "Kräv alltid". Nya utskriftsjobb från den här filen startar med den här inställningen.',
+      clearsPlateHelp: 'Filen slutar med ett plattbyte eller push-off. Efter en lyckad utskrift startar kön nästa jobb utan att vänta på plattbekräftelse, om inte plattbekräftelse är påslagen för den skrivaren. Nya utskriftsjobb från den här filen startar med den här inställningen.',
       title: 'Filinformation',
       size: 'Storlek',
       type: 'Typ',
@@ -5870,7 +5870,7 @@ errors: {
       clearsPlateFor: 'Rensar plattan: {{filename}}',
       clearsPlateLegend: 'Ikryssad: den här skrivarens fil tömmer plattan själv',
       clearsPlate: 'Tömmer plattan',
-      clearsPlateTitle: 'Filen för den här skrivaren tömmer plattan själv. Efter en lyckad utskrift på den här skrivaren startar kön nästa jobb utan plattbekräftelse, om inte skrivaren är inställd på "Kräv alltid".',
+      clearsPlateTitle: 'Filen för den här skrivaren tömmer plattan själv. Efter en lyckad utskrift på den här skrivaren startar kön nästa jobb utan plattbekräftelse, om inte plattbekräftelse är påslagen för den skrivaren.',
       moveUp: 'Flytta upp',
       moveDown: 'Flytta ner',
       queued: 'Köat med {{count}} alternativ',
@@ -5962,7 +5962,7 @@ errors: {
     askForOutcome: 'Fråga efter resultat',
     askForOutcomeTitle: 'Fråga hur utskriften blev när den är klar',
     clearsPlate: 'Tömmer plattan automatiskt',
-    clearsPlateTitle: 'Filen tömmer plattan själv (plattbytare eller push-off). Efter en lyckad utskrift startar kön nästa jobb utan att vänta på bekräftelse för tömd platta, om inte skrivaren är inställd på "Kräv alltid".',
+    clearsPlateTitle: 'Filen tömmer plattan själv (plattbytare eller push-off). Efter en lyckad utskrift startar kön nästa jobb utan att vänta på bekräftelse för tömd platta, om inte plattbekräftelse är påslagen för den skrivaren.',
   },
 
   // Backup

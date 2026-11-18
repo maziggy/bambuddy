@@ -5501,6 +5501,11 @@ export default {
     allMaterials: 'Todos los materiales',
     filterByBrand: 'Filtrar por marca...',
     showArchived: 'Mostrar archivadas',
+    lastUsed: {
+      hint: 'Valores tomados de su última bobina ({{name}})',
+      hintPlain: 'Valores tomados de su última bobina',
+      clear: 'Borrar',
+    },
     quickAdd: 'Añadir rápido (existencias)',
     quantity: 'Cantidad',
     stock: 'Existencias',

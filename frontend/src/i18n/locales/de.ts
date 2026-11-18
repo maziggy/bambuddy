@@ -5498,6 +5498,11 @@ export default {
     allMaterials: 'Alle Materialien',
     filterByBrand: 'Nach Marke filtern...',
     showArchived: 'Archivierte anzeigen',
+    lastUsed: {
+      hint: 'Werte Ihrer letzten Spule übernommen ({{name}})',
+      hintPlain: 'Werte Ihrer letzten Spule übernommen',
+      clear: 'Zurücksetzen',
+    },
     quickAdd: 'Schnellerfassung (Lager)',
     quantity: 'Menge',
     stock: 'Lager',

@@ -5539,6 +5539,11 @@ export default {
     allMaterials: 'Alle materialen',
     filterByBrand: 'Filteren op merk...',
     showArchived: 'Gearchiveerde tonen',
+    lastUsed: {
+      hint: 'Overgenomen van je laatste spoel ({{name}})',
+      hintPlain: 'Overgenomen van je laatste spoel',
+      clear: 'Wissen',
+    },
     quickAdd: 'Snel toevoegen (voorraad)',
     quantity: 'Aantal',
     stock: 'Voorraad',

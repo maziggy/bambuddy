@@ -5489,6 +5489,11 @@ export default {
     allMaterials: '所有材料',
     filterByBrand: '按品牌篩選...',
     showArchived: '顯示已歸檔',
+    lastUsed: {
+      hint: '已沿用上一個耗材的數值（{{name}}）',
+      hintPlain: '已沿用上一個耗材的數值',
+      clear: '清除',
+    },
     quickAdd: '快速新增（庫存）',
     quantity: '數量',
     stock: '庫存',

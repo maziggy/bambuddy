@@ -5273,6 +5273,11 @@ export default {
     allMaterials: "Все материалы",
     filterByBrand: "Фильтр по бренду…",
     showArchived: "Показывать архивные",
+    lastUsed: {
+      hint: 'Значения из последней катушки ({{name}})',
+      hintPlain: 'Значения из последней катушки',
+      clear: 'Очистить',
+    },
     quickAdd: "Быстрое добавление",
     quantity: "Количество",
     stock: "На складе",

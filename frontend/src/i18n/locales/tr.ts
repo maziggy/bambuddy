@@ -5484,6 +5484,11 @@ export default {
     allMaterials: 'Tüm Malzemeler',
     filterByBrand: 'Markaya göre filtrele...',
     showArchived: 'Arşivlenmişleri göster',
+    lastUsed: {
+      hint: 'Son makaranızla başlatıldı ({{name}})',
+      hintPlain: 'Son makaranızla başlatıldı',
+      clear: 'Temizle',
+    },
     quickAdd: 'Hızlı Ekle (Stok)',
     quantity: 'Miktar',
     stock: 'Stok',

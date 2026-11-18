@@ -5282,6 +5282,11 @@ export default {
     allMaterials: '모든 재료',
     filterByBrand: '브랜드로 필터...',
     showArchived: '보관된 항목 표시',
+    lastUsed: {
+      hint: '마지막 스풀 값으로 시작했습니다({{name}})',
+      hintPlain: '마지막 스풀 값으로 시작했습니다',
+      clear: '지우기',
+    },
     quickAdd: '빠른 추가 (재고)',
     quantity: '수량',
     stock: '재고',

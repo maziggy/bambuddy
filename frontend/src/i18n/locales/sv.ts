@@ -5570,6 +5570,11 @@ errors: {
     allMaterials: 'Alla material',
     filterByBrand: 'Filtrera efter märke...',
     showArchived: 'Visa arkiverade',
+    lastUsed: {
+      hint: 'Värden från din senaste rulle ({{name}})',
+      hintPlain: 'Värden från din senaste rulle',
+      clear: 'Rensa',
+    },
     quickAdd: 'Snabb-lägg-till (Lager)',
     quantity: 'Kvantitet',
     stock: 'Lager',

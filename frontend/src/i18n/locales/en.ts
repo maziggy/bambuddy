@@ -5541,6 +5541,11 @@ export default {
     allMaterials: 'All Materials',
     filterByBrand: 'Filter by brand...',
     showArchived: 'Show archived',
+    lastUsed: {
+      hint: 'Started with your last spool ({{name}})',
+      hintPlain: 'Started with your last spool',
+      clear: 'Clear',
+    },
     quickAdd: 'Quick Add (Stock)',
     quantity: 'Quantity',
     stock: 'Stock',

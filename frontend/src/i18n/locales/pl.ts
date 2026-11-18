@@ -5541,6 +5541,11 @@ export default {
     allMaterials: 'Wszystkie materiały',
     filterByBrand: 'Filtruj według producenta...',
     showArchived: 'Pokaż zarchiwizowane',
+    lastUsed: {
+      hint: 'Wartości z ostatniej szpuli ({{name}})',
+      hintPlain: 'Wartości z ostatniej szpuli',
+      clear: 'Wyczyść',
+    },
     quickAdd: 'Szybkie dodawanie (zapas)',
     quantity: 'Ilość',
     stock: 'Zapas',

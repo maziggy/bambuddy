@@ -5484,6 +5484,11 @@ export default {
     allMaterials: 'Tous Matériaux',
     filterByBrand: 'Filtrer par marque...',
     showArchived: 'Afficher archivées',
+    lastUsed: {
+      hint: 'Valeurs reprises de votre dernière bobine ({{name}})',
+      hintPlain: 'Valeurs reprises de votre dernière bobine',
+      clear: 'Effacer',
+    },
     quickAdd: 'Ajout rapide (Stock)',
     quantity: 'Quantité',
     stock: 'Stock',

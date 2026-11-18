@@ -5489,6 +5489,11 @@ export default {
     allMaterials: '所有材料',
     filterByBrand: '按品牌筛选...',
     showArchived: '显示已归档',
+    lastUsed: {
+      hint: '已沿用上一个耗材的数值（{{name}}）',
+      hintPlain: '已沿用上一个耗材的数值',
+      clear: '清除',
+    },
     quickAdd: '快速添加（库存）',
     quantity: '数量',
     stock: '库存',

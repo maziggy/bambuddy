@@ -5483,6 +5483,11 @@ export default {
     allMaterials: 'Tutti i Materiali',
     filterByBrand: 'Filtra per marchio...',
     showArchived: 'Mostra archiviate',
+    lastUsed: {
+      hint: "Valori ripresi dall'ultima bobina ({{name}})",
+      hintPlain: "Valori ripresi dall'ultima bobina",
+      clear: 'Cancella',
+    },
     quickAdd: 'Aggiunta rapida (Scorta)',
     quantity: 'Quantità',
     stock: 'Scorta',

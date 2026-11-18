@@ -5483,6 +5483,11 @@ export default {
     allMaterials: 'Todos os Materiais',
     filterByBrand: 'Filtrar por marca...',
     showArchived: 'Mostrar arquivados',
+    lastUsed: {
+      hint: 'Iniciado com seu último carretel ({{name}})',
+      hintPlain: 'Iniciado com seu último carretel',
+      clear: 'Limpar',
+    },
     quickAdd: 'Adição rápida (Estoque)',
     quantity: 'Quantidade',
     stock: 'Estoque',

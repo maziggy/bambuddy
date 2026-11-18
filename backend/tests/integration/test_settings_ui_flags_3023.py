@@ -148,6 +148,7 @@ class TestWhatItExposes:
             "currency",
             "check_updates",
             "queue_shortest_first",
+            "build_plate_tracking_enabled",
             "use_slicer_api",
             "open_in_slicer",
             "preferred_slicer",

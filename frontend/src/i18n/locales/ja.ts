@@ -241,6 +241,15 @@ export default {
   },
   // Printers page
   printers: {
+    buildPlate: {
+      label: '装着中のビルドプレート',
+      swap: '装着中のビルドプレートを変更',
+      notTracked: 'プレート未管理',
+      swapFailed: 'プレートを変更できませんでした',
+      confirmMidPrintTitle: '印刷中です',
+      confirmMidPrintMessage: '{{name}} は印刷中です。実際にプレートを交換してから変更してください。この印刷が終わるとすぐに、キューは新しいプレート向けの次のジョブを送信します。',
+      confirmMidPrintConfirm: 'プレートを変更',
+    },
     locations: {
       title: 'プリンターの場所',
       backToPrinters: 'プリンターに戻る',
@@ -2871,6 +2880,25 @@ export default {
       keepExistingSpoolWeightDesc: 'このフィラメントタイプで既に作成されたスプールは旧風袋重量を保持します。新しいスプールは更新後の値を使用します。',
       applyToAllSpools: '全スプールに適用',
       applyToAllSpoolsDesc: 'このフィラメントタイプの全重量計算に新しい風袋重量が即座に適用されます。',
+    },
+    buildPlates: {
+      title: 'ビルドプレート',
+      enable: 'ビルドプレートの管理を有効にする',
+      enableDescription: '各プリンターに装着中のプレートを記録し、スライス時のプレートと一致するプリンターにのみキューのジョブを送ります。既定ではオフで、オフの間はプレートを無視します。',
+      reEnabledNote: '管理をオフにする前に記録したプレートは保存時にクリアされます。各プリンターカードでプレートを設定してください。',
+      ownedTitle: '所有しているプレート',
+      ownedDescription: '使用するプレートの種類にチェックを入れてください。チェックしたプレートだけがプリンターとジョブで選択できます。3D Effect シートのように、スライサーがその種類として扱うプレートは、種類の下にパターンとして追加します。',
+      addPattern: 'パターンを追加',
+      patternPlaceholder: '例: カーボンファイバー',
+      patternAdd: '追加',
+      removePattern: '{{name}} を削除',
+      saveFailed: 'プレートを保存できませんでした',
+      untickTitle: '使用中のプレート',
+      untickMessage: '{{name}} は {{printers}} 台のプリンターに装着され、キュー内の {{jobs}} 件のジョブが必要としています。チェックを外してもプレート一覧から隠れるだけで、それらのプリンターはそのまま保持し、ジョブも待ち続けます。',
+      untickConfirm: 'チェックを外す',
+      removePatternTitle: 'パターンを削除',
+      removePatternMessage: '{{name}} は {{printers}} 台のプリンターに装着され、キュー内の {{jobs}} 件のジョブが指定しています。プリンターはパターンなしのプレート種類を保持し、それらのジョブはその種類のどのプレートでも受け付けます。',
+      removePatternConfirm: '削除',
     },
     colorCatalog: {
       title: 'カラーカタログ',
@@ -5742,6 +5770,13 @@ export default {
 
   // Print modal
   printModal: {
+    buildPlate: {
+      label: 'ビルドプレート',
+      anyOfType: '任意の {{type}}',
+      fromFile: 'ファイルのプレート',
+      any: '任意のプレート（無視）',
+      hint: '一致するプレートを装着したプリンターが見つかるまでジョブは待機します。',
+    },
     multiFile: {
       groupLabel: '選択したファイルの扱い',
       alternatives: '候補',

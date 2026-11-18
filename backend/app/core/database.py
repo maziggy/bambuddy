@@ -5918,6 +5918,14 @@ async def _run_migrations(conn):
     # Spoolman and the location sync then imported as storage locations.
     await _migrate_drop_ams_slot_locations(conn)
 
+    # Migration: build plate tracking (#1306). All nullable: NULL means "not
+    # tracked" / "no plate constraint", which is exactly today's behaviour for
+    # every existing printer and queued job.
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN installed_plate_type VARCHAR(32)")
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN installed_plate_pattern VARCHAR(64)")
+    await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN required_plate_type VARCHAR(32)")
+    await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN required_plate_pattern VARCHAR(64)")
+    await _safe_execute(conn, "ALTER TABLE print_queue_variants ADD COLUMN required_plate_type VARCHAR(32)")
     # Data migration: printer locations as the locations API stores them (#2962).
     await _migrate_normalize_printer_locations(conn)
 

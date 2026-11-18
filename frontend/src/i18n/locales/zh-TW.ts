@@ -242,6 +242,15 @@ export default {
 
   // Printers page
   printers: {
+    buildPlate: {
+      label: '已安裝的列印板',
+      swap: '更換已安裝的列印板',
+      notTracked: '未追蹤列印板',
+      swapFailed: '無法更換列印板',
+      confirmMidPrintTitle: '正在列印',
+      confirmMidPrintMessage: '{{name}} 正在列印。請在實際更換列印板後再修改——本次列印一結束，佇列就會為新列印板傳送下一個工作。',
+      confirmMidPrintConfirm: '更換列印板',
+    },
     locations: {
       title: '印表機位置',
       backToPrinters: '返回印表機',
@@ -2872,6 +2881,25 @@ export default {
       keepExistingSpoolWeightDesc: '已使用此耗材類型建立的線軸保留舊的皮重。新線軸使用更新後的值。',
       applyToAllSpools: '套用至所有線軸',
       applyToAllSpoolsDesc: '此耗材類型的所有重量計算立即使用新的皮重。',
+    },
+    buildPlates: {
+      title: '列印板',
+      enable: '啟用列印板追蹤',
+      enableDescription: '記錄每台印表機上安裝的列印板，並只把佇列工作傳送到列印板與檔案切片時所選列印板相符的印表機。預設關閉；關閉時忽略列印板。',
+      reEnabledNote: '關閉追蹤前記錄的列印板將在儲存時清除——請在每張印表機卡片上重新設定列印板。',
+      ownedTitle: '你擁有哪些列印板？',
+      ownedDescription: '勾選您使用的列印板類型；只有勾選的列印板會提供給印表機和工作。對於 3D Effect 等切片軟體視為某一類型的列印板，請在該類型下新增圖案。',
+      addPattern: '新增圖案',
+      patternPlaceholder: '例如：碳纖維',
+      patternAdd: '新增',
+      removePattern: '移除 {{name}}',
+      saveFailed: '無法儲存列印板',
+      untickTitle: '列印板正在使用',
+      untickMessage: '{{name}} 已裝在 {{printers}} 台印表機上，佇列中有 {{jobs}} 個工作需要它。取消勾選只會將其從列印板清單中隱藏：這些印表機仍保留它，這些工作會繼續等待它。',
+      untickConfirm: '仍然取消勾選',
+      removePatternTitle: '移除圖案',
+      removePatternMessage: '{{name}} 已裝在 {{printers}} 台印表機上，佇列中有 {{jobs}} 個工作指定了它。印表機將保留不帶圖案的列印板類型，這些工作將接受該類型的任意列印板。',
+      removePatternConfirm: '移除',
     },
     colorCatalog: {
       title: '顏色目錄',
@@ -5728,6 +5756,13 @@ export default {
 
   // Print modal
   printModal: {
+    buildPlate: {
+      label: '列印板',
+      anyOfType: '任意 {{type}}',
+      fromFile: '檔案中的列印板',
+      any: '任意列印板（忽略）',
+      hint: '工作會等待，直到有印表機安裝了相符的列印板。',
+    },
     multiFile: {
       groupLabel: '所選檔案的處理方式',
       alternatives: '備選',

@@ -242,6 +242,15 @@ export default {
 
   // Printers page
   printers: {
+    buildPlate: {
+      label: 'Placa instalada',
+      swap: 'Cambiar la placa instalada',
+      notTracked: 'Placa sin seguimiento',
+      swapFailed: 'No se pudo cambiar la placa',
+      confirmMidPrintTitle: 'Hay una impresión en curso',
+      confirmMidPrintMessage: '{{name}} está imprimiendo. Cambia la placa solo cuando la hayas cambiado de verdad: la cola enviará el siguiente trabajo para la nueva placa en cuanto termine esta impresión.',
+      confirmMidPrintConfirm: 'Cambiar placa',
+    },
     locations: {
       title: 'Ubicaciones de impresoras',
       backToPrinters: 'Volver a las impresoras',
@@ -2874,6 +2883,25 @@ export default {
       keepExistingSpoolWeightDesc: 'Las bobinas ya creadas con este tipo de filamento conservan el peso de tara anterior. Las bobinas nuevas usan el valor actualizado.',
       applyToAllSpools: 'Aplicar a todas las bobinas',
       applyToAllSpoolsDesc: 'Todos los cálculos de peso para este tipo de filamento usan inmediatamente el nuevo peso de tara.',
+    },
+    buildPlates: {
+      title: 'Placas de impresión',
+      enable: 'Activar seguimiento de placas',
+      enableDescription: 'Registra qué placa tiene cada impresora y solo envía trabajos de la cola a una impresora cuya placa coincida con la del archivo laminado. Desactivado por defecto: así se ignoran las placas.',
+      reEnabledNote: 'Las placas registradas antes de desactivar el seguimiento se borrarán al guardar: indica la placa en la tarjeta de cada impresora.',
+      ownedTitle: '¿Qué placas tienes?',
+      ownedDescription: 'Marca los tipos de placa que usas; solo las placas marcadas se ofrecen para impresoras y trabajos. Añade un patrón bajo un tipo para placas como las 3D Effect, que el laminador trata como ese tipo.',
+      addPattern: 'Añadir patrón',
+      patternPlaceholder: 'p. ej. Fibra de carbono',
+      patternAdd: 'Añadir',
+      removePattern: 'Quitar {{name}}',
+      saveFailed: 'No se pudo guardar la placa',
+      untickTitle: 'Placa en uso',
+      untickMessage: '{{name}} está colocada en {{printers}} impresora(s) y {{jobs}} trabajo(s) en cola la necesitan. Desmarcarla solo la oculta de las listas de placas: esas impresoras la conservan y esos trabajos siguen esperándola.',
+      untickConfirm: 'Desmarcar de todos modos',
+      removePatternTitle: 'Quitar patrón',
+      removePatternMessage: '{{name}} está colocada en {{printers}} impresora(s) y {{jobs}} trabajo(s) en cola la pidieron. Las impresoras conservan el tipo de placa sin el patrón, y esos trabajos aceptarán cualquier placa de ese tipo.',
+      removePatternConfirm: 'Quitar',
     },
     colorCatalog: {
       title: 'Catálogo de colores',
@@ -5749,6 +5777,13 @@ export default {
 
   // Print modal
   printModal: {
+    buildPlate: {
+      label: 'Placa de impresión',
+      anyOfType: 'Cualquier {{type}}',
+      fromFile: 'Placa del archivo',
+      any: 'Cualquier placa (ignorar)',
+      hint: 'El trabajo espera hasta que una impresora tenga instalada una placa compatible.',
+    },
     multiFile: {
       groupLabel: 'En qué se convierten los archivos seleccionados',
       alternatives: 'Alternativas',

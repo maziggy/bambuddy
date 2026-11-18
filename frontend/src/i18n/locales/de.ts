@@ -242,6 +242,15 @@ export default {
 
   // Printers page
   printers: {
+    buildPlate: {
+      label: 'Eingelegte Druckplatte',
+      swap: 'Eingelegte Druckplatte ändern',
+      notTracked: 'Platte nicht verfolgt',
+      swapFailed: 'Platte konnte nicht geändert werden',
+      confirmMidPrintTitle: 'Ein Druck läuft',
+      confirmMidPrintMessage: '{{name}} druckt gerade. Ändere die Platte erst, wenn sie wirklich getauscht wurde — die Warteschlange sendet den nächsten Auftrag für die neue Platte, sobald dieser Druck endet.',
+      confirmMidPrintConfirm: 'Platte ändern',
+    },
     locations: {
       title: 'Druckerstandorte',
       backToPrinters: 'Zurück zu den Druckern',
@@ -2872,6 +2881,25 @@ export default {
       keepExistingSpoolWeightDesc: 'Bereits erstellte Spulen dieses Filamenttyps behalten das alte Leergewicht. Neue Spulen nutzen den neuen Wert.',
       applyToAllSpools: 'Auf alle Spulen anwenden',
       applyToAllSpoolsDesc: 'Alle Gewichtsberechnungen für diesen Filamenttyp nutzen sofort das neue Leergewicht.',
+    },
+    buildPlates: {
+      title: 'Druckplatten',
+      enable: 'Druckplatten-Verfolgung aktivieren',
+      enableDescription: 'Speichert, welche Druckplatte in jedem Drucker liegt, und sendet Warteschlangen-Aufträge nur an Drucker mit passender Platte. Standardmäßig aus — dann werden Platten ignoriert.',
+      reEnabledNote: 'Vor dem Ausschalten erfasste Platten werden beim Speichern gelöscht — lege die Platte auf jeder Druckerkarte neu fest.',
+      ownedTitle: 'Welche Platten besitzt du?',
+      ownedDescription: 'Hake die Druckplattentypen an, die du verwendest; nur angehakte Platten werden für Drucker und Aufträge angeboten. Füge unter einem Typ ein Muster hinzu, etwa für die 3D-Effect-Platten, die der Slicer als diesen Typ behandelt.',
+      addPattern: 'Muster hinzufügen',
+      patternPlaceholder: 'z. B. Carbon',
+      patternAdd: 'Hinzufügen',
+      removePattern: '{{name}} entfernen',
+      saveFailed: 'Platte konnte nicht gespeichert werden',
+      untickTitle: 'Platte in Verwendung',
+      untickMessage: '{{name}} ist auf {{printers}} Drucker(n) eingelegt und {{jobs}} Auftrag/Aufträge in der Warteschlange benötigen sie. Das Abhaken blendet sie nur in den Plattenlisten aus: Diese Drucker behalten sie und diese Aufträge warten weiter darauf.',
+      untickConfirm: 'Trotzdem abhaken',
+      removePatternTitle: 'Muster entfernen',
+      removePatternMessage: '{{name}} ist auf {{printers}} Drucker(n) eingelegt und {{jobs}} Auftrag/Aufträge haben sie angefordert. Drucker behalten den Plattentyp ohne das Muster, und diese Aufträge akzeptieren jede Platte dieses Typs.',
+      removePatternConfirm: 'Entfernen',
     },
     colorCatalog: {
       title: 'Farbkatalog',
@@ -5742,6 +5770,13 @@ export default {
 
   // Print modal
   printModal: {
+    buildPlate: {
+      label: 'Druckplatte',
+      anyOfType: 'Beliebige {{type}}',
+      fromFile: 'Platte aus der Datei',
+      any: 'Beliebige Platte (ignorieren)',
+      hint: 'Der Auftrag wartet, bis ein Drucker eine passende Platte eingelegt hat.',
+    },
     multiFile: {
       groupLabel: 'Was aus den gewählten Dateien wird',
       alternatives: 'Alternativen',

@@ -217,6 +217,8 @@ class PrinterResponse(PrinterBase):
     camera_light_auto: bool = False  # #1655
     plate_detection_enabled: bool = False
     plate_detection_roi: PlateDetectionROI | None = None
+    installed_plate_type: str | None = None  # #1306; null = not tracked
+    installed_plate_pattern: str | None = None  # #1306
     created_at: datetime
     updated_at: datetime
 

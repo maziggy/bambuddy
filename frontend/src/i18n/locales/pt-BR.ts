@@ -242,6 +242,15 @@ export default {
 
   // Printers page
   printers: {
+    buildPlate: {
+      label: 'Placa instalada',
+      swap: 'Trocar a placa instalada',
+      notTracked: 'Placa não rastreada',
+      swapFailed: 'Não foi possível trocar a placa',
+      confirmMidPrintTitle: 'Há uma impressão em andamento',
+      confirmMidPrintMessage: '{{name}} está imprimindo. Só troque a placa depois de trocá-la de fato — a fila enviará o próximo trabalho para a nova placa assim que esta impressão terminar.',
+      confirmMidPrintConfirm: 'Trocar placa',
+    },
     locations: {
       title: 'Locais das impressoras',
       backToPrinters: 'Voltar para as impressoras',
@@ -2827,6 +2836,25 @@ export default {
       keepExistingSpoolWeightDesc: 'Os carretéis já criados com este tipo de filamento mantêm o peso tara antigo. Novos carretéis usam o valor atualizado.',
       applyToAllSpools: 'Aplicar a todos os carretéis',
       applyToAllSpoolsDesc: 'Todos os cálculos de peso para este tipo de filamento usam imediatamente o novo peso tara.',
+    },
+    buildPlates: {
+      title: 'Placas de impressão',
+      enable: 'Ativar rastreamento de placas',
+      enableDescription: 'Registra qual placa está em cada impressora e só envia trabalhos da fila para uma impressora cuja placa corresponda à placa usada no fatiamento. Desativado por padrão — quando desativado, as placas são ignoradas.',
+      reEnabledNote: 'As placas registradas antes de desativar o rastreamento serão apagadas ao salvar — defina a placa no cartão de cada impressora.',
+      ownedTitle: 'Quais placas você tem?',
+      ownedDescription: 'Marque os tipos de placa que você usa; só as placas marcadas são oferecidas para impressoras e trabalhos. Adicione um padrão sob um tipo para placas como as 3D Effect, que o fatiador trata como esse tipo.',
+      addPattern: 'Adicionar padrão',
+      patternPlaceholder: 'ex.: Fibra de carbono',
+      patternAdd: 'Adicionar',
+      removePattern: 'Remover {{name}}',
+      saveFailed: 'Não foi possível salvar a placa',
+      untickTitle: 'Placa em uso',
+      untickMessage: '{{name}} está instalada em {{printers}} impressora(s) e {{jobs}} trabalho(s) na fila precisam dela. Desmarcar apenas a oculta das listas de placas: essas impressoras a mantêm e esses trabalhos continuam aguardando por ela.',
+      untickConfirm: 'Desmarcar mesmo assim',
+      removePatternTitle: 'Remover padrão',
+      removePatternMessage: '{{name}} está instalada em {{printers}} impressora(s) e {{jobs}} trabalho(s) na fila a pediram. As impressoras mantêm o tipo de placa sem o padrão, e esses trabalhos aceitarão qualquer placa desse tipo.',
+      removePatternConfirm: 'Remover',
     },
     colorCatalog: {
       title: 'Catálogo de Cores',
@@ -5728,6 +5756,13 @@ export default {
 
   // Print modal
   printModal: {
+    buildPlate: {
+      label: 'Placa de impressão',
+      anyOfType: 'Qualquer {{type}}',
+      fromFile: 'Placa do arquivo',
+      any: 'Qualquer placa (ignorar)',
+      hint: 'O trabalho aguarda até que uma impressora tenha uma placa compatível instalada.',
+    },
     multiFile: {
       groupLabel: 'O que os arquivos selecionados se tornam',
       alternatives: 'Alternativas',

@@ -242,6 +242,15 @@ export default {
 
   // Printers page
   printers: {
+    buildPlate: {
+      label: 'Zainstalowana płyta robocza',
+      swap: 'Zmień zainstalowaną płytę roboczą',
+      notTracked: 'Płyta nieśledzona',
+      swapFailed: 'Nie udało się zmienić płyty',
+      confirmMidPrintTitle: 'Trwa drukowanie',
+      confirmMidPrintMessage: '{{name}} drukuje. Zmień płytę dopiero po jej faktycznej wymianie — kolejka wyśle następne zadanie dla nowej płyty, gdy tylko ten wydruk się zakończy.',
+      confirmMidPrintConfirm: 'Zmień płytę',
+    },
     // Printer Locations page (#2962). Counts are written as "label: N" so
     // they read correctly in every language without plural forms.
     locations: {
@@ -2894,6 +2903,25 @@ export default {
       keepExistingSpoolWeightDesc: 'Szpule już utworzone z tym rodzajem filamentu zachowują starą wagę tary. Nowe szpule używają zaktualizowanej wartości.',
       applyToAllSpools: 'Zastosuj do wszystkich szpul',
       applyToAllSpoolsDesc: 'Wszystkie obliczenia wagi dla tego rodzaju filamentu od razu używają nowej wagi tary.',
+    },
+    buildPlates: {
+      title: 'Płyty robocze',
+      enable: 'Włącz śledzenie płyt roboczych',
+      enableDescription: 'Zapisuj, która płyta robocza jest na każdej drukarce, i wysyłaj zadania z kolejki tylko do drukarki, której płyta pasuje do płyty, dla której plik został pocięty. Domyślnie wyłączone — gdy wyłączone, płyty są ignorowane.',
+      reEnabledNote: 'Płyty zapisane przed wyłączeniem śledzenia zostaną wyczyszczone po zapisaniu — ustaw płytę na karcie każdej drukarki.',
+      ownedTitle: 'Które płyty posiadasz?',
+      ownedDescription: 'Zaznacz typy płyt, których używasz; tylko zaznaczone płyty są proponowane dla drukarek i zadań. Dodaj wzór pod typem dla płyt takich jak arkusze 3D Effect, które slicer traktuje jako ten typ.',
+      addPattern: 'Dodaj wzór',
+      patternPlaceholder: 'np. Włókno węglowe',
+      patternAdd: 'Dodaj',
+      removePattern: 'Usuń {{name}}',
+      saveFailed: 'Nie udało się zapisać płyty',
+      untickTitle: 'Płyta w użyciu',
+      untickMessage: '{{name}} jest zamontowana na {{printers}} drukarkach, a {{jobs}} zadań w kolejce jej potrzebuje. Odznaczenie tylko ukrywa ją na listach płyt: te drukarki ją zachowują, a te zadania nadal na nią czekają.',
+      untickConfirm: 'Odznacz mimo to',
+      removePatternTitle: 'Usuń wzór',
+      removePatternMessage: '{{name}} jest zamontowana na {{printers}} drukarkach, a {{jobs}} zadań w kolejce o nią prosiło. Drukarki zachowują typ płyty bez wzoru, a te zadania przyjmą dowolną płytę tego typu.',
+      removePatternConfirm: 'Usuń',
     },
     colorCatalog: {
       title: 'Katalog kolorów',
@@ -5789,6 +5817,13 @@ export default {
 
   // Print modal
   printModal: {
+    buildPlate: {
+      label: 'Płyta robocza',
+      anyOfType: 'Dowolna {{type}}',
+      fromFile: 'Płyta z pliku',
+      any: 'Dowolna płyta (ignoruj płytę)',
+      hint: 'Zadanie czeka, aż drukarka będzie miała zainstalowaną pasującą płytę.',
+    },
     multiFile: {
       groupLabel: 'Czym stają się wybrane pliki',
       alternatives: 'Alternatywy',

@@ -242,6 +242,15 @@ export default {
 
   // Printers page
   printers: {
+    buildPlate: {
+      label: 'Geplaatste bouwplaat',
+      swap: 'Geplaatste bouwplaat wijzigen',
+      notTracked: 'Plaat niet bijgehouden',
+      swapFailed: 'Plaat kon niet worden gewijzigd',
+      confirmMidPrintTitle: 'Er loopt een print',
+      confirmMidPrintMessage: '{{name}} is aan het printen. Wijzig de plaat pas als die echt is gewisseld — de wachtrij stuurt de volgende taak voor de nieuwe plaat zodra deze print klaar is.',
+      confirmMidPrintConfirm: 'Plaat wijzigen',
+    },
     locations: {
       title: 'Printerlocaties',
       backToPrinters: 'Terug naar printers',
@@ -2892,6 +2901,25 @@ export default {
       keepExistingSpoolWeightDesc: 'Spoelen die al met dit filamenttype zijn gemaakt behouden het oude taragewicht. Nieuwe spoelen gebruiken de bijgewerkte waarde.',
       applyToAllSpools: 'Toepassen op alle spoelen',
       applyToAllSpoolsDesc: 'Alle gewichtsberekeningen voor dit filamenttype gebruiken direct het nieuwe taragewicht.',
+    },
+    buildPlates: {
+      title: 'Bouwplaten',
+      enable: 'Bouwplaat-tracking inschakelen',
+      enableDescription: 'Houdt bij welke bouwplaat in elke printer ligt en stuurt wachtrijtaken alleen naar een printer waarvan de plaat overeenkomt met de plaat waarvoor het bestand is gesliced. Standaard uit — dan worden platen genegeerd.',
+      reEnabledNote: 'Platen die vóór het uitschakelen zijn vastgelegd, worden bij opslaan gewist — stel de plaat in op elke printerkaart.',
+      ownedTitle: 'Welke platen heb je?',
+      ownedDescription: 'Vink de plaattypen aan die je gebruikt; alleen aangevinkte platen worden aangeboden voor printers en taken. Voeg onder een type een patroon toe voor platen zoals de 3D Effect-platen, die de slicer als dat type behandelt.',
+      addPattern: 'Patroon toevoegen',
+      patternPlaceholder: 'bijv. Koolstofvezel',
+      patternAdd: 'Toevoegen',
+      removePattern: '{{name}} verwijderen',
+      saveFailed: 'Plaat kon niet worden opgeslagen',
+      untickTitle: 'Plaat in gebruik',
+      untickMessage: '{{name}} ligt op {{printers}} printer(s) en {{jobs}} taak/taken in de wachtrij hebben deze nodig. Uitvinken verbergt de plaat alleen in de plaatlijsten: die printers houden haar en die taken blijven erop wachten.',
+      untickConfirm: 'Toch uitvinken',
+      removePatternTitle: 'Patroon verwijderen',
+      removePatternMessage: '{{name}} ligt op {{printers}} printer(s) en {{jobs}} taak/taken in de wachtrij hebben erom gevraagd. Printers houden het plaattype zonder het patroon, en die taken accepteren elke plaat van dat type.',
+      removePatternConfirm: 'Verwijderen',
     },
     colorCatalog: {
       title: 'Kleurcatalogus',
@@ -5787,6 +5815,13 @@ export default {
 
   // Print modal
   printModal: {
+    buildPlate: {
+      label: 'Bouwplaat',
+      anyOfType: 'Elke {{type}}',
+      fromFile: 'Plaat uit bestand',
+      any: 'Elke plaat (negeren)',
+      hint: 'De taak wacht tot een printer een passende plaat heeft.',
+    },
     multiFile: {
       groupLabel: 'Wat er van de geselecteerde bestanden wordt',
       alternatives: 'Alternatieven',

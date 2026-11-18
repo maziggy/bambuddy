@@ -242,6 +242,15 @@ export default {
 
   // Printers page
   printers: {
+    buildPlate: {
+      label: 'Monterad byggplatta',
+      swap: 'Byt monterad byggplatta',
+      notTracked: 'Platta spåras inte',
+      swapFailed: 'Kunde inte byta platta',
+      confirmMidPrintTitle: 'En utskrift pågår',
+      confirmMidPrintMessage: '{{name}} skriver ut. Byt platta här först när den verkligen har bytts — kön skickar nästa jobb för den nya plattan så snart den här utskriften är klar.',
+      confirmMidPrintConfirm: 'Byt platta',
+    },
     locations: {
       title: 'Skrivarplatser',
       backToPrinters: 'Tillbaka till skrivare',
@@ -2924,6 +2933,25 @@ export default {
       keepExistingSpoolWeightDesc: 'Rullar som redan skapats med denna filamenttyp behåller den gamla taravikten. Nya rullar använder den uppdaterade vikten.',
       applyToAllSpools: 'Tillämpa på alla rullar',
       applyToAllSpoolsDesc: 'Alla viktberäkningar för denna filamenttyp använder omedelbart den nya taravikten.',
+    },
+    buildPlates: {
+      title: 'Byggplattor',
+      enable: 'Aktivera spårning av byggplattor',
+      enableDescription: 'Registrerar vilken byggplatta som sitter i varje skrivare och skickar köade jobb bara till en skrivare vars platta matchar plattan filen slicades för. Av som standard — då ignoreras plattor.',
+      reEnabledNote: 'Plattor som registrerades innan spårningen stängdes av rensas när du sparar — ange plattan på varje skrivarkort.',
+      ownedTitle: 'Vilka plattor har du?',
+      ownedDescription: 'Kryssa i de plattyper du använder; bara ikryssade plattor erbjuds för skrivare och jobb. Lägg till ett mönster under en typ för plattor som 3D Effect-plattorna, som slicern behandlar som den typen.',
+      addPattern: 'Lägg till mönster',
+      patternPlaceholder: 't.ex. Kolfiber',
+      patternAdd: 'Lägg till',
+      removePattern: 'Ta bort {{name}}',
+      saveFailed: 'Kunde inte spara plattan',
+      untickTitle: 'Plattan används',
+      untickMessage: '{{name}} sitter på {{printers}} skrivare och {{jobs}} jobb i kön behöver den. Att kryssa ur döljer den bara i plattlistorna: de skrivarna behåller den och de jobben fortsätter vänta på den.',
+      untickConfirm: 'Kryssa ur ändå',
+      removePatternTitle: 'Ta bort mönster',
+      removePatternMessage: '{{name}} sitter på {{printers}} skrivare och {{jobs}} jobb i kön bad om den. Skrivarna behåller plattypen utan mönstret, och de jobben accepterar vilken platta som helst av den typen.',
+      removePatternConfirm: 'Ta bort',
     },
     colorCatalog: {
       title: 'Färgkatalog',
@@ -5818,6 +5846,13 @@ errors: {
 
   // Print modal
   printModal: {
+    buildPlate: {
+      label: 'Byggplatta',
+      anyOfType: 'Valfri {{type}}',
+      fromFile: 'Platta från filen',
+      any: 'Valfri platta (ignorera)',
+      hint: 'Jobbet väntar tills en skrivare har en matchande platta monterad.',
+    },
     multiFile: {
       groupLabel: 'Vad de valda filerna blir',
       alternatives: 'Alternativ',

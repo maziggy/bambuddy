@@ -2168,6 +2168,35 @@ describe('QueuePage', () => {
     });
   });
 
+  describe('build plate badge (#1306)', () => {
+    const plateItem = {
+      ...mockQueueItems[0],
+      bed_type: 'High Temp Plate',
+      required_plate_type: 'smooth_pei',
+      required_plate_pattern: 'Carbon Fiber',
+    };
+
+    function mockTracking(on: boolean) {
+      server.use(
+        http.get('/api/v1/queue/', () => HttpResponse.json([plateItem])),
+        http.get('/api/v1/settings/', () => HttpResponse.json({ build_plate_tracking_enabled: on })),
+      );
+    }
+
+    it('names the pattern the job asked for while tracking is on', async () => {
+      mockTracking(true);
+      render(<QueuePage />);
+      expect(await screen.findByText('High Temp Plate · Carbon Fiber')).toBeInTheDocument();
+    });
+
+    it('shows only the file plate type while tracking is off', async () => {
+      mockTracking(false);
+      render(<QueuePage />);
+      await screen.findByText('Test Print 1');
+      await waitFor(() => expect(screen.getByTitle('High Temp Plate')).toBeInTheDocument());
+      expect(screen.queryByText('High Temp Plate · Carbon Fiber')).not.toBeInTheDocument();
+    });
+  });
   describe('bulk edit ask-for-outcome (#1898)', () => {
     const openBulkEdit = async () => {
       render(<QueuePage />);
@@ -2374,3 +2403,4 @@ describe('QueuePage: jobs held by failed prints on every printer of their model'
     await waitFor(() => expect(resumed).toBe('X1C'));
   });
 });
+

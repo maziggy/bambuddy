@@ -242,6 +242,15 @@ export default {
 
   // Printers page
   printers: {
+    buildPlate: {
+      label: '已安装的打印板',
+      swap: '更换已安装的打印板',
+      notTracked: '未跟踪打印板',
+      swapFailed: '无法更换打印板',
+      confirmMidPrintTitle: '正在打印',
+      confirmMidPrintMessage: '{{name}} 正在打印。请在实际更换打印板后再修改——本次打印一结束，队列就会为新打印板发送下一个任务。',
+      confirmMidPrintConfirm: '更换打印板',
+    },
     locations: {
       title: '打印机位置',
       backToPrinters: '返回打印机',
@@ -2872,6 +2881,25 @@ export default {
       keepExistingSpoolWeightDesc: '已使用此耗材类型创建的线轴保留旧的皮重。新线轴使用更新后的值。',
       applyToAllSpools: '应用到所有线轴',
       applyToAllSpoolsDesc: '此耗材类型的所有重量计算立即使用新的皮重。',
+    },
+    buildPlates: {
+      title: '打印板',
+      enable: '启用打印板跟踪',
+      enableDescription: '记录每台打印机上安装的打印板，并且只把队列任务发送到打印板与文件切片时所选打印板一致的打印机。默认关闭；关闭时忽略打印板。',
+      reEnabledNote: '关闭跟踪前记录的打印板将在保存时清除——请在每张打印机卡片上重新设置打印板。',
+      ownedTitle: '你拥有哪些打印板？',
+      ownedDescription: '勾选您使用的打印板类型；只有勾选的打印板会提供给打印机和任务。对于 3D Effect 等切片软件视为某一类型的打印板，请在该类型下添加图案。',
+      addPattern: '添加图案',
+      patternPlaceholder: '例如：碳纤维',
+      patternAdd: '添加',
+      removePattern: '移除 {{name}}',
+      saveFailed: '无法保存打印板',
+      untickTitle: '打印板正在使用',
+      untickMessage: '{{name}} 已装在 {{printers}} 台打印机上，队列中有 {{jobs}} 个任务需要它。取消勾选只会将其从打印板列表中隐藏：这些打印机仍保留它，这些任务会继续等待它。',
+      untickConfirm: '仍然取消勾选',
+      removePatternTitle: '移除图案',
+      removePatternMessage: '{{name}} 已装在 {{printers}} 台打印机上，队列中有 {{jobs}} 个任务指定了它。打印机将保留不带图案的打印板类型，这些任务将接受该类型的任意打印板。',
+      removePatternConfirm: '移除',
     },
     colorCatalog: {
       title: '颜色目录',
@@ -5728,6 +5756,13 @@ export default {
 
   // Print modal
   printModal: {
+    buildPlate: {
+      label: '打印板',
+      anyOfType: '任意 {{type}}',
+      fromFile: '文件中的打印板',
+      any: '任意打印板（忽略）',
+      hint: '任务会等待，直到有打印机安装了匹配的打印板。',
+    },
     multiFile: {
       groupLabel: '所选文件的处理方式',
       alternatives: '备选',

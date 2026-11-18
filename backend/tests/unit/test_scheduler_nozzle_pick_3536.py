@@ -45,6 +45,7 @@ def _item(*, variants=None, archive=None, library_file=None):
         target_model="A1",
         required_filament_types=None,
         filament_overrides=None,
+        required_plate_type=None,
     )
 
 
@@ -56,6 +57,7 @@ def _variant(vid, nozzle):
         target_model="A1",
         required_filament_types=None,
         filament_overrides=None,
+        required_plate_type=None,
         library_file=SimpleNamespace(deleted_at=None, file_metadata={"nozzle_diameter": nozzle}),
     )
 

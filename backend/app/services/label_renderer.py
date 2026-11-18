@@ -609,7 +609,31 @@ def _draw_label_roomy(
     ]
 
     active = [row for row in rows if row[0] in fields and row[1]]
-    cursor_y = y + h - pad
+    top_y = y + h - pad
+
+    def name_gets_a_line(candidates: list[tuple[LabelField, str, str, float, float]]) -> bool:
+        # A row continues on further lines only while every row below it keeps
+        # its own (#3621), so where the lines run out each row above the name
+        # takes exactly one.
+        cursor = top_y
+        for field, _text, _font, size, gap in candidates:
+            if cursor - size < floor_y:
+                return False
+            if field == "name":
+                return True
+            cursor -= size + gap
+        return False
+
+    # On a short label the lines run out before the name. The name tells the
+    # user more than the hex code above it, so the code gives way (#3612).
+    # Only then: a name that has its first line is cut or continued as on
+    # every other label, and the hex code stays.
+    if any(row[0] == "name" for row in active) and not name_gets_a_line(active):
+        without_hex = [row for row in active if row[0] != "hex"]
+        if name_gets_a_line(without_hex):
+            active = without_hex
+
+    cursor_y = top_y
     for i, (_field, text, font, size, gap) in enumerate(active):
         if cursor_y - size < floor_y:
             break

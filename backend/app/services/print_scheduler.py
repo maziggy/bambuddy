@@ -1243,7 +1243,8 @@ def _wrong_nozzle_label(printer_name: str, status, sliced_nozzle: float | None) 
 
 
 def _describe_filament(entry: dict, nozzle_key: str) -> str:
-    """One-line "PETG #000000 (left nozzle)" for an error message (#2771).
+    """One-line "PETG #000000 (left nozzle)" for an error message (#2771), or
+    "PETG Black (left nozzle)" when the entry names its colour.
 
     Shared by the required and loaded sides, which name their extruder
     differently: a 3MF requirement carries ``nozzle_id``, a loaded tray carries
@@ -1252,8 +1253,11 @@ def _describe_filament(entry: dict, nozzle_key: str) -> str:
     naming a nozzle would be noise.
     """
     parts = [(entry.get("type") or "filament").upper()]
-    if entry.get("color"):
-        parts.append(str(entry["color"]))
+    # The name the user picked the colour by, when the entry has one: "Lava
+    # Red" says which spool to load, "#ED2F2E" does not (#3590).
+    color = entry.get("color_name") or entry.get("color")
+    if color:
+        parts.append(str(color))
     nozzle = entry.get(nozzle_key)
     if nozzle == 0:
         parts.append("(right nozzle)")
@@ -5493,6 +5497,8 @@ class PrintScheduler:
                     override = override_map[req["slot_id"]]
                     req["type"] = override["type"]
                     req["color"] = override["color"]
+                    # Messages name the colour as the override does (#3590).
+                    req["color_name"] = override.get("color_name") or ""
                     # A manual/preference override SWAPS the slot's filament, so the
                     # 3MF's original tray_info_idx now points at the old spool and must
                     # be cleared — matching then falls back to type+colour. A

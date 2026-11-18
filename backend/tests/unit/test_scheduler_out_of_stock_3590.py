@@ -247,11 +247,24 @@ class TestPinnedHold:
             patch("backend.app.services.print_scheduler.notification_service.on_queue_job_waiting", AsyncMock()),
         ):
             assert await scheduler._block_on_unmatched_filament(AsyncMock(), item) is True
-        assert item.waiting_reason == f"Needs PLA #8B5A2B{_NO_STOCK_SUFFIX}"
+        assert item.waiting_reason == f"Needs PLA Earth Brown{_NO_STOCK_SUFFIX}"
         assert _is_unmatched_hold_reason(item.waiting_reason)
         notify.assert_awaited_once()
-        assert notify.await_args.kwargs["filament"] == "PLA #8B5A2B"
+        assert notify.await_args.kwargs["filament"] == "PLA Earth Brown"
         assert notify.await_args.kwargs["printer_id"] == 8
+
+    @pytest.mark.asyncio
+    async def test_colour_without_a_name_is_shown_as_its_code(self):
+        """An override that names no colour (queued over the API) keeps the hex."""
+        scheduler = _pinned_scheduler()
+        item = _pinned_item([{k: v for k, v in FORCED[0].items() if k != "color_name"}])
+        with (
+            _entries((2, 300.0)),
+            patch(NOTIFY, AsyncMock()),
+            patch("backend.app.services.print_scheduler.notification_service.on_queue_job_waiting", AsyncMock()),
+        ):
+            await scheduler._block_on_unmatched_filament(AsyncMock(), item)
+        assert item.waiting_reason == "Needs PLA #8B5A2B"
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("stock", [(2, 300.0), None])
@@ -264,7 +277,7 @@ class TestPinnedHold:
             patch("backend.app.services.print_scheduler.notification_service.on_queue_job_waiting", AsyncMock()),
         ):
             await scheduler._block_on_unmatched_filament(AsyncMock(), item)
-        assert item.waiting_reason == "Needs PLA #8B5A2B"
+        assert item.waiting_reason == "Needs PLA Earth Brown"
         notify.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -287,7 +300,7 @@ class TestPinnedHold:
         # The model path clears the reason on assignment, so it hands the one the
         # item had before the pass over.
         scheduler = _pinned_scheduler()
-        before = f"Needs PLA #8B5A2B{_NO_STOCK_SUFFIX}"
+        before = f"Needs PLA Earth Brown{_NO_STOCK_SUFFIX}"
         for previous, fires in ((before, 0), (None, 1)):
             item = _pinned_item(FORCED)
             with (
@@ -403,7 +416,7 @@ class TestSettingOff:
             patch("backend.app.services.print_scheduler.notification_service.on_queue_job_waiting", AsyncMock()),
         ):
             assert await scheduler._block_on_unmatched_filament(AsyncMock(), item) is True
-        assert item.waiting_reason == "Needs PLA #8B5A2B"
+        assert item.waiting_reason == "Needs PLA Earth Brown"
         stock.assert_not_awaited()
         notify.assert_not_awaited()
 

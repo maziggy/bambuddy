@@ -119,6 +119,7 @@ registerSettingsSearch({ labelKey: 'connectedApps.title', tab: 'apikeys', keywor
 registerSettingsSearch({ labelKey: 'cameraTokens.title', tab: 'camera', keywords: 'camera token long-lived home assistant frigate kiosk stream cam wall', anchor: 'card-camera-tokens' });
 registerSettingsSearch({ labelKey: 'streamOverlay.builder.title', labelFallback: 'Streaming Overlay', tab: 'camera', keywords: 'streaming overlay obs browser source stream url token', anchor: 'card-stream-overlay' });
 registerSettingsSearch({ labelKey: 'settings.tabs.virtualPrinter', tab: 'virtual-printer', keywords: 'virtual printer proxy archive slicer bambustudio orcaslicer ip bind', anchor: 'card-vp' });
+registerSettingsSearch({ labelKey: 'connectSlicer.title', tab: 'virtual-printer', keywords: 'connect slicer instructions access code users vpn markdown', anchor: 'card-connect-slicer' });
 registerSettingsSearch({ labelKey: 'settings.tabs.spoolbuddy', tab: 'spoolbuddy', keywords: 'spoolbuddy device scale nfc rfid kiosk unregister', anchor: 'card-spoolbuddy' });
 registerSettingsSearch({ labelKey: 'settings.currentUser', tab: 'users', subTab: 'users', keywords: 'current user profile password change', anchor: 'card-currentuser' });
 registerSettingsSearch({ labelKey: 'settings.users', tab: 'users', subTab: 'users', keywords: 'users accounts list', anchor: 'card-users' });

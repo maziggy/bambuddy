@@ -1212,6 +1212,8 @@ export default {
       project: 'Projeto: {{name}}',
       runsBadge: '{{count}} impressões',
       runsBadgeTitle: '{{count}} impressões no total — {{successful}} bem-sucedidas, {{failed}} com falha. Clique para ver o histórico completo.',
+      // The card's figures for an archive printed more than once (#3609).
+      totalOfRuns: 'Total de {{count}} impressões',
       estimated: 'Estimado: {{time}}',
       actual: 'Real: {{time}}',
       accuracy: 'Precisão: {{percent}}%',
@@ -7421,6 +7423,48 @@ export default {
   },
 
   // Pending Uploads Panel
+  // The sidebar footer's menu for the signed-in user (#3602).
+  accountMenu: {
+    title: 'Conta',
+  },
+  // What a user enters in their slicer to send to virtual printers (#3602).
+  connectSlicer: {
+    title: 'Conectar fatiador',
+    subtitle: 'O que informar no Bambu Studio ou OrcaSlicer para enviar impressões ao Bambuddy.',
+    loadFailed: 'Não foi possível carregar os dados de conexão.',
+    authOff: 'Os códigos de acesso pessoais precisam da autenticação de usuários, que está desligada. Use o código de acesso próprio de uma impressora virtual em Configurações > Impressora Virtual.',
+    openSettings: 'Abrir as configurações da impressora virtual',
+    steps: {
+      certificate: 'Instale uma vez o certificado CA abaixo para que o seu fatiador confie nas impressoras virtuais.',
+      addPrinter: 'No fatiador, adicione uma impressora pelo endereço IP e informe o endereço de uma impressora virtual desta lista. Se o fatiador pedir número de série ou modelo, use os mostrados.',
+      accessCode: 'Como código de acesso, informe o seu código pessoal abaixo, não o da impressora.',
+    },
+    printers: 'Impressoras virtuais para as quais você pode enviar',
+    noPrinters: 'Não há impressora virtual para a qual você possa enviar. Fale com o administrador.',
+    notRunning: 'Parada',
+    field: {
+      address: 'Endereço',
+      serial: 'Número de série',
+      model: 'Modelo',
+    },
+    destination: {
+      library: 'Os arquivos enviados são salvos no Gerenciador de Arquivos.',
+      review: 'Os arquivos enviados aguardam revisão antes de serem salvos.',
+      queuePrinter: 'Os arquivos enviados entram na fila de {{printer}}.',
+      queueModel: 'Os arquivos enviados entram na fila da primeira {{model}} livre.',
+    },
+    liveStatus: 'O seu fatiador mostra o status ao vivo de {{printer}}.',
+    noLiveStatus: 'O seu fatiador não mostra o status ao vivo de nenhuma impressora.',
+    instructions: {
+      description: 'Todo usuário conectado encontra nesta página o seu código de acesso, as impressoras virtuais para as quais pode enviar e o certificado CA, sem acesso às Configurações. Envie o link a ele.',
+      label: 'Instruções para os usuários',
+      placeholder: 'ex.: Conecte-se primeiro à VPN.',
+      markdownHint: 'Markdown. Exibido no topo da página.',
+      openPage: 'Abrir página',
+      saved: 'Instruções salvas',
+      saveFailed: 'Não foi possível salvar as instruções',
+    },
+  },
   slicerAccessCode: {
     title: 'Código de acesso do fatiador',
     description: 'Digite este código no Bambu Studio ou OrcaSlicer no lugar do código de acesso da impressora virtual. O que você enviar à impressora virtual passa a ser seu.',

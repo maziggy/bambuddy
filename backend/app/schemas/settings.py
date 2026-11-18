@@ -242,6 +242,11 @@ class AppSettings(BaseModel):
         default="metadata",
         description="Source for the archive's display name on virtual-printer uploads: 'metadata' uses the 3MF's embedded print_name (default, matches Bambu's behavior), 'filename' uses the filename Bambu Studio sent over FTP (lets users rename via the slicer's 'send to printer' dialog).",
     )
+    virtual_printer_connect_instructions: str = Field(
+        default="",
+        max_length=4000,
+        description="Markdown the Connect slicer page shows every user above their virtual printers (#3602), e.g. 'connect to the VPN first'. Empty: none.",
+    )
 
     # Dark mode theme settings
     dark_style: str = Field(default="vibrant", description="Dark mode style: classic, glow, vibrant")
@@ -807,6 +812,7 @@ class AppSettingsUpdate(BaseModel):
     default_printer_id: int | None = None
     pipeline_max_copies: int | None = None
     virtual_printer_archive_name_source: str | None = None
+    virtual_printer_connect_instructions: str | None = Field(default=None, max_length=4000)
     dark_style: str | None = None
     dark_background: str | None = None
     dark_accent: str | None = None

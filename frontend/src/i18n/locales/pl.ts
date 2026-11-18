@@ -1219,6 +1219,8 @@ export default {
       project: 'Projekt: {{name}}',
       runsBadge: 'Wydruki: {{count}}',
       runsBadgeTitle: 'Wydruki łącznie: {{count}} — udane: {{successful}}, nieudane: {{failed}}. Kliknij, aby zobaczyć pełny dziennik wydruków.',
+      // The card's figures for an archive printed more than once (#3609).
+      totalOfRuns: 'Suma wydruków: {{count}}',
       estimated: 'Szacowany: {{time}}',
       actual: 'Rzeczywisty: {{time}}',
       accuracy: 'Dokładność: {{percent}}%',
@@ -7487,6 +7489,48 @@ export default {
   },
 
   // Pending Uploads Panel
+  // The sidebar footer's menu for the signed-in user (#3602).
+  accountMenu: {
+    title: 'Konto',
+  },
+  // What a user enters in their slicer to send to virtual printers (#3602).
+  connectSlicer: {
+    title: 'Połącz slicer',
+    subtitle: 'Co wpisać w Bambu Studio lub OrcaSlicer, aby wysyłać wydruki do Bambuddy.',
+    loadFailed: 'Nie udało się wczytać danych połączenia.',
+    authOff: 'Osobiste kody dostępu wymagają uwierzytelniania użytkowników, które jest wyłączone. Użyj kodu dostępu wirtualnej drukarki z Ustawienia > Wirtualna drukarka.',
+    openSettings: 'Otwórz ustawienia wirtualnej drukarki',
+    steps: {
+      certificate: 'Zainstaluj raz poniższy certyfikat CA, aby slicer ufał wirtualnym drukarkom.',
+      addPrinter: 'W slicerze dodaj drukarkę po adresie IP i wpisz adres wirtualnej drukarki z tej listy. Jeśli slicer zapyta o numer seryjny lub model, użyj pokazanych.',
+      accessCode: 'Jako kod dostępu wpisz swój osobisty kod poniżej, a nie kod drukarki.',
+    },
+    printers: 'Wirtualne drukarki, do których możesz wysyłać',
+    noPrinters: 'Nie ma wirtualnej drukarki, do której możesz wysyłać. Zapytaj administratora.',
+    notRunning: 'Nie działa',
+    field: {
+      address: 'Adres',
+      serial: 'Numer seryjny',
+      model: 'Model',
+    },
+    destination: {
+      library: 'Wysłane pliki trafiają do Menedżera plików.',
+      review: 'Wysłane pliki czekają na sprawdzenie przed zapisaniem.',
+      queuePrinter: 'Wysłane pliki trafiają do kolejki drukarki {{printer}}.',
+      queueModel: 'Wysłane pliki trafiają do kolejki pierwszej wolnej drukarki {{model}}.',
+    },
+    liveStatus: 'Slicer pokazuje stan na żywo drukarki {{printer}}.',
+    noLiveStatus: 'Slicer nie pokazuje stanu na żywo żadnej drukarki.',
+    instructions: {
+      description: 'Każdy zalogowany użytkownik znajdzie na tej stronie swój kod dostępu, wirtualne drukarki, do których może wysyłać, i certyfikat CA, bez dostępu do Ustawień. Wyślij mu link.',
+      label: 'Instrukcje dla użytkowników',
+      placeholder: 'np. Najpierw połącz się z VPN.',
+      markdownHint: 'Markdown. Wyświetlane na górze strony.',
+      openPage: 'Otwórz stronę',
+      saved: 'Instrukcje zapisane',
+      saveFailed: 'Nie udało się zapisać instrukcji',
+    },
+  },
   slicerAccessCode: {
     title: 'Kod dostępu slicera',
     description: 'Wpisz ten kod w Bambu Studio lub OrcaSlicer zamiast kodu dostępu wirtualnej drukarki. To, co wyślesz do wirtualnej drukarki, będzie wtedy twoje.',

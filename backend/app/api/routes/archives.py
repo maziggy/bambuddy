@@ -386,13 +386,18 @@ def compute_time_accuracy(archive: PrintArchive, run_aggregate: dict | None = No
     return result
 
 
+def _rounded(value, digits: int) -> float | None:
+    return None if value is None else round(float(value), digits)
+
+
 async def _load_run_aggregates(
     db: AsyncSession, archive_ids: list[int], printer_scope: PrinterScope | None = None, printer_id: int | None = None
 ) -> dict[int, dict]:
     """Batch-load per-archive run aggregates from PrintLogEntry.
 
     Returns ``{archive_id: {run_count, last_run_at, total_filament_actual_grams,
-    successful_run_count, failed_run_count, unmeasured_run_count, latest_run_id}}``. Archives with no logged runs are
+    successful_run_count, failed_run_count, unmeasured_run_count, total_cost,
+    total_energy_kwh, total_energy_cost, total_wear_cost, latest_run_id}}``. Archives with no logged runs are
     absent from the map; callers should treat that as zero/none.
 
     With ``printer_scope``, only the runs on its printers count: a caller
@@ -413,6 +418,11 @@ async def _load_run_aggregates(
             func.sum(case((PrintLogEntry.status == "completed", 1), else_=0)).label("successful"),
             func.sum(case((PrintLogEntry.status.in_(("failed", "aborted")), 1), else_=0)).label("failed"),
             func.sum(case((PrintLogEntry.duration_unmeasured.is_(True), 1), else_=0)).label("estimated"),
+            # NULL when no run has the figure (no plug, no price): unknown, not 0.
+            func.sum(PrintLogEntry.cost).label("total_cost"),
+            func.sum(PrintLogEntry.energy_kwh).label("total_energy_kwh"),
+            func.sum(PrintLogEntry.energy_cost).label("total_energy_cost"),
+            func.sum(PrintLogEntry.wear_cost).label("total_wear_cost"),
         )
         .where(
             PrintLogEntry.archive_id.in_(archive_ids),
@@ -426,7 +436,19 @@ async def _load_run_aggregates(
         .group_by(PrintLogEntry.archive_id)
     )
     aggregates: dict[int, dict] = {}
-    for archive_id, run_count, last_run_at, total_filament, successful, failed, estimated in rows.all():
+    for (
+        archive_id,
+        run_count,
+        last_run_at,
+        total_filament,
+        successful,
+        failed,
+        estimated,
+        total_cost,
+        total_energy_kwh,
+        total_energy_cost,
+        total_wear_cost,
+    ) in rows.all():
         aggregates[archive_id] = {
             "run_count": int(run_count or 0),
             "last_run_at": last_run_at,
@@ -434,6 +456,11 @@ async def _load_run_aggregates(
             "successful_run_count": int(successful or 0),
             "failed_run_count": int(failed or 0),
             "unmeasured_run_count": int(estimated or 0),
+            # What all its prints cost, as Statistics adds it up (#3609).
+            "total_cost": _rounded(total_cost, 2),
+            "total_energy_kwh": _rounded(total_energy_kwh, 3),
+            "total_energy_cost": _rounded(total_energy_cost, 3),
+            "total_wear_cost": _rounded(total_wear_cost, 2),
         }
     # The latest print of each (by start), which the archive shows: a print
     # running now included, as the archive shows it while it runs.
@@ -637,6 +664,8 @@ def archive_to_response(
         data["successful_run_count"] = run_aggregate.get("successful_run_count", 0)
         data["failed_run_count"] = run_aggregate.get("failed_run_count", 0)
         data["latest_run_id"] = run_aggregate.get("latest_run_id")
+        for key in ("total_cost", "total_energy_kwh", "total_energy_cost", "total_wear_cost"):
+            data[key] = run_aggregate.get(key)
 
     return data
 

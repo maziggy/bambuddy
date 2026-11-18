@@ -180,6 +180,13 @@ class ArchiveResponse(BaseModel):
     total_filament_actual_grams: float | None = None
     successful_run_count: int = 0
     failed_run_count: int = 0
+    # What all its runs cost, summed as Statistics does (#3609). The archive's
+    # own cost / energy_cost stay the file's and the first run's (#1378,
+    # #2614). None where no run has the figure.
+    total_cost: float | None = None
+    total_energy_kwh: float | None = None
+    total_energy_cost: float | None = None
+    total_wear_cost: float | None = None
 
     @model_validator(mode="after")
     def compute_object_count(self) -> "ArchiveResponse":

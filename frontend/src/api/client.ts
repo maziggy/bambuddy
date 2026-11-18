@@ -1012,6 +1012,13 @@ export interface Archive {
   total_filament_actual_grams: number | null;
   successful_run_count: number;
   failed_run_count: number;
+  // What all its runs cost, summed as Statistics does (#3609); null where no
+  // run has the figure. The archive's own cost and energy stay the file's and
+  // the first run's.
+  total_cost?: number | null;
+  total_energy_kwh?: number | null;
+  total_energy_cost?: number | null;
+  total_wear_cost?: number | null;
 }
 
 export interface ArchiveSlim {
@@ -1729,6 +1736,8 @@ export interface AppSettings {
   // Server-backed so two admins seed the same alert rules and a restore
   // brings them back; see utils/locationSensorDefaults.ts.
   location_sensor_alert_defaults: string;
+  // Markdown on the Connect slicer page, above the user's virtual printers (#3602).
+  virtual_printer_connect_instructions: string;
 }
 
 export type AppSettingsUpdate = Partial<Omit<AppSettings, 'octoeverywhere_api_key_configured'>>;
@@ -9534,18 +9543,40 @@ export const multiVirtualPrinterApi = {
   getCaCertificate: () =>
     request<VPCaCertificate>('/virtual-printers/ca-certificate'),
 
-  // A script that adds the CA to Bambu Studio and OrcaSlicer, with the CA
-  // written into it: 'windows' (.cmd) or 'unix' (.sh, Linux and macOS).
   // The signed-in user's personal access code (#1430); renewing replaces it.
   getMyAccessCode: () => request<{ code: string }>('/virtual-printers/my-access-code'),
   renewMyAccessCode: () => request<{ code: string }>('/virtual-printers/my-access-code', { method: 'POST' }),
 
+  // What the signed-in user enters in their slicer (#3602).
+  getConnectInfo: () => request<VPConnectInfo>('/virtual-printers/connect-info'),
+
+  // A script that adds the CA to Bambu Studio and OrcaSlicer, with the CA
+  // written into it: 'windows' (.cmd) or 'unix' (.sh, Linux and macOS).
   getCaCertificateInstaller: (platform: 'windows' | 'unix') =>
     request<{ filename: string; content: string }>(`/virtual-printers/ca-certificate/installer/${platform}`),
 
   diagnose: (id: number) =>
     request<VPDiagnosticResult>(`/virtual-printers/${id}/diagnostic`),
 };
+
+/** A virtual printer the signed-in user may send to with their personal code (#3602). */
+export interface VPConnectPrinter {
+  id: number;
+  name: string;
+  mode: 'library' | 'review' | 'queue';
+  model: string;
+  model_name: string;
+  serial: string;
+  address: string;
+  target_printer_name: string | null;
+  running: boolean;
+}
+
+export interface VPConnectInfo {
+  auth_enabled: boolean;
+  instructions: string;
+  printers: VPConnectPrinter[];
+}
 
 /** The shared CA certificate every virtual printer presents — imported once
  *  into the slicer's trust store. Only the public certificate is returned. */

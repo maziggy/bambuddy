@@ -1217,6 +1217,8 @@ export default {
       project: 'Projekt: {{name}}',
       runsBadge: '{{count}} utskrifter',
       runsBadgeTitle: '{{count}} utskrifter totalt — {{successful}} lyckade, {{failed}} misslyckade. Klicka för att se hela utskriftsloggen.',
+      // The card's figures for an archive printed more than once (#3609).
+      totalOfRuns: 'Totalt för {{count}} utskrifter',
       estimated: 'Uppskattad: {{time}}',
       actual: 'Faktisk: {{time}}',
       accuracy: 'Noggrannhet: {{percent}}%',
@@ -7516,6 +7518,48 @@ errors: {
   },
 
   // Pending Uploads Panel
+  // The sidebar footer's menu for the signed-in user (#3602).
+  accountMenu: {
+    title: 'Konto',
+  },
+  // What a user enters in their slicer to send to virtual printers (#3602).
+  connectSlicer: {
+    title: 'Anslut slicer',
+    subtitle: 'Vad du anger i Bambu Studio eller OrcaSlicer för att skicka utskrifter till Bambuddy.',
+    loadFailed: 'Det gick inte att läsa in anslutningsuppgifterna.',
+    authOff: 'Personliga åtkomstkoder kräver användarautentisering, som är avstängd. Använd en virtuell skrivares egen åtkomstkod från Inställningar > Virtuell skrivare.',
+    openSettings: 'Öppna inställningarna för virtuell skrivare',
+    steps: {
+      certificate: 'Installera CA-certifikatet nedan en gång, så litar din slicer på de virtuella skrivarna.',
+      addPrinter: 'Lägg till en skrivare via IP-adress i din slicer och ange adressen till en virtuell skrivare i listan. Om slicern frågar efter serienummer eller modell, använd de som visas.',
+      accessCode: 'Ange din personliga kod nedan som åtkomstkod, inte skrivarens egen.',
+    },
+    printers: 'Virtuella skrivare du kan skicka till',
+    noPrinters: 'Det finns ingen virtuell skrivare du kan skicka till. Fråga din administratör.',
+    notRunning: 'Körs inte',
+    field: {
+      address: 'Adress',
+      serial: 'Serienummer',
+      model: 'Modell',
+    },
+    destination: {
+      library: 'Filer du skickar sparas i Filhanteraren.',
+      review: 'Filer du skickar väntar på granskning innan de sparas.',
+      queuePrinter: 'Filer du skickar läggs i kön för {{printer}}.',
+      queueModel: 'Filer du skickar läggs i kön för första lediga {{model}}.',
+    },
+    liveStatus: 'Din slicer visar livestatus för {{printer}}.',
+    noLiveStatus: 'Din slicer visar ingen livestatus för någon skrivare.',
+    instructions: {
+      description: 'Varje inloggad användare hittar sin åtkomstkod, de virtuella skrivare den får skicka till och CA-certifikatet på den här sidan, utan åtkomst till Inställningar. Skicka länken till dem.',
+      label: 'Instruktioner för användare',
+      placeholder: 't.ex. Anslut till VPN först.',
+      markdownHint: 'Markdown. Visas överst på sidan.',
+      openPage: 'Öppna sidan',
+      saved: 'Instruktionerna sparades',
+      saveFailed: 'Det gick inte att spara instruktionerna',
+    },
+  },
   slicerAccessCode: {
     title: 'Åtkomstkod för slicern',
     description: 'Ange den här koden i Bambu Studio eller OrcaSlicer i stället för den virtuella skrivarens åtkomstkod. Det du skickar till den virtuella skrivaren blir då ditt.',

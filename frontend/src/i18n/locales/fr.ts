@@ -1212,6 +1212,8 @@ export default {
       project: 'Projet : {{name}}',
       runsBadge: '{{count}} impressions',
       runsBadgeTitle: '{{count}} impressions au total — {{successful}} réussies, {{failed}} échouées. Cliquez pour voir le journal complet.',
+      // The card's figures for an archive printed more than once (#3609).
+      totalOfRuns: 'Total de {{count}} impressions',
       estimated: 'Estimé : {{time}}',
       actual: 'Réel : {{time}}',
       accuracy: 'Précision : {{percent}}%',
@@ -7422,6 +7424,48 @@ export default {
   },
 
   // Pending Uploads Panel
+  // The sidebar footer's menu for the signed-in user (#3602).
+  accountMenu: {
+    title: 'Compte',
+  },
+  // What a user enters in their slicer to send to virtual printers (#3602).
+  connectSlicer: {
+    title: 'Connecter le trancheur',
+    subtitle: 'Ce qu\'il faut saisir dans Bambu Studio ou OrcaSlicer pour envoyer des impressions à Bambuddy.',
+    loadFailed: 'Impossible de charger les informations de connexion.',
+    authOff: 'Les codes d\'accès personnels nécessitent l\'authentification des utilisateurs, qui est désactivée. Utilisez le code d\'accès propre d\'une imprimante virtuelle, dans Paramètres > Imprimante virtuelle.',
+    openSettings: 'Ouvrir les paramètres de l\'imprimante virtuelle',
+    steps: {
+      certificate: 'Installez une fois le certificat CA ci-dessous pour que votre trancheur fasse confiance aux imprimantes virtuelles.',
+      addPrinter: 'Dans votre trancheur, ajoutez une imprimante par adresse IP et saisissez l\'adresse d\'une imprimante virtuelle de cette liste. Si le trancheur demande un numéro de série ou un modèle, utilisez ceux affichés.',
+      accessCode: 'Comme code d\'accès, saisissez votre code personnel ci-dessous, pas celui de l\'imprimante.',
+    },
+    printers: 'Imprimantes virtuelles auxquelles vous pouvez envoyer',
+    noPrinters: 'Aucune imprimante virtuelle ne vous est ouverte. Demandez à votre administrateur.',
+    notRunning: 'Arrêtée',
+    field: {
+      address: 'Adresse',
+      serial: 'Numéro de série',
+      model: 'Modèle',
+    },
+    destination: {
+      library: 'Les fichiers envoyés sont enregistrés dans le Gestionnaire de fichiers.',
+      review: 'Les fichiers envoyés attendent une validation avant d\'être enregistrés.',
+      queuePrinter: 'Les fichiers envoyés sont mis en file d\'attente pour {{printer}}.',
+      queueModel: 'Les fichiers envoyés sont mis en file d\'attente pour la première {{model}} libre.',
+    },
+    liveStatus: 'Votre trancheur affiche l\'état en direct de {{printer}}.',
+    noLiveStatus: 'Votre trancheur n\'affiche l\'état en direct d\'aucune imprimante.',
+    instructions: {
+      description: 'Chaque utilisateur connecté trouve sur cette page son code d\'accès, les imprimantes virtuelles auxquelles il peut envoyer et le certificat CA, sans accès aux Paramètres. Envoyez-lui le lien.',
+      label: 'Instructions pour les utilisateurs',
+      placeholder: 'p. ex. Connectez-vous d\'abord au VPN.',
+      markdownHint: 'Markdown. Affiché en haut de la page.',
+      openPage: 'Ouvrir la page',
+      saved: 'Instructions enregistrées',
+      saveFailed: 'Impossible d\'enregistrer les instructions',
+    },
+  },
   slicerAccessCode: {
     title: 'Code d\'accès du trancheur',
     description: 'Saisissez ce code dans Bambu Studio ou OrcaSlicer à la place du code d\'accès de l\'imprimante virtuelle. Ce que vous envoyez à l\'imprimante virtuelle est alors à vous.',

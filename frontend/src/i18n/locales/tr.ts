@@ -1212,6 +1212,8 @@ export default {
       project: 'Proje: {{name}}',
       runsBadge: '{{count}} baskı',
       runsBadgeTitle: 'Toplam {{count}} baskı — {{successful}} başarılı, {{failed}} başarısız. Tam baskı günlüğünü görmek için tıklayın.',
+      // The card's figures for an archive printed more than once (#3609).
+      totalOfRuns: '{{count}} baskının toplamı',
       estimated: 'Tahmini: {{time}}',
       actual: 'Gerçek: {{time}}',
       accuracy: 'Doğruluk: %{{percent}}',
@@ -7378,6 +7380,48 @@ export default {
   },
 
   // Bekleyen Yüklemeler Paneli
+  // The sidebar footer's menu for the signed-in user (#3602).
+  accountMenu: {
+    title: 'Hesap',
+  },
+  // What a user enters in their slicer to send to virtual printers (#3602).
+  connectSlicer: {
+    title: 'Dilimleyiciyi bağla',
+    subtitle: 'Bambuddy\'ye baskı göndermek için Bambu Studio veya OrcaSlicer\'a girilecek bilgiler.',
+    loadFailed: 'Bağlantı bilgileri yüklenemedi.',
+    authOff: 'Kişisel erişim kodları kullanıcı kimlik doğrulaması gerektirir ve bu kapalı. Ayarlar > Sanal Yazıcı bölümündeki sanal yazıcının kendi erişim kodunu kullanın.',
+    openSettings: 'Sanal yazıcı ayarlarını aç',
+    steps: {
+      certificate: 'Dilimleyicinizin sanal yazıcılara güvenmesi için aşağıdaki CA sertifikasını bir kez yükleyin.',
+      addPrinter: 'Dilimleyicide IP adresiyle bir yazıcı ekleyin ve buradaki bir sanal yazıcının adresini girin. Dilimleyici seri numarası veya model sorarsa gösterilenleri kullanın.',
+      accessCode: 'Erişim kodu olarak yazıcının kendi kodunu değil, aşağıdaki kişisel kodunuzu girin.',
+    },
+    printers: 'Gönderebileceğiniz sanal yazıcılar',
+    noPrinters: 'Gönderebileceğiniz bir sanal yazıcı yok. Yöneticinize sorun.',
+    notRunning: 'Çalışmıyor',
+    field: {
+      address: 'Adres',
+      serial: 'Seri numarası',
+      model: 'Model',
+    },
+    destination: {
+      library: 'Gönderdiğiniz dosyalar Dosya Yöneticisi\'ne kaydedilir.',
+      review: 'Gönderdiğiniz dosyalar kaydedilmeden önce incelemeyi bekler.',
+      queuePrinter: 'Gönderdiğiniz dosyalar {{printer}} kuyruğuna eklenir.',
+      queueModel: 'Gönderdiğiniz dosyalar ilk boşalan {{model}} kuyruğuna eklenir.',
+    },
+    liveStatus: 'Dilimleyiciniz {{printer}} yazıcısının canlı durumunu gösterir.',
+    noLiveStatus: 'Dilimleyiciniz hiçbir yazıcının canlı durumunu göstermez.',
+    instructions: {
+      description: 'Oturum açan her kullanıcı, Ayarlar\'a erişmeden erişim kodunu, gönderebileceği sanal yazıcıları ve CA sertifikasını bu sayfada bulur. Bağlantıyı onlara gönderin.',
+      label: 'Kullanıcılar için talimatlar',
+      placeholder: 'ör. Önce VPN\'e bağlanın.',
+      markdownHint: 'Markdown. Sayfanın üstünde gösterilir.',
+      openPage: 'Sayfayı aç',
+      saved: 'Talimatlar kaydedildi',
+      saveFailed: 'Talimatlar kaydedilemedi',
+    },
+  },
   slicerAccessCode: {
     title: 'Dilimleyici erişim kodu',
     description: 'Sanal yazıcının kendi erişim kodu yerine bu kodu Bambu Studio veya OrcaSlicer\'a girin. Sanal yazıcıya gönderdikleriniz böylece sizin olur.',

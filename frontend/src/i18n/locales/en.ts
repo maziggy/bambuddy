@@ -1219,6 +1219,8 @@ export default {
       project: 'Project: {{name}}',
       runsBadge: '{{count}} prints',
       runsBadgeTitle: '{{count}} prints total — {{successful}} successful, {{failed}} failed. Click to see the full print log.',
+      // The card's figures for an archive printed more than once (#3609).
+      totalOfRuns: 'Total of {{count}} prints',
       estimated: 'Estimated: {{time}}',
       actual: 'Actual: {{time}}',
       accuracy: 'Accuracy: {{percent}}%',
@@ -7487,6 +7489,48 @@ export default {
   },
 
   // Pending Uploads Panel
+  // The sidebar footer's menu for the signed-in user (#3602).
+  accountMenu: {
+    title: 'Account',
+  },
+  // What a user enters in their slicer to send to virtual printers (#3602).
+  connectSlicer: {
+    title: 'Connect slicer',
+    subtitle: 'What to enter in Bambu Studio or OrcaSlicer to send prints to Bambuddy.',
+    loadFailed: 'Could not load the connection details.',
+    authOff: 'Personal access codes need user authentication, which is off. Use a virtual printer\'s own access code from Settings > Virtual Printer.',
+    openSettings: 'Open Virtual Printer settings',
+    steps: {
+      certificate: 'Install the CA certificate below once, so your slicer trusts the virtual printers.',
+      addPrinter: 'In your slicer, add a printer by IP address and enter the address of a virtual printer listed here. If the slicer asks for a serial number or model, use the ones shown.',
+      accessCode: 'As the access code, enter your personal code below, not the printer\'s own.',
+    },
+    printers: 'Virtual printers you can send to',
+    noPrinters: 'There is no virtual printer you can send to. Ask your administrator.',
+    notRunning: 'Not running',
+    field: {
+      address: 'Address',
+      serial: 'Serial number',
+      model: 'Model',
+    },
+    destination: {
+      library: 'Files you send are saved to the File Manager.',
+      review: 'Files you send wait for review before they are saved.',
+      queuePrinter: 'Files you send are queued for {{printer}}.',
+      queueModel: 'Files you send are queued for the first free {{model}}.',
+    },
+    liveStatus: 'Your slicer shows the live status of {{printer}}.',
+    noLiveStatus: 'Your slicer shows no live printer status.',
+    instructions: {
+      description: 'Every signed-in user finds their access code, the virtual printers they may send to and the CA certificate on this page, without Settings access. Send them its link.',
+      label: 'Instructions for users',
+      placeholder: 'e.g. Connect to the VPN first.',
+      markdownHint: 'Markdown. Shown at the top of the page.',
+      openPage: 'Open page',
+      saved: 'Instructions saved',
+      saveFailed: 'Could not save the instructions',
+    },
+  },
   slicerAccessCode: {
     title: 'Slicer access code',
     description: 'Enter this code in Bambu Studio or OrcaSlicer instead of the virtual printer\'s own access code. What you send to the virtual printer is then yours.',

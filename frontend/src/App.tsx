@@ -22,6 +22,7 @@ const ArchivesPage = lazyPage(() => import('./pages/ArchivesPage'), 'ArchivesPag
 const QueuePage = lazyPage(() => import('./pages/QueuePage'), 'QueuePage');
 const StatsPage = lazyPage(() => import('./pages/StatsPage'), 'StatsPage');
 const SettingsPage = lazyPage(() => import('./pages/SettingsPage'), 'SettingsPage');
+const ConnectSlicerPage = lazyPage(() => import('./pages/ConnectSlicerPage'), 'ConnectSlicerPage');
 const FinancePage = lazyPage(() => import('./pages/FinancePage'), 'FinancePage');
 const ProfilesPage = lazyPage(() => import('./pages/ProfilesPage'), 'ProfilesPage');
 const MaintenancePage = lazyPage(() => import('./pages/MaintenancePage'), 'MaintenancePage');
@@ -259,6 +260,8 @@ function App() {
                   <Route path="users" element={<Navigate to="/settings?tab=users" replace />} />
                   <Route path="groups" element={<Navigate to="/settings?tab=users" replace />} />
                   <Route path="system" element={<SystemInfoPage />} />
+                  {/* Any signed-in user: what to enter in the slicer, without Settings access (#3602). */}
+                  <Route path="connect-slicer" element={<ConnectSlicerPage />} />
                   <Route path="notifications" element={<NotificationsPage />} />
                   <Route path="gcode-viewer" element={<GCodeViewerPage />} />
                   <Route path="external/:id" element={<ExternalLinkPage />} />

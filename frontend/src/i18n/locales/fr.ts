@@ -8846,4 +8846,26 @@ export default {
     noReadAccess: 'Vous n\'avez pas la permission de consulter les prévisions de stock.',
     noWriteAccess: 'Vous n\'avez pas la permission de modifier les paramètres de prévision.',
   },
+  // "To do" list of what the queue waits on (#3615)
+  queueTodo: {
+    title: "À faire",
+    badgeLabel: "À faire : {{count}}",
+    anyModel: "N'importe quelle {{model}}",
+    jobCount_one: "{{count}} tâche",
+    jobCount_other: "{{count}} tâches",
+    kind: {
+      plateClear: "Confirmer que le plateau est vide",
+      loadFilament: "Charger du filament",
+      startStaged: "Lancer la tâche en attente",
+      sensorInterlock: "Bloqué par un capteur",
+      powerOnFailed: "L'imprimante ne s'est pas allumée",
+      loadFilamentOn: "Charger du filament sur",
+    },
+    plateIsClear: "Le plateau est vide",
+    or: "ou",
+    noStock: "plus en stock",
+    openPrinter: "Ouvrir l'imprimante",
+    openQueue: "Ouvrir la file",
+    actionFailed: "Échec de l'action",
+  },
 };

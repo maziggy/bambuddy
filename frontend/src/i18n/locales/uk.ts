@@ -8901,4 +8901,26 @@ export default {
     noReadAccess: "Ви не маєте дозволу переглядати прогнози запасів.",
     noWriteAccess: "Ви не маєте дозволу змінювати налаштування прогнозу.",
   },
+  // "To do" list of what the queue waits on (#3615)
+  queueTodo: {
+    title: "До виконання",
+    badgeLabel: "До виконання: {{count}}",
+    anyModel: "Будь-який {{model}}",
+    jobCount_one: "Завдання: {{count}}",
+    jobCount_other: "Завдання: {{count}}",
+    kind: {
+      plateClear: "Підтвердьте, що стіл вільний",
+      loadFilament: "Завантажте філамент",
+      startStaged: "Запустити підготовлене завдання",
+      sensorInterlock: "Заблоковано датчиком",
+      powerOnFailed: "Принтер не ввімкнувся",
+      loadFilamentOn: "Завантажте філамент у",
+    },
+    plateIsClear: "Стіл вільний",
+    or: "або",
+    noStock: "на складі не залишилось",
+    openPrinter: "Відкрити принтер",
+    openQueue: "Відкрити чергу",
+    actionFailed: "Не вдалося виконати дію",
+  },
 };

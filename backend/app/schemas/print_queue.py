@@ -569,3 +569,45 @@ class PrintBatchResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class QueueTodoFilament(BaseModel):
+    """One filament a waiting job needs loaded (#3615). ``color`` is "#RRGGBB" or empty."""
+
+    type: str
+    color: str = ""
+    color_name: str = ""
+    no_stock: bool = False
+
+
+class QueueTodoJob(BaseModel):
+    id: int
+    name: str
+    # Whether the caller may start it now; only meaningful for a staged job.
+    can_start: bool = False
+
+
+class QueueTodoPrinter(BaseModel):
+    id: int
+    name: str
+
+
+class QueueTodoEntry(BaseModel):
+    kind: Literal["plate_clear", "load_filament", "start_staged", "sensor_interlock", "power_on_failed"]
+    jobs: list[QueueTodoJob]
+    filaments: list[QueueTodoFilament] = []
+    # Printers where loading ``filaments`` lets a model job start; empty for other kinds.
+    printers: list[QueueTodoPrinter] = []
+    detail: str | None = None
+
+
+class QueueTodoGroup(BaseModel):
+    printer_id: int | None = None
+    printer_name: str
+    target_model: str | None = None
+    entries: list[QueueTodoEntry]
+
+
+class QueueTodoResponse(BaseModel):
+    count: int
+    groups: list[QueueTodoGroup]

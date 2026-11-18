@@ -8911,4 +8911,26 @@ export default {
     noReadAccess: 'Je hebt geen machtiging om voorraadprognoses te bekijken.',
     noWriteAccess: 'Je hebt geen machtiging om prognose-instellingen te wijzigen.',
   },
+  // "To do" list of what the queue waits on (#3615)
+  queueTodo: {
+    title: "Te doen",
+    badgeLabel: "Te doen: {{count}}",
+    anyModel: "Elke {{model}}",
+    jobCount_one: "{{count}} opdracht",
+    jobCount_other: "{{count}} opdrachten",
+    kind: {
+      plateClear: "Bevestig dat de bouwplaat leeg is",
+      loadFilament: "Filament laden",
+      startStaged: "Gereedstaande opdracht starten",
+      sensorInterlock: "Geblokkeerd door een sensor",
+      powerOnFailed: "Printer is niet ingeschakeld",
+      loadFilamentOn: "Filament laden op",
+    },
+    plateIsClear: "Bouwplaat is leeg",
+    or: "of",
+    noStock: "niets meer in voorraad",
+    openPrinter: "Printer openen",
+    openQueue: "Wachtrij openen",
+    actionFailed: "Actie mislukt",
+  },
 };

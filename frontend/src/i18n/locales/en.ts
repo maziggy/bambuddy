@@ -8913,4 +8913,26 @@ export default {
     noReadAccess: 'You do not have permission to view inventory forecasts.',
     noWriteAccess: 'You do not have permission to modify forecast settings.',
   },
+  // "To do" list of what the queue waits on (#3615)
+  queueTodo: {
+    title: "To do",
+    badgeLabel: "To do: {{count}}",
+    anyModel: "Any {{model}}",
+    jobCount_one: "{{count}} job",
+    jobCount_other: "{{count}} jobs",
+    kind: {
+      plateClear: "Confirm the plate is clear",
+      loadFilament: "Load filament",
+      startStaged: "Start the staged job",
+      sensorInterlock: "Blocked by a sensor",
+      powerOnFailed: "Printer did not power on",
+      loadFilamentOn: "Load filament on",
+    },
+    plateIsClear: "Plate is clear",
+    or: "or",
+    noStock: "none left in inventory",
+    openPrinter: "Open printer",
+    openQueue: "Open queue",
+    actionFailed: "Action failed",
+  },
 };

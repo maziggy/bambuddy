@@ -8465,4 +8465,26 @@ export default {
     noReadAccess: "У вас нет прав на просмотр прогноза запасов.",
     noWriteAccess: "У вас нет прав на изменение настроек прогноза.",
   },
+  // "To do" list of what the queue waits on (#3615)
+  queueTodo: {
+    title: "К выполнению",
+    badgeLabel: "К выполнению: {{count}}",
+    anyModel: "Любой {{model}}",
+    jobCount_one: "Задания: {{count}}",
+    jobCount_other: "Задания: {{count}}",
+    kind: {
+      plateClear: "Подтвердите, что стол свободен",
+      loadFilament: "Загрузите филамент",
+      startStaged: "Запустить подготовленное задание",
+      sensorInterlock: "Заблокировано датчиком",
+      powerOnFailed: "Принтер не включился",
+      loadFilamentOn: "Загрузите филамент в",
+    },
+    plateIsClear: "Стол свободен",
+    or: "или",
+    noStock: "на складе не осталось",
+    openPrinter: "Открыть принтер",
+    openQueue: "Открыть очередь",
+    actionFailed: "Не удалось выполнить действие",
+  },
 };

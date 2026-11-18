@@ -8843,4 +8843,26 @@ export default {
     noReadAccess: '您没有查看库存预测的权限。',
     noWriteAccess: '您没有修改预测设置的权限。',
   },
+  // "To do" list of what the queue waits on (#3615)
+  queueTodo: {
+    title: "待办",
+    badgeLabel: "待办：{{count}}",
+    anyModel: "任意 {{model}}",
+    jobCount_one: "{{count}} 个任务",
+    jobCount_other: "{{count}} 个任务",
+    kind: {
+      plateClear: "确认打印板已清理",
+      loadFilament: "装入耗材",
+      startStaged: "启动已暂存的任务",
+      sensorInterlock: "被传感器阻止",
+      powerOnFailed: "打印机未能开机",
+      loadFilamentOn: "装入耗材到",
+    },
+    plateIsClear: "打印板已清理",
+    or: "或",
+    noStock: "库存已用完",
+    openPrinter: "打开打印机",
+    openQueue: "打开队列",
+    actionFailed: "操作失败",
+  },
 };

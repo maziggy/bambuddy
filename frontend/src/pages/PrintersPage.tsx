@@ -163,7 +163,7 @@ import {
 import { ConfirmOutcomeDialog } from '../components/ConfirmOutcomeDialog';
 
 // Aliased: lucide-react already exports a `Link` icon into this module.
-import { Link as RouterLink, useNavigate } from 'react-router-dom';
+import { Link as RouterLink, useLocation, useNavigate } from 'react-router-dom';
 import { api, discoveryApi, firmwareApi, withMediaToken, ApiError } from '../api/client';
 import { formatDateOnly, formatDateTime, formatETA, formatDuration, formatDurationFromHours, parseUTCDate } from '../utils/date';
 import type { Printer, PrinterCreate, PrinterStatus, PandaBreathCommand, PandaBreathMode, PandaBreathState, AMSUnit, AMSTray, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool, SmartPlug, PrinterDiagnosticResult } from '../api/client';
@@ -9350,6 +9350,27 @@ export function PrintersPage() {
     queryKey: ['printers'],
     queryFn: api.getPrinters,
   });
+
+  // /printers#printer-card-<id> (the queue "To do" list, #3615): once the
+  // printers are loaded, bring that card into view; in S mode open it.
+  // Keyed on the navigation (location.key), so following the same link again
+  // scrolls again; marked handled only once the card was there to act on, so
+  // printers still loading or a filter hiding it retry when those change.
+  const { hash: locationHash, key: locationKey } = useLocation();
+  const handledCardNav = useRef<string | null>(null);
+  useEffect(() => {
+    const match = /^#printer-card-(\d+)$/.exec(locationHash);
+    if (!match || !printers || handledCardNav.current === locationKey) return;
+    const id = Number(match[1]);
+    if (!printers.some((p) => p.id === id)) return;
+    if (viewMode === 'compact') {
+      handledCardNav.current = locationKey;
+      openCompactCard(id);
+    } else if (document.getElementById(`printer-card-${id}`)) {
+      handledCardNav.current = locationKey;
+      scrollPrinterIntoView(id);
+    }
+  }, [locationHash, locationKey, printers, statusFilter, locationFilter, viewMode, openCompactCard, scrollPrinterIntoView]);
 
   // Fetch the UI-rendering subset of settings. Uses /ui-preferences (not /settings)
   // so users with printers:read but no settings:read still get the values needed

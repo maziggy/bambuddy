@@ -8860,4 +8860,26 @@ export default {
     noReadAccess: 'Sie haben keine Berechtigung, Bestandsprognosen anzuzeigen.',
     noWriteAccess: 'Sie haben keine Berechtigung, Prognoseeinstellungen zu ändern.',
   },
+  // "To do" list of what the queue waits on (#3615)
+  queueTodo: {
+    title: "Zu erledigen",
+    badgeLabel: "Zu erledigen: {{count}}",
+    anyModel: "Beliebiger {{model}}",
+    jobCount_one: "{{count}} Auftrag",
+    jobCount_other: "{{count}} Aufträge",
+    kind: {
+      plateClear: "Bestätigen, dass die Druckplatte frei ist",
+      loadFilament: "Filament einlegen",
+      startStaged: "Bereitgestellten Auftrag starten",
+      sensorInterlock: "Von einem Sensor blockiert",
+      powerOnFailed: "Drucker hat sich nicht eingeschaltet",
+      loadFilamentOn: "Filament einlegen in",
+    },
+    plateIsClear: "Druckplatte freigeben",
+    or: "oder",
+    noStock: "nichts mehr im Bestand",
+    openPrinter: "Drucker öffnen",
+    openQueue: "Warteschlange öffnen",
+    actionFailed: "Aktion fehlgeschlagen",
+  },
 };

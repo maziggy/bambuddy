@@ -8913,4 +8913,26 @@ export default {
     noReadAccess: 'Nie masz uprawnień do wyświetlania prognoz magazynu.',
     noWriteAccess: 'Nie masz uprawnień do zmiany ustawień prognozy.',
   },
+  // "To do" list of what the queue waits on (#3615)
+  queueTodo: {
+    title: "Do zrobienia",
+    badgeLabel: "Do zrobienia: {{count}}",
+    anyModel: "Dowolna {{model}}",
+    jobCount_one: "Zadania: {{count}}",
+    jobCount_other: "Zadania: {{count}}",
+    kind: {
+      plateClear: "Potwierdź, że płyta jest pusta",
+      loadFilament: "Załaduj filament",
+      startStaged: "Uruchom przygotowane zadanie",
+      sensorInterlock: "Zablokowane przez czujnik",
+      powerOnFailed: "Drukarka nie włączyła się",
+      loadFilamentOn: "Załaduj filament do",
+    },
+    plateIsClear: "Płyta jest pusta",
+    or: "lub",
+    noStock: "brak w magazynie",
+    openPrinter: "Otwórz drukarkę",
+    openQueue: "Otwórz kolejkę",
+    actionFailed: "Akcja nie powiodła się",
+  },
 };

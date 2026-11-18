@@ -8942,4 +8942,26 @@ errors: {
     noReadAccess: 'Du har inte behörighet att visa lagerprognoser.',
     noWriteAccess: 'Du har inte behörighet att modifiera prognosinställningar.',
   },
+  // "To do" list of what the queue waits on (#3615)
+  queueTodo: {
+    title: "Att göra",
+    badgeLabel: "Att göra: {{count}}",
+    anyModel: "Valfri {{model}}",
+    jobCount_one: "{{count}} jobb",
+    jobCount_other: "{{count}} jobb",
+    kind: {
+      plateClear: "Bekräfta att byggplattan är tom",
+      loadFilament: "Ladda filament",
+      startStaged: "Starta det förberedda jobbet",
+      sensorInterlock: "Blockerad av en sensor",
+      powerOnFailed: "Skrivaren slogs inte på",
+      loadFilamentOn: "Ladda filament i",
+    },
+    plateIsClear: "Plattan är tom",
+    or: "eller",
+    noStock: "inget kvar i lagret",
+    openPrinter: "Öppna skrivare",
+    openQueue: "Öppna kön",
+    actionFailed: "Åtgärden misslyckades",
+  },
 };

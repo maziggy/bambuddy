@@ -66,7 +66,7 @@ import {
   Workflow,
   ThumbsUp,
 } from 'lucide-react';
-import { api, ApiError } from '../api/client';
+import { api } from '../api/client';
 import { PipelineRunsView } from './PipelineRunsPage';
 import { type TimeFormat, formatETA, formatDuration, formatRelativeTime, parseUTCDate } from '../utils/date';
 import { getBedTypeInfo } from '../utils/bedType';
@@ -82,6 +82,9 @@ import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { PrintModal } from '../components/PrintModal';
 import { useToast } from '../contexts/ToastContext';
+import { QueueTodoList } from '../components/QueueTodoList';
+import { useQueueTodo } from '../hooks/useQueueTodo';
+import { useStartQueueItem } from '../hooks/useStartQueueItem';
 import { useAuth } from '../contexts/AuthContext';
 import { QueueStatsBar } from '../components/QueueStatsBar';
 import { CompactHistoryRow } from '../components/CompactHistoryRow';
@@ -1943,6 +1946,7 @@ export function QueuePage() {
     mutationFn: (id: number) => api.cancelQueueItem(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
+      queryClient.invalidateQueries({ queryKey: ['queue-todo'] }); // #3615
       showToast(t('queue.toast.cancelled'));
     },
     onError: () => showToast(t('queue.toast.cancelFailed'), 'error'),
@@ -1952,6 +1956,7 @@ export function QueuePage() {
     mutationFn: (id: number) => api.removeFromQueue(id),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
+      queryClient.invalidateQueries({ queryKey: ['queue-todo'] }); // #3615
       queryClient.invalidateQueries({ queryKey: ['batches'] });
       // The backend keeps an order's last run for a plate, cancelled rather
       // than deleted, so the order can still re-queue it (#2960). Say so:
@@ -1965,66 +1970,22 @@ export function QueuePage() {
     mutationFn: (id: number) => api.stopQueueItem(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
+      queryClient.invalidateQueries({ queryKey: ['queue-todo'] }); // #3615
       showToast(t('queue.toast.stopped'));
     },
     onError: () => showToast(t('queue.toast.stopFailed'), 'error'),
   });
 
-  // Filament-deficit confirmation state (#1496). When the backend returns
-  // 409 with `code=insufficient_filament` we stash the deficit + item id
-  // here; the modal at the bottom of the page reads it and the "Print
-  // Anyway" path re-issues the start with `skipFilamentCheck=true`.
-  const [filamentShortConfirm, setFilamentShortConfirm] = useState<{
-    itemId: number;
-    deficit: Array<{
-      slot_id: number;
-      required_grams: number;
-      remaining_grams: number | null;
-      filament_type?: string | null;
-    }>;
-  } | null>(null);
-
-  // A filament the printer has no tray for at all (#2799): 409 with
-  // `code=unmatched_filament` and the missing filaments. Same "Print Anyway"
-  // path as the deficit above.
-  const [filamentMissingConfirm, setFilamentMissingConfirm] = useState<{
-    itemId: number;
-    missing: string[];
-  } | null>(null);
-
-  const startMutation = useMutation({
-    mutationFn: ({ id, skipFilamentCheck }: { id: number; skipFilamentCheck?: boolean }) =>
-      api.startQueueItem(id, { skipFilamentCheck }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['queue'] });
-      showToast(t('queue.toast.released'));
-      setFilamentShortConfirm(null);
-      setFilamentMissingConfirm(null);
-    },
-    onError: (error: unknown, variables) => {
-      if (error instanceof ApiError && error.status === 409 && error.code === 'insufficient_filament') {
-        const deficitRaw = (error.detail?.deficit ?? []) as Array<{
-          slot_id: number;
-          required_grams: number;
-          remaining_grams: number | null;
-          filament_type?: string | null;
-        }>;
-        setFilamentShortConfirm({ itemId: variables.id, deficit: deficitRaw });
-        return;
-      }
-      if (error instanceof ApiError && error.status === 409 && error.code === 'unmatched_filament') {
-        const missing = (error.detail?.missing ?? []) as string[];
-        setFilamentMissingConfirm({ itemId: variables.id, missing });
-        return;
-      }
-      showToast(t('queue.toast.startFailed'), 'error');
-    },
-  });
+  // Start with the filament "Print anyway" confirmations (#1496, #2799),
+  // shared with the "To do" list (#3615).
+  const { startMutation, modals: startModals } = useStartQueueItem();
+  const { data: queueTodo } = useQueueTodo();
 
   const reorderMutation = useMutation({
     mutationFn: (items: { id: number; position: number }[]) => api.reorderQueue(items),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
+      queryClient.invalidateQueries({ queryKey: ['queue-todo'] }); // #3615
     },
     onError: () => showToast(t('queue.toast.reorderFailed'), 'error'),
   });
@@ -2036,6 +1997,7 @@ export function QueuePage() {
     mutationFn: () => api.clearQueueHistory(historyFilters),
     onSuccess: ({ cleared, kept }) => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
+      queryClient.invalidateQueries({ queryKey: ['queue-todo'] }); // #3615
       queryClient.invalidateQueries({ queryKey: ['batches'] });
       showToast(
         kept > 0
@@ -2050,6 +2012,7 @@ export function QueuePage() {
     mutationFn: (data: PrintQueueBulkUpdate) => api.bulkUpdateQueue(data),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
+      queryClient.invalidateQueries({ queryKey: ['queue-todo'] }); // #3615
       setSelectedItems([]);
       setShowBulkEditModal(false);
       const toast = bulkUpdateToast(result);
@@ -2067,6 +2030,7 @@ export function QueuePage() {
     },
     onSuccess: (count) => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
+      queryClient.invalidateQueries({ queryKey: ['queue-todo'] }); // #3615
       setSelectedItems([]);
       showToast(t('queue.toast.bulkCancelled', { count }));
     },
@@ -2077,6 +2041,7 @@ export function QueuePage() {
     mutationFn: (printerId: number) => api.resumeQueueAfterFailure(printerId),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
+      queryClient.invalidateQueries({ queryKey: ['queue-todo'] }); // #3615
       setResumeConfirm(null);
       showToast(
         t('queue.toast.resumedAfterFailure', {
@@ -2092,6 +2057,7 @@ export function QueuePage() {
     mutationFn: (model: string) => api.resumeModelQueueAfterFailure(model),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
+      queryClient.invalidateQueries({ queryKey: ['queue-todo'] }); // #3615
       setResumeModelConfirm(null);
       showToast(t('queue.toast.resumedModelAfterFailure', { count: result.acknowledged }));
     },
@@ -2102,6 +2068,7 @@ export function QueuePage() {
     mutationFn: (data: { name: string; item_ids: number[] }) => api.createBatch(data),
     onSuccess: (batch) => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
+      queryClient.invalidateQueries({ queryKey: ['queue-todo'] }); // #3615
       setSelectedItems([]);
       setGroupBatchModal(false);
       // New batches start expanded so the user sees what they just grouped.
@@ -2115,6 +2082,7 @@ export function QueuePage() {
     mutationFn: (id: number) => api.ungroupBatch(id),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
+      queryClient.invalidateQueries({ queryKey: ['queue-todo'] }); // #3615
       setUngroupBatchId(null);
       showToast(t('queue.toast.batchUngrouped', { count: result.ungrouped_count }));
     },
@@ -2757,6 +2725,9 @@ export function QueuePage() {
         t={t}
       />}
 
+      {/* #3615: everything the queue waits on, grouped by printer. Empty renders nothing. */}
+      {activeTab === 'queue' && <QueueTodoList todo={queueTodo} heading />}
+
       {/* #1818: Resume-after-failure banner. One row per printer whose queue
           is gated by a prior failed/aborted print. Visible regardless of
           tab/layout so the user can clear the gate without hunting for
@@ -3262,45 +3233,7 @@ export function QueuePage() {
       )}
 
       {/* Confirm Action Modal */}
-      {filamentShortConfirm && (
-        <ConfirmModal
-          title={t('queue.filamentShort.confirmTitle')}
-          message={
-            t('queue.filamentShort.confirmIntro') + '\n\n' +
-            filamentShortConfirm.deficit
-              .map((d) =>
-                t('queue.filamentShort.lineItem', {
-                  slot: d.slot_id,
-                  required: Math.round(d.required_grams),
-                  remaining:
-                    d.remaining_grams == null
-                      ? t('queue.filamentShort.unknown')
-                      : Math.round(d.remaining_grams),
-                }),
-              )
-              .join('\n')
-          }
-          confirmText={t('queue.filamentShort.printAnyway')}
-          variant="warning"
-          onConfirm={() => {
-            startMutation.mutate({ id: filamentShortConfirm.itemId, skipFilamentCheck: true });
-          }}
-          onCancel={() => setFilamentShortConfirm(null)}
-        />
-      )}
-
-      {filamentMissingConfirm && (
-        <ConfirmModal
-          title={t('queue.filamentMissing.confirmTitle')}
-          message={t('queue.filamentMissing.confirmIntro') + '\n\n' + filamentMissingConfirm.missing.join('\n')}
-          confirmText={t('queue.filamentShort.printAnyway')}
-          variant="warning"
-          onConfirm={() => {
-            startMutation.mutate({ id: filamentMissingConfirm.itemId, skipFilamentCheck: true });
-          }}
-          onCancel={() => setFilamentMissingConfirm(null)}
-        />
-      )}
+      {startModals}
 
       {confirmAction && (
         <ConfirmModal

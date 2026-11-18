@@ -8845,4 +8845,26 @@ export default {
     noReadAccess: 'Você não tem permissão para visualizar previsões de inventário.',
     noWriteAccess: 'Você não tem permissão para modificar as configurações de previsão.',
   },
+  // "To do" list of what the queue waits on (#3615)
+  queueTodo: {
+    title: "A fazer",
+    badgeLabel: "A fazer: {{count}}",
+    anyModel: "Qualquer {{model}}",
+    jobCount_one: "{{count}} trabalho",
+    jobCount_other: "{{count}} trabalhos",
+    kind: {
+      plateClear: "Confirme que a mesa está livre",
+      loadFilament: "Carregar filamento",
+      startStaged: "Iniciar o trabalho em espera",
+      sensorInterlock: "Bloqueado por um sensor",
+      powerOnFailed: "A impressora não ligou",
+      loadFilamentOn: "Carregar filamento em",
+    },
+    plateIsClear: "A mesa está livre",
+    or: "ou",
+    noStock: "nada restante no estoque",
+    openPrinter: "Abrir impressora",
+    openQueue: "Abrir fila",
+    actionFailed: "A ação falhou",
+  },
 };

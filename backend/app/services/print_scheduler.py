@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import re
 import time
 import uuid
 import zipfile
@@ -755,7 +756,13 @@ def _is_tray_id(value: object) -> bool:
 # Prefix of the waiting_reason `_block_on_unmatched_filament` writes when it
 # stages an item (#2799). The manual_start branch clears every other reason on
 # a staged item (#3074); this one is the reason it was staged, so it stays.
+# A job held on its own printer names it: "A1 Left needs PLA Lava Red" (#3590).
+# A job released to the pool has no printer and keeps the bare "Needs ...".
 _UNMATCHED_HOLD_PREFIX = "Needs "
+_UNMATCHED_HOLD_VERB = " needs "
+# "<printer> needs <filament>", and not the short-spool text "PLA (20 g left,
+# needs 300 g)", which also holds the word.
+_UNMATCHED_HOLD_NAMED = re.compile(r" needs (?!\d+(?:\.\d+)? g\))")
 
 # Appended to a forced filament in a waiting reason when the built-in inventory
 # knows the filament and has no spool of it left (#3590). Stable text, no grams,
@@ -770,7 +777,9 @@ _SHORT_HOLD_RECHECK_SECONDS = 120
 
 def _is_unmatched_hold_reason(reason: str | None) -> bool:
     """True for the reason the unmatched-filament hold wrote when it staged the item."""
-    return bool(reason) and reason.startswith(_UNMATCHED_HOLD_PREFIX)
+    if not reason:
+        return False
+    return reason.startswith(_UNMATCHED_HOLD_PREFIX) or _UNMATCHED_HOLD_NAMED.search(reason) is not None
 
 
 def _filament_overrides_of(item: PrintQueueItem) -> list:
@@ -9809,7 +9818,15 @@ class PrintScheduler:
             previous_reason = item.waiting_reason
         item.manual_start = True
         # Human-readable: this renders on the queue row.
-        item.waiting_reason = f"{_UNMATCHED_HOLD_PREFIX}{wanted}"
+        # It names the printer to load the filament on, unless the job goes back
+        # to the pool below and no printer holds it any more (#3590).
+        printer = await self._get_printer(db, held_by)
+        name = None if release_assignment or printer is None else printer.name
+        printer_name = name.strip() if isinstance(name, str) else ""
+        if printer_name:
+            item.waiting_reason = f"{printer_name}{_UNMATCHED_HOLD_VERB}{wanted}"
+        else:
+            item.waiting_reason = f"{_UNMATCHED_HOLD_PREFIX}{wanted}"
         if release_assignment:
             # "Any P2S" means any, so the job returns to the pool rather than
             # waiting on the printer that could not take it. The mapping goes
@@ -9823,7 +9840,6 @@ class PrintScheduler:
         await db.commit()
 
         job_name = await self._get_job_name(db, item)
-        printer = await self._get_printer(db, held_by)
         logger.info(
             "Queue item %s blocked — printer %s has nothing loaded for %s; promoted to manual_start",
             item.id,

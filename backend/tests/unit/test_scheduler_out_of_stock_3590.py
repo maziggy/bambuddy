@@ -254,6 +254,38 @@ class TestPinnedHold:
         assert notify.await_args.kwargs["printer_id"] == 8
 
     @pytest.mark.asyncio
+    async def test_the_reason_names_the_printer_that_holds_the_job(self):
+        scheduler = _pinned_scheduler()
+        scheduler._get_printer.return_value.name = "A1 Left"
+        item = _pinned_item(FORCED)
+        with (
+            _entries((0, 0.0)),
+            patch(NOTIFY, AsyncMock()),
+            patch("backend.app.services.print_scheduler.notification_service.on_queue_job_waiting", AsyncMock()),
+        ):
+            await scheduler._block_on_unmatched_filament(AsyncMock(), item)
+        assert item.waiting_reason == f"A1 Left needs PLA Earth Brown{_NO_STOCK_SUFFIX}"
+        # Still the reason a staged item keeps, unlike the short-spool text.
+        assert _is_unmatched_hold_reason(item.waiting_reason)
+        assert _is_unmatched_hold_reason("A1 Left needs PLA Earth Brown")
+        assert not _is_unmatched_hold_reason("PLA (20 g left, needs 300 g)")
+        assert not _is_unmatched_hold_reason("PLA (needs 300 g)")
+
+    @pytest.mark.asyncio
+    async def test_a_job_released_to_the_pool_names_no_printer(self):
+        scheduler = _pinned_scheduler()
+        scheduler._get_printer.return_value.name = "A1 Left"
+        item = _pinned_item(FORCED)
+        with (
+            _entries((2, 300.0)),
+            patch(NOTIFY, AsyncMock()),
+            patch("backend.app.services.print_scheduler.notification_service.on_queue_job_waiting", AsyncMock()),
+            patch("backend.app.services.print_scheduler.drop_printer_resolved"),
+        ):
+            await scheduler._block_on_unmatched_filament(AsyncMock(), item, release_assignment=True)
+        assert item.waiting_reason == "Needs PLA Earth Brown"
+
+    @pytest.mark.asyncio
     async def test_colour_without_a_name_is_shown_as_its_code(self):
         """An override that names no colour (queued over the API) keeps the hex."""
         scheduler = _pinned_scheduler()

@@ -1,12 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { X, Loader2, Printer, CheckSquare, Square, Search, Download } from 'lucide-react';
+import { X, Loader2, Printer, CheckSquare, Square, Search, Download, Tag } from 'lucide-react';
 import {
   api,
   ApiError,
+  DEFAULT_ROLL_LENGTH_MM,
   DEFAULT_SPOOL_LABEL_FIELDS,
+  LABEL_PRINTER_TAPES,
+  ROLL_MAX_LENGTH_MM,
+  MAX_PRINT_LABELS_PER_REQUEST,
+  MAX_PRINT_TAPE_MM,
+  ROLL_MIN_LENGTH_MM,
   SPOOL_LABEL_FIELDS,
+  type LabelRollSpec,
   type LabelSheetLayout,
   type SavedLabelTemplate,
   type SpoolLabelField,
@@ -19,6 +26,9 @@ import { ConfirmModal } from './ConfirmModal';
 import { LabelSheetDiagram, LabelSheetLayoutEditor } from './LabelSheetLayoutEditor';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { isLabelPrinterConfigured, useUiSettings } from '../hooks/useUiSettings';
+import { printCapsProblem, printLabelsWithToasts } from '../utils/labelPrintJobs';
+import { DEFAULT_ROLL_TAPE, LABEL_PREFS_STORAGE_KEY, clampRollLength } from '../utils/labelPrint';
 import {
   DEFAULT_LAYOUT,
   MAX_PNG_SHEET_PAGES_X_DPI,
@@ -123,13 +133,9 @@ const FIELD_LABELS: Record<SpoolLabelField, { i18nKey: string; fallback: string 
   spool_id: { i18nKey: 'spoolId', fallback: 'Spool ID' },
 };
 
-// Remembered per browser. Printing only needs inventory access, and a server
-// setting would need settings access to save.
-const PREFS_STORAGE_KEY = 'bambuddy-label-print-options';
-
 // What the label size dropdown holds: a built-in template, a one-off custom
 // sheet, or a saved template by id (#3296).
-type TemplateChoice = SpoolLabelTemplate | 'custom' | `saved:${number}`;
+type TemplateChoice = SpoolLabelTemplate | 'custom' | 'roll' | `saved:${number}`;
 
 const SAVED_TEMPLATES_KEY = ['labelTemplates'];
 
@@ -143,7 +149,7 @@ function savedIdOf(choice: TemplateChoice): number | null {
 
 function isTemplateChoice(value: unknown): value is TemplateChoice {
   if (typeof value !== 'string') return false;
-  if (value === 'custom' || /^saved:[1-9]\d*$/.test(value)) return true;
+  if (value === 'custom' || value === 'roll' || /^saved:[1-9]\d*$/.test(value)) return true;
   return TEMPLATE_OPTIONS.some((o) => o.value === value);
 }
 
@@ -156,6 +162,9 @@ interface LabelPrefs {
   monochrome: boolean;
   format: OutputFormat;
   dpi: PngDpi;
+  /** Roll format (#3612): tape width in mm, '' = the label printer's tape. */
+  rollTape: string;
+  rollLength: number;
 }
 
 const DEFAULT_PREFS: LabelPrefs = {
@@ -165,12 +174,14 @@ const DEFAULT_PREFS: LabelPrefs = {
   monochrome: false,
   format: 'pdf',
   dpi: 300,
+  rollTape: '',
+  rollLength: DEFAULT_ROLL_LENGTH_MM,
 };
 
 function loadPrefs(): LabelPrefs {
   let raw: unknown;
   try {
-    raw = JSON.parse(localStorage.getItem(PREFS_STORAGE_KEY) ?? 'null');
+    raw = JSON.parse(localStorage.getItem(LABEL_PREFS_STORAGE_KEY) ?? 'null');
   } catch {
     return DEFAULT_PREFS;
   }
@@ -192,12 +203,14 @@ function loadPrefs(): LabelPrefs {
     monochrome: r.monochrome === true,
     format: r.format === 'png' ? 'png' : 'pdf',
     dpi: PNG_DPIS.includes(r.dpi as PngDpi) ? (r.dpi as PngDpi) : DEFAULT_PREFS.dpi,
+    rollTape: (LABEL_PRINTER_TAPES as readonly unknown[]).includes(r.rollTape) ? (r.rollTape as string) : '',
+    rollLength: typeof r.rollLength === 'number' ? clampRollLength(r.rollLength) : DEFAULT_ROLL_LENGTH_MM,
   };
 }
 
 function savePrefs(prefs: LabelPrefs): void {
   try {
-    localStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(prefs));
+    localStorage.setItem(LABEL_PREFS_STORAGE_KEY, JSON.stringify(prefs));
   } catch {
     // Private mode or storage disabled: the options just aren't remembered.
   }
@@ -339,6 +352,8 @@ export function LabelTemplatePickerModal({
   const [sortMode, setSortMode] = useState<SortMode>('id');
   const [prefs, setPrefs] = useState<LabelPrefs>(DEFAULT_PREFS);
   const [startingPositionInput, setStartingPositionInput] = useState('1');
+  const [rollLengthInput, setRollLengthInput] = useState(String(DEFAULT_ROLL_LENGTH_MM));
+  const [directPending, setDirectPending] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -362,6 +377,12 @@ export function LabelTemplatePickerModal({
     staleTime: 0,
   });
   const savedTemplates = useMemo(() => savedQuery.data ?? [], [savedQuery.data]);
+  // Direct printing is offered only with a label printer set up (#3612).
+  const { data: appSettings } = useUiSettings({ enabled: isOpen });
+  const printerConfigured = isLabelPrinterConfigured(appSettings);
+  // ui-flags sends the tape to every user; an older backend omits it, and the
+  // server then checks the tape itself.
+  const printerTape = printerConfigured ? appSettings?.label_printer_tape || null : null;
 
   const saveMutation = useMutation({
     mutationFn: ({ id, name, layout }: { id?: number; name: string; layout: LabelSheetLayout }) =>
@@ -409,7 +430,9 @@ export function LabelTemplatePickerModal({
       setSearch('');
       setMaterialFilter('');
       setSortMode('id');
-      setPrefs(loadPrefs());
+      const loaded = loadPrefs();
+      setPrefs(loaded);
+      setRollLengthInput(String(loaded.rollLength));
       setStartingPositionInput('1');
       setPending(false);
       setEditing(null);
@@ -484,9 +507,28 @@ export function LabelTemplatePickerModal({
           : null;
   const problem = activeDraft ? layoutProblem(activeDraft) : null;
   const activeLayout = activeDraft && !problem ? parseDraft(activeDraft) : null;
+  const isRoll = template === 'roll';
+  const rollTape = prefs.rollTape || printerTape || (printerConfigured ? '50' : DEFAULT_ROLL_TAPE);
+  const tapeFits = printerTape === null || rollTape === printerTape;
+  // Preview = print: this format goes to the printer in black and white, so the
+  // preview shows that and the option is locked on; downloads keep the choice.
+  const printLocked = printerConfigured && isRoll && tapeFits;
+  const monochrome = prefs.monochrome || printLocked;
+  const rollLengthValue = Number(rollLengthInput);
+  const rollLengthValid =
+    rollLengthInput.trim() !== '' &&
+    Number.isFinite(rollLengthValue) &&
+    rollLengthValue >= ROLL_MIN_LENGTH_MM &&
+    rollLengthValue <= ROLL_MAX_LENGTH_MM;
+  const roll: LabelRollSpec | null = isRoll && rollLengthValid ? { tape: rollTape, length_mm: rollLengthValue } : null;
+  const rollKey = roll ? JSON.stringify(roll) : '';
   // Waiting for the saved list, or a layout that can't print: nothing to send.
-  const sheetReady = !isCustomSheet || activeLayout !== null;
-  const requestTemplate: SpoolLabelRequestTemplate = isCustomSheet ? 'custom' : (template as SpoolLabelTemplate);
+  const sheetReady = (!isCustomSheet || activeLayout !== null) && (!isRoll || rollLengthValid);
+  const requestTemplate: SpoolLabelRequestTemplate = isCustomSheet
+    ? 'custom'
+    : isRoll
+      ? 'roll'
+      : (template as SpoolLabelTemplate);
   const layoutKey = activeLayout ? JSON.stringify(activeLayout) : '';
 
   // A remembered saved template that has since been deleted: back to the
@@ -532,7 +574,8 @@ export function LabelTemplatePickerModal({
         spool_id: previewSpoolId,
         template: requestTemplate,
         ...(layoutKey ? { layout: JSON.parse(layoutKey) as LabelSheetLayout } : {}),
-        monochrome: prefs.monochrome,
+        ...(rollKey ? { roll: JSON.parse(rollKey) as LabelRollSpec } : {}),
+        monochrome,
         fields: fieldsKey ? (fieldsKey.split(',') as SpoolLabelField[]) : [],
       };
       try {
@@ -554,7 +597,7 @@ export function LabelTemplatePickerModal({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [isOpen, previewSpoolId, sheetReady, requestTemplate, layoutKey, fieldsKey, prefs.monochrome, spoolmanMode]);
+  }, [isOpen, previewSpoolId, sheetReady, requestTemplate, layoutKey, rollKey, fieldsKey, monochrome, spoolmanMode]);
 
   // Free the last preview when the modal unmounts.
   useEffect(
@@ -578,13 +621,33 @@ export function LabelTemplatePickerModal({
     sheetCapacity === undefined ||
     (Number.isInteger(startingPosition) && startingPosition >= 1 && startingPosition <= sheetCapacity);
   const templateOption = TEMPLATE_OPTIONS.find((o) => o.value === template) ?? TEMPLATE_OPTIONS[0];
+  const directHint = printerTape
+    ? t('inventory.labels.direct.hint', 'The label printer takes the roll format with {{tape}} mm tape.', { tape: printerTape })
+    : t('inventory.labels.direct.hintAnyTape', 'The label printer takes the roll format.');
   // PNG of whole sheet pages is capped at pages × dpi, as on the server.
   const pngSheetPages =
     prefs.format === 'png' && sheetCapacity !== undefined && startingPositionIsValid
       ? sheetPageCount(sheetCapacity, selectedCount, startingPosition)
       : 0;
   const pngTooLarge = pngSheetPages * prefs.dpi > MAX_PNG_SHEET_PAGES_X_DPI;
-  const canPrint = !noSelection && !pending && startingPositionIsValid && sheetReady && !pngTooLarge;
+  const canPrint = !noSelection && !pending && !directPending && startingPositionIsValid && sheetReady && !pngTooLarge;
+  // Only the roll format on the printer's own tape goes to the label printer.
+  // One print request is capped in labels and in metres of tape (#3612).
+  const capsProblem = roll ? printCapsProblem(selectedCount, roll.length_mm) : null;
+  const capsHint =
+    capsProblem === 'tooMany'
+      ? t('inventory.labels.direct.tooMany', 'At most {{max}} labels can be printed at once. Select fewer spools.', {
+          max: MAX_PRINT_LABELS_PER_REQUEST,
+        })
+      : capsProblem === 'tooLong' && roll
+        ? t(
+            'inventory.labels.direct.tooLong',
+            'These labels need {{total}} mm of tape; at most {{max}} mm fit in one print. Select fewer spools or use a shorter label.',
+            { total: selectedCount * roll.length_mm, max: MAX_PRINT_TAPE_MM },
+          )
+        : null;
+  const canDirectPrint =
+    !noSelection && !pending && !directPending && isRoll && roll !== null && tapeFits && capsProblem === null;
 
   function updatePrefs(change: Partial<LabelPrefs>) {
     setPrefs((prev) => {
@@ -706,6 +769,28 @@ export function LabelTemplatePickerModal({
     setSelectedIds(new Set());
   }
 
+  async function handleDirectPrint() {
+    if (!canDirectPrint || !roll) return;
+    const ids = sortedSpools.filter((s) => selectedIds.has(s.id)).map((s) => s.id);
+    setDirectPending(true);
+    try {
+      // Always monochrome: the printer prints black on white (#3612).
+      // The server takes the job at once; the toasts follow it from here, so
+      // the dialog can close.
+      await printLabelsWithToasts(
+        spoolmanMode ? 'spoolman' : 'inventory',
+        { spool_ids: ids, template: 'roll', roll, monochrome: true, fields },
+        { t, showToast },
+      );
+      onClose();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      showToast(t('inventory.labels.direct.error', 'Could not print: {{msg}}', { msg }), 'error');
+    } finally {
+      setDirectPending(false);
+    }
+  }
+
   async function handlePrint() {
     if (!canPrint) return;
     // Order matters: the backend (labels.py) prints labels in the same order
@@ -716,6 +801,7 @@ export function LabelTemplatePickerModal({
       spool_ids: ids,
       template: requestTemplate,
       ...(activeLayout ? { layout: activeLayout } : {}),
+      ...(roll ? { roll } : {}),
       monochrome: prefs.monochrome,
       starting_position: sheetCapacity === undefined ? 1 : startingPosition,
       fields,
@@ -951,6 +1037,7 @@ export function LabelTemplatePickerModal({
                     {t(`inventory.labels.templates.${opt.i18nKey}.label`, opt.fallbackLabel)}
                   </option>
                 ))}
+                <option value="roll">{t('inventory.labels.roll.option', 'Roll (label printer tape)')}</option>
                 {savedTemplates.length > 0 && (
                   <optgroup label={t('inventory.labels.custom.savedGroup', 'Saved templates')}>
                     {savedTemplates.map((tpl) => (
@@ -965,13 +1052,63 @@ export function LabelTemplatePickerModal({
               <p data-testid="label-template-hint" className="text-xs text-bambu-gray">
                 {template === 'custom'
                   ? t('inventory.labels.custom.hint', 'Describe your own label sheet below.')
-                  : savedId !== null
+                  : isRoll
+                    ? t('inventory.labels.roll.hint', 'Continuous tape cut to the length you choose, for label printers.')
+                    : savedId !== null
                     ? savedTemplate
                       ? layoutSummary(savedTemplate.layout)
                       : null
                     : t(`inventory.labels.templates.${templateOption.i18nKey}.hint`, templateOption.fallbackHint)}
               </p>
             </div>
+
+            {/* Roll: tape width and length (#3612). */}
+            {isRoll && (
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="space-y-0.5 block">
+                  <span className="text-xs text-bambu-gray">{t('inventory.labels.roll.tape', 'Tape width')}</span>
+                  <select
+                    data-testid="label-roll-tape"
+                    value={rollTape}
+                    onChange={(e) => updatePrefs({ rollTape: e.target.value })}
+                    className="block px-2 py-1 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white text-sm focus:outline-none focus:border-bambu-green"
+                  >
+                    {LABEL_PRINTER_TAPES.map((tape) => (
+                      <option key={tape} value={tape}>
+                        {tape} mm
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-0.5 block">
+                  <span className="text-xs text-bambu-gray">{t('inventory.labels.roll.length', 'Length (mm)')}</span>
+                  <input
+                    data-testid="label-roll-length"
+                    type="number"
+                    min={ROLL_MIN_LENGTH_MM}
+                    max={ROLL_MAX_LENGTH_MM}
+                    step={1}
+                    value={rollLengthInput}
+                    onChange={(e) => {
+                      setRollLengthInput(e.target.value);
+                      const n = Number(e.target.value);
+                      if (e.target.value.trim() !== '' && n >= ROLL_MIN_LENGTH_MM && n <= ROLL_MAX_LENGTH_MM) {
+                        updatePrefs({ rollLength: n });
+                      }
+                    }}
+                    className="w-24 px-2 py-1 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white text-sm focus:outline-none focus:border-bambu-green"
+                  />
+                </label>
+                {!rollLengthValid && (
+                  <p data-testid="label-roll-length-invalid" className="text-xs text-red-400 pb-1.5">
+                    {t('inventory.labels.roll.lengthInvalid', 'Enter a length from {{min}} to {{max}} mm.', {
+                      min: ROLL_MIN_LENGTH_MM,
+                      max: ROLL_MAX_LENGTH_MM,
+                    })}
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* A saved template: its sheet, and Edit / Delete for those who may (#3296). */}
             {savedTemplate && !editing && (
@@ -1163,15 +1300,19 @@ export function LabelTemplatePickerModal({
 
             {/* Print options */}
             <div className="space-y-3">
-              <label className="inline-flex items-center gap-2 cursor-pointer select-none">
-                {prefs.monochrome ? (
+              <label
+                className={`inline-flex items-center gap-2 select-none ${printLocked ? 'opacity-70' : 'cursor-pointer'}`}
+              >
+                {monochrome ? (
                   <CheckSquare className="w-4 h-4 text-bambu-green shrink-0" />
                 ) : (
                   <Square className="w-4 h-4 text-bambu-gray shrink-0" />
                 )}
                 <input
+                  data-testid="label-monochrome"
                   type="checkbox"
-                  checked={prefs.monochrome}
+                  checked={monochrome}
+                  disabled={printLocked}
                   onChange={(e) => updatePrefs({ monochrome: e.target.checked })}
                   className="sr-only"
                 />
@@ -1179,7 +1320,9 @@ export function LabelTemplatePickerModal({
                   {t('inventory.labels.monochrome', 'Monochrome (black & white printer)')}
                 </span>
                 <span className="text-xs text-bambu-gray">
-                  {t('inventory.labels.monochromeHint', 'Drops the colour swatch and widens the text')}
+                  {printLocked
+                    ? t('inventory.labels.direct.monochromeForced', 'Always black and white when printing on the label printer.')
+                    : t('inventory.labels.monochromeHint', 'Drops the colour swatch and widens the text')}
                 </span>
               </label>
 
@@ -1293,10 +1436,29 @@ export function LabelTemplatePickerModal({
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 px-5 py-3 border-t border-bambu-dark-tertiary">
-          <Button variant="secondary" onClick={onClose} disabled={pending}>
+        <div className="flex flex-wrap items-center justify-end gap-2 px-5 py-3 border-t border-bambu-dark-tertiary">
+          {printerConfigured && (
+            <p data-testid="label-direct-hint" className="flex-1 min-w-48 text-xs text-bambu-gray">
+              {capsHint ??
+                (isRoll && tapeFits
+                ? t('inventory.labels.direct.note', 'Printed in black and white on the label printer.')
+                : directHint)}
+            </p>
+          )}
+          <Button variant="secondary" onClick={onClose} disabled={pending || directPending}>
             {t('common.cancel', 'Cancel')}
           </Button>
+          {printerConfigured && (
+            <Button
+              data-testid="label-direct-print-button"
+              variant="secondary"
+              onClick={handleDirectPrint}
+              disabled={!canDirectPrint}
+            >
+              {directPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Tag className="w-4 h-4" />}
+              {t('inventory.labels.direct.print', 'Print on label printer')}
+            </Button>
+          )}
           <Button
             data-testid="label-print-button"
             onClick={handlePrint}

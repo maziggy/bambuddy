@@ -19,6 +19,9 @@ Beyond these, a sheet of any grid can be described at run time as a
 ``SheetLayout`` (#3296): page size, label size, columns and rows, margins and
 gaps. The built-in sheets are ``SheetLayout`` values too.
 
+A ``RollLayout`` (#3612) is one label per page sized for a label printer's
+continuous tape: the length along the tape, and the tape's printable width.
+
 The legacy ``ams_30x15`` preset (#809) was incorrect — the original 30×15 mm
 dimension didn't fit any documented variant of model 752566. Replaced by the
 two ``ams_holder_*`` presets above (#1426).
@@ -45,18 +48,22 @@ from __future__ import annotations
 
 import io
 import unicodedata
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Literal
 
 import qrcode
+from PIL import Image
 from reportlab.lib.colors import Color, HexColor, black, white
 from reportlab.lib.pagesizes import A4, letter
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas as rl_canvas
+
+from backend.app.services.label_printers.brother_ql_media import TAPES, TapeId, printable_width_mm
 
 # Label text is printed in Liberation Sans, embedded in the PDF (#3553). The
 # PDF base fonts (Helvetica) only cover Western European characters, so names
@@ -699,8 +706,37 @@ class SheetLayout:
         return None
 
 
-# A built-in template name, or a sheet layout supplied at run time.
-Template = TemplateName | SheetLayout
+# Label length along a roll's tape (#3612). From 20 mm the roomy layout's text
+# column fits; 200 mm is far beyond any spool label.
+ROLL_MIN_LENGTH_MM = 20.0
+ROLL_MAX_LENGTH_MM = 200.0
+
+
+@dataclass(frozen=True)
+class RollLayout:
+    """One label per page on a label printer's continuous tape (#3612).
+
+    Drawn landscape: ``length_mm`` along the tape, and the tape's printable
+    width as the height, so what is rendered is what the printer prints."""
+
+    tape: TapeId
+    length_mm: float
+
+    @property
+    def label_size_mm(self) -> tuple[float, float]:
+        return self.length_mm, printable_width_mm(self.tape)
+
+    def problem(self) -> str | None:
+        """Why this roll can't be printed, or ``None`` when it can."""
+        if self.tape not in TAPES:
+            return f"Unknown tape: {self.tape!r}"
+        if not ROLL_MIN_LENGTH_MM <= self.length_mm <= ROLL_MAX_LENGTH_MM:
+            return f"The label length must be between {ROLL_MIN_LENGTH_MM:g} and {ROLL_MAX_LENGTH_MM:g} mm"
+        return None
+
+
+# A built-in template name, or a sheet or roll layout supplied at run time.
+Template = TemplateName | SheetLayout | RollLayout
 
 # (label_w_mm, label_h_mm) for single-label-per-page templates.
 _SINGLE_LABEL_SIZES_MM: dict[str, tuple[float, float]] = {
@@ -717,17 +753,21 @@ _SHEET_TEMPLATES: dict[str, SheetLayout] = {
 
 
 def _sheet_layout(template: Template) -> SheetLayout | None:
+    if isinstance(template, RollLayout):
+        return None
     if isinstance(template, SheetLayout):
         return template
     return _SHEET_TEMPLATES.get(template)
 
 
 def _template_title(template: Template) -> str:
+    if isinstance(template, RollLayout):
+        return f"{template.tape} mm roll"
     return "custom sheet" if isinstance(template, SheetLayout) else template
 
 
 def _render_single_label_pdf(
-    template: TemplateName,
+    template: TemplateName | RollLayout,
     data_list: list[LabelData],
     monochrome: bool = False,
     fields: frozenset[LabelField] = DEFAULT_LABEL_FIELDS,
@@ -737,7 +777,7 @@ def _render_single_label_pdf(
 
     buf = io.BytesIO()
     c = _new_canvas(buf, (page_w, page_h))
-    c.setTitle(f"Bambuddy spool labels ({template})")
+    c.setTitle(f"Bambuddy spool labels ({_template_title(template)})")
 
     for data in data_list:
         _draw_label(c, 0, 0, page_w, page_h, data, monochrome, fields)
@@ -748,7 +788,10 @@ def _render_single_label_pdf(
 
 
 def label_size_mm(template: Template) -> tuple[float, float]:
-    """(width, height) of one label of ``template`` — a sheet's cell size."""
+    """(width, height) of one label of ``template`` — a sheet's cell size, or a
+    roll label's length and the tape's printable width."""
+    if isinstance(template, RollLayout):
+        return template.label_size_mm
     if isinstance(template, SheetLayout):
         return template.label_w_mm, template.label_h_mm
     if template in _SHEET_TEMPLATES:
@@ -848,6 +891,13 @@ def render_labels(
 
     ``fields`` names the lines to print (#2981); see ``ALL_LABEL_FIELDS``.
     """
+    if isinstance(template, RollLayout):
+        problem = template.problem()
+        if problem:
+            raise ValueError(problem)
+        if starting_position != 1:
+            raise ValueError("Starting position is only supported for sheet label templates")
+        return _render_single_label_pdf(template, data_list, monochrome, fields)
     if isinstance(template, SheetLayout):
         return _render_sheet_pdf(template, _template_title(template), data_list, monochrome, starting_position, fields)
     if template in _SHEET_TEMPLATES:
@@ -871,6 +921,8 @@ def render_label_preview_pdf(
     For a roll template that is the label as printed; for a sheet it is one
     cell, which is all the preview needs to show.
     """
+    if isinstance(template, RollLayout) and (problem := template.problem()):
+        raise ValueError(problem)
     w_mm, h_mm = label_size_mm(template)
     page_w, page_h = w_mm * mm, h_mm * mm
     buf = io.BytesIO()
@@ -881,6 +933,37 @@ def render_label_preview_pdf(
     return buf.getvalue()
 
 
+def iter_pdf_images(pdf: bytes, dpi: int, *, grayscale: bool = False) -> Iterator[Image.Image]:
+    """Rasterise the pages of ``pdf`` to PIL images at ``dpi``, one page at a
+    time, without smoothing the embedded QR bitmap (see ``pdf_to_pngs``).
+
+    Lazy, so a caller that drops each image before taking the next holds one
+    page at a time. PDFium is only locked while it renders, not while the caller
+    works on a page; ``grayscale`` yields "L" images instead of "RGB".
+    """
+    import pypdfium2 as pdfium
+
+    from backend.app.services.pdf_thumbnail import _PDFIUM_LOCK
+
+    with _PDFIUM_LOCK:
+        doc = pdfium.PdfDocument(pdf)
+        count = len(doc)
+    try:
+        for index in range(count):
+            with _PDFIUM_LOCK:
+                page = doc[index]
+                try:
+                    bitmap = page.render(scale=dpi / 72, no_smoothimage=True, grayscale=grayscale)  # pyright: ignore[reportArgumentType]
+                    image = bitmap.to_pil().convert("L" if grayscale else "RGB")
+                finally:
+                    page.close()
+            yield image
+            del image  # not alive while the next page renders
+    finally:
+        with _PDFIUM_LOCK:
+            doc.close()
+
+
 def pdf_to_pngs(pdf: bytes, dpi: int) -> list[bytes]:
     """Rasterise every page of ``pdf`` to a PNG at ``dpi``.
 
@@ -889,26 +972,14 @@ def pdf_to_pngs(pdf: bytes, dpi: int) -> list[bytes]:
     makes a small code unreadable on a 203 dpi thermal printer (#1870). The
     PNG carries its dpi so label software prints it at the right size.
     """
-    import pypdfium2 as pdfium
-
-    from backend.app.services.pdf_thumbnail import _PDFIUM_LOCK
-
-    pages: list[bytes] = []
-    with _PDFIUM_LOCK:
-        doc = pdfium.PdfDocument(pdf)
-        try:
-            for index in range(len(doc)):
-                page = doc[index]
-                try:
-                    image = page.render(scale=dpi / 72, no_smoothimage=True).to_pil()
-                finally:
-                    page.close()
-                out = io.BytesIO()
-                image.convert("RGB").save(out, "PNG", dpi=(dpi, dpi), optimize=True)
-                pages.append(out.getvalue())
-        finally:
-            doc.close()
-    return pages
+    pngs: list[bytes] = []
+    # Each page is encoded before the next is rendered, so only one bitmap is alive.
+    for image in iter_pdf_images(pdf, dpi):
+        out = io.BytesIO()
+        image.save(out, "PNG", dpi=(dpi, dpi), optimize=True)
+        pngs.append(out.getvalue())
+        del image
+    return pngs
 
 
 __all__ = [
@@ -917,12 +988,16 @@ __all__ = [
     "LabelData",
     "LabelField",
     "PageSize",
+    "ROLL_MAX_LENGTH_MM",
+    "ROLL_MIN_LENGTH_MM",
+    "RollLayout",
     "sheet_page_count",
     "SheetLayout",
     "Template",
     "TemplateName",
     "get_sheet_capacity",
     "label_size_mm",
+    "iter_pdf_images",
     "pdf_to_pngs",
     "render_label_preview_pdf",
     "render_labels",

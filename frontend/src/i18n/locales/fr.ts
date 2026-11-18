@@ -5565,6 +5565,11 @@ export default {
     showLess: 'Moins',
     showAll: 'Toutes',
     noColorsFound: 'Aucune couleur correspondante',
+    catalogColors: {
+      showAll: 'Afficher toutes les couleurs',
+      showMatching: 'Afficher uniquement les correspondantes',
+      allBrand: 'Toutes les couleurs {{brand}}',
+    },
     noResults: 'Aucun résultat',
     // Multi-color gradient + visual effect (#1154) — English fallback.
     extraColorsLabel: 'Couleurs supplémentaires',

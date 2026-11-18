@@ -5562,6 +5562,11 @@ export default {
     showLess: 'Daha az göster',
     showAll: 'Tümünü göster',
     noColorsFound: 'Aramanızla eşleşen renk yok',
+    catalogColors: {
+      showAll: 'Tüm renkleri göster',
+      showMatching: 'Yalnızca eşleşenleri göster',
+      allBrand: 'Tüm {{brand}} renkleri',
+    },
     noResults: 'Eşleşme bulunamadı',
     extraColorsLabel: 'Ekstra renkler',
     extraColorsPlaceholder: 'EC984C,#6CD4BC,A66EB9,D87694',

@@ -5615,6 +5615,11 @@ export default {
     showLess: "Показувати менше",
     showAll: "Показати все",
     noColorsFound: "Жоден колір не відповідає вашому запиту",
+    catalogColors: {
+      showAll: "Показати всі кольори",
+      showMatching: "Показати лише відповідні",
+      allBrand: "Усі кольори {{brand}}",
+    },
     noResults: "Збігів не знайдено",
     // Multi-color gradient + visual effect (#1154)
     extraColorsLabel: "Додаткові кольори",

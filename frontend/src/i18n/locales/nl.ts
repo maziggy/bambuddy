@@ -5620,6 +5620,11 @@ export default {
     showLess: 'Minder tonen',
     showAll: 'Alles tonen',
     noColorsFound: 'Geen kleuren komen overeen met je zoekopdracht',
+    catalogColors: {
+      showAll: 'Alle kleuren tonen',
+      showMatching: 'Alleen passende kleuren tonen',
+      allBrand: 'Alle {{brand}}-kleuren',
+    },
     noResults: 'Geen overeenkomsten gevonden',
     // Multi-color gradient + visual effect (#1154)
     extraColorsLabel: 'Extra kleuren',

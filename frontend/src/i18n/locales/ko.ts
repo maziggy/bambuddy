@@ -5360,6 +5360,11 @@ export default {
     showLess: '간략히 보기',
     showAll: '모두 보기',
     noColorsFound: '검색과 일치하는 색상 없음',
+    catalogColors: {
+      showAll: '모든 색상 표시',
+      showMatching: '일치하는 색상만 표시',
+      allBrand: '{{brand}} 모든 색상',
+    },
     noResults: '일치하는 항목 없음',
     extraColorsLabel: '추가 색상',
     extraColorsPlaceholder: 'EC984C,#6CD4BC,A66EB9,D87694',

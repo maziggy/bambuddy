@@ -6,7 +6,7 @@ import { QUICK_COLORS, ALL_COLORS } from './constants';
 import { FilamentSwatch } from '../FilamentSwatch';
 import { buildFilamentBackground, FILAMENT_EFFECT_OPTIONS } from '../filamentSwatchHelpers';
 import { getSwatchStyle } from '../../utils/colors';
-import { matchCatalogColors } from './catalogColors';
+import { matchCatalogColors, allBrandCatalogColors } from './catalogColors';
 
 /** Parse user paste from 3dfilamentprofiles.com etc.: split on commas/whitespace,
  *  drop the leading `#`, accept 6/8-char hex, lowercase. Returns null when no
@@ -111,20 +111,36 @@ export function ColorSection({
     [catalogColors, formData.brand, formData.material, formData.subtype],
   );
 
+  // #3619: "Show all colours" widens the list to every catalog colour of the brand
+  // (matching ones first). Only offered when that adds colours.
+  const [showAllCatalog, setShowAllCatalog] = useState(false);
+  const allBrandColors = useMemo<CatalogDisplayColor[]>(
+    () => allBrandCatalogColors(catalogColors, formData.brand, matchedCatalogColors),
+    [catalogColors, formData.brand, matchedCatalogColors],
+  );
+  const canShowAllCatalog = allBrandColors.length > matchedCatalogColors.length;
+  const showingAllCatalog = showAllCatalog && canShowAllCatalog;
+  const visibleCatalogColors = showingAllCatalog ? allBrandColors : matchedCatalogColors;
+  // A new product starts with its own colours again.
+  useEffect(() => {
+    setShowAllCatalog(false);
+  }, [formData.brand, formData.material]);
+
   const catalogSearchResults = useMemo<CatalogDisplayColor[]>(() => {
-    if (!colorSearch) return matchedCatalogColors;
-    if (matchedCatalogColors.length === 0) return [];
+    if (!colorSearch) return visibleCatalogColors;
+    if (visibleCatalogColors.length === 0) return [];
     const q = colorSearch.toLowerCase();
-    const matches = matchedCatalogColors.filter(c =>
+    const matches = visibleCatalogColors.filter(c =>
       c.name.toLowerCase().includes(q) ||
       (c.manufacturer?.toLowerCase().includes(q) ?? false) ||
       (c.material?.toLowerCase().includes(q) ?? false),
     );
     return matches;
-  }, [colorSearch, matchedCatalogColors]);
+  }, [colorSearch, visibleCatalogColors]);
 
-  // Only show catalog section if there are matched catalog colors
-  const showCatalogSection = matchedCatalogColors.length > 0;
+  // Show the catalog section for matched colours, or when the user asked for all of the
+  // brand's colours although none matches the material (#3619).
+  const showCatalogSection = matchedCatalogColors.length > 0 || showingAllCatalog;
 
   // Fallback hardcoded colors for search/expand
   const filteredFallbackColors = useMemo(() => {
@@ -234,9 +250,30 @@ export function ColorSection({
       {showCatalogSection ? (
         /* Catalog colors matching selected brand/material */
         <div className="space-y-1.5">
-          <span className="text-xs text-bambu-gray">
-            {colorSearch ? t('inventory.searchResults') : `${formData.brand}${formData.material ? ` ${formData.material}` : ''}`}
-          </span>
+          <div className="flex items-center justify-between text-xs text-bambu-gray">
+            <span>
+              {colorSearch
+                ? t('inventory.searchResults')
+                : showingAllCatalog
+                  ? t('inventory.catalogColors.allBrand', { brand: formData.brand.trim() })
+                  : `${formData.brand}${formData.material ? ` ${formData.material}` : ''}`}
+            </span>
+            {!colorSearch && canShowAllCatalog && (
+              <button
+                type="button"
+                onClick={() => setShowAllCatalog(!showAllCatalog)}
+                aria-expanded={showingAllCatalog}
+                className="flex items-center gap-1 hover:text-white transition-colors"
+                data-testid="catalog-colors-toggle"
+              >
+                {showAllCatalog ? (
+                  <>{matchedCatalogColors.length > 0 ? t('inventory.catalogColors.showMatching') : t('inventory.showLess')} <ChevronUp className="w-3 h-3" /></>
+                ) : (
+                  <>{t('inventory.catalogColors.showAll')} <ChevronDown className="w-3 h-3" /></>
+                )}
+              </button>
+            )}
+          </div>
           <div className="flex flex-wrap gap-1.5">
             {catalogSearchResults.map(color => (
               <button
@@ -277,17 +314,32 @@ export function ColorSection({
           <div className="flex items-center justify-between text-xs text-bambu-gray">
             <span>{colorSearch ? t('inventory.searchResults') : (showAllColors ? t('inventory.allColors') : t('inventory.commonColors'))}</span>
             {!colorSearch && (
-              <button
-                type="button"
-                onClick={() => setShowAllColors(!showAllColors)}
-                className="flex items-center gap-1 hover:text-white transition-colors"
-              >
-                {showAllColors ? (
-                  <>{t('inventory.showLess')} <ChevronUp className="w-3 h-3" /></>
-                ) : (
-                  <>{t('inventory.showAll')} <ChevronDown className="w-3 h-3" /></>
+              <span className="flex items-center gap-3">
+                {/* No colour matches the material, but the brand has catalog colours (#3619). */}
+                {canShowAllCatalog && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllCatalog(true)}
+                    aria-expanded={false}
+                    className="flex items-center gap-1 hover:text-white transition-colors"
+                    data-testid="catalog-colors-toggle"
+                  >
+                    {t('inventory.catalogColors.allBrand', { brand: formData.brand.trim() })} <ChevronDown className="w-3 h-3" />
+                  </button>
                 )}
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAllColors(!showAllColors)}
+                  aria-expanded={showAllColors}
+                  className="flex items-center gap-1 hover:text-white transition-colors"
+                >
+                  {showAllColors ? (
+                    <>{t('inventory.showLess')} <ChevronUp className="w-3 h-3" /></>
+                  ) : (
+                    <>{t('inventory.showAll')} <ChevronDown className="w-3 h-3" /></>
+                  )}
+                </button>
+              </span>
             )}
           </div>
           <div className="flex flex-wrap gap-1.5">

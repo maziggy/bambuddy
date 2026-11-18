@@ -5578,6 +5578,11 @@ export default {
     showLess: '少なく表示',
     showAll: 'すべて表示',
     noColorsFound: '一致する色がありません',
+    catalogColors: {
+      showAll: 'すべての色を表示',
+      showMatching: '一致するものだけ表示',
+      allBrand: '{{brand}}のすべての色',
+    },
     noResults: '結果なし',
     // Multi-color gradient + visual effect (#1154) — English fallback.
     extraColorsLabel: '追加の色',

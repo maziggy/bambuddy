@@ -1259,18 +1259,30 @@ function ArchiveCard({
               {archive.project_name}
             </span>
           )}
-          {archive.run_count > 1 && (
+          {archive.run_count > 0 && (
             <button
-              className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-bambu-orange/20 text-bambu-orange hover:bg-bambu-orange/30 transition-colors cursor-pointer"
+              className={`text-[10px] px-1.5 py-0.5 rounded font-medium transition-colors cursor-pointer ${
+                // Printed well at least once, or only ever failed (#1634)
+                archive.successful_run_count > 0
+                  ? 'bg-bambu-green/20 text-bambu-green hover:bg-bambu-green/30'
+                  : archive.failed_run_count > 0
+                    ? 'bg-status-error/20 text-status-error hover:bg-status-error/30'
+                    : 'bg-bambu-orange/20 text-bambu-orange hover:bg-bambu-orange/30'
+              }`}
               onClick={(e) => {
                 e.stopPropagation();
                 navigate(`/archives/${archive.id}`);
               }}
-              title={t('archives.card.runsBadgeTitle', {
-                count: archive.run_count,
-                successful: archive.successful_run_count,
-                failed: archive.failed_run_count,
-              })}
+              title={[
+                t('archives.card.runsBadgeTitle', {
+                  count: archive.run_count,
+                  successful: archive.successful_run_count,
+                  failed: archive.failed_run_count,
+                }),
+                archive.last_run_at
+                  ? t('archives.card.runsBadgeLast', { date: formatDateTime(archive.last_run_at, timeFormat) })
+                  : null,
+              ].filter(Boolean).join('\n')}
             >
               {t('archives.card.runsBadge', { count: archive.run_count })}
             </button>

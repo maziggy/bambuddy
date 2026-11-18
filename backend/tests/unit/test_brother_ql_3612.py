@@ -364,6 +364,15 @@ class TestSend:
         printer.close()
         assert printer.received.count(b"\x1biz") == 1
 
+    def test_test_page_without_the_bundled_fonts(self, tmp_path):
+        # Builds without backend/app/data/fonts must still print a test label.
+        from backend.app.services.label_printers import brother_ql
+
+        missing = tmp_path / "missing.ttf"
+        with patch.object(brother_ql, "_FONT", missing), patch.object(brother_ql, "_FONT_BOLD", missing):
+            job = BrotherQLDriver().test_job(config(9100))
+        assert job.pages == 1 and job.data
+
 
 class TestAddress:
     def test_host_and_port(self):

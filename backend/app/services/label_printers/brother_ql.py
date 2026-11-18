@@ -593,6 +593,18 @@ _FONT = Path(__file__).resolve().parent.parent.parent / "data" / "fonts" / "Libe
 _FONT_BOLD = _FONT.with_name("LiberationSans-Bold.ttf")
 
 
+def _font(path: Path, size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    """The bundled font, or Pillow's own when an install lacks it (#3612).
+
+    A test label must never fail over a font: the fonts directory is not part
+    of every build.
+    """
+    try:
+        return ImageFont.truetype(str(path), size)
+    except OSError:
+        return ImageFont.load_default(size)
+
+
 def _test_image(config: LabelPrinterConfig) -> Image.Image:
     """A small landscape test label, rotated so its width is the tape's."""
     spec = tape_spec(config.tape)
@@ -600,7 +612,7 @@ def _test_image(config: LabelPrinterConfig) -> Image.Image:
     image = Image.new("L", (length, width), 255)
     draw = ImageDraw.Draw(image)
     size = max(12, min(40, width // 5))
-    title, body = ImageFont.truetype(str(_FONT_BOLD), size), ImageFont.truetype(str(_FONT), max(10, size * 2 // 3))
+    title, body = _font(_FONT_BOLD, size), _font(_FONT, max(10, size * 2 // 3))
     draw.rectangle((2, 2, length - 3, width - 3), outline=0, width=3)
     draw.text((16, 10), "Bambuddy test label", font=title, fill=0)
     draw.text((16, 14 + size), f"{config.model}, {spec.tape_mm} mm tape", font=body, fill=0)

@@ -1651,6 +1651,8 @@ export default {
       gcodeInjection: 'G-code',
       confirmOutcome: 'Demande de résultat',
       confirmOutcomeTitle: 'Demande comment l’impression s’est déroulée une fois terminée',
+      clearsPlate: 'Libère le plateau',
+      clearsPlateTitle: 'Libère son propre plateau : pas de confirmation de plateau après une impression réussie, sauf si l\'imprimante est réglée sur « Toujours exiger »',
     },
     // Empty state
     empty: {
@@ -1693,6 +1695,7 @@ export default {
       timelapse: 'Time-lapse',
       useAms: 'Utiliser AMS',
       confirmOutcome: 'Demander le résultat',
+      clearsPlate: 'Libérer le plateau automatiquement',
       nozzleOffsetCali: 'Calibration du décalage des buses',
       applyChanges: 'Appliquer',
       selectAll: 'Tout sélectionner',
@@ -4323,6 +4326,8 @@ export default {
     title: 'Gestionnaire de fichiers',
     subtitle: 'Organisez vos fichiers d\'impression',
     uploadFiles: 'Téléverser fichiers',
+    clearsPlateOnUpload: 'Les fichiers libèrent le plateau automatiquement',
+    clearsPlateOnUploadHelp: 'S\'applique à chaque fichier de ce téléversement. Uniquement pour les fichiers tranchés qui se terminent par un changement de plateau ou une éjection de la pièce : après une impression réussie, la file n\'attend pas de confirmation de plateau.',
     newFolder: 'Nouveau dossier',
     folderName: 'Nom du dossier',
     folderNamePlaceholder: 'ex: Pièces Utiles',
@@ -4510,6 +4515,8 @@ export default {
       truncatedCols: 'Affichage des {{shown}} premières colonnes sur {{total}}',
     },
     details: {
+      clearsPlate: 'Libère le plateau automatiquement',
+      clearsPlateHelp: 'Le fichier se termine par un changement de plateau ou une éjection de la pièce. Après une impression réussie, la file lance le travail suivant sans attendre de confirmation de plateau, sauf si l\'imprimante est réglée sur « Toujours exiger ». Les nouveaux travaux d\'impression de ce fichier reprennent ce réglage.',
       title: 'Détails du fichier',
       size: 'Taille',
       type: 'Type',
@@ -5858,6 +5865,8 @@ export default {
     noPrintableCostCenters: 'Aucun centre de coûts actif n’est disponible pour l’impression. Demandez à un administrateur de vous accorder l’accès à l’impression.',
     askForOutcome: 'Demander le résultat',
     askForOutcomeTitle: 'Demander comment l’impression s’est déroulée une fois terminée',
+    clearsPlate: 'Libère le plateau automatiquement',
+    clearsPlateTitle: 'Le fichier libère lui-même le plateau (changeur de plateaux ou éjection de la pièce). Après une impression réussie, la file lance le travail suivant sans attendre de confirmation de plateau libre, sauf si l\'imprimante est réglée sur « Toujours exiger ».',
   },
 
   // Backup

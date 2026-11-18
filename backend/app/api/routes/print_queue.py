@@ -535,6 +535,7 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         "use_ams": item.use_ams,
         "nozzle_offset_cali": item.nozzle_offset_cali,
         "confirm_outcome": item.confirm_outcome,
+        "clears_plate": bool(item.clears_plate),
         "preheat_override": item.preheat_override,
         "preheat_chamber_target_override": item.preheat_chamber_target_override,
         "status": item.status,
@@ -1544,6 +1545,20 @@ async def add_to_queue(
     )
     if ams_mapping_json is None and not wants_live_color_match:
         ams_mapping_json = saved_slicer_ams_mapping(archive, data.printer_id)
+
+    # Whether the job clears its own plate (#3576): an explicit value wins, else
+    # the library file's flag, else (cross-model) all the alternatives', else
+    # the archive's — so a reprint inherits what the original print had.
+    clears_plate = data.clears_plate
+    if clears_plate is None:
+        if library_file:
+            clears_plate = bool(library_file.clears_plate)
+        elif variant_specs:
+            clears_plate = all(variant_file.clears_plate for _spec, variant_file, _model in variant_specs)
+        elif archive:
+            clears_plate = bool(archive.clears_plate)
+        else:
+            clears_plate = False
     items = []
     for i in range(quantity):
         item = PrintQueueItem(
@@ -1574,6 +1589,7 @@ async def add_to_queue(
             use_ams=data.use_ams,
             nozzle_offset_cali=data.nozzle_offset_cali,
             confirm_outcome=data.confirm_outcome,
+            clears_plate=clears_plate,
             preheat_override=data.preheat_override,
             preheat_chamber_target_override=data.preheat_chamber_target_override,
             gcode_injection=data.gcode_injection,

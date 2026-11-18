@@ -1669,6 +1669,8 @@ export default {
       gcodeInjection: 'G-code',
       confirmOutcome: 'Outcome prompt',
       confirmOutcomeTitle: 'Asks how the print came out after it completes',
+      clearsPlate: 'Clears plate',
+      clearsPlateTitle: 'Clears its own plate: no plate confirmation after a successful print, unless the printer is set to "Always require"',
     },
     // Empty state
     empty: {
@@ -1711,6 +1713,7 @@ export default {
       timelapse: 'Timelapse',
       useAms: 'Use AMS',
       confirmOutcome: 'Ask for outcome',
+      clearsPlate: 'Clears plate automatically',
       nozzleOffsetCali: 'Nozzle offset calibration',
       applyChanges: 'Apply Changes',
       selectAll: 'Select All',
@@ -4367,6 +4370,8 @@ export default {
     title: 'File Manager',
     subtitle: 'Organize and manage your print files',
     uploadFiles: 'Upload Files',
+    clearsPlateOnUpload: 'Files clear the plate automatically',
+    clearsPlateOnUploadHelp: 'Applies to every file in this upload. Only for sliced files that end with a plate change or push-off: after a successful print the queue does not wait for a plate confirmation.',
     newFolder: 'New Folder',
     folderName: 'Folder Name',
     folderNamePlaceholder: 'e.g., Functional Parts',
@@ -4554,6 +4559,8 @@ export default {
       truncatedCols: 'Showing the first {{shown}} of {{total}} columns',
     },
     details: {
+      clearsPlate: 'Clears the plate automatically',
+      clearsPlateHelp: 'The file ends with a plate change or push-off. After a successful print the queue starts the next job without waiting for a plate confirmation, unless the printer is set to "Always require". New print jobs from this file start with this setting.',
       title: 'File details',
       size: 'Size',
       type: 'Type',
@@ -5918,6 +5925,8 @@ export default {
     noPrintableCostCenters: 'No active cost center is available for printing. Ask an administrator to grant you print access.',
     askForOutcome: 'Ask for Outcome',
     askForOutcomeTitle: 'Ask how the print came out after it completes',
+    clearsPlate: 'Clears plate automatically',
+    clearsPlateTitle: 'The file clears the plate itself (plate changer or push-off). After a successful print the queue starts the next job without waiting for a plate confirmation, unless the printer is set to "Always require".',
   },
 
   // Backup

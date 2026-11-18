@@ -1650,6 +1650,8 @@ export default {
       gcodeInjection: 'G-code',
       confirmOutcome: '結果確認',
       confirmOutcomeTitle: '完了後に印刷の仕上がりを確認します',
+      clearsPlate: 'プレート自動クリア',
+      clearsPlateTitle: '自動でプレートをクリア：印刷成功後のプレート確認は不要(プリンターが「常に必須」に設定されている場合を除く)',
     },
     // Empty state
     empty: {
@@ -1692,6 +1694,7 @@ export default {
       timelapse: 'タイムラプス',
       useAms: 'AMS使用',
       confirmOutcome: '結果を確認する',
+      clearsPlate: 'プレートを自動でクリア',
       nozzleOffsetCali: 'ノズルオフセットキャリブレーション',
       applyChanges: '変更を適用',
       selectAll: 'すべて選択',
@@ -4335,6 +4338,8 @@ export default {
     title: 'ファイル管理',
     subtitle: '印刷ファイルの整理と管理',
     uploadFiles: 'ファイルをアップロード',
+    clearsPlateOnUpload: 'ファイルがプレートを自動でクリア',
+    clearsPlateOnUploadHelp: 'このアップロードのすべてのファイルに適用されます。プレート交換またはプッシュオフで終了するスライス済みファイル専用です。印刷が成功しても、キューはプレート確認を待ちません。',
     newFolder: '新しいフォルダ',
     folderName: 'フォルダ名',
     folderNamePlaceholder: '例: 機能パーツ',
@@ -4522,6 +4527,8 @@ export default {
       truncatedCols: '全{{total}}列のうち最初の{{shown}}列を表示しています',
     },
     details: {
+      clearsPlate: 'プレートを自動でクリア',
+      clearsPlateHelp: 'このファイルはプレート交換またはプッシュオフで終了します。印刷が成功すると、プリンターが「常に必須」に設定されていない限り、キューはプレート確認を待たずに次のジョブを開始します。このファイルからの新しい印刷ジョブはこの設定で開始されます。',
       title: 'ファイルの詳細',
       size: 'サイズ',
       type: '種類',
@@ -5871,6 +5878,8 @@ export default {
     noPrintableCostCenters: '印刷に利用できる有効なコストセンターがありません。管理者に印刷アクセスの付与を依頼してください。',
     askForOutcome: '結果を確認する',
     askForOutcomeTitle: '完了後に印刷の仕上がりを尋ねます',
+    clearsPlate: 'プレートを自動でクリア',
+    clearsPlateTitle: 'このファイルはプレートを自分でクリアします(プレートチェンジャーまたはプッシュオフ)。印刷が成功すると、プリンターが「常に必須」に設定されていない限り、キューはプレート確認を待たずに次のジョブを開始します。',
   },
 
   // Backup

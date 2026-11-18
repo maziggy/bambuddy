@@ -65,6 +65,7 @@ import {
   PlayCircle,
   Workflow,
   ThumbsUp,
+  Eraser,
 } from 'lucide-react';
 import { api, ApiError } from '../api/client';
 import { PipelineRunsView } from './PipelineRunsPage';
@@ -361,6 +362,7 @@ function BulkEditModal({
   const [timelapse, setTimelapse] = useState<boolean | 'unchanged'>('unchanged');
   const [useAms, setUseAms] = useState<boolean | 'unchanged'>('unchanged');
   const [confirmOutcome, setConfirmOutcome] = useState<boolean | 'unchanged'>('unchanged');
+  const [clearsPlate, setClearsPlate] = useState<boolean | 'unchanged'>('unchanged');
   const [nozzleOffsetCali, setNozzleOffsetCali] = useState<CalibrationMode | 'unchanged'>('unchanged');
 
   // Show the dual-nozzle-only toggle when the user has at least one
@@ -382,6 +384,7 @@ function BulkEditModal({
     if (timelapse !== 'unchanged') data.timelapse = timelapse;
     if (useAms !== 'unchanged') data.use_ams = useAms;
     if (confirmOutcome !== 'unchanged') data.confirm_outcome = confirmOutcome;
+    if (clearsPlate !== 'unchanged') data.clears_plate = clearsPlate;
     if (nozzleOffsetCali !== 'unchanged') data.nozzle_offset_cali = nozzleOffsetCali;
     onSave(data);
   };
@@ -389,7 +392,7 @@ function BulkEditModal({
   const hasChanges = printerId !== 'unchanged' || manualStart !== 'unchanged' || autoOffAfter !== 'unchanged' ||
     requirePreviousSuccess !== 'unchanged' || bedLevelling !== 'unchanged' || flowCali !== 'unchanged' ||
     vibrationCali !== 'unchanged' || layerInspect !== 'unchanged' || timelapse !== 'unchanged' || useAms !== 'unchanged' ||
-    confirmOutcome !== 'unchanged' || nozzleOffsetCali !== 'unchanged' || gcodeInjection !== 'unchanged';
+    confirmOutcome !== 'unchanged' || clearsPlate !== 'unchanged' || nozzleOffsetCali !== 'unchanged' || gcodeInjection !== 'unchanged';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
@@ -456,6 +459,7 @@ function BulkEditModal({
               <TriStateToggle label={t('queue.bulkEdit.timelapse')} value={timelapse} onChange={setTimelapse} t={t} />
               <TriStateToggle label={t('queue.bulkEdit.useAms')} value={useAms} onChange={setUseAms} t={t} />
               <TriStateToggle label={t('queue.bulkEdit.confirmOutcome')} value={confirmOutcome} onChange={setConfirmOutcome} t={t} />
+              <TriStateToggle label={t('queue.bulkEdit.clearsPlate')} value={clearsPlate} onChange={setClearsPlate} t={t} />
               {hasDualNozzlePrinter && (
                 <CalibrationModeToggle label={t('queue.bulkEdit.nozzleOffsetCali')} value={nozzleOffsetCali} onChange={setNozzleOffsetCali} t={t} />
               )}
@@ -1016,6 +1020,15 @@ function SortableQueueItem({
               >
                 <ThumbsUp className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                 {t('queue.badges.confirmOutcome')}
+              </span>
+            )}
+            {item.clears_plate && (
+              <span
+                title={t('queue.badges.clearsPlateTitle')}
+                className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 rounded-full border border-cyan-200 dark:border-cyan-500/20 flex items-center gap-1"
+              >
+                <Eraser className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                {t('queue.badges.clearsPlate')}
               </span>
             )}
           </div>

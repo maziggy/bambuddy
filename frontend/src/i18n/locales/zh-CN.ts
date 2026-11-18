@@ -1651,6 +1651,8 @@ export default {
       gcodeInjection: 'G-code',
       confirmOutcome: '结果确认',
       confirmOutcomeTitle: '打印完成后询问打印效果如何',
+      clearsPlate: '自动清空热床',
+      clearsPlateTitle: '自行清空热床：打印成功后无需热床确认，除非打印机设置为“始终需要”',
     },
     // Empty state
     empty: {
@@ -1693,6 +1695,7 @@ export default {
       timelapse: '延时摄影',
       useAms: '使用 AMS',
       confirmOutcome: '询问打印结果',
+      clearsPlate: '自动清空热床',
       nozzleOffsetCali: '喷嘴偏移校准',
       applyChanges: '应用更改',
       selectAll: '全选',
@@ -4322,6 +4325,8 @@ export default {
     title: '文件管理器',
     subtitle: '组织和管理您的打印文件',
     uploadFiles: '上传文件',
+    clearsPlateOnUpload: '文件自动清空热床',
+    clearsPlateOnUploadHelp: '适用于本次上传的每个文件。仅适用于以换板或推出模型结束的已切片文件：打印成功后，队列不会等待热床确认。',
     newFolder: '新建文件夹',
     folderName: '文件夹名称',
     folderNamePlaceholder: '例如：功能零件',
@@ -4509,6 +4514,8 @@ export default {
       truncatedCols: '仅显示前 {{shown}} 列，共 {{total}} 列',
     },
     details: {
+      clearsPlate: '自动清空热床',
+      clearsPlateHelp: '文件以换板或推出模型结束。打印成功后，除非打印机设置为“始终需要”，否则队列会直接开始下一个任务，无需等待热床确认。此文件的新打印任务将采用此设置。',
       title: '文件详情',
       size: '大小',
       type: '类型',
@@ -5857,6 +5864,8 @@ export default {
     noPrintableCostCenters: '没有可用于打印的有效成本中心。请联系管理员授予你打印权限。',
     askForOutcome: '询问打印结果',
     askForOutcomeTitle: '打印完成后询问打印效果如何',
+    clearsPlate: '自动清空热床',
+    clearsPlateTitle: '文件会自行清空热床(换板器或推出模型)。打印成功后,除非打印机设置为“始终需要”,否则队列会直接开始下一个任务,无需等待热床清空确认。',
   },
 
   // Backup

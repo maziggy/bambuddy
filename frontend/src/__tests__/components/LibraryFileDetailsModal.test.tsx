@@ -13,6 +13,7 @@ import { server } from '../mocks/server';
 
 const listItem: LibraryFileListItem = {
   id: 7,
+  clears_plate: false,
   folder_id: null,
   is_external: false,
   filename: 'benchy.gcode.3mf',
@@ -121,7 +122,7 @@ describe('LibraryFileDetailsModal', () => {
     await user.click(saveButton);
 
     await waitFor(() => {
-      expect(lastUpdate).toEqual({ notes: 'Use 0.2 mm layers', external_url: 'https://example.com/part' });
+      expect(lastUpdate).toEqual({ notes: 'Use 0.2 mm layers', external_url: 'https://example.com/part', clears_plate: false });
     });
     await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
@@ -135,7 +136,7 @@ describe('LibraryFileDetailsModal', () => {
     await user.click(screen.getByRole('button', { name: /save/i }));
 
     await waitFor(() => {
-      expect(lastUpdate).toEqual({ notes: 'Print with brim', external_url: '' });
+      expect(lastUpdate).toEqual({ notes: 'Print with brim', external_url: '', clears_plate: false });
     });
   });
 
@@ -148,6 +149,55 @@ describe('LibraryFileDetailsModal', () => {
     expect(screen.queryByRole('button', { name: /save/i })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Add photo')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Delete photo')).not.toBeInTheDocument();
+  });
+
+  it('seeds the clears-plate toggle from the details and saves it (#3576)', async () => {
+    const user = userEvent.setup();
+    render(<LibraryFileDetailsModal file={listItem} canEdit onClose={onClose} />);
+
+    const toggle = await screen.findByRole('checkbox', { name: /clears the plate automatically/i });
+    await screen.findByDisplayValue('Print with brim');
+    expect(toggle).not.toBeChecked();
+    const saveButton = screen.getByRole('button', { name: /save/i });
+    expect(saveButton).toBeDisabled();
+
+    await user.click(toggle);
+    expect(toggle).toBeChecked();
+    // The toggle alone marks the form dirty.
+    expect(saveButton).toBeEnabled();
+    await user.click(saveButton);
+
+    await waitFor(() => {
+      expect(lastUpdate).toEqual({
+        notes: 'Print with brim',
+        external_url: 'https://www.printables.com/model/1',
+        clears_plate: true,
+      });
+    });
+  });
+
+  it('shows a flagged file as checked and saves clearing it (#3576)', async () => {
+    server.use(http.get('/api/v1/library/files/7', () => HttpResponse.json({ ...details, clears_plate: true })));
+    const user = userEvent.setup();
+    render(<LibraryFileDetailsModal file={listItem} canEdit onClose={onClose} />);
+
+    const toggle = await screen.findByRole('checkbox', { name: /clears the plate automatically/i });
+    await waitFor(() => expect(toggle).toBeChecked());
+    expect(screen.getByRole('button', { name: /save/i })).toBeDisabled();
+
+    await user.click(toggle);
+    await user.click(screen.getByRole('button', { name: /save/i }));
+
+    await waitFor(() => expect(lastUpdate?.clears_plate).toBe(false));
+  });
+
+  it('disables the clears-plate toggle without edit permission (#3576)', async () => {
+    server.use(http.get('/api/v1/library/files/7', () => HttpResponse.json({ ...details, clears_plate: true })));
+    render(<LibraryFileDetailsModal file={listItem} canEdit={false} onClose={onClose} />);
+
+    const toggle = await screen.findByRole('checkbox', { name: /clears the plate automatically/i });
+    await waitFor(() => expect(toggle).toBeChecked());
+    expect(toggle).toBeDisabled();
   });
 
   it('removes a photo from the grid after deleting it', async () => {

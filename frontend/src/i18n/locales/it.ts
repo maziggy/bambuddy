@@ -1651,6 +1651,8 @@ export default {
       gcodeInjection: 'G-code',
       confirmOutcome: 'Richiesta esito',
       confirmOutcomeTitle: 'Chiede com’è venuta la stampa una volta completata',
+      clearsPlate: 'Libera il piatto',
+      clearsPlateTitle: 'Libera il proprio piatto: nessuna conferma del piatto dopo una stampa riuscita, a meno che la stampante non sia impostata su «Richiedi sempre»',
     },
     // Empty state
     empty: {
@@ -1693,6 +1695,7 @@ export default {
       timelapse: 'Timelapse',
       useAms: 'Usa AMS',
       confirmOutcome: 'Chiedi l’esito',
+      clearsPlate: 'Libera il piatto automaticamente',
       nozzleOffsetCali: 'Calibrazione offset ugelli',
       applyChanges: 'Applica modifiche',
       selectAll: 'Seleziona tutto',
@@ -4322,6 +4325,8 @@ export default {
     title: 'Gestore file',
     subtitle: 'Organizza e gestisci i tuoi file di stampa',
     uploadFiles: 'Carica file',
+    clearsPlateOnUpload: 'I file liberano il piatto automaticamente',
+    clearsPlateOnUploadHelp: 'Vale per ogni file di questo caricamento. Solo per file elaborati che terminano con un cambio piatto o un\'espulsione del pezzo: dopo una stampa riuscita la coda non attende la conferma del piatto.',
     newFolder: 'Nuova cartella',
     folderName: 'Nome cartella',
     folderNamePlaceholder: 'es., Parti funzionali',
@@ -4509,6 +4514,8 @@ export default {
       truncatedCols: 'Visualizzate le prime {{shown}} colonne di {{total}}',
     },
     details: {
+      clearsPlate: 'Libera il piatto automaticamente',
+      clearsPlateHelp: 'Il file termina con un cambio piatto o un\'espulsione del pezzo. Dopo una stampa riuscita la coda avvia il lavoro successivo senza attendere la conferma del piatto, a meno che la stampante non sia impostata su «Richiedi sempre». I nuovi lavori di stampa da questo file partono con questa impostazione.',
       title: 'Dettagli del file',
       size: 'Dimensione',
       type: 'Tipo',
@@ -5857,6 +5864,8 @@ export default {
     noPrintableCostCenters: 'Non è disponibile alcun centro di costo attivo per la stampa. Chiedi a un amministratore di concederti l’accesso alla stampa.',
     askForOutcome: 'Chiedi l’esito',
     askForOutcomeTitle: 'Chiedi com’è venuta la stampa una volta completata',
+    clearsPlate: 'Libera il piatto automaticamente',
+    clearsPlateTitle: 'Il file libera da solo il piatto (cambio piatto o espulsione del pezzo). Dopo una stampa riuscita la coda avvia il lavoro successivo senza attendere la conferma di piatto libero, a meno che la stampante non sia impostata su «Richiedi sempre».',
   },
 
   // Backup

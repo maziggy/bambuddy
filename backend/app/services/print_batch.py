@@ -78,6 +78,7 @@ CLONED_SETTING_COLUMNS = (
     "use_ams",
     "nozzle_offset_cali",
     "confirm_outcome",
+    "clears_plate",
     "preheat_override",
     "preheat_chamber_target_override",
     "skip_filament_check",

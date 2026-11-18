@@ -9314,6 +9314,93 @@ async def _completion_belongs_to_queue_item(db, item, data: dict) -> bool:
     return False
 
 
+async def _finishing_job_clears_plate(printer_id: int, data: dict) -> bool:
+    """Whether the queue job this completion closes clears its own plate (#3576).
+
+    Lifting the plate-clear gate is a safety relaxation, so unlike the
+    permissive ``_completion_belongs_to_queue_item`` this needs a positive name
+    match: an empty subtask name, a row without archive or an archive without
+    file name cannot be verified and keep the gate. Fail-safe False.
+    """
+    try:
+        from backend.app.models.print_queue import PrintQueueItem
+
+        async with async_session() as db:
+            result = await db.execute(
+                select(PrintQueueItem)
+                .where(PrintQueueItem.printer_id == printer_id)
+                .where(PrintQueueItem.status == "printing")
+            )
+            printing_items = list(result.scalars().all())
+            if len(printing_items) != 1:
+                return False
+            item = printing_items[0]
+            if not item.clears_plate:
+                return False
+            reconciled_id = data.get("_reconciled_archive_id")
+            if reconciled_id is not None and item.archive_id != reconciled_id:
+                return False
+            observed = (data.get("subtask_name") or "").strip()
+            expected = await _queue_item_dispatched_name(db, item)
+            if not observed or not expected:
+                return False
+            return _dispatched_name_matches_echo(expected, observed)
+    except Exception as e:
+        logging.getLogger(__name__).warning(
+            "Could not tell whether the job on printer %s clears its plate: %s", printer_id, e
+        )
+        return False
+
+
+async def _is_internal_completion(printer_id: int, data: dict) -> bool:
+    """Whether this completion is the printer's own job (calibration) while a queue row prints (#3576).
+
+    Same rule as the print-start skip: a /usr/ path, or an internal-looking
+    name Bambuddy did not dispatch. Only counts while a queue row is printing,
+    so the plate-clear gate of a calibration run beside a queue job is not
+    raised. Fail-safe False.
+    """
+    try:
+        from backend.app.models.print_queue import PrintQueueItem
+
+        filename = data.get("filename", "")
+        subtask_name = data.get("subtask_name", "")
+        if not is_internal_printer_job(filename, subtask_name):
+            return False
+        async with async_session() as db:
+            if not (filename or "").startswith("/usr/") and await _dispatched_by_bambuddy(
+                db, printer_id, filename, subtask_name
+            ):
+                return False
+            printing = await db.execute(
+                select(PrintQueueItem.id)
+                .where(PrintQueueItem.printer_id == printer_id)
+                .where(PrintQueueItem.status == "printing")
+                .limit(1)
+            )
+            return printing.first() is not None
+    except Exception as e:
+        logging.getLogger(__name__).warning("Could not classify the completion on printer %s: %s", printer_id, e)
+        return False
+
+
+async def _job_skips_plate_confirmation(printer_id: int) -> bool:
+    """A job that clears its own plate lifts the confirmation only where the setting would ask for it (#3576)."""
+    # True only for a printer that follows the app setting, and only when that asks;
+    # a printer with its own setting (#2860) decides on its own.
+    try:
+        from backend.app.services.print_scheduler import finish_needs_plate_confirmation, load_plate_clear_policy
+
+        async with async_session() as db:
+            override, require_plate_clear = await load_plate_clear_policy(db, printer_id)
+        return finish_needs_plate_confirmation(override, require_plate_clear) and not finish_needs_plate_confirmation(
+            override, require_plate_clear, job_clears_plate=True
+        )
+    except Exception as e:
+        logging.getLogger(__name__).warning("Could not read the plate-clear policy of printer %s: %s", printer_id, e)
+        return False
+
+
 async def _recover_fallback_from_cache_before_eviction(printer_id: int, data: dict) -> None:
     """Spend the 3MF download cache on a still-empty fallback archive.
 
@@ -9563,7 +9650,16 @@ async def _close_out_print(printer_id: int, data: dict):
     except Exception:
         logger.exception("Notify Live Activity completion hook failed for printer %s", printer_id)
     _final_status = data.get("status", "completed")
-    if _final_status in ("completed", "failed", "aborted", "cancelled"):
+    # A successful job whose file clears its own plate leaves nothing to confirm (#3576);
+    # a failure or cancel still raises the gate, and an "Always require" printer still waits.
+    _job_clears_plate = _final_status == "completed" and await _finishing_job_clears_plate(printer_id, data)
+    # The printer's own calibration job ending beside a printing queue row is not that row's
+    # finish; raising here would leave the gate set past a later flagged success (#3576).
+    if (
+        _final_status in ("completed", "failed", "aborted", "cancelled")
+        and not (_job_clears_plate and await _job_skips_plate_confirmation(printer_id))
+        and not await _is_internal_completion(printer_id, data)
+    ):
         printer_manager.set_awaiting_plate_clear(printer_id, True)
 
     # MQTT relay - publish print complete

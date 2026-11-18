@@ -1667,6 +1667,8 @@ export default {
       gcodeInjection: 'G-code',
       confirmOutcome: 'Resultaatvraag',
       confirmOutcomeTitle: 'Vraagt na afloop hoe de print is geworden',
+      clearsPlate: 'Maakt plaat vrij',
+      clearsPlateTitle: 'Maakt zijn eigen plaat vrij: geen platenbevestiging na een geslaagde print, tenzij de printer op "Altijd vereisen" staat',
     },
     // Empty state
     empty: {
@@ -1709,6 +1711,7 @@ export default {
       timelapse: 'Timelapse',
       useAms: 'AMS gebruiken',
       confirmOutcome: 'Vragen naar resultaat',
+      clearsPlate: 'Maakt de plaat automatisch vrij',
       nozzleOffsetCali: 'Nozzle-offsetkalibratie',
       applyChanges: 'Wijzigingen toepassen',
       selectAll: 'Alles selecteren',
@@ -4365,6 +4368,8 @@ export default {
     title: 'Bestandsbeheer',
     subtitle: 'Organiseer en beheer je afdrukbestanden',
     uploadFiles: 'Bestanden uploaden',
+    clearsPlateOnUpload: 'Bestanden maken de plaat automatisch vrij',
+    clearsPlateOnUploadHelp: 'Geldt voor elk bestand in deze upload. Alleen voor geslicete bestanden die eindigen met een plaatwissel of push-off: na een geslaagde print wacht de wachtrij niet op een platenbevestiging.',
     newFolder: 'Nieuwe map',
     folderName: 'Mapnaam',
     folderNamePlaceholder: 'bijv. Functionele onderdelen',
@@ -4552,6 +4557,8 @@ export default {
       truncatedCols: 'Eerste {{shown}} van {{total}} kolommen worden getoond',
     },
     details: {
+      clearsPlate: 'Maakt de plaat automatisch vrij',
+      clearsPlateHelp: 'Het bestand eindigt met een plaatwissel of push-off. Na een geslaagde print start de wachtrij de volgende taak zonder te wachten op een platenbevestiging, tenzij de printer op "Altijd vereisen" staat. Nieuwe printtaken van dit bestand starten met deze instelling.',
       title: 'Bestandsdetails',
       size: 'Grootte',
       type: 'Type',
@@ -5916,6 +5923,8 @@ export default {
     noPrintableCostCenters: 'Er is geen actieve kostenplaats beschikbaar voor afdrukken. Vraag een beheerder om je afdruktoegang te geven.',
     askForOutcome: 'Vragen naar resultaat',
     askForOutcomeTitle: 'Na afloop vragen hoe de print is geworden',
+    clearsPlate: 'Maakt de plaat automatisch vrij',
+    clearsPlateTitle: 'Het bestand maakt de plaat zelf vrij (plaatwisselaar of push-off). Na een geslaagde print start de wachtrij de volgende taak zonder te wachten op bevestiging dat de plaat vrij is, tenzij de printer op "Altijd vereisen" staat.',
   },
 
   // Backup

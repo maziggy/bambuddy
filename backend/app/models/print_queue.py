@@ -136,6 +136,10 @@ class PrintQueueItem(Base):
     # Ask for a post-print outcome verdict when this job completes (#1898).
     # Copied onto the archive as confirm_requested at dispatch, like plate_id.
     confirm_outcome: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # The job clears its own plate (#3576), e.g. plate change or push-off at the end:
+    # after a successful print the queue needs no plate confirmation. Copied onto
+    # the archive at dispatch, like confirm_outcome.
+    clears_plate: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
     # Preheat / heat-soak override (#1468). 'inherit' uses the global
     # preheat_enabled setting; 'on' / 'off' force the per-item decision. The

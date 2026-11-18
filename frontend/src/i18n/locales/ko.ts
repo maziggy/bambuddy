@@ -1574,6 +1574,8 @@ export default {
       gcodeInjection: 'G코드',
       confirmOutcome: '결과 확인',
       confirmOutcomeTitle: '완료 후 출력 결과가 어땠는지 물어봅니다',
+      clearsPlate: '플레이트 자동 비움',
+      clearsPlateTitle: '자체적으로 플레이트를 비움: 출력 성공 후 플레이트 확인 없음(프린터가 \'항상 필요\'로 설정된 경우 제외)',
     },
     empty: {
       title: '예약된 인쇄 없음',
@@ -1612,6 +1614,7 @@ export default {
       timelapse: '타임랩스',
       useAms: 'AMS 사용',
       confirmOutcome: '결과 묻기',
+      clearsPlate: '플레이트 자동 비움',
       nozzleOffsetCali: '노즐 오프셋 보정',
       applyChanges: '변경사항 적용',
       selectAll: '전체 선택',
@@ -4146,6 +4149,8 @@ export default {
     title: '파일 관리자',
     subtitle: '인쇄 파일 정리 및 관리',
     uploadFiles: '파일 업로드',
+    clearsPlateOnUpload: '파일이 플레이트를 자동으로 비움',
+    clearsPlateOnUploadHelp: '이 업로드의 모든 파일에 적용됩니다. 플레이트 교체 또는 푸시오프로 끝나는 슬라이스된 파일에만 사용하세요. 출력이 성공해도 대기열은 플레이트 확인을 기다리지 않습니다.',
     newFolder: '새 폴더',
     folderName: '폴더 이름',
     folderNamePlaceholder: '예: 기능성 부품',
@@ -4333,6 +4338,8 @@ export default {
       truncatedCols: '전체 {{total}}개 열 중 처음 {{shown}}개 표시 중',
     },
     details: {
+      clearsPlate: '플레이트를 자동으로 비움',
+      clearsPlateHelp: '이 파일은 플레이트 교체 또는 푸시오프로 끝납니다. 출력이 성공하면 프린터가 \'항상 필요\'로 설정되어 있지 않은 한, 대기열이 플레이트 확인을 기다리지 않고 다음 작업을 시작합니다. 이 파일의 새 출력 작업은 이 설정으로 시작됩니다.',
       title: '파일 세부 정보',
       size: '크기',
       type: '유형',
@@ -5641,6 +5648,8 @@ export default {
     noPrintableCostCenters: '인쇄에 사용할 수 있는 활성 비용 센터가 없습니다. 관리자에게 인쇄 권한을 요청하세요.',
     askForOutcome: '결과 묻기',
     askForOutcomeTitle: '완료 후 출력 결과가 어땠는지 물어보기',
+    clearsPlate: '플레이트 자동 비움',
+    clearsPlateTitle: '이 파일이 플레이트를 스스로 비웁니다(플레이트 체인저 또는 푸시오프). 출력이 성공하면 프린터가 \'항상 필요\'로 설정되어 있지 않은 한, 대기열이 플레이트 비움 확인을 기다리지 않고 다음 작업을 시작합니다.',
   },
   backup: {
     includesEncryptionKey: '로컬 백업에는 MFA 암호화 키 파일(DATA_DIR/.mfa_encryption_key)이 포함되어 백업 ZIP이 자체 완결됩니다. ZIP 파일을 민감하게 취급하세요 — 파일을 가진 누구나 내부에 저장된 OIDC 클라이언트 비밀과 TOTP 비밀을 복호화할 수 있습니다.',

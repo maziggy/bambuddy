@@ -1878,6 +1878,32 @@ describe('QueuePage', () => {
     });
   });
 
+  describe('clears-plate badge (#3576)', () => {
+    it('shows the badge only on items that clear their own plate', async () => {
+      const items = mockQueueItems.map((item, i) =>
+        i === 0 ? { ...item, clears_plate: true } : { ...item, clears_plate: false }
+      );
+      server.use(http.get('/api/v1/queue/', () => HttpResponse.json(items)));
+
+      render(<QueuePage />);
+
+      await waitFor(() => expect(screen.getByText('Test Print 1')).toBeInTheDocument());
+      const badges = screen.getAllByText('Clears plate');
+      expect(badges).toHaveLength(1);
+      expect(badges[0].closest('span')).toHaveAttribute(
+        'title',
+        'Clears its own plate: no plate confirmation after a successful print, unless the printer is set to "Always require"'
+      );
+    });
+
+    it('renders nothing when no item clears its plate', async () => {
+      render(<QueuePage />);
+
+      await waitFor(() => expect(screen.getByText('Test Print 1')).toBeInTheDocument());
+      expect(screen.queryByText('Clears plate')).not.toBeInTheDocument();
+    });
+  });
+
   describe('outcome prompt badge (#1898)', () => {
     it('shows the badge only on items with confirm_outcome set', async () => {
       const items = mockQueueItems.map((item, i) =>
@@ -2199,6 +2225,30 @@ describe('QueuePage', () => {
       await waitFor(() => expect(captured.body).not.toBeNull());
       expect(captured.body!.item_ids).toEqual([1]);
       expect(captured.body!.confirm_outcome).toBe(true);
+    });
+
+    it('sends clears_plate with the bulk PATCH once toggled (#3576)', async () => {
+      const captured = captureBulkPatch();
+      const dialog = await openBulkEdit();
+
+      const row = within(dialog).getByText('Clears plate automatically').closest('div')!;
+      await userEvent.click(within(row).getByText('Off'));
+      await userEvent.click(within(dialog).getByText('Apply Changes'));
+
+      await waitFor(() => expect(captured.body).not.toBeNull());
+      expect(captured.body!.clears_plate).toBe(false);
+    });
+
+    it('leaves clears_plate out of the PATCH while it stays on "no change" (#3576)', async () => {
+      const captured = captureBulkPatch();
+      const dialog = await openBulkEdit();
+
+      const timelapseRow = within(dialog).getByText('Timelapse').closest('div')!;
+      await userEvent.click(within(timelapseRow).getByText('On'));
+      await userEvent.click(within(dialog).getByText('Apply Changes'));
+
+      await waitFor(() => expect(captured.body).not.toBeNull());
+      expect('clears_plate' in captured.body!).toBe(false);
     });
 
     it('leaves confirm_outcome out of the PATCH while it stays on "no change"', async () => {

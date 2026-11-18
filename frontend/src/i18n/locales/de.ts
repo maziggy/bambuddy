@@ -1651,6 +1651,8 @@ export default {
       gcodeInjection: 'G-Code',
       confirmOutcome: 'Ergebnisabfrage',
       confirmOutcomeTitle: 'Fragt nach Abschluss, wie der Druck geworden ist',
+      clearsPlate: 'Räumt Platte',
+      clearsPlateTitle: 'Räumt die Platte selbst: keine Plattenbestätigung nach erfolgreichem Druck, es sei denn, der Drucker ist auf „Immer verlangen“ gestellt',
     },
     // Empty state
     empty: {
@@ -1693,6 +1695,7 @@ export default {
       timelapse: 'Zeitraffer',
       useAms: 'AMS verwenden',
       confirmOutcome: 'Nach Ergebnis fragen',
+      clearsPlate: 'Räumt die Platte automatisch',
       nozzleOffsetCali: 'Düsenversatz-Kalibrierung',
       applyChanges: 'Änderungen übernehmen',
       selectAll: 'Alle auswählen',
@@ -4335,6 +4338,8 @@ export default {
     title: 'Dateimanager',
     subtitle: 'Organisieren und verwalten Sie Ihre Druckdateien',
     uploadFiles: 'Dateien hochladen',
+    clearsPlateOnUpload: 'Dateien räumen die Platte automatisch',
+    clearsPlateOnUploadHelp: 'Gilt für jede Datei dieses Uploads. Nur für gesliceste Dateien, die mit einem Plattenwechsel oder Push-off enden: Nach einem erfolgreichen Druck wartet die Warteschlange nicht auf eine Plattenbestätigung.',
     newFolder: 'Neuer Ordner',
     folderName: 'Ordnername',
     folderNamePlaceholder: 'z.B. Funktionsteile',
@@ -4522,6 +4527,8 @@ export default {
       truncatedCols: 'Die ersten {{shown}} von {{total}} Spalten werden angezeigt',
     },
     details: {
+      clearsPlate: 'Räumt die Platte automatisch',
+      clearsPlateHelp: 'Die Datei endet mit einem Plattenwechsel oder Push-off. Nach einem erfolgreichen Druck startet die Warteschlange den nächsten Auftrag ohne Plattenbestätigung, es sei denn, der Drucker ist auf „Immer verlangen“ gestellt. Neue Druckaufträge aus dieser Datei übernehmen diese Einstellung.',
       title: 'Dateidetails',
       size: 'Größe',
       type: 'Typ',
@@ -5871,6 +5878,8 @@ export default {
     noPrintableCostCenters: 'Es ist keine aktive Kostenstelle zum Drucken verfügbar. Bitte einen Administrator, dir Druckzugriff zu gewähren.',
     askForOutcome: 'Nach Ergebnis fragen',
     askForOutcomeTitle: 'Nach Abschluss fragen, wie der Druck geworden ist',
+    clearsPlate: 'Räumt die Platte automatisch',
+    clearsPlateTitle: 'Die Datei räumt die Platte selbst (Plattenwechsler oder Push-off). Nach einem erfolgreichen Druck startet die Warteschlange den nächsten Auftrag ohne Plattenbestätigung, es sei denn, der Drucker ist auf „Immer verlangen“ gestellt.',
   },
 
   // Backup

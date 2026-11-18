@@ -1651,6 +1651,8 @@ export default {
       gcodeInjection: 'G-code',
       confirmOutcome: 'Consulta de resultado',
       confirmOutcomeTitle: 'Pergunta como a impressão ficou depois de concluída',
+      clearsPlate: 'Libera a placa',
+      clearsPlateTitle: 'Libera a própria placa: sem confirmação de placa após uma impressão bem-sucedida, a menos que a impressora esteja definida como "Sempre exigir"',
     },
     // Empty state
     empty: {
@@ -1693,6 +1695,7 @@ export default {
       timelapse: 'Timelapse',
       useAms: 'Usar AMS',
       confirmOutcome: 'Perguntar o resultado',
+      clearsPlate: 'Liberar a placa automaticamente',
       nozzleOffsetCali: 'Calibração de offset dos bicos',
       applyChanges: 'Aplicar Alterações',
       selectAll: 'Selecionar Todos',
@@ -4322,6 +4325,8 @@ export default {
     title: 'Gerenciador de Arquivos',
     subtitle: 'Organize e gerencie seus arquivos de impressão',
     uploadFiles: 'Enviar Arquivos',
+    clearsPlateOnUpload: 'Os arquivos liberam a placa automaticamente',
+    clearsPlateOnUploadHelp: 'Aplica-se a todos os arquivos deste envio. Somente para arquivos fatiados que terminam com uma troca de placa ou empurrar a peça para fora: após uma impressão bem-sucedida, a fila não espera a confirmação da placa.',
     newFolder: 'Nova Pasta',
     folderName: 'Nome da Pasta',
     folderNamePlaceholder: 'ex.: Peças Funcionais',
@@ -4509,6 +4514,8 @@ export default {
       truncatedCols: 'Mostrando as primeiras {{shown}} de {{total}} colunas',
     },
     details: {
+      clearsPlate: 'Libera a placa automaticamente',
+      clearsPlateHelp: 'O arquivo termina com uma troca de placa ou empurrar a peça para fora. Após uma impressão bem-sucedida, a fila inicia o próximo trabalho sem esperar a confirmação da placa, a menos que a impressora esteja definida como "Sempre exigir". Novos trabalhos de impressão deste arquivo começam com esta configuração.',
       title: 'Detalhes do arquivo',
       size: 'Tamanho',
       type: 'Tipo',
@@ -5857,6 +5864,8 @@ export default {
     noPrintableCostCenters: 'Não há nenhum centro de custo ativo disponível para impressão. Peça a um administrador para conceder acesso de impressão.',
     askForOutcome: 'Perguntar o resultado',
     askForOutcomeTitle: 'Perguntar como a impressão ficou depois de concluída',
+    clearsPlate: 'Libera a placa automaticamente',
+    clearsPlateTitle: 'O arquivo libera a placa sozinho (trocador de placas ou empurrar a peça para fora). Após uma impressão bem-sucedida, a fila inicia o próximo trabalho sem esperar a confirmação de placa livre, a menos que a impressora esteja definida como "Sempre exigir".',
   },
 
   // Backup

@@ -6210,6 +6210,11 @@ async def _run_migrations(conn):
         conn, f"ALTER TABLE smart_plugs ADD COLUMN mqtt_energy_total_multiplier {float_type} NOT NULL DEFAULT '1.0'"
     )
 
+    # Migration: the file / job / archive clears its own plate (#3576). False
+    # keeps every existing row waiting for the plate confirmation as before.
+    for _table in ("library_files", "print_queue", "print_archives"):
+        await _safe_execute(conn, f"ALTER TABLE {_table} ADD COLUMN clears_plate BOOLEAN DEFAULT FALSE NOT NULL")
+
     await _backfill_archive_run_photos(conn)
     await _migrate_h3c_queue_tray_ids(conn)
 

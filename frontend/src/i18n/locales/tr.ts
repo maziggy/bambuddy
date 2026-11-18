@@ -1651,6 +1651,8 @@ export default {
       gcodeInjection: 'G-kod',
       confirmOutcome: 'Sonuç sorgusu',
       confirmOutcomeTitle: 'Tamamlandığında baskının nasıl çıktığını sorar',
+      clearsPlate: 'Plakayı boşaltır',
+      clearsPlateTitle: 'Kendi plakasını boşaltır: yazıcı "Her zaman gerektir" olarak ayarlanmadıkça başarılı baskıdan sonra plaka onayı yok',
     },
     // Boş durum
     empty: {
@@ -1693,6 +1695,7 @@ export default {
       timelapse: 'Zaman atlamalı video',
       useAms: "AMS Kullan",
       confirmOutcome: 'Sonucu sor',
+      clearsPlate: 'Plakayı otomatik boşalt',
       nozzleOffsetCali: 'Nozül ofset kalibrasyonu',
       applyChanges: 'Değişiklikleri Uygula',
       selectAll: 'Tümünü Seç',
@@ -4330,6 +4333,8 @@ export default {
     title: 'Dosya Yöneticisi',
     subtitle: 'Baskı dosyalarınızı organize edin ve yönetin',
     uploadFiles: 'Dosya Yükle',
+    clearsPlateOnUpload: 'Dosyalar plakayı otomatik boşaltır',
+    clearsPlateOnUploadHelp: 'Bu yüklemedeki her dosya için geçerlidir. Yalnızca plaka değişimi veya baskıyı itme ile biten dilimlenmiş dosyalar için: başarılı bir baskıdan sonra kuyruk plaka onayını beklemez.',
     newFolder: 'Yeni Klasör',
     folderName: 'Klasör Adı',
     folderNamePlaceholder: 'örn., Fonksiyonel Parçalar',
@@ -4517,6 +4522,8 @@ export default {
       truncatedCols: '{{total}} sütundan ilk {{shown}} tanesi gösteriliyor',
     },
     details: {
+      clearsPlate: 'Plakayı otomatik boşaltır',
+      clearsPlateHelp: 'Dosya bir plaka değişimi veya baskıyı itme ile biter. Başarılı bir baskıdan sonra, yazıcı "Her zaman gerektir" olarak ayarlanmadıkça kuyruk plaka onayını beklemeden sıradaki işi başlatır. Bu dosyadan oluşturulan yeni baskı işleri bu ayarla başlar.',
       title: 'Dosya ayrıntıları',
       size: 'Boyut',
       type: 'Tür',
@@ -5847,6 +5854,8 @@ export default {
     noPrintableCostCenters: 'Yazdırma için kullanılabilir etkin bir masraf merkezi yok. Bir yöneticiden yazdırma erişimi vermesini isteyin.',
     askForOutcome: 'Sonucu sor',
     askForOutcomeTitle: 'Tamamlandığında baskının nasıl çıktığını sor',
+    clearsPlate: 'Plakayı otomatik boşaltır',
+    clearsPlateTitle: 'Dosya plakayı kendisi boşaltır (plaka değiştirici veya baskıyı itme). Başarılı bir baskıdan sonra, yazıcı "Her zaman gerektir" olarak ayarlanmadıkça kuyruk plaka onayını beklemeden sıradaki işi başlatır.',
   },
 
   // Yedekleme

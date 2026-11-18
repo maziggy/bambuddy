@@ -1669,6 +1669,8 @@ export default {
       gcodeInjection: 'G-code',
       confirmOutcome: 'Pytanie o wynik',
       confirmOutcomeTitle: 'Po zakończeniu pyta, jak wyszedł wydruk',
+      clearsPlate: 'Opróżnia płytę',
+      clearsPlateTitle: 'Sam opróżnia płytę: brak potwierdzenia płyty po udanym wydruku, chyba że drukarka jest ustawiona na „Zawsze wymagaj”',
     },
     // Empty state
     empty: {
@@ -1711,6 +1713,7 @@ export default {
       timelapse: 'Timelapse',
       useAms: 'Użyj AMS',
       confirmOutcome: 'Pytaj o wynik',
+      clearsPlate: 'Automatycznie opróżnia płytę',
       nozzleOffsetCali: 'Kalibracja przesunięcia dyszy',
       applyChanges: 'Zastosuj zmiany',
       selectAll: 'Zaznacz wszystkie',
@@ -4367,6 +4370,8 @@ export default {
     title: 'Menedżer plików',
     subtitle: 'Organizuj pliki do druku i zarządzaj nimi',
     uploadFiles: 'Prześlij pliki',
+    clearsPlateOnUpload: 'Pliki automatycznie opróżniają płytę',
+    clearsPlateOnUploadHelp: 'Dotyczy każdego pliku w tym przesyłaniu. Tylko dla pociętych plików, które kończą się wymianą płyty lub zepchnięciem wydruku: po udanym wydruku kolejka nie czeka na potwierdzenie płyty.',
     newFolder: 'Nowy folder',
     folderName: 'Nazwa folderu',
     folderNamePlaceholder: 'np. Części funkcjonalne',
@@ -4554,6 +4559,8 @@ export default {
       truncatedCols: 'Wyświetlono pierwsze kolumny: {{shown}} z {{total}}',
     },
     details: {
+      clearsPlate: 'Automatycznie opróżnia płytę',
+      clearsPlateHelp: 'Plik kończy się wymianą płyty lub zepchnięciem wydruku. Po udanym wydruku kolejka uruchamia następne zadanie bez czekania na potwierdzenie płyty, chyba że drukarka jest ustawiona na „Zawsze wymagaj”. Nowe zadania wydruku z tego pliku zaczynają z tym ustawieniem.',
       title: 'Szczegóły pliku',
       size: 'Rozmiar',
       type: 'Typ',
@@ -5918,6 +5925,8 @@ export default {
     noPrintableCostCenters: 'Brak aktywnego centrum kosztów dostępnego do drukowania. Poproś administratora o przyznanie dostępu do drukowania.',
     askForOutcome: 'Zapytaj o wynik',
     askForOutcomeTitle: 'Zapytaj po zakończeniu, jak wyszedł wydruk',
+    clearsPlate: 'Automatycznie opróżnia płytę',
+    clearsPlateTitle: 'Plik sam opróżnia płytę (zmieniacz płyt lub zepchnięcie wydruku). Po udanym wydruku kolejka uruchamia następne zadanie bez czekania na potwierdzenie opróżnienia płyty, chyba że drukarka jest ustawiona na „Zawsze wymagaj”.',
   },
 
   // Backup

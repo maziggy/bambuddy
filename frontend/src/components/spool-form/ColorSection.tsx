@@ -105,6 +105,8 @@ export function ColorSection({
     onColorUsed({ name, hex });
   };
 
+  // This component is shared with the SpoolBuddy write-tag page, which gets the
+  // brand-aware matching and "Show all colours" below on purpose.
   // Filter catalog colors by the selected brand + material + subtype (see catalogColors.ts)
   const matchedCatalogColors = useMemo<CatalogDisplayColor[]>(
     () => matchCatalogColors(catalogColors, formData.brand, formData.material, formData.subtype),
@@ -277,7 +279,7 @@ export function ColorSection({
           <div className="flex flex-wrap gap-1.5">
             {catalogSearchResults.map(color => (
               <button
-                key={`${color.hex}-${color.name}-${color.manufacturer ?? ''}`}
+                key={`${color.hex}-${color.name}-${color.manufacturer ?? ''}-${color.material ?? ''}`}
                 type="button"
                 onClick={() => selectColor(color.hex, color.name, color.extra_colors, color.effect_type)}
                 className={`w-6 h-6 rounded border-2 transition-all hover:scale-110 hover:z-20 relative group ${

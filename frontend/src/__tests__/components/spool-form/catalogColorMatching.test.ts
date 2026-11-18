@@ -3,7 +3,7 @@
  * (#3619). Documents today's behaviour of matchCatalogColors.
  */
 import { describe, it, expect } from 'vitest';
-import { matchCatalogColors, allBrandCatalogColors, type CatalogColorEntry } from '../../../components/spool-form/catalogColors';
+import { matchCatalogColors, allBrandCatalogColors, brandAliases, type CatalogColorEntry } from '../../../components/spool-form/catalogColors';
 
 const e = (manufacturer: string, color_name: string, material: string | null, extra: Partial<CatalogColorEntry> = {}): CatalogColorEntry => ({
   manufacturer,
@@ -267,11 +267,101 @@ describe('matchCatalogColors: product lines (#3619)', () => {
     it('is empty without a brand', () => {
       expect(allBrandCatalogColors(catalog, '', [])).toEqual([]);
       expect(allBrandCatalogColors(catalog, '  ', [])).toEqual([]);
+  });
+
+  it('a one-character brand has no word to match and offers nothing', () => {
+    expect(allBrandCatalogColors(catalog, 'X', [])).toEqual([]);
     });
 
     it('a product-line brand lists the whole line', () => {
       const all = allBrandCatalogColors(catalog, 'PolyTerra', matchCatalogColors(catalog, 'PolyTerra', 'PLA', ''));
       expect(names(all)).toEqual(['Cotton White', 'Earth Brown']);
     });
+  });
+});
+
+describe('variant word as brand does not match inside manufacturer names', () => {
+  const catalog = [
+    e('MatterHackers', 'Build Red', 'Build PLA'),
+    e('Bambu Lab', 'Matte Blue', 'PLA Matte'),
+  ];
+
+  it('"Matte" does not pull MatterHackers Build PLA', () => {
+    expect(names(matchCatalogColors(catalog, 'Matte', '', ''))).not.toContain('Build Red');
+    expect(names(allBrandCatalogColors(catalog, 'Matte', []))).not.toContain('Build Red');
+  });
+
+  it('a real manufacturer still matches', () => {
+    expect(names(matchCatalogColors(catalog, 'MatterHackers', '', ''))).toEqual(['Build Red']);
+  });
+});
+
+describe('brandAliases with seed-like materials (#3619)', () => {
+  const catalog = [
+    e('Bambu Lab', 'PAHT Black', 'PAHT-CF'),
+    e('Bambu Lab', 'Basic Red', 'PLA Basic'),
+    e('ColorFabb', 'Green', 'PLA'),
+    e('ColorFabb', 'Pink', 'PHA'),
+    e('ColorFabb', 'Clear', 'XT'),
+    e('3DXTECH', 'Natural', 'rPETG/ECOMAX'),
+    e('3DXTECH', 'Black', 'ECOMAX PLA'),
+    e('MatterHackers', 'Natural', 'NylonX'),
+    e('MatterHackers', 'Blue', 'Build PLA'),
+  ];
+
+  it('material words are not product lines', () => {
+    expect(brandAliases(catalog, 'Bambu Lab')).toEqual([]);
+    expect(brandAliases(catalog, 'ColorFabb')).toEqual([]);
+    expect(brandAliases(catalog, '3DXTECH')).toEqual(['ECOMAX']);
+  });
+
+  it('a product line before the material is still found', () => {
+    expect(brandAliases(catalog, 'MatterHackers')).toEqual(['Build']);
+  });
+
+  it('XT is not an alias of 3DXTECH', () => {
+    expect(brandAliases(catalog, 'XT')).not.toContain('3DXTECH');
+  });
+});
+
+describe('brandAliases (#3619)', () => {
+  const catalog = [
+    e('Polymaker', 'Cotton White', 'PolyTerra PLA'),
+    e('Polymaker', 'Lite Red', 'PolyLite PLA'),
+    e('Polymaker', 'Lite Carbon', 'PolyLite PLA-CF'),
+    e('Polymaker', 'Lite PETG', 'PolyLite PETG'),
+    e('Polymaker', 'Silk Gold', 'PLA Silk'),
+    e('Polymaker', 'Carbon', 'Carbon Fiber PLA'),
+    e('Polymaker', 'Plain', 'PLA'),
+    e('Bambu Lab', 'Basic Blue', 'PLA Basic'),
+    e('Other', 'Fake', 'PolyTerraX PLA'),
+  ];
+
+  it('a manufacturer goes by its product lines, minus variant and material words', () => {
+    expect(brandAliases(catalog, 'Polymaker').sort()).toEqual(['PolyLite', 'PolyTerra']);
+  });
+
+  it('a product line goes by the manufacturer whose materials contain it', () => {
+    expect(brandAliases(catalog, 'PolyTerra')).toEqual(['Polymaker']);
+  });
+
+  it('whole word only', () => {
+    expect(brandAliases(catalog, 'PolyTerraX')).toEqual(['Other']);
+    expect(brandAliases(catalog, 'Terra')).toEqual([]);
+  });
+
+  it('variant and material words as a brand have no aliases', () => {
+    expect(brandAliases(catalog, 'Silk')).toEqual([]);
+    expect(brandAliases(catalog, 'Basic')).toEqual([]);
+    expect(brandAliases(catalog, 'PLA')).toEqual([]);
+  });
+
+  it('no brand or no catalog: none', () => {
+    expect(brandAliases(catalog, '')).toEqual([]);
+    expect(brandAliases([], 'Polymaker')).toEqual([]);
+  });
+
+  it('a manufacturer without product lines has none', () => {
+    expect(brandAliases(catalog, 'Bambu Lab')).toEqual([]);
   });
 });

@@ -694,3 +694,34 @@ export function saveLastSpool(mode: LastSpoolMode, data: LastSpool): void {
     // Storage unavailable: the form just starts empty next time.
   }
 }
+
+// Split a dropdown's options into the ones the catalog/presets pair with the
+// other field's current value and everything else (#1905). Suggestions are only
+// a sort order — nothing is ever hidden, so an unusual-but-real combination
+// (Elegoo ASA) stays one click away. `key` lets non-string options (#3619) be
+// matched by a text key.
+export function splitSuggested<T = string>(
+  options: T[],
+  suggested: string[],
+  key: (option: T) => string = (o) => String(o),
+): { top: T[]; rest: T[] } {
+  if (suggested.length === 0) return { top: [], rest: options };
+  const keys = new Set(suggested.map(s => s.toLowerCase()));
+  return {
+    top: options.filter(o => keys.has(key(o).toLowerCase())),
+    rest: options.filter(o => !keys.has(key(o).toLowerCase())),
+  };
+}
+
+// Catalog entries whose name starts with the brand, or one of its aliases (see
+// brandAliases), as a whole word, e.g. brand "Polymaker" → "PolyMaker - Cardboard"
+// and "PolyTerra PLA - Cardboard", brand "PolyTerra" → "PolyTerra PLA - Cardboard"
+// and "PolyMaker - Cardboard" (#3619). Returns the matching names (case-insensitive).
+export function brandSuggestedNames(names: string[], brand: string, aliases: string[] = []): string[] {
+  const prefixes = [brand, ...aliases].map(p => p.trim().toLowerCase()).filter(Boolean);
+  if (!brand.trim()) return [];
+  return names.filter(n => {
+    const l = n.trim().toLowerCase();
+    return prefixes.some(b => l.startsWith(b) && (l.length === b.length || !/[a-z0-9]/.test(l[b.length])));
+  });
+}

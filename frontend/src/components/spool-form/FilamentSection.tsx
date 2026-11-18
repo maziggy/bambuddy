@@ -3,33 +3,13 @@ import { Search, Loader2, ChevronDown, Cloud, CloudOff, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { FilamentSectionProps, FilamentOption } from './types';
 import { KNOWN_VARIANTS } from './constants';
-import { parsePresetName } from './utils';
+import { parsePresetName, splitSuggested } from './utils';
+import { GroupHeading } from './GroupHeading';
 import { PresetSourceBadge } from './PresetPicker';
 import { NumberInput } from '../NumberInput';
 
 // The identity fields a slicer preset can auto-fill.
 type PresetFilledField = 'material' | 'brand' | 'subtype';
-
-// Split a dropdown's options into the ones the catalog/presets pair with the
-// other field's current value and everything else (#1905). Suggestions are only
-// a sort order — nothing is ever hidden, so an unusual-but-real combination
-// (Elegoo ASA) stays one click away.
-function splitSuggested(options: string[], suggested: string[]): { top: string[]; rest: string[] } {
-  if (suggested.length === 0) return { top: [], rest: options };
-  const keys = new Set(suggested.map(s => s.toLowerCase()));
-  return {
-    top: options.filter(o => keys.has(o.toLowerCase())),
-    rest: options.filter(o => !keys.has(o.toLowerCase())),
-  };
-}
-
-function GroupHeading({ label }: { label: string }) {
-  return (
-    <div className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-bambu-gray/70 bg-bambu-dark-tertiary/40">
-      {label}
-    </div>
-  );
-}
 
 export function FilamentSection({
   formData,

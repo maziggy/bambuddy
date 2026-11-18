@@ -51,6 +51,10 @@ function containsBrandPhrase(text: string, brandLower: string): boolean {
   return new RegExp(`(^|[^a-z0-9])${escapeRegExp(brandLower)}($|[^a-z0-9])`).test(text);
 }
 
+/** Brand split into words (>= 2 chars) for word-based matching. */
+const brandWordsOf = (brand: string | undefined) =>
+  brand ? brand.toLowerCase().split(/[\s\-_]+/).filter(w => w.length >= 2) : [];
+
 /**
  * Filter catalog colors by the selected brand + material + subtype.
  *
@@ -75,10 +79,7 @@ export function matchCatalogColors(
   const subtype = formSubtype?.toLowerCase().trim();
   if (!brand && !material) return [];
 
-  // Split brand into words (>= 2 chars) for word-based matching
-  const brandWords = brand
-    ? brand.toLowerCase().split(/[\s\-_]+/).filter(w => w.length >= 2)
-    : [];
+  const brandWords = brandWordsOf(brand);
   const brandLower = brand?.toLowerCase() ?? '';
 
   const formText = `${material ?? ''} ${subtype ?? ''}`.trim();
@@ -87,6 +88,8 @@ export function matchCatalogColors(
   const manufacturerMatches = (manufacturer: string) => {
     if (brandWords.length === 0) return true; // no brand filter
     const mfrLower = manufacturer.toLowerCase();
+    // A variant word as the "brand" ("Matte") must not match inside a manufacturer name ("MatterHackers").
+    if (brandIsVariantWord) return hasWord(mfrLower, brandLower);
     // Any significant brand word found in manufacturer name
     return brandWords.some(w => mfrLower.includes(w));
   };
@@ -148,9 +151,59 @@ export function allBrandCatalogColors(
   matched: CatalogDisplayColor[],
 ): CatalogDisplayColor[] {
   const brand = formBrand?.trim();
-  if (!brand) return [];
+  // A brand without a word of its own ("X") would match everything.
+  if (!brand || brandWordsOf(brand).length === 0) return [];
   const all = matchCatalogColors(catalogColors, brand, '', '');
   const keyOf = (c: CatalogDisplayColor) => `${c.hex}|${c.name}|${c.manufacturer ?? ''}|${c.material ?? ''}`;
   const seen = new Set(matched.map(keyOf));
   return [...matched, ...all.filter(c => !seen.has(keyOf(c)))];
+}
+
+// Base materials of the catalog's material names: the form's MATERIALS plus the
+// ones the colour catalog uses beyond them ("PAHT-CF", "CPE", "NylonX", "PHA", "XT").
+const BASE_MATERIALS = new Set([...MATERIALS.map(m => m.toLowerCase().split('-')[0]), 'paht', 'cpe', 'pha', 'xt']);
+const isBaseMaterial = (base: string) => BASE_MATERIALS.has(base) || /^pa\d+$/.test(base) || base.startsWith('nylon');
+
+// Does a word of a catalog material name the base material? "PLA-CF", "PETG+",
+// "rPETG/ECOMAX" (recycled, with a suffix) and "NylonX" do; "PolyTerra" does not.
+const isMaterialToken = (token: string) => {
+  const base = token.toLowerCase().split(/[-+/]/)[0];
+  return isBaseMaterial(base) || (base.startsWith('r') && isBaseMaterial(base.slice(1)));
+};
+
+/**
+ * Other names the chosen brand goes by in the colour catalog, for matching
+ * spool names (#3619). Data-driven, nothing hard-coded:
+ *  - a brand that is a manufacturer ("Polymaker") also goes by the product lines
+ *    its catalog materials start with ("PolyTerra PLA" -> "PolyTerra"), minus the
+ *    material word and any variant or material word ("PLA Silk" -> nothing);
+ *  - a brand that is such a product line ("PolyTerra") also goes by the manufacturers
+ *    whose catalog materials contain it as a whole word ("Polymaker").
+ * A brand that is itself a variant or material word has no aliases.
+ */
+export function brandAliases(catalogColors: CatalogColorEntry[], formBrand: string | undefined): string[] {
+  const brand = formBrand?.trim();
+  if (!brand || catalogColors.length === 0) return [];
+  const brandLower = brand.toLowerCase();
+  if (isVariantWord(brandLower)) return [];
+  const brandWords = brandWordsOf(brand);
+  if (brandWords.length === 0) return [];
+  const found = new Map<string, string>();
+  const add = (alias: string) => {
+    const key = alias.trim().toLowerCase();
+    if (key && key !== brandLower && !found.has(key)) found.set(key, alias.trim());
+  };
+  for (const c of catalogColors) {
+    if (!c.material) continue;
+    const materialLower = c.material.toLowerCase();
+    // Whole words: "XT" is not a way to say 3DXTECH.
+    if (brandWords.some(w => hasWord(c.manufacturer.toLowerCase(), w))) {
+      const tokens = c.material.trim().split(/\s+/);
+      const end = tokens.findIndex(isMaterialToken);
+      const lead = (end === -1 ? tokens : tokens.slice(0, end)).slice(0, 3);
+      if (lead.length > 0 && !lead.some(tk => MODIFIER_WORDS.has(tk.toLowerCase()))) add(lead.join(' '));
+    }
+    if (containsBrandPhrase(materialLower, brandLower)) add(c.manufacturer);
+  }
+  return [...found.values()];
 }

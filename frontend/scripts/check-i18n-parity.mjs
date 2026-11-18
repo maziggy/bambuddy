@@ -235,6 +235,7 @@ const FR_COGNATES = [
 
 // Italian cognates.
 const IT_COGNATES = [
+  'Account',  // #3602 account menu — the Italian word for a user account
   'A4 (210 × 297 mm)',  // #3296 page size name in the custom label sheet form — ISO name and metric size, written the same
   '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the IT term too
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
@@ -458,6 +459,7 @@ const UK_COGNATES = [
 // are used untranslated by Dutch slicer users. Each entry below was
 // checked individually against the Dutch translation in #2891.
 const NL_COGNATES = [
+  'Account',  // #3602 account menu — the Dutch word for a user account
   '{{page}} · {{width}} × {{height}} mm · {{capacity}} labels ({{cols}} × {{rows}})',  // #3296 custom sheet summary — "labels" is the Dutch word too
   'A4 (210 × 297 mm)',  // #3296 page size name in the custom label sheet form — ISO name and metric size, written the same
   'Project:',  // archive page label

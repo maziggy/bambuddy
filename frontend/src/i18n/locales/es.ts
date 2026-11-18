@@ -7423,6 +7423,48 @@ export default {
   },
 
   // Pending Uploads Panel
+  // The sidebar footer's menu for the signed-in user (#3602).
+  accountMenu: {
+    title: 'Cuenta',
+  },
+  // What a user enters in their slicer to send to virtual printers (#3602).
+  connectSlicer: {
+    title: 'Conectar laminador',
+    subtitle: 'Qué introducir en Bambu Studio u OrcaSlicer para enviar impresiones a Bambuddy.',
+    loadFailed: 'No se pudieron cargar los datos de conexión.',
+    authOff: 'Los códigos de acceso personales necesitan la autenticación de usuarios, que está desactivada. Usa el código de acceso propio de una impresora virtual de Ajustes > Impresora virtual.',
+    openSettings: 'Abrir los ajustes de impresora virtual',
+    steps: {
+      certificate: 'Instala una vez el certificado CA de abajo para que tu laminador confíe en las impresoras virtuales.',
+      addPrinter: 'En tu laminador, añade una impresora por dirección IP e introduce la dirección de una impresora virtual de esta lista. Si el laminador pide un número de serie o un modelo, usa los que se muestran.',
+      accessCode: 'Como código de acceso, introduce tu código personal de abajo, no el de la impresora.',
+    },
+    printers: 'Impresoras virtuales a las que puedes enviar',
+    noPrinters: 'No hay ninguna impresora virtual a la que puedas enviar. Pregunta a tu administrador.',
+    notRunning: 'No está en marcha',
+    field: {
+      address: 'Dirección',
+      serial: 'Número de serie',
+      model: 'Modelo',
+    },
+    destination: {
+      library: 'Los archivos que envías se guardan en el Gestor de archivos.',
+      review: 'Los archivos que envías esperan una revisión antes de guardarse.',
+      queuePrinter: 'Los archivos que envías se ponen en cola para {{printer}}.',
+      queueModel: 'Los archivos que envías se ponen en cola para la primera {{model}} libre.',
+    },
+    liveStatus: 'Tu laminador muestra el estado en directo de {{printer}}.',
+    noLiveStatus: 'Tu laminador no muestra el estado en directo de ninguna impresora.',
+    instructions: {
+      description: 'Cada usuario con sesión iniciada encuentra en esta página su código de acceso, las impresoras virtuales a las que puede enviar y el certificado CA, sin acceso a los Ajustes. Envíales el enlace.',
+      label: 'Instrucciones para los usuarios',
+      placeholder: 'p. ej., conéctate primero a la VPN.',
+      markdownHint: 'Markdown. Se muestra arriba en la página.',
+      openPage: 'Abrir página',
+      saved: 'Instrucciones guardadas',
+      saveFailed: 'No se pudieron guardar las instrucciones',
+    },
+  },
   slicerAccessCode: {
     title: 'Código de acceso del laminador',
     description: 'Introduce este código en Bambu Studio u OrcaSlicer en lugar del código de acceso de la impresora virtual. Lo que envíes a la impresora virtual será tuyo.',

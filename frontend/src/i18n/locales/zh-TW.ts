@@ -7400,6 +7400,48 @@ export default {
   },
 
   // Pending Uploads Panel
+  // The sidebar footer's menu for the signed-in user (#3602).
+  accountMenu: {
+    title: '帳戶',
+  },
+  // What a user enters in their slicer to send to virtual printers (#3602).
+  connectSlicer: {
+    title: '連接切片軟體',
+    subtitle: '在 Bambu Studio 或 OrcaSlicer 中要填寫什麼，才能把列印傳送到 Bambuddy。',
+    loadFailed: '無法載入連線資訊。',
+    authOff: '個人存取碼需要使用者驗證，但驗證已關閉。請使用 設定 > 虛擬印表機 中虛擬印表機自己的存取碼。',
+    openSettings: '開啟虛擬印表機設定',
+    steps: {
+      certificate: '安裝一次下方的 CA 憑證，切片軟體就會信任虛擬印表機。',
+      addPrinter: '在切片軟體中依 IP 位址新增印表機，填寫此處列出的某台虛擬印表機的位址。如果切片軟體詢問序號或型號，請使用顯示的值。',
+      accessCode: '存取碼請填寫下方你的個人存取碼，而不是印表機自己的存取碼。',
+    },
+    printers: '你可以傳送到的虛擬印表機',
+    noPrinters: '沒有你可以傳送到的虛擬印表機。請聯絡管理員。',
+    notRunning: '未執行',
+    field: {
+      address: '位址',
+      serial: '序號',
+      model: '型號',
+    },
+    destination: {
+      library: '傳送的檔案會儲存在檔案管理器中。',
+      review: '傳送的檔案在儲存前等待審核。',
+      queuePrinter: '傳送的檔案會進入 {{printer}} 的佇列。',
+      queueModel: '傳送的檔案會進入第一台閒置 {{model}} 的佇列。',
+    },
+    liveStatus: '切片軟體會顯示 {{printer}} 的即時狀態。',
+    noLiveStatus: '切片軟體不顯示任何印表機的即時狀態。',
+    instructions: {
+      description: '每位已登入使用者無需設定權限，即可在此頁面找到自己的存取碼、可傳送到的虛擬印表機和 CA 憑證。把連結傳給他們即可。',
+      label: '給使用者的說明',
+      placeholder: '例如：請先連線 VPN。',
+      markdownHint: 'Markdown。顯示在頁面頂端。',
+      openPage: '開啟頁面',
+      saved: '說明已儲存',
+      saveFailed: '無法儲存說明',
+    },
+  },
   slicerAccessCode: {
     title: '切片軟體存取碼',
     description: '在 Bambu Studio 或 OrcaSlicer 中輸入此存取碼,取代虛擬印表機本身的存取碼。這樣你傳送到虛擬印表機的內容就屬於你。',

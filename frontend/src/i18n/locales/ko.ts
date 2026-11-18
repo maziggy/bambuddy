@@ -7109,6 +7109,48 @@ export default {
     includeAccessCodesWarning: '액세스 코드가 평문으로 포함됩니다. 이 백업 파일을 안전하게 보관하세요!',
     categoriesSelected: '{{selectedCount}}개 카테고리 선택됨'
   },
+  // The sidebar footer's menu for the signed-in user (#3602).
+  accountMenu: {
+    title: '계정',
+  },
+  // What a user enters in their slicer to send to virtual printers (#3602).
+  connectSlicer: {
+    title: '슬라이서 연결',
+    subtitle: 'Bambu Studio 또는 OrcaSlicer에서 Bambuddy로 출력물을 보내려면 입력할 내용입니다.',
+    loadFailed: '연결 정보를 불러오지 못했습니다.',
+    authOff: '개인 액세스 코드에는 사용자 인증이 필요한데 꺼져 있습니다. 설정 > 가상 프린터에서 가상 프린터 자체의 액세스 코드를 사용하세요.',
+    openSettings: '가상 프린터 설정 열기',
+    steps: {
+      certificate: '아래 CA 인증서를 한 번 설치하면 슬라이서가 가상 프린터를 신뢰합니다.',
+      addPrinter: '슬라이서에서 IP 주소로 프린터를 추가하고 여기 나온 가상 프린터의 주소를 입력하세요. 슬라이서가 일련번호나 모델을 물으면 표시된 값을 사용하세요.',
+      accessCode: '액세스 코드로는 프린터 자체의 코드가 아니라 아래 개인 코드를 입력하세요.',
+    },
+    printers: '보낼 수 있는 가상 프린터',
+    noPrinters: '보낼 수 있는 가상 프린터가 없습니다. 관리자에게 문의하세요.',
+    notRunning: '실행 중 아님',
+    field: {
+      address: '주소',
+      serial: '일련번호',
+      model: '모델',
+    },
+    destination: {
+      library: '보낸 파일은 파일 관리자에 저장됩니다.',
+      review: '보낸 파일은 저장되기 전에 검토를 기다립니다.',
+      queuePrinter: '보낸 파일은 {{printer}}의 대기열에 추가됩니다.',
+      queueModel: '보낸 파일은 처음 비는 {{model}}의 대기열에 추가됩니다.',
+    },
+    liveStatus: '슬라이서에 {{printer}}의 실시간 상태가 표시됩니다.',
+    noLiveStatus: '슬라이서에 프린터의 실시간 상태가 표시되지 않습니다.',
+    instructions: {
+      description: '로그인한 모든 사용자는 설정에 접근하지 않고도 이 페이지에서 자신의 액세스 코드, 보낼 수 있는 가상 프린터, CA 인증서를 확인할 수 있습니다. 링크를 보내 주세요.',
+      label: '사용자 안내',
+      placeholder: '예: 먼저 VPN에 연결하세요.',
+      markdownHint: 'Markdown. 페이지 상단에 표시됩니다.',
+      openPage: '페이지 열기',
+      saved: '안내를 저장했습니다',
+      saveFailed: '안내를 저장하지 못했습니다',
+    },
+  },
   slicerAccessCode: {
     title: '슬라이서 액세스 코드',
     description: '가상 프린터 자체의 액세스 코드 대신 이 코드를 Bambu Studio 또는 OrcaSlicer에 입력하세요. 가상 프린터로 보낸 것은 당신의 것이 됩니다.',

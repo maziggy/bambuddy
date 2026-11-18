@@ -2,10 +2,9 @@ import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { FileText, PanelRightClose, PanelRightOpen } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
 
 import { api } from '../api/client';
-import remarkGfmNoAutolink from '../utils/remarkGfmNoAutolink';
+import { MarkdownContent } from './MarkdownContent';
 
 interface FolderReadmePanelProps {
   folderId: number;
@@ -103,45 +102,7 @@ export function FolderReadmePanel({ folderId }: FolderReadmePanelProps) {
         </button>
       </div>
       <div className="px-4 py-3 border-t border-bambu-dark-tertiary flex-1 overflow-y-auto max-h-96 lg:max-h-none text-sm text-bambu-gray-light leading-relaxed space-y-2">
-        <ReactMarkdown
-          remarkPlugins={[remarkGfmNoAutolink]}
-          components={{
-            h1: ({ children }) => <h1 className="text-lg font-semibold text-white mt-2 mb-1">{children}</h1>,
-            h2: ({ children }) => <h2 className="text-base font-semibold text-white mt-2 mb-1">{children}</h2>,
-            h3: ({ children }) => <h3 className="text-sm font-semibold text-white mt-2 mb-1">{children}</h3>,
-            p: ({ children }) => <p className="my-1">{children}</p>,
-            ul: ({ children }) => <ul className="list-disc list-inside space-y-0.5 ml-2">{children}</ul>,
-            ol: ({ children }) => <ol className="list-decimal list-inside space-y-0.5 ml-2">{children}</ol>,
-            li: ({ children }) => <li>{children}</li>,
-            code: ({ children, ...props }) => {
-              const inline = !(props as { className?: string }).className;
-              return inline ? (
-                <code className="px-1 py-0.5 bg-bambu-dark rounded text-xs font-mono text-bambu-green">{children}</code>
-              ) : (
-                <code className="block p-2 bg-bambu-dark rounded text-xs font-mono text-bambu-gray-light overflow-x-auto">{children}</code>
-              );
-            },
-            pre: ({ children }) => <pre className="my-2">{children}</pre>,
-            blockquote: ({ children }) => (
-              <blockquote className="border-l-2 border-bambu-dark-tertiary pl-3 text-bambu-gray italic">{children}</blockquote>
-            ),
-            a: ({ children, href }) => (
-              <a href={href} target="_blank" rel="noopener noreferrer" className="text-bambu-green hover:underline">
-                {children}
-              </a>
-            ),
-            table: ({ children }) => (
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-xs border-collapse">{children}</table>
-              </div>
-            ),
-            th: ({ children }) => <th className="border border-bambu-dark-tertiary px-2 py-1 text-left font-semibold text-white">{children}</th>,
-            td: ({ children }) => <td className="border border-bambu-dark-tertiary px-2 py-1">{children}</td>,
-            hr: () => <hr className="border-bambu-dark-tertiary my-2" />,
-          }}
-        >
-          {data.content}
-        </ReactMarkdown>
+        <MarkdownContent>{data.content}</MarkdownContent>
       </div>
     </div>
   );

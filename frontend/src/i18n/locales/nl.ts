@@ -7466,6 +7466,48 @@ export default {
   },
 
   // Pending Uploads Panel
+  // The sidebar footer's menu for the signed-in user (#3602).
+  accountMenu: {
+    title: 'Account',
+  },
+  // What a user enters in their slicer to send to virtual printers (#3602).
+  connectSlicer: {
+    title: 'Slicer verbinden',
+    subtitle: 'Wat je in Bambu Studio of OrcaSlicer invult om prints naar Bambuddy te sturen.',
+    loadFailed: 'De verbindingsgegevens konden niet worden geladen.',
+    authOff: 'Persoonlijke toegangscodes hebben gebruikersauthenticatie nodig, en die staat uit. Gebruik de eigen toegangscode van een virtuele printer uit Instellingen > Virtuele printer.',
+    openSettings: 'Instellingen virtuele printer openen',
+    steps: {
+      certificate: 'Installeer het CA-certificaat hieronder één keer, zodat je slicer de virtuele printers vertrouwt.',
+      addPrinter: 'Voeg in je slicer een printer toe via IP-adres en vul het adres in van een virtuele printer uit deze lijst. Vraagt de slicer om een serienummer of model, gebruik dan de getoonde.',
+      accessCode: 'Vul als toegangscode je persoonlijke code hieronder in, niet die van de printer.',
+    },
+    printers: 'Virtuele printers waar je naar kunt sturen',
+    noPrinters: 'Er is geen virtuele printer waar je naar kunt sturen. Vraag het je beheerder.',
+    notRunning: 'Draait niet',
+    field: {
+      address: 'Adres',
+      serial: 'Serienummer',
+      model: 'Model',
+    },
+    destination: {
+      library: 'Verzonden bestanden worden opgeslagen in Bestandsbeheer.',
+      review: 'Verzonden bestanden wachten op controle voordat ze worden opgeslagen.',
+      queuePrinter: 'Verzonden bestanden komen in de wachtrij voor {{printer}}.',
+      queueModel: 'Verzonden bestanden komen in de wachtrij voor de eerste vrije {{model}}.',
+    },
+    liveStatus: 'Je slicer toont de livestatus van {{printer}}.',
+    noLiveStatus: 'Je slicer toont geen livestatus van een printer.',
+    instructions: {
+      description: 'Elke aangemelde gebruiker vindt op deze pagina zijn toegangscode, de virtuele printers waar hij naar mag sturen en het CA-certificaat, zonder toegang tot Instellingen. Stuur hem de link.',
+      label: 'Instructies voor gebruikers',
+      placeholder: 'bijv. Maak eerst verbinding met de VPN.',
+      markdownHint: 'Markdown. Bovenaan de pagina getoond.',
+      openPage: 'Pagina openen',
+      saved: 'Instructies opgeslagen',
+      saveFailed: 'De instructies konden niet worden opgeslagen',
+    },
+  },
   slicerAccessCode: {
     title: 'Slicer-toegangscode',
     description: 'Voer deze code in Bambu Studio of OrcaSlicer in in plaats van de toegangscode van de virtuele printer. Wat je naar de virtuele printer stuurt, is dan van jou.',

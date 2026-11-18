@@ -7400,6 +7400,48 @@ export default {
   },
 
   // Pending Uploads Panel
+  // The sidebar footer's menu for the signed-in user (#3602).
+  accountMenu: {
+    title: '账户',
+  },
+  // What a user enters in their slicer to send to virtual printers (#3602).
+  connectSlicer: {
+    title: '连接切片软件',
+    subtitle: '在 Bambu Studio 或 OrcaSlicer 中需要填写什么，才能把打印发送到 Bambuddy。',
+    loadFailed: '无法加载连接信息。',
+    authOff: '个人访问码需要用户认证，但认证已关闭。请使用 设置 > 虚拟打印机 中虚拟打印机自己的访问码。',
+    openSettings: '打开虚拟打印机设置',
+    steps: {
+      certificate: '安装一次下方的 CA 证书，切片软件就会信任虚拟打印机。',
+      addPrinter: '在切片软件中按 IP 地址添加打印机，填写此处列出的某台虚拟打印机的地址。如果切片软件询问序列号或型号，请使用显示的值。',
+      accessCode: '访问码请填写下方你的个人访问码，而不是打印机自己的访问码。',
+    },
+    printers: '你可以发送到的虚拟打印机',
+    noPrinters: '没有你可以发送到的虚拟打印机。请联系管理员。',
+    notRunning: '未运行',
+    field: {
+      address: '地址',
+      serial: '序列号',
+      model: '型号',
+    },
+    destination: {
+      library: '发送的文件保存在文件管理器中。',
+      review: '发送的文件在保存前等待审核。',
+      queuePrinter: '发送的文件进入 {{printer}} 的队列。',
+      queueModel: '发送的文件进入第一台空闲 {{model}} 的队列。',
+    },
+    liveStatus: '切片软件会显示 {{printer}} 的实时状态。',
+    noLiveStatus: '切片软件不显示任何打印机的实时状态。',
+    instructions: {
+      description: '每位已登录用户无需设置权限，即可在此页面找到自己的访问码、可发送到的虚拟打印机和 CA 证书。把链接发给他们即可。',
+      label: '给用户的说明',
+      placeholder: '例如：请先连接 VPN。',
+      markdownHint: 'Markdown。显示在页面顶部。',
+      openPage: '打开页面',
+      saved: '说明已保存',
+      saveFailed: '无法保存说明',
+    },
+  },
   slicerAccessCode: {
     title: '切片软件访问码',
     description: '在 Bambu Studio 或 OrcaSlicer 中输入此访问码,代替虚拟打印机自身的访问码。这样你发送到虚拟打印机的内容就属于你。',

@@ -7416,6 +7416,48 @@ export default {
   },
 
   // Pending Uploads Panel
+  // The sidebar footer's menu for the signed-in user (#3602).
+  accountMenu: {
+    title: 'アカウント',
+  },
+  // What a user enters in their slicer to send to virtual printers (#3602).
+  connectSlicer: {
+    title: 'スライサーを接続',
+    subtitle: 'Bambu Studio または OrcaSlicer から Bambuddy に印刷を送るための入力内容です。',
+    loadFailed: '接続情報を読み込めませんでした。',
+    authOff: '個人用アクセスコードにはユーザー認証が必要ですが、オフになっています。設定 > 仮想プリンター にある仮想プリンター自体のアクセスコードを使ってください。',
+    openSettings: '仮想プリンターの設定を開く',
+    steps: {
+      certificate: '下の CA 証明書を一度インストールすると、スライサーが仮想プリンターを信頼します。',
+      addPrinter: 'スライサーで IP アドレスからプリンターを追加し、ここに表示された仮想プリンターのアドレスを入力します。シリアル番号やモデルを聞かれたら、表示されているものを使ってください。',
+      accessCode: 'アクセスコードには、プリンター自体のコードではなく、下のあなたの個人用コードを入力します。',
+    },
+    printers: '送信できる仮想プリンター',
+    noPrinters: '送信できる仮想プリンターがありません。管理者に問い合わせてください。',
+    notRunning: '停止中',
+    field: {
+      address: 'アドレス',
+      serial: 'シリアル番号',
+      model: 'モデル',
+    },
+    destination: {
+      library: '送信したファイルはファイル管理に保存されます。',
+      review: '送信したファイルは保存前に確認待ちになります。',
+      queuePrinter: '送信したファイルは {{printer}} のキューに入ります。',
+      queueModel: '送信したファイルは最初に空いた {{model}} のキューに入ります。',
+    },
+    liveStatus: 'スライサーに {{printer}} のライブ状態が表示されます。',
+    noLiveStatus: 'スライサーにプリンターのライブ状態は表示されません。',
+    instructions: {
+      description: 'サインインしたユーザーは誰でも、設定へのアクセスなしに、このページで自分のアクセスコード、送信できる仮想プリンター、CA 証明書を確認できます。リンクを送ってください。',
+      label: 'ユーザー向けの説明',
+      placeholder: '例: 先に VPN に接続してください。',
+      markdownHint: 'Markdown。ページの上部に表示されます。',
+      openPage: 'ページを開く',
+      saved: '説明を保存しました',
+      saveFailed: '説明を保存できませんでした',
+    },
+  },
   slicerAccessCode: {
     title: 'スライサー用アクセスコード',
     description: '仮想プリンター自体のアクセスコードの代わりに、このコードを Bambu Studio または OrcaSlicer に入力してください。仮想プリンターに送ったものはあなたのものになります。',

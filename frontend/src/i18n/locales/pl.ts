@@ -1208,6 +1208,8 @@ export default {
       project: 'Projekt: {{name}}',
       runsBadge: 'Wydruki: {{count}}',
       runsBadgeTitle: 'Wydruki łącznie: {{count}} — udane: {{successful}}, nieudane: {{failed}}. Kliknij, aby zobaczyć pełny dziennik wydruków.',
+      // The card's figures for an archive printed more than once (#3609).
+      totalOfRuns: 'Suma wydruków: {{count}}',
       estimated: 'Szacowany: {{time}}',
       actual: 'Rzeczywisty: {{time}}',
       accuracy: 'Dokładność: {{percent}}%',

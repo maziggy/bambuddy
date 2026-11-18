@@ -1201,6 +1201,8 @@ export default {
       project: 'Progetto: {{name}}',
       runsBadge: '{{count}} stampe',
       runsBadgeTitle: '{{count}} stampe in totale — {{successful}} riuscite, {{failed}} fallite. Fai clic per vedere il registro completo.',
+      // The card's figures for an archive printed more than once (#3609).
+      totalOfRuns: 'Totale di {{count}} stampe',
       estimated: 'Stimato: {{time}}',
       actual: 'Reale: {{time}}',
       accuracy: 'Accuratezza: {{percent}}%',

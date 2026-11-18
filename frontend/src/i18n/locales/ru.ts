@@ -1156,6 +1156,8 @@ export default {
       project: "Проект: {{name}}",
       runsBadge: "Печатей: {{count}}",
       runsBadgeTitle: "Всего печатей: {{count}}, успешных: {{successful}}, неудачных: {{failed}}. Нажмите, чтобы открыть полный журнал.",
+      // The card's figures for an archive printed more than once (#3609).
+      totalOfRuns: "Всего за печати: {{count}}",
       estimated: "Расчётное время: {{time}}",
       actual: "Фактическое время: {{time}}",
       accuracy: "Точность оценки: {{percent}}%",

@@ -316,6 +316,18 @@ function ArchiveCard({
     if (!saved || !Array.isArray(saved.mapping) || saved.printer_id == null) return undefined;
     return printerMap.get(saved.printer_id);
   }, [archive.extra_data, printerMap]);
+  // With more than one print, the card shows what all of them used and cost
+  // (#3609); the Print Log behind the runs badge has each one.
+  const totals =
+    archive.run_count > 1
+      ? {
+          grams: archive.total_filament_actual_grams ?? null,
+          cost: archive.total_cost ?? null,
+          energyKwh: archive.total_energy_kwh ?? null,
+          energyCost: archive.total_energy_cost ?? null,
+          wearCost: archive.total_wear_cost ?? null,
+        }
+      : null;
   const [showReprint, setShowReprint] = useState(false);
   // Post-print outcome confirmation dialog (#1898)
   const [showConfirmOutcome, setShowConfirmOutcome] = useState(false);
@@ -1303,6 +1315,59 @@ function ArchiveCard({
               )}
             </div>
           )}
+          {/* More than one print (a reprint, or each plate of a multi-plate
+              file): the totals of all of them, as Statistics adds them up.
+              The archive's own figures are the file's filament and the first
+              print's energy, which side by side matched nothing (#3609). */}
+          {totals ? (
+            <>
+              {totals.grams != null && (
+                <div
+                  className="flex items-center gap-1.5 text-bambu-gray"
+                  title={t('archives.card.totalOfRuns', { count: archive.run_count })}
+                  data-testid="archive-grams"
+                >
+                  <Package className="w-3 h-3" />
+                  {totals.grams.toFixed(1)}g
+                </div>
+              )}
+              {(totals.cost != null || totals.energyCost != null || totals.wearCost != null) && (
+                <div className="flex items-center gap-3 text-bambu-gray">
+                  {totals.cost != null && (
+                    <div
+                      className="flex items-center gap-1.5"
+                      title={t('archives.card.totalOfRuns', { count: archive.run_count })}
+                      data-testid="archive-cost"
+                    >
+                      <Coins className="w-3 h-3" />
+                      {archive.status === 'printing' && '~'}
+                      {currency}{totals.cost.toFixed(2)}
+                    </div>
+                  )}
+                  {totals.energyCost != null && (
+                    <div
+                      className="flex items-center gap-1.5"
+                      title={`${t('archives.card.totalOfRuns', { count: archive.run_count })}\n${t('stats.energyUsed')}: ${totals.energyKwh?.toFixed(3) || 'N/A'} kWh`}
+                      data-testid="archive-energy-cost"
+                    >
+                      <Zap className="w-3 h-3" />
+                      {currency}{totals.energyCost.toFixed(2)}
+                    </div>
+                  )}
+                  {totals.wearCost != null && (
+                    <div
+                      className="flex items-center gap-1.5"
+                      title={`${t('archives.card.totalOfRuns', { count: archive.run_count })}\n${t('archives.card.wearCost')}`}
+                    >
+                      <Wrench className="w-3 h-3" />
+                      {currency}{totals.wearCost.toFixed(2)}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          ) : (
+            <>
           {archive.filament_used_grams && (
             <div
               className="flex items-center gap-1.5 text-bambu-gray"
@@ -1336,7 +1401,11 @@ function ArchiveCard({
                 </div>
               )}
                 {archive.energy_cost != null && (
-                  <div className="flex items-center gap-1.5" title={`${t('stats.energyUsed')}: ${archive.energy_kwh?.toFixed(3) || 'N/A'} kWh`}>
+                  <div
+                    className="flex items-center gap-1.5"
+                    title={`${t('stats.energyUsed')}: ${archive.energy_kwh?.toFixed(3) || 'N/A'} kWh`}
+                    data-testid="archive-energy-cost"
+                  >
                     <Zap className="w-3 h-3" />
                     {currency}{archive.energy_cost.toFixed(2)}
                   </div>
@@ -1348,6 +1417,8 @@ function ArchiveCard({
                   </div>
                 )}
             </div>
+          )}
+            </>
           )}
           {(archive.layer_height || archive.total_layers) && (
             <div className="flex items-center gap-1.5 text-bambu-gray">

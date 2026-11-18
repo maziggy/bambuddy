@@ -1206,6 +1206,8 @@ export default {
       project: 'Project: {{name}}',
       runsBadge: '{{count}} afdrukken',
       runsBadgeTitle: '{{count}} afdrukken totaal — {{successful}} geslaagd, {{failed}} mislukt. Klik om het volledige afdruklogboek te bekijken.',
+      // The card's figures for an archive printed more than once (#3609).
+      totalOfRuns: 'Totaal van {{count}} prints',
       estimated: 'Geschat: {{time}}',
       actual: 'Werkelijk: {{time}}',
       accuracy: 'Nauwkeurigheid: {{percent}}%',

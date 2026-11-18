@@ -1201,6 +1201,8 @@ export default {
       project: 'Projeto: {{name}}',
       runsBadge: '{{count}} impressões',
       runsBadgeTitle: '{{count}} impressões no total — {{successful}} bem-sucedidas, {{failed}} com falha. Clique para ver o histórico completo.',
+      // The card's figures for an archive printed more than once (#3609).
+      totalOfRuns: 'Total de {{count}} impressões',
       estimated: 'Estimado: {{time}}',
       actual: 'Real: {{time}}',
       accuracy: 'Precisão: {{percent}}%',

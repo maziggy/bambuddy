@@ -1201,6 +1201,8 @@ export default {
       project: 'Proje: {{name}}',
       runsBadge: '{{count}} baskı',
       runsBadgeTitle: 'Toplam {{count}} baskı — {{successful}} başarılı, {{failed}} başarısız. Tam baskı günlüğünü görmek için tıklayın.',
+      // The card's figures for an archive printed more than once (#3609).
+      totalOfRuns: '{{count}} baskının toplamı',
       estimated: 'Tahmini: {{time}}',
       actual: 'Gerçek: {{time}}',
       accuracy: 'Doğruluk: %{{percent}}',

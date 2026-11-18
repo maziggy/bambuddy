@@ -76,6 +76,8 @@ export function matchCatalogColors(
           hex: c.hex_color.replace('#', '').substring(0, 6),
           manufacturer: c.manufacturer,
           material: typeof c.material === 'string' ? c.material : undefined,
+          extra_colors: c.extra_colors ?? null,
+          effect_type: c.effect_type ?? null,
         }));
       }
     }

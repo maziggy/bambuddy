@@ -117,11 +117,14 @@ describe('matchCatalogColors (today)', () => {
       expect(names(matchCatalogColors(withPlus, 'Bambu Lab', 'PLA', 'Silk+'))).toEqual(['Silk Plus Gold']);
     });
 
-    it('does not carry extra_colors and effect_type (current behaviour, fixed next)', () => {
+    it('carries extra_colors and effect_type like the other branches', () => {
       const r = matchCatalogColors(plus, 'Bambu Lab', 'PLA', 'Silk+');
       const blue = r.find(c => c.name === 'Silk Blue')!;
-      expect(blue.extra_colors).toBeUndefined();
-      expect(blue.effect_type).toBeUndefined();
+      expect(blue.extra_colors).toBe('aabbcc,ddeeff');
+      expect(blue.effect_type).toBe('sparkle');
+      const red = r.find(c => c.name === 'Silk Red')!;
+      expect(red.extra_colors).toBeNull();
+      expect(red.effect_type).toBeNull();
     });
   });
 

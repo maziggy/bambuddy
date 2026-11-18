@@ -5603,7 +5603,7 @@ export function SettingsPage() {
                     {t('settings.keepBedWarm', 'Keep bed warm between prints')}
                   </p>
                   <p className="text-xs text-bambu-gray mt-0.5">
-                    {t('settings.keepBedWarmDesc', 'While awaiting plate-clear, hold the bed at the keep-warm temperature below so the chamber stays hot — or at the next print\'s own bed temperature when that is higher. Only applies when the next print needs chamber heating (ASA, ABS, PA, PC etc.). Requires plate-clear confirmation to be enabled.')}
+                    {t('settings.keepBedWarmDesc', 'While awaiting plate-clear, hold the bed at the keep-warm temperature below so the chamber stays hot — or at the next print\'s own bed temperature when that is higher. Only applies when the next print needs chamber heating (ASA, ABS, PA, PC etc.). Applies to printers that wait for plate-clear confirmation, from the setting or the printer\'s own value.')}
                   </p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
@@ -5612,7 +5612,7 @@ export function SettingsPage() {
                     checked={localSettings.queue_keep_bed_warm ?? false}
                     onChange={(e) => updateSetting('queue_keep_bed_warm', e.target.checked)}
                     className="sr-only peer"
-                    disabled={!(localSettings.preheat_enabled ?? false) || !(localSettings.require_plate_clear ?? false)}
+                    disabled={!(localSettings.preheat_enabled ?? false)}
                   />
                   <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
                 </label>
@@ -5646,7 +5646,7 @@ export function SettingsPage() {
                     onChange={(v) => updateSetting('queue_keep_warm_max_minutes', v)}
                     fallback={120}
                     className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green disabled:opacity-50"
-                    disabled={!(localSettings.queue_keep_bed_warm ?? false) || !(localSettings.preheat_enabled ?? false) || !(localSettings.require_plate_clear ?? false)}
+                    disabled={!(localSettings.queue_keep_bed_warm ?? false) || !(localSettings.preheat_enabled ?? false)}
                   />
                   <p className="text-xs text-bambu-gray mt-1">
                     {t('settings.keepWarmMaxMinutesHelp', 'If the plate is not cleared within this time, the heaters are switched off rather than held indefinitely.')}

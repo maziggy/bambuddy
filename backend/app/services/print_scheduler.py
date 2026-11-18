@@ -46,6 +46,7 @@ from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 from backend.app.services import (
     drying_preflight,
     kprofile_drift,
+    plate_clear,
     print_dispatch_context,
     slicer_ams_pick,
     stock_forecast,
@@ -121,6 +122,15 @@ from backend.app.utils.tray_ids import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _plate_clear_holds(printer_id: int, require_plate_clear: bool) -> bool:
+    """Whether the plate-clear gate holds this printer's queue right now.
+
+    ``require_plate_clear`` is the app setting; the printer's own setting
+    overrides it (#2860).
+    """
+    return plate_clear.applies(printer_id, require_plate_clear) and printer_manager.is_awaiting_plate_clear(printer_id)
 
 
 def _ams_slot_label(ams_id: int, tray_id: int, layout: TrayLayout | None = None) -> str:
@@ -3666,7 +3676,7 @@ class PrintScheduler:
                     # sibling instead of spending this pass — and every pass —
                     # on the same printer.
                     continue
-                if require_plate_clear and printer_manager.is_awaiting_plate_clear(printer.id):
+                if _plate_clear_holds(printer.id, require_plate_clear):
                     # Waking this one buys nothing: it would boot into IDLE and
                     # then be held by the plate-clear gate, which is exactly
                     # what the reporter's log shows happening for 80 minutes
@@ -6016,8 +6026,15 @@ class PrintScheduler:
 
         return True
 
-    def _is_printer_idle(self, printer_id: int, require_plate_clear: bool = True) -> bool:
-        """Check if a printer is connected and idle."""
+    def _is_printer_idle(
+        self, printer_id: int, require_plate_clear: bool = True, *, ignore_plate_clear: bool = False
+    ) -> bool:
+        """Check if a printer is connected and idle.
+
+        ``require_plate_clear`` is the app setting, which a printer may override
+        (#2860). ``ignore_plate_clear`` leaves the gate out whatever either says,
+        for work that is not a print, such as drying.
+        """
         if not printer_manager.is_connected(printer_id):
             logger.debug("Printer %d: not connected", printer_id)
             return False
@@ -6032,7 +6049,7 @@ class PrintScheduler:
         # job — even if the printer currently reports IDLE. After Auto Off cycles the
         # printer, it boots back into IDLE with no memory of the previous finish; without
         # the persisted awaiting flag we'd bypass the confirmation prompt (#961).
-        if require_plate_clear and printer_manager.is_awaiting_plate_clear(printer_id):
+        if not ignore_plate_clear and _plate_clear_holds(printer_id, require_plate_clear):
             logger.debug(
                 "Printer %d: not idle — awaiting plate-clear acknowledgment (state=%s)",
                 printer_id,
@@ -6071,7 +6088,7 @@ class PrintScheduler:
         itself — somebody has to walk over to the printer — so it is worded as
         itself and allowed to notify.
         """
-        if require_plate_clear and printer_manager.is_awaiting_plate_clear(printer_id):
+        if _plate_clear_holds(printer_id, require_plate_clear):
             return f"Waiting for plate confirmation: {printer_name}"
         return f"Busy: {printer_name}"
 
@@ -7021,7 +7038,7 @@ class PrintScheduler:
             # because the printer is free and nobody is waiting on it. Leaving
             # the plate unacknowledged is also how people hold the queue by
             # hand, and that hold should not cost them their drying.
-            if not mid_print and not self._is_printer_idle(pid, require_plate_clear=False):
+            if not mid_print and not self._is_printer_idle(pid, ignore_plate_clear=True):
                 logger.debug("Auto-drying: printer %d skipped — not idle", pid)
                 continue
 
@@ -7653,7 +7670,7 @@ class PrintScheduler:
             ) or row.printer_id in running_printer_ids:
                 row.waiting_reason = "already_drying"
                 continue
-            if not self._is_printer_idle(row.printer_id, require_plate_clear=False):
+            if not self._is_printer_idle(row.printer_id, ignore_plate_clear=True):
                 row.waiting_reason = "printer_busy"
                 continue
 
@@ -7750,7 +7767,7 @@ class PrintScheduler:
             # waits for the printer to be idle. Parked on an idle printer is a
             # refusal, not something a retry fixes. The timer itself is left on
             # the printer: it may yet start once power frees up.
-            if not self._is_printer_idle(row.printer_id, require_plate_clear=False):
+            if not self._is_printer_idle(row.printer_id, ignore_plate_clear=True):
                 logger.info(
                     "Scheduled drying %d: AMS %d countdown is not running during a print; re-queued",
                     row.id,
@@ -7776,7 +7793,7 @@ class PrintScheduler:
         if elapsed >= row.duration_hours * 3600 * self.SCHEDULED_DRYING_COMPLETE_FRACTION:
             row.status = "completed"
             row.completed_at = now
-        elif not self._is_printer_idle(row.printer_id, require_plate_clear=False):
+        elif not self._is_printer_idle(row.printer_id, ignore_plate_clear=True):
             row.status = "pending"
             row.started_at = None
             row.waiting_reason = "interrupted"
@@ -8105,11 +8122,17 @@ class PrintScheduler:
         dispatch_set = set(dispatch_ids)
         dispatched_printers = {it.printer_id for it in items if it.id in dispatch_set and it.printer_id}
         pending_printer_ids = {it.printer_id for it in items if it.printer_id}
-        warm_candidates = (pending_printer_ids & busy_printers) - dispatched_printers
+        # Only a printer the plate-clear gate applies to waits for its plate to
+        # be cleared; the others go straight on to the next job (#2860).
+        warm_candidates = {
+            pid
+            for pid in (pending_printer_ids & busy_printers) - dispatched_printers
+            if plate_clear.applies(pid, require_plate_clear)
+        }
 
         keep_warm_enabled = await self._get_bool_setting(db, "queue_keep_bed_warm", default=False)
         preheat_on = await self._get_bool_setting(db, "preheat_enabled", default=False)
-        gate_open = keep_warm_enabled and require_plate_clear and preheat_on
+        gate_open = keep_warm_enabled and preheat_on and bool(warm_candidates)
 
         # Release sweep first — must run even when gate_open is False so a
         # printer owned by keep-warm when a gate toggles off gets released.

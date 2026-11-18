@@ -6064,6 +6064,10 @@ async def _run_migrations(conn):
     # Nullable: no printer has one until the order setting is "priority" and one is set.
     await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN dispatch_priority INTEGER")
 
+    # Migration: a printer's own "Require plate-clear confirmation" (#2860).
+    # Nullable: null follows the app setting, which every printer did before.
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN require_plate_clear BOOLEAN")
+
     # Migration: when each spool was last dried, at what temperature and for
     # how long (#2863). Nullable: no spool has a drying record until one ends.
     datetime_type = "DATETIME" if is_sqlite() else "TIMESTAMP"

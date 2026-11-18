@@ -8813,6 +8813,8 @@ function EditPrinterModal({
     is_active: printer.is_active,
     wear_cost_per_hour: printer.wear_cost_per_hour ? String(printer.wear_cost_per_hour) : '',
     dispatch_priority: printer.dispatch_priority != null ? String(printer.dispatch_priority) : '',
+    // '' follows the app setting (#2860)
+    require_plate_clear: printer.require_plate_clear == null ? '' : printer.require_plate_clear ? 'on' : 'off',
   });
   const { data: settings } = useUiSettings();
   const currency = getCurrencySymbol(settings?.currency || 'USD');
@@ -8873,6 +8875,8 @@ function EditPrinterModal({
       wear_cost_per_hour: Number(form.wear_cost_per_hour) > 0 ? Number(form.wear_cost_per_hour) : null,
       // Empty clears it; 0 is a real place (first) (#2915)
       dispatch_priority: form.dispatch_priority.trim() === '' ? null : Math.max(0, Math.round(Number(form.dispatch_priority)) || 0),
+      // null follows the app setting (#2860)
+      require_plate_clear: form.require_plate_clear === '' ? null : form.require_plate_clear === 'on',
     };
     // Only include access_code if it was changed
     if (form.access_code) {
@@ -9056,6 +9060,26 @@ function EditPrinterModal({
                 placeholder="-"
               />
               <p className="text-xs text-bambu-gray mt-1">{t('printers.modal.dispatchPriorityHelp')}</p>
+            </div>
+            <div>
+              <label htmlFor="edit_require_plate_clear" className="block text-sm text-bambu-gray mb-1">
+                {t('printers.modal.requirePlateClearLabel')}
+              </label>
+              <select
+                id="edit_require_plate_clear"
+                className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                value={form.require_plate_clear}
+                onChange={(e) => setForm({ ...form, require_plate_clear: e.target.value })}
+              >
+                <option value="">
+                  {t('printers.modal.requirePlateClearDefault', {
+                    value: settings?.require_plate_clear ? t('common.on') : t('common.off'),
+                  })}
+                </option>
+                <option value="on">{t('common.on')}</option>
+                <option value="off">{t('common.off')}</option>
+              </select>
+              <p className="text-xs text-bambu-gray mt-1">{t('printers.modal.requirePlateClearHelp')}</p>
             </div>
             {/* Maintenance Mode toggle (#1476) — checkbox is the inverse of
                 is_active because the user-facing concept is "is this printer
@@ -10419,7 +10443,7 @@ export function PrintersPage() {
                       bedTempPresets={effectiveBedTempPresets}
                       chamberTempPresets={effectiveChamberTempPresets}
                       fanSpeedPresets={effectiveFanSpeedPresets}
-                      requirePlateClear={settings?.require_plate_clear === true}
+                      requirePlateClear={printer.require_plate_clear ?? settings?.require_plate_clear === true}
                       selectionMode={selectionMode}
                       isSelected={selectedPrinterIds.has(printer.id)}
                       onToggleSelect={toggleSelect}
@@ -10472,7 +10496,7 @@ export function PrintersPage() {
               bedTempPresets={effectiveBedTempPresets}
               chamberTempPresets={effectiveChamberTempPresets}
               fanSpeedPresets={effectiveFanSpeedPresets}
-              requirePlateClear={settings?.require_plate_clear === true}
+              requirePlateClear={printer.require_plate_clear ?? settings?.require_plate_clear === true}
               selectionMode={selectionMode}
               isSelected={selectedPrinterIds.has(printer.id)}
               onToggleSelect={toggleSelect}

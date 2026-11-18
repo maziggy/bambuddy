@@ -491,6 +491,7 @@ export interface Printer {
   plate_detection_roi?: PlateDetectionROI;  // ROI for plate detection
   wear_cost_per_hour: number | null;  // Wear cost per printing hour (#694)
   dispatch_priority: number | null;  // Place in the pick order of any-model jobs, lowest first (#2915)
+  require_plate_clear: boolean | null;  // Own "Require plate-clear confirmation", null follows the app setting (#2860)
   wled_config: WLEDConfig | null;
   created_at: string;
   updated_at: string;
@@ -853,6 +854,7 @@ export interface PrinterCreate {
   plate_detection_roi?: PlateDetectionROI;
   wear_cost_per_hour?: number | null;
   dispatch_priority?: number | null;
+  require_plate_clear?: boolean | null;
   wled_config?: WLEDConfig | null;
 }
 

@@ -588,10 +588,18 @@ class PrinterManager:
             return
 
         try:
+            from backend.app.api.routes.settings import get_setting, setting_is_true
             from backend.app.core.database import async_session
+            from backend.app.services import plate_clear
             from backend.app.services.notification_service import notification_service
 
             async with async_session() as db:
+                # The flag goes up after every print, but it only holds the
+                # queue where the gate applies: the app setting, or the
+                # printer's own (#2860). Elsewhere nobody has to clear anything.
+                setting = setting_is_true(await get_setting(db, "require_plate_clear"))
+                if not plate_clear.applies(printer_id, setting):
+                    return
                 await notification_service.on_plate_clear_required(printer_id, printer.name, db)
         except Exception as e:
             logger.warning("Failed to send plate-clear notification for printer %d: %s", printer_id, e)
@@ -666,14 +674,23 @@ class PrinterManager:
             logger.warning("Failed to persist awaiting_plate_clear for printer %d: %s", printer_id, e)
 
     async def load_awaiting_plate_clear_from_db(self):
-        """Rehydrate the awaiting-plate-clear set from the printers table on startup."""
+        """Rehydrate the awaiting-plate-clear set from the printers table on startup.
+
+        Also loads each printer's own "Require plate-clear confirmation" (#2860),
+        which decides whether that flag holds its queue.
+        """
         from backend.app.core.database import async_session
+        from backend.app.services import plate_clear
 
         try:
             async with async_session() as db:
                 result = await db.execute(select(Printer.id).where(Printer.awaiting_plate_clear.is_(True)))
                 ids = {row[0] for row in result.all()}
                 self._awaiting_plate_clear = ids
+                result = await db.execute(
+                    select(Printer.id, Printer.require_plate_clear).where(Printer.require_plate_clear.is_not(None))
+                )
+                plate_clear.load_overrides(dict(result.tuples().all()))
                 if ids:
                     logger.info("Loaded %d printer(s) awaiting plate-clear acknowledgment: %s", len(ids), sorted(ids))
         except Exception as e:

@@ -185,6 +185,8 @@ class PrinterUpdate(IgnoresNullForRequiredColumns):
     # Place in the pick order of "Any model" jobs when the order setting is "priority"
     # (#2915); lowest first, null last.
     dispatch_priority: int | None = Field(default=None, ge=0, le=100000)
+    # Overrides the app setting require_plate_clear (#2860); null follows it.
+    require_plate_clear: bool | None = None
     external_camera_url: str | None = None
     external_camera_type: str | None = None
     external_camera_enabled: bool | None = None
@@ -209,6 +211,7 @@ class PrinterResponse(PrinterBase):
     print_hours_offset: float = 0.0
     wear_cost_per_hour: float | None = None  # #694
     dispatch_priority: int | None = None  # #2915
+    require_plate_clear: bool | None = None  # #2860, null follows the app setting
     external_camera_url: str | None = None
     external_camera_type: str | None = None
     external_camera_enabled: bool = False

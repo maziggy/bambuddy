@@ -38,6 +38,7 @@ def _item(**overrides):
     item = MagicMock()
     item.id = 495
     item.printer_id = 4
+    item.created_by_id = None  # no creator: unrestricted filament scope (#3522)
     item.archive_id = 460
     item.library_file_id = None
     item.plate_id = None

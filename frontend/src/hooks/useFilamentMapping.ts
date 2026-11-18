@@ -15,7 +15,8 @@ import {
   rackExternalLabel,
 } from '../utils/amsHelpers';
 import { externalSlotIndex, trayLayoutOf } from '../utils/trayIds';
-import type { PrinterStatus, SlotSpoolIdentity } from '../api/client';
+import { markBlocked } from '../utils/filamentScope';
+import type { FilamentPolicy, PrinterStatus, SlotSpoolIdentity } from '../api/client';
 
 /** Global-tray-id → the identity of the spool Bambuddy has bound to that slot. */
 export type SlotSpoolIdentities = Map<number, SlotSpoolIdentity>;
@@ -46,10 +47,14 @@ function spoolDisplayName(identity: SlotSpoolIdentity | undefined): string | nul
  * `slotSpools` is optional and display-only: it renames slots after their
  * bound spool without touching `type`, `color` or `trayInfoIdx`, so matching
  * and the dispatcher keep drawing on the printer's own telemetry.
+ *
+ * `policies` are the signed-in user's filament rules (#3522): trays they don't
+ * allow come back with `blocked` set.
  */
 export function buildLoadedFilaments(
   printerStatus: PrinterStatus | undefined,
   slotSpools?: SlotSpoolIdentities,
+  policies?: FilamentPolicy[] | null,
 ): LoadedFilament[] {
   const filaments: LoadedFilament[] = [];
   const amsExtruderMap = printerStatus?.ams_extruder_map;
@@ -131,7 +136,7 @@ export function buildLoadedFilaments(
     }
   }
 
-  return filaments;
+  return markBlocked(filaments, policies);
 }
 
 /**
@@ -148,6 +153,7 @@ export function buildLoadedFilaments(
  *
  * @param filamentReqs - Required filaments from the 3MF file
  * @param printerStatus - Current printer status with AMS information
+ * @param policies - The signed-in user's filament rules (#3522); blocked trays are never picked
  * @returns AMS mapping array or undefined if no mapping needed
  */
 export function computeAmsMapping(
@@ -155,8 +161,9 @@ export function computeAmsMapping(
   printerStatus: PrinterStatus | undefined,
   preferLowest?: boolean,
   inventoryByTrayId?: Map<number, number>,
+  policies?: FilamentPolicy[] | null,
 ): number[] | undefined {
-  const loadedFilaments = buildLoadedFilaments(printerStatus);
+  const loadedFilaments = buildLoadedFilaments(printerStatus, undefined, policies);
   if (loadedFilaments.length === 0) return undefined;
 
   // FTS routes any AMS slot to any extruder, so per-nozzle slot restriction
@@ -205,6 +212,8 @@ export interface LoadedFilament {
   /** The bound spool's subtype ("PLA Silk", "Multicolor"), which decides
    *  whether the swatch renders its stops as a conic sweep. */
   spoolSubtype?: string;
+  /** The signed-in user's groups may not use this filament (#3522): never auto-picked, greyed out in the picker */
+  blocked?: boolean;
 }
 
 /**
@@ -269,10 +278,11 @@ interface UseFilamentMappingResult {
 export function useLoadedFilaments(
   printerStatus: PrinterStatus | undefined,
   slotSpools?: SlotSpoolIdentities,
+  policies?: FilamentPolicy[] | null,
 ): LoadedFilament[] {
   return useMemo(() => {
-    return buildLoadedFilaments(printerStatus, slotSpools);
-  }, [printerStatus, slotSpools]);
+    return buildLoadedFilaments(printerStatus, slotSpools, policies);
+  }, [printerStatus, slotSpools, policies]);
 }
 
 /**
@@ -357,8 +367,10 @@ export function buildFilamentComparison(
     // IMPORTANT: Exclude trays that are already assigned (manually or auto)
     const reqTrayInfoIdx = req.tray_info_idx || '';
 
-    // Get available trays (not already used)
-    let available = loadedFilaments.filter((f) => !usedTrayIds.has(f.globalTrayId));
+    // Get available trays (not already used). A tray the user's groups block is
+    // never auto-picked (#3522); a manual pick of one is kept above as theirs,
+    // and the scheduler re-picks it at dispatch.
+    let available = loadedFilaments.filter((f) => !usedTrayIds.has(f.globalTrayId) && !f.blocked);
 
     // Nozzle-aware filtering: restrict to trays on the correct nozzle.
     // This is a hard filter — cross-nozzle assignment causes print failures.
@@ -519,8 +531,10 @@ export function useFilamentMapping(
   preferLowest?: boolean,
   inventoryByTrayId?: Map<number, number>,
   slotSpools?: SlotSpoolIdentities,
+  /** The signed-in user's filament rules (#3522), from `useFilamentPolicies` */
+  policies?: FilamentPolicy[] | null,
 ): UseFilamentMappingResult {
-  const loadedFilaments = useLoadedFilaments(printerStatus, slotSpools);
+  const loadedFilaments = useLoadedFilaments(printerStatus, slotSpools, policies);
 
   // FTS routes any AMS slot to any extruder, so per-nozzle slot restriction
   // doesn't apply when it's installed (#1162).

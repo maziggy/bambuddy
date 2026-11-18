@@ -156,6 +156,7 @@ describe('mapping row on a narrow screen', () => {
     render(
       <FilamentMapping
         printerId={1}
+        blockedFilaments={[]}
         filamentReqs={{
           filaments: [{ slot_id: 1, type: 'PLA', color: '#DE4343', used_grams: 297.6, used_meters: 90, ...filament }],
         }}
@@ -242,5 +243,58 @@ describe('custom slot mapping of one of several printers, on a narrow screen', (
     for (const select of selects) {
       expectStackedBelowSm(rowOf(select), '16px_minmax(70px,1fr)_auto_2fr_16px');
     }
+  });
+});
+
+describe('custom slot mapping of one of several printers, with filament rules (#3522)', () => {
+  afterEach(() => cleanup());
+
+  it('lists a tray the group may not use as disabled', async () => {
+    const printer = (id: number) => ({ id, name: `H2C-${id}`, model: 'H2C', ip_address: `192.0.2.${id}`, is_active: true }) as unknown as Printer;
+    const tray = (globalTrayId: number, trayInfoIdx: string, blocked?: boolean) => ({
+      globalTrayId,
+      type: 'PETG',
+      color: '#FFFFFF',
+      colorName: 'White',
+      amsId: 0,
+      trayId: globalTrayId,
+      isHt: false,
+      isExternal: false,
+      label: `AMS1-T${globalTrayId + 1}`,
+      trayInfoIdx,
+      remain: -1,
+      ...(blocked ? { blocked } : {}),
+    });
+    const result = (id: number): PrinterMappingResult => ({
+      printerId: id,
+      printerName: `H2C-${id}`,
+      status: undefined,
+      isLoading: false,
+      loadedFilaments: [tray(0, 'GFG03', true), tray(1, 'GFG99')],
+      autoMapping: undefined,
+      finalMapping: undefined,
+      matchStatus: 'missing',
+      exactMatches: 0,
+      typeOnlyMatches: 0,
+      missingTypes: 1,
+      totalSlots: 1,
+      config: { useDefault: false, manualMappings: {}, autoConfigured: false },
+    });
+    render(
+      <PrinterSelector
+        printers={[printer(1), printer(2)]}
+        selectedPrinterIds={[1, 2]}
+        onMultiSelect={() => {}}
+        allowMultiple
+        printerMappingResults={[result(1), result(2)]}
+        filamentReqs={{ filaments: [{ slot_id: 1, type: 'PETG', color: '#FFFFFF', used_grams: 25, used_meters: 8.5 }] }}
+        onAutoConfigurePrinter={() => {}}
+        onUpdatePrinterConfig={() => {}}
+      />,
+    );
+    const [select] = await screen.findAllByRole('combobox');
+    const options = Array.from(select.querySelectorAll('option'));
+    expect(options.find((o) => o.value === '0')).toBeDisabled();
+    expect(options.find((o) => o.value === '1')).not.toBeDisabled();
   });
 });

@@ -22,6 +22,7 @@ from backend.app.core.auth import (
     verify_password,
 )
 from backend.app.core.database import get_db
+from backend.app.core.filament_scope import filament_policies_for, resolve_user_filament_scope
 from backend.app.core.permissions import Permission
 from backend.app.core.websocket import ws_manager
 from backend.app.models.api_key import APIKey
@@ -74,6 +75,7 @@ def _user_to_response(user: User) -> UserResponse:
         auth_source=getattr(user, "auth_source", "local"),
         groups=[GroupBrief(id=g.id, name=g.name) for g in user.groups],
         permissions=sorted(user.get_permissions()),
+        filament_policies=filament_policies_for(user),
         created_at=user.created_at.isoformat(),
     )
 
@@ -662,6 +664,19 @@ async def delete_user(
                     PrintQueueItem.printer_id.is_(None),
                     PrintQueueItem.status == "pending",
                 )
+                .values(manual_start=True)
+            )
+        # Likewise for filaments (#3522), and for every pending job, pinned
+        # ones too: an ownerless job may print with any filament, so one held
+        # by this user's rules, or due to be, would otherwise go out on the
+        # next pass with the filament it was held from. Read off the user's
+        # groups, as the printer check above: a deactivated user's jobs are
+        # held because they are deactivated, not by a filament rule, and
+        # that hold is not this one's to keep.
+        if not resolve_user_filament_scope(user).is_unrestricted:
+            await db.execute(
+                update(PrintQueueItem)
+                .where(PrintQueueItem.created_by_id == user_id, PrintQueueItem.status == "pending")
                 .values(manual_start=True)
             )
         await db.execute(update(PrintArchive).where(PrintArchive.created_by_id == user_id).values(created_by_id=None))

@@ -48,6 +48,7 @@ function renderMapping() {
   render(
     <FilamentMapping
       printerId={1}
+      blockedFilaments={[]}
       filamentReqs={blueReqs}
       manualMappings={{}}
       onManualMappingChange={() => {}}

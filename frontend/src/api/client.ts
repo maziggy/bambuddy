@@ -4793,6 +4793,21 @@ export interface GroupBrief {
   name: string;
 }
 
+/** One filament rule of a group (#3522): a material type or a slicer filament id */
+export interface FilamentRule {
+  match: 'material' | 'filament_id';
+  value: string;
+}
+
+export type FilamentRuleMode = 'allow' | 'block';
+
+/** One restricted group's filament rules, from /auth/me (#3522) */
+export interface FilamentPolicy {
+  group: string;
+  mode: FilamentRuleMode;
+  rules: FilamentRule[];
+}
+
 export interface Group {
   id: number;
   name: string;
@@ -4804,6 +4819,10 @@ export interface Group {
   printer_ids: number[];
   /** Matched against Printer.location, so printers added there later are included */
   locations: string[];
+  /** Members may only print with filaments these rules allow (#3522) */
+  restrict_filaments: boolean;
+  filament_rule_mode: FilamentRuleMode;
+  filament_rules: FilamentRule[];
   user_count: number;
   created_at: string;
   updated_at: string;
@@ -4820,6 +4839,9 @@ export interface GroupCreate {
   restrict_printers?: boolean;
   printer_ids?: number[];
   locations?: string[];
+  restrict_filaments?: boolean;
+  filament_rule_mode?: FilamentRuleMode;
+  filament_rules?: FilamentRule[];
 }
 
 export interface GroupUpdate {
@@ -4829,6 +4851,9 @@ export interface GroupUpdate {
   restrict_printers?: boolean;
   printer_ids?: number[];
   locations?: string[];
+  restrict_filaments?: boolean;
+  filament_rule_mode?: FilamentRuleMode;
+  filament_rules?: FilamentRule[];
 }
 
 export interface PermissionInfo {
@@ -4880,6 +4905,8 @@ export interface UserResponse {
   auth_source: string;  // "local" or "ldap"
   groups: GroupBrief[];
   permissions: Permission[];  // All permissions from groups
+  /** null: may print with every filament (#3522) */
+  filament_policies?: FilamentPolicy[] | null;
   created_at: string;
 }
 
@@ -6528,6 +6555,8 @@ export const api = {
         used_grams: number;
         used_meters: number;
         used_in_plate?: boolean;
+        /** Slicer filament preset id, e.g. GFG03; '' when the 3MF names none. */
+        tray_info_idx?: string;
       }>;
     }>(`/archives/${archiveId}/filament-requirements${qs.toString() ? `?${qs}` : ''}`);
   },
@@ -8535,6 +8564,8 @@ export const api = {
         used_grams: number;
         used_meters: number;
         used_in_plate?: boolean;
+        /** Slicer filament preset id, e.g. GFG03; '' when the 3MF names none. */
+        tray_info_idx?: string;
       }>;
     }>(`/library/files/${fileId}/filament-requirements${qs.toString() ? `?${qs}` : ''}`);
   },

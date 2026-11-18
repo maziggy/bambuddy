@@ -388,3 +388,46 @@ def mapped_trays_with_slot(mapping_raw: object, local_slot: int) -> dict[int, in
         if slot == local_slot and (ams_id in _REGULAR_WIRE_AMS_IDS or is_ams_ht_id(ams_id)):
             found[tray] = ams_id
     return found
+
+
+def reconcile_use_ams(
+    ams_mapping: Iterable[int | str | None],
+    use_ams: bool,
+    layout: TrayLayout = _NO_LAYOUT,
+    *,
+    plate_uses_only_external: bool = False,
+) -> bool:
+    """The ``use_ams`` a single-nozzle printer is sent for ``ams_mapping``: the mapping decides the feed.
+
+    The MQTT command builder applies this (see ``start_print``), and the
+    scheduler judges a job's filament permissions (#3522) on the same answer,
+    so the two can't drift apart. Two corrections:
+
+    * A real tray (0-253, not an external input) turns the AMS on, even if the
+      job arrived with it off (#2595), unless the caller worked out from the
+      plate's own filament list that it prints only from the spool holder and
+      the real tray belongs to another plate (#3087).
+    * Only explicit external selections turn it off. An unresolved slot (-1)
+      does neither (#2589).
+
+    Entries must read as integers; anything else raises, as it would when sent.
+    """
+    entries = list(ams_mapping)
+    if not entries:
+        return use_ams
+    has_real_tray = any(t is not None and 0 <= int(t) <= 253 and not layout.is_external(int(t)) for t in entries)
+    all_external = all(t is None or int(t) >= 254 or layout.is_external(int(t)) for t in entries)
+    if has_real_tray and not use_ams and not plate_uses_only_external:
+        return True
+    if use_ams and all_external:
+        return False
+    return use_ams
+
+
+def reports_no_ams(raw_data: object) -> bool:
+    """Whether a printer's raw state positively reports no AMS attached (#3356).
+
+    An empty ``ams`` list is that report; a missing key means no AMS push has
+    been handled yet (a reconnect), which says nothing.
+    """
+    return isinstance(raw_data, Mapping) and raw_data.get("ams") == []

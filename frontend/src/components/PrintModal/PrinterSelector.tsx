@@ -188,7 +188,8 @@ function InlineMappingEditor({
             </option>
             {filterFilamentsByNozzle(printerResult.loadedFilaments, req.nozzle_id)
               .map((f) => (
-              <option key={f.globalTrayId} value={f.globalTrayId} className="bg-bambu-dark text-white">
+              // Listed but not selectable: the group may not use it (#3522).
+              <option key={f.globalTrayId} value={f.globalTrayId} disabled={f.blocked} className="bg-bambu-dark text-white">
                 {f.label}: {f.traySubBrands || f.type} ({f.colorName})
               </option>
             ))}

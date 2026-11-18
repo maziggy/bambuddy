@@ -1,0 +1,200 @@
+Error opening input file rtsp://[CREDENTIALS]@[IP]:45169/streaming/live/1.
+Error opening input files: Invalid data found when processing input
+2026-11-17 19:31:13,457 WARNING [backend.app.api.routes.camera] [f21431df] RTSP stream ended for [IP] (stream_id=1-fanout-e88309c2), will reconnect
+2026-11-17 19:31:13,457 INFO [backend.app.api.routes.camera] [f21431df] RTSP reconnecting (3/30) for [IP] (stream_id=1-fanout-e88309c2)
+2026-11-17 19:31:17,614 WARNING [backend.app.api.routes.camera] [f21431df] ffmpeg stderr (stream_id=1-fanout-e88309c2): [rtsp @ 0x56295ce04380] Failed reading RTSP data: End of file
+[in#0 @ 0x56295ce040c0] Error opening input: Invalid data found when processing input
+Error opening input file rtsp://[CREDENTIALS]@[IP]:45169/streaming/live/1.
+Error opening input files: Invalid data found when processing input
+2026-11-17 19:31:17,614 WARNING [backend.app.api.routes.camera] [f21431df] RTSP stream ended for [IP] (stream_id=1-fanout-e88309c2), will reconnect
+2026-11-17 19:31:17,614 INFO [backend.app.api.routes.camera] [f21431df] RTSP reconnecting (4/30) for [IP] (stream_id=1-fanout-e88309c2)
+2026-11-17 19:31:22,573 WARNING [backend.app.api.routes.camera] [f21431df] ffmpeg stderr (stream_id=1-fanout-e88309c2): [rtsp @ 0x5569b40f2380] Failed reading RTSP data: End of file
+[in#0 @ 0x5569b40f20c0] Error opening input: Invalid data found when processing input
+Error opening input file rtsp://[CREDENTIALS]@[IP]:45169/streaming/live/1.
+Error opening input files: Invalid data found when processing input
+2026-11-17 19:31:22,573 WARNING [backend.app.api.routes.camera] [f21431df] RTSP stream ended for [IP] (stream_id=1-fanout-e88309c2), will reconnect
+2026-11-17 19:31:22,573 INFO [backend.app.api.routes.camera] [f21431df] RTSP reconnecting (5/30) for [IP] (stream_id=1-fanout-e88309c2)
+2026-11-17 19:31:24,910 INFO [backend.app.api.routes.camera] [2e4da315] Camera viewer detached from printer-1 (subscribers=0)
+2026-11-17 19:31:24,965 INFO [backend.app.api.routes.camera] [8819256e] Using RTSP protocol for H2C
+2026-11-17 19:31:24,965 INFO [backend.app.api.routes.camera] [8819256e] Camera viewer attached to printer-1 (subscribers=1)
+2026-11-17 19:31:29,235 WARNING [backend.app.api.routes.camera] [f21431df] ffmpeg stderr (stream_id=1-fanout-e88309c2): [rtsp @ 0x55b85bc2c380] Failed reading RTSP data: End of file
+[in#0 @ 0x55b85bc2c0c0] Error opening input: Invalid data found when processing input
+Error opening input file rtsp://[CREDENTIALS]@[IP]:45169/streaming/live/1.
+Error opening input files: Invalid data found when processing input
+2026-11-17 19:31:29,235 WARNING [backend.app.api.routes.camera] [f21431df] RTSP stream ended for [IP] (stream_id=1-fanout-e88309c2), will reconnect
+2026-11-17 19:31:29,235 INFO [backend.app.api.routes.camera] [f21431df] RTSP reconnecting (6/30) for [IP] (stream_id=1-fanout-e88309c2)
+2026-11-17 19:31:37,582 WARNING [backend.app.api.routes.camera] [f21431df] ffmpeg stderr (stream_id=1-fanout-e88309c2): [rtsp @ 0x55bd7bd11380] Failed reading RTSP data: End of file
+[in#0 @ 0x55bd7bd110c0] Error opening input: Invalid data found when processing input
+Error opening input file rtsp://[CREDENTIALS]@[IP]:45169/streaming/live/1.
+Error opening input files: Invalid data found when processing input
+2026-11-17 19:31:37,582 WARNING [backend.app.api.routes.camera] [f21431df] RTSP stream ended for [IP] (stream_id=1-fanout-e88309c2), will reconnect
+2026-11-17 19:31:37,582 INFO [backend.app.api.routes.camera] [f21431df] RTSP reconnecting (7/30) for [IP] (stream_id=1-fanout-e88309c2)
+2026-11-17 19:31:40,978 INFO [backend.app.api.routes.camera] [8819256e] Camera viewer detached from printer-1 (subscribers=0)
+2026-11-17 19:31:41,035 INFO [backend.app.api.routes.camera] [fc899382] Using RTSP protocol for H2C
+2026-11-17 19:31:41,035 INFO [backend.app.api.routes.camera] [fc899382] Camera viewer attached to printer-1 (subscribers=1)
+2026-11-17 19:31:45,934 WARNING [backend.app.api.routes.camera] [f21431df] ffmpeg stderr (stream_id=1-fanout-e88309c2): [rtsp @ 0x564339d25380] Failed reading RTSP data: End of file
+[in#0 @ 0x564339d250c0] Error opening input: Invalid data found when processing input
+Error opening input file rtsp://[CREDENTIALS]@[IP]:45169/streaming/live/1.
+Error opening input files: Invalid data found when processing input
+2026-11-17 19:31:45,934 WARNING [backend.app.api.routes.camera] [f21431df] RTSP stream ended for [IP] (stream_id=1-fanout-e88309c2), will reconnect
+2026-11-17 19:31:45,935 INFO [backend.app.api.routes.camera] [f21431df] RTSP reconnecting (8/30) for [IP] (stream_id=1-fanout-e88309c2)
+2026-11-17 19:31:53,373 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-11-17 19:31:53,379 INFO [backend.app.api.routes.camera] [fc899382] Camera viewer detached from printer-1 (subscribers=0)
+2026-11-17 19:31:54,349 WARNING [backend.app.api.routes.camera] [f21431df] ffmpeg stderr (stream_id=1-fanout-e88309c2): [rtsp @ 0x5633558be380] Failed reading RTSP data: End of file
+[in#0 @ 0x5633558be0c0] Error opening input: Invalid data found when processing input
+Error opening input file rtsp://[CREDENTIALS]@[IP]:45169/streaming/live/1.
+Error opening input files: Invalid data found when processing input
+2026-11-17 19:31:54,349 WARNING [backend.app.api.routes.camera] [f21431df] RTSP stream ended for [IP] (stream_id=1-fanout-e88309c2), will reconnect
+2026-11-17 19:31:54,350 INFO [backend.app.api.routes.camera] [f21431df] RTSP reconnecting (9/30) for [IP] (stream_id=1-fanout-e88309c2)
+2026-11-17 19:31:54,911 INFO [uvicorn.access] [-] [IP]:60453 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-11-17 19:31:55,009 INFO [uvicorn.access] [-] [IP]:60423 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-17 19:31:55,718 INFO [uvicorn.access] [-] [IP]:60457 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-17 19:31:56,071 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-11-17 19:31:56,130 INFO [uvicorn.error] [-] [IP]:60460 - "WebSocket /api/v1/ws?token=[REDACTED]" [accepted]
+2026-11-17 19:31:56,131 INFO [uvicorn.error] [-] connection open
+2026-11-17 19:31:56,328 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-11-17 19:31:56,330 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-11-17 19:31:56,968 INFO [backend.app.api.routes.cloud] [b265e778] get_filament_info called with 4 IDs: ['GFG99', 'GFL99', 'GFB98', 'GFA00']
+2026-11-17 19:31:56,995 INFO [uvicorn.access] [-] [IP]:60423 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-17 19:31:57,155 INFO [backend.app.api.routes.camera] [850c7224] Using RTSP protocol for H2C
+2026-11-17 19:31:57,155 INFO [backend.app.api.routes.camera] [850c7224] Camera viewer attached to printer-1 (subscribers=1)
+2026-11-17 19:32:02,734 WARNING [backend.app.api.routes.camera] [f21431df] ffmpeg stderr (stream_id=1-fanout-e88309c2): [rtsp @ 0x55ea1bcda380] Failed reading RTSP data: End of file
+[in#0 @ 0x55ea1bcda0c0] Error opening input: Invalid data found when processing input
+Error opening input file rtsp://[CREDENTIALS]@[IP]:45169/streaming/live/1.
+Error opening input files: Invalid data found when processing input
+2026-11-17 19:32:02,735 WARNING [backend.app.api.routes.camera] [f21431df] RTSP stream ended for [IP] (stream_id=1-fanout-e88309c2), will reconnect
+2026-11-17 19:32:02,735 INFO [backend.app.api.routes.camera] [f21431df] RTSP reconnecting (10/30) for [IP] (stream_id=1-fanout-e88309c2)
+2026-11-17 19:32:05,361 INFO [backend.app.api.routes.camera] [850c7224] Camera viewer detached from printer-1 (subscribers=0)
+2026-11-17 19:32:05,408 INFO [backend.app.api.routes.camera] [bbba3c5d] Using RTSP protocol for H2C
+2026-11-17 19:32:05,408 INFO [backend.app.api.routes.camera] [bbba3c5d] Camera viewer attached to printer-1 (subscribers=1)
+2026-11-17 19:32:11,116 WARNING [backend.app.api.routes.camera] [f21431df] ffmpeg stderr (stream_id=1-fanout-e88309c2): [rtsp @ 0x55f569a31380] Failed reading RTSP data: End of file
+[in#0 @ 0x55f569a310c0] Error opening input: Invalid data found when processing input
+Error opening input file rtsp://[CREDENTIALS]@[IP]:45169/streaming/live/1.
+Error opening input files: Invalid data found when processing input
+2026-11-17 19:32:11,117 WARNING [backend.app.api.routes.camera] [f21431df] RTSP stream ended for [IP] (stream_id=1-fanout-e88309c2), will reconnect
+2026-11-17 19:32:11,117 INFO [backend.app.api.routes.camera] [f21431df] RTSP reconnecting (11/30) for [IP] (stream_id=1-fanout-e88309c2)
+2026-11-17 19:32:17,424 INFO [backend.app.api.routes.camera] [bbba3c5d] Camera viewer detached from printer-1 (subscribers=0)
+2026-11-17 19:32:17,473 INFO [backend.app.api.routes.camera] [81c09b63] Using RTSP protocol for H2C
+2026-11-17 19:32:17,474 INFO [backend.app.api.routes.camera] [81c09b63] Camera viewer attached to printer-1 (subscribers=1)
+2026-11-17 19:32:19,468 WARNING [backend.app.api.routes.camera] [f21431df] ffmpeg stderr (stream_id=1-fanout-e88309c2): [rtsp @ 0x55a3a1ce3380] Failed reading RTSP data: End of file
+[in#0 @ 0x55a3a1ce30c0] Error opening input: Invalid data found when processing input
+Error opening input file rtsp://[CREDENTIALS]@[IP]:45169/streaming/live/1.
+Error opening input files: Invalid data found when processing input
+2026-11-17 19:32:19,468 WARNING [backend.app.api.routes.camera] [f21431df] RTSP stream ended for [IP] (stream_id=1-fanout-e88309c2), will reconnect
+2026-11-17 19:32:19,469 INFO [backend.app.api.routes.camera] [f21431df] RTSP reconnecting (12/30) for [IP] (stream_id=1-fanout-e88309c2)
+2026-11-17 19:32:27,821 WARNING [backend.app.api.routes.camera] [f21431df] ffmpeg stderr (stream_id=1-fanout-e88309c2): [rtsp @ 0x5646b1eb3380] Failed reading RTSP data: End of file
+[in#0 @ 0x5646b1eb30c0] Error opening input: Invalid data found when processing input
+Error opening input file rtsp://[CREDENTIALS]@[IP]:45169/streaming/live/1.
+Error opening input files: Invalid data found when processing input
+2026-11-17 19:32:27,822 WARNING [backend.app.api.routes.camera] [f21431df] RTSP stream ended for [IP] (stream_id=1-fanout-e88309c2), will reconnect
+2026-11-17 19:32:27,822 INFO [backend.app.api.routes.camera] [f21431df] RTSP reconnecting (13/30) for [IP] (stream_id=1-fanout-e88309c2)
+2026-11-17 19:32:33,510 INFO [backend.app.api.routes.camera] [81c09b63] Camera viewer detached from printer-1 (subscribers=0)
+2026-11-17 19:32:33,597 INFO [backend.app.api.routes.camera] [8a8c6b37] Using RTSP protocol for H2C
+2026-11-17 19:32:33,599 INFO [backend.app.api.routes.camera] [8a8c6b37] Camera viewer attached to printer-1 (subscribers=1)
+2026-11-17 19:32:36,142 WARNING [backend.app.api.routes.camera] [f21431df] ffmpeg stderr (stream_id=1-fanout-e88309c2): [rtsp @ 0x55df9b324380] Failed reading RTSP data: End of file
+[in#0 @ 0x55df9b3240c0] Error opening input: Invalid data found when processing input
+Error opening input file rtsp://[CREDENTIALS]@[IP]:45169/streaming/live/1.
+Error opening input files: Invalid data found when processing input
+2026-11-17 19:32:36,143 WARNING [backend.app.api.routes.camera] [f21431df] RTSP stream ended for [IP] (stream_id=1-fanout-e88309c2), will reconnect
+2026-11-17 19:32:36,143 INFO [backend.app.api.routes.camera] [f21431df] RTSP reconnecting (14/30) for [IP] (stream_id=1-fanout-e88309c2)
+2026-11-17 19:32:44,493 WARNING [backend.app.api.routes.camera] [f21431df] ffmpeg stderr (stream_id=1-fanout-e88309c2): [rtsp @ 0x55e897440380] Failed reading RTSP data: End of file
+[in#0 @ 0x55e8974400c0] Error opening input: Invalid data found when processing input
+Error opening input file rtsp://[CREDENTIALS]@[IP]:45169/streaming/live/1.
+Error opening input files: Invalid data found when processing input
+2026-11-17 19:32:44,493 WARNING [backend.app.api.routes.camera] [f21431df] RTSP stream ended for [IP] (stream_id=1-fanout-e88309c2), will reconnect
+2026-11-17 19:32:44,493 INFO [backend.app.api.routes.camera] [f21431df] RTSP reconnecting (15/30) for [IP] (stream_id=1-fanout-e88309c2)
+2026-11-17 19:32:52,879 WARNING [backend.app.api.routes.camera] [f21431df] ffmpeg stderr (stream_id=1-fanout-e88309c2): [rtsp @ 0x5631f397a380] Failed reading RTSP data: End of file
+[in#0 @ 0x5631f397a0c0] Error opening input: Invalid data found when processing input
+Error opening input file rtsp://[CREDENTIALS]@[IP]:45169/streaming/live/1.
+Error opening input files: Invalid data found when processing input
+2026-11-17 19:32:52,880 WARNING [backend.app.api.routes.camera] [f21431df] RTSP stream ended for [IP] (stream_id=1-fanout-e88309c2), will reconnect
+2026-11-17 19:32:52,881 INFO [backend.app.api.routes.camera] [f21431df] RTSP reconnecting (16/30) for [IP] (stream_id=1-fanout-e88309c2)
+2026-11-17 19:32:57,607 INFO [backend.app.api.routes.camera] [8a8c6b37] Camera viewer detached from printer-1 (subscribers=0)
+2026-11-17 19:32:57,663 INFO [backend.app.api.routes.camera] [e73be070] Using RTSP protocol for H2C
+2026-11-17 19:32:57,663 INFO [backend.app.api.routes.camera] [e73be070] Camera viewer attached to printer-1 (subscribers=1)
+2026-11-17 19:33:01,293 WARNING [backend.app.api.routes.camera] [f21431df] ffmpeg stderr (stream_id=1-fanout-e88309c2): [rtsp @ 0x55dab064b380] Failed reading RTSP data: End of file
+[in#0 @ 0x55dab064b0c0] Error opening input: Invalid data found when processing input
+Error opening input file rtsp://[CREDENTIALS]@[IP]:45169/streaming/live/1.
+Error opening input files: Invalid data found when processing input
+2026-11-17 19:33:01,293 WARNING [backend.app.api.routes.camera] [f21431df] RTSP stream ended for [IP] (stream_id=1-fanout-e88309c2), will reconnect
+2026-11-17 19:33:01,293 INFO [backend.app.api.routes.camera] [f21431df] RTSP reconnecting (17/30) for [IP] (stream_id=1-fanout-e88309c2)
+2026-11-17 19:33:09,653 WARNING [backend.app.api.routes.camera] [f21431df] ffmpeg stderr (stream_id=1-fanout-e88309c2): [rtsp @ 0x561af8589380] Failed reading RTSP data: End of file
+[in#0 @ 0x561af85890c0] Error opening input: Invalid data found when processing input
+Error opening input file rtsp://[CREDENTIALS]@[IP]:45169/streaming/live/1.
+Error opening input files: Invalid data found when processing input
+2026-11-17 19:33:09,654 WARNING [backend.app.api.routes.camera] [f21431df] RTSP stream ended for [IP] (stream_id=1-fanout-e88309c2), will reconnect
+2026-11-17 19:33:09,654 INFO [backend.app.api.routes.camera] [f21431df] RTSP reconnecting (18/30) for [IP] (stream_id=1-fanout-e88309c2)
+2026-11-17 19:33:18,014 WARNING [backend.app.api.routes.camera] [f21431df] ffmpeg stderr (stream_id=1-fanout-e88309c2): [rtsp @ 0x563dc8f77380] Failed reading RTSP data: End of file
+[in#0 @ 0x563dc8f770c0] Error opening input: Invalid data found when processing input
+Error opening input file rtsp://[CREDENTIALS]@[IP]:45169/streaming/live/1.
+Error opening input files: Invalid data found when processing input
+2026-11-17 19:33:18,015 WARNING [backend.app.api.routes.camera] [f21431df] RTSP stream ended for [IP] (stream_id=1-fanout-e88309c2), will reconnect
+2026-11-17 19:33:18,016 INFO [backend.app.api.routes.camera] [f21431df] RTSP reconnecting (19/30) for [IP] (stream_id=1-fanout-e88309c2)
+2026-11-17 19:33:26,381 WARNING [backend.app.api.routes.camera] [f21431df] ffmpeg stderr (stream_id=1-fanout-e88309c2): [rtsp @ 0x55803121d380] Failed reading RTSP data: End of file
+[in#0 @ 0x55803121d0c0] Error opening input: Invalid data found when processing input
+Error opening input file rtsp://[CREDENTIALS]@[IP]:45169/streaming/live/1.
+Error opening input files: Invalid data found when processing input
+2026-11-17 19:33:26,382 WARNING [backend.app.api.routes.camera] [f21431df] RTSP stream ended for [IP] (stream_id=1-fanout-e88309c2), will reconnect
+2026-11-17 19:33:26,382 INFO [backend.app.api.routes.camera] [f21431df] RTSP reconnecting (20/30) for [IP] (stream_id=1-fanout-e88309c2)
+2026-11-17 19:33:34,735 WARNING [backend.app.api.routes.camera] [f21431df] ffmpeg stderr (stream_id=1-fanout-e88309c2): [rtsp @ 0x5585d17c5380] Failed reading RTSP data: End of file
+[in#0 @ 0x5585d17c50c0] Error opening input: Invalid data found when processing input
+Error opening input file rtsp://[CREDENTIALS]@[IP]:45169/streaming/live/1.
+Error opening input files: Invalid data found when processing input
+2026-11-17 19:33:34,736 WARNING [backend.app.api.routes.camera] [f21431df] RTSP stream ended for [IP] (stream_id=1-fanout-e88309c2), will reconnect
+2026-11-17 19:33:34,736 INFO [backend.app.api.routes.camera] [f21431df] RTSP reconnecting (21/30) for [IP] (stream_id=1-fanout-e88309c2)
+2026-11-17 19:33:35,681 INFO [backend.app.api.routes.camera] [e73be070] Camera viewer detached from printer-1 (subscribers=0)
+2026-11-17 19:33:35,749 INFO [backend.app.api.routes.camera] [6ec27f67] Using RTSP protocol for H2C
+2026-11-17 19:33:35,750 INFO [backend.app.api.routes.camera] [6ec27f67] Camera viewer attached to printer-1 (subscribers=1)
+2026-11-17 19:33:43,119 WARNING [backend.app.api.routes.camera] [f21431df] ffmpeg stderr (stream_id=1-fanout-e88309c2): [rtsp @ 0x55f4de329380] Failed reading RTSP data: End of file
+[in#0 @ 0x55f4de3290c0] Error opening input: Invalid data found when processing input
+Error opening input file rtsp://[CREDENTIALS]@[IP]:45169/streaming/live/1.
+Error opening input files: Invalid data found when processing input
+2026-11-17 19:33:43,119 WARNING [backend.app.api.routes.camera] [f21431df] RTSP stream ended for [IP] (stream_id=1-fanout-e88309c2), will reconnect
+2026-11-17 19:33:43,119 INFO [backend.app.api.routes.camera] [f21431df] RTSP reconnecting (22/30) for [IP] (stream_id=1-fanout-e88309c2)
+2026-11-17 19:33:51,470 WARNING [backend.app.api.routes.camera] [f21431df] ffmpeg stderr (stream_id=1-fanout-e88309c2): [rtsp @ 0x56166e570380] Failed reading RTSP data: End of file
+[in#0 @ 0x56166e5700c0] Error opening input: Invalid data found when processing input
+Error opening input file rtsp://[CREDENTIALS]@[IP]:45169/streaming/live/1.
+Error opening input files: Invalid data found when processing input
+2026-11-17 19:33:51,470 WARNING [backend.app.api.routes.camera] [f21431df] RTSP stream ended for [IP] (stream_id=1-fanout-e88309c2), will reconnect
+2026-11-17 19:33:51,470 INFO [backend.app.api.routes.camera] [f21431df] RTSP reconnecting (23/30) for [IP] (stream_id=1-fanout-e88309c2)
+2026-11-17 19:33:59,854 WARNING [backend.app.api.routes.camera] [f21431df] ffmpeg stderr (stream_id=1-fanout-e88309c2): [rtsp @ 0x562d1063b380] Failed reading RTSP data: End of file
+[in#0 @ 0x562d1063b0c0] Error opening input: Invalid data found when processing input
+Error opening input file rtsp://[CREDENTIALS]@[IP]:45169/streaming/live/1.
+Error opening input files: Invalid data found when processing input
+2026-11-17 19:33:59,855 WARNING [backend.app.api.routes.camera] [f21431df] RTSP stream ended for [IP] (stream_id=1-fanout-e88309c2), will reconnect
+2026-11-17 19:33:59,855 INFO [backend.app.api.routes.camera] [f21431df] RTSP reconnecting (24/30) for [IP] (stream_id=1-fanout-e88309c2)
+2026-11-17 19:34:06,739 INFO [backend.app.api.routes.support] [21ef05ba] Log level changed to DEBUG
+2026-11-17 19:34:06,740 INFO [backend.app.api.routes.bug_report] [21ef05ba] Bug report: enabled debug logging
+2026-11-17 19:34:06,741 WARNING [backend.app.services.bambu_mqtt] [21ef05ba] [[SERIAL]] request_status_update: not connected
+2026-11-17 19:34:06,743 INFO [uvicorn.access] [-] [IP]:50718 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-11-17 19:34:08,195 DEBUG [backend.app.services.camera] [f21431df] TLS proxy connection to [IP]:322 failed: [Errno 113] Connect call failed ('[IP]', 322)
+2026-11-17 19:34:08,211 WARNING [backend.app.api.routes.camera] [f21431df] ffmpeg stderr (stream_id=1-fanout-e88309c2): [rtsp @ 0x557eb6c2c380] Failed reading RTSP data: End of file
+[in#0 @ 0x557eb6c2c0c0] Error opening input: Invalid data found when processing input
+Error opening input file rtsp://[CREDENTIALS]@[IP]:45169/streaming/live/1.
+Error opening input files: Invalid data found when processing input
+2026-11-17 19:34:08,211 WARNING [backend.app.api.routes.camera] [f21431df] RTSP stream ended for [IP] (stream_id=1-fanout-e88309c2), will reconnect
+2026-11-17 19:34:08,212 INFO [backend.app.api.routes.camera] [f21431df] RTSP reconnecting (25/30) for [IP] (stream_id=1-fanout-e88309c2)
+2026-11-17 19:34:16,547 DEBUG [backend.app.services.camera] [f21431df] TLS proxy connection to [IP]:322 failed: [Errno 113] Connect call failed ('[IP]', 322)
+2026-11-17 19:34:16,559 WARNING [backend.app.api.routes.camera] [f21431df] ffmpeg stderr (stream_id=1-fanout-e88309c2): [rtsp @ 0x5572de4b5380] Failed reading RTSP data: End of file
+[in#0 @ 0x5572de4b50c0] Error opening input: Invalid data found when processing input
+Error opening input file rtsp://[CREDENTIALS]@[IP]:45169/streaming/live/1.
+Error opening input files: Invalid data found when processing input
+2026-11-17 19:34:16,560 WARNING [backend.app.api.routes.camera] [f21431df] RTSP stream ended for [IP] (stream_id=1-fanout-e88309c2), will reconnect
+2026-11-17 19:34:16,560 INFO [backend.app.api.routes.camera] [f21431df] RTSP reconnecting (26/30) for [IP] (stream_id=1-fanout-e88309c2)
+2026-11-17 19:34:16,566 INFO [backend.app.api.routes.camera] [6ec27f67] Camera viewer detached from printer-1 (subscribers=0)
+2026-11-17 19:34:16,612 INFO [backend.app.api.routes.camera] [f21431df] Camera stream task cancelled (stream_id=1-fanout-e88309c2)
+2026-11-17 19:34:16,614 INFO [backend.app.api.routes.camera] [4cd3f5f0] Shut down camera fan-out broadcaster printer-1
+2026-11-17 19:34:16,615 INFO [backend.app.api.routes.camera] [4cd3f5f0] Stopped 0 camera stream(s) for printer 1
+2026-11-17 19:34:16,616 INFO [uvicorn.access] [-] [IP]:50718 - "POST /api/v1/printers/1/camera/stop?viewer=vaeepwu05gt HTTP/1.1" 200
+2026-11-17 19:34:16,718 INFO [backend.app.api.routes.camera] [4e6079e1] Using RTSP protocol for H2C
+2026-11-17 19:34:16,719 INFO [backend.app.api.routes.camera] [4e6079e1] Camera viewer attached to printer-1 (subscribers=1)
+2026-11-17 19:34:16,726 DEBUG [backend.app.services.camera] [4e6079e1] TLS proxy for [IP]:322 listening on [IP]:43381
+2026-11-17 19:34:16,726 INFO [backend.app.api.routes.camera] [4e6079e1] Starting RTSP camera stream for [IP] (stream_id=1-fanout-ee8e221f, model=H2C, fps=15, probesize=32, analyzeduration=0)
+2026-11-17 19:34:16,726 DEBUG [backend.app.api.routes.camera] [4e6079e1] ffmpeg command: /usr/bin/ffmpeg -loglevel info -rtsp_transport tcp -rtsp_flags prefer_tcp -timeout 30000000 -buffer_size 1024000 -max_delay 500000 -probesize 32 -analyzeduration 0 -fflags nobuffer -flags low_delay -i rtsp://<redacted>/streaming/live/1 -f mjpeg -q:v 5 -r 15 -an -
+2026-11-17 19:34:20,099 DEBUG [backend.app.services.camera] [4e6079e1] TLS proxy connection to [IP]:322 failed: [Errno 113] Connect call failed ('[IP]', 322)
+2026-11-17 19:34:20,109 WARNING [backend.app.api.routes.camera] [4e6079e1] ffmpeg stderr (stream_id=1-fanout-ee8e221f): [rtsp @ 0x556101ad0380] Failed reading RTSP data: End of file
+[in#0 @ 0x556101ad00c0] Error opening input: Invalid data found when processing input
+Error opening input file rtsp://[CREDENTIALS]@[IP]:43381/streaming/live/1.
+Error opening input files: Invalid data found when processing input
+2026-11-17 19:34:20,109 WARNING [backend.app.api.routes.camera] [4e6079e1] RTSP stream ended for [IP] (stream_id=1-fanout-ee8e221f), will reconnect
+2026-11-17 19:34:20,110 INFO [backend.app.api.routes.camera] [4e6079e1] RTSP reconnecting (1/30) for [IP] (stream_id=1-fanout-ee8e221f)

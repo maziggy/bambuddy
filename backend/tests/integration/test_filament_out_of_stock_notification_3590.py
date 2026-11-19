@@ -34,6 +34,34 @@ class TestService:
             await notification_service.on_filament_out_of_stock("Benchy", "X1C", "PLA (Earth Brown)", db_session)
         send.assert_not_awaited()
 
+    async def _recipients(self, db_session, printer_id):
+        with patch.object(notification_service, "_send_to_providers", AsyncMock()) as fan_out:
+            await notification_service.on_filament_out_of_stock(
+                "Benchy", "X1C", "PLA (Earth Brown)", db_session, printer_id=printer_id
+            )
+            await notification_service.on_queue_job_waiting(
+                "Benchy", "X1C", "needs PLA (Earth Brown)", db_session, printer_id=printer_id
+            )
+        out_of_stock, waiting = ([p.name for p in call.args[0]] for call in fan_out.await_args_list)
+        # The two events about one job go to the same providers.
+        assert sorted(out_of_stock) == sorted(waiting)
+        return sorted(out_of_stock)
+
+    @pytest.mark.asyncio
+    async def test_any_model_job_reaches_only_all_printers_providers(
+        self, db_session, notification_provider_factory, printer_factory
+    ):
+        """No printer holds an "Any <model>" job, so a provider limited to one printer is left out."""
+        first, second = await printer_factory(), await printer_factory()
+        common = {"on_filament_out_of_stock": True, "on_queue_job_waiting": True}
+        await notification_provider_factory(name="All", **common)
+        await notification_provider_factory(name="First", printer_id=first.id, **common)
+        await notification_provider_factory(name="Second", printer_id=second.id, **common)
+
+        assert await self._recipients(db_session, None) == ["All"]
+        # A job held on a printer also reaches that printer's own provider.
+        assert await self._recipients(db_session, first.id) == ["All", "First"]
+
 
 class TestApi:
     @pytest.mark.asyncio

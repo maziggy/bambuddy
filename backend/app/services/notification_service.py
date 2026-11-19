@@ -2152,10 +2152,13 @@ class NotificationService:
         db: AsyncSession,
         printer_id: int | None = None,
     ) -> None:
-        """A queued job waits for a forced filament with none left in the inventory (#3590)."""
-        providers = await self._get_providers_for_event(
-            db, "on_filament_out_of_stock", printer_id, fleet_wide=printer_id is None
-        )
+        """A queued job waits for a forced filament with none left in the inventory (#3590).
+
+        Routed like ``on_queue_job_waiting`` for the same job: ``printer_id`` is
+        the printer a pinned job waits on; a job for "Any <model>" has none and
+        reaches only "All printers" providers.
+        """
+        providers = await self._get_providers_for_event(db, "on_filament_out_of_stock", printer_id)
         if not providers:
             return
 

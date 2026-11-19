@@ -289,7 +289,7 @@ export default {
     addPreflight: {
       checking: 'Verificando a conexão...',
       warning: 'Algumas verificações de conexão falharam. Esta impressora pode aparecer como offline. Revise as verificações abaixo, corrija o que puder ou salve mesmo assim.',
-      back: 'Voltar',
+      checkAgain: 'Verificar novamente',
       saveAnyway: 'Salvar mesmo assim',
     },
     title: 'Impressoras',
@@ -300,6 +300,8 @@ export default {
     serialNumber: 'Número de Série',
     ipAddress: 'Endereço IP / Nome do Host',
     accessCode: 'Código de Acesso',
+    showAccessCode: 'Mostrar código de acesso',
+    hideAccessCode: 'Ocultar código de acesso',
     model: 'Modelo',
     nozzleCount: 'Número de Bicos',
     autoArchive: 'Arquivamento Automático',

@@ -107,3 +107,9 @@ export function groupLibraryRows(
 export function rowFiles(rows: LibraryRow[]): LibraryFileListItem[] {
   return rows.flatMap((row) => (row.kind === 'file' ? [row.file] : row.members));
 }
+
+// The file a row stands for where one file is needed: the keyboard focus of
+// the columns view, a preview. A group's is its first version.
+export function rowLeadFile(row: LibraryRow): LibraryFileListItem {
+  return row.kind === 'file' ? row.file : row.thumbnailFile;
+}

@@ -1484,8 +1484,9 @@ describe('FileManagerPage', () => {
       render(<FileManagerPage />);
       await waitFor(() => expect(screen.getByText('Benchy')).toBeInTheDocument());
 
-      await user.click(screen.getByText('Benchy').closest('div[class*="cursor-pointer"]') as HTMLElement);
-      await user.click(await screen.findByRole('button', { name: /^Print$/ }));
+      // The two members are one card (#3628); its Print offers the whole group.
+      await user.click(screen.getByRole('button', { name: 'Actions for version group Benchy' }));
+      await user.click(await screen.findByRole('button', { name: 'Print all versions as one job' }));
 
       // The dialog is the multi-file one (the archive name lists both files) ...
       expect(await screen.findByText(/benchy\.gcode\.3mf \+1 more/)).toBeInTheDocument();

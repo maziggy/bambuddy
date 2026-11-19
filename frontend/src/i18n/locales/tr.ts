@@ -291,7 +291,7 @@ export default {
     addPreflight: {
       checking: 'Bağlantı kontrol ediliyor...',
       warning: 'Bazı bağlantı kontrolleri başarısız oldu. Bu yazıcı çevrimdışı olarak görünebilir. Aşağıdaki kontrolleri inceleyin, düzeltebileceklerinizi düzeltin veya yine de kaydedin.',
-      back: 'Geri',
+      checkAgain: 'Tekrar kontrol et',
       saveAnyway: 'Yine de kaydet',
     },
     editPrinter: 'Yazıcıyı Düzenle',
@@ -300,6 +300,8 @@ export default {
     serialNumber: 'Seri Numarası',
     ipAddress: 'IP Adresi / Ana Bilgisayar Adı',
     accessCode: 'Erişim Kodu',
+    showAccessCode: 'Erişim kodunu göster',
+    hideAccessCode: 'Erişim kodunu gizle',
     model: 'Model',
     nozzleCount: 'Nozul Sayısı',
     autoArchive: 'Otomatik Arşivle',

@@ -283,10 +283,30 @@ describe('version groups in the File Manager', () => {
 
       it('closes when the page scrolls, not when the popover does', async () => {
         const { popover } = await open();
+        await new Promise((resolve) => setTimeout(resolve, 200));
         fireEvent.scroll(popover.lastElementChild as HTMLElement);
         expect(screen.getByRole('dialog')).toBeInTheDocument();
         fireEvent.scroll(card().parentElement!);
         closed();
+      });
+
+      it('ignores the scroll its own opening causes', async () => {
+        await open();
+        fireEvent.scroll(document);
+        fireEvent.scroll(card().parentElement!);
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+      });
+
+      it('closes only a version menu with Escape, then itself with the next one', async () => {
+        const { user, toggle, popover } = await open();
+        await user.click(within(within(popover).getAllByTestId('variant-member-line')[0]).getByRole('button', { name: /^Actions for / }));
+        await screen.findByRole('button', { name: 'File details' });
+        await user.keyboard('{Escape}');
+        expect(screen.queryByRole('button', { name: 'File details' })).not.toBeInTheDocument();
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+        await user.keyboard('{Escape}');
+        closed();
+        expect(toggle).toHaveFocus();
       });
 
       it('stays open and follows a resize', async () => {
@@ -373,6 +393,19 @@ describe('version groups in the File Manager', () => {
           await user.click(within(popover).getByRole('button', { name: 'Close' }));
           closed();
           expect(toggle).toHaveFocus();
+        });
+
+        it('stays open when the page or the list scrolls, and locks the page behind it', async () => {
+          const { user } = await open();
+          await new Promise((resolve) => setTimeout(resolve, 200));
+          fireEvent.scroll(window);
+          fireEvent.scroll(document);
+          fireEvent.scroll(card().parentElement!);
+          expect(screen.getByRole('dialog')).toBeInTheDocument();
+          expect(document.body.style.overflow).toBe('hidden');
+          await user.keyboard('{Escape}');
+          closed();
+          expect(document.body.style.overflow).toBe('');
         });
 
         it('closes with a click on the backdrop without selecting the card behind it', async () => {

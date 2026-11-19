@@ -8,6 +8,9 @@ const MIN_WIDTH = 340;
 const MAX_WIDTH = 420;
 const MARGIN = 8;
 const GAP = 4;
+// The click that opens the popover (and the focus it moves) can scroll the
+// page; that scroll is not the user leaving.
+const SCROLL_GRACE_MS = 150;
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -61,6 +64,8 @@ export function VariantVersionsPopover({
   const bodyRef = useRef<HTMLDivElement>(null);
   const [placement, setPlacement] = useState<Placement | null>(null);
   const [resizeTick, setResizeTick] = useState(0);
+  const phoneRef = useRef(phone);
+  phoneRef.current = phone;
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   const close = useCallback((restoreFocus: boolean) => closeRef.current(restoreFocus), []);
@@ -109,19 +114,36 @@ export function VariantVersionsPopover({
     first?.focus({ preventScroll: true });
   }, []);
 
+  // A sheet covers the page, so the page does not scroll behind it.
   useEffect(() => {
+    if (!phone) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [phone]);
+
+  useEffect(() => {
+    const openedAt = Date.now();
     const onPointer = (event: MouseEvent) => {
       const target = event.target as Node;
       if (rootRef.current?.contains(target) || toggleRef.current?.contains(target)) return;
       close(false);
     };
     const onScroll = (event: Event) => {
+      // The sheet's backdrop covers the page: nothing to leave by scrolling.
+      if (phoneRef.current) return;
+      if (Date.now() - openedAt < SCROLL_GRACE_MS) return;
       // Scrolling the list of versions is not leaving it.
       if (rootRef.current?.contains(event.target as Node)) return;
       close(false);
     };
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        // A version's menu is open: Escape closes that menu (it listens
+        // itself), the popover stays. The menu is the only fixed element in it.
+        if (panelRef.current?.querySelector('.fixed')) return;
         close(true);
         return;
       }

@@ -806,7 +806,8 @@ def _forced_override_requirements(item: PrintQueueItem) -> list[dict]:
     """The item's force_color_match overrides as filament requirements (#3280).
 
     What ``_build_override_direct_mapping`` matches when the 3MF cannot be
-    read, so the checks after it judge the same list.
+    read, so the checks after it judge the same list. Each keeps the colour
+    name its override came with, so a held job names the colour here too (#3590).
     """
     overrides = _filament_overrides_of(item)
     return [
@@ -814,6 +815,7 @@ def _forced_override_requirements(item: PrintQueueItem) -> list[dict]:
             "slot_id": o.get("slot_id"),
             "type": o.get("type", ""),
             "color": o.get("color", ""),
+            "color_name": o.get("color_name") or "",
             "tray_info_idx": o.get("tray_info_idx", ""),
             "force_color_match": True,
         }

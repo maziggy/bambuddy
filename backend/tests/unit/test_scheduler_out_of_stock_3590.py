@@ -20,7 +20,12 @@ from backend.app.core.filament_scope import (
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.services.inventory_stock import StockEntry
-from backend.app.services.print_scheduler import _NO_STOCK_SUFFIX, PrintScheduler, _is_unmatched_hold_reason
+from backend.app.services.print_scheduler import (
+    _NO_STOCK_SUFFIX,
+    PrintScheduler,
+    _forced_override_requirements,
+    _is_unmatched_hold_reason,
+)
 from backend.tests.unit.test_scheduler_model_filament_short_3137 import (
     _add_item,
     _get_item,
@@ -304,6 +309,31 @@ class TestPinnedHold:
         ):
             await scheduler._block_on_unmatched_filament(AsyncMock(), item)
         assert item.waiting_reason == "Needs PLA #8B5A2B"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("requirements", [None, []])
+    async def test_a_file_without_requirements_still_names_the_colour(self, requirements):
+        """Then the forced overrides are the requirements, and they keep their colour name."""
+        scheduler = _pinned_scheduler()
+        scheduler._get_filament_requirements = AsyncMock(return_value=requirements)
+        scheduler._get_printer.return_value.name = "A1 Left"
+        item = _pinned_item(FORCED)
+        with (
+            _entries((0, 0.0)),
+            patch(NOTIFY, AsyncMock()) as notify,
+            patch("backend.app.services.print_scheduler.notification_service.on_queue_job_waiting", AsyncMock()),
+        ):
+            assert await scheduler._block_on_unmatched_filament(AsyncMock(), item) is True
+        assert item.waiting_reason == f"A1 Left needs PLA Earth Brown{_NO_STOCK_SUFFIX}"
+        assert notify.await_args.kwargs["filament"] == "PLA Earth Brown"
+
+    def test_forced_overrides_as_requirements_keep_the_colour_name(self):
+        named, unnamed = FORCED[0], {**FORCED[0], "slot_id": 2, "color_name": None}
+        item = _pinned_item([named, unnamed, {**named, "slot_id": 3, "force_color_match": False}])
+        assert [(r["slot_id"], r["color_name"]) for r in _forced_override_requirements(item)] == [
+            (1, "Earth Brown"),
+            (2, ""),
+        ]
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("stock", [(2, 300.0), None])

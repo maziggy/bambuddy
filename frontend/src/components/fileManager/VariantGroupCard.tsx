@@ -76,11 +76,15 @@ export function VariantGroupCard({
       // An open card takes a row of its own, so the cards beside it keep their
       // height and its version lines spread over the width; a closed one is a
       // cell like any file card.
-      className={`relative flex flex-col pb-2 min-w-0 ${expanded ? 'col-span-full' : ''}`}
+      className={`relative flex flex-col min-w-0 ${expanded ? 'col-span-full' : 'pb-2'}`}
     >
       {/* The cards behind it: a pile, not a single file. */}
-      <div aria-hidden="true" className="absolute inset-x-2 bottom-1 h-3 rounded-b-lg border border-t-0 border-bambu-dark-tertiary bg-bambu-dark-secondary" />
-      <div aria-hidden="true" className="absolute inset-x-4 bottom-0 h-3 rounded-b-lg border border-t-0 border-bambu-dark-tertiary bg-bambu-dark" />
+      {!expanded && (
+        <>
+          <div aria-hidden="true" className="absolute inset-x-2 bottom-1 h-3 rounded-b-lg border border-t-0 border-bambu-dark-tertiary bg-bambu-dark-secondary" />
+          <div aria-hidden="true" className="absolute inset-x-4 bottom-0 h-3 rounded-b-lg border border-t-0 border-bambu-dark-tertiary bg-bambu-dark" />
+        </>
+      )}
       <div
         className={`group relative flex-1 bg-bambu-dark-secondary rounded-lg border transition-all cursor-pointer ${
           selectedCount > 0
@@ -90,7 +94,13 @@ export function VariantGroupCard({
         onClick={() => onToggleSelect(row)}
         {...dragSourceProps(row, groupDrag)}
       >
-        <div className={`${expanded ? 'h-40' : 'aspect-square'} bg-bambu-dark flex items-center justify-center overflow-hidden rounded-t-lg relative`}>
+        {/* Open: a header row (fixed square thumbnail, text beside it) over the versions. */}
+        <div className={expanded ? 'flex items-start gap-3 p-3' : undefined}>
+        <div
+          className={`bg-bambu-dark flex items-center justify-center overflow-hidden relative ${
+            expanded ? 'w-28 h-28 sm:w-40 sm:h-40 shrink-0 rounded-lg' : 'aspect-square rounded-t-lg'
+          }`}
+        >
           {first.thumbnail_path ? (
             <img
               src={`${thumbUrl}${version ? (thumbUrl.includes('?') ? '&' : '?') + `v=${version}` : ''}`}
@@ -107,7 +117,7 @@ export function VariantGroupCard({
           </div>
         </div>
 
-        <div className="p-3">
+        <div className={expanded ? 'min-w-0 flex-1' : 'p-3'}>
           <h3 className="text-sm font-medium text-white truncate" title={row.name}>
             {row.name}
           </h3>
@@ -162,6 +172,7 @@ export function VariantGroupCard({
             {menuAnchor && <ContextMenu x={menuAnchor.x} y={menuAnchor.y} items={menuItems} onClose={() => setMenuAnchor(null)} />}
           </div>
           </div>
+        </div>
         </div>
 
         {expanded && (

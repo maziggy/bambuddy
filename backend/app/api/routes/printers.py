@@ -639,6 +639,14 @@ async def delete_printer(
     await db.execute(select(Printer.id).where(Printer.id == printer_id).with_for_update())
 
     if delete_archives:
+        # A charge waiting on one of their runs for its energy is written
+        # first (#3581): without its archive it has nothing to charge.
+        from backend.app.models.print_log import PrintLogEntry
+        from backend.app.services.finance_billing import settle_pending_print_charges
+
+        await settle_pending_print_charges(
+            db, PrintLogEntry.archive_id.in_(select(PrintArchive.id).where(PrintArchive.printer_id == printer_id))
+        )
         # Delete all archives for this printer
         await db.execute(sql_delete(PrintArchive).where(PrintArchive.printer_id == printer_id))
     else:

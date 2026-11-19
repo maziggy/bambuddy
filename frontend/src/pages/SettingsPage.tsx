@@ -1,5 +1,5 @@
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Pencil, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog, QrCode, Heart, Briefcase, Workflow, UploadCloud, MonitorPlay, Info, Lightbulb } from 'lucide-react';
+import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Pencil, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Receipt, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog, QrCode, Heart, Briefcase, Workflow, UploadCloud, MonitorPlay, Info, Lightbulb } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -1391,6 +1391,11 @@ export function SettingsPage() {
       (baseline.session_max_hours ?? 24) !== (localSettings.session_max_hours ?? 24) ||
       (baseline.billing_enabled ?? false) !== (localSettings.billing_enabled ?? false) ||
       (baseline.printer_kill_switch_enabled ?? false) !== (localSettings.printer_kill_switch_enabled ?? false) ||
+      (baseline.billing_completed_energy ?? false) !== (localSettings.billing_completed_energy ?? false) ||
+      (baseline.billing_completed_wear ?? false) !== (localSettings.billing_completed_wear ?? false) ||
+      (baseline.billing_failed_filament ?? 'proportional') !== (localSettings.billing_failed_filament ?? 'proportional') ||
+      (baseline.billing_failed_energy ?? false) !== (localSettings.billing_failed_energy ?? false) ||
+      (baseline.billing_failed_wear ?? false) !== (localSettings.billing_failed_wear ?? false) ||
       (baseline.finance_budget_reset_day ?? 1) !== (localSettings.finance_budget_reset_day ?? 1) ||
       (baseline.finance_budget_reset_timezone ?? 'UTC') !== (localSettings.finance_budget_reset_timezone ?? 'UTC');
 
@@ -1526,6 +1531,11 @@ export function SettingsPage() {
         session_max_hours: localSettings.session_max_hours,
         billing_enabled: localSettings.billing_enabled,
         printer_kill_switch_enabled: localSettings.printer_kill_switch_enabled,
+        billing_completed_energy: localSettings.billing_completed_energy,
+        billing_completed_wear: localSettings.billing_completed_wear,
+        billing_failed_filament: localSettings.billing_failed_filament,
+        billing_failed_energy: localSettings.billing_failed_energy,
+        billing_failed_wear: localSettings.billing_failed_wear,
         finance_budget_reset_day: localSettings.finance_budget_reset_day,
         finance_budget_reset_timezone: localSettings.finance_budget_reset_timezone,
       };
@@ -2467,6 +2477,104 @@ export function SettingsPage() {
                       />
                       <div className="w-11 h-6 bg-bambu-dark-tertiary rounded-full peer-checked:bg-bambu-green peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all" />
                     </label>
+                  </div>
+                )}
+                {localSettings.billing_enabled && (
+                  <div className="mt-4 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark p-4">
+                    <div className="mb-3">
+                      <h4 className="text-base font-medium text-white flex items-center gap-2">
+                        <Receipt className="w-4 h-4 text-bambu-green" />
+                        {t('settings.billingChargePolicy')}
+                      </h4>
+                      <p className="text-xs text-bambu-gray mt-1">{t('settings.billingChargePolicyDescription')}</p>
+                    </div>
+                    <div className="space-y-3">
+                      <p className="text-xs font-medium text-bambu-gray uppercase tracking-wider">{t('settings.billingChargeCompleted')}</p>
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex-1">
+                          <p className="text-white">{t('stats.energyCost')}</p>
+                          <p className="text-xs text-bambu-gray">{t('settings.billingChargeEnergyDescription')}</p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            aria-label={`${t('settings.billingChargeCompleted')}: ${t('stats.energyCost')}`}
+                            checked={localSettings.billing_completed_energy ?? false}
+                            onChange={(e) => updateSetting('billing_completed_energy', e.target.checked)}
+                            className="peer sr-only"
+                          />
+                          <div className="w-11 h-6 bg-bambu-dark-tertiary rounded-full peer-checked:bg-bambu-green peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all" />
+                        </label>
+                      </div>
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex-1">
+                          <p className="text-white">{t('stats.wearCost')}</p>
+                          <p className="text-xs text-bambu-gray">{t('settings.billingChargeWearDescription')}</p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            aria-label={`${t('settings.billingChargeCompleted')}: ${t('stats.wearCost')}`}
+                            checked={localSettings.billing_completed_wear ?? false}
+                            onChange={(e) => updateSetting('billing_completed_wear', e.target.checked)}
+                            className="peer sr-only"
+                          />
+                          <div className="w-11 h-6 bg-bambu-dark-tertiary rounded-full peer-checked:bg-bambu-green peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all" />
+                        </label>
+                      </div>
+                    </div>
+                    <div className="border-t border-bambu-dark-tertiary pt-3 mt-3 space-y-3">
+                      <p className="text-xs font-medium text-bambu-gray uppercase tracking-wider">{t('settings.billingChargeFailed')}</p>
+                      <div>
+                        <label htmlFor="billing-failed-filament" className="block text-xs text-bambu-gray mb-1">
+                          {t('settings.billingFailedFilament')}
+                        </label>
+                        <select
+                          id="billing-failed-filament"
+                          value={localSettings.billing_failed_filament ?? 'proportional'}
+                          onChange={(e) =>
+                            updateSetting('billing_failed_filament', e.target.value as 'proportional' | 'full' | 'none')
+                          }
+                          className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green"
+                        >
+                          <option value="proportional">{t('settings.billingFailedFilamentProportional')}</option>
+                          <option value="full">{t('settings.billingFailedFilamentFull')}</option>
+                          <option value="none">{t('settings.billingFailedFilamentNone')}</option>
+                        </select>
+                      </div>
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex-1">
+                          <p className="text-white">{t('stats.energyCost')}</p>
+                          <p className="text-xs text-bambu-gray">{t('settings.billingChargeEnergyDescription')}</p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            aria-label={`${t('settings.billingChargeFailed')}: ${t('stats.energyCost')}`}
+                            checked={localSettings.billing_failed_energy ?? false}
+                            onChange={(e) => updateSetting('billing_failed_energy', e.target.checked)}
+                            className="peer sr-only"
+                          />
+                          <div className="w-11 h-6 bg-bambu-dark-tertiary rounded-full peer-checked:bg-bambu-green peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all" />
+                        </label>
+                      </div>
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex-1">
+                          <p className="text-white">{t('stats.wearCost')}</p>
+                          <p className="text-xs text-bambu-gray">{t('settings.billingChargeWearDescription')}</p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            aria-label={`${t('settings.billingChargeFailed')}: ${t('stats.wearCost')}`}
+                            checked={localSettings.billing_failed_wear ?? false}
+                            onChange={(e) => updateSetting('billing_failed_wear', e.target.checked)}
+                            className="peer sr-only"
+                          />
+                          <div className="w-11 h-6 bg-bambu-dark-tertiary rounded-full peer-checked:bg-bambu-green peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all" />
+                        </label>
+                      </div>
+                    </div>
                   </div>
                 )}
                 {localSettings.billing_enabled && (

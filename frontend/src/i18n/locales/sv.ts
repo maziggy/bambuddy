@@ -6210,6 +6210,9 @@ errors: {
       showAll: 'Visa alla färger',
       showMatching: 'Visa bara matchande',
       allBrand: 'Alla {{brand}}-färger',
+      sortBy: 'Sortera katalogfärger',
+      sortByName: 'Sortera efter namn',
+      sortByColor: 'Sortera efter färg',
     },
     noResults: 'Inga matchningar hittade',
     // Multi-color gradient + visual effect (#1154)

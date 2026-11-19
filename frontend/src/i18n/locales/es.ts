@@ -6141,6 +6141,9 @@ export default {
       showAll: 'Mostrar todos los colores',
       showMatching: 'Mostrar solo los que coinciden',
       allBrand: 'Todos los colores de {{brand}}',
+      sortBy: 'Ordenar colores del catálogo',
+      sortByName: 'Ordenar por nombre',
+      sortByColor: 'Ordenar por color',
     },
     noResults: 'No se encontraron coincidencias',
     // Multi-color gradient + visual effect (#1154)

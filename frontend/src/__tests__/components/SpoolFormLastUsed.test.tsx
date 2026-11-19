@@ -2,7 +2,7 @@
  * The create form starts from the last created spool (#3619).
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, waitFor, fireEvent, act } from '@testing-library/react';
 import { render } from '../utils';
 import { SpoolFormModal } from '../../components/SpoolFormModal';
@@ -352,6 +352,103 @@ describe('SpoolFormModal last used values (#3619)', () => {
     fireEvent.change(document.querySelector('input[max="100"]')!, { target: { value: '2' } });
     submit();
     await waitFor(() => expect(mApi.setSpoolSuppliers).toHaveBeenCalledTimes(2));
+  });
+
+  describe('remembers the suppliers the created spool really has', () => {
+    const inherited = (id: number) => ({ id, suppliers: [{ id: id + 1, supplier_id: 2, supplier_name: 'Inherited' }] });
+    // A saved record always carries preset_from_default; the seeded ones here do not.
+    const savedIds = async (key = KEY) => {
+      await waitFor(() => expect(JSON.parse(store.get(key)!)).toHaveProperty('preset_from_default'));
+      return JSON.parse(store.get(key)!).supplier_ids;
+    };
+    const quickAdd = () => fireEvent.click(document.querySelector('button.rounded-full')!);
+
+    afterEach(() => {
+      mApi.createSpool.mockResolvedValue({ id: 99 });
+      mApi.bulkCreateSpools.mockResolvedValue([{ id: 100 }, { id: 101 }]);
+      mApi.createSpoolmanInventorySpool.mockResolvedValue({ id: 77 });
+    });
+
+    it('the inherited ones on a create, not the remembered chips that were skipped', async () => {
+      store.set(KEY, JSON.stringify(remembered));
+      mApi.createSpool.mockResolvedValue(inherited(99));
+      renderForm();
+      await screen.findByText(/Started with your last spool/);
+      await settle();
+      submit();
+      expect(await savedIds()).toEqual([2]);
+      expect(mApi.setSpoolSuppliers).not.toHaveBeenCalled();
+    });
+
+    it('the inherited ones on a quick add', async () => {
+      store.set(KEY, JSON.stringify(remembered));
+      mApi.createSpool.mockResolvedValue(inherited(99));
+      renderForm();
+      await screen.findByText(/Started with your last spool/);
+      await settle();
+      quickAdd();
+      submit();
+      expect(await savedIds()).toEqual([2]);
+      expect(mApi.setSpoolSuppliers).not.toHaveBeenCalled();
+    });
+
+    it('the inherited ones on a bulk create', async () => {
+      store.set(KEY, JSON.stringify(remembered));
+      mApi.bulkCreateSpools.mockResolvedValue([inherited(100), inherited(102)]);
+      renderForm();
+      await screen.findByText(/Started with your last spool/);
+      await settle();
+      quickAdd();
+      await waitFor(() => expect(document.querySelector('input[max="100"]')).not.toBeNull());
+      fireEvent.change(document.querySelector('input[max="100"]')!, { target: { value: '2' } });
+      submit();
+      expect(await savedIds()).toEqual([2]);
+      expect(mApi.setSpoolSuppliers).not.toHaveBeenCalled();
+    });
+
+    it('the inherited ones when the form showed no supplier', async () => {
+      store.set(KEY, JSON.stringify({ v: 1, brand: 'Polymaker', material: 'PLA', subtype: 'Basic', slicer_filament: 'GFL99' }));
+      mApi.createSpool.mockResolvedValue(inherited(99));
+      renderForm();
+      await screen.findByText(/Started with your last spool/);
+      await settle();
+      submit();
+      expect(await savedIds()).toEqual([2]);
+    });
+
+    it('the remembered chips when nothing was inherited', async () => {
+      store.set(KEY, JSON.stringify(remembered));
+      renderForm();
+      await screen.findByText(/Started with your last spool/);
+      await settle();
+      submit();
+      expect(await savedIds()).toEqual([8]);
+      await waitFor(() => expect(mApi.setSpoolSuppliers).toHaveBeenCalledWith(99, [expect.objectContaining({ supplier_id: 8 })]));
+    });
+
+    it('the chips the user changed, which replace the inherited ones', async () => {
+      store.set(KEY, JSON.stringify({ ...remembered, supplier_ids: [8, 9] }));
+      mApi.getSuppliers.mockResolvedValue([{ id: 8, name: 'Shop' }, { id: 9, name: 'Other shop' }]);
+      mApi.createSpool.mockResolvedValue(inherited(99));
+      renderForm();
+      await screen.findByText(/Started with your last spool/);
+      await settle();
+      fireEvent.click(screen.getByText('Color & Cost'));
+      fireEvent.click((await screen.findAllByRole('button', { name: 'Remove' }))[0]);
+      submit();
+      expect(await savedIds()).toEqual([9]);
+      await waitFor(() => expect(mApi.setSpoolSuppliers).toHaveBeenCalledWith(99, [expect.objectContaining({ supplier_id: 9 })]));
+    });
+
+    it('the remembered chips in Spoolman mode, which has no inheritance', async () => {
+      store.set(SPOOLMAN_KEY, JSON.stringify({ v: 1, brand: 'Remote', material: 'PETG', supplier_ids: [8] }));
+      renderForm({ spoolmanMode: true });
+      await screen.findByText(/Started with your last spool/);
+      await settle();
+      submit();
+      expect(await savedIds(SPOOLMAN_KEY)).toEqual([8]);
+      await waitFor(() => expect(mApi.setSpoolmanSpoolSuppliers).toHaveBeenCalledWith(77, [expect.objectContaining({ supplier_id: 8 })]));
+    });
   });
 
   it('keeps the memory when submitted before the lists have loaded', async () => {

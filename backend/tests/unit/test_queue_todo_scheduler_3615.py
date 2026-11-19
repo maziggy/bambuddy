@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from backend.app.models.print_queue import PrintQueueItem
+from backend.app.services.bambu_mqtt import PrinterState
 from backend.app.services.print_scheduler import _UNMATCHED_HOLD_PREFIX, PrintScheduler, _todo_for_types
 from backend.app.services.queue_todo import FilamentHold, TodoFilament
 from backend.tests.unit.test_ams_mapping_per_printer_2799 import (
@@ -207,6 +208,7 @@ class TestRebuildAfterRestart:
         text = f"{_UNMATCHED_HOLD_PREFIX}PLA #FF0000"
         item_id = await _add_item(queue_db, printer_id=1, manual_start=True, waiting_reason=text)
         with (
+            patch.object(scheduler, "_build_loaded_filaments", MagicMock(return_value=list(P2S_5_TRAYS))),
             patch.object(scheduler, "_compute_ams_mapping_for_printer", AsyncMock(return_value=[-1])),
             patch.object(
                 scheduler,
@@ -311,7 +313,7 @@ class TestRebuildAttemptsAreRemembered:
 
     @pytest.mark.asyncio
     async def test_three_passes_make_one_attempt(self):
-        scheduler = PrintScheduler()
+        scheduler = _scheduler(P2S_5_TRAYS)
         scheduler._pass_holds = {}
         scheduler._compute_ams_mapping_for_printer = AsyncMock(return_value=None)
         scheduler._unmatched_requirements = AsyncMock(return_value=[])
@@ -344,7 +346,7 @@ class TestRebuildAttemptsAreRemembered:
 
     @pytest.mark.asyncio
     async def test_an_offline_printer_is_not_mapped_and_asked_again_later(self, caplog):
-        scheduler = PrintScheduler()
+        scheduler = _scheduler(P2S_5_TRAYS)
         scheduler._pass_holds = {}
         scheduler._compute_ams_mapping_for_printer = AsyncMock(return_value=None)
         scheduler._unmatched_requirements = AsyncMock(return_value=[])
@@ -358,3 +360,30 @@ class TestRebuildAttemptsAreRemembered:
             pm.get_status.return_value = MagicMock()
             await scheduler._rebuild_filament_hold(AsyncMock(), item)
         assert scheduler._compute_ams_mapping_for_printer.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_a_printer_that_has_not_reported_its_trays_is_asked_again(self):
+        """A client and its status exist from connect on, also for a printer that is off."""
+        scheduler = PrintScheduler()
+        scheduler._pass_holds = {}
+        scheduler._get_filament_requirements = AsyncMock(
+            return_value=[{"slot_id": 1, "type": "PETG", "color": "#2850E0"}]
+        )
+        scheduler._get_bool_setting = AsyncMock(return_value=False)
+        item = self._staged()
+        item.created_by_id = None
+        state = PrinterState()  # as connect_printer stores it: no AMS report yet
+        with patch("backend.app.services.print_scheduler.printer_manager") as pm:
+            pm.get_status.return_value = state
+            for _ in range(2):
+                await scheduler._rebuild_filament_hold(AsyncMock(), item)
+            assert scheduler._pass_holds == {}
+            assert scheduler._rebuild_tried == set()
+
+            # The trays arrive: the next pass records what is missing, once.
+            state.raw_data = {
+                "ams": [{"id": 0, "tray": [{"id": 0, "tray_type": "PLA", "tray_color": "FF0000FF"}]}]
+            }
+            await scheduler._rebuild_filament_hold(AsyncMock(), item)
+        assert scheduler._pass_holds == {41: [FilamentHold(41, 8, None, (TodoFilament("PETG", "#2850E0", ""),))]}
+        assert len(scheduler._rebuild_tried) == 1

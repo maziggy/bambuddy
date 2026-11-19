@@ -1914,7 +1914,8 @@ class PrintScheduler:
 
         Read from the same sources as the writers and leaves the waiting text
         alone. Tried once per state of the job: a rebuild that found nothing is
-        not repeated while its inputs stay the same.
+        not repeated while its inputs stay the same. A pinned job's printer
+        must have reported its trays first; until then nothing is remembered.
 
         Known limits (#3615): a hold carried over from the previous pass is not
         re-validated while the job stays staged, and a rebuilt hold for a
@@ -1939,9 +1940,13 @@ class PrintScheduler:
                     filaments = await self._deficit_todo_filaments(db, item, deficit)
             if not filaments and _is_unmatched_hold_reason(item.waiting_reason):
                 if item.printer_id:
-                    if printer_manager.get_status(item.printer_id) is None:
-                        # Offline: nothing to map against, and not worth
-                        # remembering as tried; asked again once it is up.
+                    status = printer_manager.get_status(item.printer_id)
+                    if status is None or not self._build_loaded_filaments(status):
+                        # No trays reported: the printer is switched off or
+                        # has not sent its AMS yet (a client and its status
+                        # exist from connect on). Nothing to map against, and
+                        # not remembered as tried; asked again every pass
+                        # until the trays are there.
                         return
                     mapping = await self._compute_ams_mapping_for_printer(db, item.printer_id, item)
                     unmatched = await self._unmatched_requirements(db, item, item.printer_id, mapping)

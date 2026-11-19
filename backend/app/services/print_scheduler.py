@@ -1881,8 +1881,16 @@ class PrintScheduler:
         return {item_id: list(holds) for item_id, holds in self._filament_holds.items()}
 
     def power_on_failed_printers(self) -> set[int]:
-        """Printers a power-on failed on: pinned jobs this pass, model wakes while cooling off (#2786, #3615)."""
-        return self._power_failed_pinned | {pid for pid in list(self._wake_failures) if self._wake_recently_failed(pid)}
+        """Printers a power-on failed on: pinned jobs this pass, model wakes while cooling off (#2786, #3615).
+
+        Not one that has connected since: the cool-off keeps its entry until
+        it runs out, but a connected printer is no longer waiting to be
+        switched on.
+        """
+        failed = self._power_failed_pinned | {
+            pid for pid in list(self._wake_failures) if self._wake_recently_failed(pid)
+        }
+        return {pid for pid in failed if not printer_manager.is_connected(pid)}
 
     def _record_hold(
         self, item_id: int, printer_id: int | None, target_model: str | None, filaments: list[TodoFilament]

@@ -296,6 +296,18 @@ class TestPowerOnFailed:
         scheduler._wake_failures = {1: time.monotonic() + 100, 2: time.monotonic() - 1}
         assert scheduler.power_on_failed_printers() == {1}
 
+    def test_a_printer_that_has_connected_is_dropped_and_its_cool_off_kept(self):
+        scheduler = PrintScheduler()
+        scheduler._wake_failures = {1: time.monotonic() + 100, 2: time.monotonic() + 100}
+        scheduler._power_failed_pinned = {3, 4}
+        with patch(
+            "backend.app.services.print_scheduler.printer_manager.is_connected",
+            MagicMock(side_effect=lambda pid: pid in (2, 4)),
+        ):
+            assert scheduler.power_on_failed_printers() == {1, 3}
+        # The cool-off itself (#2786) is untouched.
+        assert set(scheduler._wake_failures) == {1, 2}
+
 
 class TestRebuildAttemptsAreRemembered:
     """A rebuild that finds nothing is not repeated every pass (#3615)."""

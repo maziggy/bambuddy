@@ -9145,6 +9145,13 @@ export interface LibraryFileListItem {
   // matching rows on screen. 0 when the file is not grouped.
   variant_group_id?: number | null;
   variant_count?: number;
+  // Only with `with_variant_members=true` (#3628): the group's name and this
+  // file's place in it, whether it was appended from outside the listing's
+  // folder or filter, and the folder it sits in then.
+  variant_group_name?: string | null;
+  variant_position?: number | null;
+  variant_elsewhere?: boolean;
+  folder_name?: string | null;
   // Metadata indicators (#3077). Optional for the same reason as `tags`: older
   // mocks construct list items without them. Read sites default to falsy.
   external_url?: string | null;

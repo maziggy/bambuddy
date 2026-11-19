@@ -87,7 +87,7 @@ import { PurgeOldFilesModal } from '../components/PurgeOldFilesModal';
 import { useToast } from '../contexts/ToastContext';
 import { usePageFileDrop } from '../hooks/usePageFileDrop';
 import { useAuth } from '../contexts/AuthContext';
-import { formatDuration, parseUTCDate, formatDate } from '../utils/date';
+import { formatDuration, formatDate } from '../utils/date';
 import { formatFileSize } from '../utils/file';
 import { assignableProjects } from '../utils/projectTree';
 import { openInSlicer, resolveDesktopSlicer, type SlicerType } from '../utils/slicer';
@@ -95,9 +95,8 @@ import { isSlicedLibraryFile, isSliceableLibraryFile } from '../utils/libraryFil
 import { useUiSettings } from '../hooks/useUiSettings';
 import { FOLDER_DRAG_TYPE, isValidFolderMove, isWritableFolder, moveDisallowedFolderIds } from '../utils/libraryFolders';
 import { PendingUploadsPanel } from '../components/PendingUploadsPanel';
+import { filterAndSortFiles, type SortField, type SortDirection } from './fileManager/filterSort';
 
-type SortField = 'name' | 'date' | 'size' | 'type' | 'prints';
-type SortDirection = 'asc' | 'desc';
 type TFunction = (key: string, options?: Record<string, unknown>) => string;
 
 // Document previews (#2976) are code-split: pdf.js and the spreadsheet
@@ -217,70 +216,6 @@ function fileTypeBadgeClass(fileType: string): string {
   if (fileType === 'pdf') return 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400';
   if (isSpreadsheetType(fileType)) return 'bg-teal-100 dark:bg-teal-500/20 text-teal-700 dark:text-teal-400';
   return 'bg-bambu-gray/20 text-bambu-gray';
-}
-
-// Search / type / user filtering plus the sort, shared by the main listing and
-// by each Miller column's file list so a column never sorts differently from
-// the pane beside it. `query` matches the filename and the embedded print name.
-function filterAndSortFiles(
-  files: LibraryFileListItem[],
-  opts: {
-    query?: string;
-    filterType: string;
-    filterUsername: string;
-    sortField: SortField;
-    sortDirection: SortDirection;
-  },
-): LibraryFileListItem[] {
-  let result = [...files];
-
-  const query = opts.query?.trim().toLowerCase();
-  if (query) {
-    result = result.filter(
-      (f) =>
-        f.filename.toLowerCase().includes(query) ||
-        (f.print_name && f.print_name.toLowerCase().includes(query))
-    );
-  }
-
-  if (opts.filterType !== 'all') {
-    result = result.filter((f) => f.file_type === opts.filterType);
-  }
-
-  const userQuery = opts.filterUsername.trim().toLowerCase();
-  if (userQuery) {
-    result = result.filter(
-      (f) => f.created_by_username && f.created_by_username.toLowerCase().includes(userQuery)
-    );
-  }
-
-  result.sort((a, b) => {
-    let comparison = 0;
-    switch (opts.sortField) {
-      case 'name':
-        comparison = (a.print_name || a.filename).localeCompare(b.print_name || b.filename);
-        break;
-      case 'date':
-        // #2680: sort by real on-disk mtime (matches `ls -t`), falling back to
-        // the DB created_at for managed uploads that have no filesystem mtime.
-        comparison =
-          (parseUTCDate(a.fs_modified_at ?? a.created_at)?.getTime() ?? 0) -
-          (parseUTCDate(b.fs_modified_at ?? b.created_at)?.getTime() ?? 0);
-        break;
-      case 'size':
-        comparison = a.file_size - b.file_size;
-        break;
-      case 'type':
-        comparison = a.file_type.localeCompare(b.file_type);
-        break;
-      case 'prints':
-        comparison = a.print_count - b.print_count;
-        break;
-    }
-    return opts.sortDirection === 'asc' ? comparison : -comparison;
-  });
-
-  return result;
 }
 
 // Keep the filename useful when fixed columns consume the available width,

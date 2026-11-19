@@ -4323,6 +4323,7 @@ export default {
       showVersions: '顯示版本',
       hideVersions: '隱藏版本',
       versionsHeading: '版本',
+      versionsOf: '{{name}}的版本',
       inFolder: '位於 {{folder}}',
       inLibraryRoot: '位於資料庫根目錄',
       print: '將所有版本作為一個工作列印',

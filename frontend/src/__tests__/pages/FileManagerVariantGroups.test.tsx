@@ -137,7 +137,7 @@ describe('version groups in the File Manager', () => {
       expect(screen.getAllByTestId('variant-group-card')).toHaveLength(1);
     });
 
-    it('lists the versions on expanding, with a hint for the one in another folder', async () => {
+    it('lists the versions in a popover, with a hint for the one in another folder', async () => {
       const user = userEvent.setup();
       render(<FileManagerPage />);
       await screen.findByText('plain.stl');
@@ -147,8 +147,10 @@ describe('version groups in the File Manager', () => {
       await user.click(toggle);
 
       expect(toggle).toHaveAttribute('aria-expanded', 'true');
-      expect(toggle.getAttribute('aria-controls')).toBe(within(card()).getByRole('group', { name: 'Versions' }).id);
-      const lines = within(card()).getAllByTestId('variant-member-line');
+      const popover = screen.getByRole('dialog', { name: 'Versions of Vase' });
+      expect(toggle.getAttribute('aria-controls')).toBe(popover.id);
+      expect(card()).not.toContainElement(popover);
+      const lines = within(popover).getAllByTestId('variant-member-line');
       expect(lines.map((l) => l.getAttribute('data-file-id'))).toEqual(['21', '22', '23']);
       expect(within(lines[0]).getByText('X1C')).toBeInTheDocument();
       expect(within(lines[0]).getByText('1h 0m')).toBeInTheDocument();
@@ -195,17 +197,191 @@ describe('version groups in the File Manager', () => {
       expect(await screen.findByText(/all 3 versions of "Vase"\. 1 of them is in another folder\./)).toBeInTheDocument();
     });
 
-    it('opens a card over a row of its own without stretching the cards beside it', async () => {
-      const user = userEvent.setup();
-      render(<FileManagerPage />);
-      await screen.findByText('plain.stl');
-      expect(card().className).not.toContain('col-span-full');
-      await user.click(within(card()).getByRole('button', { name: 'Show versions' }));
-      expect(card().className).toContain('col-span-full');
-      // Plain cards stretch to the row height as ever.
-      expect(card().parentElement!.className).not.toContain('items-start');
-      // The versions spread over the card's width.
-      expect(within(card()).getByRole('group', { name: 'Versions' }).className).toContain('sm:grid-cols-2');
+    describe('versions popover', () => {
+      async function open() {
+        const user = userEvent.setup();
+        render(<FileManagerPage />);
+        await screen.findByText('plain.stl');
+        const toggle = within(card()).getByRole('button', { name: 'Show versions' });
+        await user.click(toggle);
+        const popover = await screen.findByRole('dialog', { name: 'Versions of Vase' });
+        return { user, toggle, popover };
+      }
+      const closed = () => expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+      it('does not change the card or its grid when opened', async () => {
+        const gridClasses = () => card().parentElement!.className;
+        const cardClasses = card;
+        render(<FileManagerPage />);
+        await screen.findByText('plain.stl');
+        const before = { card: cardClasses().className, grid: gridClasses(), cards: card().parentElement!.children.length };
+        await userEvent.setup().click(within(card()).getByRole('button', { name: 'Show versions' }));
+        await screen.findByRole('dialog');
+        expect(card().className).toBe(before.card);
+        expect(card().className).not.toContain('col-span-full');
+        expect(gridClasses()).toBe(before.grid);
+        expect(card().parentElement!.children.length).toBe(before.cards);
+        expect(within(card()).getAllByRole('heading', { level: 3 })).toHaveLength(1);
+      });
+
+      it('is a portal to the body under the card, not wider than 420px nor narrower than 340px', async () => {
+        const { popover } = await open();
+        expect(popover.parentElement!.parentElement).toBe(document.body);
+        expect(popover.style.position).toBe('fixed');
+        expect(popover).toHaveAttribute('data-testid', 'variant-versions-popover');
+        const width = parseInt(popover.style.width, 10);
+        expect(width).toBeGreaterThanOrEqual(340);
+        expect(width).toBeLessThanOrEqual(420);
+        expect(within(popover).getAllByTestId('variant-member-line')).toHaveLength(3);
+        // No sheet chrome on a wide screen.
+        expect(within(popover).queryByRole('button', { name: 'Close' })).not.toBeInTheDocument();
+      });
+
+      it('moves focus to the first control inside it', async () => {
+        const { popover } = await open();
+        expect(popover).toContainElement(document.activeElement as HTMLElement);
+        expect(document.activeElement).toBe(within(popover).getAllByRole('button')[0]);
+      });
+
+      it('closes with a second click on the toggle', async () => {
+        const { user, toggle } = await open();
+        await user.click(toggle);
+        closed();
+        expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      });
+
+      it('closes with Escape and returns focus to the toggle', async () => {
+        const { user, toggle } = await open();
+        await user.keyboard('{Escape}');
+        closed();
+        expect(toggle).toHaveFocus();
+      });
+
+      it('closes on a click outside, not on one inside', async () => {
+        const { user, popover } = await open();
+        await user.click(within(popover).getAllByTestId('variant-member-line')[0]);
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+        await user.click(screen.getByText('plain.stl'));
+        closed();
+      });
+
+      it('closes when Tab leaves it and returns focus to the toggle', async () => {
+        const { user, toggle, popover } = await open();
+        const buttons = within(popover).getAllByRole('button');
+        buttons[buttons.length - 1].focus();
+        await user.tab();
+        closed();
+        expect(toggle).toHaveFocus();
+      });
+
+      it('keeps Tab between its own controls', async () => {
+        const { user, popover } = await open();
+        await user.tab();
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+        expect(popover).toContainElement(document.activeElement as HTMLElement);
+      });
+
+      it('closes when the page scrolls, not when the popover does', async () => {
+        const { popover } = await open();
+        fireEvent.scroll(popover.lastElementChild as HTMLElement);
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+        fireEvent.scroll(card().parentElement!);
+        closed();
+      });
+
+      it('stays open and follows a resize', async () => {
+        const { popover } = await open();
+        fireEvent(window, new Event('resize'));
+        expect(screen.getByRole('dialog')).toBe(popover);
+      });
+
+      it('closes when the card starts a drag', async () => {
+        await open();
+        const draggable = card().querySelector('[draggable="true"]') as HTMLElement;
+        fireEvent.dragStart(draggable, { dataTransfer: { setData: () => {}, effectAllowed: '' } });
+        closed();
+      });
+
+      it('opens one group at a time', async () => {
+        serve([
+          ...baseFiles,
+          item(41, 'cup_X1C.gcode.3mf', { variant_group_id: 9, variant_count: 2, variant_group_name: 'Cup', variant_position: 0, sliced_for_model: 'X1C' }),
+          item(42, 'cup_P1S.gcode.3mf', { variant_group_id: 9, variant_count: 2, variant_group_name: 'Cup', variant_position: 1, sliced_for_model: 'P1S' }),
+        ]);
+        const user = userEvent.setup();
+        render(<FileManagerPage />);
+        await screen.findByText('plain.stl');
+        const cards = screen.getAllByTestId('variant-group-card');
+        expect(cards).toHaveLength(2);
+        const vase1 = cards.find((c) => within(c).queryByText('Vase'))!;
+        const cup = cards.find((c) => within(c).queryByText('Cup'))!;
+        await user.click(within(vase1).getByRole('button', { name: 'Show versions' }));
+        expect(await screen.findByRole('dialog', { name: 'Versions of Vase' })).toBeInTheDocument();
+        await user.click(within(cup).getByRole('button', { name: 'Show versions' }));
+        expect(await screen.findByRole('dialog', { name: 'Versions of Cup' })).toBeInTheDocument();
+        expect(screen.getAllByRole('dialog')).toHaveLength(1);
+        expect(within(vase1).getByRole('button', { name: 'Show versions' })).toHaveAttribute('aria-expanded', 'false');
+      });
+
+      it('disappears with the card when the view changes', async () => {
+        const { user } = await open();
+        await user.click(screen.getByTitle('List view'));
+        await screen.findByTestId('variant-group-list-row');
+        closed();
+        await user.click(screen.getByTitle('Grid view'));
+        await screen.findByTestId('variant-group-card');
+        closed();
+        expect(within(card()).getByRole('button', { name: 'Show versions' })).toHaveAttribute('aria-expanded', 'false');
+      });
+
+      it('runs a version menu inside it without closing it or selecting the group', async () => {
+        const { user, popover } = await open();
+        const line = within(popover).getAllByTestId('variant-member-line')[0];
+        await user.click(within(line).getByRole('button', { name: /^Actions for / }));
+        await user.click(await screen.findByRole('button', { name: 'File details' }));
+        // The menu item acted, the popover is still there, nothing got selected.
+        expect(screen.getByRole('dialog', { name: 'Versions of Vase' })).toBeInTheDocument();
+        expect(screen.queryByText(/selected$/)).not.toBeInTheDocument();
+        expect(within(card()).getByRole('checkbox')).toHaveAttribute('aria-checked', 'false');
+      });
+
+      it('keeps the card\'s own selection, print and menu as they were', async () => {
+        const { user } = await open();
+        await user.click(within(card()).getByText('Vase'));
+        expect(await screen.findByText('2 selected')).toBeInTheDocument();
+        closed();
+      });
+
+      describe('on a phone', () => {
+        const width = window.innerWidth;
+        beforeEach(() => {
+          Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 390 });
+        });
+        afterEach(() => {
+          Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width });
+        });
+
+        it('opens a bottom sheet with a heading, a close button and a backdrop', async () => {
+          const { user, toggle, popover } = await open();
+          expect(popover).toHaveAttribute('data-testid', 'variant-versions-sheet');
+          expect(popover.className).toContain('inset-x-0');
+          expect(popover.className).toContain('max-h-[70vh]');
+          expect(within(popover).getByText('Versions of Vase')).toBeInTheDocument();
+          expect(within(popover).getAllByTestId('variant-member-line')).toHaveLength(3);
+          expect(screen.getByTestId('variant-versions-backdrop')).toBeInTheDocument();
+          expect(card().className).not.toContain('col-span-full');
+          await user.click(within(popover).getByRole('button', { name: 'Close' }));
+          closed();
+          expect(toggle).toHaveFocus();
+        });
+
+        it('closes with a click on the backdrop without selecting the card behind it', async () => {
+          const { user } = await open();
+          await user.click(screen.getByTestId('variant-versions-backdrop'));
+          closed();
+          expect(screen.queryByText(/selected$/)).not.toBeInTheDocument();
+        });
+      });
     });
 
     it('leaves an ungrouped file as it was', async () => {
@@ -617,7 +793,7 @@ describe('version groups in the File Manager', () => {
       render(<FileManagerPage />);
       await screen.findByTestId('variant-group-card');
       await user.click(within(card()).getByRole('button', { name: 'Show versions' }));
-      const line = within(card()).getAllByTestId('variant-member-line')[1];
+      const line = screen.getAllByTestId('variant-member-line')[1];
       await user.click(within(line).getByRole('button', { name: /Actions for/ }));
       await user.click(await screen.findByRole('button', { name: 'Remove from group' }));
       await waitFor(() => expect(calls).toEqual(['7/22']));
@@ -641,7 +817,7 @@ describe('version groups in the File Manager', () => {
       render(<FileManagerPage />);
       await screen.findByTestId('variant-group-card');
       await user.click(within(card()).getByRole('button', { name: 'Show versions' }));
-      const line = within(card()).getAllByTestId('variant-member-line')[1];
+      const line = screen.getAllByTestId('variant-member-line')[1];
       await user.click(within(line).getByRole('button', { name: /Actions for/ }));
       await user.click(await screen.findByRole('button', { name: 'Print this version only' }));
 
@@ -700,9 +876,9 @@ describe('version groups in the File Manager', () => {
       const user = userEvent.setup();
       render(<FileManagerPage />);
       await screen.findByTestId('variant-group-card');
-      await user.click(within(card()).getByRole('button', { name: 'Show versions' }));
       await printGroup(user);
-      const line = within(card()).getAllByTestId('variant-member-line')[1];
+      await user.click(within(card()).getByRole('button', { name: 'Show versions' }));
+      const line = screen.getAllByTestId('variant-member-line')[1];
       await user.click(within(line).getByRole('button', { name: /Actions for/ }));
       await user.click(await screen.findByRole('button', { name: 'Print this version only' }));
       expect((await screen.findAllByText('vase_P1S.gcode.3mf')).length).toBeGreaterThan(1);
@@ -729,7 +905,7 @@ describe('version groups in the File Manager', () => {
       // The title truncates instead of widening the card.
       expect(within(c).getByText(long).className).toContain('truncate');
       await user.click(within(c).getByRole('button', { name: 'Show versions' }));
-      expect(within(c).getAllByTestId('variant-member-line')).toHaveLength(40);
+      expect(screen.getAllByTestId('variant-member-line')).toHaveLength(40);
     });
 
     it('lists a version in an external folder like any other', async () => {
@@ -741,7 +917,7 @@ describe('version groups in the File Manager', () => {
       render(<FileManagerPage />);
       const c = await screen.findByTestId('variant-group-card');
       await user.click(within(c).getByRole('button', { name: 'Show versions' }));
-      expect(within(c).getByText('in NAS (read-only)')).toBeInTheDocument();
+      expect(screen.getByText('in NAS (read-only)')).toBeInTheDocument();
     });
 
     it('offers Preview in a version\'s menu', async () => {
@@ -750,7 +926,7 @@ describe('version groups in the File Manager', () => {
       render(<FileManagerPage />);
       const c = await screen.findByTestId('variant-group-card');
       await user.click(within(c).getByRole('button', { name: 'Show versions' }));
-      await user.click(within(within(c).getAllByTestId('variant-member-line')[0]).getByRole('button', { name: /Actions for/ }));
+      await user.click(within(screen.getAllByTestId('variant-member-line')[0]).getByRole('button', { name: /Actions for/ }));
       expect(await screen.findByRole('button', { name: '3D Preview' })).toBeEnabled();
     });
 
@@ -761,7 +937,7 @@ describe('version groups in the File Manager', () => {
       render(<FileManagerPage />);
       const c = await screen.findByTestId('variant-group-card');
       await user.click(within(c).getByRole('button', { name: 'Show versions' }));
-      await user.click(within(within(c).getAllByTestId('variant-member-line')[0]).getByRole('button', { name: /Actions for/ }));
+      await user.click(within(screen.getAllByTestId('variant-member-line')[0]).getByRole('button', { name: /Actions for/ }));
       expect(await screen.findByRole('button', { name: '3D Preview' })).toBeDisabled();
     });
 
@@ -771,8 +947,8 @@ describe('version groups in the File Manager', () => {
       render(<FileManagerPage />);
       const c = await screen.findByTestId('variant-group-card');
       await user.click(within(c).getByRole('button', { name: 'Show versions' }));
-      expect(within(c).getByText('in another folder')).toBeInTheDocument();
-      expect(within(c).queryByText('in the library root')).not.toBeInTheDocument();
+      expect(screen.getByText('in another folder')).toBeInTheDocument();
+      expect(screen.queryByText('in the library root')).not.toBeInTheDocument();
     });
 
     it('says "in the library root" for an elsewhere version that is in no folder', async () => {
@@ -781,7 +957,7 @@ describe('version groups in the File Manager', () => {
       render(<FileManagerPage />);
       const c = await screen.findByTestId('variant-group-card');
       await user.click(within(c).getByRole('button', { name: 'Show versions' }));
-      expect(within(c).getByText('in the library root')).toBeInTheDocument();
+      expect(screen.getByText('in the library root')).toBeInTheDocument();
     });
 
     it('does not open a preview when a version line is double-clicked', async () => {
@@ -790,7 +966,7 @@ describe('version groups in the File Manager', () => {
       render(<FileManagerPage />);
       const c = await screen.findByTestId('variant-group-card');
       await user.click(within(c).getByRole('button', { name: 'Show versions' }));
-      fireEvent.doubleClick(within(c).getAllByTestId('variant-member-line')[0]);
+      fireEvent.doubleClick(screen.getAllByTestId('variant-member-line')[0]);
       expect(screen.queryByTestId('model-viewer-modal')).not.toBeInTheDocument();
     });
   });

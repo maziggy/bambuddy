@@ -4336,6 +4336,7 @@ export default {
       showVersions: 'バージョンを表示',
       hideVersions: 'バージョンを隠す',
       versionsHeading: 'バージョン',
+      versionsOf: '{{name}} のバージョン',
       inFolder: '{{folder}}内',
       inLibraryRoot: 'ライブラリのルート',
       print: 'すべてのバージョンを1つのジョブとして印刷',

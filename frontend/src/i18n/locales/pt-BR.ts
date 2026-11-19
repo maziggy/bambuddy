@@ -4323,6 +4323,7 @@ export default {
       showVersions: 'Mostrar versões',
       hideVersions: 'Ocultar versões',
       versionsHeading: 'Versões',
+      versionsOf: 'Versões de {{name}}',
       inFolder: 'em {{folder}}',
       inLibraryRoot: 'na raiz da biblioteca',
       print: 'Imprimir todas as versões como um único trabalho',

@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CalendarClock, ChevronDown, ChevronRight, Layers, MoreVertical, Printer, Trash2, Unlink } from 'lucide-react';
 import { api } from '../../api/client';
@@ -7,12 +7,15 @@ import { formatFileSize } from '../../utils/file';
 import type { GroupRow } from '../../pages/fileManager/variantGroups';
 import { ContextMenu, type ContextMenuItem } from '../ContextMenu';
 import { VariantMemberLine } from './VariantMemberLine';
+import { VariantVersionsPopover } from './VariantVersionsPopover';
 import { VariantSelectionBox } from './VariantSelectionBox';
 import { groupSelection } from '../../pages/fileManager/variantSelection';
 import { dragSourceProps, type VariantGroupViewProps } from './variantTypes';
 
 // A version group as one card of the grid view (#3628): the first version's
 // thumbnail, the name, the printer models, and the versions behind a toggle.
+// The card never changes size or place: the versions open in a popover (a
+// bottom sheet on a phone), so the tiles around it stay where they are.
 export function VariantGroupCard({
   row,
   selectedIds,
@@ -23,11 +26,28 @@ export function VariantGroupCard({
   memberActions,
   groupActions,
   groupDrag,
+  openGroupId,
+  onOpenGroupChange,
 }: { row: GroupRow } & VariantGroupViewProps) {
   const { t } = useTranslation();
-  const [expanded, setExpanded] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null);
   const panelId = useId();
+  const cardRef = useRef<HTMLDivElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  // One group is open at a time across the page, so the page holds which.
+  const expanded = openGroupId === row.id;
+  const expandedRef = useRef(expanded);
+  expandedRef.current = expanded;
+  const onOpenGroupChangeRef = useRef(onOpenGroupChange);
+  onOpenGroupChangeRef.current = onOpenGroupChange;
+  // A card that goes away (folder or view change, group dissolved) takes its
+  // popover with it and must not leave its id open.
+  useEffect(
+    () => () => {
+      if (expandedRef.current) onOpenGroupChangeRef.current(null);
+    },
+    [],
+  );
 
   const first = row.thumbnailFile;
   const { count: selectedCount, total: selectableCount } = groupSelection(row, selectedIds);
@@ -73,18 +93,12 @@ export function VariantGroupCard({
       data-file-id={first.id}
       data-member-ids={row.members.map((m) => m.id).join(' ')}
       style={highlighted ? { outline: '4px solid #facc15', outlineOffset: '2px' } : undefined}
-      // An open card takes a row of its own, so the cards beside it keep their
-      // height and its version lines spread over the width; a closed one is a
-      // cell like any file card.
-      className={`relative flex flex-col min-w-0 ${expanded ? 'col-span-full' : 'pb-2'}`}
+      ref={cardRef}
+      className="relative flex flex-col min-w-0 pb-2"
     >
       {/* The cards behind it: a pile, not a single file. */}
-      {!expanded && (
-        <>
-          <div aria-hidden="true" className="absolute inset-x-2 bottom-1 h-3 rounded-b-lg border border-t-0 border-bambu-dark-tertiary bg-bambu-dark-secondary" />
-          <div aria-hidden="true" className="absolute inset-x-4 bottom-0 h-3 rounded-b-lg border border-t-0 border-bambu-dark-tertiary bg-bambu-dark" />
-        </>
-      )}
+      <div aria-hidden="true" className="absolute inset-x-2 bottom-1 h-3 rounded-b-lg border border-t-0 border-bambu-dark-tertiary bg-bambu-dark-secondary" />
+      <div aria-hidden="true" className="absolute inset-x-4 bottom-0 h-3 rounded-b-lg border border-t-0 border-bambu-dark-tertiary bg-bambu-dark" />
       <div
         className={`group relative flex-1 bg-bambu-dark-secondary rounded-lg border transition-all cursor-pointer ${
           selectedCount > 0
@@ -94,13 +108,7 @@ export function VariantGroupCard({
         onClick={() => onToggleSelect(row)}
         {...dragSourceProps(row, groupDrag)}
       >
-        {/* Open: a header row (fixed square thumbnail, text beside it) over the versions. */}
-        <div className={expanded ? 'flex items-start gap-3 p-3' : undefined}>
-        <div
-          className={`bg-bambu-dark flex items-center justify-center overflow-hidden relative ${
-            expanded ? 'w-28 h-28 sm:w-40 sm:h-40 shrink-0 rounded-lg' : 'aspect-square rounded-t-lg'
-          }`}
-        >
+        <div className="bg-bambu-dark flex items-center justify-center overflow-hidden relative aspect-square rounded-t-lg">
           {first.thumbnail_path ? (
             <img
               src={`${thumbUrl}${version ? (thumbUrl.includes('?') ? '&' : '?') + `v=${version}` : ''}`}
@@ -117,7 +125,7 @@ export function VariantGroupCard({
           </div>
         </div>
 
-        <div className={expanded ? 'min-w-0 flex-1' : 'p-3'}>
+        <div className="p-3">
           <h3 className="text-sm font-medium text-white truncate" title={row.name}>
             {row.name}
           </h3>
@@ -139,12 +147,13 @@ export function VariantGroupCard({
           )}
           <div className="mt-2 flex items-center justify-between gap-2">
           <button
+            ref={toggleRef}
             type="button"
             aria-expanded={expanded}
             aria-controls={panelId}
             onClick={(e) => {
               e.stopPropagation();
-              setExpanded((v) => !v);
+              onOpenGroupChange(expanded ? null : row.id);
             }}
             onDoubleClick={(e) => e.stopPropagation()}
             className="inline-flex items-center gap-1 text-xs text-bambu-green hover:underline whitespace-nowrap"
@@ -173,10 +182,19 @@ export function VariantGroupCard({
           </div>
           </div>
         </div>
-        </div>
 
         {expanded && (
-          <div id={panelId} role="group" aria-label={t('fileManager.variants.versionsHeading')} className="px-1 pb-2 border-t border-bambu-dark-tertiary grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-x-2 content-start">
+          <VariantVersionsPopover
+            id={panelId}
+            name={row.name}
+            anchorRef={cardRef}
+            toggleRef={toggleRef}
+            layoutKey={row.members.length}
+            onClose={(restoreFocus) => {
+              onOpenGroupChange(null);
+              if (restoreFocus) toggleRef.current?.focus();
+            }}
+          >
             {row.members.map((m) => (
               <VariantMemberLine
                 key={m.id}
@@ -187,7 +205,7 @@ export function VariantGroupCard({
                 highlighted={highlightedFileId === m.id}
               />
             ))}
-          </div>
+          </VariantVersionsPopover>
         )}
 
         <VariantSelectionBox

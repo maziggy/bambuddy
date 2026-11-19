@@ -4363,6 +4363,7 @@ export default {
       showVersions: 'Показати версії',
       hideVersions: 'Сховати версії',
       versionsHeading: 'Версії',
+      versionsOf: 'Версії «{{name}}»',
       inFolder: 'у {{folder}}',
       inLibraryRoot: 'у корені бібліотеки',
       print: 'Друкувати всі версії одним завданням',

@@ -4336,6 +4336,7 @@ export default {
       showVersions: 'Versionen anzeigen',
       hideVersions: 'Versionen ausblenden',
       versionsHeading: 'Versionen',
+      versionsOf: 'Versionen von {{name}}',
       inFolder: 'im Ordner {{folder}}',
       inLibraryRoot: 'im Hauptverzeichnis der Bibliothek',
       print: 'Alle Versionen als einen Auftrag drucken',

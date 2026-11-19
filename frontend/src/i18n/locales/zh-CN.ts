@@ -4323,6 +4323,7 @@ export default {
       showVersions: '显示版本',
       hideVersions: '隐藏版本',
       versionsHeading: '版本',
+      versionsOf: '{{name}}的版本',
       inFolder: '位于 {{folder}}',
       inLibraryRoot: '位于库根目录',
       print: '将所有版本作为一个任务打印',

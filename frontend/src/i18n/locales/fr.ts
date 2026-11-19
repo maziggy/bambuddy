@@ -4324,6 +4324,7 @@ export default {
       showVersions: 'Afficher les versions',
       hideVersions: 'Masquer les versions',
       versionsHeading: 'Versions du groupe',
+      versionsOf: 'Versions de {{name}}',
       inFolder: 'dans {{folder}}',
       inLibraryRoot: 'à la racine de la bibliothèque',
       print: 'Imprimer toutes les versions en un seul travail',

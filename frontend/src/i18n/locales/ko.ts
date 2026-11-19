@@ -4147,6 +4147,7 @@ export default {
       showVersions: '버전 보기',
       hideVersions: '버전 숨기기',
       versionsHeading: '버전',
+      versionsOf: '{{name}}의 버전',
       inFolder: '{{folder}}에 있음',
       inLibraryRoot: '라이브러리 최상위에 있음',
       print: '모든 버전을 하나의 작업으로 인쇄',

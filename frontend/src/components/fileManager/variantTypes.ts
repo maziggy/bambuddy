@@ -27,6 +27,9 @@ export interface VariantGroupViewProps {
   onTagClick?: (tagId: number) => void;
   memberActions: VariantMemberActions;
   groupActions: VariantGroupActions;
+  /** The group whose versions are open in a popover (grid view): one at a time on the page. */
+  openGroupId: number | null;
+  onOpenGroupChange: (id: number | null) => void;
   /** Dragging a group onto a folder moves the versions in this folder. */
   groupDrag?: {
     canDrag: (row: GroupRow) => boolean;

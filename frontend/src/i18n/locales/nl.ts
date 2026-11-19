@@ -4366,6 +4366,7 @@ export default {
       showVersions: 'Versies tonen',
       hideVersions: 'Versies verbergen',
       versionsHeading: 'Versies',
+      versionsOf: 'Versies van {{name}}',
       inFolder: 'in map {{folder}}',
       inLibraryRoot: 'in de hoofdmap van de bibliotheek',
       print: 'Alle versies als één taak afdrukken',

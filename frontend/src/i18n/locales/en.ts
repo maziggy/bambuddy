@@ -4368,6 +4368,7 @@ export default {
       showVersions: 'Show versions',
       hideVersions: 'Hide versions',
       versionsHeading: 'Versions',
+      versionsOf: 'Versions of {{name}}',
       inFolder: 'in {{folder}}',
       inLibraryRoot: 'in the library root',
       print: 'Print all versions as one job',

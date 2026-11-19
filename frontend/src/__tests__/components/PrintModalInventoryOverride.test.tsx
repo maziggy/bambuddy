@@ -329,7 +329,7 @@ describe('PrintModal "Show inventory colours" setting (#3590)', () => {
           id: 2,
           username: 'operator',
           is_admin: false,
-          permissions: ['settings:read', 'queue:read', 'queue:create', 'queue:update', 'printers:read'],
+          permissions: ['settings:read', 'queue:read', 'queue:create', 'queue:update', 'printers:read', 'inventory:read'],
         }),
       ),
     );
@@ -340,6 +340,41 @@ describe('PrintModal "Show inventory colours" setting (#3590)', () => {
     expect(box.closest('label')).toHaveAttribute('title', 'Only users who may change settings can switch this.');
     await user.click(box);
     expect(settingsWrites).toEqual([]);
+  });
+
+  it('a user without inventory:read gets no inventory request, group or checkbox', async () => {
+    // The route answers 403 without inventory:read, so the dialog must not ask.
+    mockBackend({ flag: true });
+    setAuthToken('test-token', 'session');
+    server.use(
+      http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+      http.get('*/api/v1/auth/me', () =>
+        HttpResponse.json({
+          id: 2,
+          username: 'operator',
+          is_admin: false,
+          permissions: ['settings:read', 'settings:update', 'queue:read', 'queue:create', 'queue:update', 'printers:read'],
+        }),
+      ),
+      http.get('/api/v1/printers/inventory-filaments', () => {
+        inventoryRequests += 1;
+        return HttpResponse.json({ detail: 'Missing required permissions' }, { status: 403 });
+      }),
+    );
+    renderEdit([{ slot_id: 1, type: 'PLA', color: '#0000FF', tray_info_idx: 'GFA05', force_color_match: true }]);
+    const trigger = await screen.findByRole('combobox', { name: /filament override for/i });
+    // The stored override is still shown, as a saved row.
+    await waitFor(() => expect(trigger.textContent).not.toMatch(/original filament/i));
+    fireEvent.click(trigger);
+    expect(optionValues().filter(Boolean)).toEqual(['PLA|#FF0000', 'PLA|#0000FF|GFA05']);
+    expect(
+      within(screen.getByRole('listbox'))
+        .getAllByRole('group')
+        .map((g) => g.getAttribute('aria-label')),
+    ).toEqual(['Saved with this job']);
+    expect(screen.queryByText(/spools/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: /show inventory colours/i })).not.toBeInTheDocument();
+    expect(inventoryRequests).toBe(0);
   });
 
   it('off: a stored inventory override stays as "Saved with this job" and in the payload', async () => {

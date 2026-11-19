@@ -692,9 +692,11 @@ export function PrintModal({
   // with a stock hint (#3590). Only while the install-wide setting is on: off
   // (the default) the dialog is as before, with no request and loaded rows only.
   // Spoolman mode answers inventory_available=false and the picker then shows
-  // "Loaded now" only.
+  // "Loaded now" only. The list is the inventory's stock, so the route also
+  // asks for inventory:read: without it nothing is requested or offered.
   const spoolmanMode = !!settings?.spoolman_enabled;
-  const inventoryEnabled = !!settings?.filament_override_inventory && !spoolmanMode;
+  const canReadInventory = hasPermission('inventory:read');
+  const inventoryEnabled = !!settings?.filament_override_inventory && !spoolmanMode && canReadInventory;
   const { data: inventoryFilamentsData } = useQuery({
     queryKey: ['inventory-filaments'],
     queryFn: () => api.getInventoryFilaments(),
@@ -2238,8 +2240,9 @@ export function PrintModal({
     && (((effectiveAvailableFilaments?.length ?? 0) > 0) || (inventoryEnabled && inventoryFilaments.length > 0));
 
   // Only once the settings are known: before that the box would flash unchecked and enabled
-  // (and show up for a Spoolman install).
-  const inventoryOption = !settings || spoolmanMode
+  // (and show up for a Spoolman install). Not for a user who may not read the
+  // inventory: the box would offer colours the dialog cannot list for them.
+  const inventoryOption = !settings || spoolmanMode || !canReadInventory
     ? undefined
     : {
         checked: inventoryEnabled,

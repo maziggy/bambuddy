@@ -327,13 +327,16 @@ async def list_usb_cameras(
 
 @router.get("/inventory-filaments")
 async def get_inventory_filaments(
-    _=RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
+    _=RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE, Permission.INVENTORY_READ),
     db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Built-in inventory stock per type + colour + variant, for the filament override (#3590).
 
-    Not printer-specific, so no printer scope applies. In Spoolman mode there is
-    no built-in stock: ``inventory_available`` is False and the list empty.
+    It is the inventory's stock, so the caller needs ``inventory:read`` next to
+    ``queue:create`` (an API key: Queue and Read Status), like the inventory's
+    own read routes. Not printer-specific, so no printer scope applies. In
+    Spoolman mode there is no built-in stock: ``inventory_available`` is False
+    and the list empty.
     """
     entries = await inventory_stock(db)
     if entries is None:

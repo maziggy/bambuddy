@@ -273,6 +273,17 @@ class TestTodoAccess:
         ).json()["access_token"]
         return admin, member
 
+    @staticmethod
+    async def _add_user(async_client, admin, username, group_ids=()) -> int:
+        """Another real user (jobs point at their creator by foreign key); returns the id."""
+        created = await async_client.post(
+            "/api/v1/users/",
+            headers=_auth(admin),
+            json={"username": username, "password": "UserPass1!", "group_ids": list(group_ids)},
+        )
+        assert created.status_code in (200, 201), created.text
+        return created.json()["id"]
+
     async def test_403_without_queue_read(self, async_client, printer_factory):
         await printer_factory()
         _, member = await self._setup(async_client, ["printers:read"])
@@ -300,6 +311,67 @@ class TestTodoAccess:
         assert all(e["kind"] != "load_filament" for e in _only_entries(body))
         assert {g["printer_id"] for g in admin_body["groups"]} == {a.id, b.id, None}
         assert on_a.id != model_b.id
+
+
+class TestModelJobCreatorScope:
+    """A model job's printer entries follow its creator's printers, as the scheduler does (#1727)."""
+
+    async def _printer_entries(self, async_client, token, printer_ids):
+        with (
+            patch("backend.app.api.routes.print_queue.printer_manager.is_awaiting_plate_clear", lambda pid: True),
+            patch("backend.app.api.routes.print_queue.plate_clear.applies", lambda pid, setting: True),
+            patch(
+                "backend.app.api.routes.print_queue.ha_sensor_manager.blocked_printers",
+                AsyncMock(return_value=dict.fromkeys(printer_ids, "Door")),
+            ),
+            patch.object(scheduler, "power_on_failed_printers", return_value=set(printer_ids)),
+        ):
+            body = (await async_client.get(URL, headers=_auth(token))).json()
+        return {
+            group["printer_id"]: {entry["kind"]: [job["name"] for job in entry["jobs"]] for entry in group["entries"]}
+            for group in body["groups"]
+        }
+
+    async def test_admin_sees_no_printer_entry_where_the_creator_has_no_access(
+        self, async_client, printer_factory, make_item
+    ):
+        a = await printer_factory(name="A", model="X1C")
+        b = await printer_factory(name="B", model="X1C")
+        helper = TestTodoAccess()
+        admin, _ = await helper._setup(async_client, ["queue:read_all"], printer_ids=[a.id])
+        free_id = await helper._add_user(async_client, admin, "free")
+        await make_item(None, name="Limited", target_model="X1C", created_by_id=helper.member_id)
+        await make_item(None, name="Free", target_model="X1C", created_by_id=free_id)
+
+        groups = await self._printer_entries(async_client, admin, [a.id, b.id])
+
+        kinds = ("plate_clear", "sensor_interlock", "power_on_failed")
+        # The scheduler never sends "Limited" to B, so nothing on B is listed for it.
+        assert groups[a.id] == dict.fromkeys(kinds, ["Limited", "Free"])
+        assert groups[b.id] == dict.fromkeys(kinds, ["Free"])
+
+    async def test_a_printer_only_out_of_scope_jobs_match_gets_no_group(self, async_client, printer_factory, make_item):
+        a = await printer_factory(name="A", model="X1C")
+        b = await printer_factory(name="B", model="X1C")
+        helper = TestTodoAccess()
+        admin, _ = await helper._setup(async_client, ["queue:read_all"], printer_ids=[a.id])
+        await make_item(None, name="Limited", target_model="X1C", created_by_id=helper.member_id)
+
+        groups = await self._printer_entries(async_client, admin, [a.id, b.id])
+
+        assert set(groups) == {a.id}
+
+    async def test_the_viewer_still_sees_only_their_own_printers(self, async_client, printer_factory, make_item):
+        a = await printer_factory(name="A", model="X1C")
+        b = await printer_factory(name="B", model="X1C")
+        helper = TestTodoAccess()
+        admin, member = await helper._setup(async_client, ["queue:read_all"], printer_ids=[a.id])
+        free_id = await helper._add_user(async_client, admin, "free")
+        await make_item(None, name="Free", target_model="X1C", created_by_id=free_id)
+
+        groups = await self._printer_entries(async_client, member, [a.id, b.id])
+
+        assert set(groups) == {a.id}
 
 
 class TestModelJobFilament:

@@ -78,7 +78,7 @@ class TodoJob:
     id: int
     name: str
     # Printers the job could go to: its pinned printer, or every printer of
-    # its model (and location) the caller may see.
+    # its model (and location) that its creator may use and the caller may see.
     printer_ids: frozenset[int]
     # The pinned printer, None for a model job.
     pinned_id: int | None

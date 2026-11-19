@@ -924,6 +924,10 @@ async def queue_todo(
     def model_key(model: str | None) -> str | None:
         return (normalize_printer_model(model) or model or "").lower() or None
 
+    # The scheduler sends a model job only to the printers its creator may use
+    # (#1727), so its printer entries are limited to those; read once per creator.
+    creator_scopes: dict[int | None, PrinterScope] = {}
+
     jobs: list[TodoJob] = []
     for item in items:
         if item.printer_id is not None:
@@ -932,10 +936,14 @@ async def queue_todo(
             ids = frozenset({item.printer_id})
             key = label = None
         else:
+            if item.created_by_id not in creator_scopes:
+                creator_scopes[item.created_by_id] = await _scheduler._creator_printer_scope(db, item.created_by_id)
+            creator_scope = creator_scopes[item.created_by_id]
             ids = frozenset(
                 row.id
                 for row in printer_rows
                 if row.is_active
+                and creator_scope.allows(row.id)
                 and _could_take_printer(item, row.id, row.model)
                 and (not item.target_location or row.location == item.target_location)
             )

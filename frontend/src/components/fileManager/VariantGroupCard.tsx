@@ -73,16 +73,16 @@ export function VariantGroupCard({
       data-file-id={first.id}
       data-member-ids={row.members.map((m) => m.id).join(' ')}
       style={highlighted ? { outline: '4px solid #facc15', outlineOffset: '2px' } : undefined}
-      // An open card takes two columns, so its version lines have room and the
-      // pile of cards stays one card wide; the grid does not stretch the cards
-      // beside it to its height.
-      className={`relative self-start pb-2 min-w-0 ${expanded ? 'col-span-2' : ''}`}
+      // An open card takes a row of its own, so the cards beside it keep their
+      // height and its version lines spread over the width; a closed one is a
+      // cell like any file card.
+      className={`relative flex flex-col pb-2 min-w-0 ${expanded ? 'col-span-full' : ''}`}
     >
       {/* The cards behind it: a pile, not a single file. */}
       <div aria-hidden="true" className="absolute inset-x-2 bottom-1 h-3 rounded-b-lg border border-t-0 border-bambu-dark-tertiary bg-bambu-dark-secondary" />
       <div aria-hidden="true" className="absolute inset-x-4 bottom-0 h-3 rounded-b-lg border border-t-0 border-bambu-dark-tertiary bg-bambu-dark" />
       <div
-        className={`group relative bg-bambu-dark-secondary rounded-lg border transition-all cursor-pointer ${
+        className={`group relative flex-1 bg-bambu-dark-secondary rounded-lg border transition-all cursor-pointer ${
           selectedCount > 0
             ? 'border-bambu-green ring-1 ring-bambu-green'
             : 'border-bambu-dark-tertiary hover:border-bambu-green/50'
@@ -165,7 +165,7 @@ export function VariantGroupCard({
         </div>
 
         {expanded && (
-          <div id={panelId} role="group" aria-label={t('fileManager.variants.versionsHeading')} className="px-1 pb-2 border-t border-bambu-dark-tertiary">
+          <div id={panelId} role="group" aria-label={t('fileManager.variants.versionsHeading')} className="px-1 pb-2 border-t border-bambu-dark-tertiary grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-x-2 content-start">
             {row.members.map((m) => (
               <VariantMemberLine
                 key={m.id}

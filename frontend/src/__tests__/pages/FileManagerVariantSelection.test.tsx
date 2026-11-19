@@ -238,6 +238,23 @@ describe('print plan', () => {
     const g = group([1, 2]);
     expect(planBulkPrint([], [g], byId([g]))).toEqual({ fullGroups: [], partialGroups: [], looseFiles: [] });
   });
+  it('judges a group listed in two columns by the pane that ticks it, never as partial', () => {
+    // Alpha's column lists 21 (here) and 22 (elsewhere); Beta's pane lists 22
+    // (here) and 21 (elsewhere). The merged file map has both as "here".
+    const inAlpha = group([21, 22]);
+    inAlpha.members[1] = { ...inAlpha.members[1], variant_elsewhere: true };
+    const inBeta = group([21, 22]);
+    inBeta.members[0] = { ...inBeta.members[0], variant_elsewhere: true };
+    const files = byId([group([21, 22])]);
+    for (const ids of [[21], [22], [21, 22]]) {
+      const plan = planBulkPrint(ids, [inAlpha, inBeta], files);
+      expect(plan.partialGroups).toEqual([]);
+      expect(plan.fullGroups).toHaveLength(1);
+      expect(plan.looseFiles).toEqual([]);
+    }
+    // The job still carries every visible version of the group.
+    expect(planBulkPrint([22], [inAlpha, inBeta], files).fullGroups[0].members.map((m) => m.id)).toEqual([21, 22]);
+  });
 });
 
 describe('dragging a group onto a folder', () => {

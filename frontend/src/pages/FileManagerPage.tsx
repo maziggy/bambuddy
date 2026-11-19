@@ -130,6 +130,8 @@ function isStepType(fileType: string): boolean {
 
 // Mirrors IMAGE_EXTENSIONS in routes/library.py — the types the server both
 // stores and renders a thumbnail for, and so the ones that get an image icon.
+// The files pane's key where a focused row says which pane it is in (#3628).
+const COLUMNS_PANE = 'pane';
 const IMAGE_TYPES = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tiff', 'tif']);
 
 // The subset ImagePreviewModal can actually show: it hands the bytes to an
@@ -1835,6 +1837,14 @@ export function FileManagerPage() {
   // keys hijacking multi-select.
   const columnsViewRef = useRef<HTMLDivElement>(null);
   const [columnsFocusedFileId, setColumnsFocusedFileId] = useState<number | null>(null);
+  // Which pane the focused row is in: a version group can be listed in several
+  // visible columns under the same file id (#3628), so the id alone does not
+  // say which row has the focus. COLUMNS_PANE is the files pane.
+  const [columnsFocusedKey, setColumnsFocusedKey] = useState<string>(COLUMNS_PANE);
+  const focusColumnsRow = (id: number | null, key: string = COLUMNS_PANE) => {
+    setColumnsFocusedFileId(id);
+    setColumnsFocusedKey(key);
+  };
   const [wrapFolderNames, setWrapFolderNames] = useState(() => {
     return localStorage.getItem('library-wrap-folders') === 'true';
   });
@@ -2168,7 +2178,7 @@ export function FileManagerPage() {
     if (filesUpdatedAt < pendingHighlight.requestedAt) return;
     if (filteredAndSortedFiles.some((f) => f.id === pendingHighlight.fileId)) {
       setHighlightedFileId(pendingHighlight.fileId);
-      if (viewMode === 'columns') setColumnsFocusedFileId(pendingHighlight.fileId);
+      if (viewMode === 'columns') focusColumnsRow(pendingHighlight.fileId);
     } else {
       showToast(t('fileManager.highlightedFileNotFound'), 'warning');
     }
@@ -2807,8 +2817,11 @@ export function FileManagerPage() {
   // The version groups on screen, by each version's id: a key on a focused
   // group row acts on the whole group (#3628).
   const groupRowByFileId = new Map<number, GroupRow>();
+  const visibleGroupRows: GroupRow[] = [];
   for (const row of [...libraryRows, ...[...columnFiles.values()].flatMap((l) => l.rows)]) {
-    if (row.kind === 'group') for (const m of row.members) groupRowByFileId.set(m.id, row);
+    if (row.kind !== 'group') continue;
+    visibleGroupRows.push(row);
+    for (const m of row.members) groupRowByFileId.set(m.id, row);
   }
 
   // The toolbar's Preview button acts on one file, so it is offered only for
@@ -2833,6 +2846,7 @@ export function FileManagerPage() {
     selectedFiles,
     setSelectedFiles,
     selectableFiles,
+    groupRows: visibleGroupRows,
     selectedSlicedFiles,
     setPrintFile,
   });
@@ -2929,9 +2943,13 @@ export function FileManagerPage() {
   const focusedFileColumnList =
     columnsFocusedFileId === null
       ? undefined
-      : columnFileLevels
-          .map((level) => columnFiles.get(level.key)?.files)
-          .find((list) => list?.some((f) => f.id === columnsFocusedFileId));
+      : columnsFocusedKey !== COLUMNS_PANE
+        ? columnFiles.get(columnsFocusedKey)?.files
+        : paneNavFiles.some((f) => f.id === columnsFocusedFileId)
+          ? undefined
+          : columnFileLevels
+              .map((level) => columnFiles.get(level.key)?.files)
+              .find((list) => list?.some((f) => f.id === columnsFocusedFileId));
   const focusedFileList = focusedFileColumnList ?? paneNavFiles;
 
   // Focus the columns pane when the view opens so arrow keys work right away,
@@ -2942,7 +2960,7 @@ export function FileManagerPage() {
     if (viewMode === 'columns') columnsViewRef.current?.focus({ preventScroll: true });
   }, [viewMode]);
   useEffect(() => {
-    setColumnsFocusedFileId(null);
+    focusColumnsRow(null);
   }, [selectedFolderId, viewMode]);
   // A selection belongs to the folder it was made in. Every column can tick a
   // file, so a selection that survived a folder change would leave Move and
@@ -2961,8 +2979,12 @@ export function FileManagerPage() {
   }, [selectedFolderId, viewMode]);
   useEffect(() => {
     if (viewMode !== 'columns' || columnsFocusedFileId === null) return;
-    columnsViewRef.current?.querySelector(`[data-file-id="${columnsFocusedFileId}"]`)?.scrollIntoView?.({ block: 'nearest' });
-  }, [columnsFocusedFileId, viewMode]);
+    const testId = columnsFocusedKey === COLUMNS_PANE ? 'columns-files-pane' : `columns-level-${columnsFocusedKey}`;
+    const pane = Array.from(columnsViewRef.current?.querySelectorAll<HTMLElement>('[data-testid]') ?? []).find(
+      (el) => el.dataset.testid === testId,
+    );
+    pane?.querySelector(`[data-file-id="${columnsFocusedFileId}"]`)?.scrollIntoView?.({ block: 'nearest' });
+  }, [columnsFocusedFileId, columnsFocusedKey, viewMode]);
 
   // Finder-style keys: Up/Down move within the current column, Right descends
   // (into the first child folder, then into the files), Left ascends, Enter
@@ -2973,12 +2995,22 @@ export function FileManagerPage() {
   // key (or Shift+F10) jumps there directly, or opens the selected folder's
   // kebab while no file is focused. Inside a strip Left/Right walk the
   // buttons, Enter/Space activate one natively and Escape returns to the pane.
+  // The pane the focused row is in: the same file can be listed in several
+  // visible columns, so a lookup by file id alone could land on another one.
+  const focusedPaneElement = (): HTMLElement | null => {
+    const root = columnsViewRef.current;
+    if (!root) return null;
+    const testId = columnsFocusedKey === COLUMNS_PANE ? 'columns-files-pane' : `columns-level-${columnsFocusedKey}`;
+    return (
+      Array.from(root.querySelectorAll<HTMLElement>('[data-testid]')).find((el) => el.dataset.testid === testId) ?? root
+    );
+  };
   const focusColumnsActions = () => {
     const root = columnsViewRef.current;
     if (!root) return;
     if (columnsFocusedFileId !== null) {
-      root
-        .querySelector<HTMLButtonElement>(`[data-file-id="${columnsFocusedFileId}"] [data-file-actions] button:not([disabled])`)
+      focusedPaneElement()
+        ?.querySelector<HTMLButtonElement>(`[data-file-id="${columnsFocusedFileId}"] [data-file-actions] button:not([disabled])`)
         ?.focus();
     } else if (selectedFolderId !== null) {
       const kebab = root.querySelector<HTMLButtonElement>(`[data-folder-id="${selectedFolderId}"] [data-folder-actions] button`);
@@ -2991,7 +3023,7 @@ export function FileManagerPage() {
   // which owns the state. True when the row changed.
   const setFocusedGroupOpen = (open: boolean): boolean => {
     if (columnsFocusedFileId === null || !groupRowByFileId.has(columnsFocusedFileId)) return false;
-    const chevron = columnsViewRef.current?.querySelector<HTMLButtonElement>(
+    const chevron = focusedPaneElement()?.querySelector<HTMLButtonElement>(
       `[data-testid="variant-group-column-row"][data-file-id="${columnsFocusedFileId}"] button[aria-expanded]`,
     );
     if (!chevron || (chevron.getAttribute('aria-expanded') === 'true') === open) return false;
@@ -3052,11 +3084,11 @@ export function FileManagerPage() {
           // lands on index 0, ArrowUp on -2 → no-op, both intended.
           const idx = focusedFileList.findIndex((f) => f.id === columnsFocusedFileId);
           const next = focusedFileList[idx + dir];
-          if (next) setColumnsFocusedFileId(next.id);
+          if (next) focusColumnsRow(next.id, columnsFocusedKey);
           else if (dir === -1 && idx === 0 && focusedFileColumnList) {
             // Off the top of a column's files: back onto that same column's
             // folders, which is where ArrowDown came from.
-            setColumnsFocusedFileId(null);
+            focusColumnsRow(null);
           }
         } else if (selectedFolderId === null) {
           if (dir === 1 && folderColumns[0].items.length > 0) {
@@ -3072,7 +3104,7 @@ export function FileManagerPage() {
             // exactly as they read on screen: the only way a keyboard
             // reaches an intermediate column's rows at all.
             const colFiles = col ? columnFiles.get(col.key)?.files : undefined;
-            if (colFiles?.length) setColumnsFocusedFileId(colFiles[0].id);
+            if (colFiles?.length && col) focusColumnsRow(colFiles[0].id, col.key);
           }
         }
         break;
@@ -3086,7 +3118,7 @@ export function FileManagerPage() {
         if (!columnsFilterActive && selectedNode && selectedNode.children.length > 0) {
           setSelectedFolderId(selectedNode.children[0].id);
         } else if (paneNavFiles.length > 0) {
-          setColumnsFocusedFileId(paneNavFiles[0].id);
+          focusColumnsRow(paneNavFiles[0].id);
         }
         break;
       }
@@ -3094,7 +3126,7 @@ export function FileManagerPage() {
         e.preventDefault();
         if (inFiles) {
           // Left closes an open group first, then leaves the files.
-          if (!setFocusedGroupOpen(false)) setColumnsFocusedFileId(null);
+          if (!setFocusedGroupOpen(false)) focusColumnsRow(null);
           break;
         }
         // With a filter active the folder columns are hidden — don't move a
@@ -3128,7 +3160,7 @@ export function FileManagerPage() {
           if (!columnsFilterActive && selectedNode && selectedNode.children.length > 0) {
             setSelectedFolderId(selectedNode.children[0].id);
           } else if (paneNavFiles.length > 0) {
-            setColumnsFocusedFileId(paneNavFiles[0].id);
+            focusColumnsRow(paneNavFiles[0].id);
           }
           break;
         }
@@ -3156,16 +3188,16 @@ export function FileManagerPage() {
   };
 
   // One row of a column's file list: a file, or a version group (#3628).
-  const renderColumnRow = (row: LibraryRow) => {
+  const renderColumnRow = (row: LibraryRow, paneKey: string) => {
     if (row.kind === 'group') {
       const leadId = row.thumbnailFile.id;
       return (
         <VariantGroupColumnRow
           key={`group-${row.id}`}
           row={row}
-          isFocused={columnsFocusedFileId === leadId}
+          isFocused={columnsFocusedFileId === leadId && columnsFocusedKey === paneKey}
           onSelect={(r) => {
-            setColumnsFocusedFileId(r.thumbnailFile.id);
+            focusColumnsRow(r.thumbnailFile.id, paneKey);
             handleGroupSelect(r);
           }}
           {...variantViewProps}
@@ -3179,13 +3211,13 @@ export function FileManagerPage() {
         file={file}
         isSelected={selectedFiles.includes(file.id)}
         isHighlighted={highlightedFileId === file.id}
-        isFocused={columnsFocusedFileId === file.id}
+        isFocused={columnsFocusedFileId === file.id && columnsFocusedKey === paneKey}
         showModified={showModified}
         thumbnailVersion={thumbnailVersions[file.id]}
         onSelect={(f) => {
           // Focusing a file in an intermediate column must not move the
           // folder selection out from under it.
-          setColumnsFocusedFileId(f.id);
+          focusColumnsRow(f.id, paneKey);
           handleFileSelect(f.id);
         }}
         onOpen={openPreview}
@@ -4024,7 +4056,7 @@ export function FileManagerPage() {
                     {level?.loading && (
                       <div className="px-3 py-2 text-sm text-bambu-gray" aria-hidden="true">…</div>
                     )}
-                    {level && !level.loading && level.rows.map(renderColumnRow)}
+                    {level && !level.loading && level.rows.map((row) => renderColumnRow(row, col.key))}
                   </FolderDropZone>
                   );
                 })}
@@ -4052,7 +4084,7 @@ export function FileManagerPage() {
                             : t('fileManager.noFilesYet')}
                     </div>
                   ) : (
-                    libraryRows.map(renderColumnRow)
+                    libraryRows.map((row) => renderColumnRow(row, COLUMNS_PANE))
                   )}
                 </div>
               </div>
@@ -4100,7 +4132,7 @@ export function FileManagerPage() {
             </div>
           ) : viewMode === 'grid' ? (
             <div className="flex-1 lg:overflow-y-auto">
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 items-start">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
                 {libraryRows.map((row) => {
                   if (row.kind === 'group') {
                     return <VariantGroupCard key={`group-${row.id}`} row={row} {...variantViewProps} />;

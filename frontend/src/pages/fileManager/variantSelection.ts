@@ -32,25 +32,37 @@ export function planBulkPrint(
   filesById: ReadonlyMap<number, LibraryFileListItem>,
 ): BulkPrintPlan {
   const selected = new Set(selectedIds);
-  const seen = new Set<number>();
+  const fullIds = new Set<number>();
   const fullGroups: GroupRow[] = [];
   const partialGroups: BulkPrintPlan['partialGroups'] = [];
   const inFullGroup = new Set<number>();
+  // `groupRows` are the rows on screen, and a group can be on screen in several
+  // columns. Each row is judged by what its own tick selects (the versions in
+  // its pane), so a group ticked in full in one pane never reads as partial
+  // because another pane lists other versions of it (#3628).
   for (const row of groupRows) {
-    if (seen.has(row.id)) continue;
-    seen.add(row.id);
+    if (fullIds.has(row.id)) continue;
     const members = selectableMembers(row);
     const count = members.filter((m) => selected.has(m.id)).length;
     if (count === 0) continue;
     if (count === members.length) {
-      if (row.members.some(isSlicedLibraryFile)) {
-        fullGroups.push(row);
-        for (const m of row.members) inFullGroup.add(m.id);
-      }
-    } else if (members.some((m) => selected.has(m.id) && isSlicedLibraryFile(m))) {
+      if (!row.members.some(isSlicedLibraryFile)) continue;
+      fullIds.add(row.id);
+      fullGroups.push(row);
+      for (const m of row.members) inFullGroup.add(m.id);
+      const earlier = partialGroups.findIndex((p) => p.row.id === row.id);
+      if (earlier !== -1) partialGroups.splice(earlier, 1);
+    } else if (
+      members.some((m) => selected.has(m.id) && isSlicedLibraryFile(m)) &&
+      !partialGroups.some((p) => p.row.id === row.id)
+    ) {
       partialGroups.push({ row, selected: count });
     }
   }
+  // Jobs come in the order the groups were ticked.
+  const tickedAt = (row: GroupRow) =>
+    Math.min(...selectableMembers(row).map((m) => selectedIds.indexOf(m.id)).filter((i) => i !== -1));
+  fullGroups.sort((a, b) => tickedAt(a) - tickedAt(b));
   const looseFiles = selectedIds
     .map((id) => filesById.get(id))
     .filter((f): f is LibraryFileListItem => !!f && isSlicedLibraryFile(f) && !inFullGroup.has(f.id));

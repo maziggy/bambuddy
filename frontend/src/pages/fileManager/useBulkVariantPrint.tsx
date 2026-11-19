@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { api, type LibraryFileListItem } from '../../api/client';
 import { isSlicedLibraryFile } from '../../utils/libraryFiles';
-import { groupRowsOf, type GroupRow } from './variantGroups';
+import type { GroupRow } from './variantGroups';
 import { planBulkPrint, promotePartialGroups, type BulkPrintPlan } from './variantSelection';
 
 // What the print dialog shows when it is for a group or a single version
@@ -24,12 +24,15 @@ export function useBulkVariantPrint({
   selectedFiles,
   setSelectedFiles,
   selectableFiles,
+  groupRows,
   selectedSlicedFiles,
   setPrintFile,
 }: {
   selectedFiles: number[];
   setSelectedFiles: React.Dispatch<React.SetStateAction<number[]>>;
   selectableFiles: ReadonlyMap<number, LibraryFileListItem>;
+  /** The version groups as rows on screen, in every pane that lists them. */
+  groupRows: readonly GroupRow[];
   selectedSlicedFiles: LibraryFileListItem[];
   setPrintFile: (file: LibraryFileListItem | null) => void;
 }) {
@@ -43,9 +46,14 @@ export function useBulkVariantPrint({
   const advanced = useRef(false);
   const [partialPlan, setPartialPlan] = useState<BulkPrintPlan | null>(null);
 
-  // Groups come from every file a tick can point at, not from the rows on
-  // screen, so a group ticked in an earlier column counts too.
-  const groupRows = useMemo(() => groupRowsOf(selectableFiles.values()), [selectableFiles]);
+  // The latest print request. A group's dialog waits for its fetch, so a
+  // request made meanwhile (a version, another group) must not be overwritten
+  // when that fetch resolves: the last call wins.
+  const printRequest = useRef(0);
+
+  // The plan reads the rows as they are on screen, a group ticked in one
+  // column judged by that column's own versions, exactly as the tick box
+  // counts them, so a full tick never reads as partial (#3628).
   const plan = useMemo(
     () => planBulkPrint(selectedFiles, groupRows, selectableFiles),
     [selectedFiles, groupRows, selectableFiles],
@@ -54,6 +62,7 @@ export function useBulkVariantPrint({
   // One version on its own, without offering the rest of its group.
   const printVersion = useCallback(
     (file: LibraryFileListItem) => {
+      printRequest.current += 1;
       setPrintOverride({ ids: [file.id], variantFiles: undefined });
       setPrintFile(file);
     },
@@ -68,17 +77,20 @@ export function useBulkVariantPrint({
     async (row: GroupRow) => {
       const sliced = row.members.filter(isSlicedLibraryFile);
       if (sliced.length === 0) return;
+      const request = ++printRequest.current;
       const targets = new Map<number, string | null>();
       try {
         const group = await queryClient.fetchQuery({
           queryKey: ['variant-group', row.id],
           queryFn: () => api.getVariantGroup(row.id),
-          staleTime: 0,
+          staleTime: 30_000,
+          retry: 0,
         });
         for (const m of group.members) targets.set(m.library_file_id, m.target_model);
       } catch {
         // Fall back to each file's declared model.
       }
+      if (request !== printRequest.current) return;
       setPrintOverride({
         ids: sliced.map((f) => f.id),
         variantFiles: sliced.map((f) => ({
@@ -96,7 +108,10 @@ export function useBulkVariantPrint({
   // own, anything else is the selection as the dialog always took it.
   const openLoose = (files: LibraryFileListItem[]) => {
     if (files.length === 1 && files[0].variant_group_id != null) printVersion(files[0]);
-    else setPrintFile(files[0]);
+    else {
+      printRequest.current += 1;
+      setPrintFile(files[0]);
+    }
   };
 
   const start = (next: BulkPrintPlan) => {

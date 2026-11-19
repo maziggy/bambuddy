@@ -195,14 +195,17 @@ describe('version groups in the File Manager', () => {
       expect(await screen.findByText(/all 3 versions of "Vase"\. 1 of them is in another folder\./)).toBeInTheDocument();
     });
 
-    it('opens a card over two columns without stretching the cards beside it', async () => {
+    it('opens a card over a row of its own without stretching the cards beside it', async () => {
       const user = userEvent.setup();
       render(<FileManagerPage />);
       await screen.findByText('plain.stl');
-      expect(card().className).not.toContain('col-span-2');
+      expect(card().className).not.toContain('col-span-full');
       await user.click(within(card()).getByRole('button', { name: 'Show versions' }));
-      expect(card().className).toContain('col-span-2');
-      expect(card().parentElement!.className).toContain('items-start');
+      expect(card().className).toContain('col-span-full');
+      // Plain cards stretch to the row height as ever.
+      expect(card().parentElement!.className).not.toContain('items-start');
+      // The versions spread over the card's width.
+      expect(within(card()).getByRole('group', { name: 'Versions' }).className).toContain('sm:grid-cols-2');
     });
 
     it('leaves an ungrouped file as it was', async () => {
@@ -339,6 +342,96 @@ describe('version groups in the File Manager', () => {
       expect(await screen.findByTestId('variant-detail-pane')).toBeInTheDocument();
       await user.keyboard('{Enter}');
       await waitFor(() => expect(screen.queryByTestId('variant-detail-pane')).not.toBeInTheDocument());
+    });
+
+    describe('one group visible in two columns', () => {
+      // Version 21 sits in Alpha, version 22 in its subfolder Beta, which is
+      // open: Alpha's column and the files pane both list the group row, and
+      // its first version (21) is the lead of both.
+      const tree = [
+        {
+          id: 1, name: 'Alpha', parent_id: null, file_count: 1, project_id: null, archive_id: null,
+          project_name: null, archive_name: null, latest_activity_at: null,
+          children: [
+            {
+              id: 2, name: 'Beta', parent_id: 1, file_count: 1, project_id: null, archive_id: null,
+              project_name: null, archive_name: null, latest_activity_at: null, children: [],
+            },
+          ],
+        },
+      ];
+      const inAlpha = [
+        vase(21, 'X1C', 0, { variant_count: 2, folder_id: 1 }),
+        vase(22, 'P1S', 1, { variant_count: 2, folder_id: 2, variant_elsewhere: true, folder_name: 'Beta' }),
+      ];
+      const inBeta = [
+        vase(21, 'X1C', 0, { variant_count: 2, folder_id: 1, variant_elsewhere: true, folder_name: 'Alpha' }),
+        vase(22, 'P1S', 1, { variant_count: 2, folder_id: 2 }),
+      ];
+
+      async function openBeta() {
+        server.use(
+          http.get('/api/v1/library/folders', () => HttpResponse.json(tree)),
+          http.get('/api/v1/library/files', ({ request }) => {
+            const folder = new URL(request.url).searchParams.get('folder_id');
+            return HttpResponse.json(folder === '1' ? inAlpha : folder === '2' ? inBeta : []);
+          }),
+        );
+        const user = userEvent.setup();
+        render(<FileManagerPage />);
+        await user.click(await screen.findByTitle('Column view'));
+        const columns = within(await screen.findByTestId('columns-view'));
+        await user.click(await columns.findByText('Alpha'));
+        await user.click(await columns.findByText('Beta'));
+        const level = within(screen.getByTestId('columns-level-folder-1'));
+        const pane = within(screen.getByTestId('columns-files-pane'));
+        await level.findByTestId('variant-group-column-row');
+        await pane.findByTestId('variant-group-column-row');
+        screen.getByTestId('columns-view').focus();
+        return { user, level, pane };
+      }
+
+      it('acts on the focused pane\'s row only', async () => {
+        const { user, level, pane } = await openBeta();
+        await user.keyboard('{ArrowRight}');
+        expect(pane.getByTestId('variant-group-column-row').firstElementChild!.className).toContain('ring-1');
+        expect(level.getByTestId('variant-group-column-row').firstElementChild!.className).not.toContain('ring-1');
+
+        await user.keyboard('{ArrowRight}');
+        expect(await pane.findByTestId('variant-detail-pane')).toBeInTheDocument();
+        expect(level.queryByTestId('variant-detail-pane')).not.toBeInTheDocument();
+
+        await user.keyboard('{ArrowLeft}');
+        await waitFor(() => expect(pane.queryByTestId('variant-detail-pane')).not.toBeInTheDocument());
+        await user.keyboard('{Enter}');
+        expect(await pane.findByTestId('variant-detail-pane')).toBeInTheDocument();
+        expect(level.queryByTestId('variant-detail-pane')).not.toBeInTheDocument();
+        await user.keyboard('{Enter}');
+        await waitFor(() => expect(pane.queryByTestId('variant-detail-pane')).not.toBeInTheDocument());
+      });
+
+      it('prints a group ticked in full as one job, never asking about a partial tick', async () => {
+        const { user, pane } = await openBeta();
+        // The pane's tick selects Beta's version only; that is the whole group
+        // as far as this pane is concerned.
+        await user.click(pane.getByText('Vase'));
+        expect(await screen.findByText('1 selected')).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: /^Print$/ }));
+        expect(screen.queryByText('Print as one job?')).not.toBeInTheDocument();
+        // Every visible version, as one job.
+        expect(await screen.findByText(/vase_X1C\.gcode\.3mf \+1 more/)).toBeInTheDocument();
+      });
+
+      it('acts on the column\'s row when that is the one clicked', async () => {
+        const { user, level, pane } = await openBeta();
+        await user.click(level.getByText('Vase'));
+        screen.getByTestId('columns-view').focus();
+        await user.keyboard('{ArrowRight}');
+        expect(await level.findByTestId('variant-detail-pane')).toBeInTheDocument();
+        expect(pane.queryByTestId('variant-detail-pane')).not.toBeInTheDocument();
+        await user.keyboard('{ArrowLeft}');
+        await waitFor(() => expect(level.queryByTestId('variant-detail-pane')).not.toBeInTheDocument());
+      });
     });
 
     it('leaves Enter and Space on a version\'s kebab and in its menu to the line', async () => {
@@ -554,6 +647,70 @@ describe('version groups in the File Manager', () => {
 
       expect((await screen.findAllByText('vase_P1S.gcode.3mf')).length).toBeGreaterThan(1);
       expect(screen.queryByText(/\+1 more/)).not.toBeInTheDocument();
+    });
+  });
+
+  describe('printing a group', () => {
+    const twoVersions = () => serve([vase(21, 'X1C', 0), vase(22, 'P1S', 1)]);
+    const group = (targets: Record<number, string>) => ({
+      id: 7,
+      name: 'Vase',
+      members: [21, 22].map((id, i) => ({
+        library_file_id: id,
+        filename: `vase_${id}.gcode.3mf`,
+        target_model: targets[id],
+        position: i,
+      })),
+    });
+    const printGroup = async (user: ReturnType<typeof userEvent.setup>) => {
+      await user.click(screen.getByRole('button', { name: 'Actions for version group Vase' }));
+      await user.click(await screen.findByRole('button', { name: 'Print all versions as one job' }));
+    };
+
+    it('uses the model the server dispatches to, not the one the list declares', async () => {
+      twoVersions();
+      server.use(http.get('/api/v1/library/variant-groups/7', () => HttpResponse.json(group({ 21: 'H2D', 22: 'P1S' }))));
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+      await screen.findByTestId('variant-group-card');
+      await printGroup(user);
+      expect(await screen.findByText('H2D')).toBeInTheDocument();
+      expect(screen.queryByText('X1C')).not.toBeInTheDocument();
+    });
+
+    it('falls back to the declared models when the group cannot be fetched', async () => {
+      twoVersions();
+      server.use(http.get('/api/v1/library/variant-groups/7', () => HttpResponse.json({ detail: 'no' }, { status: 500 })));
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+      await screen.findByTestId('variant-group-card');
+      await printGroup(user);
+      expect(await screen.findByText('X1C')).toBeInTheDocument();
+      expect(screen.getByText('P1S')).toBeInTheDocument();
+    });
+
+    it('keeps a version print started while the group is still loading', async () => {
+      twoVersions();
+      server.use(
+        http.get('/api/v1/library/variant-groups/7', async () => {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          return HttpResponse.json(group({ 21: 'H2D', 22: 'P1S' }));
+        }),
+      );
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+      await screen.findByTestId('variant-group-card');
+      await user.click(within(card()).getByRole('button', { name: 'Show versions' }));
+      await printGroup(user);
+      const line = within(card()).getAllByTestId('variant-member-line')[1];
+      await user.click(within(line).getByRole('button', { name: /Actions for/ }));
+      await user.click(await screen.findByRole('button', { name: 'Print this version only' }));
+      expect((await screen.findAllByText('vase_P1S.gcode.3mf')).length).toBeGreaterThan(1);
+
+      // The group's answer arrives late and must not replace the version dialog.
+      await new Promise((resolve) => setTimeout(resolve, 1800));
+      expect(screen.queryByText(/\+1 more/)).not.toBeInTheDocument();
+      expect(screen.queryByText('H2D')).not.toBeInTheDocument();
     });
   });
 

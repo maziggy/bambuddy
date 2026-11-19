@@ -10,7 +10,7 @@ import { VariantMemberLine } from './VariantMemberLine';
 import { VariantVersionsPopover } from './VariantVersionsPopover';
 import { VariantSelectionBox } from './VariantSelectionBox';
 import { groupSelection } from '../../pages/fileManager/variantSelection';
-import { dragSourceProps, type VariantGroupViewProps } from './variantTypes';
+import { dragSourceProps, type VariantGroupViewProps, type VariantMemberActions } from './variantTypes';
 
 // A version group as one card of the grid view (#3628): the first version's
 // thumbnail, the name, the printer models, and the versions behind a toggle.
@@ -48,6 +48,26 @@ export function VariantGroupCard({
     },
     [],
   );
+
+  // What a version's menu opens a dialog for closes the popover first, so the
+  // dialog is not behind it and Escape closes one thing at a time.
+  const closeThen =
+    <A extends unknown[]>(fn: (...args: A) => void) =>
+    (...args: A) => {
+      onOpenGroupChange(null);
+      fn(...args);
+    };
+  const popoverMemberActions: VariantMemberActions = {
+    ...memberActions,
+    onDetails: closeThen(memberActions.onDetails),
+    onRename: closeThen(memberActions.onRename),
+    onDelete: closeThen(memberActions.onDelete),
+    onPrintFile: closeThen(memberActions.onPrintFile),
+    previewItem: (file) => {
+      const item = memberActions.previewItem(file);
+      return item && { ...item, onClick: closeThen(item.onClick) };
+    },
+  };
 
   const first = row.thumbnailFile;
   const { count: selectedCount, total: selectableCount } = groupSelection(row, selectedIds);
@@ -200,7 +220,7 @@ export function VariantGroupCard({
                 key={m.id}
                 file={m}
                 groupId={row.id}
-                memberActions={memberActions}
+                memberActions={popoverMemberActions}
                 groupActions={groupActions}
                 highlighted={highlightedFileId === m.id}
               />

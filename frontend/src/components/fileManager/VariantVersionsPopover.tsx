@@ -70,11 +70,29 @@ export function VariantVersionsPopover({
   closeRef.current = onClose;
   const close = useCallback((restoreFocus: boolean) => closeRef.current(restoreFocus), []);
 
+  // Place it again when the window resizes, and when the card moves without
+  // either (a sidebar collapsing, a banner appearing above the grid).
   useEffect(() => {
-    const onResize = () => setResizeTick((n) => n + 1);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
+    const bump = () => setResizeTick((n) => n + 1);
+    window.addEventListener('resize', bump);
+    const measure = () => {
+      const r = anchorRef.current?.getBoundingClientRect();
+      return r ? `${r.left}|${r.top}|${r.width}|${r.bottom}|${window.innerWidth}|${window.innerHeight}` : '';
+    };
+    let last = measure();
+    let frame = 0;
+    const watch = () => {
+      const key = measure();
+      if (key !== last) bump();
+      last = key;
+      frame = window.requestAnimationFrame(watch);
+    };
+    frame = window.requestAnimationFrame(watch);
+    return () => {
+      window.removeEventListener('resize', bump);
+      window.cancelAnimationFrame(frame);
+    };
+  }, [anchorRef]);
 
   useLayoutEffect(() => {
     const panel = panelRef.current;
@@ -108,11 +126,16 @@ export function VariantVersionsPopover({
     setPlacement({ left, top, width, maxHeight });
   }, [phone, anchorRef, layoutKey, resizeTick]);
 
-  // Focus goes into the popover when it opens.
+  // Focus goes into the popover once it is shown: a hidden element (before it
+  // is placed) cannot take focus. The sheet needs no placing.
+  const ready = phone || placement !== null;
+  const focusedRef = useRef(false);
   useEffect(() => {
+    if (!ready || focusedRef.current) return;
+    focusedRef.current = true;
     const first = panelRef.current?.querySelector<HTMLElement>(FOCUSABLE);
     first?.focus({ preventScroll: true });
-  }, []);
+  }, [ready]);
 
   // A sheet covers the page, so the page does not scroll behind it.
   useEffect(() => {
@@ -142,8 +165,8 @@ export function VariantVersionsPopover({
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         // A version's menu is open: Escape closes that menu (it listens
-        // itself), the popover stays. The menu is the only fixed element in it.
-        if (panelRef.current?.querySelector('.fixed')) return;
+        // itself), the popover stays.
+        if (panelRef.current?.querySelector('[data-context-menu]')) return;
         close(true);
         return;
       }
@@ -164,7 +187,11 @@ export function VariantVersionsPopover({
         close(true);
       }
     };
-    const onDragStart = () => close(false);
+    const onDragStart = (event: Event) => {
+      // A drag of the card closes it; a drag inside it is not leaving.
+      if (rootRef.current?.contains(event.target as Node)) return;
+      close(false);
+    };
     document.addEventListener('mousedown', onPointer);
     document.addEventListener('keydown', onKey);
     document.addEventListener('scroll', onScroll, true);
@@ -183,6 +210,11 @@ export function VariantVersionsPopover({
     onClick: (e: React.MouseEvent) => e.stopPropagation(),
     onDoubleClick: (e: React.MouseEvent) => e.stopPropagation(),
     onContextMenu: (e: React.MouseEvent) => e.stopPropagation(),
+    // Nothing in it is a drag source, and the card's drag must not start.
+    onDragStart: (e: React.DragEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+    },
   };
 
   return createPortal(
@@ -190,7 +222,7 @@ export function VariantVersionsPopover({
       {phone && (
         <div
           data-testid="variant-versions-backdrop"
-          className="fixed inset-0 z-[999] bg-black/60"
+          className="fixed inset-0 z-[45] bg-black/60"
           onClick={() => close(false)}
         />
       )}
@@ -214,8 +246,8 @@ export function VariantVersionsPopover({
         }
         className={
           phone
-            ? 'fixed inset-x-0 bottom-0 z-[1000] max-h-[70vh] flex flex-col overflow-hidden rounded-t-2xl border border-b-0 border-bambu-dark-tertiary bg-bambu-dark-secondary shadow-2xl'
-            : 'z-[1000] flex flex-col overflow-hidden rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary shadow-xl'
+            ? 'fixed inset-x-0 bottom-0 z-[46] max-h-[70vh] flex flex-col overflow-hidden rounded-t-2xl border border-b-0 border-bambu-dark-tertiary bg-bambu-dark-secondary shadow-2xl'
+            : 'z-[46] flex flex-col overflow-hidden rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary shadow-xl'
         }
       >
         {phone && (

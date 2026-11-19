@@ -237,6 +237,24 @@ describe('version groups in the File Manager', () => {
         expect(within(popover).queryByRole('button', { name: 'Close' })).not.toBeInTheDocument();
       });
 
+      it('focuses its first control only once it is visible', async () => {
+        const seen: string[] = [];
+        const original = HTMLElement.prototype.focus;
+        const spy = vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function (this: HTMLElement, ...args) {
+          const panel = this.closest<HTMLElement>('[role="dialog"]');
+          if (panel) seen.push(panel.style.visibility);
+          return original.apply(this, args);
+        });
+        try {
+          const { popover } = await open();
+          expect(seen.length).toBeGreaterThan(0);
+          expect(seen.every((v) => v === 'visible')).toBe(true);
+          expect(popover).toContainElement(document.activeElement as HTMLElement);
+        } finally {
+          spy.mockRestore();
+        }
+      });
+
       it('moves focus to the first control inside it', async () => {
         const { popover } = await open();
         expect(popover).toContainElement(document.activeElement as HTMLElement);
@@ -301,6 +319,7 @@ describe('version groups in the File Manager', () => {
         const { user, toggle, popover } = await open();
         await user.click(within(within(popover).getAllByTestId('variant-member-line')[0]).getByRole('button', { name: /^Actions for / }));
         await screen.findByRole('button', { name: 'File details' });
+        expect(popover.querySelector('[data-context-menu]')).not.toBeNull();
         await user.keyboard('{Escape}');
         expect(screen.queryByRole('button', { name: 'File details' })).not.toBeInTheDocument();
         expect(screen.getByRole('dialog')).toBeInTheDocument();
@@ -309,10 +328,34 @@ describe('version groups in the File Manager', () => {
         expect(toggle).toHaveFocus();
       });
 
-      it('stays open and follows a resize', async () => {
+      it('stays open and is placed again when the window resizes', async () => {
         const { popover } = await open();
+        const left = popover.style.left;
+        vi.spyOn(card(), 'getBoundingClientRect').mockReturnValue({
+          left: 300, top: 100, right: 500, bottom: 400, width: 200, height: 300, x: 300, y: 100, toJSON: () => ({}),
+        });
         fireEvent(window, new Event('resize'));
+        await waitFor(() => expect(popover.style.left).toBe('300px'));
+        expect(left).not.toBe('300px');
+        expect(popover.style.top).toBe('404px');
         expect(screen.getByRole('dialog')).toBe(popover);
+      });
+
+      it('follows a card that moves without a resize', async () => {
+        const { popover } = await open();
+        vi.spyOn(card(), 'getBoundingClientRect').mockReturnValue({
+          left: 120, top: 100, right: 320, bottom: 400, width: 200, height: 300, x: 120, y: 100, toJSON: () => ({}),
+        });
+        await waitFor(() => expect(popover.style.left).toBe('120px'));
+      });
+
+      it('closes before a version\'s Delete opens its confirm, which is then usable', async () => {
+        const { user, popover } = await open();
+        await user.click(within(within(popover).getAllByTestId('variant-member-line')[0]).getByRole('button', { name: /^Actions for / }));
+        await user.click(await screen.findByRole('button', { name: 'Delete' }));
+        await screen.findByText(/Are you sure you want to delete/);
+        closed();
+        expect(popover).not.toBeInTheDocument();
       });
 
       it('closes when the card starts a drag', async () => {
@@ -359,8 +402,9 @@ describe('version groups in the File Manager', () => {
         const line = within(popover).getAllByTestId('variant-member-line')[0];
         await user.click(within(line).getByRole('button', { name: /^Actions for / }));
         await user.click(await screen.findByRole('button', { name: 'File details' }));
-        // The menu item acted, the popover is still there, nothing got selected.
-        expect(screen.getByRole('dialog', { name: 'Versions of Vase' })).toBeInTheDocument();
+        // The menu item acted (the details dialog took the popover's place),
+        // and nothing got selected.
+        closed();
         expect(screen.queryByText(/selected$/)).not.toBeInTheDocument();
         expect(within(card()).getByRole('checkbox')).toHaveAttribute('aria-checked', 'false');
       });
@@ -854,7 +898,8 @@ describe('version groups in the File Manager', () => {
       await user.click(within(line).getByRole('button', { name: /Actions for/ }));
       await user.click(await screen.findByRole('button', { name: 'Print this version only' }));
 
-      expect((await screen.findAllByText('vase_P1S.gcode.3mf')).length).toBeGreaterThan(1);
+      expect((await screen.findAllByText('vase_P1S.gcode.3mf')).length).toBeGreaterThan(0);
+      expect(screen.queryByRole('dialog', { name: 'Versions of Vase' })).not.toBeInTheDocument();
       expect(screen.queryByText(/\+1 more/)).not.toBeInTheDocument();
     });
   });
@@ -914,7 +959,8 @@ describe('version groups in the File Manager', () => {
       const line = screen.getAllByTestId('variant-member-line')[1];
       await user.click(within(line).getByRole('button', { name: /Actions for/ }));
       await user.click(await screen.findByRole('button', { name: 'Print this version only' }));
-      expect((await screen.findAllByText('vase_P1S.gcode.3mf')).length).toBeGreaterThan(1);
+      expect((await screen.findAllByText('vase_P1S.gcode.3mf')).length).toBeGreaterThan(0);
+      expect(screen.queryByRole('dialog', { name: 'Versions of Vase' })).not.toBeInTheDocument();
 
       // The group's answer arrives late and must not replace the version dialog.
       await new Promise((resolve) => setTimeout(resolve, 1800));

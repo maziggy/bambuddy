@@ -191,6 +191,19 @@ describe('SpoolFormModal last used values (#3619)', () => {
     expect(await screen.findByText(/Started with your last spool \(PETG\)/)).toBeInTheDocument();
   });
 
+  it('ignores a record of another or no version', async () => {
+    // Otherwise complete records: only the version keeps them off the form.
+    for (const v of [2, '1', undefined]) {
+      store.set(KEY, JSON.stringify({ ...remembered, v }));
+      const { unmount } = renderForm();
+      await screen.findByRole('heading', { name: 'Add Spool' });
+      await settle();
+      expect(screen.queryByText(/Started with your last spool/)).not.toBeInTheDocument();
+      expect(screen.queryByDisplayValue('Generic PLA')).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
   it('saves after a create and never on cancel', async () => {
     const onClose = vi.fn();
     const seeded = JSON.stringify({ v: 1, brand: 'Polymaker', material: 'PLA', subtype: 'Basic', slicer_filament: 'GFL99' });

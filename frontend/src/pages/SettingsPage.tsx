@@ -63,7 +63,7 @@ import { SecurityStatusCard } from '../components/SecurityStatusCard';
 import { APIBrowser } from '../components/APIBrowser';
 import { virtualPrinterApi, spoolbuddyApi } from '../api/client';
 import { defaultNavItems, getDefaultView, setDefaultView } from '../components/Layout';
-import { availableLanguages } from '../i18n';
+import { availableLanguages } from '../i18n/languages';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, type ThemeStyle, type DarkBackground, type LightBackground, type ThemeAccent } from '../contexts/ThemeContext';
 import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } from 'react';
@@ -1869,7 +1869,7 @@ export function SettingsPage() {
                 </label>
                 <div className="relative">
                   <select
-                    value={i18n.language}
+                    value={settings?.language ?? i18n.language}
                     onChange={(e) => {
                       const newLang = e.target.value;
                       // Block server persist if the user lacks settings:update —

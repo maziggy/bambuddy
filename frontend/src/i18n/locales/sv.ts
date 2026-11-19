@@ -2321,8 +2321,8 @@ export default {
     smartPlugs: 'Smarta kontakter',
     spoolman: 'Spoolman',
     updates: 'Uppdateringar',
-    language: 'Språk',
-    languageDescription: 'Välj ditt föredragna språk',
+    language: 'Språk för SpoolBuddy-skärmarna',
+    languageDescription: 'Språket i SpoolBuddy-skärmarna. Var och en väljer sitt eget gränssnittsspråk i menyn \'Konto\' eller, utan inloggning, med jordglobsknappen.',
     theme: 'Tema',
     themeLight: 'Ljust',
     themeDark: 'Mörkt',
@@ -7571,6 +7571,10 @@ errors: {
   // The sidebar footer's menu for the signed-in user (#3602).
   accountMenu: {
     title: 'Konto',
+  },
+  // Per-browser interface language in the user menu (#3623).
+  languageMenu: {
+    label: 'Språk',
   },
   // What a user enters in their slicer to send to virtual printers (#3602).
   connectSlicer: {

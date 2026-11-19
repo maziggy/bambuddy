@@ -293,7 +293,7 @@ export default {
     addPreflight: {
       checking: 'Sprawdzanie połączenia...',
       warning: 'Część testów połączenia nie powiodła się. Ta drukarka może być widoczna jako offline. Przejrzyj poniższe testy, popraw, co możesz, lub mimo to zapisz.',
-      back: 'Wstecz',
+      checkAgain: 'Sprawdź ponownie',
       saveAnyway: 'Zapisz mimo to',
     },
     editPrinter: 'Edytuj drukarkę',
@@ -302,6 +302,8 @@ export default {
     serialNumber: 'Numer seryjny',
     ipAddress: 'Adres IP / nazwa hosta',
     accessCode: 'Kod dostępu',
+    showAccessCode: 'Pokaż kod dostępu',
+    hideAccessCode: 'Ukryj kod dostępu',
     model: 'Model',
     nozzleCount: 'Liczba dysz',
     autoArchive: 'Automatyczne archiwizowanie',

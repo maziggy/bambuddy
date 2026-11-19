@@ -289,7 +289,7 @@ export default {
     addPreflight: {
       checking: 'Comprobando la conexión...',
       warning: 'Algunas comprobaciones de conexión fallaron. Esta impresora podría aparecer como desconectada. Revisa las comprobaciones de abajo, soluciona lo que puedas o guárdala de todos modos.',
-      back: 'Atrás',
+      checkAgain: 'Comprobar de nuevo',
       saveAnyway: 'Guardar de todos modos',
     },
     title: 'Impresoras',
@@ -300,6 +300,8 @@ export default {
     serialNumber: 'Número de serie',
     ipAddress: 'Dirección IP / Nombre de host',
     accessCode: 'Código de acceso',
+    showAccessCode: 'Mostrar código de acceso',
+    hideAccessCode: 'Ocultar código de acceso',
     model: 'Modelo',
     nozzleCount: 'Número de boquillas',
     autoArchive: 'Archivado automático',

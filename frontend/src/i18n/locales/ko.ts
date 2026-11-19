@@ -288,6 +288,8 @@ export default {
     serialNumber: '일련번호',
     ipAddress: 'IP 주소 / 호스트명',
     accessCode: '액세스 코드',
+    showAccessCode: '액세스 코드 표시',
+    hideAccessCode: '액세스 코드 숨기기',
     model: '모델',
     nozzleCount: '노즐 수',
     autoArchive: '자동 아카이브',
@@ -957,7 +959,7 @@ export default {
     addPreflight: {
       checking: '연결 확인 중...',
       warning: '일부 연결 확인이 실패했습니다. 이 프린터가 오프라인으로 표시될 수 있습니다. 아래 항목을 검토하고 수정하거나 그냥 저장하세요.',
-      back: '뒤로',
+      checkAgain: '다시 확인',
       saveAnyway: '그냥 저장'
     }
   },

@@ -291,7 +291,7 @@ export default {
     addPreflight: {
       checking: 'Verbinding controleren...',
       warning: 'Sommige verbindingscontroles zijn mislukt. Deze printer kan als offline worden weergegeven. Controleer de onderstaande controles, herstel wat je kunt of sla toch op.',
-      back: 'Terug',
+      checkAgain: 'Opnieuw controleren',
       saveAnyway: 'Toch opslaan',
     },
     editPrinter: 'Printer bewerken',
@@ -300,6 +300,8 @@ export default {
     serialNumber: 'Serienummer',
     ipAddress: 'IP-adres / hostnaam',
     accessCode: 'Toegangscode',
+    showAccessCode: 'Toegangscode tonen',
+    hideAccessCode: 'Toegangscode verbergen',
     model: 'Model',
     nozzleCount: 'Aantal nozzles',
     autoArchive: 'Automatisch archiveren',

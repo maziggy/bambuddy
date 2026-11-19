@@ -289,7 +289,7 @@ export default {
     addPreflight: {
       checking: '正在检查连接...',
       warning: '部分连接检查未通过。此打印机可能显示为离线。请查看下方的检查项，尽量修复，或仍然保存。',
-      back: '返回',
+      checkAgain: '重新检查',
       saveAnyway: '仍然保存',
     },
     title: '打印机',
@@ -300,6 +300,8 @@ export default {
     serialNumber: '序列号',
     ipAddress: 'IP 地址 / 主机名',
     accessCode: '访问码',
+    showAccessCode: '显示访问码',
+    hideAccessCode: '隐藏访问码',
     model: '型号',
     nozzleCount: '喷嘴数量',
     autoArchive: '自动归档',

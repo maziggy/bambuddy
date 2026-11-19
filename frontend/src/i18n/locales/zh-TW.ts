@@ -289,7 +289,7 @@ export default {
     addPreflight: {
       checking: '正在檢查連線...',
       warning: '部分連線檢查未通過。此印表機可能顯示為離線。請查看下方的檢查項目，盡量修復，或仍然儲存。',
-      back: '返回',
+      checkAgain: '重新檢查',
       saveAnyway: '仍然儲存',
     },
     title: '印表機',
@@ -300,6 +300,8 @@ export default {
     serialNumber: '序列號',
     ipAddress: 'IP 位址 / 主機名稱',
     accessCode: '存取碼',
+    showAccessCode: '顯示存取碼',
+    hideAccessCode: '隱藏存取碼',
     model: '型號',
     nozzleCount: '噴嘴數量',
     autoArchive: '自動歸檔',

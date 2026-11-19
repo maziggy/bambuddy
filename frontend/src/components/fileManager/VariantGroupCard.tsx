@@ -8,7 +8,7 @@ import type { GroupRow } from '../../pages/fileManager/variantGroups';
 import { ContextMenu, type ContextMenuItem } from '../ContextMenu';
 import { VariantMemberLine } from './VariantMemberLine';
 import { VariantSelectionBox } from './VariantSelectionBox';
-import { selectedMemberCount, type VariantGroupViewProps } from './variantTypes';
+import { dragSourceProps, selectedMemberCount, type VariantGroupViewProps } from './variantTypes';
 
 // A version group as one card of the grid view (#3628): the first version's
 // thumbnail, the name, the printer models, and the versions behind a toggle.
@@ -21,6 +21,7 @@ export function VariantGroupCard({
   onToggleSelect,
   memberActions,
   groupActions,
+  groupDrag,
 }: { row: GroupRow } & VariantGroupViewProps) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
@@ -83,6 +84,7 @@ export function VariantGroupCard({
             : 'border-bambu-dark-tertiary hover:border-bambu-green/50'
         }`}
         onClick={() => onToggleSelect(row)}
+        {...dragSourceProps(row, groupDrag)}
       >
         <div className="aspect-square bg-bambu-dark flex items-center justify-center overflow-hidden rounded-t-lg relative">
           {first.thumbnail_path ? (

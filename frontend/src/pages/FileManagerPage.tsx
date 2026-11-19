@@ -93,13 +93,14 @@ import { assignableProjects } from '../utils/projectTree';
 import { openInSlicer, resolveDesktopSlicer, type SlicerType } from '../utils/slicer';
 import { isSlicedLibraryFile, isSliceableLibraryFile } from '../utils/libraryFiles';
 import { useUiSettings } from '../hooks/useUiSettings';
-import { FOLDER_DRAG_TYPE, isValidFolderMove, isWritableFolder, moveDisallowedFolderIds } from '../utils/libraryFolders';
+import { FOLDER_DRAG_TYPE, FILES_DRAG_TYPE, isValidFilesMove, isValidFolderMove, isWritableFolder, moveDisallowedFolderIds } from '../utils/libraryFolders';
 import { PendingUploadsPanel } from '../components/PendingUploadsPanel';
 import type { SortField, SortDirection } from './fileManager/filterSort';
 import { groupLibraryRows, rowFiles, rowLeadFile, type GroupRow, type LibraryRow } from './fileManager/variantGroups';
 import { VariantGroupCard } from '../components/fileManager/VariantGroupCard';
 import { VariantGroupListRow } from '../components/fileManager/VariantGroupListRow';
 import { VariantGroupColumnRow } from '../components/fileManager/VariantGroupColumnRow';
+import { planBulkPrint, promotePartialGroups, bulkPrintJobCount, draggedMemberIds, type BulkPrintPlan } from './fileManager/variantSelection';
 import { useVariantGroupActions } from '../components/fileManager/useVariantGroupActions';
 
 type TFunction = (key: string, options?: Record<string, unknown>) => string;
@@ -821,7 +822,8 @@ interface FolderDragProps {
 function useFolderDropTarget(folderDrag: FolderDragProps | undefined, destinationId: number | null) {
   const key = useId();
   if (!folderDrag) return { isOver: false, handlers: {} };
-  const isFolderDrag = (e: DragEvent) => e.dataTransfer.types.includes(FOLDER_DRAG_TYPE);
+  const isFolderDrag = (e: DragEvent) =>
+    e.dataTransfer.types.includes(FOLDER_DRAG_TYPE) || e.dataTransfer.types.includes(FILES_DRAG_TYPE);
   const claim = (e: DragEvent) => {
     e.stopPropagation();
     const accepted = folderDrag.canDropOn(destinationId);
@@ -1793,11 +1795,18 @@ export function FileManagerPage() {
   // Set when a variant group, or one of its versions, is printed (#3628): the
   // dialog then shows exactly these files, whatever else is selected.
   const [printOverride, setPrintOverride] = useState<{
+    ids: number[];
     variantFiles: { id: number; filename: string; sliced_for_model: string | null }[] | undefined;
   } | null>(null);
   // A separate-jobs run (#3462) that was partly queued: what is in the queue,
   // so closing the dialog after a refusal doesn't queue it again on the next
   // Print (#3471 review). Kept while the selection is exactly the files left.
+  // Group jobs still to open after the one on screen, then the loose files, when
+  // a bulk Print holds several (#3628).
+  const [printQueue, setPrintQueue] = useState<{ groups: GroupRow[]; loose: LibraryFileListItem[] } | null>(null);
+  const printAdvanced = useRef(false);
+  const [partialPrintPlan, setPartialPrintPlan] = useState<BulkPrintPlan | null>(null);
+  const [draggingGroupFiles, setDraggingGroupFiles] = useState<LibraryFileListItem[] | null>(null);
   const [separateJobsRun, setSeparateJobsRun] = useState<SeparateJobsProgress | null>(null);
   const [sliceFile, setSliceFile] = useState<LibraryFileListItem | null>(null);
   const [showCombineModal, setShowCombineModal] = useState(false);
@@ -2345,11 +2354,22 @@ export function FileManagerPage() {
     },
     onDragEnd: () => {
       setDraggingFolder(null);
+      setDraggingGroupFiles(null);
       setFolderDropTarget(null);
     },
     canDropOn: (destinationId) =>
-      draggingFolder !== null && !!folders && isValidFolderMove(folders, draggingFolder, destinationId),
+      draggingGroupFiles !== null
+        ? !!folders && isValidFilesMove(folders, draggingGroupFiles, destinationId)
+        : draggingFolder !== null && !!folders && isValidFolderMove(folders, draggingFolder, destinationId),
     onDrop: (destinationId) => {
+      // A version group dropped on a folder moves the versions of this folder (#3628).
+      if (draggingGroupFiles) {
+        if (folders && isValidFilesMove(folders, draggingGroupFiles, destinationId)) {
+          moveFilesMutation.mutate({ fileIds: draggingGroupFiles.map((f) => f.id), folderId: destinationId });
+        }
+        setDraggingGroupFiles(null);
+        return;
+      }
       if (!draggingFolder || !folders || !isValidFolderMove(folders, draggingFolder, destinationId)) return;
       moveFolderMutation.mutate({ id: draggingFolder.id, parentId: destinationId });
       setDraggingFolder(null);
@@ -2490,6 +2510,7 @@ export function FileManagerPage() {
     const sliced = row.members.filter(isSlicedLibraryFile);
     if (sliced.length === 0) return;
     setPrintOverride({
+      ids: sliced.map((f) => f.id),
       variantFiles: sliced.map((f) => ({ id: f.id, filename: f.filename, sliced_for_model: f.sliced_for_model })),
     });
     setPrintFile(sliced[0]);
@@ -2645,11 +2666,24 @@ export function FileManagerPage() {
       onRename: fileActionProps.onRename,
       onDelete: fileActionProps.onDelete,
       onPrintFile: (f: LibraryFileListItem) => {
-        setPrintOverride({ variantFiles: undefined });
+        setPrintOverride({ ids: [f.id], variantFiles: undefined });
         setPrintFile(f);
       },
     },
     groupActions: variantGroup.actions,
+    groupDrag: {
+      canDrag: (row: GroupRow) => draggedMemberIds(row, (f) => canModify('library', 'update', f.created_by_id)).length > 0,
+      onDragStart: (row: GroupRow, e: React.DragEvent) => {
+        const ids = draggedMemberIds(row, (f) => canModify('library', 'update', f.created_by_id));
+        e.dataTransfer.setData(FILES_DRAG_TYPE, JSON.stringify(ids));
+        e.dataTransfer.effectAllowed = 'move';
+        setDraggingGroupFiles(row.members.filter((m) => ids.includes(m.id)));
+      },
+      onDragEnd: () => {
+        setDraggingGroupFiles(null);
+        setFolderDropTarget(null);
+      },
+    },
   };
 
   const isLoading = foldersLoading || filesLoading;
@@ -2787,6 +2821,30 @@ export function FileManagerPage() {
         .filter((f): f is LibraryFileListItem => !!f && isSlicedLibraryFile(f)),
     [selectableFiles, selectedFiles],
   );
+
+  // The selection as print jobs (#3628): a fully selected group is one job.
+  const bulkPlan = planBulkPrint(
+    selectedFiles,
+    [...groupRowByFileId.values()],
+    selectableFiles,
+  );
+  const hasFullGroup = bulkPlan.fullGroups.length > 0;
+  const bulkJobCount = bulkPrintJobCount(bulkPlan);
+
+  const startBulkPrint = (plan: BulkPrintPlan | null) => {
+    if (plan && plan.fullGroups.length > 0) {
+      const [first, ...rest] = plan.fullGroups;
+      setPrintQueue({ groups: rest, loose: plan.looseFiles });
+      printVariantGroup(first);
+    } else {
+      setPrintQueue(null);
+      setPrintFile(selectedSlicedFiles[0]);
+    }
+  };
+  const handleBulkPrint = () => {
+    if (bulkPlan.partialGroups.length > 0) setPartialPrintPlan(bulkPlan);
+    else startBulkPrint(bulkPlan);
+  };
 
   // "Combine to 3MF" is offered only when every selected file is an STL, so
   // the action never silently drops part of the selection. Resolved like the
@@ -3722,15 +3780,19 @@ export function FileManagerPage() {
                       <Button
                         variant="primary"
                         size="sm"
-                        onClick={() => setPrintFile(selectedSlicedFiles[0])}
+                        onClick={handleBulkPrint}
                         disabled={!hasPermission('queue:create')}
                         title={!hasPermission('queue:create') ? t('fileManager.noPermissionAddToQueue') : undefined}
                       >
                         <Printer className="w-4 h-4 sm:mr-1" />
                         <span className="hidden sm:inline">
-                          {selectedSlicedFiles.length > 1
-                            ? t('fileManager.printFiles', { count: selectedSlicedFiles.length })
-                            : t('common.print')}
+                          {hasFullGroup
+                            ? bulkJobCount > 1
+                              ? t('fileManager.variants.printJobs', { count: bulkJobCount })
+                              : t('common.print')
+                            : selectedSlicedFiles.length > 1
+                              ? t('fileManager.printFiles', { count: selectedSlicedFiles.length })
+                              : t('common.print')}
                         </span>
                       </Button>
                     )}
@@ -4361,11 +4423,47 @@ export function FileManagerPage() {
 
       {variantGroup.dialogs}
 
+      {partialPrintPlan && (
+        <ConfirmModal
+          title={t('fileManager.variants.partialTitle')}
+          message={partialPrintPlan.partialGroups
+            .map((p) =>
+              t('fileManager.variants.partialMessage', {
+                selected: p.selected,
+                total: p.row.members.length,
+                name: p.row.name,
+              }),
+            )
+            .join('\n')}
+          confirmText={t('fileManager.variants.printAsOneJob')}
+          cancelText={t('fileManager.variants.printSelectionOnly')}
+          dismissible={false}
+          onConfirm={() => {
+            const plan = promotePartialGroups(partialPrintPlan);
+            setPartialPrintPlan(null);
+            startBulkPrint(plan);
+          }}
+          onCancel={() => {
+            setPartialPrintPlan(null);
+            startBulkPrint(null);
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setPartialPrintPlan(null)}
+            className="text-sm text-bambu-gray hover:text-white underline"
+          >
+            {t('common.cancel')}
+          </button>
+        </ConfirmModal>
+      )}
+
       {/* Held back until the variant group has loaded. The modal reads its
           candidate list once, on mount, so opening before the group arrives
           would show a single-file print for a file that has alternatives. */}
       {printFile && (printOverride || !printFile.variant_group_id || printFileGroup !== undefined) && (
         <PrintModal
+          key={`${printFile.id}-${printOverride ? 'group' : 'files'}`}
           mode="create"
           libraryFileId={printVariantFiles?.[0]?.id ?? printFile.id}
           variantFiles={printVariantFiles}
@@ -4383,8 +4481,14 @@ export function FileManagerPage() {
               : printFile.print_name || printFile.filename
           }
           onClose={() => {
+            // onSuccess has just opened the next job of a bulk Print.
+            if (printAdvanced.current) {
+              printAdvanced.current = false;
+              return;
+            }
             setPrintFile(null);
             setPrintOverride(null);
+            setPrintQueue(null);
             // Closed after a refusal: what went in leaves the selection, and the
             // rest reopens as that run (see separateJobsRun).
             if (separateJobsRun) {
@@ -4395,10 +4499,30 @@ export function FileManagerPage() {
             }
           }}
           onSuccess={() => {
+            const finished = printOverride;
             setPrintFile(null);
             setPrintOverride(null);
             setSeparateJobsRun(null);
-            setSelectedFiles([]);
+            if (finished) {
+              // A group or a single version: only what was printed leaves the
+              // selection, and a bulk Print goes on with its next job.
+              setSelectedFiles((prev) => prev.filter((id) => !finished.ids.includes(id)));
+              const queue = printQueue;
+              if (queue && queue.groups.length > 0) {
+                const [next, ...rest] = queue.groups;
+                setPrintQueue({ ...queue, groups: rest });
+                printVariantGroup(next);
+                printAdvanced.current = true;
+              } else if (queue) {
+                setPrintQueue(null);
+                if (queue.loose.length > 0) {
+                  setPrintFile(queue.loose[0]);
+                  printAdvanced.current = true;
+                }
+              }
+            } else {
+              setSelectedFiles([]);
+            }
             queryClient.invalidateQueries({ queryKey: ['library-files'] });
             queryClient.invalidateQueries({ queryKey: ['queue'] });
             queryClient.invalidateQueries({ queryKey: ['archives'] });

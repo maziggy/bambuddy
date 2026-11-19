@@ -8,7 +8,7 @@ import type { GroupRow } from '../../pages/fileManager/variantGroups';
 import { VariantGroupActionStrip } from './VariantGroupActionStrip';
 import { VariantMemberLine } from './VariantMemberLine';
 import { VariantSelectionBox } from './VariantSelectionBox';
-import { selectedMemberCount, type VariantGroupViewProps } from './variantTypes';
+import { dragSourceProps, selectedMemberCount, type VariantGroupViewProps } from './variantTypes';
 
 // A version group as one expandable row of the list view (#3628). It lines up
 // with the file rows beside it (`gridClassName` is theirs); expanding it
@@ -25,6 +25,7 @@ export function VariantGroupListRow({
   onTagClick,
   memberActions,
   groupActions,
+  groupDrag,
 }: { row: GroupRow; gridClassName: string } & VariantGroupViewProps) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
@@ -54,6 +55,7 @@ export function VariantGroupListRow({
           selectedCount > 0 ? 'bg-bambu-green/10' : ''
         }`}
         onClick={() => onToggleSelect(row)}
+        {...dragSourceProps(row, groupDrag)}
       >
         <VariantSelectionBox
           selectedCount={selectedCount}

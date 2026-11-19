@@ -7,6 +7,9 @@ import type { LibraryFolderTree } from '../api/client';
  */
 export const FOLDER_DRAG_TYPE = 'application/x-bambuddy-folder';
 
+/** Drag type of a version group card (#3628); its payload is the file ids. */
+export const FILES_DRAG_TYPE = 'application/x-bambuddy-files';
+
 function collectSubtreeIds(folder: LibraryFolderTree, into: Set<number>): void {
   into.add(folder.id);
   for (const child of folder.children) collectSubtreeIds(child, into);
@@ -69,4 +72,22 @@ export function isValidFolderMove(
   const destination = findFolder(folders, destinationId);
   if (!destination || !isWritableFolder(destination)) return false;
   return !moveDisallowedFolderIds(folders, folder.id).has(destinationId);
+}
+
+/**
+ * Whether dropping files on `destinationId` (null = root) would move at least
+ * one of them somewhere the server accepts: not into an external folder, not
+ * into one the user may not write to, and not where they all already are.
+ */
+export function isValidFilesMove(
+  folders: LibraryFolderTree[],
+  files: { folder_id: number | null }[],
+  destinationId: number | null,
+): boolean {
+  if (!files.some((f) => (f.folder_id ?? null) !== destinationId)) return false;
+  if (destinationId === null) return true;
+  const destination = findFolder(folders, destinationId);
+  if (!destination || !isWritableFolder(destination)) return false;
+  // Id 0 matches no folder, so only the external subtrees are disallowed.
+  return !moveDisallowedFolderIds(folders, 0).has(destinationId);
 }

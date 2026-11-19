@@ -8,7 +8,7 @@ import type { GroupRow } from '../../pages/fileManager/variantGroups';
 import { VariantGroupActionStrip } from './VariantGroupActionStrip';
 import { VariantMemberLine } from './VariantMemberLine';
 import { VariantSelectionBox } from './VariantSelectionBox';
-import { selectedMemberCount, type VariantGroupViewProps } from './variantTypes';
+import { dragSourceProps, selectedMemberCount, type VariantGroupViewProps } from './variantTypes';
 
 // A version group as one row of a Miller column (#3628). The row sits where a
 // file's row would; the versions are listed in a pane under it, opened with
@@ -23,6 +23,7 @@ export function VariantGroupColumnRow({
   showModified,
   memberActions,
   groupActions,
+  groupDrag,
 }: {
   row: GroupRow;
   isFocused: boolean;
@@ -51,6 +52,7 @@ export function VariantGroupColumnRow({
     >
       <div
         onClick={() => onSelect(row)}
+        {...dragSourceProps(row, groupDrag)}
         className={`group flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors ${
           selectedCount > 0 ? 'bg-bambu-green/10' : 'hover:bg-bambu-dark'
         } ${isFocused ? 'ring-1 ring-inset ring-bambu-green/60' : ''}`}

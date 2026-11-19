@@ -24,6 +24,22 @@ export interface VariantGroupViewProps {
   onTagClick?: (tagId: number) => void;
   memberActions: VariantMemberActions;
   groupActions: VariantGroupActions;
+  /** Dragging a group onto a folder moves the versions in this folder. */
+  groupDrag?: {
+    canDrag: (row: GroupRow) => boolean;
+    onDragStart: (row: GroupRow, e: React.DragEvent) => void;
+    onDragEnd: () => void;
+  };
+}
+
+// The attributes that make a group's root element a drag source.
+export function dragSourceProps(row: GroupRow, drag: VariantGroupViewProps['groupDrag']) {
+  if (!drag || !drag.canDrag(row)) return {};
+  return {
+    draggable: true,
+    onDragStart: (e: React.DragEvent) => drag.onDragStart(row, e),
+    onDragEnd: drag.onDragEnd,
+  };
 }
 
 export function selectedMemberCount(row: GroupRow, selectedIds: readonly number[]): number {

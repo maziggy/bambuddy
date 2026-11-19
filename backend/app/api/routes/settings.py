@@ -204,6 +204,7 @@ _BOOL_SETTING_KEYS = frozenset(
         "per_printer_mapping_expanded",
         "prometheus_enabled",
         "user_notifications_enabled",
+        "notification_submitter_email_enabled",
         "queue_drying_enabled",
         "queue_drying_block",
         "ambient_drying_enabled",

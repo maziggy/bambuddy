@@ -2439,6 +2439,8 @@ export default {
     userNotificationsEnabled: 'ユーザー通知',
     userNotificationsEnabledDescription: 'ユーザー通知メニューと印刷ジョブイベントのメール通知を有効にします。高度な認証が必要です。',
     userNotificationsDisabledHint: 'ユーザー通知を使用するには高度な認証を有効にしてください。',
+    notificationSubmitterEmail: '通知に送信者のメールアドレスを含める',
+    notificationSubmitterEmailDescription: '印刷通知の {submitted_by_email} を埋めます。通知テンプレートやプロバイダーを編集できるユーザーは、ユーザーのメールアドレスを任意のサーバーに送信できるようになります。',
     notificationProviders: '通知プロバイダー',
     addProvider: 'プロバイダーを追加',
     editProvider: 'プロバイダーを編集',

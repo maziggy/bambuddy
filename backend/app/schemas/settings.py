@@ -433,6 +433,14 @@ class AppSettings(BaseModel):
         default=True,
         description="Enable user email notifications for print job events (requires Advanced Authentication)",
     )
+    notification_submitter_email_enabled: bool = Field(
+        default=False,
+        description=(
+            "Fill {submitted_by_email} in print notifications with the email of the user who sent the job. "
+            "Off, it stays empty: anyone who can edit templates or providers could otherwise send "
+            "every submitter's email to a server of their choosing."
+        ),
+    )
 
     # Default print options. bed_levelling / flow_cali / nozzle_offset_cali are
     # tri-state (off/on/auto), defaulting to "auto" per BambuStudio.
@@ -877,6 +885,7 @@ class AppSettingsUpdate(BaseModel):
     low_stock_threshold: float | None = Field(default=None, ge=0.1, le=99.9)
     session_max_hours: int | None = Field(default=None, ge=1, le=720)
     user_notifications_enabled: bool | None = None
+    notification_submitter_email_enabled: bool | None = None
     default_bed_levelling: TriState | None = None
     default_flow_cali: TriState | None = None
     default_vibration_cali: bool | None = None
@@ -1189,8 +1198,8 @@ class AppSettingsUpdate(BaseModel):
 # Settings that decide who can sign in or where credential material goes: a
 # directory server that hands out groups, local sign-in, the session length,
 # the address password-reset and welcome links point at, the metrics
-# endpoint's token, and the folder full backups (every password hash) are
-# written to. Admin-only to change (routes/settings.update_settings, and a
+# endpoint's token, the folder full backups (every password hash) are
+# written to, and whether print notifications carry the submitter's email. Admin-only to change (routes/settings.update_settings, and a
 # GitHub restore by a non-admin skips them); the settings permissions keep
 # everything else.
 ADMIN_ONLY_SETTING_KEYS = frozenset(
@@ -1202,5 +1211,6 @@ ADMIN_ONLY_SETTING_KEYS = frozenset(
         "prometheus_enabled",
         "prometheus_token",
         "local_backup_path",
+        "notification_submitter_email_enabled",
     }
 )

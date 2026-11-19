@@ -2460,6 +2460,8 @@ export default {
     userNotificationsEnabled: 'Gebruikersmeldingen',
     userNotificationsEnabledDescription: 'Schakel het gebruikersmeldingenmenu en e-mailmeldingen voor afdrukgebeurtenissen in. Vereist Geavanceerde authenticatie.',
     userNotificationsDisabledHint: 'Schakel Geavanceerde authenticatie in om gebruikersmeldingen te gebruiken.',
+    notificationSubmitterEmail: 'E-mail van de indiener in meldingen',
+    notificationSubmitterEmailDescription: 'Vult {submitted_by_email} in printmeldingen. Wie meldingssjablonen of -providers kan bewerken, kan dan e-mailadressen van gebruikers naar elke server sturen.',
     notificationProviders: 'Meldingsproviders',
     addProvider: 'Provider toevoegen',
     editProvider: 'Provider bewerken',

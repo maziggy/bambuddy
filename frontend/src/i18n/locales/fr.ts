@@ -2395,6 +2395,8 @@ export default {
     userNotificationsEnabled: 'Notifications utilisateur',
     userNotificationsEnabledDescription: "Active le menu de notifications utilisateur et les notifications par e-mail pour les événements d'impression. Nécessite l'authentification avancée.",
     userNotificationsDisabledHint: "Activez l'authentification avancée pour utiliser les notifications utilisateur.",
+    notificationSubmitterEmail: "E-mail de l'expéditeur dans les notifications",
+    notificationSubmitterEmailDescription: "Remplit {submitted_by_email} dans les notifications d'impression. Toute personne pouvant modifier les modèles ou fournisseurs de notifications peut alors envoyer les e-mails des utilisateurs à n'importe quel serveur.",
     notificationProviders: 'Fournisseurs de notifications',
     addProvider: 'Ajouter un fournisseur',
     editProvider: 'Modifier le fournisseur',

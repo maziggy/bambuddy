@@ -321,6 +321,11 @@ class NotificationService:
         virtual printer with their own access code. Left unset, so empty in the
         message, when nobody is known, the user is gone or has no email. The email
         lets a webhook bridge turn the user into a chat mention.
+
+        The email is only filled while an admin has turned on
+        ``notification_submitter_email_enabled``: users who may edit templates and
+        providers can't read user emails, and could otherwise point a webhook at
+        their own server to collect them.
         """
         user_id = archive_data.get("created_by_id") if archive_data else None
         if user_id is None:
@@ -336,7 +341,16 @@ class NotificationService:
         if row is None:
             return
         variables["submitted_by"] = row.username
-        if row.email:
+        if not row.email:
+            return
+        from backend.app.api.routes.settings import get_setting
+
+        try:
+            email_enabled = (await get_setting(db, "notification_submitter_email_enabled") or "").lower() == "true"
+        except Exception as e:
+            logger.warning("Could not read notification_submitter_email_enabled: %s", e)
+            return
+        if email_enabled:
             variables["submitted_by_email"] = row.email
 
     def _format_duration(self, seconds: int | None) -> str:

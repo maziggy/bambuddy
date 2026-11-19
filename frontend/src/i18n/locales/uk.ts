@@ -2458,6 +2458,8 @@ export default {
     userNotificationsEnabled: "Сповіщення користувача",
     userNotificationsEnabledDescription: "Увімкніть меню сповіщень користувача та сповіщення електронною поштою про події завдань друку. Потрібна розширена автентифікація.",
     userNotificationsDisabledHint: "Увімкніть розширену автентифікацію, щоб використовувати сповіщення користувачів.",
+    notificationSubmitterEmail: "Електронна пошта відправника в сповіщеннях",
+    notificationSubmitterEmailDescription: "Заповнює {submitted_by_email} у сповіщеннях про друк. Будь-хто, хто може редагувати шаблони чи постачальників сповіщень, зможе надіслати адреси електронної пошти користувачів на будь-який сервер.",
     notificationProviders: "Служби сповіщень",
     addProvider: "Додати службу",
     editProvider: "Редагувати службу",

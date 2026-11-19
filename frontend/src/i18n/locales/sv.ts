@@ -2492,6 +2492,8 @@ export default {
     userNotificationsEnabled: 'Användarnotiser',
     userNotificationsEnabledDescription: 'Aktivera menyn för användarnotiser och e-postnotiser för utskriftshändelser. Kräver avancerad autentisering.',
     userNotificationsDisabledHint: 'Aktivera avancerad autentisering för att använda användarnotiser.',
+    notificationSubmitterEmail: 'Avsändarens e-post i notiser',
+    notificationSubmitterEmailDescription: 'Fyller i {submitted_by_email} i utskriftsnotiser. Den som kan redigera notismallar eller notisleverantörer kan då skicka användarnas e-postadresser till valfri server.',
     notificationProviders: 'Notisleverantörer',
     addProvider: 'Lägg till leverantör',
     editProvider: 'Redigera leverantör',

@@ -2346,6 +2346,8 @@ export default {
     userNotificationsEnabled: '사용자 알림',
     userNotificationsEnabledDescription: '사용자 알림 메뉴 및 인쇄 작업 이벤트에 대한 이메일 알림을 활성화합니다. 고급 인증이 필요합니다.',
     userNotificationsDisabledHint: '사용자 알림을 사용하려면 고급 인증을 활성화하세요.',
+    notificationSubmitterEmail: '알림에 제출자 이메일 포함',
+    notificationSubmitterEmailDescription: '인쇄 알림의 {submitted_by_email}을(를) 채웁니다. 알림 템플릿이나 제공자를 편집할 수 있는 사람은 사용자 이메일을 임의의 서버로 보낼 수 있게 됩니다.',
     notificationProviders: '알림 제공자',
     addProvider: '제공자 추가',
     editProvider: '제공자 편집',

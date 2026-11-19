@@ -2462,6 +2462,8 @@ export default {
     userNotificationsEnabled: 'Powiadomienia użytkowników',
     userNotificationsEnabledDescription: 'Włącz menu powiadomień użytkowników i powiadomienia e-mail o zdarzeniach zadań druku. Wymaga zaawansowanego uwierzytelniania.',
     userNotificationsDisabledHint: 'Włącz zaawansowane uwierzytelnianie, aby korzystać z powiadomień użytkowników.',
+    notificationSubmitterEmail: 'E-mail zlecającego w powiadomieniach',
+    notificationSubmitterEmailDescription: 'Wypełnia {submitted_by_email} w powiadomieniach o wydrukach. Każdy, kto może edytować szablony lub dostawców powiadomień, może wtedy wysłać e-maile użytkowników na dowolny serwer.',
     notificationProviders: 'Dostawcy powiadomień',
     addProvider: 'Dodaj dostawcę',
     editProvider: 'Edytuj dostawcę',

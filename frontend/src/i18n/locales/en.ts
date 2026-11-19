@@ -2462,6 +2462,8 @@ export default {
     userNotificationsEnabled: 'User Notifications',
     userNotificationsEnabledDescription: 'Enable the user notifications menu and email notifications for print job events. Requires Advanced Authentication.',
     userNotificationsDisabledHint: 'Enable Advanced Authentication to use user notifications.',
+    notificationSubmitterEmail: "Submitter's email in notifications",
+    notificationSubmitterEmailDescription: "Fills {submitted_by_email} in print notifications. Anyone who can edit notification templates or providers can then send users' emails to any server.",
     notificationProviders: 'Notification Providers',
     addProvider: 'Add Provider',
     editProvider: 'Edit Provider',

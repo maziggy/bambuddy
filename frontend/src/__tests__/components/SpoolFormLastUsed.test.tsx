@@ -518,6 +518,39 @@ describe('SpoolFormModal last used values (#3619)', () => {
     expect(mApi.createSpool.mock.calls[0][0].slicer_filament).toBe('PFUS09');
   });
 
+  it('an untouched remembered preset gives way once the subtype changes', async () => {
+    store.set(KEY, JSON.stringify({ v: 1, brand: 'Polymaker', material: 'PLA', subtype: 'Basic', slicer_filament: 'GFL99', slicer_filament_name: 'Generic PLA' }));
+    // Profile defaults are keyed on the subtype too: only PLA Silk has one.
+    mApi.resolveProfileDefault.mockImplementation(async (key: { subtype: string }) => (
+      key.subtype === 'Silk'
+        ? { slicer_filament: 'PFUS07', slicer_filament_name: 'Default PLA Silk', presets: [], k_profiles: [], default_ids: [1] }
+        : null
+    ));
+    renderForm();
+    await screen.findByText(/Started with your last spool/);
+    fireEvent.focus(screen.getByPlaceholderText('Basic, Matte, Silk...'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Silk' }));
+    await waitFor(() => expect(mApi.resolveProfileDefault).toHaveBeenCalledWith(expect.objectContaining({ material: 'PLA', subtype: 'Silk' })));
+    // Past the lookup's debounce and the answer.
+    await new Promise((r) => setTimeout(r, 500));
+    submit();
+    await waitFor(() => expect(mApi.createSpool).toHaveBeenCalled());
+    expect(mApi.createSpool.mock.calls[0][0]).toMatchObject({ subtype: 'Silk', slicer_filament: 'PFUS07', slicer_filament_name: 'Default PLA Silk' });
+  });
+
+  it('an untouched remembered preset is dropped when the new subtype has no default', async () => {
+    store.set(KEY, JSON.stringify({ v: 1, brand: 'Polymaker', material: 'PLA', subtype: 'Basic', slicer_filament: 'GFL99', slicer_filament_name: 'Generic PLA' }));
+    renderForm();
+    await screen.findByText(/Started with your last spool/);
+    await waitFor(() => expect(mApi.resolveProfileDefault).toHaveBeenCalledWith(expect.objectContaining({ subtype: 'Basic' })));
+    fireEvent.focus(screen.getByPlaceholderText('Basic, Matte, Silk...'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Silk' }));
+    await waitFor(() => expect(mApi.resolveProfileDefault).toHaveBeenCalledWith(expect.objectContaining({ subtype: 'Silk' })));
+    await new Promise((r) => setTimeout(r, 500));
+    // As after a brand or material change: the preset belonged to PLA Basic.
+    expect(screen.queryByDisplayValue('Generic PLA')).not.toBeInTheDocument();
+  });
+
   describe('a remembered preset that came from a profile default', () => {
     const remember = () => store.set(KEY, JSON.stringify({ v: 1, brand: 'Polymaker', material: 'PLA', subtype: 'Basic', slicer_filament: 'PFUS01', slicer_filament_name: 'Default PLA', preset_from_default: true }));
 

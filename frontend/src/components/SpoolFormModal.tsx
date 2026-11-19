@@ -118,7 +118,7 @@ export function SpoolFormModal({
   // A remembered preset the user has not changed, and the product it belonged to.
   // Material the remembered values will put on the form; the profile-default effect waits for it (#3619).
   const awaitingRemembered = useRef<string | null>(null);
-  const rememberedPresetRef = useRef<{ brand: string; material: string; code: string } | null>(null);
+  const rememberedPresetRef = useRef<{ brand: string; material: string; subtype: string; code: string } | null>(null);
   const [locationsLoaded, setLocationsLoaded] = useState(false);
   const [catalogLoaded, setCatalogLoaded] = useState(false);
 
@@ -557,7 +557,7 @@ export function SpoolFormModal({
         rememberedPresetFromDefault = last?.preset_from_default === true;
         awaitingRemembered.current = last ? (last.material ?? '').trim() : null;
         rememberedPresetRef.current = last?.slicer_filament && !rememberedPresetFromDefault
-          ? { brand: last.brand ?? '', material: last.material ?? '', code: last.slicer_filament }
+          ? { brand: last.brand ?? '', material: last.material ?? '', subtype: last.subtype ?? '', code: last.slicer_filament }
           : null;
       }
       if (spool || !isCreating) {
@@ -776,16 +776,17 @@ export function SpoolFormModal({
         return next;
       });
       setPrefilledFromDefault(kRows.size > 0 || presetRows.size > 0 || !!resolved?.slicer_filament);
-      // A remembered preset nobody touched belongs to the remembered product: once brand or
-      // material moved away from it, it gives way to the new product's default like a
-      // default-filled one would (#3619).
+      // A remembered preset nobody touched belongs to the remembered product: once brand,
+      // material or subtype (profile defaults are keyed on all three) moved away from it,
+      // it gives way to the new product's default like a default-filled one would (#3619).
       const remembered = rememberedPresetRef.current;
       if (remembered) {
         const now = formDataRef.current;
         const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
         // An empty field is the render before the remembered values landed, not a user's choice.
         if (now.slicer_filament === remembered.code) {
-          if (!same(now.brand, remembered.brand) || !same(now.material, remembered.material)) {
+          if (!same(now.brand, remembered.brand) || !same(now.material, remembered.material)
+            || !same(now.subtype, remembered.subtype)) {
             presetFromDefault.current = true;
             rememberedPresetRef.current = null;
           }

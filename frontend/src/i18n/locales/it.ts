@@ -289,7 +289,7 @@ export default {
     addPreflight: {
       checking: 'Verifica della connessione...',
       warning: 'Alcuni controlli di connessione non sono riusciti. Questa stampante potrebbe risultare offline. Controlla le verifiche qui sotto, risolvi ciò che puoi oppure salva comunque.',
-      back: 'Indietro',
+      checkAgain: 'Verifica di nuovo',
       saveAnyway: 'Salva comunque',
     },
     title: 'Stampanti',
@@ -300,6 +300,8 @@ export default {
     serialNumber: 'Numero Seriale',
     ipAddress: 'Indirizzo IP',
     accessCode: 'Codice di Accesso',
+    showAccessCode: 'Mostra codice di accesso',
+    hideAccessCode: 'Nascondi codice di accesso',
     model: 'Modello',
     nozzleCount: 'Numero Ugelli',
     autoArchive: 'Auto Archiviazione',

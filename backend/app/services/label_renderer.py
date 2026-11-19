@@ -44,6 +44,7 @@ for label-printer software that takes images.
 from __future__ import annotations
 
 import io
+import unicodedata
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -366,6 +367,48 @@ def _truncate_to_width(c: rl_canvas.Canvas, text: str, font: str, size: float, m
     return text + ell if text else ell
 
 
+def _is_wide(ch: str) -> bool:
+    return unicodedata.east_asian_width(ch) in ("W", "F")
+
+
+# Punctuation that never starts a line, nor ends one, in Chinese and Japanese.
+_NO_LINE_START = frozenset("、。，．,.：；！？）】」』〉》〕｝ー々")
+_NO_LINE_END = frozenset("（【「『〈《〔｛")
+
+
+def _breaks_before(text: str, p: int) -> bool:
+    """Whether a line may break before ``text[p]``."""
+    if text[p] == " ":
+        return True
+    if text[p] in _NO_LINE_START or text[p - 1] in _NO_LINE_END:
+        return False
+    return _is_wide(text[p - 1]) or _is_wide(text[p])
+
+
+def _wrap_to_width(c: rl_canvas.Canvas, text: str, font: str, size: float, max_w: float, max_lines: int) -> list[str]:
+    """Break ``text`` into at most ``max_lines`` lines of ``max_w`` points
+    (#3621). A line breaks at its last space, or next to a Chinese, Japanese
+    or Korean character, which run on without spaces; a word too long for a
+    line breaks inside it. What is left after the last line is cut with an
+    ellipsis."""
+    lines: list[str] = []
+    rest = text
+    while len(lines) < max_lines - 1 and _text_width(rest, font, size) > max_w:
+        cut = 1  # at least one character a line, however narrow the column
+        while cut < len(rest) and _text_width(rest[: cut + 1], font, size) <= max_w:
+            cut += 1
+        at = next((p for p in range(cut, 0, -1) if _breaks_before(rest, p)), cut)
+        lines.append(rest[:at].rstrip())
+        rest = rest[at:].lstrip()
+    if rest:
+        lines.append(_truncate_to_width(c, rest, font, size, max_w))
+    return lines
+
+
+# The most lines one row of the roomy layout may take.
+_ROW_MAX_LINES = 3
+
+
 def _draw_label(
     c: rl_canvas.Canvas,
     x: float,
@@ -558,16 +601,22 @@ def _draw_label_roomy(
         ("added", data.added.isoformat() if data.added else "", FONT_REGULAR, 6.5, 1.2),
     ]
 
+    active = [row for row in rows if row[0] in fields and row[1]]
     cursor_y = y + h - pad
-    for field, text, font, size, gap in rows:
-        if field not in fields or not text:
-            continue
+    for i, (_field, text, font, size, gap) in enumerate(active):
         if cursor_y - size < floor_y:
             break
-        c.setFont(font, size)
-        cursor_y -= size
-        _draw_text(c, text_x, cursor_y, _truncate_to_width(c, text, font, size, text_w), font, size)
-        cursor_y -= gap
+        # A row too wide for the column continues on further lines, as long
+        # as every row below it still gets a line of its own (#3621).
+        below = sum(s + g for _f, _t, _fo, s, g in active[i + 1 :])
+        room = 1
+        while room < _ROW_MAX_LINES and cursor_y - (room + 1) * (size + gap) - below >= floor_y:
+            room += 1
+        for line in _wrap_to_width(c, text, font, size, text_w, room):
+            c.setFont(font, size)
+            cursor_y -= size
+            _draw_text(c, text_x, cursor_y, line, font, size)
+            cursor_y -= gap
 
     if show_id:
         c.setFont(FONT_BOLD, id_size)

@@ -289,7 +289,7 @@ export default {
     addPreflight: {
       checking: 'Vérification de la connexion...',
       warning: 'Certaines vérifications de connexion ont échoué. Cette imprimante pourrait apparaître hors ligne. Examinez les vérifications ci-dessous, corrigez ce que vous pouvez, ou enregistrez quand même.',
-      back: 'Retour',
+      checkAgain: 'Vérifier à nouveau',
       saveAnyway: 'Enregistrer quand même',
     },
     title: 'Imprimantes',
@@ -300,6 +300,8 @@ export default {
     serialNumber: 'Numéro de série',
     ipAddress: 'Adresse IP / Nom d\'hôte',
     accessCode: 'Code d\'accès',
+    showAccessCode: 'Afficher le code d\'accès',
+    hideAccessCode: 'Masquer le code d\'accès',
     model: 'Modèle',
     nozzleCount: 'Nombre de buses',
     autoArchive: 'Auto-archivage',

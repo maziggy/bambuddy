@@ -291,7 +291,7 @@ export default {
     addPreflight: {
       checking: 'Kontrollerar anslutning...',
       warning: 'Vissa anslutningskontroller misslyckades. Denna skrivare kan visas som offline. Granska kontrollerna nedan, åtgärda vad du kan, eller spara ändå.',
-      back: 'Tillbaka',
+      checkAgain: 'Kontrollera igen',
       saveAnyway: 'Spara ändå',
     },
     editPrinter: 'Redigera skrivare',
@@ -300,6 +300,8 @@ export default {
     serialNumber: 'Serienummer',
     ipAddress: 'IP-adress / värdnamn',
     accessCode: 'Åtkomstkod',
+    showAccessCode: 'Visa åtkomstkod',
+    hideAccessCode: 'Dölj åtkomstkod',
     model: 'Modell',
     nozzleCount: 'Antal munstycken',
     autoArchive: 'Autoarkivera',

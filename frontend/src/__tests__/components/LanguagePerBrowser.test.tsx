@@ -122,6 +122,24 @@ describe('language per browser (#3623)', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Language' })).toBeNull());
   });
 
+  it('shows a browser language with a region (de-DE) as its base language', async () => {
+    await i18n.changeLanguage('de-DE');
+    render(<Layout />);
+    fireEvent.click((await screen.findAllByRole('button', { name: /^(Language|Sprache)$/ }))[0]);
+    const select = (await screen.findByRole('combobox', { name: /^(Language|Sprache)$/ })) as HTMLSelectElement;
+    expect(select.value).toBe('de');
+  });
+
+  it('offers the language button in the collapsed sidebar footer as well', async () => {
+    render(<Layout />);
+    await screen.findAllByRole('button', { name: 'Language' });
+    // The expanded and the collapsed footer are separate markup.
+    const toggle = screen.queryByTitle('Collapse sidebar') ?? screen.getByTitle('Expand sidebar');
+    fireEvent.click(toggle);
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Language' }))[0]);
+    expect(await screen.findByRole('combobox', { name: 'Language' })).toBeInTheDocument();
+  });
+
   it('lists every language by its own name', async () => {
     render(<Layout />);
     fireEvent.click((await screen.findAllByRole('button', { name: 'Language' }))[0]);
@@ -166,7 +184,7 @@ describe('language per browser (#3623)', () => {
   });
 });
 
-describe('Settings > General default language (#3623)', () => {
+describe('Settings > General SpoolBuddy display language (#3623)', () => {
   let savedLanguage = 'en';
   let settingsWrites: Array<Record<string, unknown>> = [];
   beforeEach(async () => {
@@ -189,13 +207,13 @@ describe('Settings > General default language (#3623)', () => {
     );
   });
 
-  it('labels the picker as the install-wide default and explains it', async () => {
+  it('labels the picker as the SpoolBuddy display language and explains it', async () => {
     render(<SettingsPage />);
 
-    expect(await screen.findByText('Default language')).toBeInTheDocument();
+    expect(await screen.findByText('SpoolBuddy display language')).toBeInTheDocument();
     expect(
       screen.getByText(
-        'The language of SpoolBuddy displays. Each person can choose their own interface language in the account menu.',
+        'The language of the SpoolBuddy displays. Each person chooses their own interface language in the account menu, or with the globe button when login is off.',
       ),
     ).toBeInTheDocument();
   });
@@ -204,7 +222,7 @@ describe('Settings > General default language (#3623)', () => {
     const updateSettings = vi.spyOn(api, 'updateSettings');
     render(<SettingsPage />);
 
-    const label = await screen.findByText('Default language');
+    const label = await screen.findByText('SpoolBuddy display language');
     const select = within(label.closest('div') as HTMLElement).getByRole('combobox') as HTMLSelectElement;
     // Browser is English, the install-wide setting is German.
     expect(i18n.language).toBe('en');

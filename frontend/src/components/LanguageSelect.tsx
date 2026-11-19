@@ -10,11 +10,9 @@ import { availableLanguages } from '../i18n/languages';
  */
 export function LanguageSelect({ id, className = '' }: { id: string; className?: string }) {
   const { t, i18n } = useTranslation();
-  // i18n.language can carry a region ("de-DE") the list does not have.
-  const current =
-    availableLanguages.find((l) => l.code === i18n.language)?.code ??
-    availableLanguages.find((l) => l.code === i18n.language?.split('-')[0])?.code ??
-    'en';
+  // i18next resolves a region the list does not have ("de-DE") to its
+  // supported base language, so i18n.language is one of the list's codes.
+  const current = availableLanguages.find((l) => l.code === i18n.language)?.code ?? 'en';
 
   return (
     <div className={className}>

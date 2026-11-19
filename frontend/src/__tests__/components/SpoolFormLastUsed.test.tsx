@@ -300,6 +300,79 @@ describe('SpoolFormModal last used values (#3619)', () => {
     expect(JSON.parse(store.get(KEY)!).brand).toBe('Builtin');
   });
 
+  describe('a remembered tare in Spoolman mode (#2908)', () => {
+    const filament = { id: 4, name: 'PETG Remote', material: 'PETG', vendor: { name: 'Remote' }, color_hex: 'FF0000', color_name: null, weight: 1000, spool_weight: 180 };
+    const open = async () => {
+      store.set(SPOOLMAN_KEY, JSON.stringify({ v: 1, brand: 'Remote', material: 'PETG', core_weight: 200 }));
+      mApi.getSpoolmanInventoryFilaments.mockResolvedValue([filament]);
+      renderForm({ spoolmanMode: true });
+      await screen.findByText(/Started with your last spool/);
+      await settle();
+    };
+    const pickFilament = async () => {
+      fireEvent.click(screen.getByText('Spoolman Filament Catalog'));
+      fireEvent.click(await screen.findByText('Remote — PETG Remote'));
+    };
+    const sent = async () => {
+      await waitFor(() => expect(mApi.createSpoolmanInventorySpool).toHaveBeenCalled());
+      return mApi.createSpoolmanInventorySpool.mock.calls[0][0];
+    };
+
+    it('is sent when no Spoolman filament is picked', async () => {
+      await open();
+      submit();
+      expect((await sent()).core_weight).toBe(200);
+      await waitFor(() => expect(JSON.parse(store.get(SPOOLMAN_KEY)!)).toHaveProperty('preset_from_default'));
+      expect(JSON.parse(store.get(SPOOLMAN_KEY)!).core_weight).toBe(200);
+    });
+
+    it('is released by picking a Spoolman filament, whose own tare applies', async () => {
+      await open();
+      await pickFilament();
+      submit();
+      const data = await sent();
+      expect(data.spoolman_filament_id).toBe(4);
+      expect(data).not.toHaveProperty('core_weight');
+      // The spool inherits its tare again: nothing to carry to the next form.
+      await waitFor(() => expect(JSON.parse(store.get(SPOOLMAN_KEY)!)).toHaveProperty('preset_from_default'));
+      expect(JSON.parse(store.get(SPOOLMAN_KEY)!).core_weight).toBeNull();
+    });
+
+    it('is released as well after the weight picker was only looked at', async () => {
+      await open();
+      // The picker selects the catalogue entry matching 200 g by itself: not a user's choice.
+      fireEvent.click(screen.getByText('Color & Cost'));
+      await screen.findByDisplayValue(/Cardboard/);
+      fireEvent.click(screen.getByText('Filament Info'));
+      await pickFilament();
+      submit();
+      expect(await sent()).not.toHaveProperty('core_weight');
+    });
+
+    it('stays when the user set the tare in this form before picking the filament', async () => {
+      await open();
+      fireEvent.click(screen.getByText('Color & Cost'));
+      fireEvent.change(document.querySelector('input[type="number"][max="2000"]')!, { target: { value: '230' } });
+      fireEvent.click(screen.getByText('Filament Info'));
+      await pickFilament();
+      submit();
+      const data = await sent();
+      expect(data.spoolman_filament_id).toBe(4);
+      expect(data.core_weight).toBe(230);
+    });
+
+    it('stays when the user set the tare after picking the filament', async () => {
+      await open();
+      await pickFilament();
+      fireEvent.click(screen.getByText('Color & Cost'));
+      fireEvent.change(document.querySelector('input[type="number"][max="2000"]')!, { target: { value: '230' } });
+      submit();
+      const data = await sent();
+      expect(data.spoolman_filament_id).toBe(4);
+      expect(data.core_weight).toBe(230);
+    });
+  });
+
   it('saves remembered suppliers in Spoolman mode, which has no inheritance', async () => {
     store.set(SPOOLMAN_KEY, JSON.stringify({ v: 1, brand: 'Remote', material: 'PETG', supplier_ids: [8] }));
     renderForm({ spoolmanMode: true });

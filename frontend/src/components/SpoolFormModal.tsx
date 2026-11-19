@@ -119,6 +119,9 @@ export function SpoolFormModal({
   // Material the remembered values will put on the form; the profile-default effect waits for it (#3619).
   const awaitingRemembered = useRef<string | null>(null);
   const rememberedPresetRef = useRef<{ brand: string; material: string; subtype: string; code: string } | null>(null);
+  // Spoolman mode: the tare on the form came from memory and the user has not set one
+  // in this form. Picking a Spoolman filament releases it, see handleFilamentSelect.
+  const tareFromMemory = useRef(false);
   const [locationsLoaded, setLocationsLoaded] = useState(false);
   const [catalogLoaded, setCatalogLoaded] = useState(false);
 
@@ -585,6 +588,7 @@ export function SpoolFormModal({
       // inheriting. Only Spoolman spools report the flag (#2908).
       // A remembered tare on a Spoolman create is sent like a chosen one.
       setCoreWeightTouched((isCopying && spool?.core_weight_is_inherited === false) || (spoolmanMode && rememberedTare));
+      tareFromMemory.current = spoolmanMode && rememberedTare;
       setLocationIdTouched(false);
       setSupplierLinksTouched(false);
       setPrinterProfilesTouched(false);
@@ -604,6 +608,7 @@ export function SpoolFormModal({
       setSuppliersFromMemory(false);
       rememberedPresetRef.current = null;
       awaitingRemembered.current = null;
+      tareFromMemory.current = false;
     }
   }, [isOpen, spool, mode, isCopying, isEditing, isCreating, spoolmanMode]);
 
@@ -679,6 +684,7 @@ export function SpoolFormModal({
     rememberedPresetRef.current = null;
     setLocationIdTouched(false);
     setCoreWeightTouched(false);
+    tareFromMemory.current = false;
     setPendingLast(null);
     setLastApplied(null);
     presetFromDefault.current = false;
@@ -857,7 +863,11 @@ export function SpoolFormModal({
         : {}),
     }));
     if (key === 'weight_used') setWeightTouched(true);
-    if (key === 'core_weight') setCoreWeightTouched(true);
+    if (key === 'core_weight') {
+      setCoreWeightTouched(true);
+      // Set in this form: the user's, whatever filament is picked afterwards.
+      tareFromMemory.current = false;
+    }
     if (key === 'location_id') setLocationIdTouched(true);
     if (key === 'last_dried_at') setLastDriedTouched(true);
     // A preset the user picked is theirs: the next product's default leaves it alone.
@@ -882,6 +892,15 @@ export function SpoolFormModal({
     // prefilled a clear filament picked from the Spoolman catalogue as 808080FF.
     const colorHex = /^[0-9A-F]{6}(?:[0-9A-F]{2})?$/.test(rawHex) ? rawHex : '808080';
     const prefillRgba = colorHex.length === 8 ? colorHex : `${colorHex}FF`;
+    // A tare that only came from memory (#3619) belonged to the last spool. Sent with
+    // the create it would override the picked filament's own tare (#2908), so it is
+    // released: the form is back to an untouched tare, which is not sent. One the
+    // user set in this form stays.
+    const releaseTare = tareFromMemory.current;
+    if (releaseTare) {
+      tareFromMemory.current = false;
+      setCoreWeightTouched(false);
+    }
     setFormData(prev => ({
       ...prev,
       spoolman_filament_id: filament.id,
@@ -891,6 +910,9 @@ export function SpoolFormModal({
       rgba: prefillRgba,
       color_name: filament.color_name || '',
       label_weight: filament.weight ?? prev.label_weight,
+      ...(releaseTare
+        ? { core_weight: defaultFormData.core_weight, core_weight_catalog_id: defaultFormData.core_weight_catalog_id }
+        : {}),
     }));
     showToast(t('inventory.spoolmanFilamentSelected'), 'success');
   };

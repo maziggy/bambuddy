@@ -50,7 +50,7 @@ from backend.app.core.printer_scope import PrinterScope, ensure_model_target_all
 from backend.app.core.row_visibility import visible_row_clauses
 from backend.app.core.tasks import spawn_background_task
 from backend.app.models.archive import PrintArchive
-from backend.app.models.library import LibraryFile, LibraryFileTag, LibraryFolder
+from backend.app.models.library import FileVariantGroup, LibraryFile, LibraryFileTag, LibraryFolder
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
 from backend.app.models.project import Project
@@ -2366,6 +2366,7 @@ async def list_files(
     external_only: bool = False,
     recursive: bool = False,
     tag_ids: list[int] = Query(default_factory=list),
+    with_variant_members: bool = False,
     db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
@@ -2397,6 +2398,11 @@ async def list_files(
                  intentionally bypassed — tags are cross-cutting and the user
                  wants "every file with this tag" regardless of where it lives.
                  ``recursive`` becomes irrelevant in that case.
+        with_variant_members: For every variant group present in the result, also
+                 return the visible members that the filters left out (other
+                 folders), flagged ``variant_elsewhere`` and carrying their
+                 ``folder_name``. Every row of a group then reports
+                 ``variant_group_name`` and ``variant_position`` (#3628).
     """
     if internal_only and external_only:
         raise HTTPException(
@@ -2451,6 +2457,48 @@ async def list_files(
     query = query.order_by(LibraryFile.filename)
     result = await db.execute(query)
     files = result.scalars().unique().all() if tag_ids else result.scalars().all()
+
+    # Variant group members the filters left out (#3628): one query for the
+    # members, one for the group names, one for their folder names.
+    group_names: dict[int, str] = {}
+    elsewhere_ids: set[int] = set()
+    folder_names: dict[int, str] = {}
+    if with_variant_members:
+        shown_group_ids = {f.variant_group_id for f in files if f.variant_group_id}
+        if shown_group_ids:
+            shown_ids = {f.id for f in files}
+            extra_members = (
+                (
+                    await db.execute(
+                        visible_members_query(shown_group_ids, user, can_read_all)
+                        .options(selectinload(LibraryFile.created_by), selectinload(LibraryFile.tags))
+                        .order_by(LibraryFile.variant_group_id, LibraryFile.variant_position, LibraryFile.id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            extras = [m for m in extra_members if m.id not in shown_ids]
+            elsewhere_ids = {m.id for m in extras}
+            files = [*files, *extras]
+            group_names = dict(
+                (
+                    await db.execute(
+                        select(FileVariantGroup.id, FileVariantGroup.name).where(
+                            FileVariantGroup.id.in_(shown_group_ids)
+                        )
+                    )
+                ).all()
+            )
+            extra_folder_ids = {m.folder_id for m in extras if m.folder_id is not None}
+            if extra_folder_ids:
+                folder_names = dict(
+                    (
+                        await db.execute(
+                            select(LibraryFolder.id, LibraryFolder.name).where(LibraryFolder.id.in_(extra_folder_ids))
+                        )
+                    ).all()
+                )
 
     # Get duplicate counts
     hash_counts = {}
@@ -2518,6 +2566,12 @@ async def list_files(
                 tags=[TagSummary(id=t.id, name=t.name) for t in f.tags],
                 variant_group_id=f.variant_group_id,
                 variant_count=variant_counts.get(f.variant_group_id, 0) if f.variant_group_id else 0,
+                variant_group_name=group_names.get(f.variant_group_id)
+                if with_variant_members and f.variant_group_id
+                else None,
+                variant_position=f.variant_position if with_variant_members and f.variant_group_id else None,
+                variant_elsewhere=f.id in elsewhere_ids,
+                folder_name=folder_names.get(f.folder_id) if f.id in elsewhere_ids and f.folder_id else None,
                 external_url=f.external_url,
                 has_notes=bool(f.notes),
                 photo_count=len(f.photos or []),

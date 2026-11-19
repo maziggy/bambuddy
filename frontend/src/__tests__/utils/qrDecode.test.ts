@@ -172,4 +172,55 @@ describe('decodeImageBlob', () => {
 
     expect(await decodeImageBlob(photo)).toBe('spool=6');
   });
+
+  describe('second read near full size (#3616)', () => {
+    function stubPhoto(width: number, height: number) {
+      const bitmap = stubBitmap();
+      Object.assign(bitmap, { width, height });
+      stubUnbuildableDetector();
+      return bitmap;
+    }
+    const sizes = () => jsQR.mock.calls.map((c) => [c[1], c[2]]);
+
+    it('reads a small label the downscaled photo loses at the photo size', async () => {
+      stubPhoto(3000, 2000);
+      jsQR.mockReturnValueOnce(null).mockReturnValueOnce({ data: 'spool=7' });
+
+      expect(await decodeImageBlob(photo)).toBe('spool=7');
+      expect(sizes()).toEqual([
+        [1600, 1067],
+        [3000, 2000],
+      ]);
+      expect(jsQR).toHaveBeenLastCalledWith(expect.any(Uint8ClampedArray), 3000, 2000, {
+        inversionAttempts: 'attemptBoth',
+      });
+    });
+
+    it('caps a 24 MP photo at 4096 px for the phone canvas limit', async () => {
+      stubPhoto(5712, 4284);
+      jsQR.mockReturnValue(null);
+
+      expect(await decodeImageBlob(photo)).toBeUndefined();
+      expect(sizes()).toEqual([
+        [1600, 1200],
+        [4096, 3072],
+      ]);
+    });
+
+    it('reads only once when the downscaled photo has the code', async () => {
+      stubPhoto(3000, 2000);
+      jsQR.mockReturnValue({ data: 'spool=8' });
+
+      expect(await decodeImageBlob(photo)).toBe('spool=8');
+      expect(jsQR).toHaveBeenCalledTimes(1);
+    });
+
+    it('reads a photo no larger than the first read only once', async () => {
+      stubPhoto(1200, 900);
+      jsQR.mockReturnValue(null);
+
+      expect(await decodeImageBlob(photo)).toBeUndefined();
+      expect(sizes()).toEqual([[1200, 900]]);
+    });
+  });
 });

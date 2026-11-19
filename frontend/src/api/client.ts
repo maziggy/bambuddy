@@ -1653,6 +1653,8 @@ export interface AppSettings {
   session_max_hours: number;
   // User email notifications toggle
   user_notifications_enabled: boolean;
+  // Admin-only: fill {submitted_by_email} in print notifications
+  notification_submitter_email_enabled: boolean;
   // Default print options
   default_bed_levelling: CalibrationMode;
   default_flow_cali: CalibrationMode;

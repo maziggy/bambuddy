@@ -2291,6 +2291,8 @@ export default {
     userNotificationsEnabled: '用户通知',
     userNotificationsEnabledDescription: '启用用户通知菜单和打印任务事件的邮件通知。需要高级身份验证。',
     userNotificationsDisabledHint: '请启用高级身份验证以使用用户通知。',
+    notificationSubmitterEmail: '在通知中包含提交者邮箱',
+    notificationSubmitterEmailDescription: '在打印通知中填充 {submitted_by_email}。能够编辑通知模板或提供商的人将可以把用户邮箱发送到任意服务器。',
     notificationProviders: '通知提供商',
     addProvider: '添加提供商',
     editProvider: '编辑提供商',

@@ -2294,6 +2294,8 @@ export default {
     userNotificationsEnabled: 'Kullanıcı Bildirimleri',
     userNotificationsEnabledDescription: 'Baskı işi olayları için kullanıcı bildirim menüsünü ve e-posta bildirimlerini etkinleştir. Gelişmiş Kimlik Doğrulama gerektirir.',
     userNotificationsDisabledHint: 'Kullanıcı bildirimlerini kullanmak için Gelişmiş Kimlik Doğrulamayı etkinleştirin.',
+    notificationSubmitterEmail: 'Bildirimlerde gönderenin e-postası',
+    notificationSubmitterEmailDescription: 'Baskı bildirimlerinde {submitted_by_email} alanını doldurur. Bildirim şablonlarını veya sağlayıcılarını düzenleyebilen herkes, kullanıcıların e-postalarını herhangi bir sunucuya gönderebilir.',
     notificationProviders: 'Bildirim Sağlayıcıları',
     addProvider: 'Sağlayıcı Ekle',
     editProvider: 'Sağlayıcıyı Düzenle',

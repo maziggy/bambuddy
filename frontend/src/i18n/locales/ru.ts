@@ -2194,6 +2194,8 @@ export default {
     userNotificationsEnabled: "Пользовательские уведомления",
     userNotificationsEnabledDescription: "Включить меню пользовательских и почтовых уведомлений о событиях печати. Требуется расширенная аутентификация.",
     userNotificationsDisabledHint: "Для пользовательских уведомлений включите расширенную аутентификацию.",
+    notificationSubmitterEmail: "Электронная почта отправителя в уведомлениях",
+    notificationSubmitterEmailDescription: "Заполняет {submitted_by_email} в уведомлениях о печати. Любой, кто может редактировать шаблоны или провайдеры уведомлений, сможет отправить адреса электронной почты пользователей на любой сервер.",
     notificationProviders: "Провайдеры уведомлений",
     addProvider: "Добавить провайдера",
     editProvider: "Изменить провайдера",

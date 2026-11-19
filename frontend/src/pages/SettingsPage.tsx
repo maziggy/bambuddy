@@ -1356,6 +1356,7 @@ export function SettingsPage() {
       baseline.prometheus_enabled !== localSettings.prometheus_enabled ||
       baseline.prometheus_token !== localSettings.prometheus_token ||
       (baseline.user_notifications_enabled ?? true) !== (localSettings.user_notifications_enabled ?? true) ||
+      (baseline.notification_submitter_email_enabled ?? false) !== (localSettings.notification_submitter_email_enabled ?? false) ||
       (baseline.default_bed_levelling ?? 'auto') !== (localSettings.default_bed_levelling ?? 'auto') ||
       (baseline.default_flow_cali ?? 'auto') !== (localSettings.default_flow_cali ?? 'auto') ||
       (baseline.default_vibration_cali ?? true) !== (localSettings.default_vibration_cali ?? true) ||
@@ -1487,6 +1488,7 @@ export function SettingsPage() {
         prometheus_enabled: localSettings.prometheus_enabled,
         prometheus_token: localSettings.prometheus_token,
         user_notifications_enabled: localSettings.user_notifications_enabled,
+        notification_submitter_email_enabled: localSettings.notification_submitter_email_enabled,
         default_bed_levelling: localSettings.default_bed_levelling,
         default_flow_cali: localSettings.default_flow_cali,
         default_vibration_cali: localSettings.default_vibration_cali,
@@ -4245,6 +4247,34 @@ export function SettingsPage() {
                       checked={localSettings.user_notifications_enabled ?? true}
                       disabled={!advancedAuthStatus?.advanced_auth_enabled}
                       onChange={(e) => updateSetting('user_notifications_enabled', e.target.checked)}
+                    />
+                    <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green peer-disabled:cursor-not-allowed"></div>
+                  </label>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Submitter email in print notifications (admin-only) */}
+            <Card className="mb-4">
+              <CardContent className="py-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-white text-sm font-medium">{t('settings.notificationSubmitterEmail')}</p>
+                    <p className="text-xs text-bambu-gray">{t('settings.notificationSubmitterEmailDescription')}</p>
+                    {!isAdmin && (
+                      <p id="submitter-email-admin-only" className="text-xs text-bambu-gray mt-1">
+                        {t('settings.adminOnlySetting')}
+                      </p>
+                    )}
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={localSettings.notification_submitter_email_enabled ?? false}
+                      disabled={!isAdmin}
+                      aria-describedby={!isAdmin ? 'submitter-email-admin-only' : undefined}
+                      onChange={(e) => updateSetting('notification_submitter_email_enabled', e.target.checked)}
                     />
                     <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green peer-disabled:cursor-not-allowed"></div>
                   </label>

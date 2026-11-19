@@ -2246,6 +2246,8 @@ export default {
     userNotificationsEnabled: 'Notificações do Usuário',
     userNotificationsEnabledDescription: 'Ativa o menu de notificações do usuário e notificações por e-mail para eventos de impressão. Requer Autenticação Avançada.',
     userNotificationsDisabledHint: 'Ative a Autenticação Avançada para usar as notificações do usuário.',
+    notificationSubmitterEmail: 'E-mail do remetente nas notificações',
+    notificationSubmitterEmailDescription: 'Preenche {submitted_by_email} nas notificações de impressão. Quem puder editar modelos ou provedores de notificação poderá enviar os e-mails dos usuários para qualquer servidor.',
     notificationProviders: 'Provedores de Notificação',
     addProvider: 'Adicionar Provedor',
     editProvider: 'Editar Provedor',

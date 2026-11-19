@@ -2246,6 +2246,8 @@ export default {
     userNotificationsEnabled: 'Notifiche utente',
     userNotificationsEnabledDescription: "Abilita il menu notifiche utente e le notifiche e-mail per gli eventi di stampa. Richiede l'autenticazione avanzata.",
     userNotificationsDisabledHint: "Abilita l'autenticazione avanzata per usare le notifiche utente.",
+    notificationSubmitterEmail: "Email del mittente nelle notifiche",
+    notificationSubmitterEmailDescription: "Compila {submitted_by_email} nelle notifiche di stampa. Chi può modificare template o provider di notifica potrà inviare le email degli utenti a qualsiasi server.",
     notificationProviders: 'Provider notifiche',
     addProvider: 'Aggiungi provider',
     editProvider: 'Modifica provider',

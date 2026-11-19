@@ -2291,6 +2291,8 @@ export default {
     userNotificationsEnabled: 'Benutzerbenachrichtigungen',
     userNotificationsEnabledDescription: 'Aktiviert das Benutzerbenachrichtigungsmenü und E-Mail-Benachrichtigungen für Druckereignisse. Erfordert Erweiterte Authentifizierung.',
     userNotificationsDisabledHint: 'Erweiterte Authentifizierung aktivieren, um Benutzerbenachrichtigungen zu verwenden.',
+    notificationSubmitterEmail: 'E-Mail des Absenders in Benachrichtigungen',
+    notificationSubmitterEmailDescription: 'Füllt {submitted_by_email} in Druckbenachrichtigungen. Wer Benachrichtigungsvorlagen oder -anbieter bearbeiten kann, kann die E-Mails der Benutzer dann an einen beliebigen Server senden.',
     notificationProviders: 'Benachrichtigungsanbieter',
     addProvider: 'Anbieter hinzufügen',
     editProvider: 'Anbieter bearbeiten',

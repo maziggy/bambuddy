@@ -2291,6 +2291,8 @@ export default {
     userNotificationsEnabled: '使用者通知',
     userNotificationsEnabledDescription: '啟用使用者通知選單和列印任務事件的郵件通知。需要進階身份驗證。',
     userNotificationsDisabledHint: '請啟用進階身份驗證以使用使用者通知。',
+    notificationSubmitterEmail: '在通知中包含提交者信箱',
+    notificationSubmitterEmailDescription: '在列印通知中填入 {submitted_by_email}。能夠編輯通知範本或通知提供者的人將可以把使用者的信箱傳送到任意伺服器。',
     notificationProviders: '通知提供者',
     addProvider: '新增提供者',
     editProvider: '編輯提供者',

@@ -6,6 +6,8 @@ import { canonicalFilamentType, normalizeColorForCompare } from '../../utils/ams
 import { SlotPicker } from './SlotPicker';
 import { displayHex } from './displayHex';
 import { useFilamentLabels } from './useFilamentLabels';
+import { useFilamentPolicies } from '../../hooks/useFilamentPolicies';
+import { filamentAllowed, filamentName } from '../../utils/filamentScope';
 import type { FilamentReqsData } from './types';
 
 interface FilamentOverrideProps {
@@ -47,6 +49,7 @@ export function FilamentOverride({
   // shared hook fronts the three queries that power the resolution so this
   // component and ``FilamentMapping`` cannot drift apart on label content.
   const labels = useFilamentLabels(filamentReqs?.filaments);
+  const filamentPolicies = useFilamentPolicies();
 
   // Index available filaments by canonical type for per-slot filtering.
   // Types in the same equivalence group (e.g. PA-CF / PA12-CF / PAHT-CF) share one bucket.
@@ -145,20 +148,28 @@ export function FilamentOverride({
                       ? 'border-blue-500/50 dark:border-blue-400/50 text-blue-700 dark:text-blue-400'
                       : 'border-bambu-gray/30 text-bambu-gray'
                   }
-                  options={compatible.map((f, idx) => ({
-                    // The value has to stay `TYPE|COLOR` -- `handleChange`
-                    // parses it -- but two spools of the same type and colour
-                    // on different printers collapse to one value, so the key
-                    // keeps the sub-brand and the index as it did before.
-                    value: `${f.type}|${f.color}`,
-                    key: `${f.type}-${f.color}-${f.tray_sub_brands}-${idx}`,
-                    label: `${f.tray_sub_brands || f.type} (${getColorName(f.color, f.tray_sub_brands, f.tray_info_idx)})`,
-                    rgba: f.color,
-                    hex: displayHex(f.color),
-                    exactMatch:
-                      normalizeColorForCompare(req.color) !== '' &&
-                      normalizeColorForCompare(f.color) === normalizeColorForCompare(req.color),
-                  }))}
+                  options={compatible.map((f, idx) => {
+                    // Listed but not selectable: the group may not use it (#3522).
+                    const blocked = !filamentAllowed(filamentPolicies, f.type, f.tray_info_idx);
+                    return {
+                      // The value has to stay `TYPE|COLOR` -- `handleChange`
+                      // parses it -- but two spools of the same type and colour
+                      // on different printers collapse to one value, so the key
+                      // keeps the sub-brand and the index as it did before.
+                      value: `${f.type}|${f.color}`,
+                      key: `${f.type}-${f.color}-${f.tray_sub_brands}-${idx}`,
+                      label: `${f.tray_sub_brands || f.type} (${getColorName(f.color, f.tray_sub_brands, f.tray_info_idx)})`,
+                      rgba: f.color,
+                      hex: displayHex(f.color),
+                      exactMatch:
+                        normalizeColorForCompare(req.color) !== '' &&
+                        normalizeColorForCompare(f.color) === normalizeColorForCompare(req.color),
+                      disabled: blocked,
+                      disabledReason: blocked
+                        ? t('printModal.filamentBlockedSlot', { filament: filamentName(f.type, f.tray_info_idx) })
+                        : undefined,
+                    };
+                  })}
                 />
                 {/* Reset button */}
                 {isOverridden ? (

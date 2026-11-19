@@ -288,6 +288,8 @@ export default {
     serialNumber: '일련번호',
     ipAddress: 'IP 주소 / 호스트명',
     accessCode: '액세스 코드',
+    showAccessCode: '액세스 코드 표시',
+    hideAccessCode: '액세스 코드 숨기기',
     model: '모델',
     nozzleCount: '노즐 수',
     autoArchive: '자동 아카이브',
@@ -630,6 +632,9 @@ export default {
       wearCostHelp: '이 프린터로 한 시간 출력할 때 드는 마모 및 부품 비용입니다. 지금부터 모든 출력의 비용에 더해지며, 이전 출력은 바뀌지 않습니다. 비워 두면 꺼집니다.',
       dispatchPriorityLabel: '모델 지정 작업 우선순위',
       dispatchPriorityHelp: '모델 지정 작업의 프린터 순서가 프린터별 우선순위일 때 사용합니다. 작은 숫자가 먼저 선택되고, 비어 있으면 마지막입니다.',
+      requirePlateClearLabel: "플레이트 비움 확인 필요",
+      requirePlateClearDefault: "설정 사용 ({{value}})",
+      requirePlateClearHelp: "자동 플레이트 교체기처럼 스스로 플레이트를 비우는 프린터에서는 끄세요. 설정은 설정 > 워크플로우 > 큐 및 디스패치에 있습니다.",
       fromPrinterSettings: '프린터 설정에서',
       modelOptional: '모델 (선택사항)',
       saveChanges: '변경사항 저장'
@@ -954,7 +959,7 @@ export default {
     addPreflight: {
       checking: '연결 확인 중...',
       warning: '일부 연결 확인이 실패했습니다. 이 프린터가 오프라인으로 표시될 수 있습니다. 아래 항목을 검토하고 수정하거나 그냥 저장하세요.',
-      back: '뒤로',
+      checkAgain: '다시 확인',
       saveAnyway: '그냥 저장'
     }
   },
@@ -1197,7 +1202,9 @@ export default {
       edit: '편집',
       delete: '삭제',
       runsBadge: '{{count}}회 인쇄',
-      runsBadgeTitle: '총 {{count}}회 인쇄 — {{successful}}회 성공, {{failed}}회 실패. 전체 인쇄 기록을 보려면 클릭하세요.'
+      runsBadgeTitle: '총 {{count}}회 인쇄 — {{successful}}회 성공, {{failed}}회 실패. 전체 인쇄 기록을 보려면 클릭하세요.',
+      // The card's figures for an archive printed more than once (#3609).
+      totalOfRuns: '{{count}}회 인쇄 합계',
     },
     modal: {
       deleteArchive: '아카이브 삭제',
@@ -2511,9 +2518,9 @@ export default {
     preheatTargetOverrideHelp: '0은 챔버 없이 베드를 가열하고 소크를 실행합니다. 비워 두면 챔버가 필요 없는 인쇄는 예열을 완전히 건너뜁니다.',
     plateClear: '플레이트 비움 확인',
     requirePlateClear: '플레이트 비움 확인 필요',
-    requirePlateClearDescription: '활성화하면 스케줄러가 완료된 작업이 있는 프린터에서 대기 중인 인쇄를 시작하기 전에 프린터별 플레이트 비움 확인을 기다립니다.',
+    requirePlateClearDescription: '활성화하면 스케줄러가 완료된 작업이 있는 프린터에서 대기 중인 인쇄를 시작하기 전에 프린터별 플레이트 비움 확인을 기다립니다. 프린터마다 자체 설정(프린터 편집)에서 이 값을 바꿀 수 있습니다.',
     keepBedWarm: '출력 사이에 베드 온도 유지',
-    keepBedWarmDesc: '플레이트 클리어 확인 대기 중에 아래의 온도 유지 값으로 베드를 유지하여 챔버를 따뜻하게 유지합니다. 다음 출력의 베드 온도가 더 높으면 그 값을 사용합니다. 다음 출력에 챔버 가열이 필요한 경우에만 적용됩니다(ASA, ABS, PA, PC 등). 플레이트 클리어 확인이 활성화되어 있어야 합니다.',
+    keepBedWarmDesc: '플레이트 클리어 확인 대기 중에 아래의 온도 유지 값으로 베드를 유지하여 챔버를 따뜻하게 유지합니다. 다음 출력의 베드 온도가 더 높으면 그 값을 사용합니다. 다음 출력에 챔버 가열이 필요한 경우에만 적용됩니다(ASA, ABS, PA, PC 등). 설정 또는 프린터 자체 값에 따라 플레이트 클리어 확인을 기다리는 프린터에 적용됩니다.',
     keepWarmBedTemp: '온도 유지 시 베드 온도 (°C)',
     keepWarmBedTempHelp: '베드로 챔버를 가열해야 할 때 사용됩니다(온도 유지 중, 그리고 출력 파일에 베드 온도가 없는 경우의 예열 시). 출력 파일의 베드 온도가 더 높으면 항상 그 값이 우선합니다.',
     keepWarmMaxMinutes: '온도 유지 종료 시간(분)',
@@ -3618,6 +3625,22 @@ export default {
       printerAccessLimited: '제한됨: 프린터 {{printers}}대 선택, 위치 {{locations}}개',
       printerAccessOpen: '제한 없음: 구성원은 모든 프린터를 볼 수 있습니다.',
       managePrinterAccess: '프린터 접근 관리',
+      filamentAccess: '필라멘트 접근',
+      adminsUseAllFilaments: '관리자는 항상 모든 필라멘트를 사용할 수 있습니다.',
+      limitFilaments: '필라멘트 제한',
+      filamentAccessOpen: '제한 없음: 구성원은 어떤 필라멘트로든 출력할 수 있습니다.',
+      filamentModeBlock: '이 필라멘트 차단',
+      filamentModeAllow: '이 필라멘트만 허용',
+      filamentMatchMaterial: '재료 유형',
+      filamentMatchId: '필라멘트 ID',
+      filamentRuleValue: '규칙 값',
+      filamentRuleMaterialPlaceholder: '예: PETG',
+      filamentRuleIdPlaceholder: '예: GFG03',
+      addFilamentRule: '규칙 추가',
+      removeFilamentRule: '{{value}} 제거',
+      noFilamentRules: '아직 규칙이 없습니다.',
+      filamentAllowEmptyWarning: '규칙이 없으면 허용 목록이 모든 필라멘트를 차단합니다.',
+      filamentRulesHint: '재료 유형은 이름으로 일치 여부를 판단합니다(PETG는 PETG-CF와 일치하지 않음). 단, PA-CF, PA12-CF, PAHT-CF는 프린터와 마찬가지로 하나의 재료로 취급됩니다. 필라멘트 ID는 슬라이서 프리셋 ID입니다(예: Bambu PETG Matte는 GFG03). 구성원이 속한 제한 그룹 중 하나라도 허용하면 해당 필라멘트를 사용할 수 있습니다.',
     }
   },
 
@@ -5558,6 +5581,7 @@ export default {
     sameTypeDifferentColor: '같은 유형, 다른 색상',
     filamentTypeNotLoaded: '필라멘트 유형이 장착되지 않음',
     statusReady: '준비됨',
+    statusBlocked: '사용 불가',
     statusColorMismatch: '색상 불일치',
     statusTypeNotFound: '유형을 찾을 수 없음',
     requiredTooltip: '필요: {{name}} - {{color}}',
@@ -5569,6 +5593,8 @@ export default {
     overrideForFilament: '{{name}}의 필라멘트 재정의',
     sameTypeDifferentColorDetail: '같은 유형, 다른 색상: {{required}} 필요, 슬롯에는 {{loaded}}',
     requiredTypeNotInPrinter: '필요한 필라멘트 유형을 프린터에서 찾을 수 없습니다.',
+    filamentBlockedSlot: '내 그룹은 {{filament}}을(를) 사용할 수 없습니다',
+    filamentBlockedFile: '이 파일은 내 그룹이 인쇄에 사용할 수 없는 필라멘트를 사용합니다: {{filaments}}',
     whenToPrint: '인쇄 시점',
     asap: '최대한 빨리',
     queue: '대기열',
@@ -7108,6 +7134,48 @@ export default {
     includeAccessCodesDescription: '다른 기기로 전송하는 경우',
     includeAccessCodesWarning: '액세스 코드가 평문으로 포함됩니다. 이 백업 파일을 안전하게 보관하세요!',
     categoriesSelected: '{{selectedCount}}개 카테고리 선택됨'
+  },
+  // The sidebar footer's menu for the signed-in user (#3602).
+  accountMenu: {
+    title: '계정',
+  },
+  // What a user enters in their slicer to send to virtual printers (#3602).
+  connectSlicer: {
+    title: '슬라이서 연결',
+    subtitle: 'Bambu Studio 또는 OrcaSlicer에서 Bambuddy로 출력물을 보내려면 입력할 내용입니다.',
+    loadFailed: '연결 정보를 불러오지 못했습니다.',
+    authOff: '개인 액세스 코드에는 사용자 인증이 필요한데 꺼져 있습니다. 설정 > 가상 프린터에서 가상 프린터 자체의 액세스 코드를 사용하세요.',
+    openSettings: '가상 프린터 설정 열기',
+    steps: {
+      certificate: '아래 CA 인증서를 한 번 설치하면 슬라이서가 가상 프린터를 신뢰합니다.',
+      addPrinter: '슬라이서에서 IP 주소로 프린터를 추가하고 여기 나온 가상 프린터의 주소를 입력하세요. 슬라이서가 일련번호나 모델을 물으면 표시된 값을 사용하세요.',
+      accessCode: '액세스 코드로는 프린터 자체의 코드가 아니라 아래 개인 코드를 입력하세요.',
+    },
+    printers: '보낼 수 있는 가상 프린터',
+    noPrinters: '보낼 수 있는 가상 프린터가 없습니다. 관리자에게 문의하세요.',
+    notRunning: '실행 중 아님',
+    field: {
+      address: '주소',
+      serial: '일련번호',
+      model: '모델',
+    },
+    destination: {
+      library: '보낸 파일은 파일 관리자에 저장됩니다.',
+      review: '보낸 파일은 저장되기 전에 검토를 기다립니다.',
+      queuePrinter: '보낸 파일은 {{printer}}의 대기열에 추가됩니다.',
+      queueModel: '보낸 파일은 처음 비는 {{model}}의 대기열에 추가됩니다.',
+    },
+    liveStatus: '슬라이서에 {{printer}}의 실시간 상태가 표시됩니다.',
+    noLiveStatus: '슬라이서에 프린터의 실시간 상태가 표시되지 않습니다.',
+    instructions: {
+      description: '로그인한 모든 사용자는 설정에 접근하지 않고도 이 페이지에서 자신의 액세스 코드, 보낼 수 있는 가상 프린터, CA 인증서를 확인할 수 있습니다. 링크를 보내 주세요.',
+      label: '사용자 안내',
+      placeholder: '예: 먼저 VPN에 연결하세요.',
+      markdownHint: 'Markdown. 페이지 상단에 표시됩니다.',
+      openPage: '페이지 열기',
+      saved: '안내를 저장했습니다',
+      saveFailed: '안내를 저장하지 못했습니다',
+    },
   },
   slicerAccessCode: {
     title: '슬라이서 액세스 코드',

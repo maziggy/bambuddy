@@ -374,7 +374,7 @@ async def test_the_dispatch_releases_its_archive_when_it_ends(fails):
 
     scheduler._hold_archive(600, 300)
     db = MagicMock()
-    db.get = AsyncMock(return_value=MagicMock(id=597))
+    db.get = AsyncMock(return_value=MagicMock(id=597, created_by_id=None))
     session = MagicMock()
     session.__aenter__ = AsyncMock(return_value=db)
     session.__aexit__ = AsyncMock(return_value=False)

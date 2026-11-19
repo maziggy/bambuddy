@@ -48,6 +48,7 @@ def _item(**overrides):
     item = MagicMock()
     item.id = 276
     item.printer_id = 8
+    item.created_by_id = None  # no creator: unrestricted filament scope (#3522)
     item.ams_mapping = json.dumps(SHARED_MAPPING)
     item.skip_filament_check = False
     item.filament_overrides = None

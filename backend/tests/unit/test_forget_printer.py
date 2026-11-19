@@ -286,6 +286,22 @@ async def test_the_scheduler_and_live_activities_forget_it():
     assert notify_live_activities._wake.is_set()
 
 
+async def test_its_own_plate_clear_setting_goes():
+    """The printer's override of "Require plate-clear confirmation" (#2860)
+    is cached by id; the printer's neighbour keeps its own."""
+    from backend.app.services import plate_clear
+
+    plate_clear.set_override(GONE, False)
+    plate_clear.set_override(KEPT, False)
+    try:
+        await main.forget_printer(GONE)
+
+        assert plate_clear.applies(GONE, True) is True
+        assert plate_clear.applies(KEPT, True) is False
+    finally:
+        plate_clear.load_overrides({})
+
+
 @pytest.mark.parametrize("ml_fails", [False, True])
 async def test_an_obico_check_in_flight_when_the_printer_goes_ends_quietly(ml_fails):
     """The check waits up to 30 s for the ML server. A KeyError there stopped the

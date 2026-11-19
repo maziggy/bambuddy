@@ -65,6 +65,7 @@ function Harness({
   return (
     <FilamentMapping
       printerId={1}
+      blockedFilaments={[]}
       filamentReqs={TWO_SLOT_REQS}
       manualMappings={manualMappings}
       onManualMappingChange={(m) => {

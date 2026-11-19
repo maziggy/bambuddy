@@ -5992,6 +5992,21 @@ async def _run_migrations(conn):
             text("UPDATE groups SET restrict_printers = :off WHERE restrict_printers IS NULL"), {"off": False}
         )
 
+    # Migration: filament-scoped groups (#3522). Off by default, so no group
+    # narrows anyone's filaments on upgrade. The backfills cover a table
+    # create_all() already gave the columns, where the ALTER is swallowed.
+    await _safe_execute(conn, "ALTER TABLE groups ADD COLUMN restrict_filaments BOOLEAN DEFAULT FALSE")
+    async with conn.begin_nested():
+        await conn.execute(
+            text("UPDATE groups SET restrict_filaments = :off WHERE restrict_filaments IS NULL"), {"off": False}
+        )
+    await _safe_execute(conn, "ALTER TABLE groups ADD COLUMN filament_rule_mode VARCHAR(10) DEFAULT 'block'")
+    async with conn.begin_nested():
+        await conn.execute(
+            text("UPDATE groups SET filament_rule_mode = :mode WHERE filament_rule_mode IS NULL"), {"mode": "block"}
+        )
+    await _safe_execute(conn, "ALTER TABLE groups ADD COLUMN filament_rules JSON")
+
     # Migration: camera-stream and websocket tokens record who minted them, so
     # they carry that caller's printer scope (#1727). Camera tokens minted
     # before this have no principal at all (username NULL; every new one sets
@@ -6048,6 +6063,10 @@ async def _run_migrations(conn):
     # Migration: a printer's place in the pick order of "Any model" jobs (#2915).
     # Nullable: no printer has one until the order setting is "priority" and one is set.
     await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN dispatch_priority INTEGER")
+
+    # Migration: a printer's own "Require plate-clear confirmation" (#2860).
+    # Nullable: null follows the app setting, which every printer did before.
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN require_plate_clear BOOLEAN")
 
     # Migration: when each spool was last dried, at what temperature and for
     # how long (#2863). Nullable: no spool has a drying record until one ends.
@@ -6400,6 +6419,8 @@ _PG_COLUMNS_SET_FROM_MODEL = (
     ("api_keys", "can_update_energy_cost"),
     ("github_backup_config", "allow_insecure_http"),
     ("github_backup_config", "provider"),
+    ("groups", "filament_rule_mode"),
+    ("groups", "restrict_filaments"),
     ("groups", "restrict_printers"),
     ("library_files", "variant_position"),
     ("library_folders", "shared"),

@@ -1,22 +1,17 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Printer, ExternalLink, AlertTriangle, Info, FileText, ShieldCheck, Copy, Check, Download } from 'lucide-react';
+import { Loader2, Plus, Printer, ExternalLink, AlertTriangle, Info, FileText } from 'lucide-react';
 import { multiVirtualPrinterApi, virtualPrinterApi } from '../api/client';
 import { Card, CardContent } from './Card';
 import { Button } from './Button';
 import { Toggle } from './Toggle';
 import { useToast } from '../contexts/ToastContext';
-import { copyTextToClipboard, downloadTextFile } from '../utils/clipboard';
 import { VirtualPrinterCard } from './VirtualPrinterCard';
 import { VirtualPrinterAddDialog } from './VirtualPrinterAddDialog';
 import { SlicerAccessCodeCard } from './SlicerAccessCodeCard';
-
-// Operating system names, the same in every language.
-const INSTALLER_PLATFORMS = [
-  ['windows', 'Windows'],
-  ['unix', 'Linux / macOS'],
-] as const;
+import { SlicerCaCertCard } from './SlicerCaCertCard';
+import { ConnectSlicerInstructionsCard } from './ConnectSlicerInstructionsCard';
 
 export function VirtualPrinterList() {
   const { t } = useTranslation();
@@ -48,45 +43,6 @@ export function VirtualPrinterList() {
   });
 
   const useFilename = globalSettings?.archive_name_source === 'filename';
-
-  // Shared CA certificate — the slicer imports it once to trust every VP's
-  // TLS connection. Generated on demand by the backend, never changes.
-  const { data: caCert } = useQuery({
-    queryKey: ['vp-ca-certificate'],
-    queryFn: multiVirtualPrinterApi.getCaCertificate,
-    staleTime: Infinity,
-  });
-  const [caCopied, setCaCopied] = useState(false);
-
-  const handleCopyCert = async () => {
-    if (!caCert) return;
-    const ok = await copyTextToClipboard(caCert.pem);
-    if (ok) {
-      setCaCopied(true);
-      showToast(t('virtualPrinter.caCert.copied'));
-      setTimeout(() => setCaCopied(false), 2000);
-    } else {
-      showToast(t('virtualPrinter.toast.copyFailed'), 'error');
-    }
-  };
-
-  const handleDownloadCert = () => {
-    if (!caCert) return;
-    downloadTextFile(caCert.pem, 'bambuddy-virtual-printer-ca.crt', 'application/x-pem-file');
-  };
-
-  const [installerPending, setInstallerPending] = useState<'windows' | 'unix' | null>(null);
-  const handleDownloadInstaller = async (platform: 'windows' | 'unix') => {
-    setInstallerPending(platform);
-    try {
-      const installer = await multiVirtualPrinterApi.getCaCertificateInstaller(platform);
-      downloadTextFile(installer.content, installer.filename, 'application/octet-stream');
-    } catch (error) {
-      showToast((error as Error).message || t('virtualPrinter.caCert.installerFailed'), 'error');
-    } finally {
-      setInstallerPending(null);
-    }
-  };
 
   if (isLoading) {
     return (
@@ -147,74 +103,14 @@ export function VirtualPrinterList() {
       {/* The signed-in user's own access code (#1430); nothing while auth is off. */}
       <SlicerAccessCodeCard />
 
+      {/* The page that hands all this to users without Settings access (#3602). */}
+      <div id="card-connect-slicer">
+        <ConnectSlicerInstructionsCard />
+      </div>
+
       {/* Global VP behavior settings — two side-by-side cards, not full width */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
-        {/* Slicer CA certificate — shared by every VP, imported into the
-            slicer's trust store once instead of fetching it from the CLI. */}
-        <Card>
-          <CardContent className="py-3 px-4">
-            <div className="flex items-start gap-3">
-              <ShieldCheck className="w-4 h-4 text-bambu-green flex-shrink-0 mt-1" />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm text-white font-medium">
-                    {t('virtualPrinter.caCert.title')}
-                  </p>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <button
-                      onClick={handleCopyCert}
-                      disabled={!caCert}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded bg-bambu-dark-secondary border border-bambu-dark-tertiary text-white hover:border-bambu-gray disabled:opacity-50 transition-colors"
-                    >
-                      {caCopied
-                        ? <Check className="w-3.5 h-3.5 text-bambu-green" />
-                        : <Copy className="w-3.5 h-3.5" />}
-                      {caCopied ? t('virtualPrinter.caCert.copied') : t('virtualPrinter.caCert.copy')}
-                    </button>
-                    <button
-                      onClick={handleDownloadCert}
-                      disabled={!caCert}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded bg-bambu-dark-secondary border border-bambu-dark-tertiary text-white hover:border-bambu-gray disabled:opacity-50 transition-colors"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      {t('virtualPrinter.caCert.download')}
-                    </button>
-                  </div>
-                </div>
-                <p className="text-xs text-bambu-gray mt-1">
-                  {t('virtualPrinter.caCert.description')}
-                </p>
-                <div className="flex flex-wrap items-center gap-2 mt-2">
-                  <span className="text-xs text-white">{t('virtualPrinter.caCert.installerTitle')}</span>
-                  {INSTALLER_PLATFORMS.map(([platform, label]) => (
-                    <button
-                      key={platform}
-                      onClick={() => handleDownloadInstaller(platform)}
-                      disabled={installerPending !== null}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded bg-bambu-dark-secondary border border-bambu-dark-tertiary text-white hover:border-bambu-gray disabled:opacity-50 transition-colors"
-                    >
-                      {installerPending === platform
-                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        : <Download className="w-3.5 h-3.5" />}
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-xs text-bambu-gray mt-1">
-                  {t('virtualPrinter.caCert.installerHint')}
-                </p>
-                {caCert && (
-                  <p
-                    className="text-[10px] text-bambu-gray font-mono mt-1 truncate"
-                    title={caCert.fingerprint_sha256}
-                  >
-                    {t('virtualPrinter.caCert.fingerprint')}: {caCert.fingerprint_sha256}
-                  </p>
-                )}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <SlicerCaCertCard />
 
         {/* Archive name source */}
         <Card>

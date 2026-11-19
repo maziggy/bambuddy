@@ -420,7 +420,7 @@ class TestPlateHoldDoesNotGateDrying:
 
         await scheduler._check_auto_drying(self._db(), [], set())
 
-        scheduler._is_printer_idle.assert_called_with(1, require_plate_clear=False)
+        scheduler._is_printer_idle.assert_called_with(1, ignore_plate_clear=True)
 
     @pytest.mark.asyncio
     @patch("backend.app.services.print_scheduler.printer_manager")

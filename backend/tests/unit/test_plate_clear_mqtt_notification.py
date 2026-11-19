@@ -185,9 +185,23 @@ class TestEdgeTriggering:
             call.args[0].close()
 
 
+def _gate_setting(value: str | None):
+    """The app setting require_plate_clear, as the emit path reads it."""
+    return patch("backend.app.api.routes.settings.get_setting", AsyncMock(return_value=value))
+
+
+@pytest.fixture
+def no_overrides():
+    from backend.app.services import plate_clear
+
+    plate_clear.load_overrides({})
+    yield plate_clear
+    plate_clear.load_overrides({})
+
+
 class TestEmitFanOut:
     @pytest.mark.asyncio
-    async def test_rising_edge_publishes_and_notifies(self):
+    async def test_rising_edge_publishes_and_notifies(self, no_overrides):
         manager = PrinterManager()
         manager._printer_info[7] = SimpleNamespace(name="X1C", serial_number="01P00A000000001")
 
@@ -199,6 +213,7 @@ class TestEmitFanOut:
                 "backend.app.services.notification_service.notification_service.on_plate_clear_required",
                 notify,
             ),
+            _gate_setting("true"),
         ):
             await manager._emit_plate_clear_change(7, True)
 
@@ -256,7 +271,7 @@ class TestEmitFanOut:
         publish.assert_awaited_once_with(9, "Powered-off X1C", "01P00A000000009", False)
 
     @pytest.mark.asyncio
-    async def test_mqtt_failure_does_not_block_the_notification(self):
+    async def test_mqtt_failure_does_not_block_the_notification(self, no_overrides):
         manager = PrinterManager()
         manager._printer_info[7] = SimpleNamespace(name="X1C", serial_number="01P00A000000001")
 
@@ -270,7 +285,55 @@ class TestEmitFanOut:
                 "backend.app.services.notification_service.notification_service.on_plate_clear_required",
                 notify,
             ),
+            _gate_setting("true"),
         ):
             await manager._emit_plate_clear_change(7, True)
 
         assert notify.await_count == 1
+
+
+class TestNotifyOnlyWhereTheGateApplies:
+    """The flag goes up after every print, but a printer the gate does not
+    apply to holds no queue, so nobody has anything to clear (#2860)."""
+
+    @staticmethod
+    async def _notified(setting: str | None) -> bool:
+        manager = PrinterManager()
+        manager._printer_info[7] = SimpleNamespace(name="A1 mini", serial_number="0300AA000000007")
+        publish = AsyncMock()
+        notify = AsyncMock()
+        with (
+            patch("backend.app.services.mqtt_relay.mqtt_relay.on_plate_clear_state", publish),
+            patch(
+                "backend.app.services.notification_service.notification_service.on_plate_clear_required",
+                notify,
+            ),
+            _gate_setting(setting),
+        ):
+            await manager._emit_plate_clear_change(7, True)
+        # The retained MQTT topic reports the flag either way.
+        publish.assert_awaited_once_with(7, "A1 mini", "0300AA000000007", True)
+        return notify.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_silent_with_the_setting_off(self, no_overrides):
+        assert await self._notified("false") is False
+
+    @pytest.mark.asyncio
+    async def test_silent_with_no_setting_row(self, no_overrides):
+        assert await self._notified(None) is False
+
+    @pytest.mark.asyncio
+    async def test_printer_turned_on_notifies_with_the_setting_off(self, no_overrides):
+        no_overrides.set_override(7, True)
+        assert await self._notified("false") is True
+
+    @pytest.mark.asyncio
+    async def test_printer_turned_off_is_silent_with_the_setting_on(self, no_overrides):
+        no_overrides.set_override(7, False)
+        assert await self._notified("true") is False
+
+    @pytest.mark.asyncio
+    async def test_another_printers_override_does_not_count(self, no_overrides):
+        no_overrides.set_override(8, False)
+        assert await self._notified("true") is True

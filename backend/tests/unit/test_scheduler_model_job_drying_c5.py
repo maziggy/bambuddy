@@ -162,7 +162,7 @@ async def _considered_for_drying(ctx, scheduler, *, scope=None) -> set[int]:
     reaches is asked whether it is idle (answered no, so nothing starts)."""
     reached: set[int] = set()
 
-    def idle(pid, require_plate_clear=False):
+    def idle(pid, require_plate_clear=True, *, ignore_plate_clear=False):
         reached.add(pid)
         return False
 

@@ -5,11 +5,12 @@
  * choices with filaments available across printers of the selected model.
  */
 
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { render } from '../utils';
 import { server } from '../mocks/server';
+import { setAuthToken } from '../../api/client';
 import { FilamentOverride } from '../../components/PrintModal/FilamentOverride';
 import type { FilamentReqsData } from '../../components/PrintModal/types';
 
@@ -609,5 +610,56 @@ describe('FilamentOverride', () => {
       });
       expect(triggerText()).toMatch(/PLA \(/);
     });
+  });
+});
+
+describe('FilamentOverride — filament rules of the user\'s group (#3522)', () => {
+  beforeEach(() => {
+    setAuthToken('test-token', 'session');
+    server.use(
+      http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+      http.get('*/api/v1/auth/me', () =>
+        HttpResponse.json({
+          id: 2,
+          username: 'student',
+          is_admin: false,
+          permissions: [],
+          filament_policies: [
+            { group: 'Students', mode: 'block', rules: [{ match: 'filament_id', value: 'GFG03' }] },
+          ],
+        }),
+      ),
+    );
+  });
+
+  afterEach(() => {
+    setAuthToken(null);
+  });
+
+  it('lists a filament the group may not use, greyed out with the reason', async () => {
+    render(
+      <FilamentOverride
+        filamentReqs={{ filaments: [{ slot_id: 1, type: 'PETG', color: '#FFFFFF', used_grams: 10, used_meters: 3 }] }}
+        availableFilaments={[
+          { type: 'PETG', color: '#000000', tray_info_idx: 'GFG03', tray_sub_brands: 'PETG Matte', extruder_id: null },
+          { type: 'PETG', color: '#0000FF', tray_info_idx: 'GFG99', tray_sub_brands: 'PETG Other', extruder_id: null },
+        ]}
+        overrides={{}}
+        onChange={mockOnChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('combobox'));
+    const listbox = await screen.findByRole('listbox');
+    // The policies arrive with /auth/me, after the first render.
+    await waitFor(() =>
+      expect(within(listbox).getByRole('option', { name: /PETG Matte/ })).toHaveAttribute('aria-disabled', 'true'),
+    );
+    const blocked = within(listbox).getByRole('option', { name: /PETG Matte/ });
+    expect(blocked).toHaveAttribute('title', "Your group can't use PETG (GFG03)");
+    expect(within(listbox).getByRole('option', { name: /PETG Other/ })).not.toHaveAttribute('aria-disabled');
+
+    fireEvent.click(blocked);
+    expect(mockOnChange).not.toHaveBeenCalled();
   });
 });

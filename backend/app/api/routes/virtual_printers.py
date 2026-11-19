@@ -14,6 +14,8 @@ from backend.app.core.auth import (
     RequestPrinterScope,
     RequirePermissionIfAuthEnabled,
     get_current_active_user,
+    is_auth_enabled,
+    require_auth_if_enabled,
 )
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -352,13 +354,14 @@ async def get_tailscale_status(
 
 @router.get("/ca-certificate")
 async def get_ca_certificate(
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+    _: User | None = Depends(require_auth_if_enabled),
 ):
     """Return the shared virtual-printer CA certificate (PEM) for slicer trust import.
 
     One CA is shared by every virtual printer — the user imports it into their
     slicer's trust store once. Only the public certificate is returned; the CA
-    private key never leaves the backend.
+    private key never leaves the backend. So any signed-in user may fetch it,
+    for the Connect slicer page (#3602).
     """
     from backend.app.services.virtual_printer import virtual_printer_manager
 
@@ -372,13 +375,14 @@ async def get_ca_certificate(
 @router.get("/ca-certificate/installer/{platform}")
 async def get_ca_certificate_installer(
     platform: str,
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+    _: User | None = Depends(require_auth_if_enabled),
 ):
     """Return a script that adds the CA to Bambu Studio and OrcaSlicer.
 
     ``platform`` is ``windows`` (a .cmd) or ``unix`` (a .sh for Linux and
     macOS). The CA is written into the script, which then needs no access to
-    Bambuddy. Returns ``{"filename", "content"}``.
+    Bambuddy. Returns ``{"filename", "content"}``. Holds only the public
+    certificate, so any signed-in user may fetch it (#3602).
     """
     from backend.app.services.virtual_printer import virtual_printer_manager
     from backend.app.services.virtual_printer.slicer_cert_installer import (
@@ -429,6 +433,79 @@ async def renew_my_access_code(
     if user is None:
         raise HTTPException(status_code=401, detail="Not signed in")
     return {"code": await code_for(db, user, renew=True)}
+
+
+CONNECT_INSTRUCTIONS_KEY = "virtual_printer_connect_instructions"
+
+
+@router.get("/connect-info")
+async def get_connect_info(
+    current_user: User | None = Depends(require_auth_if_enabled),
+    db: AsyncSession = Depends(get_db, scope="function"),
+):
+    """What a signed-in user enters in their slicer to send to virtual printers (#3602).
+
+    Lists the enabled virtual printers they may sign in to with their personal
+    code (the sign-in's own rule, ``user_codes.refusal``), with only what the
+    slicer asks for. Never a virtual printer's own access code. With auth off
+    there are no personal codes: ``auth_enabled`` is false and the list empty.
+    An API key has no slicer, so it is refused.
+    """
+    from sqlalchemy.orm import selectinload
+
+    from backend.app.api.routes.settings import get_setting
+    from backend.app.models.printer import Printer
+    from backend.app.models.virtual_printer import VirtualPrinter, normalize_vp_mode
+    from backend.app.services.virtual_printer import VIRTUAL_PRINTER_MODELS, virtual_printer_manager
+    from backend.app.services.virtual_printer.manager import DEFAULT_VIRTUAL_PRINTER_MODEL, _get_serial_for_model
+    from backend.app.services.virtual_printer.user_codes import refusal
+
+    instructions = await get_setting(db, CONNECT_INSTRUCTIONS_KEY) or ""
+    if not await is_auth_enabled(db):
+        return {"auth_enabled": False, "instructions": instructions, "printers": []}
+    if current_user is None:
+        raise HTTPException(status_code=403, detail="Only for a signed-in user")
+
+    user = (
+        await db.execute(select(User).where(User.id == current_user.id).options(selectinload(User.groups)))
+    ).scalar_one()
+    vps = (
+        (
+            await db.execute(
+                select(VirtualPrinter)
+                .where(VirtualPrinter.enabled.is_(True))
+                .order_by(VirtualPrinter.position, VirtualPrinter.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    printers = []
+    for vp in vps:
+        if await refusal(db, user, mode=vp.mode, target_printer_id=vp.target_printer_id) is not None:
+            continue
+        model_code = vp.model or DEFAULT_VIRTUAL_PRINTER_MODEL
+        target_name = None
+        if vp.target_printer_id is not None:
+            target_name = (
+                await db.execute(select(Printer.name).where(Printer.id == vp.target_printer_id))
+            ).scalar_one_or_none()
+        instance = virtual_printer_manager.get_instance(vp.id)
+        printers.append(
+            {
+                "id": vp.id,
+                "name": vp.name,
+                "mode": normalize_vp_mode(vp.mode),
+                "model": model_code,
+                "model_name": VIRTUAL_PRINTER_MODELS.get(model_code, model_code),
+                "serial": _get_serial_for_model(model_code, vp.serial_suffix),
+                # What the virtual printer advertises and its certificate names.
+                "address": vp.remote_interface_ip or vp.bind_ip or "",
+                "target_printer_name": target_name,
+                "running": bool(instance and instance.is_running),
+            }
+        )
+    return {"auth_enabled": True, "instructions": instructions, "printers": printers}
 
 
 @router.get("/{vp_id}/diagnostic", response_model=VPDiagnosticResult)

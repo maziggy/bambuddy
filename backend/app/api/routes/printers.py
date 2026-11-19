@@ -59,7 +59,7 @@ from backend.app.schemas.printer import (
     WLEDPresetTestRequest,
     hms_error_responses,
 )
-from backend.app.services import camera_light as camera_light_service, drying_preflight, kprofile_drift
+from backend.app.services import camera_light as camera_light_service, drying_preflight, kprofile_drift, plate_clear
 from backend.app.services.bambu_ftp import (
     DownloadDeadlineExceeded,
     FileNotOnPrinterError,
@@ -540,8 +540,12 @@ async def update_printer(
         except Exception as e:
             logger.error("Failed to sync virtual printers after printer IP change: %s", e)
 
-    if "wled_config" in update_data:
-        wled_manager.configure_printer(printer_id, printer.wled_config)
+    if "require_plate_clear" in update_data:
+        plate_clear.set_override(printer_id, printer.require_plate_clear)
+
+    if "wled_config" in update_data or "require_plate_clear" in update_data:
+        if "wled_config" in update_data:
+            wled_manager.configure_printer(printer_id, printer.wled_config)
         state = printer_manager.get_status(printer_id)
         if state and printer.is_active:
             wled_manager.handle_status(

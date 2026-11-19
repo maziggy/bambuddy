@@ -180,4 +180,44 @@ describe('SlotPicker', () => {
     await user.click(within(listbox).getByRole('option', { name: /Select slot/ }));
     expect(onChange).toHaveBeenCalledWith('');
   });
+
+  it('shows a disabled row with its reason and does not pick it (#3522)', async () => {
+    const user = userEvent.setup();
+    const { onChange } = renderPicker({
+      options: [
+        { value: '0', label: 'A1: PETG', disabled: true, disabledReason: "Your group can't use PETG (GFG03)" },
+        { value: '1', label: 'A2: PLA' },
+      ],
+    });
+
+    const listbox = await open(user);
+    const blocked = within(listbox).getByRole('option', { name: /A1: PETG/ });
+    expect(blocked).toHaveAttribute('aria-disabled', 'true');
+    expect(blocked).toHaveAttribute('title', "Your group can't use PETG (GFG03)");
+
+    await user.click(blocked);
+    expect(onChange).not.toHaveBeenCalled();
+    // The list stays open: nothing was chosen, so there is nothing to close on.
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+
+    await user.click(within(listbox).getByRole('option', { name: /A2: PLA/ }));
+    expect(onChange).toHaveBeenCalledWith('1');
+  });
+
+  it('ignores Enter on a disabled row (#3522)', async () => {
+    const user = userEvent.setup();
+    const { onChange } = renderPicker({
+      options: [
+        { value: '0', label: 'A1: PETG', disabled: true, disabledReason: "Your group can't use PETG" },
+        { value: '1', label: 'A2: PLA' },
+      ],
+    });
+
+    screen.getByRole('combobox', { name: /printer slot for pla/i }).focus();
+    await user.keyboard('{ArrowDown}');
+    await screen.findByRole('listbox');
+    // Row 0 is the placeholder, so one press lands on the blocked slot.
+    await user.keyboard('{ArrowDown}{Enter}');
+    expect(onChange).not.toHaveBeenCalled();
+  });
 });

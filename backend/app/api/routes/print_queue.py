@@ -1,5 +1,6 @@
 """API routes for print queue management."""
 
+import asyncio
 import json
 import logging
 import re
@@ -29,6 +30,11 @@ from backend.app.core.auth import (
 )
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
+from backend.app.core.filament_scope import (
+    ensure_requirements_allowed,
+    judged_requirements,
+    resolve_user_id_filament_scope,
+)
 from backend.app.core.permissions import Permission
 from backend.app.core.printer_scope import PrinterScope, ensure_model_target_allowed
 from backend.app.core.websocket import ws_manager
@@ -1324,6 +1330,29 @@ async def add_to_queue(
     elif archive is not None:
         ensure_sliced(file_path, archive.filename)
     plate_id = data.plate_id or printed_plate_of_multi_plate_file(file_path)
+
+    # Filament permissions (#3522): refuse now, naming the filament, rather than
+    # queue a job the scheduler would only hold. Read before any lock or write,
+    # and for each file of a cross-model job, with the overrides that job keeps
+    # applied as the scheduler applies them (`judged_requirements`), so both
+    # answer alike. The scheduler checks again at dispatch, which also covers
+    # every other way a job is created; a file that is missing or unreadable
+    # here is left to it too.
+    filament_scope = await resolve_user_id_filament_scope(db, actor.id if actor else None)
+    if not filament_scope.is_unrestricted:
+        from backend.app.services.filament_requirements import extract_filament_requirements
+
+        kept_overrides = data.filament_overrides if target_model_norm or data.printer_id is not None else None
+        sources = [(file_path, plate_id, kept_overrides)] if file_path is not None else []
+        sources += [
+            (library_file_disk_path(variant_file), spec.plate_id, spec.filament_overrides)
+            for spec, variant_file, _ in variant_specs
+        ]
+        for source_path, source_plate, overrides in sources:
+            if source_path.exists():
+                requirements = await asyncio.to_thread(extract_filament_requirements, source_path, source_plate)
+                ensure_requirements_allowed(filament_scope, judged_requirements(requirements, overrides))
+
     if target_model_norm:
         if file_path and file_path.exists():
             filament_types = _extract_filament_types_from_3mf(file_path, plate_id)

@@ -545,6 +545,7 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         "been_jumped": item.been_jumped,
         # Auto-print G-code injection
         "gcode_injection": item.gcode_injection,
+        "respect_reservations": bool(item.respect_reservations),
         # H2C rack-swap nozzle pick (#1780)
         "nozzle_mapping": nozzle_mapping_parsed,
         "nozzle_rack_choice": nozzle_rack_choice_parsed,
@@ -3169,6 +3170,10 @@ async def start_queue_item(
     # Print Anyway / no deficit: clear the flags and let the scheduler dispatch.
     item.manual_start = False
     item.filament_short = False
+    # Starting by hand is the override for a reservation hold (#2785): the user
+    # has seen the reservation and chosen to print anyway, so the scheduler must
+    # not stage the item again on its next pass.
+    item.respect_reservations = False
     # Persist the user's "Print Anyway" decision so the scheduler does not
     # immediately re-flag this item on the next tick (#1698-followup). The
     # pre-fix behaviour bounced between "user said anyway" and

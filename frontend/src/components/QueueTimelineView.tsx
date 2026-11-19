@@ -1,9 +1,9 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, Clock, Layers, Printer as PrinterIcon } from 'lucide-react';
+import { CalendarClock, ChevronLeft, ChevronRight, Clock, Layers, Printer as PrinterIcon } from 'lucide-react';
 import { formatDuration, parseUTCDate } from '../utils/date';
 import { compareQueueOrder, queueLaneKey } from '../utils/queueOrder';
 import { isBusyOnlyWaitingReason } from '../utils/waitingReason';
-import type { PrintQueueItem, Printer } from '../api/client';
+import type { PrintQueueItem, Printer, ReservationOccurrence } from '../api/client';
 import { queueItemThumbnailUrl } from '../utils/queueItemThumbnail';
 import { Button } from './Button';
 
@@ -39,6 +39,11 @@ interface QueueTimelineViewProps {
    *  scheduler had no intention of running (#3043). */
   sjfEnabled: boolean;
   onItemClick: (item: PrintQueueItem) => void;
+  /** Reservation windows (#2785), drawn as hatched bands behind the bars of
+   *  each reserved printer's lane. */
+  reservations?: ReservationOccurrence[];
+  /** Opens the reservation manager; the button is hidden when omitted. */
+  onManageReservations?: () => void;
   t: (key: string, options?: Record<string, unknown>) => string;
 }
 
@@ -65,6 +70,8 @@ export function QueueTimelineView({
   printerStatuses,
   sjfEnabled,
   onItemClick,
+  reservations,
+  onManageReservations,
   t,
 }: QueueTimelineViewProps) {
   // Tick "now" every minute so the NOW line and ETA labels stay live.
@@ -256,6 +263,21 @@ export function QueueTimelineView({
 
   const trackRef = useRef<HTMLDivElement | null>(null);
 
+  // Reservation windows per printer lane, parsed once.
+  const reservationsByPrinter = useMemo(() => {
+    const map = new Map<number, { key: string; start: number; end: number; occ: ReservationOccurrence }[]>();
+    for (const occ of reservations ?? []) {
+      const start = parseUTCDate(occ.start)?.getTime();
+      const end = parseUTCDate(occ.end)?.getTime();
+      if (start == null || end == null) continue;
+      for (const pid of occ.printer_ids) {
+        if (!map.has(pid)) map.set(pid, []);
+        map.get(pid)!.push({ key: `${occ.reservation_id}:${start}`, start, end, occ });
+      }
+    }
+    return map;
+  }, [reservations]);
+
   return (
     <div>
       {/* Window controls */}
@@ -298,6 +320,12 @@ export function QueueTimelineView({
               className="text-xs text-bambu-green"
             >
               {t('queue.timeline.window.now')}
+            </Button>
+          )}
+          {onManageReservations && (
+            <Button variant="ghost" size="sm" onClick={onManageReservations} className="text-xs">
+              <CalendarClock className="w-3.5 h-3.5" />
+              {t('queue.reservations.manage')}
             </Button>
           )}
         </div>
@@ -389,6 +417,41 @@ export function QueueTimelineView({
                       }}
                       aria-hidden
                     />
+
+                    {/* Reservation bands (#2785) — behind the job bars, so
+                        a print overlapping one shows on top of it. */}
+                    {lane.printerId != null &&
+                      (reservationsByPrinter.get(lane.printerId) ?? []).map((band) => {
+                        const startMs = Math.max(rangeStartMs, band.start);
+                        const endMs = Math.min(rangeEndMs, band.end);
+                        if (endMs <= startMs) return null;
+                        const leftPct = ((startMs - rangeStartMs) / RANGE_MS) * 100;
+                        const widthPct = ((endMs - startMs) / RANGE_MS) * 100;
+                        const title = [
+                          t('queue.reservations.reserved'),
+                          band.occ.label || null,
+                          band.occ.created_by_username || null,
+                          `${formatTooltipTime(new Date(band.start))} → ${formatTooltipTime(new Date(band.end))}`,
+                        ].filter(Boolean).join(' · ');
+                        return (
+                          <div
+                            key={band.key}
+                            data-testid="reservation-band"
+                            title={title}
+                            className="absolute top-1 bottom-1 rounded border border-dashed border-amber-500/60 bg-amber-500/10 overflow-hidden px-1.5 flex items-end"
+                            style={{
+                              left: `${leftPct}%`,
+                              width: `${widthPct}%`,
+                              backgroundImage:
+                                'repeating-linear-gradient(135deg, transparent, transparent 5px, rgba(245,158,11,0.12) 5px, rgba(245,158,11,0.12) 10px)',
+                            }}
+                          >
+                            <span className="text-[10px] text-amber-600 dark:text-amber-300 truncate leading-tight">
+                              {band.occ.label || t('queue.reservations.reserved')}
+                            </span>
+                          </div>
+                        );
+                      })}
 
                     {/* Job bars */}
                     {laneEvents.map((ev) => {

@@ -306,6 +306,7 @@ class PrintQueueItemResponse(BaseModel):
 
     # Auto-print G-code injection
     gcode_injection: bool = False
+    respect_reservations: bool = False
     cleanup_library_after_dispatch: bool = False
 
     # H2C dual-nozzle-rack slicer pick (#1780). Surface for any future

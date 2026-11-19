@@ -30,6 +30,7 @@ NOT_A_ROW_UPDATE = {
     "SpoolWeightUpdate": "a Spoolman spool, not a database row",
     "SpoolTagLinkRequest": "a Spoolman spool, not a database row",
     "SpoolmanFilamentPatch": "a Spoolman filament, not a database row",
+    "PrinterReservationUpdate": "PUT replaces a reservation as a whole; no field accepts null",
     "FilamentProfileDefaultWrite": "replaces a default as a whole; its validator reads a null key field as empty",
 }
 

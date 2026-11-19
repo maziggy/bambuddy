@@ -72,6 +72,11 @@ class PrintQueueItem(Base):
     # Auto-print G-code injection (#422)
     gcode_injection: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # Stamped by a reservation-aware virtual printer (#2785): the scheduler
+    # stages this item for manual start rather than auto-dispatching it onto a
+    # printer that is reserved now or would be before the print finishes.
+    respect_reservations: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+
     # How many times the start-watchdog has reverted this item from 'printing'
     # back to 'pending' (#2555). A printer that accepts project_file but never
     # starts (#1678) used to be retried forever: upload, wait out the watchdog,

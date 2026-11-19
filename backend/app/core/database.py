@@ -698,6 +698,7 @@ async def init_db():
         printer,
         printer_ha_sensor,
         printer_location,
+        printer_reservation,
         printer_sensor_history,
         project,
         project_bom,
@@ -6107,6 +6108,15 @@ async def _run_migrations(conn):
     # (``print_cost_estimate.fill_plate_estimates``).
     await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN plate_estimates JSON")
 
+    # Migration: reservation-aware auto-dispatch (#2785). Per-VP opt-in, stamped
+    # onto each queue item the VP creates so the scheduler can honour it. Both
+    # default off: existing VPs keep dispatching exactly as before.
+    false_lit = "0" if is_sqlite() else "FALSE"
+    await _safe_execute(
+        conn, f"ALTER TABLE virtual_printers ADD COLUMN respect_reservations BOOLEAN DEFAULT {false_lit}"
+    )
+    await _safe_execute(conn, f"ALTER TABLE print_queue ADD COLUMN respect_reservations BOOLEAN DEFAULT {false_lit}")
+
     await _backfill_archive_run_photos(conn)
     await _migrate_h3c_queue_tray_ids(conn)
 
@@ -6347,6 +6357,7 @@ _PG_COLUMNS_SET_FROM_MODEL = (
     ("print_queue", "gate_acknowledged"),
     ("print_queue", "nozzle_offset_cali"),
     ("print_queue", "preheat_override"),
+    ("print_queue", "respect_reservations"),
     ("print_queue", "skip_filament_check"),
     ("printers", "camera_light_auto"),
     ("smart_plugs", "auto_off_after_drying"),
@@ -6356,6 +6367,7 @@ _PG_COLUMNS_SET_FROM_MODEL = (
     ("spool", "weight_used_baseline"),
     ("virtual_printers", "gcode_injection"),
     ("virtual_printers", "queue_force_color_match"),
+    ("virtual_printers", "respect_reservations"),
     ("virtual_printers", "save_ams_mapping"),
     ("virtual_printers", "tailscale_disabled"),
 )

@@ -66,6 +66,11 @@ class VirtualPrinter(Base):
     )  # queue mode: opt this VP's Send/Print jobs into per-model G-code snippet
     # injection (#1516). Default off so existing gcode_snippets users don't
     # silently start injecting; no-op when no snippets exist for the model.
+    respect_reservations: Mapped[bool] = mapped_column(
+        Boolean, server_default="false"
+    )  # queue mode with auto_dispatch: hold a job for manual start instead of
+    # starting it on a reserved printer or letting it run into a reservation
+    # window (#2785). Off by default so upgraders keep today's behaviour.
     model: Mapped[str | None] = mapped_column(String(50), nullable=True)  # SSDP model code (server mode)
     access_code: Mapped[str | None] = mapped_column(String(8), nullable=True)  # 8 chars (server mode)
     target_printer_id: Mapped[int | None] = mapped_column(

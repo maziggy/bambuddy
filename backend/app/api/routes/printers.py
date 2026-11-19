@@ -579,6 +579,7 @@ async def delete_printer(
     from backend.app.models.maintenance import MaintenanceHistory, PrinterMaintenance
     from backend.app.models.scheduled_drying import ScheduledDrying
     from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+    from backend.app.services.printer_reservations import drop_printer_from_reservations
 
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
@@ -645,6 +646,10 @@ async def delete_printer(
 
     # Delete scheduled drying runs for this printer (SQLite doesn't enforce FK cascades)
     await db.execute(sql_delete(ScheduledDrying).where(ScheduledDrying.printer_id == printer_id))
+
+    # Drop it from reservations (#2785). They hold printer ids as JSON, which no
+    # FK covers, and SQLite hands a freed id to the next printer created.
+    await drop_printer_from_reservations(db, printer_id)
 
     # Drop it from printer-scoped groups (SQLite doesn't enforce FK cascades)
     await db.execute(sql_delete(group_printers).where(group_printers.c.printer_id == printer_id))

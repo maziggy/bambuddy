@@ -128,6 +128,7 @@ APPLIED: frozenset[tuple[str, str]] = frozenset(
         ("print_batches", "created_by_id"),
         ("print_log_entries", "created_by_id"),
         ("print_queue", "created_by_id"),
+        ("printer_reservations", "created_by_id"),
         ("scheduled_dryings", "created_by_id"),
         ("slicer_pipelines", "created_by"),
         ("sponsor_toast_state", "user_id"),

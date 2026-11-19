@@ -585,6 +585,39 @@ export interface ScheduledDrying {
   completed_at: string | null;
 }
 
+/** A weekly window keeping printers free for someone (#2785). Times are
+ *  minutes after local midnight on the server's clock; end <= start runs past
+ *  midnight. days_mask bit 0 = Monday … bit 6 = Sunday. */
+export interface PrinterReservationInput {
+  label: string;
+  printer_ids: number[];
+  days_mask: number;
+  all_day: boolean;
+  start_minute: number;
+  end_minute: number;
+  valid_from: string | null;
+  valid_until: string | null;
+}
+
+export interface PrinterReservation extends PrinterReservationInput {
+  id: number;
+  created_by_id: number | null;
+  created_by_username: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** One concrete window of a reservation, for the timeline. UTC ISO with Z. */
+export interface ReservationOccurrence {
+  reservation_id: number;
+  label: string;
+  printer_ids: number[];
+  created_by_id: number | null;
+  created_by_username: string | null;
+  start: string;
+  end: string;
+}
+
 export interface NozzleInfo {
   // Two vocabularies live in this field, by printer generation. Legacy
   // printers (X1/P1) report the nozzle MATERIAL -- "stainless_steel",
@@ -2912,6 +2945,7 @@ export interface PrintQueueItem {
   been_jumped?: boolean;
   // Auto-print G-code injection
   gcode_injection?: boolean;
+  respect_reservations?: boolean;
   cleanup_library_after_dispatch?: boolean;
   /** Which rack position each filament group prints from, on a nozzle-rack
    *  machine (#1784): `{ [group_id]: 1-based position }`. Re-checked against
@@ -5595,6 +5629,19 @@ export const api = {
     ),
   cancelScheduledDrying: (id: number) =>
     request<{ status: string; id: number }>(`/scheduled-dryings/${id}`, { method: 'DELETE' }),
+
+  // Printer reservations (#2785)
+  listPrinterReservations: () => request<PrinterReservation[]>('/printer-reservations'),
+  listReservationOccurrences: (start: string, end: string) =>
+    request<ReservationOccurrence[]>(
+      `/printer-reservations/occurrences?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`
+    ),
+  createPrinterReservation: (data: PrinterReservationInput) =>
+    request<PrinterReservation>('/printer-reservations', { method: 'POST', body: JSON.stringify(data) }),
+  updatePrinterReservation: (id: number, data: PrinterReservationInput) =>
+    request<PrinterReservation>(`/printer-reservations/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deletePrinterReservation: (id: number) =>
+    request<{ status: string; id: number }>(`/printer-reservations/${id}`, { method: 'DELETE' }),
 
   // AMS Filament Backup (auto-switch to a backup spool when one runs out)
   setAmsFilamentBackup: (printerId: number, enabled: boolean) =>
@@ -9282,6 +9329,7 @@ export interface VirtualPrinterConfig {
   queue_force_color_match: boolean;
   save_ams_mapping: boolean;
   gcode_injection: boolean;
+  respect_reservations?: boolean;
   tailscale_disabled: boolean;
   bind_ip: string | null;
   remote_interface_ip: string | null;
@@ -9310,6 +9358,7 @@ export const multiVirtualPrinterApi = {
     queue_force_color_match?: boolean;
     save_ams_mapping?: boolean;
     gcode_injection?: boolean;
+    respect_reservations?: boolean;
     bind_ip?: string;
     remote_interface_ip?: string;
   }) =>
@@ -9329,6 +9378,7 @@ export const multiVirtualPrinterApi = {
     queue_force_color_match?: boolean;
     save_ams_mapping?: boolean;
     gcode_injection?: boolean;
+    respect_reservations?: boolean;
     tailscale_disabled?: boolean;
     bind_ip?: string;
     remote_interface_ip?: string;

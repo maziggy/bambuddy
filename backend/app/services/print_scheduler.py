@@ -65,6 +65,13 @@ from backend.app.services.printer_manager import (
     supports_drying,
     supports_drying_while_printing,
 )
+from backend.app.services.printer_reservations import (
+    Occurrence,
+    describe_hold,
+    find_conflict,
+    is_reservation_hold_reason,
+    load_reservations,
+)
 from backend.app.services.queue_item_printer import drop_printer_resolved
 from backend.app.services.slot_nozzle import reports_two_nozzles
 from backend.app.services.smart_plug_manager import publish_plug_state, smart_plug_manager
@@ -2095,6 +2102,52 @@ class PrintScheduler:
                 else set()
             )
 
+            # Printer reservations (#2785), read once per pass. Only items from a
+            # reservation-aware virtual printer look at them; for everything
+            # else a reservation is information on the timeline, not a gate.
+            reservations: list = []
+            if any(i.respect_reservations for i in items):
+                try:
+                    reservations = await load_reservations(db)
+                except Exception as e:
+                    # Like the interlock: a broken lookup means no holds.
+                    logger.warning("Printer reservation lookup failed: %s", e)
+            reservation_now = utcnow_naive()
+            reserved_printers: dict[int, tuple[str, str]] = {}
+            reserved_ids = {pid for r in reservations for pid in (r.printer_ids or [])}
+            if reserved_ids:
+                rows = await db.execute(
+                    select(Printer.id, Printer.name, Printer.model).where(Printer.id.in_(reserved_ids))
+                )
+                reserved_printers = {pid: (name or "", model or "") for pid, name, model in rows.all()}
+
+            def reservation_conflict(item: PrintQueueItem, printer_id: int) -> Occurrence | None:
+                """The reservation *item* would start on or run into on *printer_id*.
+
+                The print is assumed to start now and run for its estimated
+                time; with no estimate only "reserved right now" can be judged.
+                """
+                if not item.respect_reservations or not reservations:
+                    return None
+                end = reservation_now + timedelta(seconds=item.print_time_seconds or 0)
+                return find_conflict(reservations, printer_id, reservation_now, end, owner_id=item.created_by_id)
+
+            async def stage_for_reservation(item: PrintQueueItem, printer_id: int, occ: Occurrence) -> None:
+                """Hold *item* for the user to start by hand, saying which reservation is why."""
+                name = reserved_printers.get(printer_id, ("", ""))[0] or printer_label(printer_id)
+                reason = describe_hold(occ, printer_name=name, starts_now=occ.start <= reservation_now)
+                item.manual_start = True
+                logger.info(
+                    "Queue item %s staged for manual start: printer %s reservation %s (%s .. %s)",
+                    item.id,
+                    printer_id,
+                    occ.reservation_id,
+                    occ.start,
+                    occ.end,
+                )
+                await hold_item(item, reason)
+                skip_reasons["reservation"] = skip_reasons.get("reservation", 0) + 1
+
             async def _creator_scope(user_id: int | None) -> PrinterScope:
                 if not scope_auth_enabled or user_id is None:
                     return ALL_PRINTERS
@@ -2135,7 +2188,14 @@ class PrintScheduler:
                     # reason was written at staging and is why the item waits:
                     # it names the filament to load (#2799). Pressing start
                     # clears manual_start, and the branches below overwrite it.
-                    keep = item.waiting_reason if _is_unmatched_hold_reason(item.waiting_reason) else None
+                    # A reservation hold (#2785) is kept for the same reason:
+                    # it says which reservation the job is waiting behind.
+                    keep = (
+                        item.waiting_reason
+                        if _is_unmatched_hold_reason(item.waiting_reason)
+                        or is_reservation_hold_reason(item.waiting_reason)
+                        else None
+                    )
                     await hold_item(item, keep)
                     skip_reasons["manual_start"] = skip_reasons.get("manual_start", 0) + 1
                     continue
@@ -2288,6 +2348,13 @@ class PrintScheduler:
                         )
                         continue
 
+                    # Reservation-aware dispatch (#2785): the printer is free,
+                    # but someone has it reserved now or before this print
+                    # would finish. Staged for the user, not dispatched.
+                    if occ := reservation_conflict(item, item.printer_id):
+                        await stage_for_reservation(item, item.printer_id, occ)
+                        continue
+
                     # Check condition (previous print success)
                     if item.require_previous_success:
                         if not await self._check_previous_success(db, item):
@@ -2426,6 +2493,13 @@ class PrintScheduler:
                     wakeable_candidates: list[_ModelCandidate] = []
                     # Printers passed over because their last print failed.
                     gate_blocked: set[int] = set()
+                    # Printers this job may not auto-start on because of a
+                    # reservation (#2785), with the window that blocks each.
+                    reserved_for_item: dict[int, Occurrence] = {}
+                    if item.respect_reservations:
+                        for reserved_pid in reserved_printers:
+                            if occ := reservation_conflict(item, reserved_pid):
+                                reserved_for_item[reserved_pid] = occ
 
                     if not candidates:
                         # Every candidate file has been deleted or trashed out from
@@ -2482,7 +2556,11 @@ class PrintScheduler:
                                 # Sensor-held printers are unavailable to the
                                 # matcher but stay out of busy_printers itself
                                 # (#1148) — see where `interlocked` is built.
-                                busy_printers | interlocked.keys() | gate_blocked | drying_held,
+                                busy_printers
+                                | interlocked.keys()
+                                | gate_blocked
+                                | drying_held
+                                | reserved_for_item.keys(),
                                 effective_types,
                                 item.target_location,
                                 filament_overrides=filament_overrides,
@@ -2511,6 +2589,29 @@ class PrintScheduler:
                             break
                         per_model_reasons.append((candidate.target_model, match_reason or ""))
 
+                    # Nothing else took it, and a printer of the right model sits
+                    # idle but reserved (#2785): that reservation is what holds
+                    # the job, so stage it for the user rather than leave it
+                    # looking like it waits for a busy printer.
+                    if printer_id is None and reserved_for_item:
+                        blocking = next(
+                            (
+                                (pid, occ)
+                                for pid, occ in reserved_for_item.items()
+                                if pid not in busy_printers
+                                and pid not in interlocked
+                                and pid not in drying_held
+                                and item_scope.allows(pid)
+                                and _could_take_printer(item, pid, reserved_printers.get(pid, ("", ""))[1])
+                                and printer_manager.is_connected(pid)
+                                and self._is_printer_idle(pid, require_plate_clear)
+                            ),
+                            None,
+                        )
+                        if blocking:
+                            await stage_for_reservation(item, *blocking)
+                            continue
+
                     # Nothing is available and nothing has been woken this pass:
                     # switch one matching printer on. Assignment is left to the
                     # next pass, which sees the booted printer's live state
@@ -2520,7 +2621,7 @@ class PrintScheduler:
                             db,
                             wakeable_candidates,
                             item.target_location,
-                            busy_printers | interlocked.keys(),
+                            busy_printers | interlocked.keys() | reserved_for_item.keys(),
                             wakeable_printer_ids,
                             require_plate_clear,
                             printer_scope=item_scope,

@@ -87,6 +87,10 @@ import { QueueStatsBar } from '../components/QueueStatsBar';
 import { CompactHistoryRow } from '../components/CompactHistoryRow';
 import { ColorSubstitutionNotes } from '../components/ColorSubstitutionNotes';
 import { QueueTimelineView } from '../components/QueueTimelineView';
+import {
+  ReservationsModal,
+  RESERVATION_OCCURRENCES_QUERY_KEY,
+} from '../components/ReservationsModal';
 import { compareQueueOrder } from '../utils/queueOrder';
 import { BatchOrdersView } from '../components/BatchOrdersView';
 import { ThumbnailHoverPreview } from '../components/ThumbnailHoverPreview';
@@ -1883,6 +1887,22 @@ export function QueuePage() {
     queryKey: ['batches', 'active'],
     queryFn: () => api.getBatches('active'),
   });
+
+  // Printer reservations for the timeline (#2785): a day back and two weeks
+  // ahead covers every window the timeline can be paged to in practice.
+  const [showReservations, setShowReservations] = useState(false);
+  const { data: reservationOccurrences } = useQuery({
+    queryKey: RESERVATION_OCCURRENCES_QUERY_KEY,
+    queryFn: () => {
+      const now = Date.now();
+      return api.listReservationOccurrences(
+        new Date(now - 24 * 3600 * 1000).toISOString(),
+        new Date(now + 14 * 24 * 3600 * 1000).toISOString(),
+      );
+    },
+    enabled: activeTab === 'timeline',
+    refetchInterval: 5 * 60 * 1000,
+  });
   const activeBatchCount = activeBatches?.length ?? 0;
 
   // Only what is still in play: pending and printing, plus skipped for the
@@ -2942,7 +2962,7 @@ export function QueuePage() {
         <BatchOrdersView hasPermission={hasPermission} t={t} focusBatchId={focusBatchId} />
       ) : isLoading || (activeTab === 'history' && historyLoading) ? (
         <div className="text-center py-12 text-bambu-gray">{t('common.loading')}</div>
-      ) : queue?.length === 0 && !historyLoading && historyTotal === 0 ? (
+      ) : queue?.length === 0 && !historyLoading && historyTotal === 0 && activeTab !== 'timeline' ? (
         <Card className="p-12 text-center border-dashed">
           <Calendar className="w-16 h-16 text-bambu-gray mx-auto mb-4 opacity-50" />
           <h3 className="text-xl font-medium text-white mb-2">{t('queue.empty.title')}</h3>
@@ -2956,6 +2976,8 @@ export function QueuePage() {
           printers={printers || []}
           printerStatuses={printerStatusMap}
           sjfEnabled={settings?.queue_shortest_first ?? false}
+          reservations={reservationOccurrences}
+          onManageReservations={() => setShowReservations(true)}
           onItemClick={(item) => {
             if (['completed', 'failed', 'skipped', 'cancelled'].includes(item.status)) {
               setRequeueItem(item);
@@ -3236,6 +3258,12 @@ export function QueuePage() {
           )}
         </div>
       )}
+
+      <ReservationsModal
+        open={showReservations}
+        onClose={() => setShowReservations(false)}
+        printers={printers || []}
+      />
 
       {/* Edit Modal */}
       {editItem && (

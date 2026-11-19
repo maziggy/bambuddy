@@ -74,6 +74,7 @@ from backend.app.api.routes import (
     print_log,
     print_queue,
     printer_locations,
+    printer_reservations,
     printer_sensor_history,
     printers,
     projects,
@@ -13168,6 +13169,7 @@ app.include_router(location_ha_sensors.router, prefix=app_settings.api_prefix)
 app.include_router(print_log.router, prefix=app_settings.api_prefix)
 app.include_router(print_queue.router, prefix=app_settings.api_prefix)
 app.include_router(scheduled_dryings.router, prefix=app_settings.api_prefix)
+app.include_router(printer_reservations.router, prefix=app_settings.api_prefix)
 app.include_router(kprofiles.router, prefix=app_settings.api_prefix)
 app.include_router(notifications.router, prefix=app_settings.api_prefix)
 app.include_router(notification_templates.router, prefix=app_settings.api_prefix)

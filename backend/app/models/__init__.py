@@ -35,6 +35,7 @@ from backend.app.models.print_batch import PrintBatch, PrintBatchPlate
 from backend.app.models.printer import Printer
 from backend.app.models.printer_ha_sensor import PrinterHASensor
 from backend.app.models.printer_location import PrinterLocation
+from backend.app.models.printer_reservation import PrinterReservation
 from backend.app.models.printer_sensor_history import PrinterSensorHistory
 from backend.app.models.project import Project
 from backend.app.models.scheduled_drying import ScheduledDrying
@@ -79,6 +80,7 @@ __all__ = [
     "PrinterSensorHistory",
     "PrinterHASensor",
     "ScheduledDrying",
+    "PrinterReservation",
     "AmsLabel",
     "PendingUpload",
     "PrintBatch",

@@ -3236,6 +3236,7 @@ class TestVirtualPrinterManager:
             "queue_force_color_match": False,  # default — must be explicit so MagicMock truthiness doesn't trip the change detector
             "save_ams_mapping": False,  # same reason as above
             "gcode_injection": False,  # same reason as above
+            "respect_reservations": False,  # same reason as above
             "position": 0,
         }
         defaults.update(overrides)

@@ -74,6 +74,14 @@ export function isValidFolderMove(
   return !moveDisallowedFolderIds(folders, folder.id).has(destinationId);
 }
 
+// Files cannot be moved into an external folder or anything beneath one.
+// `moveDisallowedFolderIds` also adds the dragged folder's own subtree; id 0
+// names no folder, so what it returns is the external subtrees alone.
+const NO_DRAGGED_FOLDER = 0;
+function externalFolderIds(folders: LibraryFolderTree[]): Set<number> {
+  return moveDisallowedFolderIds(folders, NO_DRAGGED_FOLDER);
+}
+
 /**
  * Whether dropping files on `destinationId` (null = root) would move at least
  * one of them somewhere the server accepts: not into an external folder, not
@@ -88,6 +96,5 @@ export function isValidFilesMove(
   if (destinationId === null) return true;
   const destination = findFolder(folders, destinationId);
   if (!destination || !isWritableFolder(destination)) return false;
-  // Id 0 matches no folder, so only the external subtrees are disallowed.
-  return !moveDisallowedFolderIds(folders, 0).has(destinationId);
+  return !externalFolderIds(folders).has(destinationId);
 }

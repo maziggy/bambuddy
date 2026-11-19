@@ -24,6 +24,7 @@ from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes.cloud import resolve_api_key_cloud_owner
 from backend.app.api.routes.library_variants import (
+    masked_group_names,
     normalize_model_name,
     resolve_variant_model,
     visible_members_query,
@@ -2460,28 +2461,28 @@ async def list_files(
 
     # Variant group members the filters left out (#3628): one query for the
     # members, one for the group names, one for their folder names.
-    group_names: dict[int, str] = {}
+    group_names: dict[int, str | None] = {}
     elsewhere_ids: set[int] = set()
     folder_names: dict[int, str] = {}
     if with_variant_members:
         shown_group_ids = {f.variant_group_id for f in files if f.variant_group_id}
         if shown_group_ids:
             shown_ids = {f.id for f in files}
-            extra_members = (
-                (
-                    await db.execute(
-                        visible_members_query(shown_group_ids, user, can_read_all)
-                        .options(selectinload(LibraryFile.created_by), selectinload(LibraryFile.tags))
-                        .order_by(LibraryFile.variant_group_id, LibraryFile.variant_position, LibraryFile.id)
-                    )
-                )
-                .scalars()
-                .all()
+            extra_query = (
+                visible_members_query(shown_group_ids, user, can_read_all)
+                .options(selectinload(LibraryFile.created_by), selectinload(LibraryFile.tags))
+                .order_by(LibraryFile.variant_group_id, LibraryFile.variant_position, LibraryFile.id)
             )
+            # Same internal/external restriction as the list itself.
+            if internal_only:
+                extra_query = extra_query.where(LibraryFile.is_external.is_(False))
+            elif external_only:
+                extra_query = extra_query.where(LibraryFile.is_external.is_(True))
+            extra_members = (await db.execute(extra_query)).scalars().all()
             extras = [m for m in extra_members if m.id not in shown_ids]
             elsewhere_ids = {m.id for m in extras}
             files = [*files, *extras]
-            group_names = dict(
+            raw_names = dict(
                 (
                     await db.execute(
                         select(FileVariantGroup.id, FileVariantGroup.name).where(
@@ -2490,6 +2491,8 @@ async def list_files(
                     )
                 ).all()
             )
+            # A name equal to a file the caller cannot see is withheld (#3628).
+            group_names = await masked_group_names(db, raw_names, user, can_read_all)
             extra_folder_ids = {m.folder_id for m in extras if m.folder_id is not None}
             if extra_folder_ids:
                 folder_names = dict(

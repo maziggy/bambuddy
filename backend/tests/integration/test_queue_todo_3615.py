@@ -12,6 +12,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
+from backend.app.models.group import Group
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.services.print_scheduler import scheduler
 from backend.app.services.queue_todo import FilamentHold, TodoFilament
@@ -19,6 +20,7 @@ from backend.app.services.queue_todo import FilamentHold, TodoFilament
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 from backend.tests.integration import test_api_key_queue_acts_as_owner as owner_tests  # noqa: E402
+from backend.tests.integration.test_api_key_own_rows import _key  # noqa: E402
 
 world = owner_tests.world
 
@@ -199,6 +201,18 @@ class TestTodoEntries:
         ):
             body = (await async_client.get(URL)).json()
         assert [g["printer_id"] for g in body["groups"]] == [b.id]
+
+    async def test_model_job_does_not_count_for_an_inactive_printer(self, async_client, printer_factory, make_item):
+        a = await printer_factory(name="A", model="X1C")
+        await printer_factory(name="Retired", model="X1C", is_active=False)
+        await make_item(None, target_model="X1C")
+        with (
+            patch("backend.app.api.routes.print_queue.printer_manager.is_awaiting_plate_clear", lambda pid: True),
+            patch("backend.app.api.routes.print_queue.plate_clear.applies", lambda pid, setting: True),
+        ):
+            body = (await async_client.get(URL)).json()
+        # The scheduler only sends a model job to active printers.
+        assert [g["printer_id"] for g in body["groups"]] == [a.id]
 
     async def test_sensor_interlock_carries_the_sensor_name(self, async_client, printer_factory, make_item):
         a = await printer_factory()
@@ -551,16 +565,20 @@ class TestCanStart:
     async def test_someone_elses_job_needs_update_all(self, async_client, printer_factory, make_item):
         a = await printer_factory()
         helper = TestTodoAccess()
-        _, member = await helper._setup(async_client, ["queue:read_all", "queue:update_own", "queue:start_unreviewed"])
-        await make_item(a.id, manual_start=True, created_by_id=helper.member_id + 100)
+        admin, member = await helper._setup(
+            async_client, ["queue:read_all", "queue:update_own", "queue:start_unreviewed"]
+        )
+        other_id = await helper._add_user(async_client, admin, "other")
+        await make_item(a.id, manual_start=True, created_by_id=other_id)
         entry = _only_entries((await async_client.get(URL, headers=_auth(member))).json())[0]
         assert entry["jobs"][0]["can_start"] is False
 
     async def test_update_all_starts_anything(self, async_client, printer_factory, make_item):
         a = await printer_factory()
         helper = TestTodoAccess()
-        _, member = await helper._setup(async_client, ["queue:read_all", "queue:update_all"])
-        await make_item(a.id, manual_start=True, created_by_id=helper.member_id + 100)
+        admin, member = await helper._setup(async_client, ["queue:read_all", "queue:update_all"])
+        other_id = await helper._add_user(async_client, admin, "other")
+        await make_item(a.id, manual_start=True, created_by_id=other_id)
         entry = _only_entries((await async_client.get(URL, headers=_auth(member))).json())[0]
         assert entry["jobs"][0]["can_start"] is True
 
@@ -579,9 +597,10 @@ class TestReadOwn:
         a = await printer_factory(name="A")
         b = await printer_factory(name="B")
         helper = TestTodoAccess()
-        _, member = await helper._setup(async_client, ["queue:read_own"])
+        admin, member = await helper._setup(async_client, ["queue:read_own"])
+        other_id = await helper._add_user(async_client, admin, "other")
         mine = await make_item(a.id, name="Mine", manual_start=True, created_by_id=helper.member_id)
-        await make_item(b.id, name="Theirs", manual_start=True, created_by_id=helper.member_id + 100)
+        await make_item(b.id, name="Theirs", manual_start=True, created_by_id=other_id)
         with (
             patch("backend.app.api.routes.print_queue.printer_manager.is_awaiting_plate_clear", lambda pid: True),
             patch("backend.app.api.routes.print_queue.plate_clear.applies", lambda pid, setting: True),
@@ -593,9 +612,6 @@ class TestReadOwn:
 
 class TestApiKeyCaller:
     async def test_key_acts_as_its_owner(self, async_client, db_session, world):
-        from backend.app.models.group import Group
-        from backend.tests.integration.test_api_key_own_rows import _key
-
         group = (await db_session.execute(select(Group).where(Group.name == "own-queuers"))).scalar_one()
         group.permissions = [*group.permissions, "queue:start_unreviewed"]
         mine = await owner_tests._archive(db_session, world["owner"].id, 21)
@@ -629,3 +645,37 @@ class TestApiKeyCaller:
         assert response.status_code == 200, response.text
         jobs = [j for e in _only_entries(response.json()) for j in e["jobs"]]
         assert [(j["name"], j["can_start"]) for j in jobs] == [("a21", True)]
+
+    async def _staged_model_and_pinned(self, db_session, world):
+        """The owner's two staged jobs: one for any X1C, one on the printer."""
+        group = (await db_session.execute(select(Group).where(Group.name == "own-queuers"))).scalar_one()
+        group.permissions = [*group.permissions, "queue:start_unreviewed"]
+        owner_id = world["owner"].id
+        any_model = await owner_tests._archive(db_session, owner_id, 31)
+        pinned = await owner_tests._archive(db_session, owner_id, 32)
+        common = {"status": "pending", "manual_start": True, "created_by_id": owner_id}
+        db_session.add_all(
+            [
+                PrintQueueItem(archive_id=any_model.id, target_model="X1C", position=1, **common),
+                PrintQueueItem(archive_id=pinned.id, printer_id=world["printer"].id, position=2, **common),
+            ]
+        )
+        await db_session.commit()
+
+    async def _can_start_by_name(self, async_client, key) -> dict[str, bool]:
+        response = await async_client.get(URL, headers=key)
+        assert response.status_code == 200, response.text
+        return {j["name"]: j["can_start"] for e in _only_entries(response.json()) for j in e["jobs"]}
+
+    async def test_a_key_limited_to_some_printers_cannot_start_a_model_job(self, async_client, db_session, world):
+        """The start endpoint refuses it (ensure_model_target_allowed), so the list offers no Start."""
+        await self._staged_model_and_pinned(db_session, world)
+        key = await _key(db_session, world["owner"].id, printer_ids=[world["printer"].id])
+
+        assert await self._can_start_by_name(async_client, key) == {"a31": False, "a32": True}
+
+    async def test_a_key_for_every_printer_can_start_a_model_job(self, async_client, db_session, world):
+        await self._staged_model_and_pinned(db_session, world)
+        key = await _key(db_session, world["owner"].id)
+
+        assert await self._can_start_by_name(async_client, key) == {"a31": True, "a32": True}

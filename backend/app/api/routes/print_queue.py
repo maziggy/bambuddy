@@ -458,15 +458,24 @@ def _library_display_name(library_file: LibraryFile) -> str:
 
 
 def _queue_item_display_name(item: PrintQueueItem) -> str:
-    """The job's name as the queue row shows it (shared with the "To do" list, #3615)."""
-    if item.archive is not None and item.archive.deleted_at is None:
-        name = _archive_display_name(item.archive)
-    elif item.library_file is not None:
-        name = _library_display_name(item.library_file)
-    else:
-        variant = next((v.library_file for v in item.variants if v.library_file is not None), None)
-        name = _library_display_name(variant) if variant is not None else ""
-    return name or f"#{item.id}"
+    """The job's name as the queue row shows it, for the "To do" list (#3615).
+
+    The row is named in the frontend (``queueItemDisplayName``) from the fields
+    ``_enrich_response`` fills; this reads the same values in the same order:
+    the archive's name unless it is deleted, the library file's, the first
+    cross-model candidate's filename with "+N more" (#671), then "File #<id>"
+    of the archive or library file. A job with nothing left to point at, which
+    the row calls "File #null", is "#<item id>" here.
+    """
+    if item.archive is not None and item.archive.deleted_at is None and (name := _archive_display_name(item.archive)):
+        return name
+    if item.library_file is not None and (name := _library_display_name(item.library_file)):
+        return name
+    if variants := _variant_summaries(item):
+        others = len(variants) - 1
+        return f"{variants[0].filename} +{others} more" if others > 0 else variants[0].filename
+    file_id = item.archive_id if item.archive_id is not None else item.library_file_id
+    return f"File #{file_id}" if file_id is not None else f"#{item.id}"
 
 
 def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:

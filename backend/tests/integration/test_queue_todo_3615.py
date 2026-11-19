@@ -254,6 +254,69 @@ class TestTodoEntries:
         assert [g["printer_id"] for g in body["groups"]] == [b.id, a.id]
 
 
+class TestJobNames:
+    """A job is called what its queue row calls it (queueItemDisplayName in the frontend)."""
+
+    async def _names(self, async_client) -> tuple[dict, dict]:
+        (row,) = (await async_client.get("/api/v1/queue/?status=pending")).json()
+        (job,) = _only_entries((await async_client.get(URL)).json())[0]["jobs"]
+        return row, job
+
+    async def test_cross_model_job_is_its_first_file_plus_the_number_of_others(
+        self, async_client, db_session, printer_factory
+    ):
+        from backend.app.models.library import LibraryFile
+        from backend.app.models.print_queue import PrintQueueVariant
+
+        await printer_factory(name="A", model="X1C")
+        files = [
+            LibraryFile(
+                filename=f"part_{model}.gcode.3mf",
+                file_path=f"/library/part_{model}.gcode.3mf",
+                file_type="3mf",
+                file_size=10,
+                file_metadata={"print_name": "Part", "sliced_for_model": model},
+            )
+            for model in ("X1C", "P1S", "A1")
+        ]
+        db_session.add_all(files)
+        await db_session.flush()
+        item = PrintQueueItem(status="pending", position=1, target_model="X1C", manual_start=True)
+        item.variants = [
+            PrintQueueVariant(position=i, library_file_id=f.id, target_model=model)
+            for i, (f, model) in enumerate(zip(files, ("X1C", "P1S", "A1"), strict=True))
+        ]
+        db_session.add(item)
+        await db_session.commit()
+
+        row, job = await self._names(async_client)
+
+        # The row has no archive or library name and names the first candidate's file.
+        assert (row["archive_name"], row["library_file_name"]) == (None, None)
+        assert [v["filename"] for v in row["variants"]][0] == "part_X1C.gcode.3mf"
+        assert job["name"] == "part_X1C.gcode.3mf +2 more"
+
+    async def test_a_job_whose_archive_was_deleted_is_file_number_of_the_archive(
+        self, async_client, db_session, printer_factory, archive_factory, make_item
+    ):
+        from datetime import datetime, timezone
+
+        from backend.app.models.archive import PrintArchive
+
+        a = await printer_factory(name="A")
+        await archive_factory(a.id)  # so the archive id is not the item id
+        item = await make_item(a.id, name="Gone", manual_start=True)
+        assert item.archive_id != item.id
+        archive = await db_session.get(PrintArchive, item.archive_id)
+        archive.deleted_at = datetime.now(timezone.utc)
+        await db_session.commit()
+
+        row, job = await self._names(async_client)
+
+        assert (row["archive_name"], row["library_file_name"], row["archive_deleted"]) == (None, None, True)
+        assert job["name"] == f"File #{item.archive_id}"
+
+
 def _auth(jwt: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {jwt}"}
 

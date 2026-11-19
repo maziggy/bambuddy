@@ -1894,6 +1894,13 @@ class PrintScheduler:
             FilamentHold(item_id, printer_id, target_model, tuple(filaments))
         )
 
+    def _record_model_holds(
+        self, item_id: int, model_holds: Mapping[int, tuple[str | None, list[TodoFilament]]]
+    ) -> None:
+        """Note a model job's filament waits, one per printer that lacks something (#3615)."""
+        for printer_id, (target_model, filaments) in model_holds.items():
+            self._record_hold(item_id, printer_id, target_model, filaments)
+
     def _carry_filament_hold(self, item: PrintQueueItem) -> bool:
         """Keep a staged job's earlier hold: it never reaches the writers again (#3615).
 
@@ -2892,7 +2899,11 @@ class PrintScheduler:
                         power_on_attempted = attempted_id is not None
                         if woken_id is not None:
                             # Hold this item back rather than dispatching onto a
-                            # printer whose AMS has not reported yet.
+                            # printer whose AMS has not reported yet. Its
+                            # filament waits on the other printers still stand,
+                            # so they are recorded as on any other pass (#3615).
+                            if not gate_blocked:
+                                self._record_model_holds(item.id, model_holds)
                             skip_reasons["powered_on_printer"] = skip_reasons.get("powered_on_printer", 0) + 1
                             continue
 
@@ -2931,8 +2942,7 @@ class PrintScheduler:
 
                     # Record the filament waits next to the reason they back (#3615).
                     if printer_id is None and not gate_blocked and not scope_held:
-                        for held_pid, (held_model, held_fils) in model_holds.items():
-                            self._record_hold(item.id, held_pid, held_model, held_fils)
+                        self._record_model_holds(item.id, model_holds)
 
                     # Update waiting_reason if changed and send notification when first waiting
                     if item.waiting_reason != waiting_reason:

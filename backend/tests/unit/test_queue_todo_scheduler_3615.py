@@ -381,9 +381,7 @@ class TestRebuildAttemptsAreRemembered:
             assert scheduler._rebuild_tried == set()
 
             # The trays arrive: the next pass records what is missing, once.
-            state.raw_data = {
-                "ams": [{"id": 0, "tray": [{"id": 0, "tray_type": "PLA", "tray_color": "FF0000FF"}]}]
-            }
+            state.raw_data = {"ams": [{"id": 0, "tray": [{"id": 0, "tray_type": "PLA", "tray_color": "FF0000FF"}]}]}
             await scheduler._rebuild_filament_hold(AsyncMock(), item)
         assert scheduler._pass_holds == {41: [FilamentHold(41, 8, None, (TodoFilament("PETG", "#2850E0", ""),))]}
         assert len(scheduler._rebuild_tried) == 1

@@ -129,13 +129,31 @@ def _validate_member(lib_file: LibraryFile, explicit_model: str | None) -> str:
     return model
 
 
-async def _group_response(db: AsyncSession, group: FileVariantGroup) -> VariantGroupResponse:
+def visible_members_query(group_ids, user: User | ApiKeyActor | None, can_see_all: bool):
+    """Untrashed members of the given groups that the caller may see (#3628).
+
+    Same ownership rule as the file list: an ``*_OWN`` caller sees only files
+    they created, so a group never reveals another user's file names or counts.
+    """
+    query = LibraryFile.active().where(LibraryFile.variant_group_id.in_(group_ids))
+    if user is not None and not can_see_all:
+        query = query.where(LibraryFile.created_by_id == user.id)
+    return query
+
+
+async def _group_response(
+    db: AsyncSession,
+    group: FileVariantGroup,
+    user: User | ApiKeyActor | None,
+    can_see_all: bool,
+) -> VariantGroupResponse:
+    """Group with only the members the caller may see (#3628)."""
     members = (
         (
             await db.execute(
-                LibraryFile.active()
-                .where(LibraryFile.variant_group_id == group.id)
-                .order_by(LibraryFile.variant_position, LibraryFile.id)
+                visible_members_query([group.id], user, can_see_all).order_by(
+                    LibraryFile.variant_position, LibraryFile.id
+                )
             )
         )
         .scalars()
@@ -235,7 +253,7 @@ async def create_variant_group(
 
     await db.commit()
     logger.info("Created variant group %s with %d members", group.id, len(file_ids))
-    return await _group_response(db, group)
+    return await _group_response(db, group, user, can_update_all)
 
 
 @router.get("/by-file/{file_id}", response_model=VariantGroupResponse)
@@ -262,7 +280,8 @@ async def get_group_for_file(
         raise HTTPException(404, "Library file not found")
     if lib_file.variant_group_id is None:
         raise HTTPException(404, "File is not part of a variant group")
-    return await _group_response(db, await _get_group_or_404(db, lib_file.variant_group_id))
+    group = await _get_group_or_404(db, lib_file.variant_group_id)
+    return await _group_response(db, group, user, can_read_all)
 
 
 @router.get("/{group_id}", response_model=VariantGroupResponse)
@@ -276,7 +295,14 @@ async def get_variant_group(
         )
     ),
 ) -> VariantGroupResponse:
-    return await _group_response(db, await _get_group_or_404(db, group_id))
+    user, can_read_all = auth_result
+    group = await _get_group_or_404(db, group_id)
+    response = await _group_response(db, group, user, can_read_all)
+    if not response.members:
+        # Nothing in it is visible to this caller: same answer as for a missing
+        # group, so the id does not confirm that someone else's group exists.
+        raise HTTPException(404, "Variant group not found")
+    return response
 
 
 @router.patch("/{group_id}", response_model=VariantGroupResponse)
@@ -316,7 +342,7 @@ async def update_variant_group(
             files[fid].variant_position = position
 
     await db.commit()
-    return await _group_response(db, group)
+    return await _group_response(db, group, user, can_update_all)
 
 
 @router.post("/{group_id}/members", response_model=VariantGroupResponse)
@@ -372,7 +398,7 @@ async def add_variant_group_member(
     lib_file.variant_group_id = group.id
     lib_file.variant_position = len(existing)
     await db.commit()
-    return await _group_response(db, group)
+    return await _group_response(db, group, user, can_update_all)
 
 
 @router.delete("/{group_id}/members/{file_id}", response_model=None, status_code=204)

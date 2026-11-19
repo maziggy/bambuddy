@@ -23,7 +23,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes.cloud import resolve_api_key_cloud_owner
-from backend.app.api.routes.library_variants import normalize_model_name, resolve_variant_model
+from backend.app.api.routes.library_variants import (
+    normalize_model_name,
+    resolve_variant_model,
+    visible_members_query,
+)
 from backend.app.api.routes.print_queue import (
     _extract_filament_types_from_3mf,
     printed_plate_of_multi_plate_file,
@@ -2467,9 +2471,11 @@ async def list_files(
     variant_counts: dict[int, int] = {}
     group_ids = {f.variant_group_id for f in files if f.variant_group_id}
     if group_ids:
+        # Only members the caller may see (#3628), so the count never reveals
+        # files an *_OWN user cannot open.
         count_result = await db.execute(
-            select(LibraryFile.variant_group_id, func.count(LibraryFile.id))
-            .where(LibraryFile.variant_group_id.in_(group_ids), LibraryFile.deleted_at.is_(None))
+            visible_members_query(group_ids, user, can_read_all)
+            .with_only_columns(LibraryFile.variant_group_id, func.count(LibraryFile.id))
             .group_by(LibraryFile.variant_group_id)
         )
         variant_counts = dict(count_result.all())

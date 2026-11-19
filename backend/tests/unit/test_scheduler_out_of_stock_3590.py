@@ -11,6 +11,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from sqlalchemy import select, text
 
+from backend.app.core.filament_scope import (
+    file_hold_message,
+    print_anyway_hold_message,
+    spool_hold_message,
+    unlisted_file_hold_message,
+)
+from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.services.inventory_stock import StockEntry
 from backend.app.services.print_scheduler import _NO_STOCK_SUFFIX, PrintScheduler, _is_unmatched_hold_reason
@@ -266,10 +273,10 @@ class TestPinnedHold:
             await scheduler._block_on_unmatched_filament(AsyncMock(), item)
         assert item.waiting_reason == f"A1 Left needs PLA Earth Brown{_NO_STOCK_SUFFIX}"
         # Still the reason a staged item keeps, unlike the short-spool text.
-        assert _is_unmatched_hold_reason(item.waiting_reason)
-        assert _is_unmatched_hold_reason("A1 Left needs PLA Earth Brown")
-        assert not _is_unmatched_hold_reason("PLA (20 g left, needs 300 g)")
-        assert not _is_unmatched_hold_reason("PLA (needs 300 g)")
+        assert _is_unmatched_hold_reason(item.waiting_reason, "A1 Left")
+        assert _is_unmatched_hold_reason("A1 Left needs PLA Earth Brown", "A1 Left")
+        assert not _is_unmatched_hold_reason("PLA (20 g left, needs 300 g)", "A1 Left")
+        assert not _is_unmatched_hold_reason("PLA (needs 300 g)", "A1 Left")
 
     @pytest.mark.asyncio
     async def test_a_job_released_to_the_pool_names_no_printer(self):
@@ -346,6 +353,86 @@ class TestPinnedHold:
             assert held is True
             assert item.waiting_reason == before
             assert notify.await_count == fires
+
+
+PETG = [{"type": "PETG", "tray_info_idx": "GFG03"}]
+SCOPE_HOLDS = [
+    file_hold_message(PETG),
+    spool_hold_message(PETG),
+    unlisted_file_hold_message(PETG),
+    print_anyway_hold_message([{"type": "PLA"}], PETG),
+]
+
+
+class TestStagedHoldReason:
+    """Only the unmatched-filament hold's own reason outlives staging (#2799, #3074).
+
+    A printer-named reason is recognised by the name of the printer the item
+    is on, not by the word "needs": the filament scope hold "This file needs a
+    filament ..." (#3522) holds it too, and has to be cleared like any other
+    reason once the job waits for a start press.
+    """
+
+    @pytest.mark.parametrize("reason", SCOPE_HOLDS)
+    def test_a_filament_scope_hold_is_not_the_unmatched_hold(self, reason):
+        assert not _is_unmatched_hold_reason(reason, "X1C-1")
+        assert not _is_unmatched_hold_reason(reason)
+
+    def test_the_printer_named_form_needs_the_items_own_printer(self):
+        reason = "X1C-1 needs PLA Earth Brown"
+        assert _is_unmatched_hold_reason(reason, "X1C-1")
+        assert _is_unmatched_hold_reason(reason, " X1C-1 ")
+        assert not _is_unmatched_hold_reason(reason, "X1C-2")
+        assert not _is_unmatched_hold_reason(reason)
+
+    def test_a_printer_name_holding_the_word_still_works(self):
+        name = "Bay 2 needs service"
+        assert _is_unmatched_hold_reason(f"{name} needs PLA Earth Brown", name)
+        assert not _is_unmatched_hold_reason(f"{name} is offline", name)
+
+    def test_the_form_without_a_printer_still_works(self):
+        assert _is_unmatched_hold_reason("Needs PLA #8B5A2B")
+        assert _is_unmatched_hold_reason("Needs PLA Earth Brown", "X1C-1")
+        assert not _is_unmatched_hold_reason(None, "X1C-1")
+        assert not _is_unmatched_hold_reason("", "X1C-1")
+
+    async def _reason_after_a_pass(self, ctx, reason, *, printer_name=None, **fields):
+        if printer_name:
+            async with ctx.session_maker() as db:
+                (await db.get(Printer, 1)).name = printer_name
+                await db.commit()
+        values = {"printer_id": 1, "target_model": None, "manual_start": True, "waiting_reason": reason}
+        values.update(fields)
+        item_id = await _add_item(ctx, **values)
+        await _run(ctx, _sched(), short=set(), launched=MagicMock())
+        return (await _get_item(ctx, item_id)).waiting_reason
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("reason", SCOPE_HOLDS)
+    async def test_a_scope_held_job_set_to_manual_start_loses_the_reason(self, queue_db, reason):
+        assert await self._reason_after_a_pass(queue_db, reason) is None
+
+    @pytest.mark.asyncio
+    async def test_the_reason_naming_its_printer_stays(self, queue_db):
+        reason = f"X1C-1 needs PLA Earth Brown{_NO_STOCK_SUFFIX}"
+        assert await self._reason_after_a_pass(queue_db, reason) == reason
+
+    @pytest.mark.asyncio
+    async def test_the_reason_stays_on_a_printer_named_with_the_word(self, queue_db):
+        reason = "Bay 2 needs service needs PLA Earth Brown"
+        assert await self._reason_after_a_pass(queue_db, reason, printer_name="Bay 2 needs service") == reason
+
+    @pytest.mark.asyncio
+    async def test_a_reason_naming_another_printer_is_cleared(self, queue_db):
+        assert await self._reason_after_a_pass(queue_db, "X1C-2 needs PLA Earth Brown") is None
+
+    @pytest.mark.asyncio
+    async def test_the_form_without_a_printer_stays(self, queue_db):
+        reason = "Needs PLA #8B5A2B"
+        assert await self._reason_after_a_pass(queue_db, reason) == reason
+        # Released to the pool: no printer holds it.
+        pooled = {"printer_id": None, "target_model": "X1C", "position": 2}
+        assert await self._reason_after_a_pass(queue_db, reason, **pooled) == reason
 
 
 class TestPoweredOffPrinters:

@@ -3,7 +3,6 @@
 import asyncio
 import json
 import logging
-import re
 import time
 import uuid
 import zipfile
@@ -760,9 +759,6 @@ def _is_tray_id(value: object) -> bool:
 # A job released to the pool has no printer and keeps the bare "Needs ...".
 _UNMATCHED_HOLD_PREFIX = "Needs "
 _UNMATCHED_HOLD_VERB = " needs "
-# "<printer> needs <filament>", and not the short-spool text "PLA (20 g left,
-# needs 300 g)", which also holds the word.
-_UNMATCHED_HOLD_NAMED = re.compile(r" needs (?!\d+(?:\.\d+)? g\))")
 
 # Appended to a forced filament in a waiting reason when the built-in inventory
 # knows the filament and has no spool of it left (#3590). Stable text, no grams,
@@ -775,11 +771,26 @@ _NO_STOCK_SUFFIX = " \u2013 none left in inventory"
 _SHORT_HOLD_RECHECK_SECONDS = 120
 
 
-def _is_unmatched_hold_reason(reason: str | None) -> bool:
-    """True for the reason the unmatched-filament hold wrote when it staged the item."""
+def _unmatched_hold_reason(printer_name: str, wanted: str) -> str:
+    """The reason the unmatched-filament hold writes; ``printer_name`` is empty for a job no printer holds."""
+    name = printer_name.strip()
+    return f"{name}{_UNMATCHED_HOLD_VERB}{wanted}" if name else f"{_UNMATCHED_HOLD_PREFIX}{wanted}"
+
+
+def _is_unmatched_hold_reason(reason: str | None, printer_name: str = "") -> bool:
+    """True for the reason the unmatched-filament hold wrote when it staged the item.
+
+    ``printer_name`` is the name of the printer the item is on. The form naming
+    a printer is recognised only as that printer's own "<name> needs ": other
+    reasons hold the word too, such as the filament scope hold "This file needs
+    a filament ..." (#3522), and those are cleared on a staged item (#3074).
+    """
     if not reason:
         return False
-    return reason.startswith(_UNMATCHED_HOLD_PREFIX) or _UNMATCHED_HOLD_NAMED.search(reason) is not None
+    if reason.startswith(_UNMATCHED_HOLD_PREFIX):
+        return True
+    name = printer_name.strip()
+    return bool(name) and reason.startswith(f"{name}{_UNMATCHED_HOLD_VERB}")
 
 
 def _filament_overrides_of(item: PrintQueueItem) -> list:
@@ -2333,7 +2344,8 @@ class PrintScheduler:
                     # reason was written at staging and is why the item waits:
                     # it names the filament to load (#2799). Pressing start
                     # clears manual_start, and the branches below overwrite it.
-                    keep = item.waiting_reason if _is_unmatched_hold_reason(item.waiting_reason) else None
+                    held_on = pinned_printers.get(item.printer_id, ("", ""))[0] if item.printer_id else ""
+                    keep = item.waiting_reason if _is_unmatched_hold_reason(item.waiting_reason, held_on) else None
                     await hold_item(item, keep)
                     skip_reasons["manual_start"] = skip_reasons.get("manual_start", 0) + 1
                     continue
@@ -9822,11 +9834,7 @@ class PrintScheduler:
         # to the pool below and no printer holds it any more (#3590).
         printer = await self._get_printer(db, held_by)
         name = None if release_assignment or printer is None else printer.name
-        printer_name = name.strip() if isinstance(name, str) else ""
-        if printer_name:
-            item.waiting_reason = f"{printer_name}{_UNMATCHED_HOLD_VERB}{wanted}"
-        else:
-            item.waiting_reason = f"{_UNMATCHED_HOLD_PREFIX}{wanted}"
+        item.waiting_reason = _unmatched_hold_reason(name if isinstance(name, str) else "", wanted)
         if release_assignment:
             # "Any P2S" means any, so the job returns to the pool rather than
             # waiting on the printer that could not take it. The mapping goes

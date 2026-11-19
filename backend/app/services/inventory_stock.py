@@ -37,8 +37,6 @@ class StockEntry:
     effect_type: str | None
     spool_count: int  # active spools not known to be empty (unknown weight counts as present)
     remaining_grams: float  # unknown weights add 0 g
-    empty_spool_count: int
-    archived_only: bool = False  # only archived spools matched: known, none left
 
 
 def _most_common(values: list[str]) -> str:
@@ -87,7 +85,6 @@ async def inventory_stock(
         type_ = _most_common([t for _, t in pairs])
         active = [s for s in members if s.archived_at is None]
         count = 0
-        empty = 0
         grams = 0.0
         for s in active:
             if (s.label_weight or 0) <= 0:
@@ -97,8 +94,6 @@ async def inventory_stock(
             if remaining > 0:
                 count += 1
                 grams += remaining
-            else:
-                empty += 1
         rep = (active or members)[0]
         entries.append(
             StockEntry(
@@ -112,8 +107,6 @@ async def inventory_stock(
                 effect_type=rep.effect_type,
                 spool_count=count,
                 remaining_grams=round(grams, 1),
-                empty_spool_count=empty,
-                archived_only=not active,
             )
         )
     entries.sort(key=lambda e: (e.spool_count == 0, e.type, e.color, e.tray_info_idx))

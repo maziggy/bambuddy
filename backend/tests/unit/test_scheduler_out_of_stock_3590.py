@@ -70,7 +70,7 @@ def _stock(stock):
     if stock is None or isinstance(stock, list):
         return stock
     count, grams = stock
-    return [StockEntry("PLA", "#8B5A2B", "", "", "", None, None, None, count, grams, 0)]
+    return [StockEntry("PLA", "#8B5A2B", "", "", "", None, None, None, count, grams)]
 
 
 def _entries(stock):
@@ -153,8 +153,8 @@ class TestMatcherReason:
         scheduler = _sched()
         other = {**FORCED[0], "color": "#00FF00", "color_name": "Green"}
         entries = [
-            StockEntry("PLA", "#8B5A2B", "", "", "", None, None, None, 0, 0.0, 1),
-            StockEntry("PLA", "#00FF00", "", "", "", None, None, None, 3, 900.0, 0),
+            StockEntry("PLA", "#8B5A2B", "", "", "", None, None, None, 0, 0.0),
+            StockEntry("PLA", "#00FF00", "", "", "", None, None, None, 3, 900.0),
         ]
         overrides = {"PLA (Earth Brown)": [FORCED[0]], "PLA (Green)": [other]}
         with patch(ENTRIES, AsyncMock(return_value=entries)):
@@ -204,8 +204,8 @@ class TestQueuePass:
 
         def stock(petg_spools: int) -> list[StockEntry]:
             return [
-                StockEntry("PLA", "#8B5A2B", "", "", "", None, None, None, 0, 0.0, 1),
-                StockEntry("PETG", "#0000FF", "", "", "", None, None, None, petg_spools, petg_spools * 500.0, 0),
+                StockEntry("PLA", "#8B5A2B", "", "", "", None, None, None, 0, 0.0),
+                StockEntry("PETG", "#0000FF", "", "", "", None, None, None, petg_spools, petg_spools * 500.0),
             ]
 
         notify = await self._pass(queue_db, scheduler, stock(1))

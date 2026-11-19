@@ -60,7 +60,6 @@ async def test_archived_excluded_and_unknown_weight_counts_as_present(db_session
     assert await stock_for(db_session, "PLA", "#FF0000", "") == (1, 0.0)
     blue = next(e for e in entries if e.color == "#0000FF")
     assert blue.remaining_grams == 600.0
-    assert all(not e.archived_only for e in entries)
 
 
 async def test_empty_spools_are_none_left_and_sorted_last(db_session):
@@ -68,7 +67,7 @@ async def test_empty_spools_are_none_left_and_sorted_last(db_session):
     await db_session.commit()
     entries = await inventory_stock(db_session)
     assert [e.color for e in entries] == ["#0000FF", "#FF0000"]
-    assert (entries[1].spool_count, entries[1].empty_spool_count) == (0, 1)
+    assert (entries[1].spool_count, entries[1].remaining_grams) == (0, 0.0)
     assert await stock_for(db_session, "PLA", "#FF0000", "") == (0, 0.0)
 
 
@@ -91,7 +90,7 @@ async def test_empty_inventory_is_unknown(db_session):
 
 
 async def test_stock_in_is_pure():
-    e = StockEntry("PLA", "#FF0000", "", "", "", None, None, None, 2, 500.0, 0)
+    e = StockEntry("PLA", "#FF0000", "", "", "", None, None, None, 2, 500.0)
     assert stock_in([e], "pla", "#ff0000", "GFA00") == (2, 500.0)
     assert stock_in([e], "PLA", "#00FF00", "") is None
     assert stock_in([], "PLA", "#FF0000", "") is None

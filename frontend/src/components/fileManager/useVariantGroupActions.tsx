@@ -6,6 +6,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { isSlicedLibraryFile } from '../../utils/libraryFiles';
 import type { GroupRow } from '../../pages/fileManager/variantGroups';
+import { invalidateAfterLibraryDelete } from '../../pages/fileManager/invalidate';
 import { ConfirmModal } from '../ConfirmModal';
 
 export interface VariantGroupActions {
@@ -73,9 +74,7 @@ export function useVariantGroupActions({
     mutationFn: (ids: number[]) => api.bulkDeleteLibrary(ids, []),
     onSuccess: (_, ids) => {
       refresh();
-      queryClient.invalidateQueries({ queryKey: ['library-folders'] });
-      queryClient.invalidateQueries({ queryKey: ['library-stats'] });
-      queryClient.invalidateQueries({ queryKey: ['library-trash-count'] });
+      invalidateAfterLibraryDelete(queryClient);
       showToast(t('fileManager.toast.filesDeleted', { count: ids.length }), 'success');
       onFilesDeleted(ids);
       setConfirm(null);
@@ -126,6 +125,14 @@ export function useVariantGroupActions({
     canRemove,
   };
 
+  // The confirm says how many of the versions sit in other folders: deleting
+  // the group deletes those too, which the folder on screen does not show.
+  const deleteMessage = (row: GroupRow) => {
+    const message = t('fileManager.variants.deleteGroupConfirm', { count: row.members.length, name: row.name });
+    const elsewhere = row.members.filter((m) => m.variant_elsewhere).length;
+    return elsewhere > 0 ? `${message} ${t('fileManager.variants.deleteGroupElsewhere', { count: elsewhere })}` : message;
+  };
+
   const dialogs = confirm ? (
     confirm.kind === 'ungroup' ? (
       <ConfirmModal
@@ -141,7 +148,7 @@ export function useVariantGroupActions({
     ) : (
       <ConfirmModal
         title={t('fileManager.variants.deleteGroupTitle', { count: confirm.row.members.length })}
-        message={t('fileManager.variants.deleteGroupConfirm', { count: confirm.row.members.length, name: confirm.row.name })}
+        message={deleteMessage(confirm.row)}
         confirmText={t('common.delete')}
         variant="danger"
         isLoading={deleteMutation.isPending}

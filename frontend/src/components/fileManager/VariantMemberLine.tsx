@@ -56,6 +56,8 @@ export function VariantMemberLine({
       title: !canPrint ? t('fileManager.noPermissionAddToQueue') : undefined,
     });
   }
+  const preview = memberActions.previewItem(file);
+  if (preview) items.push(preview);
   items.push(
     {
       label: t('fileManager.details.title'),
@@ -83,7 +85,7 @@ export function VariantMemberLine({
       icon: <Unlink className="w-4 h-4" />,
       onClick: () => groupActions.removeFromGroup(file, groupId),
       disabled: !groupActions.canRemove(file),
-      title: !groupActions.canRemove(file) ? t('fileManager.noPermissionRenameFile') : undefined,
+      title: !groupActions.canRemove(file) ? t('fileManager.variants.noPermissionRemove') : undefined,
     },
     {
       label: t('common.delete'),
@@ -95,11 +97,16 @@ export function VariantMemberLine({
     },
   );
 
-  const folderHint = file.variant_elsewhere
-    ? file.folder_name
-      ? t('fileManager.variants.inFolder', { folder: file.folder_name })
-      : t('fileManager.variants.inLibraryRoot')
-    : null;
+  // Where an elsewhere version lives, from the server's flag and the folder it
+  // reports, whatever filter is active (#3628). Root only when it is in no
+  // folder; a folder the server gave no name for is just "another folder".
+  const folderHint = !file.variant_elsewhere
+    ? null
+    : file.folder_id == null
+      ? t('fileManager.variants.inLibraryRoot')
+      : file.folder_name
+        ? t('fileManager.variants.inFolder', { folder: file.folder_name })
+        : t('fileManager.variants.inAnotherFolder');
 
   return (
     <div

@@ -13,6 +13,19 @@ export interface BulkPrintPlan {
   looseFiles: LibraryFileListItem[];
 }
 
+// The versions a group's tick selects: those in the folder on screen. Members
+// listed only because they sit elsewhere are never selected by it, so a bulk
+// Delete, Move or Tag cannot reach into another folder (#3628).
+export function selectableMembers(row: GroupRow): LibraryFileListItem[] {
+  return row.members.filter((m) => !m.variant_elsewhere);
+}
+
+// How many of a group's selectable versions are selected.
+export function groupSelection(row: GroupRow, selectedIds: readonly number[]): { count: number; total: number } {
+  const members = selectableMembers(row);
+  return { count: members.filter((m) => selectedIds.includes(m.id)).length, total: members.length };
+}
+
 export function planBulkPrint(
   selectedIds: readonly number[],
   groupRows: readonly GroupRow[],
@@ -26,14 +39,15 @@ export function planBulkPrint(
   for (const row of groupRows) {
     if (seen.has(row.id)) continue;
     seen.add(row.id);
-    const count = row.members.filter((m) => selected.has(m.id)).length;
+    const members = selectableMembers(row);
+    const count = members.filter((m) => selected.has(m.id)).length;
     if (count === 0) continue;
-    if (count === row.members.length) {
+    if (count === members.length) {
       if (row.members.some(isSlicedLibraryFile)) {
         fullGroups.push(row);
         for (const m of row.members) inFullGroup.add(m.id);
       }
-    } else if (row.members.some((m) => selected.has(m.id) && isSlicedLibraryFile(m))) {
+    } else if (members.some((m) => selected.has(m.id) && isSlicedLibraryFile(m))) {
       partialGroups.push({ row, selected: count });
     }
   }
@@ -51,11 +65,6 @@ export function promotePartialGroups(plan: BulkPrintPlan): BulkPrintPlan {
     partialGroups: [],
     looseFiles: plan.looseFiles.filter((f) => !promoted.has(f.id)),
   };
-}
-
-// The number of print jobs the Print button stands for.
-export function bulkPrintJobCount(plan: BulkPrintPlan): number {
-  return plan.fullGroups.length + (plan.looseFiles.length > 0 ? 1 : 0);
 }
 
 // The versions a drag of the group card moves: those in the folder on screen

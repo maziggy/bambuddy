@@ -1,5 +1,6 @@
 import type { LibraryFileListItem } from '../../api/client';
 import type { GroupRow } from '../../pages/fileManager/variantGroups';
+import type { ContextMenuItem } from '../ContextMenu';
 import type { VariantGroupActions } from './useVariantGroupActions';
 
 // What a version line can do to its file: the same actions a plain file has,
@@ -11,6 +12,8 @@ export interface VariantMemberActions {
   onDelete: (id: number) => void;
   /** Print just this version, without offering the rest of the group. */
   onPrintFile: (file: LibraryFileListItem) => void;
+  /** The file's "Preview" menu entry, or null when it has no preview. */
+  previewItem: (file: LibraryFileListItem) => ContextMenuItem | null;
 }
 
 // Everything the three views need to draw and drive a group row.
@@ -40,8 +43,4 @@ export function dragSourceProps(row: GroupRow, drag: VariantGroupViewProps['grou
     onDragStart: (e: React.DragEvent) => drag.onDragStart(row, e),
     onDragEnd: drag.onDragEnd,
   };
-}
-
-export function selectedMemberCount(row: GroupRow, selectedIds: readonly number[]): number {
-  return row.members.filter((m) => selectedIds.includes(m.id)).length;
 }

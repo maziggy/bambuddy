@@ -103,6 +103,20 @@ export function groupLibraryRows(
   return rows;
 }
 
+// The version groups among a set of files, whatever view they were loaded
+// for: a group needs at least two of its visible members in the set. Used to
+// resolve a selection that spans several lists (the columns view).
+export function groupRowsOf(files: Iterable<LibraryFileListItem>): GroupRow[] {
+  const byGroup = new Map<number, LibraryFileListItem[]>();
+  for (const file of files) {
+    if (file.variant_group_id == null) continue;
+    const list = byGroup.get(file.variant_group_id);
+    if (list) list.push(file);
+    else byGroup.set(file.variant_group_id, [file]);
+  }
+  return [...byGroup.entries()].filter(([, m]) => m.length >= 2).map(([id, m]) => buildGroupRow(id, m));
+}
+
 // Every file behind the rows, in row order.
 export function rowFiles(rows: LibraryRow[]): LibraryFileListItem[] {
   return rows.flatMap((row) => (row.kind === 'file' ? [row.file] : row.members));

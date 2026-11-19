@@ -8,7 +8,8 @@ import type { GroupRow } from '../../pages/fileManager/variantGroups';
 import { ContextMenu, type ContextMenuItem } from '../ContextMenu';
 import { VariantMemberLine } from './VariantMemberLine';
 import { VariantSelectionBox } from './VariantSelectionBox';
-import { dragSourceProps, selectedMemberCount, type VariantGroupViewProps } from './variantTypes';
+import { groupSelection } from '../../pages/fileManager/variantSelection';
+import { dragSourceProps, type VariantGroupViewProps } from './variantTypes';
 
 // A version group as one card of the grid view (#3628): the first version's
 // thumbnail, the name, the printer models, and the versions behind a toggle.
@@ -29,7 +30,7 @@ export function VariantGroupCard({
   const panelId = useId();
 
   const first = row.thumbnailFile;
-  const selectedCount = selectedMemberCount(row, selectedIds);
+  const { count: selectedCount, total: selectableCount } = groupSelection(row, selectedIds);
   const models = [...new Set(row.members.map((m) => m.sliced_for_model).filter((m): m is string => !!m))];
   const totalSize = row.members.reduce((sum, m) => sum + m.file_size, 0);
   const printed = row.members.reduce((sum, m) => sum + m.print_count, 0);
@@ -72,7 +73,10 @@ export function VariantGroupCard({
       data-file-id={first.id}
       data-member-ids={row.members.map((m) => m.id).join(' ')}
       style={highlighted ? { outline: '4px solid #facc15', outlineOffset: '2px' } : undefined}
-      className="relative self-start pb-2 min-w-0"
+      // An open card takes two columns, so its version lines have room and the
+      // pile of cards stays one card wide; the grid does not stretch the cards
+      // beside it to its height.
+      className={`relative self-start pb-2 min-w-0 ${expanded ? 'col-span-2' : ''}`}
     >
       {/* The cards behind it: a pile, not a single file. */}
       <div aria-hidden="true" className="absolute inset-x-2 bottom-1 h-3 rounded-b-lg border border-t-0 border-bambu-dark-tertiary bg-bambu-dark-secondary" />
@@ -86,7 +90,7 @@ export function VariantGroupCard({
         onClick={() => onToggleSelect(row)}
         {...dragSourceProps(row, groupDrag)}
       >
-        <div className="aspect-square bg-bambu-dark flex items-center justify-center overflow-hidden rounded-t-lg relative">
+        <div className={`${expanded ? 'h-40' : 'aspect-square'} bg-bambu-dark flex items-center justify-center overflow-hidden rounded-t-lg relative`}>
           {first.thumbnail_path ? (
             <img
               src={`${thumbUrl}${version ? (thumbUrl.includes('?') ? '&' : '?') + `v=${version}` : ''}`}
@@ -133,7 +137,7 @@ export function VariantGroupCard({
               setExpanded((v) => !v);
             }}
             onDoubleClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1 text-xs text-bambu-green hover:underline"
+            className="inline-flex items-center gap-1 text-xs text-bambu-green hover:underline whitespace-nowrap"
           >
             {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
             {expanded ? t('fileManager.variants.hideVersions') : t('fileManager.variants.showVersions')}
@@ -155,6 +159,7 @@ export function VariantGroupCard({
             >
               <MoreVertical className="w-4 h-4 text-bambu-gray" />
             </button>
+            {menuAnchor && <ContextMenu x={menuAnchor.x} y={menuAnchor.y} items={menuItems} onClose={() => setMenuAnchor(null)} />}
           </div>
           </div>
         </div>
@@ -174,12 +179,11 @@ export function VariantGroupCard({
           </div>
         )}
 
-        {menuAnchor && <ContextMenu x={menuAnchor.x} y={menuAnchor.y} items={menuItems} onClose={() => setMenuAnchor(null)} />}
-
         <VariantSelectionBox
           selectedCount={selectedCount}
-          total={row.members.length}
+          total={selectableCount}
           label={t('fileManager.variants.selectGroup', { name: row.name })}
+          onToggle={() => onToggleSelect(row)}
           className={`absolute top-2 left-2 ${
             selectedCount > 0 ? '' : 'border-white/30 bg-black/30 can-hover:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
           }`}

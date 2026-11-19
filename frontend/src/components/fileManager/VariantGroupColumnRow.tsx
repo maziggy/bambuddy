@@ -8,7 +8,8 @@ import type { GroupRow } from '../../pages/fileManager/variantGroups';
 import { VariantGroupActionStrip } from './VariantGroupActionStrip';
 import { VariantMemberLine } from './VariantMemberLine';
 import { VariantSelectionBox } from './VariantSelectionBox';
-import { dragSourceProps, selectedMemberCount, type VariantGroupViewProps } from './variantTypes';
+import { groupSelection } from '../../pages/fileManager/variantSelection';
+import { dragSourceProps, type VariantGroupViewProps } from './variantTypes';
 
 // A version group as one row of a Miller column (#3628). The row sits where a
 // file's row would; the versions are listed in a pane under it, opened with
@@ -35,7 +36,7 @@ export function VariantGroupColumnRow({
   const panelId = useId();
 
   const first = row.thumbnailFile;
-  const selectedCount = selectedMemberCount(row, selectedIds);
+  const { count: selectedCount, total: selectableCount } = groupSelection(row, selectedIds);
   const highlighted = highlightedFileId !== null && row.members.some((m) => m.id === highlightedFileId);
   const version = thumbnailVersions[first.id];
   const thumbUrl = api.getLibraryFileThumbnailUrl(first.id);
@@ -60,8 +61,10 @@ export function VariantGroupColumnRow({
       >
         <VariantSelectionBox
           selectedCount={selectedCount}
-          total={row.members.length}
+          total={selectableCount}
           label={t('fileManager.variants.selectGroup', { name: row.name })}
+          onToggle={() => onSelect(row)}
+          tabIndex={-1}
           size="w-4 h-4"
         />
         <div className="w-10 h-10 rounded bg-bambu-dark flex-shrink-0 overflow-hidden flex items-center justify-center">

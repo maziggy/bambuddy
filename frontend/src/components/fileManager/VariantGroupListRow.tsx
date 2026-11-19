@@ -8,7 +8,8 @@ import type { GroupRow } from '../../pages/fileManager/variantGroups';
 import { VariantGroupActionStrip } from './VariantGroupActionStrip';
 import { VariantMemberLine } from './VariantMemberLine';
 import { VariantSelectionBox } from './VariantSelectionBox';
-import { dragSourceProps, selectedMemberCount, type VariantGroupViewProps } from './variantTypes';
+import { groupSelection } from '../../pages/fileManager/variantSelection';
+import { dragSourceProps, type VariantGroupViewProps } from './variantTypes';
 
 // A version group as one expandable row of the list view (#3628). It lines up
 // with the file rows beside it (`gridClassName` is theirs); expanding it
@@ -16,6 +17,7 @@ import { dragSourceProps, selectedMemberCount, type VariantGroupViewProps } from
 export function VariantGroupListRow({
   row,
   gridClassName,
+  typeBadgeClass,
   selectedIds,
   highlightedFileId,
   thumbnailVersions,
@@ -26,13 +28,18 @@ export function VariantGroupListRow({
   memberActions,
   groupActions,
   groupDrag,
-}: { row: GroupRow; gridClassName: string } & VariantGroupViewProps) {
+}: {
+  row: GroupRow;
+  gridClassName: string;
+  /** Colours of a file type's badge, the one plain rows use. */
+  typeBadgeClass: (fileType: string) => string;
+} & VariantGroupViewProps) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const panelId = useId();
 
   const first = row.thumbnailFile;
-  const selectedCount = selectedMemberCount(row, selectedIds);
+  const { count: selectedCount, total: selectableCount } = groupSelection(row, selectedIds);
   const highlighted = highlightedFileId !== null && row.members.some((m) => m.id === highlightedFileId);
   const version = thumbnailVersions[first.id];
   const thumbUrl = api.getLibraryFileThumbnailUrl(first.id);
@@ -44,14 +51,16 @@ export function VariantGroupListRow({
   const printed = row.members.reduce((sum, m) => sum + m.print_count, 0);
 
   return (
-    <>
+    // One block as wide as the row's grid, so the open panel's background and
+    // border run as far as the row's when the list scrolls sideways.
+    <div className="min-w-min border-b border-bambu-dark-tertiary last:border-b-0">
       <div
         data-testid="variant-group-list-row"
         data-variant-group-id={row.id}
         data-file-id={first.id}
         data-member-ids={row.members.map((m) => m.id).join(' ')}
         style={highlighted ? { outline: '2px solid #facc15', outlineOffset: '-2px' } : undefined}
-        className={`grid ${gridClassName} min-w-min gap-4 px-4 py-3 items-center border-b border-bambu-dark-tertiary last:border-b-0 cursor-pointer hover:bg-bambu-dark/50 transition-colors ${
+        className={`grid ${gridClassName} min-w-min gap-4 px-4 py-3 items-center cursor-pointer hover:bg-bambu-dark/50 transition-colors ${
           selectedCount > 0 ? 'bg-bambu-green/10' : ''
         }`}
         onClick={() => onToggleSelect(row)}
@@ -59,8 +68,9 @@ export function VariantGroupListRow({
       >
         <VariantSelectionBox
           selectedCount={selectedCount}
-          total={row.members.length}
+          total={selectableCount}
           label={t('fileManager.variants.selectGroup', { name: row.name })}
+          onToggle={() => onToggleSelect(row)}
         />
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-10 h-10 rounded bg-bambu-dark flex-shrink-0 overflow-hidden flex items-center justify-center">
@@ -118,7 +128,11 @@ export function VariantGroupListRow({
           </div>
         )}
         <div>
-          <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-bambu-gray/20 text-bambu-gray">
+          <span
+            className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+              types.length === 1 ? typeBadgeClass(types[0]) : 'bg-bambu-gray/20 text-bambu-gray'
+            }`}
+          >
             {types.length === 1 ? types[0].toUpperCase() : t('fileManager.variants.mixedTypes')}
           </span>
         </div>
@@ -151,7 +165,7 @@ export function VariantGroupListRow({
           id={panelId}
           role="group"
           aria-label={t('fileManager.variants.versionsHeading')}
-          className="pl-14 pr-4 py-1 border-b border-bambu-dark-tertiary bg-bambu-dark/30"
+          className="pl-14 pr-4 py-1 border-t border-bambu-dark-tertiary bg-bambu-dark/30"
         >
           {row.members.map((m) => (
             <VariantMemberLine
@@ -165,6 +179,6 @@ export function VariantGroupListRow({
           ))}
         </div>
       )}
-    </>
+    </div>
   );
 }

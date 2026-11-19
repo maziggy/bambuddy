@@ -11,7 +11,7 @@ import { server } from '../mocks/server';
 import { FileManagerPage } from '../../pages/FileManagerPage';
 import { setAuthToken } from '../../api/client';
 import type { LibraryFileListItem } from '../../api/client';
-import { planBulkPrint, promotePartialGroups, bulkPrintJobCount, draggedMemberIds } from '../../pages/fileManager/variantSelection';
+import { planBulkPrint, promotePartialGroups, draggedMemberIds, selectableMembers, groupSelection } from '../../pages/fileManager/variantSelection';
 import { groupLibraryRows, type GroupRow } from '../../pages/fileManager/variantGroups';
 import { isValidFilesMove } from '../../utils/libraryFolders';
 
@@ -113,7 +113,7 @@ describe('selecting a version group', () => {
     await user.click(screen.getByText('plain.gcode.3mf').closest('[data-file-id]') as HTMLElement);
     expect(await screen.findByText('3 selected')).toBeInTheDocument();
 
-    await user.click(await toolbarPrint('Print (2 jobs)'));
+    await user.click(await toolbarPrint('Print (1 group + 1 file)'));
     // The group first.
     expect(await screen.findByText(/vase_X1C\.gcode\.3mf \+1 more/)).toBeInTheDocument();
     const dialogPrint = () => screen.getAllByRole('button', { name: /^Print$/ }).at(-1) as HTMLElement;
@@ -195,7 +195,8 @@ describe('print plan', () => {
     expect(plan.fullGroups).toEqual([g]);
     expect(plan.partialGroups).toEqual([]);
     expect(plan.looseFiles.map((f) => f.id)).toEqual([9]);
-    expect(bulkPrintJobCount(plan)).toBe(2);
+    expect(plan.fullGroups).toHaveLength(1);
+    expect(plan.looseFiles).toHaveLength(1);
   });
 
   it('reports a partly selected group and can promote it', () => {
@@ -207,15 +208,30 @@ describe('print plan', () => {
     const promoted = promotePartialGroups(plan);
     expect(promoted.fullGroups).toEqual([g]);
     expect(promoted.looseFiles).toEqual([]);
-    expect(bulkPrintJobCount(promoted)).toBe(1);
+    expect(promoted.fullGroups).toHaveLength(1);
   });
 
-  it('counts two groups as two jobs', () => {
+  it('makes one job of each fully selected group', () => {
     const a = group([1, 2], 7);
     const b = group([3, 4], 8);
     const plan = planBulkPrint([1, 2, 3, 4], [a, b, a], byId([a, b]));
     expect(plan.fullGroups.map((g) => g.id)).toEqual([7, 8]);
-    expect(bulkPrintJobCount(plan)).toBe(2);
+    expect(plan.looseFiles).toEqual([]);
+  });
+
+  it('counts a group as fully selected when its versions in this folder are', () => {
+    const files = [
+      item(1, 'a.gcode.3mf', { variant_group_id: 7, variant_position: 0 }),
+      item(2, 'b.gcode.3mf', { variant_group_id: 7, variant_position: 1 }),
+      item(3, 'c.gcode.3mf', { variant_group_id: 7, variant_position: 2, variant_elsewhere: true, folder_id: 9 }),
+    ] as unknown as LibraryFileListItem[];
+    const [g] = groupLibraryRows(files, { query: '', filterType: 'all', filterUsername: '' }, { sortField: 'name', sortDirection: 'asc' });
+    if (g.kind !== 'group') throw new Error('group expected');
+    expect(selectableMembers(g).map((m) => m.id)).toEqual([1, 2]);
+    expect(groupSelection(g, [1])).toEqual({ count: 1, total: 2 });
+    const plan = planBulkPrint([1, 2], [g], new Map(files.map((f) => [f.id, f])));
+    expect(plan.fullGroups).toEqual([g]);
+    expect(plan.partialGroups).toEqual([]);
   });
 
   it('ignores groups with nothing selected', () => {
@@ -302,5 +318,257 @@ describe('deleting a selected group', () => {
     const toolbar = screen.getByText('3 selected').closest('div')!.parentElement as HTMLElement;
     await user.click(within(toolbar).getByRole('button', { name: /^Delete$/ }));
     expect(await screen.findByText('Delete 3 Files')).toBeInTheDocument();
+  });
+});
+
+
+// A page with a group of two (21, 22), a group of two more (41, 42), a version
+// of the first group in another folder, and a plain file.
+const twoGroups = (extraForSecond: Item[] = []) => [
+  member(21, 'X1C', 0),
+  member(22, 'P1S', 1),
+  member(23, 'A1', 2, { variant_elsewhere: true, folder_id: 9, folder_name: 'Archive' }),
+  ...[41, 42].map((id, i) =>
+    item(id, `cup_${id}.gcode.3mf`, {
+      variant_group_id: 8,
+      variant_count: 2,
+      variant_group_name: 'Cup',
+      variant_position: i,
+      sliced_for_model: i ? 'P1S' : 'X1C',
+    }),
+  ),
+  ...extraForSecond,
+  item(30, 'plain.stl', { file_type: 'stl' }),
+];
+const cupMember = (id: number, position: number) =>
+  item(id, `cup_${id}.gcode.3mf`, {
+    variant_group_id: 8,
+    variant_count: 3,
+    variant_group_name: 'Cup',
+    variant_position: position,
+    sliced_for_model: 'A1',
+  });
+const cards = () => screen.getAllByTestId('variant-group-card');
+// Cards are sorted by name: Cup before Vase.
+const cardNamed = (name: string) => cards().find((c) => within(c).queryByText(name)) as HTMLElement;
+const toolbarOf = () => screen.getByText(/ selected$/).closest('div')!.parentElement as HTMLElement;
+
+describe('selection stays in this folder', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('the card tick leaves a version of another folder out, and Delete never sends it', async () => {
+    serve(twoGroups());
+    let body: { file_ids: number[] } | null = null;
+    server.use(
+      http.post('/api/v1/library/bulk-delete', async ({ request }) => {
+        body = (await request.json()) as { file_ids: number[] };
+        return HttpResponse.json({ deleted_files: 2, deleted_folders: 0 });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<FileManagerPage />);
+    await screen.findAllByTestId('variant-group-card');
+    await user.click(within(cardNamed('Vase')).getByText('Vase'));
+    expect(await screen.findByText('2 selected')).toBeInTheDocument();
+    expect(within(cardNamed('Vase')).getByRole('checkbox')).toHaveAttribute('aria-checked', 'true');
+
+    await user.click(within(toolbarOf()).getByRole('button', { name: /^Delete$/ }));
+    expect(await screen.findByText('Delete 2 Files')).toBeInTheDocument();
+    await user.click(screen.getAllByRole('button', { name: 'Delete' }).at(-1)!);
+    await waitFor(() => expect(body).toEqual({ file_ids: [21, 22], folder_ids: [] }));
+  });
+
+  it('Move sends only the versions in this folder, like a drag does', async () => {
+    serve(twoGroups());
+    let body: { file_ids: number[]; folder_id: number | null } | null = null;
+    server.use(
+      http.post('/api/v1/library/files/move', async ({ request }) => {
+        body = (await request.json()) as typeof body;
+        return HttpResponse.json({ status: 'ok', moved: 2 });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<FileManagerPage />);
+    await screen.findAllByTestId('variant-group-card');
+    await user.click(within(cardNamed('Vase')).getByText('Vase'));
+    await screen.findByText('2 selected');
+    await user.click(within(toolbarOf()).getByRole('button', { name: /^Move$/ }));
+    const modal = (await screen.findByText('Move 2 File(s)')).closest('div')!.parentElement as HTMLElement;
+    await user.click(within(modal).getByRole('button', { name: 'Vases' }));
+    await user.click(within(modal).getByRole('button', { name: /^Move$/ }));
+    await waitFor(() => expect(body).toEqual({ file_ids: [21, 22], folder_id: 1 }));
+  });
+
+  it('Select all ticks this folder\'s files only, never a version listed from elsewhere', async () => {
+    serve(twoGroups());
+    const user = userEvent.setup();
+    render(<FileManagerPage />);
+    await screen.findAllByTestId('variant-group-card');
+    await user.click(screen.getByRole('button', { name: /Select all/i }));
+    // 21, 22, 41, 42 and the plain file; not 23.
+    expect(await screen.findByText('5 selected')).toBeInTheDocument();
+    expect(within(cardNamed('Vase')).getByRole('checkbox')).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('Select all leaves out versions a search hides', async () => {
+    serve(twoGroups());
+    const user = userEvent.setup();
+    render(<FileManagerPage />);
+    await screen.findAllByTestId('variant-group-card');
+    await user.type(screen.getByPlaceholderText(/search/i), 'x1c');
+    await waitFor(() => expect(screen.queryByText('plain.stl')).not.toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: /Select all/i }));
+    // vase_X1C and cup_41 (its model is X1C but its name has no "x1c": not it).
+    expect(await screen.findByText('1 selected')).toBeInTheDocument();
+    expect(within(screen.getByTestId('variant-group-card')).getByRole('checkbox')).toHaveAttribute('aria-checked', 'mixed');
+  });
+
+  it('drops a tick from a version that turns out to be elsewhere', async () => {
+    serve(twoGroups());
+    const user = userEvent.setup();
+    render(<FileManagerPage />);
+    await screen.findAllByTestId('variant-group-card');
+    await user.click(within(cardNamed('Vase')).getByText('Vase'));
+    await screen.findByText('2 selected');
+    // A filter then leaves 22 out of the listing: it is only listed as elsewhere.
+    serve([member(21, 'X1C', 0), member(22, 'P1S', 1, { variant_elsewhere: true, folder_id: 1, folder_name: 'Vases' })]);
+    window.dispatchEvent(new Event('visibilitychange'));
+    await waitFor(() => expect(screen.getByText('1 selected')).toBeInTheDocument());
+  });
+});
+
+describe('printing a selection with groups', () => {
+  beforeEach(() => localStorage.clear());
+
+  const selectBothGroups = async (user: ReturnType<typeof userEvent.setup>) => {
+    await screen.findAllByTestId('variant-group-card');
+    await user.click(within(cardNamed('Vase')).getByText('Vase'));
+    await user.click(within(cardNamed('Cup')).getByText('Cup'));
+    await screen.findByText('4 selected');
+  };
+
+  it('posts one queue item with every version as an alternative', async () => {
+    const posted: Array<Record<string, unknown>> = [];
+    serve([member(21, 'X1C', 0), member(22, 'P1S', 1)]);
+    server.use(
+      http.get('/api/v1/library/variant-groups/7', () =>
+        HttpResponse.json({
+          id: 7,
+          name: 'Vase',
+          members: [
+            { library_file_id: 21, filename: 'vase_X1C.gcode.3mf', target_model: 'X1C', position: 0 },
+            { library_file_id: 22, filename: 'vase_P1S.gcode.3mf', target_model: 'P1S', position: 1 },
+          ],
+        }),
+      ),
+      http.post('/api/v1/queue/', async ({ request }) => {
+        posted.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({ id: 1, status: 'pending' });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<FileManagerPage />);
+    const card = await screen.findByTestId('variant-group-card');
+    await user.click(within(card).getByText('Vase'));
+    await user.click(await toolbarPrint(/^Print$/));
+    await screen.findByText(/vase_X1C\.gcode\.3mf \+1 more/);
+    const dialogPrint = () => screen.getAllByRole('button', { name: /^Print$/ }).at(-1) as HTMLElement;
+    await waitFor(() => expect(dialogPrint()).toBeEnabled());
+    await user.click(dialogPrint());
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0].variants).toEqual([
+      { library_file_id: 21, plate_id: null },
+      { library_file_id: 22, plate_id: null },
+    ]);
+    expect(posted[0].library_file_id).toBeUndefined();
+  });
+
+  it('keeps a full group one job when only the selection is printed', async () => {
+    serve(twoGroups());
+    const user = userEvent.setup();
+    render(<FileManagerPage />);
+    await selectBothGroups(user);
+    // The second group gains a third version: partly selected now.
+    serve(twoGroups([cupMember(43, 2)]).map((f) => (f.id === 41 || f.id === 42 ? { ...f, variant_count: 3 } : f)));
+    window.dispatchEvent(new Event('visibilitychange'));
+    await waitFor(() => expect(within(cardNamed('Cup')).getByText('3 versions')).toBeInTheDocument());
+
+    await user.click(await toolbarPrint('Print (1 group + 2 files)'));
+    await user.click(await screen.findByRole('button', { name: 'Print selection only' }));
+    // The Vase group is one job (two files), not four files in one dialog.
+    expect(await screen.findByText(/vase_X1C\.gcode\.3mf \+2 more/)).toBeInTheDocument();
+    expect(screen.queryByText(/\+3 more/)).not.toBeInTheDocument();
+  });
+
+  it('prints a lone selected version on its own, without the rest of its group', async () => {
+    serve([member(21, 'X1C', 0), member(22, 'P1S', 1)]);
+    const user = userEvent.setup();
+    render(<FileManagerPage />);
+    const card = await screen.findByTestId('variant-group-card');
+    await user.click(within(card).getByText('Vase'));
+    await screen.findByText('2 selected');
+    // 22 vanishes from the listing and 23 turns up: only 21 of the two is selected.
+    serve([member(21, 'X1C', 0), member(23, 'A1', 1)]);
+    server.use(
+      http.get('/api/v1/library/variant-groups/7', () =>
+        HttpResponse.json({
+          id: 7,
+          name: 'Vase',
+          members: [21, 23].map((id, i) => ({ library_file_id: id, filename: `v${id}.gcode.3mf`, target_model: 'X1C', position: i })),
+        }),
+      ),
+    );
+    window.dispatchEvent(new Event('visibilitychange'));
+    await waitFor(() => expect(within(screen.getByTestId('variant-group-card')).getByRole('checkbox')).toHaveAttribute('aria-checked', 'mixed'));
+    await user.click(await toolbarPrint('Print'));
+    await user.click(await screen.findByRole('button', { name: 'Print selection only' }));
+    expect(await screen.findByText('vase_X1C.gcode.3mf')).toBeInTheDocument();
+    expect(screen.queryByText(/\+1 more/)).not.toBeInTheDocument();
+  });
+
+  it('stops the run when the first dialog is cancelled: nothing queued, no second dialog', async () => {
+    const posted: unknown[] = [];
+    serve(twoGroups());
+    server.use(
+      http.post('/api/v1/queue/', async ({ request }) => {
+        posted.push(await request.json());
+        return HttpResponse.json({ id: 1, status: 'pending' });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<FileManagerPage />);
+    await selectBothGroups(user);
+    await user.click(await toolbarPrint('Print (2 jobs)'));
+    expect(await screen.findByText(/vase_X1C\.gcode\.3mf \+2 more/)).toBeInTheDocument();
+    await user.click(screen.getAllByRole('button', { name: 'Cancel' }).at(-1)!);
+
+    await waitFor(() => expect(screen.queryByText(/\+2 more/)).not.toBeInTheDocument());
+    // The run is over: the second group does not open on its own, and the
+    // selection is as it was.
+    await new Promise((r) => setTimeout(r, 200));
+    expect(screen.queryByText(/cup_41\.gcode\.3mf \+1 more/)).not.toBeInTheDocument();
+    expect(posted).toEqual([]);
+    expect(screen.getByText('4 selected')).toBeInTheDocument();
+  });
+
+  it('opens the next group after the first is queued, with a full and a partial group in one selection', async () => {
+    const posted: unknown[] = [];
+    serve(twoGroups());
+    server.use(
+      http.post('/api/v1/queue/', async ({ request }) => {
+        posted.push(await request.json());
+        return HttpResponse.json({ id: posted.length, status: 'pending' });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<FileManagerPage />);
+    await selectBothGroups(user);
+    await user.click(await toolbarPrint('Print (2 jobs)'));
+    await screen.findByText(/vase_X1C\.gcode\.3mf \+2 more/);
+    const dialogPrint = () => screen.getAllByRole('button', { name: /^Print$/ }).at(-1) as HTMLElement;
+    await waitFor(() => expect(dialogPrint()).toBeEnabled());
+    await user.click(dialogPrint());
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(await screen.findByText(/cup_41\.gcode\.3mf \+1 more/)).toBeInTheDocument();
   });
 });

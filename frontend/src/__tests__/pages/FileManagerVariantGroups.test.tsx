@@ -160,17 +160,49 @@ describe('version groups in the File Manager', () => {
       expect(screen.queryByText(/selected$/)).not.toBeInTheDocument();
     });
 
-    it('selects every visible version with the card and clears them with a second click', async () => {
+    it('selects the versions in this folder with the card and clears them with a second click', async () => {
       const user = userEvent.setup();
       render(<FileManagerPage />);
       await screen.findByText('plain.stl');
 
       await user.click(within(card()).getByText('Vase'));
-      expect(await screen.findByText('3 selected')).toBeInTheDocument();
+      expect(await screen.findByText('2 selected')).toBeInTheDocument();
       expect(within(card()).getByRole('checkbox')).toHaveAttribute('aria-checked', 'true');
 
       await user.click(within(card()).getByText('Vase'));
-      await waitFor(() => expect(screen.queryByText('3 selected')).not.toBeInTheDocument());
+      await waitFor(() => expect(screen.queryByText('2 selected')).not.toBeInTheDocument());
+    });
+
+    it('keeps the selection when a card menu entry is chosen', async () => {
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+      await screen.findByText('plain.stl');
+      expect(screen.queryByText(/selected$/)).not.toBeInTheDocument();
+
+      await user.click(within(card()).getByRole('button', { name: 'Actions for version group Vase' }));
+      await user.click(await screen.findByRole('button', { name: 'Ungroup' }));
+      expect(await screen.findByText('Ungroup versions')).toBeInTheDocument();
+      expect(screen.queryByText(/selected$/)).not.toBeInTheDocument();
+      expect(within(card()).getByRole('checkbox')).toHaveAttribute('aria-checked', 'false');
+    });
+
+    it('says in the delete confirm how many versions sit in other folders', async () => {
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+      await screen.findByText('plain.stl');
+      await user.click(within(card()).getByRole('button', { name: 'Actions for version group Vase' }));
+      await user.click(await screen.findByRole('button', { name: 'Delete all versions' }));
+      expect(await screen.findByText(/all 3 versions of "Vase"\. 1 of them is in another folder\./)).toBeInTheDocument();
+    });
+
+    it('opens a card over two columns without stretching the cards beside it', async () => {
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+      await screen.findByText('plain.stl');
+      expect(card().className).not.toContain('col-span-2');
+      await user.click(within(card()).getByRole('button', { name: 'Show versions' }));
+      expect(card().className).toContain('col-span-2');
+      expect(card().parentElement!.className).toContain('items-start');
     });
 
     it('leaves an ungrouped file as it was', async () => {
@@ -219,10 +251,36 @@ describe('version groups in the File Manager', () => {
       expect(gridOf(groupRow)).toBe(gridOf(fileRow));
     });
 
+    it('colours the type badge like a plain row when every version has one type', async () => {
+      await openList();
+      const row = screen.getByTestId('variant-group-list-row');
+      const badge = within(row).getByText('GCODE.3MF');
+      expect(badge.className).toContain('text-blue-700');
+    });
+
+    it('shows the Mixed badge in grey when the versions differ in type', async () => {
+      serve([vase(21, 'X1C', 0), vase(22, 'P1S', 1, { file_type: 'gcode' })]);
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+      await screen.findByTestId('variant-group-card');
+      await user.click(screen.getByTitle('List view'));
+      const badge = within(await screen.findByTestId('variant-group-list-row')).getByText('Mixed');
+      expect(badge.className).toContain('text-bambu-gray');
+    });
+
+    it('wraps the open panel and the row in one block, so both are as wide as the row', async () => {
+      const user = await openList();
+      const row = screen.getByTestId('variant-group-list-row');
+      await user.click(within(row).getByRole('button', { name: /Show versions/ }));
+      const panel = screen.getByRole('group', { name: 'Versions' });
+      expect(panel.parentElement).toBe(row.parentElement);
+      expect(row.parentElement!.className).toContain('min-w-min');
+    });
+
     it('selects all versions from the row', async () => {
       const user = await openList();
       await user.click(within(screen.getByTestId('variant-group-list-row')).getByText('Vase'));
-      expect(await screen.findByText('3 selected')).toBeInTheDocument();
+      expect(await screen.findByText('2 selected')).toBeInTheDocument();
     });
   });
 
@@ -253,7 +311,51 @@ describe('version groups in the File Manager', () => {
       // Rows in order: plain.stl, solo, Vase (group). ArrowRight focuses the first.
       await user.keyboard('{ArrowRight}{ArrowDown}{ArrowDown}');
       await user.keyboard(' ');
-      expect(await screen.findByText('3 selected')).toBeInTheDocument();
+      expect(await screen.findByText('2 selected')).toBeInTheDocument();
+    });
+  });
+
+  describe('columns view keyboard', () => {
+    async function focusGroupRow() {
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+      await screen.findByText('plain.stl');
+      await user.click(screen.getByTitle('Column view'));
+      const pane = await screen.findByTestId('columns-view');
+      pane.focus();
+      // Rows in order: plain.stl, solo, Vase (group). ArrowRight focuses the first.
+      await user.keyboard('{ArrowRight}{ArrowDown}{ArrowDown}');
+      return user;
+    }
+
+    it('opens and closes the versions of the focused group with the arrow keys and Enter', async () => {
+      const user = await focusGroupRow();
+      expect(screen.queryByTestId('variant-detail-pane')).not.toBeInTheDocument();
+      await user.keyboard('{ArrowRight}');
+      expect(await screen.findByTestId('variant-detail-pane')).toBeInTheDocument();
+      await user.keyboard('{ArrowLeft}');
+      await waitFor(() => expect(screen.queryByTestId('variant-detail-pane')).not.toBeInTheDocument());
+      await user.keyboard('{Enter}');
+      expect(await screen.findByTestId('variant-detail-pane')).toBeInTheDocument();
+      await user.keyboard('{Enter}');
+      await waitFor(() => expect(screen.queryByTestId('variant-detail-pane')).not.toBeInTheDocument());
+    });
+
+    it('leaves Enter and Space on a version\'s kebab and in its menu to the line', async () => {
+      const user = await focusGroupRow();
+      await user.keyboard('{ArrowRight}');
+      const pane = await screen.findByTestId('variant-detail-pane');
+      const line = within(pane).getAllByTestId('variant-member-line')[0];
+      const kebab = within(line).getByRole('button', { name: /Actions for/ });
+      kebab.focus();
+      await user.keyboard('{Enter}');
+      const download = await within(line).findByRole('button', { name: 'Download' });
+      // Enter on the kebab opened the menu; it did not toggle the group.
+      expect(screen.getByTestId('variant-detail-pane')).toBeInTheDocument();
+      download.focus();
+      await user.keyboard('{Enter}');
+      expect(screen.getByTestId('variant-detail-pane')).toBeInTheDocument();
+      expect(screen.queryByText(/selected$/)).not.toBeInTheDocument();
     });
   });
 
@@ -331,6 +433,11 @@ describe('version groups in the File Manager', () => {
       for (const name of ['Rename', 'Remove from group', 'Delete']) {
         expect(await screen.findByRole('button', { name })).toBeDisabled();
       }
+      // The reason says what is missing for this action, not for renaming.
+      expect(screen.getByRole('button', { name: 'Remove from group' })).toHaveAttribute(
+        'title',
+        'You need permission to edit this version to remove it from its group',
+      );
       // Reading and printing stay available.
       expect(screen.getByRole('button', { name: 'Download' })).toBeEnabled();
       expect(screen.getByRole('button', { name: 'Print this version only' })).toBeEnabled();
@@ -480,6 +587,37 @@ describe('version groups in the File Manager', () => {
       expect(within(c).getByText('in NAS (read-only)')).toBeInTheDocument();
     });
 
+    it('offers Preview in a version\'s menu', async () => {
+      serve([vase(21, 'X1C', 0), vase(22, 'P1S', 1)]);
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+      const c = await screen.findByTestId('variant-group-card');
+      await user.click(within(c).getByRole('button', { name: 'Show versions' }));
+      await user.click(within(within(c).getAllByTestId('variant-member-line')[0]).getByRole('button', { name: /Actions for/ }));
+      expect(await screen.findByRole('button', { name: '3D Preview' })).toBeEnabled();
+    });
+
+    it('disables Preview in a version\'s menu without read permission', async () => {
+      mockAuthUser(['library:read_own']);
+      serve([vase(21, 'X1C', 0), vase(22, 'P1S', 1)]);
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+      const c = await screen.findByTestId('variant-group-card');
+      await user.click(within(c).getByRole('button', { name: 'Show versions' }));
+      await user.click(within(within(c).getAllByTestId('variant-member-line')[0]).getByRole('button', { name: /Actions for/ }));
+      expect(await screen.findByRole('button', { name: '3D Preview' })).toBeDisabled();
+    });
+
+    it('does not call a version in a named folder "in the library root", whatever the filter', async () => {
+      serve([vase(21, 'X1C', 0), vase(22, 'P1S', 1, { variant_elsewhere: true, folder_id: 4, folder_name: null })]);
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+      const c = await screen.findByTestId('variant-group-card');
+      await user.click(within(c).getByRole('button', { name: 'Show versions' }));
+      expect(within(c).getByText('in another folder')).toBeInTheDocument();
+      expect(within(c).queryByText('in the library root')).not.toBeInTheDocument();
+    });
+
     it('says "in the library root" for an elsewhere version that is in no folder', async () => {
       serve([vase(21, 'X1C', 0, { folder_id: 3 }), vase(22, 'P1S', 1, { variant_elsewhere: true })]);
       const user = userEvent.setup();
@@ -501,13 +639,34 @@ describe('version groups in the File Manager', () => {
   });
 });
 
+describe('VariantSelectionBox keyboard', () => {
+  it('is a button that Space and Enter toggle, without reaching the row behind it', async () => {
+    const onToggle = vi.fn();
+    const onRow = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <div onClick={onRow}>
+        <VariantSelectionBox selectedCount={0} total={2} label="Pick" onToggle={onToggle} />
+      </div>,
+    );
+    const box = screen.getByRole('checkbox', { name: 'Pick' });
+    expect(box.tagName).toBe('BUTTON');
+    box.focus();
+    await user.keyboard(' ');
+    await user.keyboard('{Enter}');
+    await user.click(box);
+    expect(onToggle).toHaveBeenCalledTimes(3);
+    expect(onRow).not.toHaveBeenCalled();
+  });
+});
+
 describe('VariantSelectionBox', () => {
   it.each([
     [0, false],
     [1, 'mixed'],
     [3, true],
   ] as const)('reports %i of 3 selected as aria-checked=%s', (count, expected) => {
-    render(<VariantSelectionBox selectedCount={count} total={3} label="Pick" />);
+    render(<VariantSelectionBox selectedCount={count} total={3} label="Pick" onToggle={() => {}} />);
     const box = screen.getByRole('checkbox', { name: 'Pick' });
     expect(box.getAttribute('aria-checked')).toBe(String(expected));
   });

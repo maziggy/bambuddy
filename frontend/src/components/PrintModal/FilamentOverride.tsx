@@ -21,6 +21,10 @@ export interface FilamentOverrideEntry {
   /** Picked from the inventory list; UI state only, never sent. An idx-less pick
    *  must not get a stored variant re-attached on save (#3590). */
   fromInventory?: boolean;
+  /** The colour name saved with the override: the inventory entry's own name
+   *  for an inventory pick, or what a stored override came with. Without one
+   *  the dialog names the colour from its hex on save (#3590). */
+  colorName?: string;
 }
 
 /** "350 g" below a kilogram, else "1.4 kg", in the UI language's number format (#3590). */
@@ -32,6 +36,11 @@ function formatStockWeight(grams: number, fmt: Intl.NumberFormat): string {
  *  for an entry without a variant, so it never equals a loaded row's `TYPE|COLOR`. */
 const inventoryValue = (f: { type: string; color: string; tray_info_idx?: string }) =>
   `${f.type}|${f.color}|${f.tray_info_idx ?? ''}`;
+
+/** The inventory entry's own colour name, when it has a readable one: what its
+ *  picker row then shows, and what the override is saved with (#3590). A Bambu
+ *  colour code or no name leaves the naming to the hex, as before. */
+const ownColorName = (f: InventoryFilament): string | null => resolveSpoolColorName(f.color_name, null);
 
 interface FilamentOverrideProps {
   filamentReqs: FilamentReqsData | undefined;
@@ -142,6 +151,7 @@ export function FilamentOverride({
     } else {
       // Parse "TYPE|COLOR[|IDX]" value; the idx part is optional (older values have none).
       const [type, color, idx] = value.split('|');
+      const colorName = inventoryEntry ? ownColorName(inventoryEntry) : null;
       onChange({
         ...overrides,
         [slotId]: {
@@ -149,6 +159,7 @@ export function FilamentOverride({
           color,
           ...(idx ? { tray_info_idx: idx } : {}),
           ...(inventoryEntry ? { fromInventory: true } : {}),
+          ...(colorName ? { colorName } : {}),
         },
       });
       // Stock is about a colour, so an inventory pick forces it by default; the box can be unticked (#3590).
@@ -266,7 +277,7 @@ export function FilamentOverride({
               if (!selectedInventory) {
                 syntheticRow = {
                   value: pickerValue,
-                  label: `${override.type} (${getColorName(override.color)})`,
+                  label: `${override.type} (${override.colorName || getColorName(override.color)})`,
                   rgba: override.color.replace('#', ''),
                 };
               }

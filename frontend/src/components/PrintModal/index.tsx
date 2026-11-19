@@ -352,8 +352,13 @@ export function PrintModal({
     if (mode === 'edit-queue-item' && queueItem?.filament_overrides) {
       const overrides: Record<number, FilamentOverrideEntry> = {};
       for (const o of queueItem.filament_overrides) {
-        // The variant id is kept so an inventory pick survives an edit (#3590).
-        overrides[o.slot_id] = { type: o.type, color: o.color, ...(o.tray_info_idx ? { tray_info_idx: o.tray_info_idx } : {}) };
+        // The variant id and the colour name are kept so an inventory pick survives an edit (#3590).
+        overrides[o.slot_id] = {
+          type: o.type,
+          color: o.color,
+          ...(o.tray_info_idx ? { tray_info_idx: o.tray_info_idx } : {}),
+          ...(o.color_name ? { colorName: o.color_name } : {}),
+        };
       }
       return overrides;
     }
@@ -1452,13 +1457,15 @@ export function PrintModal({
                 : storedVariantFor(req.slot_id, effectiveType, effectiveColor);
             // A slot left as sliced keeps its own preset; a swapped one only a stored matching one.
             const preset = variant.tray_info_idx ?? (userOverride ? undefined : req.tray_info_idx);
-            const colorName = getColorName(effectiveColor, productLineOf(preset, effectiveType, filamentNameByIdx));
+            // An inventory pick is saved under the entry's own colour name, a stored
+            // override under the one it came with; otherwise the hex is named (#3590).
+            const colorName = userOverride?.colorName || getColorName(effectiveColor, productLineOf(preset, effectiveType, filamentNameByIdx));
             entries.push({ slot_id: req.slot_id, type: effectiveType, color: effectiveColor, color_name: colorName, ...variant, force_color_match: isForceColor });
           }
         }
       } else {
         // Fallback: no filament requirements data — only include explicit user overrides
-        for (const [slotId, { type, color, tray_info_idx, fromInventory }] of Object.entries(filamentOverrides)) {
+        for (const [slotId, { type, color, tray_info_idx, fromInventory, colorName: ownName }] of Object.entries(filamentOverrides)) {
           const id = parseInt(slotId, 10);
           const isForceColor = forceColorMatch[id] ?? false;
           const variant = tray_info_idx
@@ -1466,7 +1473,7 @@ export function PrintModal({
             : fromInventory
               ? {}
               : storedVariantFor(id, type, color);
-          const colorName = getColorName(color, productLineOf(variant.tray_info_idx, type, filamentNameByIdx));
+          const colorName = ownName || getColorName(color, productLineOf(variant.tray_info_idx, type, filamentNameByIdx));
           entries.push({ slot_id: id, type, color, color_name: colorName, ...variant, force_color_match: isForceColor });
         }
       }

@@ -139,6 +139,73 @@ describe('PrintModal inventory override (#3590)', () => {
     ]);
   });
 
+  // An entry whose own name is not what the hex is called in the catalogue.
+  const EARTH_BROWN = { ...INVENTORY.filaments[0], color: '#7D6556', rgba: '7D6556FF', color_name: 'Earth Brown' };
+  const STORED_EARTH_BROWN = {
+    slot_id: 1,
+    type: 'PLA',
+    color: '#7D6556',
+    color_name: 'Earth Brown',
+    tray_info_idx: 'GFA05',
+    force_color_match: true,
+  };
+
+  it('saves an inventory pick under the colour name of its inventory entry', async () => {
+    mockBackend({ inventory: { inventory_available: true, filaments: [EARTH_BROWN] } });
+    const user = userEvent.setup();
+    renderEdit();
+    fireEvent.click(await screen.findByRole('combobox', { name: /filament override for/i }));
+    const option = await waitFor(() => {
+      const el = within(screen.getByRole('listbox'))
+        .getAllByRole('option')
+        .find((o) => o.getAttribute('data-value') === 'PLA|#7D6556|GFA05');
+      if (!el) throw new Error('inventory row missing');
+      return el;
+    });
+    expect(option.textContent).toContain('Matte PLA (Earth Brown)');
+    fireEvent.click(option);
+    await submit(user);
+
+    await waitFor(() => expect(patched).toHaveLength(1));
+    expect(patched[0].filament_overrides).toEqual([expect.objectContaining(STORED_EARTH_BROWN)]);
+    expect(patched[0].filament_overrides?.[0]).not.toHaveProperty('colorName');
+  });
+
+  it.each([
+    ['its inventory entry still there', [EARTH_BROWN]],
+    ['its inventory entry gone', []],
+  ])('keeps the stored colour name when the item is saved unchanged, with %s', async (_label, filaments) => {
+    mockBackend({ inventory: { inventory_available: true, filaments } });
+    const user = userEvent.setup();
+    renderEdit([STORED_EARTH_BROWN]);
+    const trigger = await screen.findByRole('combobox', { name: /filament override for/i });
+    await waitFor(() => expect(trigger.textContent).toContain('PLA (Earth Brown)'));
+    await submit(user);
+
+    await waitFor(() => expect(patched).toHaveLength(1));
+    expect(patched[0].filament_overrides).toEqual([expect.objectContaining(STORED_EARTH_BROWN)]);
+  });
+
+  it('a switch to a loaded row names the colour from its hex again', async () => {
+    mockBackend({ inventory: { inventory_available: true, filaments: [EARTH_BROWN] } });
+    const user = userEvent.setup();
+    renderEdit([STORED_EARTH_BROWN]);
+    const trigger = await screen.findByRole('combobox', { name: /filament override for/i });
+    await waitFor(() => expect(trigger.textContent).toContain('Earth Brown'));
+    fireEvent.click(trigger);
+    fireEvent.click(
+      within(screen.getByRole('listbox'))
+        .getAllByRole('option')
+        .find((o) => o.getAttribute('data-value') === 'PLA|#FF0000')!,
+    );
+    await submit(user);
+
+    await waitFor(() => expect(patched).toHaveLength(1));
+    const [entry] = patched[0].filament_overrides ?? [];
+    expect(entry).toMatchObject({ slot_id: 1, color: '#FF0000' });
+    expect(entry.color_name).not.toBe('Earth Brown');
+  });
+
   it('an explicit variant-less inventory pick does not get the stored variant back', async () => {
     mockBackend({
       inventory: {

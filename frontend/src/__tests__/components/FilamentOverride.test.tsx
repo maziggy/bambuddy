@@ -824,7 +824,7 @@ describe('FilamentOverride inventory group (#3590)', () => {
     const { onForce } = renderInv([inv()]);
     fireEvent.click(openPicker().find((r) => r.getAttribute('data-value') === 'PLA|#0000FF|GFA05')!);
     expect(mockOnChange).toHaveBeenCalledWith({
-      1: { type: 'PLA', color: '#0000FF', tray_info_idx: 'GFA05', fromInventory: true },
+      1: { type: 'PLA', color: '#0000FF', tray_info_idx: 'GFA05', fromInventory: true, colorName: 'Blue' },
     });
     expect(onForce).toHaveBeenCalledWith(1, true, true);
   });
@@ -832,7 +832,34 @@ describe('FilamentOverride inventory group (#3590)', () => {
   it('an inventory entry without a variant sends no idx', () => {
     renderInv([inv({ tray_info_idx: '' })]);
     fireEvent.click(openPicker().find((r) => r.getAttribute('data-value') === 'PLA|#0000FF|')!);
-    expect(mockOnChange).toHaveBeenCalledWith({ 1: { type: 'PLA', color: '#0000FF', fromInventory: true } });
+    expect(mockOnChange).toHaveBeenCalledWith({
+      1: { type: 'PLA', color: '#0000FF', fromInventory: true, colorName: 'Blue' },
+    });
+  });
+
+  it('an inventory pick carries the colour name its row showed, not a name for the hex', () => {
+    renderInv([inv({ color: '#7D6556', rgba: '7D6556FF', color_name: 'Earth Brown' })]);
+    const row = openPicker().find((r) => r.getAttribute('data-value') === 'PLA|#7D6556|GFA05')!;
+    expect(row.textContent).toContain('Matte PLA (Earth Brown)');
+    fireEvent.click(row);
+    expect(mockOnChange).toHaveBeenCalledWith({
+      1: { type: 'PLA', color: '#7D6556', tray_info_idx: 'GFA05', fromInventory: true, colorName: 'Earth Brown' },
+    });
+  });
+
+  it.each(['', 'A06-D0'])('an inventory entry without a readable colour name (%j) carries none', (color_name) => {
+    renderInv([inv({ color_name })]);
+    fireEvent.click(openPicker().find((r) => r.getAttribute('data-value') === 'PLA|#0000FF|GFA05')!);
+    expect(mockOnChange).toHaveBeenCalledWith({
+      1: { type: 'PLA', color: '#0000FF', tray_info_idx: 'GFA05', fromInventory: true },
+    });
+  });
+
+  it('names a vanished stored override by the colour name it was saved with', () => {
+    renderInv([], {
+      overrides: { 1: { type: 'PLA', color: '#7D6556', tray_info_idx: 'GFA05', colorName: 'Earth Brown' } },
+    });
+    expect(triggerText()).toContain('PLA (Earth Brown)');
   });
 
   it('picking a loaded row neither sets an idx nor touches force colour', () => {

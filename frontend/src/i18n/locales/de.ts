@@ -289,7 +289,7 @@ export default {
     addPreflight: {
       checking: 'Verbindung wird geprüft...',
       warning: 'Einige Verbindungsprüfungen sind fehlgeschlagen. Dieser Drucker wird möglicherweise als offline angezeigt. Prüfe die Punkte unten, behebe was möglich ist, oder speichere trotzdem.',
-      back: 'Zurück',
+      checkAgain: 'Erneut prüfen',
       saveAnyway: 'Trotzdem speichern',
     },
     title: 'Drucker',
@@ -300,6 +300,8 @@ export default {
     serialNumber: 'Seriennummer',
     ipAddress: 'IP-Adresse / Hostname',
     accessCode: 'Zugangscode',
+    showAccessCode: 'Zugangscode anzeigen',
+    hideAccessCode: 'Zugangscode verbergen',
     model: 'Modell',
     nozzleCount: 'Düsenanzahl',
     autoArchive: 'Automatische Archivierung',

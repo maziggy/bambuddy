@@ -2270,8 +2270,8 @@ export default {
     smartPlugs: 'Akıllı Prizler',
     spoolman: 'Spoolman',
     updates: 'Güncellemeler',
-    language: 'Dil',
-    languageDescription: 'Tercih ettiğiniz dili seçin',
+    language: 'Varsayılan dil',
+    languageDescription: 'SpoolBuddy ekranlarının dili. Herkes kendi arayüz dilini \'Hesap\' menüsünden seçebilir.',
     theme: 'Tema',
     themeLight: 'Açık',
     themeDark: 'Koyu',
@@ -7386,6 +7386,10 @@ export default {
   // The sidebar footer's menu for the signed-in user (#3602).
   accountMenu: {
     title: 'Hesap',
+  },
+  // Per-browser interface language in the user menu (#3623).
+  languageMenu: {
+    label: 'Dil',
   },
   // What a user enters in their slicer to send to virtual printers (#3602).
   connectSlicer: {

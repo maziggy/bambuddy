@@ -2287,8 +2287,8 @@ export default {
     smartPlugs: 'Slimme stekkers',
     spoolman: 'Spoolman',
     updates: 'Updates',
-    language: 'Taal',
-    languageDescription: 'Selecteer je voorkeurstaal',
+    language: 'Standaardtaal',
+    languageDescription: 'De taal van de SpoolBuddy-schermen. Iedereen kan zijn eigen interfacetaal kiezen in het menu \'Account\'.',
     theme: 'Thema',
     themeLight: 'Licht',
     themeDark: 'Donker',
@@ -7493,6 +7493,10 @@ export default {
   // The sidebar footer's menu for the signed-in user (#3602).
   accountMenu: {
     title: 'Account',
+  },
+  // Per-browser interface language in the user menu (#3623).
+  languageMenu: {
+    label: 'Taal',
   },
   // What a user enters in their slicer to send to virtual printers (#3602).
   connectSlicer: {

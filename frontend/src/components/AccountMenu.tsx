@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Key, MonitorSmartphone, UserRound } from 'lucide-react';
+import { LanguageSelect } from './LanguageSelect';
 
 const MENU_WIDTH = 220;
 
@@ -21,11 +22,14 @@ export function AccountMenu({ username, onChangePassword }: { username: string; 
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<{ left: number; bottom: number } | null>(null);
 
-  const close = () => setPosition(null);
+  const close = (restoreFocus = false) => {
+    setPosition(null);
+    if (restoreFocus) buttonRef.current?.focus();
+  };
 
   const toggle = () => {
     if (position) {
-      close();
+      close(true);
       return;
     }
     const rect = buttonRef.current?.getBoundingClientRect();
@@ -36,6 +40,12 @@ export function AccountMenu({ username, onChangePassword }: { username: string; 
     });
   };
 
+  // The dialog opens with the language select focused (#3623).
+  const isOpen = !!position;
+  useEffect(() => {
+    if (isOpen) menuRef.current?.querySelector('select')?.focus();
+  }, [isOpen]);
+
   useEffect(() => {
     if (!position) return;
     const onPointer = (event: MouseEvent) => {
@@ -43,7 +53,7 @@ export function AccountMenu({ username, onChangePassword }: { username: string; 
       if (!menuRef.current?.contains(target) && !buttonRef.current?.contains(target)) close();
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') close();
+      if (event.key === 'Escape') close(true);
     };
     document.addEventListener('mousedown', onPointer);
     document.addEventListener('keydown', onKey);
@@ -66,7 +76,7 @@ export function AccountMenu({ username, onChangePassword }: { username: string; 
         }`}
         title={t('accountMenu.title')}
         aria-label={t('accountMenu.title')}
-        aria-haspopup="menu"
+        aria-haspopup="dialog"
         aria-expanded={!!position}
       >
         <UserRound className="w-5 h-5" />
@@ -75,13 +85,15 @@ export function AccountMenu({ username, onChangePassword }: { username: string; 
         createPortal(
           <div
             ref={menuRef}
-            role="menu"
+            role="dialog"
+            aria-label={t('accountMenu.title')}
             style={{ position: 'fixed', left: position.left, bottom: position.bottom, width: MENU_WIDTH }}
             className="z-[1000] bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl overflow-hidden"
           >
             <div className="px-3 py-2 text-xs text-bambu-gray border-b border-bambu-dark-tertiary truncate">{username}</div>
+            {/* Per-browser interface language, no permission needed (#3623). */}
+            <LanguageSelect id="account-menu-language" className="px-3 py-2 border-b border-bambu-dark-tertiary" />
             <button
-              role="menuitem"
               className={item}
               onClick={() => {
                 close();
@@ -92,7 +104,6 @@ export function AccountMenu({ username, onChangePassword }: { username: string; 
               {t('changePassword.title')}
             </button>
             <button
-              role="menuitem"
               className={item}
               onClick={() => {
                 close();

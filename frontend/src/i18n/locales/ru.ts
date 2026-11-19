@@ -2171,8 +2171,8 @@ export default {
     smartPlugs: "Умные розетки",
     spoolman: "Spoolman",
     updates: "Обновления",
-    language: "Язык",
-    languageDescription: "Выберите предпочитаемый язык",
+    language: "Язык по умолчанию",
+    languageDescription: "Язык экранов SpoolBuddy. Каждый пользователь может выбрать свой язык интерфейса в меню «Учётная запись».",
     theme: "Тема",
     themeLight: "Светлая",
     themeDark: "Тёмная",
@@ -7123,6 +7123,10 @@ export default {
   // The sidebar footer's menu for the signed-in user (#3602).
   accountMenu: {
     title: "Учётная запись",
+  },
+  // Per-browser interface language in the user menu (#3623).
+  languageMenu: {
+    label: "Язык",
   },
   // What a user enters in their slicer to send to virtual printers (#3602).
   connectSlicer: {

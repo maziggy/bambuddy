@@ -2285,8 +2285,8 @@ export default {
     smartPlugs: "Розумні розетки",
     spoolman: "Spoolman",
     updates: "Оновлення",
-    language: "Мова",
-    languageDescription: "Виберіть бажану мову",
+    language: "Мова за замовчуванням",
+    languageDescription: "Мова екранів SpoolBuddy. Кожен користувач може обрати власну мову інтерфейсу в меню «Обліковий запис».",
     theme: "Тема",
     themeLight: "Світла",
     themeDark: "Темна",
@@ -7483,6 +7483,10 @@ export default {
   // The sidebar footer's menu for the signed-in user (#3602).
   accountMenu: {
     title: "Обліковий запис",
+  },
+  // Per-browser interface language in the user menu (#3623).
+  languageMenu: {
+    label: "Мова",
   },
   // What a user enters in their slicer to send to virtual printers (#3602).
   connectSlicer: {

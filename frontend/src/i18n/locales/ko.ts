@@ -2174,8 +2174,8 @@ export default {
     smartPlugs: '스마트 플러그',
     spoolman: 'Spoolman',
     updates: '업데이트',
-    language: '언어',
-    languageDescription: '선호하는 언어를 선택하세요',
+    language: '기본 언어',
+    languageDescription: 'SpoolBuddy 화면의 언어입니다. 인터페이스 언어는 각 사용자가 \'계정\' 메뉴에서 직접 선택할 수 있습니다.',
     theme: '테마',
     themeLight: '라이트',
     themeDark: '다크',
@@ -7136,6 +7136,10 @@ export default {
   // The sidebar footer's menu for the signed-in user (#3602).
   accountMenu: {
     title: '계정',
+  },
+  // Per-browser interface language in the user menu (#3623).
+  languageMenu: {
+    label: '언어',
   },
   // What a user enters in their slicer to send to virtual printers (#3602).
   connectSlicer: {

@@ -2230,8 +2230,8 @@ export default {
     smartPlugs: 'Prises connectées',
     spoolman: 'Spoolman',
     updates: 'Mises à jour',
-    language: 'Langue',
-    languageDescription: 'Choisissez votre langue',
+    language: 'Langue des écrans SpoolBuddy',
+    languageDescription: 'La langue des écrans SpoolBuddy. Chaque personne choisit sa propre langue d\'interface dans le menu « Compte » ou, sans connexion, avec le bouton globe.',
     theme: 'Thème',
     themeLight: 'Clair',
     themeDark: 'Sombre',
@@ -7445,6 +7445,10 @@ export default {
   // The sidebar footer's menu for the signed-in user (#3602).
   accountMenu: {
     title: 'Compte',
+  },
+  // Per-browser interface language in the user menu (#3623).
+  languageMenu: {
+    label: 'Langue',
   },
   // What a user enters in their slicer to send to virtual printers (#3602).
   connectSlicer: {

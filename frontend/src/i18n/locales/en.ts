@@ -2297,8 +2297,8 @@ export default {
     smartPlugs: 'Smart Plugs',
     spoolman: 'Spoolman',
     updates: 'Updates',
-    language: 'Language',
-    languageDescription: 'Select your preferred language',
+    language: 'SpoolBuddy display language',
+    languageDescription: 'The language of the SpoolBuddy displays. Each person chooses their own interface language in the account menu, or with the globe button when login is off.',
     theme: 'Theme',
     themeLight: 'Light',
     themeDark: 'Dark',
@@ -7510,6 +7510,10 @@ export default {
   // The sidebar footer's menu for the signed-in user (#3602).
   accountMenu: {
     title: 'Account',
+  },
+  // Per-browser interface language in the user menu (#3623).
+  languageMenu: {
+    label: 'Language',
   },
   // What a user enters in their slicer to send to virtual printers (#3602).
   connectSlicer: {

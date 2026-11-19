@@ -1674,6 +1674,12 @@ export interface AppSettings {
   // Finance budget reset window
   billing_enabled: boolean;
   printer_kill_switch_enabled: boolean;
+  // Charging policy (#3581): what a print's wallet charge is made of
+  billing_completed_energy: boolean;
+  billing_completed_wear: boolean;
+  billing_failed_filament: 'proportional' | 'full' | 'none';
+  billing_failed_energy: boolean;
+  billing_failed_wear: boolean;
   finance_budget_reset_day: number;
   finance_budget_reset_timezone: string;
   // Plate-clear confirmation

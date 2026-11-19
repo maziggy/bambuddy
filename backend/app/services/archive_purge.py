@@ -290,6 +290,12 @@ class ArchivePurgeService:
 
                     from backend.app.models.print_log import PrintLogEntry
 
+                    # A charge waiting on one of them for its energy is
+                    # written first (#3581).
+                    from backend.app.services.finance_billing import settle_pending_print_charges
+
+                    await settle_pending_print_charges(delete_db, PrintLogEntry.archive_id == archive_id)
+
                     # Its open run too: it has no archive left to end on.
                     await delete_db.execute(
                         sa_delete(PrintLogEntry)

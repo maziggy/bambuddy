@@ -224,6 +224,10 @@ _BOOL_SETTING_KEYS = frozenset(
         "confirm_default_good_on_plate_clear",
         "billing_enabled",
         "printer_kill_switch_enabled",
+        "billing_completed_energy",
+        "billing_completed_wear",
+        "billing_failed_energy",
+        "billing_failed_wear",
         "ldap_enabled",
         "ldap_auto_provision",
         "local_login_enabled",
@@ -249,7 +253,14 @@ _FLOAT_SETTING_KEYS = frozenset(
 # String settings limited to a fixed set of values, which a stored "None"
 # would break when the settings response is built.
 _ENUM_SETTING_KEYS = frozenset(
-    {"energy_price_source", "obico_sensitivity", "obico_action", "octoeverywhere_confidence", "octoeverywhere_action"}
+    {
+        "energy_price_source",
+        "obico_sensitivity",
+        "obico_action",
+        "octoeverywhere_confidence",
+        "octoeverywhere_action",
+        "billing_failed_filament",
+    }
 )
 
 _INT_SETTING_KEYS = frozenset(

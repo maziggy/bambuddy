@@ -116,13 +116,13 @@ describe('AccountMenu', () => {
     render(<AccountMenu username="student" onChangePassword={onChangePassword} />);
 
     await user.click(screen.getByRole('button', { name: 'Account' }));
-    expect(screen.getByRole('menu')).toHaveTextContent('student');
-    await user.click(screen.getByRole('menuitem', { name: 'Change Password' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('student');
+    await user.click(screen.getByRole('button', { name: 'Change Password' }));
     expect(onChangePassword).toHaveBeenCalledOnce();
-    expect(screen.queryByRole('menu')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
 
     await user.click(screen.getByRole('button', { name: 'Account' }));
-    await user.click(screen.getByRole('menuitem', { name: 'Connect slicer' }));
+    await user.click(screen.getByRole('button', { name: 'Connect slicer' }));
     expect(window.location.pathname).toBe('/connect-slicer');
   });
 
@@ -131,9 +131,11 @@ describe('AccountMenu', () => {
     render(<AccountMenu username="student" onChangePassword={() => {}} />);
 
     await user.click(screen.getByRole('button', { name: 'Account' }));
+    expect(screen.getByRole('combobox', { name: 'Language' })).toHaveFocus();
     await user.keyboard('{Escape}');
 
-    expect(screen.queryByRole('menu')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Account' })).toHaveFocus();
   });
 });
 

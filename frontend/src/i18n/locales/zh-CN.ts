@@ -2269,8 +2269,8 @@ export default {
     smartPlugs: '智能插座',
     spoolman: 'Spoolman',
     updates: '更新',
-    language: '语言',
-    languageDescription: '选择您的首选语言',
+    language: 'SpoolBuddy 显示屏语言',
+    languageDescription: 'SpoolBuddy 显示屏的语言。每个人可以在“账户”菜单中，或在未启用登录时通过地球图标按钮，选择自己的界面语言。',
     theme: '主题',
     themeLight: '浅色',
     themeDark: '深色',
@@ -7429,6 +7429,10 @@ export default {
   // The sidebar footer's menu for the signed-in user (#3602).
   accountMenu: {
     title: '账户',
+  },
+  // Per-browser interface language in the user menu (#3623).
+  languageMenu: {
+    label: '语言',
   },
   // What a user enters in their slicer to send to virtual printers (#3602).
   connectSlicer: {

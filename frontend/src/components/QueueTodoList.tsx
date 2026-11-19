@@ -168,6 +168,11 @@ function EntryRow({ group, entry, onNavigate, onStart, startPending }: {
                   />
                 )}
                 <span>{[f.type, f.color_name].filter(Boolean).join(' ')}</span>
+                {(f.nozzle === 0 || f.nozzle === 1) && (
+                  <span data-testid="todo-nozzle">
+                    ({t(f.nozzle === 1 ? 'printModal.leftNozzleTooltip' : 'printModal.rightNozzleTooltip')})
+                  </span>
+                )}
                 {f.no_stock && (
                   <span className="text-red-400">({t('queueTodo.noStock')})</span>
                 )}

@@ -578,6 +578,8 @@ class QueueTodoFilament(BaseModel):
     color: str = ""
     color_name: str = ""
     no_stock: bool = False
+    # The nozzle a dual-nozzle file wants it on: 0 right, 1 left, None when it names none.
+    nozzle: int | None = None
 
 
 class QueueTodoJob(BaseModel):

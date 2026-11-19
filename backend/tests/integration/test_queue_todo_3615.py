@@ -119,7 +119,24 @@ class TestTodoEntries:
         entry = _only_entries(body)[0]
         assert entry["kind"] == "load_filament"
         assert [j["id"] for j in entry["jobs"]] == [i.id for i in items]
-        assert entry["filaments"] == [{"type": "PLA", "color": "#FF0000", "color_name": "Red", "no_stock": False}]
+        assert entry["filaments"] == [
+            {"type": "PLA", "color": "#FF0000", "color_name": "Red", "no_stock": False, "nozzle": None}
+        ]
+
+    async def test_dual_nozzle_filaments_name_their_nozzle(self, async_client, printer_factory, make_item):
+        a = await printer_factory(name="A", model="H2D")
+        item = await make_item(a.id)
+        black = ("PETG", "#000000", "Black")
+        scheduler._filament_holds = {
+            item.id: [
+                FilamentHold(item.id, a.id, None, (TodoFilament(*black, nozzle=1), TodoFilament(*black, nozzle=0)))
+            ]
+        }
+        (entry,) = _only_entries((await async_client.get(URL)).json())
+        assert [(f["type"], f["color_name"], f["nozzle"]) for f in entry["filaments"]] == [
+            ("PETG", "Black", 0),
+            ("PETG", "Black", 1),
+        ]
 
     async def test_different_filaments_stay_separate(self, async_client, printer_factory, make_item):
         a = await printer_factory(name="A")

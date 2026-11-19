@@ -13,7 +13,13 @@ import pytest
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.services.bambu_mqtt import PrinterState
 from backend.app.services.print_scheduler import _UNMATCHED_HOLD_PREFIX, PrintScheduler, _todo_for_types
-from backend.app.services.queue_todo import FilamentHold, TodoFilament
+from backend.app.services.queue_todo import (
+    FilamentHold,
+    TodoFilament,
+    TodoJob,
+    build_todo,
+    todo_filament_from_requirement,
+)
 from backend.tests.unit.test_ams_mapping_per_printer_2799 import (
     P2S_5_TRAYS,
     _item,
@@ -66,6 +72,64 @@ class TestPinnedUnmatchedHold:
         await scheduler._block_on_unmatched_filament(AsyncMock(), item)
 
         assert scheduler.filament_holds_snapshot() == {}
+
+
+class TestNozzle:
+    """A dual-nozzle file names the nozzle each filament goes on; the record keeps it (#3615)."""
+
+    def test_the_requirement_s_nozzle_is_carried(self):
+        req = {"type": "petg", "color": "#000000", "nozzle_id": 1}
+        assert todo_filament_from_requirement(req) == TodoFilament("PETG", "#000000", "", nozzle=1)
+        assert todo_filament_from_requirement({**req, "nozzle_id": 0}).nozzle == 0
+        # Single-nozzle files name none, and anything else is no nozzle.
+        for other in ({}, {"nozzle_id": None}, {"nozzle_id": 2}, {"nozzle_id": "1"}, {"nozzle_id": True}):
+            assert todo_filament_from_requirement({"type": "PETG", **other}).nozzle is None
+
+    @pytest.mark.asyncio
+    async def test_the_same_filament_on_both_nozzles_is_two_distinct_filaments(self):
+        requirements = [
+            {"slot_id": 1, "type": "PETG", "color": "#000000", "nozzle_id": 0},
+            {"slot_id": 2, "type": "PETG", "color": "#000000", "nozzle_id": 1},
+        ]
+        scheduler = _scheduler(P2S_5_TRAYS, requirements)
+        scheduler._get_job_name = AsyncMock(return_value="body1")
+        scheduler._get_printer = AsyncMock(return_value=MagicMock(model="H2D"))
+        scheduler._pass_holds = {}
+        item = _item(ams_mapping=json.dumps([-1, -1]), target_model=None)
+
+        assert await scheduler._block_on_unmatched_filament(AsyncMock(), item) is True
+
+        (hold,) = scheduler._pass_holds[item.id]
+        assert hold.filaments == (
+            TodoFilament("PETG", "#000000", "", nozzle=0),
+            TodoFilament("PETG", "#000000", "", nozzle=1),
+        )
+        assert "PETG #000000 (right nozzle), PETG #000000 (left nozzle)" in item.waiting_reason
+
+    def test_the_list_keeps_nozzles_apart(self):
+        left = TodoFilament("PETG", "#000000", "", nozzle=1)
+        right = TodoFilament("PETG", "#000000", "", nozzle=0)
+        jobs = [TodoJob(i, f"J{i}", frozenset({8}), 8, None, None, False) for i in (1, 2, 3)]
+        holds = {
+            1: [FilamentHold(1, 8, None, (left, right))],
+            2: [FilamentHold(2, 8, None, (left,))],
+            3: [FilamentHold(3, 8, None, (left,))],
+        }
+
+        (group,) = build_todo(jobs, {8: "H2D"}, holds, [], {}, [])["groups"]
+
+        # Jobs 2 and 3 want the same nozzle and share an entry; job 1 wants both.
+        assert [
+            ([j["id"] for j in e["jobs"]], [(f["type"], f["nozzle"]) for f in e["filaments"]]) for e in group["entries"]
+        ] == [([1], [("PETG", 0), ("PETG", 1)]), ([2, 3], [("PETG", 1)])]
+
+    def test_a_filament_on_the_other_nozzle_is_another_entry(self):
+        jobs = [TodoJob(i, f"J{i}", frozenset({8}), 8, None, None, False) for i in (1, 2)]
+        holds = {
+            1: [FilamentHold(1, 8, None, (TodoFilament("PETG", "#000000", "", nozzle=0),))],
+            2: [FilamentHold(2, 8, None, (TodoFilament("PETG", "#000000", "", nozzle=1),))],
+        }
+        assert build_todo(jobs, {8: "H2D"}, holds, [], {}, [])["count"] == 2
 
 
 class TestMatcherHolds:

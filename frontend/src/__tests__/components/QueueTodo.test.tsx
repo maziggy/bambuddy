@@ -91,6 +91,27 @@ describe('QueueTodoList', () => {
     expect(screen.getAllByTestId('todo-swatch')).toHaveLength(2);
   });
 
+  it('names the nozzle of a dual-nozzle filament, and none otherwise', () => {
+    const black = { type: 'PETG', color: '#000000', color_name: 'Black', no_stock: false };
+    const dual: QueueTodo = {
+      count: 1,
+      groups: [{
+        printer_id: 1,
+        printer_name: 'H2D',
+        target_model: null,
+        entries: [{
+          kind: 'load_filament',
+          jobs: [{ id: 30, name: 'Dual', can_start: false }],
+          filaments: [{ ...black, nozzle: 0 }, { ...black, nozzle: 1 }, { ...black, nozzle: null }, black],
+          printers: [],
+          detail: null,
+        }],
+      }],
+    };
+    render(<QueueTodoList todo={dual} />);
+    expect(screen.getAllByTestId('todo-nozzle').map((n) => n.textContent)).toEqual(['(Right nozzle)', '(Left nozzle)']);
+  });
+
   it('renders nothing when empty', () => {
     const { container } = render(<QueueTodoList todo={{ count: 0, groups: [] }} />);
     expect(container.querySelector('[data-testid="queue-todo-list"]')).toBeNull();

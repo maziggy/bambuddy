@@ -196,6 +196,29 @@ class TestQueuePass:
         assert (await self._pass(queue_db, _sched(), (0, 0.0))).await_count == 0
 
     @pytest.mark.asyncio
+    async def test_a_second_filament_running_out_rewrites_the_reason_without_a_second_event(self, queue_db):
+        """Once per job: a reason that changes but named a shortage before does not fire again."""
+        petg = {"slot_id": 2, "type": "PETG", "color": "#0000FF", "color_name": "Blue", "force_color_match": True}
+        item_id = await _add_item(queue_db, filament_overrides=json.dumps([FORCED[0], petg]))
+        scheduler = _sched()
+
+        def stock(petg_spools: int) -> list[StockEntry]:
+            return [
+                StockEntry("PLA", "#8B5A2B", "", "", "", None, None, None, 0, 0.0, 1),
+                StockEntry("PETG", "#0000FF", "", "", "", None, None, None, petg_spools, petg_spools * 500.0, 0),
+            ]
+
+        notify = await self._pass(queue_db, scheduler, stock(1))
+        notify.assert_awaited_once()
+        assert notify.await_args.kwargs["filament"] == "PLA (Earth Brown)"
+        first = (await _get_item(queue_db, item_id)).waiting_reason
+        assert first.endswith(f"PETG (Blue), PLA (Earth Brown){_NO_STOCK_SUFFIX}")
+
+        assert (await self._pass(queue_db, scheduler, stock(0))).await_count == 0
+        second = (await _get_item(queue_db, item_id)).waiting_reason
+        assert second.endswith(f"PETG (Blue){_NO_STOCK_SUFFIX}, PLA (Earth Brown){_NO_STOCK_SUFFIX}")
+
+    @pytest.mark.asyncio
     async def test_no_event_with_stock_or_unknown(self, queue_db):
         item_id = await _add_item(queue_db, filament_overrides=json.dumps(FORCED))
         for stock in ((3, 500.0), None):

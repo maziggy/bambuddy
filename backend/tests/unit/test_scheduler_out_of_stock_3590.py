@@ -24,8 +24,11 @@ from backend.app.services.print_scheduler import (
     _NO_STOCK_SUFFIX,
     PrintScheduler,
     _forced_override_requirements,
+    _is_filament_wait,
     _is_unmatched_hold_reason,
 )
+from backend.tests.unit import test_scheduler_loaded_filament_first_3587 as filament_first
+from backend.tests.unit.test_scheduler_loaded_filament_first_3587 import ctx  # noqa: F401 - fixture
 from backend.tests.unit.test_scheduler_model_filament_short_3137 import (
     _add_item,
     _get_item,
@@ -608,3 +611,129 @@ class TestSettingOff:
             notify.assert_not_awaited()
             assert _NO_STOCK_SUFFIX not in (await _get_item(queue_db, item_id)).waiting_reason
         stock.assert_not_awaited()
+
+
+class TestWithLoadedFilamentFirst:
+    """Both suffixes on one reason (#3587): the stock hint on the filament, the priority at the very end."""
+
+    NO_MATCH = f"No matching material/color. Waiting on PLA (Earth Brown){_NO_STOCK_SUFFIX}"
+    PRIORITY = " \u00b7 has priority"
+
+    @staticmethod
+    def _priority_in(hours: int) -> str:
+        return f" \u00b7 priority in {hours} h"
+
+    async def _job(self, ctx, hours, age_hours=10):
+        await filament_first._mode(ctx, hours=hours)
+        await filament_first._set(ctx, "filament_override_inventory", "true")
+        return await filament_first._add_item(ctx, age_hours=age_hours, filament_overrides=json.dumps(FORCED))
+
+    async def _age(self, ctx, item_id, hours):
+        async with ctx.session_maker() as db:
+            await db.execute(
+                text("UPDATE print_queue SET created_at = :at WHERE id = :id"),
+                {"at": filament_first._naive_utc(hours), "id": item_id},
+            )
+            await db.commit()
+
+    async def _pass(self, ctx, scheduler, stock=(0, 0.0)):
+        """One queue pass; returns the "job waiting" and the "out of stock" mocks."""
+        waiting, out = AsyncMock(), AsyncMock()
+        await filament_first._run(
+            ctx,
+            scheduler,
+            waiting=waiting,
+            extra_patches=(
+                patch.object(scheduler, "_missing_force_color_pairs", _pairs()),
+                _entries(stock),
+                patch(NOTIFY, out),
+            ),
+        )
+        return waiting, out
+
+    async def _reason(self, ctx, item_id):
+        return (await filament_first._get(ctx, item_id)).waiting_reason
+
+    def test_a_reason_with_both_is_a_filament_wait(self):
+        assert _is_filament_wait(f"{self.NO_MATCH}{self._priority_in(5)}")
+        assert _is_filament_wait(
+            f"Waiting for filament: X1C-1 (needs PLA (Earth Brown){_NO_STOCK_SUFFIX}){self.PRIORITY}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_the_stock_hint_comes_before_the_priority_suffix(self, ctx):
+        item_id = await self._job(ctx, "48")
+        waiting, out = await self._pass(ctx, PrintScheduler())
+
+        assert await self._reason(ctx, item_id) == f"{self.NO_MATCH}{self._priority_in(38)}"
+        out.assert_awaited_once()
+        assert out.await_args.kwargs["filament"] == "PLA (Earth Brown)"
+        # With a limit the one "job waiting" notification is the priority moment.
+        waiting.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_a_countdown_change_sends_neither_event_again(self, ctx):
+        item_id = await self._job(ctx, "48")
+        scheduler = PrintScheduler()
+        _, out = await self._pass(ctx, scheduler)
+        assert out.await_count == 1
+
+        await self._age(ctx, item_id, 20)
+        waiting, out = await self._pass(ctx, scheduler)
+        assert await self._reason(ctx, item_id) == f"{self.NO_MATCH}{self._priority_in(28)}"
+        out.assert_not_awaited()
+        waiting.assert_not_awaited()
+
+        # Nor after a restart: both read the saved reason.
+        await self._age(ctx, item_id, 30)
+        waiting, out = await self._pass(ctx, PrintScheduler())
+        assert await self._reason(ctx, item_id) == f"{self.NO_MATCH}{self._priority_in(18)}"
+        out.assert_not_awaited()
+        waiting.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_priority_is_announced_once_on_a_reason_that_names_the_shortage(self, ctx):
+        item_id = await self._job(ctx, "48")
+        scheduler = PrintScheduler()
+        _, out = await self._pass(ctx, scheduler)
+        assert out.await_count == 1
+
+        await self._age(ctx, item_id, 49)
+        waiting, out = await self._pass(ctx, scheduler)
+        reason = await self._reason(ctx, item_id)
+        assert reason == f"{self.NO_MATCH}{self.PRIORITY}"
+        waiting.assert_awaited_once()
+        assert waiting.await_args.kwargs["waiting_reason"] == reason
+        out.assert_not_awaited()
+
+        for again in (scheduler, PrintScheduler()):
+            waiting, out = await self._pass(ctx, again)
+            waiting.assert_not_awaited()
+            out.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_stock_running_out_under_priority_sends_only_the_stock_event(self, ctx):
+        item_id = await self._job(ctx, "48", age_hours=49)
+        scheduler = PrintScheduler()
+        waiting, out = await self._pass(ctx, scheduler, stock=(1, 100.0))
+        assert (await self._reason(ctx, item_id)).endswith(f"PLA (Earth Brown){self.PRIORITY}")
+        waiting.assert_awaited_once()
+        out.assert_not_awaited()
+
+        waiting, out = await self._pass(ctx, scheduler)
+        assert await self._reason(ctx, item_id) == f"{self.NO_MATCH}{self.PRIORITY}"
+        waiting.assert_not_awaited()
+        out.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_without_a_limit_each_event_is_sent_once(self, ctx):
+        item_id = await self._job(ctx, "None")
+        scheduler = PrintScheduler()
+        waiting, out = await self._pass(ctx, scheduler)
+        assert await self._reason(ctx, item_id) == self.NO_MATCH
+        waiting.assert_awaited_once()
+        out.assert_awaited_once()
+
+        waiting, out = await self._pass(ctx, scheduler)
+        waiting.assert_not_awaited()
+        out.assert_not_awaited()

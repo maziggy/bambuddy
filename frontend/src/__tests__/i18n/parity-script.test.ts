@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 // @ts-expect-error -- .mjs script with no type declarations; pure JS import is fine for tests
-import { compareLocales } from '../../../scripts/check-i18n-parity.mjs';
+import { compareLocales, findMissingCodeKeys } from '../../../scripts/check-i18n-parity.mjs';
 
 type LocaleMap = Map<string, string>;
 
@@ -91,5 +91,29 @@ describe('compareLocales (parity-script self-test)', () => {
     expect(() =>
       compareLocales({ 'zh-CN': toMap({ a: 'x' }) } as Record<string, LocaleMap>),
     ).toThrow(/locales\.en/);
+  });
+});
+
+describe('findMissingCodeKeys (#3631)', () => {
+  const enKeys = new Set(['common.save', 'items.count_one', 'items.count_other', 'tour.steps.first']);
+  const check = (text: string) => findMissingCodeKeys([{ file: 'src/X.tsx', text }], enKeys);
+
+  it('passes keys that exist in en.ts', () => {
+    expect(check("t('common.save'); i18n.t(\"common.save\")")).toEqual([]);
+  });
+
+  it('flags a key missing from en.ts, with or without an inline fallback', () => {
+    expect(check("t('common.saved'); t('spoolbuddy.settings.cores', 'Cores')")).toEqual([
+      'src/X.tsx: common.saved',
+      'src/X.tsx: spoolbuddy.settings.cores',
+    ]);
+  });
+
+  it('accepts a plural base key and a subtree read with returnObjects', () => {
+    expect(check("t('items.count', { count: 2 }); t('tour.steps', { returnObjects: true })")).toEqual([]);
+  });
+
+  it('ignores dynamic and undotted keys', () => {
+    expect(check('t(`status.${s}`); t(key); t(\'plain\'); format(\'a.b\')')).toEqual([]);
   });
 });

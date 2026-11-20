@@ -143,7 +143,17 @@ export default {
     right: '오른쪽',
     user: '사용자',
     run: '실행',
-    running: '실행 중...'
+    running: '실행 중...',
+    average: '평균',
+    current: '현재',
+    history: '기록',
+    humidity: '습도',
+    max: '최대',
+    min: '최소',
+    saved: '저장됨',
+    target: '목표',
+    temperature: '온도',
+    unavailable: '사용 불가',
   },
   finance: {
     allTypes: '모든 유형',
@@ -234,6 +244,11 @@ export default {
     withdraw: '출금',
     printCharge: '인쇄 비용',
     deleteTransaction: '거래 삭제',
+    adjustmentFailed: '지갑 조정에 실패했습니다',
+    amountMustBePositive: '금액은 0보다 커야 합니다',
+    depositSuccess: '입금되었습니다',
+    noEligibleUsers: '대상 사용자가 없습니다',
+    withdrawSuccess: '출금되었습니다',
   },
   printers: {
     locations: {
@@ -302,7 +317,8 @@ export default {
       problem: '문제 발생',
       error: '오류',
       finished: '완료',
-      unknown: '알 수 없음'
+      unknown: '알 수 없음',
+      title: '상태',
     },
     temperatures: {
       nozzle: '노즐',
@@ -557,7 +573,8 @@ export default {
     },
     connection: {
       connected: '연결됨',
-      offline: '오프라인'
+      offline: '오프라인',
+      ethernet: '이더넷',
     },
     plateStatus: {
       markCleared: '플레이트 비움으로 표시',
@@ -961,7 +978,10 @@ export default {
       warning: '일부 연결 확인이 실패했습니다. 이 프린터가 오프라인으로 표시될 수 있습니다. 아래 항목을 검토하고 수정하거나 그냥 저장하세요.',
       checkAgain: '다시 확인',
       saveAnyway: '그냥 저장'
-    }
+    },
+    networkLabel: '네트워크',
+    noActiveJob: '진행 중인 작업 없음',
+    power: '전원',
   },
   archives: {
     media: {
@@ -2695,7 +2715,8 @@ export default {
       passwordNeedsUppercase: '비밀번호에 대문자가 최소 1개 포함되어야 합니다',
       passwordNeedsLowercase: '비밀번호에 소문자가 최소 1개 포함되어야 합니다',
       passwordNeedsDigit: '비밀번호에 숫자가 최소 1개 포함되어야 합니다',
-      passwordNeedsSpecial: '비밀번호에 특수문자가 최소 1개 포함되어야 합니다'
+      passwordNeedsSpecial: '비밀번호에 특수문자가 최소 1개 포함되어야 합니다',
+      saveFailed: '저장 실패',
     },
     testConnection: '연결 테스트',
     catalog: {
@@ -3209,6 +3230,11 @@ export default {
         },
       },
     },
+    filterTemplates: '템플릿 필터…',
+    gcodeConfigured: '구성됨',
+    noSearchResults: '일치하는 설정이 없습니다.',
+    noTemplatesMatch: '필터와 일치하는 템플릿이 없습니다.',
+    searchPlaceholder: '설정 검색…',
   },
   notification: {
     printStarted: {
@@ -4042,7 +4068,21 @@ export default {
       noOverridesYet: '아직 재정의 없음',
       clickFieldsToAdd: '왼쪽 필드를 클릭하여 추가',
       saveAsTemplate: '템플릿으로 저장',
-      jsonTip: '팁: 이 모달 어디서나 .json 파일을 드래그 앤 드롭하여 설정을 가져올 수 있습니다'
+      jsonTip: '팁: 이 모달 어디서나 .json 파일을 드래그 앤 드롭하여 설정을 가져올 수 있습니다',
+      commonSettings: '공통 설정',
+      currentOverrides: '현재 재정의',
+      customTemplate: '사용자 지정 템플릿',
+      discoveredFromPresets: '가져온 프리셋에서 발견된 필드',
+      exportToJson: '설정을 JSON으로 내보내기',
+      fileImported: '파일에서 설정을 가져왔습니다',
+      importFromJson: 'JSON에서 설정 가져오기',
+      invalidJson: '잘못된 JSON',
+      invalidJsonFile: '잘못된 JSON 파일',
+      manageTemplatesHint: '저장된 템플릿은 프로필 페이지의 템플릿 버튼에서 관리할 수 있습니다.',
+      noOverridesToSave: '저장할 재정의가 없습니다',
+      noSettingId: '설정 ID가 없습니다',
+      noTemplatesSelected: '사용 가능한 템플릿 없음',
+      templateApplied: '적용된 템플릿:',
     },
     cloudView: {
       searchPlaceholder: '프리셋 검색...',
@@ -4104,7 +4144,21 @@ export default {
         created: '템플릿 생성됨',
         applied: '템플릿 적용됨'
       }
-    }
+    },
+    diff: {
+      added: '추가됨',
+      changed: '변경됨',
+      changes: '변경 사항',
+      field: '필드',
+      left: '왼쪽',
+      noDifferences: '차이가 없습니다.',
+      noFieldsMatch: '검색과 일치하는 필드가 없습니다.',
+      removed: '제거됨',
+      right: '오른쪽',
+      same: '변경 없음',
+      searchFields: '필드 검색...',
+      title: '프로필 비교',
+    },
   },
   support: {
     debugLoggingActive: '디버그 로깅이 활성화되어 있습니다',
@@ -4119,7 +4173,39 @@ export default {
     bundleStepConnection: '프린터 연결 확인 실행 중',
     bundleStepVirtualPrinters: '가상 프린터 설정 확인 실행 중',
     bundleStepLogScan: '알려진 문제가 있는지 최근 로그 스캔 중',
-    bundleStepBuild: '지원 번들 ZIP 빌드 중'
+    bundleStepBuild: '지원 번들 ZIP 빌드 중',
+    collectItem1: '앱 버전 및 디버그 모드',
+    collectItem2: 'OS, 아키텍처, Python 버전',
+    collectItem3: '데이터베이스 통계 (개수만)',
+    collectItem4: '프린터 모델 및 노즐 수',
+    collectItem5: '민감하지 않은 설정 (테마, 형식)',
+    collectItem6: '디버그 로그 (민감 정보 제거됨)',
+    collected: '수집 항목:',
+    debugLogging: '디버그 로깅',
+    debugLoggingDisabled: '일반 로깅 수준',
+    debugLoggingEnabled: '상세 로그 수집 중',
+    description: '디버그 로깅을 활성화하여 상세 정보를 수집한 다음, 문제를 보고할 때 공유할 지원 번들을 다운로드하세요.',
+    disableDebug: '비활성화',
+    enableDebug: '활성화',
+    enableDebugFirst: '먼저 디버그 로깅을 활성화하세요',
+    instructions: '문제를 보고하려면:',
+    notCollected: '수집하지 않는 항목:',
+    notItem1: '프린터 이름 및 일련번호',
+    notItem2: '액세스 코드 및 비밀번호',
+    notItem3: '이메일 주소',
+    notItem4: 'API 키 및 토큰',
+    notItem5: '웹훅 URL',
+    notItem6: '호스트 이름 또는 사용자 이름',
+    notItem7: 'IP 주소',
+    privacyNote: '로그의 이메일 주소는 [EMAIL], 프린터 이름은 [PRINTER], 일련번호는 [SERIAL], IP 주소는 [IP]로 대체됩니다.',
+    privacyTitle: '지원 번들에는 무엇이 포함되나요?',
+    step1: '디버그 로깅 활성화',
+    step2: '문제 재현',
+    step3: '지원 번들 다운로드',
+    step4: 'ZIP 파일을 문제 보고서에 첨부',
+    supportBundle: '지원 번들',
+    supportBundleDescription: '시스템 정보 및 로그를 ZIP 파일로 다운로드',
+    title: '지원 및 문제 해결',
   },
   fileManager: {
     combine: {
@@ -4407,7 +4493,8 @@ export default {
       failedToGenerateThumbnails: '썸네일 생성 실패: {{error}}',
       thumbnailGenerated: '썸네일 생성됨',
       failedToGenerateThumbnail: '썸네일 생성 실패: {{error}}'
-    }
+    },
+    filterByUser: '사용자별 필터',
   },
   projects: {
     parentLabel: '상위 프로젝트',
@@ -4646,7 +4733,41 @@ export default {
     containerName: '컨테이너 이름',
     imageName: '이미지 이름',
     platform: '플랫폼',
-    architecture: '아키텍처'
+    architecture: '아키텍처',
+    application: '애플리케이션',
+    archiveStorage: '아카이브 저장소',
+    available: '사용 가능',
+    bootTime: '부팅 시간',
+    completed: '완료',
+    connectedPrinters: '연결된 프린터',
+    cores: '코어',
+    cpu: 'CPU',
+    database: '데이터베이스',
+    databaseSize: '데이터베이스 크기',
+    dbEngine: '데이터베이스 엔진',
+    dbVersion: '버전',
+    failed: '실패',
+    failedToLoad: '시스템 정보를 불러오지 못했습니다',
+    filaments: '필라멘트',
+    fileManagerStorage: '파일 관리자',
+    free: '여유',
+    hostname: '호스트 이름',
+    memory: '메모리',
+    noPrintersConnected: '연결된 프린터 없음',
+    ofTotal: '/ {{total}}대 프린터 연결됨',
+    os: '운영 체제',
+    printers: '프린터',
+    printing: '인쇄 중',
+    projects: '프로젝트',
+    python: 'Python',
+    smartPlugs: '스마트 플러그',
+    storage: '저장소',
+    subtitle: '시스템 리소스 및 데이터베이스 통계 모니터링',
+    systemDetails: '시스템 세부 정보',
+    totalArchives: '총 아카이브 수',
+    totalFilament: '총 사용 필라멘트',
+    totalPrintTime: '총 인쇄 시간',
+    usage: '사용률',
   },
   sponsors: {
     sectionTitle: '독립적·커뮤니티 후원',
@@ -4913,6 +5034,8 @@ export default {
     confirmDelete: '"{{name}}"을(를) 삭제하시겠습니까?',
     confirmDeleteMessage: '이 위치가 카탈로그에서 제거됩니다. 스풀을 먼저 옮겨야 합니다.',
     confirmDeleteMessageWithSensors: '이 위치가 카탈로그에서 제거됩니다. 스풀을 먼저 옮겨야 합니다. 연결된 센서도 함께 삭제됩니다.',
+    deleteAria: '{{name}} 삭제',
+    editAria: '{{name}} 편집',
   },
 
   inventory: {
@@ -5494,7 +5617,10 @@ export default {
     resetAllConsumedCountersConfirm: '{{count}}개 스풀(아카이브 포함)의 소비된 그램 카운터를 모두 0으로 초기화하시겠습니까? 이는 "총 소비량" 통계를 지워 이후 인쇄가 처음부터 추적되도록 합니다. 스풀과 잔여 무게는 변경되지 않습니다.',
     consumedCounterReset: '카운터가 초기화되었습니다',
     allConsumedCountersReset: '{{count}}개 스풀의 카운터가 초기화되었습니다',
-    resetConsumedCounterFailed: '카운터 초기화 실패'
+    resetConsumedCounterFailed: '카운터 초기화 실패',
+    assignedSpool: '할당된 스풀',
+    unassignFailed: '스풀 할당 해제 실패',
+    unassignSuccess: '스풀 할당 해제됨',
   },
   timelapse: {
     title: '타임랩스',
@@ -5643,6 +5769,9 @@ export default {
     noPrintableCostCenters: '인쇄에 사용할 수 있는 활성 비용 센터가 없습니다. 관리자에게 인쇄 권한을 요청하세요.',
     askForOutcome: '결과 묻기',
     askForOutcomeTitle: '완료 후 출력 결과가 어땠는지 물어보기',
+    costCenter: '비용 센터',
+    personalDefault: '개인',
+    totalCostForQuantity: '합계: {{cost}}',
   },
   backup: {
     includesEncryptionKey: '로컬 백업에는 MFA 암호화 키 파일(DATA_DIR/.mfa_encryption_key)이 포함되어 백업 ZIP이 자체 완결됩니다. ZIP 파일을 민감하게 취급하세요 — 파일을 가진 누구나 내부에 저장된 OIDC 클라이언트 비밀과 TOTP 비밀을 복호화할 수 있습니다.',
@@ -6520,7 +6649,10 @@ export default {
       placeholders: {
         plugName: '거실 플러그',
         mqttStateOnValue: 'ON, true, 1',
-        mqttSameAsPower: '전력 토픽과 같거나 다름'
+        mqttSameAsPower: '전력 토픽과 같거나 다름',
+        searchEnergySensors: '에너지 센서 검색...',
+        searchEntities: '엔티티 검색...',
+        searchPowerSensors: '전력 센서 검색...',
       }
     },
     linkedTo: '연결됨:',
@@ -7411,7 +7543,9 @@ export default {
       systemReady: '시스템 준비됨',
       spoolmanUnavailable: 'Spoolman을 사용할 수 없어 태그를 조회하지 못했습니다',
       lookupFailed: '태그 조회에 실패했습니다',
-      status: '상태'
+      status: '상태',
+      backend: '백엔드',
+      connectDisplay: '스풀을 스캔하려면 SpoolBuddy 디스플레이를 연결하세요',
     },
     dashboard: {
       readyToScan: '스캔 준비됨',
@@ -7439,7 +7573,8 @@ export default {
       plateReadyLabel: '초기화할 플레이트',
       plateClearAction: '초기화',
       plateClearedToast: '플레이트가 초기화됨으로 표시됨',
-      plateClearFailed: '플레이트를 초기화됨으로 표시할 수 없음'
+      plateClearFailed: '플레이트를 초기화됨으로 표시할 수 없음',
+      printers: '프린터',
     },
     modal: {
       assignToAms: 'AMS에 할당',
@@ -7455,7 +7590,10 @@ export default {
       assignError: '스풀 할당 실패. 다시 시도하세요.',
       noPrinterSelected: '프린터 선택...',
       noAmsDetected: '이 프린터에서 AMS가 감지되지 않음',
-      slot: '슬롯'
+      slot: '슬롯',
+      addAnyway: '그래도 추가',
+      quickAddDesc: '이 NFC 태그로 기본 PLA 스풀 항목을 생성합니다. 세부 정보는 나중에 Bambuddy에서 편집할 수 있습니다.',
+      quickAddHint: '최상의 결과를 위해 먼저 Bambuddy 웹 인터페이스에서 스풀을 추가한 다음(재료, 색상, 브랜드 포함), 여기에서 "스풀 할당"을 사용하여 NFC 태그를 할당하세요.',
     },
     weight: {
       tare: '영점 조정',
@@ -7483,14 +7621,27 @@ export default {
       level: '레벨',
       active: '활성',
       slot: '슬롯',
-      empty: '비어 있음'
+      empty: '비어 있음',
+      assignDesc: '재고의 스풀 추적',
+      configureDesc: '필라멘트 프리셋, K-프로필 및 색상 설정',
+      linkDesc: 'Spoolman 스풀을 이 슬롯에 연결',
+      unassignDesc: '이 슬롯에서 재고 스풀 제거',
+      unlinkDesc: '이 슬롯의 Spoolman 연결 해제',
     },
     inventory: {
       search: '스풀 검색...',
       empty: '재고에 스풀 없음',
       noResults: '일치하는 스풀 없음',
       spools: '스풀',
-      addSpool: '스풀 추가'
+      addSpool: '스풀 추가',
+      all: '전체',
+      costPerKg: 'kg당 비용',
+      inAms: 'AMS 내',
+      kProfiles: 'K-프로필',
+      note: '메모',
+      nozzleTemp: '노즐',
+      searchPlaceholder: '스풀 검색...',
+      slicerFilament: '슬라이서 필라멘트',
     },
     settings: {
       tabDevice: '장치',
@@ -7556,7 +7707,30 @@ export default {
       updateAvailable: '업데이트 사용 가능',
       updateInstructions: 'SSH를 통해 업데이트: SpoolBuddy 설치 스크립트를 실행하여 업그레이드하세요.',
       upToDate: '최신 버전',
-      includeBeta: '베타 버전 포함'
+      includeBeta: '베타 버전 포함',
+      applyUpdate: '업데이트 적용',
+      arch: '아키텍처',
+      available: '여유',
+      cores: '코어',
+      deviceOffline: '장치 오프라인',
+      disk: '디스크',
+      distro: '배포판',
+      forceUpdate: '강제 업데이트',
+      kernel: '커널',
+      loadAvg: '평균 부하',
+      memory: '메모리',
+      osInfo: 'OS',
+      runtime: '런타임',
+      sshDescription: 'SSH 키는 자동으로 배포됩니다. 수동으로 설정하려면 장치의 ~/.ssh/authorized_keys에 이 키를 추가하세요.',
+      sshKeyLoading: '로딩 중...',
+      sshSetup: 'SSH 설정',
+      systemStatsWaiting: '시스템 통계 대기 중...',
+      systemUptime: '가동 시간',
+      tabSystem: '시스템',
+      temp: '온도',
+      updateFailed: '업데이트 실패',
+      updateWaiting: '업데이트 중...',
+      used: '사용됨',
     },
     writeTag: {
       writeWith: '쓰기 장치',
@@ -7595,7 +7769,14 @@ export default {
       creating: '생성 중...',
       spoolCreated: '스풀 생성됨! 쓰기 준비됨.',
       createFailed: '스풀 생성 실패',
-      incompleteDataWarning: '불완전한 Spoolman 데이터로 태그 쓰여짐'
+      incompleteDataWarning: '불완전한 Spoolman 데이터로 태그 쓰여짐',
+      fullView: '전체',
+      simpleView: '간단',
+      untagFailed: '스풀에서 태그 제거 실패',
+      untagSpool: '선택한 스풀의 태그 해제',
+      untagSuccess: '스풀에서 태그가 제거되었습니다',
+      untagging: '태그 제거 중...',
+      viewMode: '보기',
     },
     quickMenu: {
       printerPower: '프린터 전원',
@@ -7615,7 +7796,23 @@ export default {
       confirmPlugOff: '{{name}}을(를) 끄시겠습니까?',
       turnOn: '켜기',
       turnOff: '끄기'
-    }
+    },
+    diagnostic: {
+      clickStart: '"진단 실행"을 클릭하여 다음 장치에서 하드웨어 진단을 시작하세요:',
+      close: '닫기',
+      completed: '진단이 성공적으로 완료되었습니다.',
+      nfcTitle: 'NFC 리더 진단',
+      queuing: '장치에서 진단을 대기열에 추가하는 중...\n',
+      readTagTitle: '태그 읽기 진단',
+      runAgain: '다시 실행',
+      runBtn: '진단 실행',
+      running: '장치에서 진단 실행 중...',
+      runningBtn: '실행 중...',
+      scaleTitle: '저울 진단',
+    },
+    errors: {
+      quickAddFailed: '스풀 추가 실패',
+    },
   },
   bugReport: {
     title: '버그 신고',
@@ -7899,6 +8096,7 @@ export default {
     backToFiles: '파일 관리자로 돌아가기',
     plates: '플레이트',
     plateN: '플레이트 {{n}}',
+    notSliced: '이 파일은 아직 슬라이스되지 않았습니다.',
   },
   libraryTrash: {
     title: '휴지통',
@@ -8488,5 +8686,8 @@ export default {
         fail: '이 가상 프린터의 TLS 인증서가 없습니다. Bambuddy 데이터 디렉터리가 쓰기 가능한지 확인하세요.'
       }
     }
-  }
+  },
+  amsHistory: {
+    recordingInfo: '프린터가 연결되어 있는 동안 5분마다 데이터가 기록됩니다',
+  },
 };

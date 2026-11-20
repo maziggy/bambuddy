@@ -59,13 +59,27 @@ export function decodeCanvas(
   }
 }
 
+/** jsQR's first, fast read of a photo: its long side scaled down to this. */
+const PHOTO_FAST_SIDE = 1600;
+/**
+ * The second read, at the photo's own size up to this long side. iOS Safari
+ * refuses a canvas over about 16.7 MP, which a 24 MP photo would be.
+ */
+const PHOTO_FULL_SIDE = 4096;
+
+function scaledTo(bitmap: ImageBitmap, maxSide: number): [number, number] {
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+  return [Math.max(1, Math.round(bitmap.width * scale)), Math.max(1, Math.round(bitmap.height * scale))];
+}
+
 /**
  * Decode a QR from a captured photo. The photo is taken with the phone's native
- * camera (file input + capture) — which focuses far better than an in-page
- * getUserMedia preview — so a small/dense spool QR resolves cleanly. Prefer the
- * platform decoder; fall back to jsQR (downscaling huge stills for speed — a
- * focused QR survives the downscale). Rejects only when the image itself can't
- * be opened.
+ * camera (file input + capture), which focuses far better than an in-page
+ * getUserMedia preview. Prefer the platform decoder; fall back to jsQR, first
+ * on the photo scaled down for speed, then, if that finds nothing, near its
+ * own size: a small label in the photo has too few pixels per module left
+ * after the downscale (#3616). Rejects only when the image itself can't be
+ * opened.
  */
 export async function decodeImageBlob(blob: Blob): Promise<string | undefined> {
   const bitmap = await createImageBitmap(blob, { imageOrientation: 'from-image' });
@@ -79,11 +93,19 @@ export async function decodeImageBlob(blob: Blob): Promise<string | undefined> {
         /* the platform decoder failed on this image — jsQR gets a go */
       }
     }
-    const maxSide = 1600;
-    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
-    const w = Math.max(1, Math.round(bitmap.width * scale));
-    const h = Math.max(1, Math.round(bitmap.height * scale));
-    return decodeCanvas(document.createElement('canvas'), bitmap, w, h, 'attemptBoth');
+    const canvas = document.createElement('canvas');
+    const [w, h] = scaledTo(bitmap, PHOTO_FAST_SIDE);
+    const fast = decodeCanvas(canvas, bitmap, w, h, 'attemptBoth');
+    if (fast) return fast;
+    const [fw, fh] = scaledTo(bitmap, PHOTO_FULL_SIDE);
+    // A photo no larger than the first read has nothing more to give.
+    if (fw === w && fh === h) return undefined;
+    const full = decodeCanvas(canvas, bitmap, fw, fh, 'attemptBoth');
+    // iOS Safari counts a canvas's memory until it is resized, not until it
+    // is collected: give the 50 MB back now, for the next photo.
+    canvas.width = 0;
+    canvas.height = 0;
+    return full;
   } finally {
     bitmap.close?.();
   }

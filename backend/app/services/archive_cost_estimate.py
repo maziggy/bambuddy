@@ -24,6 +24,12 @@ deliberately not read here: it still describes the previous job until the
 printer pushes an update (see ``spoolman_tracking._resolve_slot_to_tray_fallback``).
 With no trustworthy mapping, nothing is priced and the placeholder stays.
 
+Every run is priced this way, not only the first (#3580): the figure for the
+plate a run prints is kept on the run opened at its start
+(``PrintLogEntry.planned_cost``), and billing charges the run from it. The
+archive's cost stays its first run's (#1378), so a reprint on other or
+re-priced spools is charged at those while the card does not change.
+
 Strictly best-effort. Nothing here may fail a print start.
 """
 
@@ -83,7 +89,10 @@ async def _internal_rates(
     """Price per gram of the built-in inventory spool in each tray.
 
     Same rule as ``usage_tracker``'s completion writer: the spool's own
-    ``cost_per_kg``, or the default rate when the spool has none.
+    ``cost_per_kg``, or the default rate when the spool has none. A spool
+    priced 0 is free. One without a price is not: with a default rate of 0 it
+    gets no rate here, as a tray without a spool gets none, so a run only on
+    such spools is not priced 0 but left to the archive's cost (#3580).
     """
     from backend.app.models.spool import Spool
     from backend.app.models.spool_assignment import SpoolAssignment
@@ -107,17 +116,71 @@ async def _internal_rates(
         ).scalar_one_or_none()  # one assignment per tray (UniqueConstraint)
         if spool is None:
             continue
-        cost_per_kg = spool.cost_per_kg if spool.cost_per_kg is not None else default_cost_per_kg
+        cost_per_kg = spool.cost_per_kg
+        if cost_per_kg is None or cost_per_kg < 0:
+            if default_cost_per_kg <= 0:
+                continue
+            cost_per_kg = default_cost_per_kg
         rates[tray] = cost_per_kg / 1000.0
     return rates
 
 
-async def _spoolman_rates(printer_id: int, trays: set[int], ams_trays: dict[int, dict]) -> dict[int, float]:
+class SpoolmanOnce:
+    """What the queue estimates of one request ask Spoolman once (#3580): the
+    health-checked client, and the list of spools the trays' tags are matched
+    against. A bulk edit prices every item it changes, and each asked again.
+
+    A failure is kept too: a Spoolman that did not answer is not asked again
+    for every tray and item. ``None`` then, and the caller goes on without.
+    """
+
+    def __init__(self) -> None:
+        self._client = None
+        self._client_asked = False
+        self._spools: list[dict] | None = None
+        self._spools_asked = False
+
+    async def client(self):
+        if not self._client_asked:
+            self._client_asked = True
+            from backend.app.services.spoolman_tracking import _get_spoolman_client_with_fallback
+
+            try:
+                self._client = await _get_spoolman_client_with_fallback()
+            except Exception as exc:  # noqa: BLE001 -- an estimate falls back to the default rate
+                logger.debug("[COST] Spoolman cannot be asked for the queue estimate: %s", exc)
+        return self._client
+
+    async def spools(self, client) -> list[dict] | None:
+        if not self._spools_asked:
+            self._spools_asked = True
+            try:
+                self._spools = await client.get_spools()
+            except Exception as exc:  # noqa: BLE001 -- the slot assignments still find their spools
+                logger.debug("[COST] Could not list the Spoolman spools: %s", exc)
+        return self._spools
+
+
+async def _spoolman_rates(
+    printer_id: int,
+    trays: set[int],
+    ams_trays: dict[int, dict],
+    once: SpoolmanOnce | None = None,
+) -> dict[int, float]:
     """Price per gram of the Spoolman spool in each tray.
 
     Resolves the spool the way usage reporting does (tag first, then the local
     slot assignment, #1459) and prices it with ``_spool_cost_per_gram``, so the
     estimate and the completion figure read the same price fields.
+
+    The queue's reservation resolves its spools here too (#3580), so it prices
+    the spool the run is then charged at. It passes ``once``: the client is
+    then the request's health-checked one, and the tags are matched against
+    its one list of the spools instead of a lookup per tray, as it runs on
+    every queue add and dispatch.
+
+    A tag that could not be looked up (the list or the lookup failed) is not
+    the end of its tray: the slot assignment is still tried.
     """
     from backend.app.services.printer_manager import printer_tray_layout
     from backend.app.services.spoolman import get_spoolman_client
@@ -129,10 +192,11 @@ async def _spoolman_rates(printer_id: int, trays: set[int], ams_trays: dict[int,
         _spool_cost_per_gram,
     )
 
-    # The client the integration already set up. No health check: that's an
-    # extra request per print, and its failure log says usage reporting is
-    # being skipped. An unreachable Spoolman fails per tray below instead.
-    client = await get_spoolman_client()
+    # At a print start, the client the integration already set up. No health
+    # check: that's an extra request per print, and its failure log says usage
+    # reporting is being skipped. An unreachable Spoolman fails per tray below
+    # instead.
+    client = await once.client() if once is not None else await get_spoolman_client()
     if client is None:
         return {}
     serial = await _get_printer_serial(printer_id)
@@ -143,10 +207,16 @@ async def _spoolman_rates(printer_id: int, trays: set[int], ams_trays: dict[int,
         spool = None
         try:
             tray_info = ams_trays.get(tray)
-            if tray_info:
-                tag = _resolve_spool_tag(tray_info, serial, tray, layout)
-                if tag:
-                    spool = await client.find_spool_by_tag(tag)
+            tag = _resolve_spool_tag(tray_info, serial, tray, layout) if tray_info else None
+            if tag and once is not None:
+                spool_list = await once.spools(client)
+                if spool_list is not None:
+                    spool = await client.find_spool_by_tag(tag, spool_list)
+            elif tag:
+                spool = await client.find_spool_by_tag(tag)
+        except Exception as exc:  # noqa: BLE001 -- the slot assignment may still know the spool
+            logger.debug("[COST] Tray %s: could not look its tag up in Spoolman: %s", tray, exc)
+        try:
             if spool is None:
                 ams_id, tray_id = _global_tray_id_to_ams_slot(tray, layout)
                 spool_id = await _resolve_spool_id_via_slot_assignment(printer_id, ams_id, tray_id)
@@ -168,6 +238,7 @@ def schedule_archive_cost_estimate(
     ams_mapping: list | None = None,
     plate_id: int | None = None,
     session_factory=None,
+    run_only: bool = False,
 ) -> asyncio.Task | None:
     """Run ``estimate_archive_cost_at_start`` in the background, on its own session.
 
@@ -176,6 +247,11 @@ def schedule_archive_cost_estimate(
 
     ``session_factory`` is the caller's ``async_session``, so the estimate
     opens its session the same way the rest of the caller does.
+
+    ``run_only`` is for a print seen again (a restart resuming it, #3580): the
+    estimate of its start may have gone with the restart, so the run is priced
+    if it has no price yet, and the card is left alone. While the start's own
+    estimate still runs, that one is returned and nothing is scheduled.
     """
     from backend.app.core.tasks import spawn_background_task
 
@@ -187,43 +263,109 @@ def schedule_archive_cost_estimate(
     except TypeError:
         mapping = None
 
+    key = (printer_id, archive_id)
+    if run_only:
+        running = _running_estimates.get(key)
+        if running is not None and not running.done():
+            return running
+
     async def _run() -> None:
         async with session_factory() as db:
-            await estimate_archive_cost_at_start(db, printer_id, archive_id, printer_manager, mapping, plate_id)
+            if run_only:
+                await price_run_without_a_price(db, printer_id, archive_id, printer_manager, mapping, plate_id)
+            else:
+                await estimate_archive_cost_at_start(db, printer_id, archive_id, printer_manager, mapping, plate_id)
 
     try:
         task = spawn_background_task(_run(), name=f"archive-cost-estimate-{archive_id}")
     except Exception:  # noqa: BLE001 -- an estimate must never fail a print start
         logger.warning("[COST] Archive %s: could not schedule the cost estimate", archive_id, exc_info=True)
         return None
-    _running_estimates[archive_id] = task
+    _running_estimates[key] = task
 
-    def _forget(done: asyncio.Task, archive_id: int = archive_id) -> None:
-        if _running_estimates.get(archive_id) is done:
-            del _running_estimates[archive_id]
+    def _forget(done: asyncio.Task) -> None:
+        if _running_estimates.get(key) is done:
+            del _running_estimates[key]
 
     task.add_done_callback(_forget)
     return task
 
 
-# Estimates still running, by archive: completion stops its archive's before
-# writing the real cost (COST-4).
-_running_estimates: dict[int, asyncio.Task] = {}
+# Estimates still running, by the print they price: completion stops its own
+# before writing the real cost (COST-4). By printer too (#3580): an archive
+# printing on two printers has an estimate for each run, and one's start or
+# end must not take the other's.
+_running_estimates: dict[tuple[int, int], asyncio.Task] = {}
 
 
-async def settle_archive_cost_estimate(archive_id: int) -> None:
-    """Stop the archive's start estimate, if still running, before the real cost.
+async def settle_archive_cost_estimate(printer_id: int, archive_id: int) -> None:
+    """Stop the start estimate of the archive's print on the printer, if still
+    running, before the real cost.
 
     Completion commits the measured cost before it marks the archive ended; an
     estimate still waiting on Spoolman then saw a printing archive with no runs
-    logged, and wrote its figure over the real one on a very short print.
+    logged, and wrote its figure over the real one on a very short print. It
+    would price the run after its charge the same way.
     """
-    task = _running_estimates.pop(archive_id, None)
+    task = _running_estimates.pop((printer_id, archive_id), None)
     if task is None or task.done():
         return
     task.cancel()
     with contextlib.suppress(asyncio.CancelledError, Exception):
         await task
+
+
+# How long a print's end waits for the price of a run its start did not price.
+RUN_PRICING_TIMEOUT_SECONDS = 10.0
+
+
+async def price_unpriced_run(
+    printer_id: int,
+    archive_id: int,
+    printer_manager,
+    ams_mapping: list | None = None,
+    plate_id: int | None = None,
+    session_factory=None,
+    timeout: float = RUN_PRICING_TIMEOUT_SECONDS,
+) -> None:
+    """Price the archive's run open on the printer now, at its end, if its
+    start has not (#3580).
+
+    The start's estimate runs in the background and is stopped at the end
+    (``settle_archive_cost_estimate``): a print that failed within seconds, a
+    slow Spoolman or a restart could leave the run without a price, and it was
+    then charged the archive's first-run cost without a word. Does nothing for
+    a run that has a price, and nothing with billing off. Waits ``timeout``
+    seconds at most; a run still not priced is charged from the archive's
+    cost, as before.
+    """
+    if session_factory is None:
+        from backend.app.core.database import async_session as session_factory
+
+    async def _price() -> None:
+        async with session_factory() as db:
+            await price_run_without_a_price(db, printer_id, archive_id, printer_manager, ams_mapping, plate_id)
+
+    try:
+        await asyncio.wait_for(_price(), timeout)
+    except Exception:  # noqa: BLE001 -- the charge falls back to the archive's cost
+        logger.warning("[COST] Archive %s: could not price its run at the print's end", archive_id, exc_info=True)
+
+
+async def price_run_without_a_price(
+    db: AsyncSession,
+    printer_id: int,
+    archive_id: int,
+    printer_manager,
+    ams_mapping: list | None = None,
+    plate_id: int | None = None,
+) -> None:
+    """Price the archive's run open on the printer if it has no price yet,
+    and nothing else: the card is its start's to write (#3580)."""
+    try:
+        await _estimate(db, printer_id, archive_id, printer_manager, ams_mapping, plate_id, run_only=True)
+    except Exception:  # noqa: BLE001 -- the charge falls back to the archive's cost
+        logger.warning("[COST] Archive %s: could not price its open run", archive_id, exc_info=True)
 
 
 async def estimate_archive_cost_at_start(
@@ -248,11 +390,16 @@ async def _estimate(
     printer_manager,
     ams_mapping: list | None,
     plate_id: int | None,
+    run_only: bool = False,
 ) -> None:
+    """``run_only`` prices the open run if it has no price yet and nothing
+    else: the card is the start's to write."""
     from backend.app.api.routes.settings import get_setting
     from backend.app.models.archive import PrintArchive
-    from backend.app.models.print_log import PrintLogEntry
     from backend.app.models.print_queue import PrintQueueItem
+    from backend.app.services.finance_budget import is_billing_enabled
+    from backend.app.services.print_cost_estimate import plate_scoped_run_estimate
+    from backend.app.services.print_log import _open_run_on
     from backend.app.services.spoolman_tracking import build_ams_tray_lookup
     from backend.app.services.usage_tracker import _match_slots_by_color
     from backend.app.utils.threemf_tools import extract_filament_usage_from_3mf
@@ -262,12 +409,19 @@ async def _estimate(
         return
 
     # A reprint keeps its first run's cost on the card (#1378); completion
-    # doesn't overwrite it either.
-    existing_runs = (
-        await db.execute(select(func.count(PrintLogEntry.id)).where(PrintLogEntry.archive_id == archive_id))
-    ).scalar()
-    if existing_runs:
+    # doesn't overwrite it either. Its own run is still priced, for billing
+    # (#3580): without a run opened at this start there is nothing to price.
+    is_reprint = bool(await _ended_runs(db, archive_id))
+
+    # The run of this archive open on the printer: the one this start opened.
+    # Its price is only what billing charges, so with billing off none is
+    # worked out, and a reprint asks its spools nothing, as before #3580.
+    run = await _open_run_on(db, archive_id, printer_id) if await is_billing_enabled(db) else None
+    if run_only and run is not None and run.planned_cost is not None:
         return
+    if run is None and (is_reprint or run_only):
+        return
+    prices_card = not is_reprint and not run_only
 
     full_path = (
         app_settings.base_dir / archive.file_path
@@ -287,97 +441,170 @@ async def _estimate(
         .scalars()
         .first()
     )
+    if queue_item is None and run is not None and run.queue_item_id is not None:
+        # At the print's end (``price_unpriced_run``) its item is no longer printing.
+        queue_item = await db.get(PrintQueueItem, run.queue_item_id)
     if plate_id is None and queue_item is not None:
         plate_id = queue_item.plate_id
-
-    filament_usage = extract_filament_usage_from_3mf(full_path, plate_id) or []
-    used = [(u.get("slot_id", 0), u.get("used_g", 0) or 0) for u in filament_usage]
-    used = [(slot, grams) for slot, grams in used if grams > 0]
-    if not used:
-        return
 
     state = printer_manager.get_status(printer_id)
     raw_data = getattr(state, "raw_data", None) or {}
     ams_trays = build_ams_tray_lookup(raw_data)
-
-    slot_to_tray = ams_mapping or None
-    source = "print_cmd" if slot_to_tray else None
-    if not slot_to_tray and queue_item is not None and queue_item.ams_mapping:
-        try:
-            slot_to_tray = json.loads(queue_item.ams_mapping)
-            source = "queue"
-        except json.JSONDecodeError:
-            slot_to_tray = None
-    if not slot_to_tray:
-        slot_to_tray = _match_slots_by_color(filament_usage, raw_data.get("ams"))
-        source = "color_match" if slot_to_tray else None
-    if not slot_to_tray:
-        logger.info("[COST] Archive %s: no slot-to-tray mapping at print start, keeping the placeholder", archive_id)
-        return
-
-    slot_trays = {slot: _mapped_tray(slot, slot_to_tray, ams_trays) for slot, _ in used}
-    trays = {tray for tray in slot_trays.values() if tray is not None}
-    if not trays:
-        return
-
     default_cost_per_kg = await _default_cost_per_kg(db)
     spoolman_enabled = (await get_setting(db, "spoolman_enabled") or "").lower() == "true"
-    if spoolman_enabled:
-        rates = await _spoolman_rates(printer_id, trays, ams_trays)
-    else:
-        rates = await _internal_rates(db, printer_id, trays, default_cost_per_kg)
+    source_name = "Spoolman" if spoolman_enabled else "inventory"
+    rates: dict[int, float] = {}
+    looked_up: set[int] = set()
+    unmapped_logged = False
 
-    cost = 0.0
-    priced_grams = 0.0
-    for slot, grams in used:
-        rate = rates.get(slot_trays[slot])
-        if rate is None:
-            continue
-        cost += grams * rate
-        priced_grams += grams
-    if priced_grams <= 0:
-        return
+    async def at_spools(plate: int | None) -> tuple[float, float, str] | None:
+        """The plate's slots at the spools mapped for this start: their cost,
+        the grams they cover, and where the mapping came from. None when
+        nothing of it can be priced. ``plate`` None is the whole file."""
+        filament_usage = extract_filament_usage_from_3mf(full_path, plate) or []
+        used = [(u.get("slot_id", 0), u.get("used_g", 0) or 0) for u in filament_usage]
+        used = [(slot, grams) for slot, grams in used if grams > 0]
+        if not used:
+            return None
 
-    # Grams no spool priced -- unmapped slots, empty trays, unpriced spools, and
-    # anything the 3MF didn't attribute to a slot -- at the default rate, in
-    # one subtraction against the archive's own total, as both completion
-    # writers do.
-    unpriced_grams = max(0.0, archive.filament_used_grams - priced_grams)
-    if unpriced_grams > 0 and default_cost_per_kg > 0:
-        cost += (unpriced_grams / 1000.0) * default_cost_per_kg
-    if cost <= 0:
+        slot_to_tray = ams_mapping or None
+        source = "print_cmd" if slot_to_tray else None
+        if not slot_to_tray and queue_item is not None and queue_item.ams_mapping:
+            try:
+                slot_to_tray = json.loads(queue_item.ams_mapping)
+                source = "queue"
+            except json.JSONDecodeError:
+                slot_to_tray = None
+        if not slot_to_tray:
+            slot_to_tray = _match_slots_by_color(filament_usage, raw_data.get("ams"))
+            source = "color_match" if slot_to_tray else None
+        if not slot_to_tray or source is None:
+            nonlocal unmapped_logged
+            if not unmapped_logged:  # once, though the card and the run may both ask
+                unmapped_logged = True
+                logger.info(
+                    "[COST] Archive %s: no slot-to-tray mapping at print start, keeping the placeholder", archive_id
+                )
+            return None
+
+        slot_trays = {slot: _mapped_tray(slot, slot_to_tray, ams_trays) for slot, _ in used}
+        trays = {tray for tray in slot_trays.values() if tray is not None}
+        if not trays:
+            return None
+        # Each tray is looked up once, whichever plate asks for it first.
+        new_trays = trays - looked_up
+        if new_trays:
+            looked_up.update(new_trays)
+            if spoolman_enabled:
+                rates.update(await _spoolman_rates(printer_id, new_trays, ams_trays))
+            else:
+                rates.update(await _internal_rates(db, printer_id, new_trays, default_cost_per_kg))
+
+        cost = 0.0
+        priced_grams = 0.0
+        for slot, grams in used:
+            tray = slot_trays[slot]
+            rate = rates.get(tray) if tray is not None else None
+            if rate is None:
+                continue
+            cost += grams * rate
+            priced_grams += grams
+        if priced_grams <= 0:
+            return None
+        return cost, priced_grams, source
+
+    def with_the_rest(spools: tuple[float, float, str], total_grams: float) -> tuple[float, float]:
+        """Grams no spool priced -- unmapped slots, empty trays, unpriced spools,
+        and anything the 3MF didn't attribute to a slot -- at the default rate,
+        in one subtraction against the total, as both completion writers do.
+        Returns the cost and those grams."""
+        cost, priced_grams, _source = spools
+        unpriced_grams = max(0.0, total_grams - priced_grams)
+        return round(cost + (unpriced_grams / 1000.0) * max(0.0, default_cost_per_kg), 2), unpriced_grams
+
+    # The card: the plate the start named, against the archive's own total.
+    # Only a first run's is written, so only a first run's is worked out.
+    card_spools = await at_spools(plate_id) if prices_card else None
+    card_cost, card_unpriced_grams = with_the_rest(card_spools, archive.filament_used_grams) if card_spools else (0, 0)
+
+    # The run's own figure, which billing charges (#3580): the plate the run
+    # opened at this start carries, against that plate's grams. Both are what
+    # the charge at its end works from (``plate_scoped_run_estimate``). A start
+    # at the printer names no plate, and the card is then the whole file's
+    # while the run still prints one plate of it: the run is priced for that
+    # plate, on its own.
+    run_spools = None
+    run_cost, run_unpriced_grams, run_grams = 0.0, 0.0, 0.0
+    if run is not None:
+        run_plate = run.plate_id
+        if run_plate is None:
+            run_plate = plate_id if plate_id is not None else archive.plate_id
+        run_grams = plate_scoped_run_estimate(archive, full_path, run_plate)[0] or archive.filament_used_grams
+        run_spools = card_spools if prices_card and run_plate == plate_id else await at_spools(run_plate)
+        if run_spools:
+            run_cost, run_unpriced_grams = with_the_rest(run_spools, run_grams)
+    if not card_spools and not run_spools:
         return
 
     # The Spoolman lookups above can take a while. If the print already ended
     # -- a failure seconds in -- completion has written the real figure, and
-    # an estimate must not replace it.
+    # an estimate must not replace it. The run is read again for the same
+    # reason: ended, it is no longer open, and its charge is written.
     await db.refresh(archive)
-    still_running_first_run = (
-        archive.status == "printing"
-        and not (
-            await db.execute(select(func.count(PrintLogEntry.id)).where(PrintLogEntry.archive_id == archive_id))
-        ).scalar()
-    )
-    if not still_running_first_run:
+    if run is not None:
+        run = await _open_run_on(db, archive_id, printer_id)
+    still_running_first_run = archive.status == "printing" and not await _ended_runs(db, archive_id)
+    # A run priced 0 is kept as that: its spools are free (priced 0), and it
+    # is charged nothing, not the archive's cost a run nothing priced gets.
+    if run is not None and (not run_spools or (run.planned_cost, run.planned_grams) == (run_cost, run_grams)):
+        run = None
+    price_card = bool(card_spools) and still_running_first_run and card_cost > 0 and card_cost != archive.cost
+    if run is None and not price_card:
         return
 
-    new_cost = round(cost, 2)
-    if new_cost == archive.cost:
-        return
-    logger.info(
-        "[COST] Archive %s: estimated cost %s -> %s at print start (%.2fg priced from %s spools via %s mapping, "
-        "%.2fg at the default rate)",
-        archive_id,
-        archive.cost,
-        new_cost,
-        priced_grams,
-        "Spoolman" if spoolman_enabled else "inventory",
-        source,
-        unpriced_grams,
-    )
-    archive.cost = new_cost
+    if run is not None and run_spools:
+        logger.info(
+            "[COST] Archive %s: run %s planned at %s for %.2fg (%.2fg priced from %s spools via %s mapping, "
+            "%.2fg at the default rate)",
+            archive_id,
+            run.id,
+            run_cost,
+            run_grams,
+            run_spools[1],
+            source_name,
+            run_spools[2],
+            run_unpriced_grams,
+        )
+        # Together: the charge of a run that did not finish is its share of
+        # these grams, of this cost.
+        run.planned_cost = run_cost
+        run.planned_grams = run_grams
+    if price_card and card_spools:
+        logger.info(
+            "[COST] Archive %s: estimated cost %s -> %s at print start (%.2fg priced from %s spools via %s mapping, "
+            "%.2fg at the default rate)",
+            archive_id,
+            archive.cost,
+            card_cost,
+            card_spools[1],
+            source_name,
+            card_spools[2],
+            card_unpriced_grams,
+        )
+        archive.cost = card_cost
     await db.commit()
 
-    from backend.app.core.websocket import ws_manager
+    if price_card:
+        from backend.app.core.websocket import ws_manager
 
-    await ws_manager.send_archive_updated({"id": archive_id, "cost": new_cost})
+        await ws_manager.send_archive_updated({"id": archive_id, "cost": card_cost})
+
+
+async def _ended_runs(db: AsyncSession, archive_id: int) -> int:
+    """How many prints of the archive have ended. A run still printing is open
+    and not counted (``PrintLogEntry``'s open runs are left out of reads)."""
+    from backend.app.models.print_log import PrintLogEntry
+
+    return (
+        await db.execute(select(func.count(PrintLogEntry.id)).where(PrintLogEntry.archive_id == archive_id))
+    ).scalar() or 0

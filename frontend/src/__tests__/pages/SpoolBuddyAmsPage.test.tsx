@@ -79,9 +79,10 @@ vi.mock('../../api/client', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, fallback?: string | Record<string, unknown>) => {
-      if (typeof fallback === 'string') return fallback;
-      return key;
+    t: (key: string, fallback?: string | Record<string, unknown>, options?: Record<string, unknown>) => {
+      const text = typeof fallback === 'string' ? fallback : key;
+      const values = typeof fallback === 'object' ? fallback : options;
+      return text.replace(/\{\{(\w+)\}\}/g, (m, name) => (values && name in values ? String(values[name]) : m));
     },
     i18n: { language: 'en', changeLanguage: vi.fn() },
   }),

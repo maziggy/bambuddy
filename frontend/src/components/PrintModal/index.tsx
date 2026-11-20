@@ -747,7 +747,7 @@ export function PrintModal({
     if (waitForIdleToast) {
       showToast(t('queue.printQueuedWillStartWhenIdle'));
     } else if (count === 1) {
-      showToast(assignmentMode === 'model' ? `Queued for any ${targetModel}` : t('queue.printQueued'));
+      showToast(assignmentMode === 'model' ? t('printModal.queuedForAnyModel', { model: targetModel }) : t('queue.printQueued'));
     } else {
       showToast(t('queue.itemsQueued', { count }));
     }
@@ -1250,7 +1250,7 @@ export function PrintModal({
           // inventory binding, or one whose Spoolman spool it could not read —
           // both mean "nothing to weigh", never "empty".
           const slotMaterials = slotMaterialsPerPrinter.get(printerId);
-          const printerName = printers?.find((p) => p.id === printerId)?.name ?? `Printer ${printerId}`;
+          const printerName = printers?.find((p) => p.id === printerId)?.name ?? t('printModal.printerN', { id: printerId });
 
           if (!slotMaterials || slotMaterials.size === 0) continue;
 
@@ -1300,7 +1300,7 @@ export function PrintModal({
             const slot = slotMaterials.get(globalTrayId);
             if (!slot) continue;
 
-            const slotLabel = slotLabelByTray.get(globalTrayId) ?? `Tray ${globalTrayId}`;
+            const slotLabel = slotLabelByTray.get(globalTrayId) ?? t('printModal.trayN', { id: globalTrayId });
 
             if (backupOn) {
               const key = poolKey(slot);
@@ -1340,21 +1340,21 @@ export function PrintModal({
 
     // Validate printer/model selection
     if (assignmentMode === 'printer' && selectedPrinters.length === 0) {
-      showToast('Please select at least one printer', 'error');
+      showToast(t('printModal.selectAtLeastOnePrinter'), 'error');
       return;
     }
     // A cross-model job has no single target model — each candidate carries its
     // own, and the backend gates each of them separately. Both checks below are
     // about the one-model case only.
     if (!isCrossModel && assignmentMode === 'model' && !targetModel) {
-      showToast('Please select a target printer model', 'error');
+      showToast(t('printModal.selectTargetModel'), 'error');
       return;
     }
     // Cross-model safety gate (#2578) — mirrors the backend's 400 so the user
     // gets inline feedback instead of a failed request. Separate jobs are
     // gated per file below; the dialog's own file may no longer be listed.
     if (!isMultiFile && assignmentMode === 'model' && !isGcodeCompatible(slicedForModel, targetModel)) {
-      showToast(`File was sliced for ${slicedForModel} and cannot be dispatched to ${targetModel} printers`, 'error');
+      showToast(t('printModal.crossModelBlocked', { sliced: slicedForModel, target: targetModel }), 'error');
       return;
     }
     if (separateJobsIncompatible.length > 0) {
@@ -1865,7 +1865,7 @@ export function PrintModal({
           results.success++;
         } catch (error) {
           results.failed++;
-          const plateName = plate ? (plate.name || `Plate ${plate.index}`) : '';
+          const plateName = plate ? (plate.name || t('printModal.plateN', 'Plate {{n}}', { n: plate.index })) : '';
           results.errors.push(plateName ? `${plateName}: ${(error as Error).message}` : (error as Error).message);
         }
       }
@@ -1950,8 +1950,8 @@ export function PrintModal({
             results.success++;
           } catch (error) {
             results.failed++;
-            const printerName = printers?.find(p => p.id === printerId)?.name || `Printer ${printerId}`;
-            const plateName = plate ? (plate.name || `Plate ${plate.index}`) : '';
+            const printerName = printers?.find(p => p.id === printerId)?.name || t('printModal.printerN', { id: printerId });
+            const plateName = plate ? (plate.name || t('printModal.plateN', 'Plate {{n}}', { n: plate.index })) : '';
             const label = plateName ? `${printerName} (${plateName})` : printerName;
             results.errors.push(`${label}: ${(error as Error).message}`);
           }
@@ -1965,7 +1965,7 @@ export function PrintModal({
     if (results.failed === 0) {
       if (isEditing) {
         if (mode === 'edit-queue-item') {
-          showToast('Queue item updated');
+          showToast(t('printModal.queueItemUpdated'));
         }
       } else {
         await showQueuedToast(results.success);
@@ -1974,9 +1974,9 @@ export function PrintModal({
       onSuccess?.();
       onClose();
     } else if (results.success === 0) {
-      showToast(`Failed: ${results.errors[0]}`, 'error');
+      showToast(t('printModal.submitFailed', { error: results.errors[0] }), 'error');
     } else {
-      showToast(`${results.success} succeeded, ${results.failed} failed`, 'error');
+      showToast(t('printModal.submitPartial', { succeeded: results.success, failed: results.failed }), 'error');
       queryClient.invalidateQueries({ queryKey: ['queue'] });
     }
   };
@@ -2256,7 +2256,7 @@ export function PrintModal({
           <form onSubmit={handleSubmit} className="p-4 space-y-4">
             {/* Archive name */}
             <p className="text-sm text-bambu-gray">
-              <span className="block text-bambu-gray mb-1">Print Job</span>
+              <span className="block text-bambu-gray mb-1">{t('printModal.printJob')}</span>
               <span className="text-white font-medium truncate block">{archiveName}</span>
             </p>
 
@@ -2464,7 +2464,7 @@ export function PrintModal({
                   <div className="p-3 mb-2 bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-300 dark:border-yellow-500/30 rounded-lg flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
                     <span className="text-sm text-yellow-700 dark:text-yellow-400">
-                      File was sliced for {slicedForModel}, but printing on {selectedPrinter.model}
+                      {t('printModal.slicedForOtherModel', { sliced: slicedForModel, model: selectedPrinter.model })}
                     </span>
                   </div>
                 );
@@ -2508,7 +2508,7 @@ export function PrintModal({
               <div className="flex items-start gap-2 p-3 mb-2 bg-orange-50 dark:bg-orange-500/10 border border-orange-300 dark:border-orange-500/30 rounded-lg text-sm">
                 <AlertCircle className="w-4 h-4 text-orange-600 dark:text-orange-400 mt-0.5 flex-shrink-0" />
                 <p className="text-orange-700 dark:text-orange-400">
-                  Archive data unavailable. The source file may have been deleted. Filament mapping is disabled.
+                  {t('printModal.archiveDataUnavailable')}
                 </p>
               </div>
             )}
@@ -2710,7 +2710,7 @@ export function PrintModal({
             {/* Error message */}
             {updateQueueMutation.isError && (
               <div className="mb-4 p-3 bg-red-100 dark:bg-red-500/20 border border-red-500/50 rounded-lg text-sm text-red-700 dark:text-red-400">
-                {(updateQueueMutation.error as Error)?.message || 'Failed to complete operation'}
+                {(updateQueueMutation.error as Error)?.message || t('printModal.operationFailed')}
               </div>
             )}
 
@@ -2749,7 +2749,7 @@ export function PrintModal({
             {/* Actions */}
             <div className="flex gap-3 pt-2">
               <Button type="button" variant="secondary" onClick={onClose} className="flex-1" disabled={isSubmitting}>
-                Cancel
+                {t('common.cancel')}
               </Button>
               <Button
                 type="submit"

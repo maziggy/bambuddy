@@ -93,6 +93,7 @@ import { BatchOrdersView } from '../components/BatchOrdersView';
 import { ThumbnailHoverPreview } from '../components/ThumbnailHoverPreview';
 import { buildLoadedFilaments, type LoadedFilament } from '../hooks/useFilamentMapping';
 import { hasGcodeSnippets, useUiSettings } from '../hooks/useUiSettings';
+import { formatWaitingReason } from '../utils/waitingReason';
 
 // The scheduler's MODEL_GATE_WAIT_REASON (print_scheduler.py).
 const MODEL_GATE_WAIT_REASON = 'The last print failed on every free matching printer';
@@ -1098,7 +1099,7 @@ function SortableQueueItem({
           {item.waiting_reason && item.status === 'pending' && (
             <p className="text-[10px] sm:text-xs text-purple-700 dark:text-purple-400 mt-1.5 sm:mt-2 flex items-start gap-1">
               <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
-              <span>{item.waiting_reason}</span>
+              <span>{formatWaitingReason(item.waiting_reason, t)}</span>
             </p>
           )}
 
@@ -2276,6 +2277,14 @@ export function QueuePage() {
     // Claimants for each printer, in the order the scheduler would take them.
     // Staged and future-scheduled items are excluded: the scheduler skips both
     // without marking the printer busy, so neither holds up the item behind it.
+    const isSkippedForFilament = (item: PrintQueueItem): boolean => {
+      const reason = item.waiting_reason;
+      if (!reason) return false;
+      return (
+        (reason.includes('Waiting for filament: ') || reason.includes('No matching material/color')) &&
+        !reason.endsWith(' · has priority')
+      );
+    };
     const contenders = new Map<number, PrintQueueItem[]>();
     queue
       .filter(
@@ -2283,7 +2292,11 @@ export function QueuePage() {
           item.status === 'pending' &&
           item.printer_id != null &&
           !item.manual_start &&
-          !isFutureScheduled(item)
+          !isFutureScheduled(item) &&
+          // Loaded filament first (#3587): a job skipped for missing filament is
+          // not what dispatches next, so it must not block the job behind it.
+          // One with priority does hold its printer, so it stays.
+          !isSkippedForFilament(item)
       )
       .sort(schedulerOrder)
       .forEach(item => {

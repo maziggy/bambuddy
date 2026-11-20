@@ -94,42 +94,44 @@ function materialNumberSortKey(value: string | null): string {
   return (value || '').toLowerCase().replace(/\d+/g, (digits) => digits.padStart(64, '0'));
 }
 
-const DEFAULT_COLUMNS: ColumnConfig[] = [
-  { id: 'id', label: '#', visible: true },
-  { id: 'added_time', label: 'Added', visible: true },
-  { id: 'encode_time', label: 'Encoded', visible: false },
-  { id: 'last_used_time', label: 'Last Used', visible: false },
-  { id: 'rgba', label: 'Color', visible: true },
-  { id: 'material', label: 'Material', visible: true },
-  { id: 'subtype', label: 'Subtype', visible: true },
-  { id: 'color_name', label: 'Color Name', visible: false },
-  { id: 'brand', label: 'Brand', visible: true },
-  { id: 'slicer_filament', label: 'Slicer Filament', visible: false },
-  { id: 'location', label: 'Location', visible: true },
-  { id: 'storage_location', label: 'Storage Location', visible: false },
-  { id: 'temperature', label: 'Temperature', visible: false },
-  { id: 'humidity', label: 'Humidity', visible: false },
-  { id: 'last_dried', label: 'Last Dried', visible: true },
-  { id: 'battery', label: 'Battery', visible: false },
-  { id: 'label_weight', label: 'Label', visible: true },
-  { id: 'net', label: 'Net', visible: true },
-  { id: 'gross', label: 'Gross', visible: false },
-  { id: 'used', label: 'Used', visible: false },
-  { id: 'printed_total', label: 'Printed Total', visible: false },
-  { id: 'printed_since_weight', label: 'Printed Since Weight', visible: false },
-  { id: 'note', label: 'Note', visible: false },
-  { id: 'material_number', label: 'Material No.', visible: false },
-  { id: 'suppliers', label: 'Suppliers', visible: false },
-  { id: 'pa_k', label: 'PA(K)', visible: true },
-  { id: 'tag_id', label: 'Tag ID', visible: false },
-  { id: 'data_origin', label: 'Data Origin', visible: false },
-  { id: 'tag_type', label: 'Linked Tag Type', visible: false },
-  { id: 'stock', label: 'Stock', visible: false },
-  { id: 'remaining', label: 'Remaining', visible: true },
-  { id: 'spool_name', label: 'Spool', visible: false },
-  { id: 'cost_per_kg', label: 'Cost/kg', visible: false },
-  { id: 'weight_check', label: 'Weight Check', visible: false },
-];
+// Order and default visibility only: the labels come from columnHeaders at
+// render (localizedColumnConfig), so they follow the interface language.
+const DEFAULT_COLUMNS: ColumnConfig[] = ([
+  { id: 'id', visible: true },
+  { id: 'added_time', visible: true },
+  { id: 'encode_time', visible: false },
+  { id: 'last_used_time', visible: false },
+  { id: 'rgba', visible: true },
+  { id: 'material', visible: true },
+  { id: 'subtype', visible: true },
+  { id: 'color_name', visible: false },
+  { id: 'brand', visible: true },
+  { id: 'slicer_filament', visible: false },
+  { id: 'location', visible: true },
+  { id: 'storage_location', visible: false },
+  { id: 'temperature', visible: false },
+  { id: 'humidity', visible: false },
+  { id: 'last_dried', visible: true },
+  { id: 'battery', visible: false },
+  { id: 'label_weight', visible: true },
+  { id: 'net', visible: true },
+  { id: 'gross', visible: false },
+  { id: 'used', visible: false },
+  { id: 'printed_total', visible: false },
+  { id: 'printed_since_weight', visible: false },
+  { id: 'note', visible: false },
+  { id: 'material_number', visible: false },
+  { id: 'suppliers', visible: false },
+  { id: 'pa_k', visible: true },
+  { id: 'tag_id', visible: false },
+  { id: 'data_origin', visible: false },
+  { id: 'tag_type', visible: false },
+  { id: 'stock', visible: false },
+  { id: 'remaining', visible: true },
+  { id: 'spool_name', visible: false },
+  { id: 'cost_per_kg', visible: false },
+  { id: 'weight_check', visible: false },
+] as Omit<ColumnConfig, 'label'>[]).map((c) => ({ ...c, label: c.id }));
 
 function loadColumnConfig(): ColumnConfig[] {
   try {
@@ -237,16 +239,16 @@ type CellCtx = {
 // Column header labels (25 columns — matching SpoolBuddy exactly)
 const columnHeaders: Record<string, (t: TFn) => string> = {
   id: () => '#',
-  added_time: () => 'Added',
-  encode_time: () => 'Encoded',
-  last_used_time: () => 'Last Used',
+  added_time: (t) => t('inventory.tableColumns.added'),
+  encode_time: (t) => t('inventory.tableColumns.encoded'),
+  last_used_time: (t) => t('inventory.tableColumns.lastUsed'),
   rgba: (t) => t('inventory.color'),
   material: (t) => t('inventory.material'),
   subtype: (t) => t('inventory.subtype'),
   color_name: (t) => t('inventory.colorName'),
   brand: (t) => t('inventory.brand'),
   slicer_filament: (t) => t('inventory.slicerFilament'),
-  location: () => 'Location',
+  location: (t) => t('inventory.tableColumns.location'),
   storage_location: (t) => t('inventory.storageLocation'),
   temperature: (t) => t('inventory.temperature'),
   humidity: (t) => t('inventory.humidity'),
@@ -254,17 +256,17 @@ const columnHeaders: Record<string, (t: TFn) => string> = {
   battery: (t) => t('inventory.battery'),
   label_weight: (t) => t('inventory.labelWeight'),
   net: (t) => t('inventory.net'),
-  gross: () => 'Gross',
+  gross: (t) => t('inventory.tableColumns.gross'),
   used: (t) => t('inventory.weightUsed'),
-  printed_total: () => 'Printed Total',
-  printed_since_weight: () => 'Printed Since Weight',
+  printed_total: (t) => t('inventory.tableColumns.printedTotal'),
+  printed_since_weight: (t) => t('inventory.tableColumns.printedSinceWeight'),
   note: (t) => t('inventory.note'),
   material_number: (t) => t('inventory.materialNumber'),
   suppliers: (t) => t('inventory.suppliers.label'),
   pa_k: () => 'PA(K)',
-  tag_id: () => 'Tag ID',
-  data_origin: () => 'Data Origin',
-  tag_type: () => 'Linked Tag Type',
+  tag_id: (t) => t('inventory.tableColumns.tagId'),
+  data_origin: (t) => t('inventory.tableColumns.dataOrigin'),
+  tag_type: (t) => t('inventory.tableColumns.tagType'),
   stock: (t) => t('inventory.stock'),
   remaining: (t) => t('inventory.remaining'),
   spool_name: (t) => t('inventory.spoolName'),
@@ -283,8 +285,8 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
   encode_time: ({ spool, dateFormat }) => (
     <span className="text-sm text-bambu-gray">{formatInventoryDate(spool.encode_time, dateFormat)}</span>
   ),
-  last_used_time: ({ spool, dateFormat }) => (
-    <span className="text-sm text-bambu-gray">{spool.last_used ? formatInventoryDate(spool.last_used, dateFormat) : 'Never'}</span>
+  last_used_time: ({ spool, dateFormat, t }) => (
+    <span className="text-sm text-bambu-gray">{spool.last_used ? formatInventoryDate(spool.last_used, dateFormat) : t('inventory.never')}</span>
   ),
   last_dried: ({ spool, dateFormat }) => {
     if (!spool.last_dried_at) return <span className="text-sm text-bambu-gray">-</span>;
@@ -324,10 +326,10 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
       {spool.slicer_filament_name || spool.slicer_filament || '-'}
     </span>
   ),
-  location: ({ spool, assignmentMap }) => {
+  location: ({ spool, assignmentMap, t }) => {
     const assignment = assignmentMap[spool.id];
     if (!assignment) return <span className="text-sm text-bambu-gray">-</span>;
-    const printerLabel = assignment.printer_name || `Printer ${assignment.printer_id}`;
+    const printerLabel = assignment.printer_name || t('inventory.printerN', { id: assignment.printer_id });
     const slotLabel = formatAssignmentSlotLabel(assignment);
     return (
       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400">
@@ -494,9 +496,9 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
       </span>
     );
   },
-  weight_check: ({ spool, onSyncWeight }) => {
+  weight_check: ({ spool, onSyncWeight, t }) => {
     const scaleWeight = spool.last_scale_weight;
-    if (scaleWeight == null) return <span className="text-sm text-bambu-gray/50" title="No scale measurement">-</span>;
+    if (scaleWeight == null) return <span className="text-sm text-bambu-gray/50" title={t('inventory.noScaleMeasurement')}>-</span>;
 
     const coreWeight = spool.core_weight || 0;
     const calculatedWeight = Math.max(0, spool.label_weight - spool.weight_used) + coreWeight;
@@ -513,9 +515,10 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
     }
 
     const diffStr = difference > 0 ? `+${Math.round(difference)}` : `${Math.round(difference)}`;
+    const tooltipValues = { scale: Math.round(scaleWeight), calculated: Math.round(calculatedWeight), difference: diffStr };
     const tooltip = isMatch
-      ? `Scale: ${Math.round(scaleWeight)}g\nCalculated: ${Math.round(calculatedWeight)}g\nDifference: ${diffStr}g (within tolerance)`
-      : `Scale: ${Math.round(scaleWeight)}g\nCalculated: ${Math.round(calculatedWeight)}g\nDifference: ${diffStr}g (mismatch!)`;
+      ? t('inventory.weightCheckMatchTooltip', tooltipValues)
+      : t('inventory.weightCheckMismatchTooltip', tooltipValues);
 
     return (
       <div
@@ -537,7 +540,7 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
                   onSyncWeight(spool);
                 }}
                 className="p-1 hover:bg-bambu-green/20 rounded transition-colors text-bambu-green"
-                title="Sync: trust scale weight and reset tracking"
+                title={t('inventory.syncScaleWeightTitle')}
               >
                 <RefreshCw className="w-3.5 h-3.5" />
               </button>
@@ -1143,7 +1146,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
       ]
         .filter(Boolean)
         .join(' ');
-      showToast(`Synced "${spoolName}" to scale weight`, 'success');
+      showToast(t('inventory.syncedToScaleWeight', { name: spoolName }), 'success');
     } catch (e) {
       const is404 = e instanceof ApiError && e.status === 404;
       const is503 = e instanceof ApiError && e.status === 503;
@@ -1488,6 +1491,16 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
     saveColumnConfig(config);
   };
 
+  // The column dialog shows the same localized names as the table headers.
+  const localizedColumnConfig = useMemo(
+    () => columnConfig.map((c) => ({ ...c, label: columnHeaders[c.id]?.(t) ?? c.id })),
+    [columnConfig, t]
+  );
+  const localizedDefaultColumns = useMemo(
+    () => DEFAULT_COLUMNS.map((c) => ({ ...c, label: columnHeaders[c.id]?.(t) ?? c.id })),
+    [t]
+  );
+
   // Visible column IDs in order
   const visibleColumns = useMemo(
     () => columnConfig.filter((c) => c.visible).map((c) => c.id),
@@ -1751,7 +1764,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
                   key={mat}
                   className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${MATERIAL_COLORS[mat] || 'bg-bambu-dark-tertiary text-bambu-gray'}`}
                 >
-                  {mat} <span className="opacity-70">{formatWeight(data.weight, true)}</span>
+                  {mat === 'Unknown' ? t('common.unknown') : mat} <span className="opacity-70">{formatWeight(data.weight, true)}</span>
                 </span>
               ))}
             </div>
@@ -2554,7 +2567,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
                       onClick={() => setPageIndex(0)}
                       disabled={safePageIndex === 0}
                       className="p-1.5 rounded text-bambu-gray hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                      title="First page"
+                      title={t('inventory.firstPage')}
                     >
                       <ChevronsLeft className="w-4 h-4" />
                     </button>
@@ -2566,7 +2579,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
                       <ChevronLeft className="w-4 h-4" />
                     </button>
                     <span className="text-bambu-gray px-2 whitespace-nowrap">
-                      {t('inventory.page')} {safePageIndex + 1} {t('inventory.of')} {totalPages}
+                      {t('inventory.pageOf', { page: safePageIndex + 1, total: totalPages })}
                     </span>
                     <button
                       onClick={() => setPageIndex((p) => Math.min(totalPages - 1, p + 1))}
@@ -2579,7 +2592,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
                       onClick={() => setPageIndex(totalPages - 1)}
                       disabled={safePageIndex >= totalPages - 1}
                       className="p-1.5 rounded text-bambu-gray hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                      title="Last page"
+                      title={t('inventory.lastPage')}
                     >
                       <ChevronsRight className="w-4 h-4" />
                     </button>
@@ -2651,8 +2664,8 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
       <ColumnConfigModal
         isOpen={showColumnModal}
         onClose={() => setShowColumnModal(false)}
-        columns={columnConfig}
-        defaultColumns={DEFAULT_COLUMNS}
+        columns={localizedColumnConfig}
+        defaultColumns={localizedDefaultColumns}
         onSave={handleColumnConfigSave}
       />
 
@@ -2751,7 +2764,7 @@ function PaginationBar({
   totalPages: number;
   onPageChange: (page: number) => void;
   onPageSizeChange: (size: number) => void;
-  t: (key: string) => string;
+  t: (key: string, opts?: Record<string, unknown>) => string;
 }) {
   const isShowAll = pageSize === -1;
   if (totalPages <= 1 && !isShowAll) return null;
@@ -2795,7 +2808,7 @@ function PaginationBar({
               <ChevronLeft className="w-4 h-4" />
             </button>
             <span className="text-bambu-gray px-2 whitespace-nowrap">
-              {t('inventory.page')} {pageIndex + 1} {t('inventory.of')} {totalPages}
+              {t('inventory.pageOf', { page: pageIndex + 1, total: totalPages })}
             </span>
             <button
               onClick={() => onPageChange(Math.min(totalPages - 1, pageIndex + 1))}

@@ -660,8 +660,11 @@ export function SpoolmanSettings() {
                     }`}
                   >
                     {syncResult.success
-                      ? `Synced ${syncResult.synced_count} spool${syncResult.synced_count !== 1 ? 's' : ''} successfully`
-                      : `Synced ${syncResult.synced_count} spool${syncResult.synced_count !== 1 ? 's' : ''} with ${syncResult.errors.length} error${syncResult.errors.length !== 1 ? 's' : ''}`}
+                      ? t('settings.spoolmanSyncResult.success', { count: syncResult.synced_count })
+                      : t('settings.spoolmanSyncResult.withErrors', {
+                          count: syncResult.synced_count,
+                          errors: t('settings.spoolmanSyncResult.errorCount', { count: syncResult.errors.length }),
+                        })}
                   </div>
 
                   {/* Skipped spools */}
@@ -671,7 +674,7 @@ export function SpoolmanSettings() {
                         <div className="flex items-center gap-1.5">
                           <AlertTriangle className="w-3.5 h-3.5" />
                           <span className="font-medium">
-                            {syncResult.skipped_count} spool{syncResult.skipped_count !== 1 ? 's' : ''} skipped
+                            {t('settings.spoolmanSyncResult.skipped', { count: syncResult.skipped_count })}
                           </span>
                         </div>
                         {syncResult.skipped_count > 5 && (
@@ -679,7 +682,7 @@ export function SpoolmanSettings() {
                             onClick={() => setShowAllSkipped(!showAllSkipped)}
                             className="text-xs text-amber-700 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 underline"
                           >
-                            {showAllSkipped ? 'Show less' : 'Show all'}
+                            {showAllSkipped ? t('inventory.showLess') : t('inventory.showAll')}
                           </button>
                         )}
                       </div>
@@ -698,7 +701,7 @@ export function SpoolmanSettings() {
                         ))}
                         {!showAllSkipped && syncResult.skipped_count > 5 && (
                           <li className="text-amber-700/70 dark:text-amber-300/60 italic">
-                            ...and {syncResult.skipped_count - 5} more
+                            {t('settings.spoolmanSyncResult.andMore', { count: syncResult.skipped_count - 5 })}
                           </li>
                         )}
                       </ul>
@@ -708,7 +711,7 @@ export function SpoolmanSettings() {
                   {/* Errors */}
                   {syncResult.errors.length > 0 && (
                     <div className="p-2 bg-red-50 dark:bg-red-500/10 border border-red-300 dark:border-red-500/30 rounded text-sm">
-                      <div className="text-red-700 dark:text-red-400 font-medium mb-1">Errors:</div>
+                      <div className="text-red-700 dark:text-red-400 font-medium mb-1">{t('settings.spoolmanSyncResult.errors')}</div>
                       <ul className="text-xs text-red-700/90 dark:text-red-300/80 space-y-0.5">
                         {syncResult.errors.map((err, i) => (
                           <li key={i}>{err}</li>

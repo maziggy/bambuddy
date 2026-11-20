@@ -10,6 +10,7 @@ import { QueuePage } from '../../pages/QueuePage';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import { setAuthToken } from '../../api/client';
+import i18n from '../../i18n';
 import { setColorCatalog, __resetColorCatalogForTests } from '../../utils/colors';
 
 // Mock queue data
@@ -1277,6 +1278,25 @@ describe('QueuePage', () => {
       expect(etaRowNames[0]).toContain('First up');
     });
 
+    it('gives the ETA to the job behind one skipped for filament, but not behind one with priority', async () => {
+      const mk = (reason: string) => [
+        { ...mockQueueItems[0], id: 10, position: 1, archive_name: 'Skipped first', waiting_reason: reason },
+        { ...mockQueueItems[0], id: 11, position: 2, archive_name: 'Runs instead' },
+      ];
+      server.use(http.get('/api/v1/queue/', () => HttpResponse.json(mk('Waiting for filament: PLA · priority in 3 h'))));
+      const first = render(<QueuePage />);
+      await screen.findByText('Runs instead');
+      const names = screen.queryAllByTestId('queue-item-eta').map((el) => el.closest('.group')?.textContent);
+      expect(names).toHaveLength(1);
+      expect(names[0]).toContain('Runs instead');
+      first.unmount();
+
+      server.use(http.get('/api/v1/queue/', () => HttpResponse.json(mk('Waiting for filament: PLA · has priority'))));
+      render(<QueuePage />);
+      await screen.findByText('Runs instead');
+      expect(screen.queryAllByTestId('queue-item-eta')).toHaveLength(0);
+    });
+
     it('shows an ETA for a staged item queued behind others on an idle printer', async () => {
       // The scheduler skips manual-start items without claiming the printer, so
       // a staged job is startable whenever its printer is free — queue order
@@ -1420,6 +1440,31 @@ describe('QueuePage', () => {
       expect(
         within(row as HTMLElement).queryByTestId('queue-item-eta'),
       ).not.toBeInTheDocument();
+    });
+
+    it('renders a translated waiting reason with its priority suffix (#3587)', async () => {
+      await i18n.changeLanguage('de');
+      server.use(
+        http.get('/api/v1/queue/', () =>
+          HttpResponse.json([
+            {
+              ...mockQueueItems[0],
+              archive_name: 'Skipped Print',
+              waiting_reason: 'Waiting for filament: PLA Earth Brown · priority in 5 h',
+            },
+          ]),
+        ),
+      );
+
+      render(<QueuePage />);
+
+      try {
+        expect(
+          await screen.findByText('Warten auf Filament: PLA Earth Brown · Vorrang in 5 Std.'),
+        ).toBeInTheDocument();
+      } finally {
+        await i18n.changeLanguage('en');
+      }
     });
 
     it('does not show an ETA for a waiting item', async () => {

@@ -61,13 +61,15 @@ export function parsePresetTriple(
   return [...fallback];
 }
 
-/** Build the popover options: fixed "Off" button + 3 user-configured presets. */
+/** Build the popover options: fixed "Off" button + 3 user-configured presets.
+ * offLabel is the translated "Off" (t('common.off')). */
 export function buildPresetOptions(
   values: PresetTriple,
   unit: 'C' | '%',
+  offLabel = 'Off',
 ): Array<{ label: string; value: number }> {
   return [
-    { label: 'Off', value: 0 },
+    { label: offLabel, value: 0 },
     ...values.map((v) => ({ label: `${v} ${unit}`, value: v })),
   ];
 }

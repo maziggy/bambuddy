@@ -1653,6 +1653,8 @@ export interface AppSettings {
   session_max_hours: number;
   // User email notifications toggle
   user_notifications_enabled: boolean;
+  // Admin-only: fill {submitted_by_email} in print notifications
+  notification_submitter_email_enabled: boolean;
   // Default print options
   default_bed_levelling: CalibrationMode;
   default_flow_cali: CalibrationMode;
@@ -1684,6 +1686,10 @@ export interface AppSettings {
   // old strictly-serial behaviour, where every printer waited out every other
   // printer's transfer.
   queue_max_concurrent_uploads: number;
+  // Skip jobs whose filament is not loaded instead of holding them (#3587);
+  // after queue_max_wait_hours (null = no limit) a skipped job gets priority.
+  queue_loaded_filament_first: boolean;
+  queue_max_wait_hours: number | null;
   // Preheat / heat-soak before queued prints (#1468). Master toggle is the
   // default for new queue items; per-item PrintQueueItem.preheat_override can
   // flip the decision per print. Chamber target derives from the loaded AMS

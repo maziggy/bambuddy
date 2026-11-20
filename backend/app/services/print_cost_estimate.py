@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +21,9 @@ from backend.app.services.printer_manager import printer_tray_layout
 from backend.app.utils import threemf_tools
 from backend.app.utils.safe_path import safe_join_under
 from backend.app.utils.tray_ids import TrayLayout
+
+if TYPE_CHECKING:
+    from backend.app.services.archive_cost_estimate import SpoolmanOnce
 
 logger = logging.getLogger(__name__)
 
@@ -167,38 +170,35 @@ def _global_tray_id(assignment, layout: TrayLayout) -> int:
     return layout.tray_from_slot_key(assignment.ams_id, assignment.tray_id)
 
 
-async def _spoolman_cost_by_tray(db: AsyncSession, printer_id: int, trays: set[int]) -> dict[int, float | None]:
+async def _spoolman_cost_by_tray(
+    printer_id: int, trays: set[int], ams_trays: dict[int, dict], once: "SpoolmanOnce | None" = None
+) -> dict[int, float]:
     """Per-kg price of the Spoolman spool in each of ``trays``, from the spool's
-    own price or its filament's. Only those spools are fetched, after a health
-    check: this runs on queue add and at dispatch. Empty when Spoolman cannot
-    be asked, and the estimate uses the default rate, as for an unpriced spool.
-    """
-    from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
-    from backend.app.services.spoolman_tracking import _get_spoolman_client_with_fallback, _spool_cost_per_gram
+    own price or its filament's. A tray without a priced spool is left out.
 
-    layout = printer_tray_layout(printer_id)
-    rows = [
-        row
-        for row in (
-            await db.execute(select(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.printer_id == printer_id))
-        )
-        .scalars()
-        .all()
-        if _global_tray_id(row, layout) in trays
-    ]
-    if not rows:
+    The spool is found as the start estimate finds it, with its resolver
+    (``archive_cost_estimate._spoolman_rates``): by the tray's RFID tag first,
+    then by the slot assignment. The start estimate sets what the run is
+    charged (#3580), and a tag-matched spool with no slot assignment was
+    otherwise charged at its price after the budget check approved another.
+
+    This runs on queue add and at dispatch, so it asks after a health check,
+    for one list of the spools to match the tags against, and for no spool
+    outside the mapped trays. ``once`` is the request's, when it prices more
+    than one item: the check and the list are then asked for once for all of
+    them. Empty when Spoolman cannot be asked, and the estimate uses the
+    default rate, as for an unpriced spool.
+    """
+    from backend.app.services.archive_cost_estimate import SpoolmanOnce, _spoolman_rates
+
+    if not trays:
         return {}
-    by_tray: dict[int, float | None] = {}
     try:
-        client = await _get_spoolman_client_with_fallback()
-        if client is None:
-            return {}
-        for row in rows:
-            per_gram = _spool_cost_per_gram(await client.get_spool(row.spoolman_spool_id))
-            by_tray[_global_tray_id(row, layout)] = per_gram * 1000.0 if per_gram is not None else None
+        rates = await _spoolman_rates(printer_id, trays, ams_trays, once=once or SpoolmanOnce())
     except Exception as exc:  # noqa: BLE001 — an estimate falls back to the default rate
         logger.debug("Spoolman prices unavailable for the queue estimate: %s", exc)
-    return by_tray
+        return {}
+    return {tray: per_gram * 1000.0 for tray, per_gram in rates.items()}
 
 
 async def default_cost_per_kg(db: AsyncSession) -> float:
@@ -254,12 +254,30 @@ async def estimate_queue_source_cost(
     plate_id: int | None = None,
     ams_mapping: list[int] | str | None = None,
     printer_id: int | None = None,
+    spoolman_once: "SpoolmanOnce | None" = None,
 ) -> float | None:
-    """Compute a queue cost without trusting the request's display hint."""
+    """Compute a queue cost without trusting the request's display hint.
+
+    ``spoolman_once`` is shared by a request that prices more than one item,
+    so Spoolman is asked for its spools once for all of them."""
 
     if archive is not None:
         archive_path = settings.base_dir / archive.file_path
-        grams, cost = plate_scoped_run_estimate(archive, archive_path, plate_id)
+        # The plate the dispatch prints (#3580). With none named that is the
+        # file's default plate, not the plate the archive printed last.
+        run_plate = _dispatched_plate(plate_id, archive_path)
+        grams, cost = plate_scoped_run_estimate(archive, archive_path, run_plate)
+        # A print of an archive is charged at the spools mapped for it, not at
+        # the archive's cost (#3580): with a mapping, what it reserves is
+        # priced the same way. Without one, or with no spool in the mapped
+        # trays, the charge falls back to the archive's cost and so does this.
+        if printer_id is not None and _parse_mapping(ams_mapping) and archive_path.exists():
+            usage = threemf_tools.extract_plate_metadata_from_3mf(archive_path, run_plate).filament_usage
+            at_spools = await _cost_at_mapped_spools(
+                db, usage, ams_mapping, printer_id, total_grams=grams, spoolman_once=spoolman_once
+            )
+            if at_spools is not None and at_spools[1]:
+                return at_spools[0]
         if cost is not None and cost > 0:
             return float(cost)
         # Older archives and imports can have trustworthy filament usage but
@@ -292,16 +310,74 @@ async def estimate_queue_source_cost(
     if not usage:
         return None
 
+    at_spools = await _cost_at_mapped_spools(db, usage, ams_mapping, printer_id, spoolman_once=spoolman_once)
+    return at_spools[0] if at_spools is not None else None
+
+
+def _dispatched_plate(plate_id: int | None, file_path: Path) -> int | None:
+    """The plate a dispatch of ``file_path`` prints for a queue item's
+    ``plate_id``: the scheduler's own rule (``_effective_plate_id``), so a
+    job that names none is priced for the plate it prints. None, the whole
+    file, when there is no file to read a default plate from."""
+    if plate_id is not None and plate_id > 0:
+        return plate_id
+    if file_path.suffix.lower() != ".3mf" or not file_path.is_file():
+        return None
+    # Imported here: the scheduler imports this module.
+    from backend.app.services.print_scheduler import _effective_plate_id
+
+    return _effective_plate_id(None, file_path)
+
+
+async def _cost_at_mapped_spools(
+    db: AsyncSession,
+    usage: list[dict],
+    ams_mapping: list[int] | str | None,
+    printer_id: int | None,
+    total_grams: float | None = None,
+    spoolman_once: "SpoolmanOnce | None" = None,
+) -> tuple[float, bool] | None:
+    """What ``usage`` costs at the spools in the trays its slots are mapped
+    to. A slot without a mapped, priced spool is at the default rate, as are
+    the grams of ``total_grams`` the slots do not account for. Returns the
+    cost, and whether any slot's tray holds a spool; None for no cost.
+
+    Priced as the start estimate prices the run, which is what the run is
+    charged (#3580): a slot's tray is read from the mapping by the estimate's
+    own rule (``_mapped_tray``, so -1 is the external spool), and a built-in
+    spool priced 0 is free. A print only on such spools then costs 0, and
+    that is returned, not None."""
+    from backend.app.services.archive_cost_estimate import _mapped_tray
+    from backend.app.services.printer_manager import printer_manager
+    from backend.app.services.spoolman_tracking import build_ams_tray_lookup
+
     default_cost = await default_cost_per_kg(db)
     cost_by_tray: dict[int, float | None] = {}
     mapping = _parse_mapping(ams_mapping)
+    slots: list[tuple[int | None, float]] = []
+    if printer_id is not None and mapping:
+        state = printer_manager.get_status(printer_id)
+        ams_trays = build_ams_tray_lookup(getattr(state, "raw_data", None) or {})
+    else:
+        ams_trays = {}
+    for filament in usage:
+        try:
+            slot_id = int(filament.get("slot_id") or 0)
+            grams = float(filament.get("used_g") or 0)
+        except (TypeError, ValueError):
+            continue
+        slots.append((_mapped_tray(slot_id, mapping, ams_trays) if mapping else None, grams))
     # The prices of the spools the mode's own table puts in those trays. The
     # built-in table may still hold rows from before a switch to Spoolman --
     # nothing clears it since #2812 -- and pricing from a spool the printer is
     # not drawing on would be worse than the default rate this falls back to.
     spoolman_mode = await spoolman_owns_assignments(db)
     if printer_id is not None and mapping and spoolman_mode:
-        cost_by_tray = await _spoolman_cost_by_tray(db, printer_id, {t for t in mapping if t >= 0})
+        cost_by_tray = dict(
+            await _spoolman_cost_by_tray(
+                printer_id, {tray for tray, grams in slots if tray is not None and grams > 0}, ams_trays, spoolman_once
+            )
+        )
     if printer_id is not None and mapping and not spoolman_mode:
         assignments = (
             (
@@ -318,16 +394,26 @@ async def estimate_queue_source_cost(
         cost_by_tray = {_global_tray_id(a, layout): a.spool.cost_per_kg for a in assignments}
 
     total = 0.0
-    for filament in usage:
-        try:
-            slot_id = int(filament.get("slot_id") or 0)
-            grams = float(filament.get("used_g") or 0)
-        except (TypeError, ValueError):
-            continue
-        tray_id = mapping[slot_id - 1] if mapping and 0 < slot_id <= len(mapping) else None
+    slot_grams = 0.0
+    on_a_spool = False
+    for tray_id, grams in slots:
         cost_per_kg = cost_by_tray.get(tray_id) if tray_id is not None else None
-        if cost_per_kg is None or cost_per_kg <= 0:
-            cost_per_kg = default_cost
-        total += (grams / 1000.0) * cost_per_kg
+        # A built-in spool without a price is at the default rate, one priced
+        # 0 is free. Spoolman's table holds priced spools only: 0 there is no
+        # price (``_spool_cost_per_gram``). With a default rate of 0 a spool
+        # without a price does not count as a spool here: it is not free, and
+        # the start estimate gives it no rate either (``_internal_rates``).
+        rate = cost_per_kg if cost_per_kg is not None and cost_per_kg >= 0 else None
+        if grams > 0 and tray_id in cost_by_tray and (rate is not None or default_cost > 0):
+            on_a_spool = True
+        if rate is None:
+            rate = default_cost
+        total += (grams / 1000.0) * rate
+        slot_grams += grams
+    if total_grams is not None and total_grams > slot_grams:
+        total += ((total_grams - slot_grams) / 1000.0) * default_cost
 
-    return round(total, 2) if total > 0 else None
+    # Free spools only: 0 is then the cost, as the run is charged (#3580).
+    if total > 0 or on_a_spool:
+        return round(total, 2), on_a_spool
+    return None

@@ -12,6 +12,16 @@ from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 from backend.app.services import print_cost_estimate as pce
 
 
+@pytest.fixture(autouse=True)
+def slot_assignments_from_the_test_database(test_engine):
+    """The spool resolver reads the slot assignments on a session of its own."""
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    with patch("backend.app.services.spoolman_tracking.async_session", maker):
+        yield
+
+
 @pytest.mark.asyncio
 @pytest.mark.integration
 @pytest.mark.parametrize("price,expected", [(60.0, 6.0), (None, 2.5)])

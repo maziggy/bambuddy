@@ -331,6 +331,7 @@ export default {
       finished: 'Voltooid',
       unknown: 'Onbekend',
       title: 'Status',
+      failed: 'Mislukt',
     },
     temperatures: {
       nozzle: 'Nozzle',
@@ -599,6 +600,8 @@ export default {
       unloadAms3h: 'Sleuf {{n}} wordt ontladen. Trek het filament met de hand uit de AMS 3H terug zodra de printer daarom vraagt.',
       failedToLoad: 'Filament laden mislukt',
       failedToUnload: 'Filament ontladen mislukt',
+      chamberLightOn: 'Kamerverlichting aan',
+      chamberLightOff: 'Kamerverlichting uit',
     },
     // Connection status
     connection: {
@@ -649,6 +652,12 @@ export default {
       homeZ: 'Auto Home',
       moveAnyway: 'Toch verplaatsen',
       homingStarted: 'Printer automatisch homen…',
+      moveYForward: 'Y naar voren bewegen',
+      moveXLeft: 'X naar links bewegen',
+      moveXRight: 'X naar rechts bewegen',
+      moveYBack: 'Y naar achteren bewegen',
+      retractFilament: 'Filament terugtrekken',
+      extrudeFilament: 'Filament extruderen',
     },
     // Permissions
     pandaBreath: {
@@ -691,6 +700,9 @@ export default {
       fromPrinterSettings: 'Uit printerinstellingen',
       modelOptional: 'Model (optioneel)',
       saveChanges: 'Wijzigingen opslaan',
+      hostPlaceholder: '192.168.1.100 of printer.local',
+      seriesGroup: '{{series}}-serie',
+      locationGroupLabel: 'Locatie / groep',
     },
     // Skip objects
     skipObjects: {
@@ -914,6 +926,13 @@ export default {
       labelPlaceholder: 'Label...',
       clickToEdit: '{{label}} - Klik om te bewerken',
       clickToAddLabel: 'Klik om label toe te voegen',
+      checkTitle: 'Controle printplaat',
+      refsCount: '{{count}}/{{max}} referenties',
+      referenceAlt: 'Referentie {{n}}',
+      calibrating: 'Bezig met kalibreren...',
+      calibrateEmptyPlate: 'Lege plaat kalibreren',
+      adding: 'Bezig met toevoegen...',
+      addReference: 'Referentie toevoegen ({{count}}/{{max}})',
     },
     // Speed
     speed: {
@@ -1018,6 +1037,7 @@ export default {
       width: 'Breedte',
       height: 'Hoogte',
       instruction: 'Pas het detectiegebied aan zodat het op de bouwplaat is gericht. Het groene kader in het voorbeeld toont het huidige gebied.',
+      current: 'Huidig: X={{x}}%, Y={{y}}%, B={{w}}%, H={{h}}%',
     },
     developerModeWarning: 'Developer LAN-modus is niet ingeschakeld op: {{names}}. Sommige functies werken mogelijk niet.',
     howToEnable: 'Inschakelen',
@@ -1029,6 +1049,45 @@ export default {
     networkLabel: 'Netwerk',
     noActiveJob: 'Geen actieve taak',
     power: 'Stroom',
+    indicator: {
+      good: 'Goed',
+      fair: 'Matig',
+      bad: 'Slecht',
+      humidityTitle: 'Luchtvochtigheid: {{value}}% - {{status}}',
+      humidityTitleClickable: 'Luchtvochtigheid: {{value}}% - {{status}} (klik voor geschiedenis)',
+      temperatureTitle: 'Temperatuur: {{value}}°C - {{status}}',
+      temperatureTitleClickable: 'Temperatuur: {{value}}°C - {{status}} (klik voor geschiedenis)',
+      customPlaceholder: 'Aangepast',
+      set: 'Instellen',
+    },
+    nozzleSlotEmpty: 'Slot {{slot}} — Leeg',
+    unknownModel: 'Onbekend model',
+    wifiTitle: 'Wifi: {{signal}} dBm - {{strength}}',
+    badgeOk: 'OK',
+    maintenanceBadge: {
+      dueAndSoon: '{{due}} onderhoud vereist, {{soon}} binnenkort vereist - Klik om te bekijken',
+      due: '{{due}} onderhoud vereist - Klik om te bekijken',
+      soon: '{{soon}} binnenkort vereist - Klik om te bekijken',
+    },
+    startedBy: 'Gestart door {{user}}',
+    lastPrint: 'Laatste: {{name}}',
+    control: {
+      setNozzleTemperatures: 'Nozzletemperaturen instellen',
+      leftTemp: 'Temp. links',
+      rightTemp: 'Temp. rechts',
+      setNozzleTemperature: 'Nozzletemperatuur instellen',
+      setBedTemperature: 'Bedtemperatuur instellen',
+      setChamberTemperature: 'Kamertemperatuur instellen',
+      setNozzleSelection: 'Nozzleselectie instellen',
+      setFanSpeed: 'Snelheid {{fan}} instellen',
+    },
+    externalSlotLocation: 'Externe slot {{slot}}',
+    plugTurnOff: 'Uitschakelen',
+    plugTurnOn: 'Inschakelen',
+    haRunEntity: '{{entity}} uitvoeren',
+    haToggleEntity: '{{entity}} omschakelen',
+    noPrintersWithSmartPlugs: 'Geen printers met slimme stekkers',
+    ungrouped: 'Niet gegroepeerd',
   },
 
   // Archives page
@@ -1274,6 +1333,8 @@ export default {
       download: 'Downloaden',
       edit: 'Bewerken',
       delete: 'Verwijderen',
+      reprintCount_one: '{{count}} herdruk',
+      reprintCount_other: '{{count}} herdrukken',
     },
     calendar: {
       today: 'Vandaag',
@@ -1348,6 +1409,30 @@ export default {
       failedDeleteArchives: 'Archieven verwijderen mislukt',
       photoDeleted: 'Foto verwijderd',
       failedDeletePhoto: 'Foto verwijderen mislukt',
+      collections: {
+        all: 'Alle archieven',
+        recent: 'Laatste 24 uur',
+        favorites: 'Favorieten',
+        notPrinted: 'Niet geprint',
+        printed: 'Geprint',
+        failed: 'Mislukte prints',
+        duplicates: 'Duplicaten',
+      },
+      archivesDeletedCount_one: '{{count}} archief verwijderd',
+      archivesDeletedCount_other: '{{count}} archieven verwijderd',
+      toggledFavoritesCount_one: 'Favorietstatus gewijzigd voor {{count}} archief',
+      toggledFavoritesCount_other: 'Favorietstatus gewijzigd voor {{count}} archieven',
+      compareCount: 'Vergelijken ({{count}})',
+      upload3mf: '3MF uploaden',
+      fileTypeSliced: 'Gesliced (GCODE)',
+      fileTypeSource: 'Alleen bronbestand',
+      hideFailed: 'Mislukte verbergen',
+      allTags: 'Alle tags',
+      colors: 'Kleuren:',
+      matchAnyColor: 'Overeenkomst met EEN van de gekozen kleuren',
+      matchAllColors: 'Overeenkomst met ALLE gekozen kleuren',
+      createdAutomatically: 'Archieven worden automatisch aangemaakt wanneer prints voltooid zijn',
+      noPrinter: 'Geen printer',
     },
     list: {
       name: 'Naam',
@@ -1407,6 +1492,23 @@ export default {
         cancelled: 'Geannuleerd',
         skipped: 'Overgeslagen',
       },
+    },
+    batchProject: {
+      added_one: '{{count}} archief toegevoegd aan "{{name}}"',
+      added_other: '{{count}} archieven toegevoegd aan "{{name}}"',
+      assignFailed: 'Project toewijzen mislukt',
+      removed_one: '{{count}} archief uit project verwijderd',
+      removed_other: '{{count}} archieven uit project verwijderd',
+      removeFailed: 'Verwijderen uit project mislukt',
+      title: 'Toewijzen aan project',
+      assignSelected_one: '{{count}} geselecteerd archief aan een project toewijzen',
+      assignSelected_other: '{{count}} geselecteerde archieven aan een project toewijzen',
+      removeFromProject: 'Uit project verwijderen',
+      clearAssignment: 'Projecttoewijzing wissen',
+      orAssignTo: 'of toewijzen aan',
+      archiveCount_one: '{{count}} archief',
+      archiveCount_other: '{{count}} archieven',
+      noProjects: 'Nog geen projecten. Maak er een aan op de pagina Projecten.',
     },
   },
 
@@ -1839,6 +1941,9 @@ export default {
       noEditItems: 'Je hebt geen toestemming om wachtrij-items te bewerken',
       noCancelItems: 'Je hebt geen toestemming om wachtrij-items te annuleren',
     },
+    selectPlateToPrint: 'Plaat kiezen om te printen',
+    selectPlatesToPrint: 'Platen kiezen om te printen',
+    plateSelectionRequired: 'Selectie vereist',
   },
 
   // Statistics page
@@ -1978,6 +2083,23 @@ export default {
     allUsers: 'Alle gebruikers',
     noUser: 'Geen gebruiker (systeem)',
     filterByUser: 'Filteren op gebruiker',
+    costAvg: 'gem. {{cost}}',
+    filamentTooltip: 'Filament',
+    usageTooltip: 'Verbruik',
+    weekdays: {
+      mon: 'Ma',
+      tue: 'Di',
+      wed: 'Wo',
+      thu: 'Do',
+      fri: 'Vr',
+      sat: 'Za',
+      sun: 'Zo',
+    },
+    heatmapCellTitle_one: '{{day}} {{hour}}: {{count}} print',
+    heatmapCellTitle_other: '{{day}} {{hour}}: {{count}} prints',
+    heatmapLess: 'Minder',
+    heatmapMore: 'Meer',
+    weekOf: 'Week van {{date}}',
   },
 
   // Maintenance page
@@ -2123,6 +2245,7 @@ export default {
     deleteEntryMessage: '“{{task}}” van {{date}} wordt definitief uit het onderhoudslogboek verwijderd. De laatste reset van de taak blijft staan.',
     entryDeleted: 'Logboekitem verwijderd',
     deleteFailed: 'Verwijderen mislukt: {{error}}',
+    ok: 'OK',
   },
 
   // Settings page
@@ -2870,6 +2993,20 @@ export default {
       cameraConnectedCoalesced: 'Camera verbonden{{resolution}} (gedeeld met een opname die al draait)',
       cameraConnectedLiveView: 'Camera werkt{{resolution}} (beeld uit de liveweergave, die de camera gebruikt)',
       saveFailed: 'Opslaan mislukt',
+      storageRefreshFailed: 'Opslaggebruik vernieuwen mislukt',
+      apiKeyCreateFailed: 'API-sleutel aanmaken mislukt: {{message}}',
+      apiKeyDeleteFailed: 'API-sleutel verwijderen mislukt: {{message}}',
+      emailRequiredAdvancedAuth: 'E-mailadres is verplicht wanneer geavanceerde authenticatie is ingeschakeld',
+      allProvidersTested: 'Alle {{tested}} providers succesvol getest!',
+      providersSucceeded: '{{success}}/{{tested}} providers geslaagd',
+      testProvidersFailed: 'Testen van providers mislukt: {{message}}',
+      allPlugsTurnedOn: 'Alle {{success}} stekkers ingeschakeld',
+      allPlugsTurnedOff: 'Alle {{success}} stekkers uitgeschakeld',
+      plugsTurnedOnPartial: '{{success}} stekkers ingeschakeld, {{failed}} mislukt',
+      plugsTurnedOffPartial: '{{success}} stekkers uitgeschakeld, {{failed}} mislukt',
+      failedWithMessage: 'Mislukt: {{message}}',
+      saveFailedWithMessage: 'Opslaan mislukt: {{message}}',
+      updatePrinterFailed: 'Printer bijwerken mislukt: {{message}}',
     },
     testConnection: 'Verbinding testen',
     catalog: {
@@ -3216,6 +3353,8 @@ export default {
       oidcUnlinkConfirmTitle: 'Account ontkoppelen?',
       oidcUnlinkConfirmMessage: 'Je kunt dan niet meer inloggen met {{provider}}.',
       oidcUnlinkConfirmAction: 'Ontkoppelen',
+      qrCodeAlt: 'TOTP-QR-code',
+      codeOrBackupPlaceholder: '000000 of XXXXXXXX',
     },
 
     // Session Policy (#1706) — admin-configurable session lifetime ceiling.
@@ -3411,6 +3550,34 @@ export default {
     noSearchResults: 'Geen overeenkomende instellingen.',
     noTemplatesMatch: 'Geen sjablonen komen overeen met je filter.',
     searchPlaceholder: 'Instellingen zoeken…',
+    rebuildLedgerFailed: 'Herbouwen van het grootboek starten mislukt',
+    mqttBrokerPlaceholder: 'mqtt.example.com of 192.168.1.100',
+    clearFilter: 'Filter wissen',
+    bulkPlugTitleOn: 'Alle stekkers inschakelen',
+    bulkPlugTitleOff: 'Alle stekkers uitschakelen',
+    bulkPlugMessageOn: 'Hiermee worden alle {{total}} ingeschakelde slimme stekkers AANGEZET.',
+    bulkPlugMessageOff: 'Hiermee worden alle {{total}} ingeschakelde slimme stekkers UITGEZET. Actieve printers kunnen hierdoor worden getroffen!',
+    bulkPlugConfirmOn: 'Alles inschakelen',
+    bulkPlugConfirmOff: 'Alles uitschakelen',
+    releaseNotesTitle: 'Releaseopmerkingen - v{{version}}',
+    userItemArchives_one: '{{count}} archief',
+    userItemArchives_other: '{{count}} archieven',
+    userItemQueueItems_one: '{{count}} wachtrij-item',
+    userItemQueueItems_other: '{{count}} wachtrij-items',
+    userItemLibraryFiles_one: '{{count}} bibliotheekbestand',
+    userItemLibraryFiles_other: '{{count}} bibliotheekbestanden',
+    spoolmanSyncResult: {
+      success_one: '{{count}} spoel succesvol gesynchroniseerd',
+      success_other: '{{count}} spoelen succesvol gesynchroniseerd',
+      withErrors_one: '{{count}} spoel gesynchroniseerd met {{errors}}',
+      withErrors_other: '{{count}} spoelen gesynchroniseerd met {{errors}}',
+      errorCount_one: '{{count}} fout',
+      errorCount_other: '{{count}} fouten',
+      skipped_one: '{{count}} spoel overgeslagen',
+      skipped_other: '{{count}} spoelen overgeslagen',
+      andMore: '...en nog {{count}}',
+      errors: 'Fouten:',
+    },
   },
 
   // Notifications (for push notifications)
@@ -3545,6 +3712,7 @@ export default {
     timestamp: 'Tijdstempel',
     direction: 'Richting',
     all: 'Alle',
+    autoScroll: 'Automatisch scrollen',
   },
 
   // Printer File Manager modal (printer internal storage)
@@ -3795,6 +3963,8 @@ export default {
         profile: 'Profiel',
       },
     },
+    chamberLightOnToast: 'Kamerverlichting aan',
+    chamberLightOffToast: 'Kamerverlichting uit',
   },
 
   // Groups management
@@ -4373,7 +4543,9 @@ export default {
       same: 'Ongewijzigd',
       searchFields: 'Velden zoeken...',
       title: 'Profielen vergelijken',
+      gcodeLines: '[{{count}} regels G-code/script]',
     },
+    scrollToTop: 'Naar boven scrollen',
   },
 
   // Support/Debug
@@ -4715,6 +4887,8 @@ export default {
       failedToGenerateThumbnail: 'Miniatuur genereren mislukt: {{error}}',
     },
     filterByUser: 'Filteren op gebruiker',
+    linkedProjectTitle: 'Project: {{name}} (klik om te wijzigen)',
+    linkedArchiveTitle: 'Archief: {{name}} (klik om te wijzigen)',
   },
 
   // Projects
@@ -5255,6 +5429,8 @@ export default {
     disableWeightSyncDesc: 'Werk de resterende capaciteit niet bij op basis van AMS-schattingen. Gebruik dit als je de verbruikstracking van Spoolman verkiest boven AMS-schattingen op basis van percentages. Nieuwe spoelen gebruiken nog steeds de AMS-schatting als startgewicht.',
     reportPartialUsage: 'Gedeeltelijk verbruik rapporteren voor mislukte afdrukken',
     reportPartialUsageDesc: 'Wanneer een afdruk mislukt of wordt geannuleerd, rapporteer dan het geschatte filamentverbruik tot dat moment op basis van de laagvoortgang.',
+    linkSlotInfo: 'AMS {{amsId}} T{{trayId}} · Printer #{{printerId}}',
+    tagValue: 'Tag: {{tag}}',
   },
 
   locations: {
@@ -5342,6 +5518,7 @@ export default {
       restorePartial: '{{ok}} spoelen hersteld, {{failed}} mislukt',
       restoreAllFailed: 'Alle {{count}} spoelherstelacties zijn mislukt — selectie blijft behouden zodat je opnieuw kunt proberen',
       invalidHex: 'Voer 6 hextekens (RRGGBB) of 8 (RRGGBBAA) in. Anders wordt het veld niet toegepast.',
+      hexPlaceholder: 'RRGGBB of RRGGBBAA',
     },
     spoolmanMixedContentTitle: 'Spoolman kan niet via HTTPS laden — mixed content wordt door je browser geblokkeerd',
     spoolmanMixedContentBody: 'Bambuddy wordt via HTTPS aangeboden (via je reverse proxy), maar je Spoolman-URL gebruikt nog gewone HTTP. Browsers blokkeren mixed content om veiligheidsredenen, waardoor de ingebedde Spoolman-interface niet kan worden weergegeven. Spoolman moet via HTTPS bereikbaar zijn om dit te laten werken.',
@@ -5890,6 +6067,30 @@ export default {
     assignedSpool: 'Toegewezen spoel',
     unassignFailed: 'Toewijzing van spoel opheffen mislukt',
     unassignSuccess: 'Toewijzing van spoel opgeheven',
+    pickerDiagCounts: '{{fetched}} opgehaald · {{archived}} gearchiveerd · {{assigned}} toegewezen aan andere slots',
+    pickerDiagFiltered: '{{unassigned}} niet-toegewezen spoelen — {{filtered}} weggefilterd door slotovereenkomst. Probeer "Alle spoelen tonen".',
+    tableColumns: {
+      added: 'Toegevoegd',
+      encoded: 'Gecodeerd',
+      lastUsed: 'Laatst gebruikt',
+      location: 'Locatie',
+      gross: 'Bruto',
+      printedTotal: 'Totaal geprint',
+      printedSinceWeight: 'Geprint sinds weging',
+      tagId: 'Tag-ID',
+      dataOrigin: 'Gegevensbron',
+      tagType: 'Type gekoppelde tag',
+    },
+    never: 'Nooit',
+    printerN: 'Printer {{id}}',
+    noScaleMeasurement: 'Geen weegschaalmeting',
+    weightCheckMatchTooltip: 'Weegschaal: {{scale}}g\nBerekend: {{calculated}}g\nVerschil: {{difference}}g (binnen tolerantie)',
+    weightCheckMismatchTooltip: 'Weegschaal: {{scale}}g\nBerekend: {{calculated}}g\nVerschil: {{difference}}g (afwijking!)',
+    syncScaleWeightTitle: 'Synchroniseren: weegschaalgewicht vertrouwen en tracking resetten',
+    syncedToScaleWeight: '"{{name}}" gesynchroniseerd met weegschaalgewicht',
+    firstPage: 'Eerste pagina',
+    lastPage: 'Laatste pagina',
+    pageOf: 'Pagina {{page}} van {{total}}',
   },
 
   // Timelapse
@@ -6047,6 +6248,52 @@ export default {
     costCenter: 'Kostenplaats',
     personalDefault: 'Persoonlijk',
     totalCostForQuantity: 'totaal: {{cost}}',
+    queuedForAnyModel: 'In wachtrij voor elke {{model}}',
+    printerN: 'Printer {{id}}',
+    trayN: 'Slot {{id}}',
+    selectAtLeastOnePrinter: 'Selecteer ten minste één printer',
+    selectTargetModel: 'Selecteer een doelprintermodel',
+    crossModelBlocked: 'Bestand is gesliced voor {{sliced}} en kan niet naar {{target}}-printers worden verzonden',
+    queueItemUpdated: 'Wachtrij-item bijgewerkt',
+    submitFailed: 'Mislukt: {{error}}',
+    submitPartial: '{{succeeded}} geslaagd, {{failed}} mislukt',
+    printJob: 'Printtaak',
+    slicedForOtherModel: 'Bestand is gesliced voor {{sliced}}, maar wordt geprint op {{model}}',
+    archiveDataUnavailable: 'Archiefgegevens niet beschikbaar. Het bronbestand is mogelijk verwijderd. Filamenttoewijzing is uitgeschakeld.',
+    operationFailed: 'Bewerking voltooien mislukt',
+    printerSelector: {
+      customSlotMapping: 'Aangepaste slottoewijzing',
+      selectSlotOption: '-- Slot selecteren --',
+      statePreparing: 'Voorbereiden',
+      stateFailed: 'Mislukt',
+      noActivePrintersAvailable: 'Geen actieve printers beschikbaar',
+      specificPrinter: 'Specifieke printer',
+      anyModel: 'Elke {{model}}',
+      targetModel: 'Doelmodel',
+      slicedForHint: '(gesliced voor {{model}})',
+      selectModelOption: 'Selecteer een model...',
+      incompatibleGcodeSuffix: ' — niet compatibel met {{model}}-G-code',
+      crossModelWarning: 'Bestand is gesliced voor {{sliced}}, maar wordt naar een {{target}}-printer verzonden',
+      crossModelBlocked: 'Bestand is gesliced voor {{sliced}} en kan niet naar {{target}}-printers worden verzonden — selecteer een compatibel model',
+      locationFilter: 'Locatiefilter (optioneel)',
+      anyLocation: 'Elke locatie',
+      schedulerInfo: 'De planner wijst toe aan de eerste beschikbare inactieve {{model}}-printer',
+      schedulerInfoLocation: 'De planner wijst toe aan de eerste beschikbare inactieve {{model}}-printer in {{location}}',
+      selectPrinters: 'Printers selecteren',
+      printersSelected_one: '{{count}} printer geselecteerd',
+      printersSelected_other: '{{count}} printers geselecteerd',
+      selectAll: 'Alles selecteren',
+      inactive: '(inactief)',
+      customMapping: 'Aangepaste toewijzing',
+      matchedCount: '({{matched}}/{{total}} gekoppeld)',
+      auto: 'Automatisch',
+      hiddenPrinters_one: '{{count}} andere printer verborgen (ander model) —',
+      hiddenPrinters_other: '{{count}} andere printers verborgen (ander model) —',
+      showAll: 'alles tonen',
+      showOnlyModel: 'Alleen {{model}}-printers tonen',
+      selectAtLeastOne: 'Selecteer ten minste één printer',
+      selectTargetModel: 'Selecteer een doelprintermodel',
+    },
   },
 
   // Backup
@@ -6311,6 +6558,19 @@ export default {
     processingPercent: 'Bezig met verwerken… {{percent}}%',
     failed: 'Verwerken mislukt',
     cancelled: 'Verwerken geannuleerd',
+    loadingVideoInfo: 'Video-informatie laden...',
+    title: 'Timelapse bewerken',
+    trim: 'Inkorten',
+    speed: 'Snelheid',
+    speedOutput: '{{speed}}x (uitvoer: {{duration}})',
+    musicOverlay: 'Muziek toevoegen',
+    dropAudio: 'Sleep een audiobestand hierheen of klik om te uploaden',
+    original: 'Origineel:',
+    output: 'Uitvoer:',
+    outputSummary: '{{duration}} op {{speed}}x snelheid',
+    outputSummaryWithMusic: '{{duration}} op {{speed}}x snelheid + muziek',
+    processingTimelapse: 'Timelapse verwerken...',
+    mayTakeMoments: 'Dit kan even duren',
   },
   // Tags
   tags: {
@@ -6337,6 +6597,11 @@ export default {
     uploading: 'Uploaden...',
     upload: 'Uploaden',
     uploadFailed: 'Upload mislukt',
+    filesUploaded_one: '{{count}} bestand geüpload',
+    filesUploaded_other: '{{count}} bestanden geüpload',
+    filesFailed_one: 'Uploaden van {{count}} bestand mislukt',
+    filesFailed_other: 'Uploaden van {{count}} bestanden mislukt',
+    partialUpload: '{{uploaded}} geüpload, {{failed}} mislukt',
   },
 
   archivePage: {
@@ -7126,6 +7391,9 @@ export default {
     connectionSuccess: 'Verbinding geslaagd',
     noSwitchesInSwitchbar: 'Geen schakelaars in de schakelbalk',
     enableSwitchbarHint: 'Schakel "Tonen in schakelbalk" in via Instellingen > Slimme stekkers',
+    tasmotaIpRequired: 'IP-adres is verplicht voor Tasmota-stekkers',
+    sameAsPowerTopic: 'Gelijk aan power-topic, of anders',
+    examplePlaceholder: 'bijv. {{value}}',
   },
 
   // Notifications
@@ -7497,6 +7765,22 @@ export default {
     placeholders: {
       linkName: 'Mijn link',
     },
+    addLink: 'Link toevoegen',
+    deleteConfirm: 'Weet je zeker dat je "{{name}}" wilt verwijderen? Deze actie kan niet ongedaan worden gemaakt.',
+    invalidImageType: 'Selecteer een geldig afbeeldingsbestand (PNG, JPG, GIF, SVG, WebP of ICO)',
+    imageTooLarge: 'Afbeeldingsbestand moet kleiner zijn dan 1MB',
+    nameRequired: 'Naam is verplicht',
+    urlRequired: 'URL is verplicht',
+    urlInvalidScheme: 'URL moet beginnen met http:// of https://',
+    editLink: 'Link bewerken',
+    addExternalLink: 'Externe link toevoegen',
+    nameRequiredLabel: 'Naam *',
+    urlRequiredLabel: 'URL *',
+    icon: 'Pictogram',
+    customIcon: 'Aangepast pictogram',
+    customIconAlt: 'Aangepast pictogram',
+    iconFormatsHint: 'PNG, JPG, GIF, SVG, WebP of ICO. Max. 1MB.',
+    choosePresetIcon: 'Of kies een standaardpictogram',
   },
 
   // Keyboard Shortcuts Modal
@@ -7521,8 +7805,13 @@ export default {
       newProfile: 'Nieuw profiel',
       exitSelectionMode: 'Selectiemodus afsluiten',
       showHelp: 'Deze hulp tonen',
+      openExternal: '{{name}} openen',
+      goToPage: 'Ga naar {{page}}',
+      showCamera: 'Camera van een printer tonen',
     },
     footer: 'Druk op Esc of klik buiten het venster om te sluiten',
+    rightClick: 'Rechtsklik',
+    footerWithKey: 'Druk op <kbd>Esc</kbd> of klik buiten het venster om te sluiten',
   },
 
   // Notification Log
@@ -7545,6 +7834,7 @@ export default {
       minutesAgo: '{{minutes}}m geleden',
       hoursAgo: '{{hours}}u geleden',
     },
+    clearFailed: 'Logboeken wissen mislukt: {{message}}',
   },
 
   // Restore/Backup Modal
@@ -7725,7 +8015,23 @@ export default {
     placeholders: {
       requestBody: 'JSON-requestbody...',
       searchEndpoints: 'Endpoints zoeken...',
+      value: 'waarde',
     },
+    validationError: 'Validatiefout',
+    missingRequiredParams: 'Ontbrekende verplichte parameters: {{params}}',
+    networkError: 'Netwerkfout',
+    pathParameters: 'Padparameters',
+    queryParameters: 'Queryparameters',
+    selectOption: '-- Selecteren --',
+    requestBody: 'Requestbody',
+    execute: 'Uitvoeren',
+    fillIn: 'Invullen: {{params}}',
+    response: 'Respons',
+    fetchSchemaFailed: 'OpenAPI-schema ophalen mislukt',
+    loadSchemaFailed: 'API-schema laden mislukt',
+    expandAll: 'Alles uitklappen',
+    collapseAll: 'Alles inklappen',
+    endpointCount: '{{endpoints}} endpoints in {{categories}} categorieën',
   },
 
   // Configure AMS Slot Modal
@@ -7784,12 +8090,19 @@ export default {
     downloadBackup: 'Back-up downloaden',
     restoreBackup: 'Back-up herstellen',
     noBackupsYet: 'Nog geen back-ups',
+    status: {
+      success: 'Geslaagd',
+      failed: 'Mislukt',
+      skipped: 'Overgeslagen',
+      running: 'Bezig',
+    },
   },
 
   // Email Settings
   emailSettings: {
     placeholders: {
       fromName: 'BamBuddy',
+      appPassword: 'App-wachtwoord',
     },
   },
 
@@ -7798,6 +8111,24 @@ export default {
     searchTags: 'Tags zoeken...',
     renameTag: 'Tag hernoemen',
     deleteTag: 'Tag verwijderen',
+    renamed_one: '"{{oldName}}" hernoemd naar "{{newName}}" in {{count}} archief',
+    renamed_other: '"{{oldName}}" hernoemd naar "{{newName}}" in {{count}} archieven',
+    renameFailed: 'Tag hernoemen mislukt',
+    deleted_one: '"{{name}}" verwijderd uit {{count}} archief',
+    deleted_other: '"{{name}}" verwijderd uit {{count}} archieven',
+    deleteFailed: 'Tag verwijderen mislukt',
+    title: 'Tags beheren',
+    sortByCount: 'Sorteren op aantal',
+    sortByName: 'Sorteren op naam',
+    summary: '{{tags}} in {{usages}}',
+    tagCount_one: '{{count}} tag',
+    tagCount_other: '{{count}} tags',
+    usageCount_one: '{{count}} keer gebruikt',
+    usageCount_other: '{{count}} keer gebruikt',
+    noMatch: 'Geen tags gevonden die overeenkomen met je zoekopdracht',
+    noTags: 'Geen tags gevonden',
+    confirmDelete_one: '"{{name}}" verwijderen uit {{count}} archief?',
+    confirmDelete_other: '"{{name}}" verwijderen uit {{count}} archieven?',
   },
 
   // Notification Template Editor
@@ -7813,11 +8144,33 @@ export default {
     placeholders: {
       newTag: 'Nieuwe tag invoeren...',
     },
+    failedOnArchive: 'Mislukt bij archief {{id}}: {{error}}',
+    tagCount_one: '{{count}} tag',
+    tagCount_other: '{{count}} tags',
+    archiveCount_one: '{{count}} archief',
+    archiveCount_other: '{{count}} archieven',
+    addedToast: '{{tags}} toegevoegd aan {{archives}}',
+    removedToast: '{{tags}} verwijderd uit {{archives}}',
+    updateFailed: 'Tags bijwerken mislukt',
+    addTags: 'Tags toevoegen',
+    removeTags: 'Tags verwijderen',
+    addDescription_one: 'Tags toevoegen aan {{count}} geselecteerd archief',
+    addDescription_other: 'Tags toevoegen aan {{count}} geselecteerde archieven',
+    removeDescription_one: 'Tags verwijderen uit {{count}} geselecteerd archief',
+    removeDescription_other: 'Tags verwijderen uit {{count}} geselecteerde archieven',
+    existingTags: 'Bestaande tags:',
+    tagsToAdd: 'Toe te voegen tags:',
+    tagsToRemove: 'Te verwijderen tags:',
+    processing: 'Bezig met verwerken...',
   },
 
   // Photo Gallery Modal
   photoGallery: {
     deletePhoto: 'Foto verwijderen',
+    photoOf: 'Foto {{current}} van {{total}}',
+    photoAlt: 'Foto {{number}}',
+    thumbnailAlt: 'Miniatuur {{number}}',
+    deleteConfirm: 'Deze foto verwijderen? Dit kan niet ongedaan worden gemaakt.',
   },
 
   // Filament Hover Card
@@ -7829,6 +8182,8 @@ export default {
   kProfilesView: {
     hasNote: 'Heeft notitie',
     copyProfile: 'Profiel kopiëren',
+    unnamed: 'Naamloos',
+    notePrefix: 'Notitie: {{note}}',
   },
 
   // Layout/Navigation
@@ -7841,6 +8196,10 @@ export default {
   dashboard: {
     dragToReorder: 'Sleep om te herschikken',
     hideWidget: 'Widget verbergen',
+    sizeClickToCycle: 'Grootte: {{size}} - Klik om te wisselen',
+    sizeFull: 'Volledig',
+    hiddenWidgetsClickToShow: 'Verborgen widgets (klik om te tonen):',
+    allWidgetsHidden: 'Alle widgets zijn verborgen.',
   },
 
   // Notification Provider Card
@@ -7854,6 +8213,22 @@ export default {
     sortFiles: 'Bestanden sorteren',
     goToParentFolder: 'Ga naar bovenliggende map',
     threeView: '3D-weergave',
+    gcodePreview: 'G-code-voorbeeld',
+    notSliced: 'niet gesliced',
+    sort: {
+      nameAsc: 'Naam (A-Z)',
+      nameDesc: 'Naam (Z-A)',
+      sizeAsc: 'Grootte (kleinste)',
+      sizeDesc: 'Grootte (grootste)',
+      dateAsc: 'Datum (oudste)',
+      dateDesc: 'Datum (nieuwste)',
+    },
+    dirs: {
+      root: 'Hoofdmap',
+      cache: 'Cache',
+      models: 'Modellen',
+      timelapse: 'Timelapse',
+    },
   },
 
   // Embedded Camera Viewer
@@ -7864,6 +8239,8 @@ export default {
     resetZoom: 'Zoom resetten',
     zoomIn: 'Inzoomen',
     dragToResize: 'Sleep om formaat te wijzigen',
+    minimize: 'Minimaliseren',
+    reconnectingIn: 'Opnieuw verbinden over {{seconds}}s...',
   },
 
   // Timelapse Viewer
@@ -7890,11 +8267,24 @@ export default {
   logViewer: {
     searchPlaceholder: 'Zoek bericht of loggernaam...',
     noLogEntries: 'Geen logboekitems gevonden',
+    title: 'Applicatielogboeken',
+    liveStreamingEntries: 'Live streamen - {{entries}} items',
+    subtitle: 'Applicatielogboeken bekijken en filteren',
+    live: 'Live',
+    stop: 'Stoppen',
+    start: 'Starten',
+    autoScroll: 'Automatisch scrollen',
+    logFileEmpty: 'Het logbestand is mogelijk leeg of gewist',
+    autoRefreshing: 'Wordt elke 2 seconden automatisch vernieuwd',
+    clickStartHint: 'Klik op Starten om live streamen van logboeken in te schakelen',
   },
 
   // Switchbar Popover
   switchbarPopover: {
     noSwitchesInSwitchbar: 'Geen schakelaars in de schakelbalk',
+    monitor: 'Monitoren',
+    waiting: 'Wachten',
+    turnOffConfirm: 'Weet je zeker dat je "{{name}}" wilt uitschakelen?',
   },
 
   // Project Page Modal
@@ -7907,6 +8297,13 @@ export default {
       profileTitle: 'Profieltitel',
       profileDescription: 'Profielbeschrijving...',
     },
+    title: 'Projectpagina',
+    loadFailed: 'Projectpaginagegevens laden mislukt',
+    noData: 'Geen projectpaginagegevens gevonden in dit 3MF-bestand.',
+    noDataHint: 'Projectpagina\'s zitten meestal in bestanden die van MakerWorld zijn gedownload.',
+    printProfile: 'Printprofiel',
+    byUser: 'door {{name}}',
+    imagesCount: 'Afbeeldingen ({{count}})',
   },
 
   // Spoolman Settings
@@ -7949,6 +8346,7 @@ export default {
       status: 'Status',
       backend: 'Backend',
       connectDisplay: 'Sluit het SpoolBuddy-display aan om spoelen te scannen',
+      deviceDisconnected: 'SpoolBuddy-apparaat losgekoppeld',
     },
     dashboard: {
       readyToScan: 'Gereed om te scannen',
@@ -7978,6 +8376,7 @@ export default {
       plateClearedToast: 'Plaat gemarkeerd als vrij',
       plateClearFailed: 'Plaat kon niet als vrij worden gemarkeerd',
       printers: 'Printers',
+      estimatedFilament: '~{{weight}}g filament',
     },
     modal: {
       assignToAms: 'Aan AMS toewijzen',
@@ -8030,6 +8429,7 @@ export default {
       linkDesc: 'Een Spoolman-spoel aan deze sleuf koppelen',
       unassignDesc: 'Voorraadspoel uit deze sleuf verwijderen',
       unlinkDesc: 'Spoolman-koppeling van deze sleuf verwijderen',
+      lowFilamentAlert: 'Weinig filament: {{type}} ({{slot}}) - {{remain}}% resterend',
     },
     inventory: {
       search: 'Spoelen zoeken...',
@@ -8139,6 +8539,7 @@ export default {
       updateFailed: 'Update mislukt',
       updateWaiting: 'Bijwerken...',
       used: 'Gebruikt',
+      triggerUpdateFailed: 'Update starten mislukt',
     },
     writeTag: {
       writeWith: 'Schrijven met',
@@ -8204,6 +8605,7 @@ export default {
       confirmPlugOff: '{{name}} uitschakelen?',
       turnOn: 'Inschakelen',
       turnOff: 'Uitschakelen',
+      open: 'Snelmenu openen',
     },
     diagnostic: {
       clickStart: 'Klik op "Diagnose uitvoeren" om de hardwarediagnose te starten. Apparaat:',
@@ -8217,6 +8619,9 @@ export default {
       running: 'Diagnose wordt uitgevoerd op apparaat...',
       runningBtn: 'Bezig...',
       scaleTitle: 'Weegschaaldiagnose',
+      timedOut: 'Time-out bij diagnose - apparaat heeft geen resultaten gemeld',
+      exitCode: 'Afsluitcode: {{code}}',
+      errorPrefix: 'FOUT: {{error}}',
     },
     errors: {
       quickAddFailed: 'Spoel toevoegen mislukt',
@@ -8511,6 +8916,7 @@ export default {
     noActivePrints: 'Er worden momenteel geen afdrukken uitgevoerd.',
     historyTitle: 'Recente detecties',
     noHistory: 'Nog geen detecties.',
+    printerFallback: 'Printer {{id}}',
   },
 
   octoeverywhere: {
@@ -9114,8 +9520,51 @@ export default {
     // Permissions
     noReadAccess: 'Je hebt geen machtiging om voorraadprognoses te bekijken.',
     noWriteAccess: 'Je hebt geen machtiging om prognose-instellingen te wijzigen.',
+    unitDays: 'dagen',
+    spoolsOrdered: '{{spools}} besteld',
+    chartReorderPoint: 'ROP',
+    chartSafetyStock: 'VV',
+    chartOut: 'OP',
+    chartArrives: '+{{amount}} komt binnen (d{{days}})',
+    atDailyRate: 'bij {{rate}}g/dag',
   },
   amsHistory: {
     recordingInfo: 'Gegevens worden elke 5 minuten vastgelegd zolang de printer verbonden is',
+  },
+  app: {
+    uiCrash: 'UI-crash',
+  },
+  printCalendar: {
+    days: {
+      sun: 'Zo',
+      mon: 'Ma',
+      tue: 'Di',
+      wed: 'Wo',
+      thu: 'Do',
+      fri: 'Vr',
+      sat: 'Za',
+    },
+    dayTooltip_one: '{{date}}: {{count}} print',
+    dayTooltip_other: '{{date}}: {{count}} prints',
+    less: 'Minder',
+    more: 'Meer',
+  },
+  compareArchivesModal: {
+    title: 'Archieven vergelijken ({{count}})',
+    loadFailed: 'Vergelijking laden mislukt',
+    setting: 'Instelling',
+    differencesFound_one: '{{count}} verschil gevonden',
+    differencesFound_other: '{{count}} verschillen gevonden',
+    andMore: '...en nog {{count}}',
+    successFailureAnalysis: 'Analyse geslaagd/mislukt',
+    successfulCount: '{{count}} geslaagd',
+    failedCount: '{{count}} mislukt',
+    noCorrelations: 'Geen duidelijke verbanden gevonden tussen instellingen en resultaten.',
+    needBothOutcomes: 'Voor een verbandanalyse zijn zowel geslaagde als mislukte prints nodig.',
+  },
+  qrCodeModal: {
+    title: 'QR-code',
+    scanHint: 'Scan om dit archief te openen',
+    download: 'QR-code downloaden',
   },
 };

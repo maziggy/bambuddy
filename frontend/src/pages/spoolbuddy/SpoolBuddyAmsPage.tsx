@@ -388,11 +388,14 @@ export function SpoolBuddyAmsPage() {
       savedPresetId: slotPresetDescribesTray(slotPreset?.preset_id, tray?.tray_info_idx, slotPreset?.tray_info_idx)
         ? slotPreset?.preset_id
         : undefined,
-      location: `${spoolBuddyAmsName(amsId, amsType)} Slot ${trayId + 1}`,
+      location: t('configureAmsSlot.slotLabel', '{{ams}} Slot {{slot}}', {
+        ams: spoolBuddyAmsName(amsId, amsType),
+        slot: trayId + 1,
+      }),
     };
 
     setSlotActionPicker(slotData);
-  }, [slotPresets, amsExtruderMap, isDualNozzle, trayLayout]);
+  }, [slotPresets, amsExtruderMap, isDualNozzle, trayLayout, t]);
 
   const handleExtSlotClick = useCallback((extTray: AMSTray) => {
     const extTrayId = extTray.id ?? 254;
@@ -414,12 +417,12 @@ export function SpoolBuddyAmsPage() {
       location: trayLayout.rack
         ? rackExternalLabel(extTrayId)
         : isDualNozzle
-          ? (extTrayId === 254 ? 'Ext-L' : 'Ext-R')
-          : 'External',
+          ? (extTrayId === 254 ? t('printers.extL', 'Ext-L') : t('printers.extR', 'Ext-R'))
+          : t('printers.external', 'External'),
     };
 
     setSlotActionPicker(slotData);
-  }, [slotPresets, isDualNozzle, trayLayout.rack]);
+  }, [slotPresets, isDualNozzle, trayLayout.rack, t]);
 
   const openConfigureFromPicker = useCallback(() => {
     if (!slotActionPicker) return;
@@ -484,7 +487,7 @@ export function SpoolBuddyAmsPage() {
           const slot = formatSlotLabel(unit.id, i, isHt, isExternal);
           setAlert({
             type: 'warning',
-            message: `Low Filament: ${tray.tray_type} (${slot}) - ${tray.remain}% remaining`,
+            message: t('spoolbuddy.ams.lowFilamentAlert', 'Low Filament: {{type}} ({{slot}}) - {{remain}}% remaining', { type: tray.tray_type, slot, remain: tray.remain }),
           });
           return;
         }
@@ -645,7 +648,7 @@ export function SpoolBuddyAmsPage() {
                           {nozzleSide && <NozzleBadge side={nozzleSide} />}
                         </div>
                         <div className="text-sm text-white/80 truncate">
-                          {isEmpty ? 'Empty' : tray.tray_type || '?'}
+                          {isEmpty ? t('ams.empty', 'Empty') : tray.tray_type || '?'}
                         </div>
                         {(temp != null || humidity != null) && (
                           <div className="flex items-center gap-1.5">

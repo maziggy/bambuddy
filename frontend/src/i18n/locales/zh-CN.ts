@@ -331,6 +331,7 @@ export default {
       finished: '已完成',
       unknown: '未知',
       title: '状态',
+      failed: '失败',
     },
     temperatures: {
       nozzle: '喷嘴',
@@ -596,6 +597,8 @@ export default {
       unloadAms3h: '正在退出槽位 {{n}} 的耗材。打印机提示时，请手动将耗材从 AMS 3H 拉出。',
       failedToLoad: '加载耗材失败',
       failedToUnload: '卸载耗材失败',
+      chamberLightOn: '腔室灯已开启',
+      chamberLightOff: '腔室灯已关闭',
     },
     // Connection status
     connection: {
@@ -646,6 +649,12 @@ export default {
       homeZ: '自动归零',
       moveAnyway: '强制移动',
       homingStarted: '打印机自动归零中…',
+      moveYForward: 'Y 轴向前移动',
+      moveXLeft: 'X 轴向左移动',
+      moveXRight: 'X 轴向右移动',
+      moveYBack: 'Y 轴向后移动',
+      retractFilament: '回抽耗材',
+      extrudeFilament: '挤出耗材',
     },
     // Permissions
     pandaBreath: {
@@ -688,6 +697,9 @@ export default {
       fromPrinterSettings: '来自打印机设置',
       modelOptional: '型号（可选）',
       saveChanges: '保存更改',
+      hostPlaceholder: '192.168.1.100 或 printer.local',
+      seriesGroup: '{{series}} 系列',
+      locationGroupLabel: '位置 / 分组',
     },
     // Skip objects
     skipObjects: {
@@ -909,6 +921,13 @@ export default {
       labelPlaceholder: '标签...',
       clickToEdit: '{{label}} - 点击编辑',
       clickToAddLabel: '点击添加标签',
+      checkTitle: '打印板检查',
+      refsCount: '{{count}}/{{max}} 张参考图',
+      referenceAlt: '参考图 {{n}}',
+      calibrating: '校准中...',
+      calibrateEmptyPlate: '校准空打印板',
+      adding: '添加中...',
+      addReference: '添加参考图（{{count}}/{{max}}）',
     },
     // Speed
     speed: {
@@ -1013,6 +1032,7 @@ export default {
       width: '宽度',
       height: '高度',
       instruction: '调整检测区域以聚焦到构建板。预览中的绿色框显示当前区域。',
+      current: '当前：X={{x}}%，Y={{y}}%，W={{w}}%，H={{h}}%',
     },
     developerModeWarning: '以下打印机未启用开发者局域网模式：{{names}}。某些功能可能无法使用。',
     howToEnable: '如何启用',
@@ -1024,6 +1044,45 @@ export default {
     networkLabel: '网络',
     noActiveJob: '无进行中的任务',
     power: '电源',
+    indicator: {
+      good: '良好',
+      fair: '一般',
+      bad: '较差',
+      humidityTitle: '湿度：{{value}}% - {{status}}',
+      humidityTitleClickable: '湿度：{{value}}% - {{status}}（点击查看历史）',
+      temperatureTitle: '温度：{{value}}°C - {{status}}',
+      temperatureTitleClickable: '温度：{{value}}°C - {{status}}（点击查看历史）',
+      customPlaceholder: '自定义',
+      set: '设置',
+    },
+    nozzleSlotEmpty: '槽位 {{slot}} — 空',
+    unknownModel: '未知型号',
+    wifiTitle: 'WiFi：{{signal}} dBm - {{strength}}',
+    badgeOk: '正常',
+    maintenanceBadge: {
+      dueAndSoon: '{{due}} 项维护到期，{{soon}} 项即将到期 - 点击查看',
+      due: '{{due}} 项维护到期 - 点击查看',
+      soon: '{{soon}} 项即将到期 - 点击查看',
+    },
+    startedBy: '由 {{user}} 启动',
+    lastPrint: '上次：{{name}}',
+    control: {
+      setNozzleTemperatures: '设置喷嘴温度',
+      leftTemp: '左侧温度',
+      rightTemp: '右侧温度',
+      setNozzleTemperature: '设置喷嘴温度',
+      setBedTemperature: '设置热床温度',
+      setChamberTemperature: '设置腔室温度',
+      setNozzleSelection: '设置喷嘴选择',
+      setFanSpeed: '设置{{fan}}转速',
+    },
+    externalSlotLocation: '外部槽位 {{slot}}',
+    plugTurnOff: '关闭',
+    plugTurnOn: '开启',
+    haRunEntity: '运行 {{entity}}',
+    haToggleEntity: '切换 {{entity}}',
+    noPrintersWithSmartPlugs: '没有配备智能插座的打印机',
+    ungrouped: '未分组',
   },
 
   // Archives page
@@ -1269,6 +1328,8 @@ export default {
       download: '下载',
       edit: '编辑',
       delete: '删除',
+      reprintCount_one: '重新打印 {{count}} 次',
+      reprintCount_other: '重新打印 {{count}} 次',
     },
     calendar: {
       today: '今天',
@@ -1343,6 +1404,30 @@ export default {
       failedDeleteArchives: '删除归档失败',
       photoDeleted: '照片已删除',
       failedDeletePhoto: '删除照片失败',
+      collections: {
+        all: '所有归档',
+        recent: '最近 24 小时',
+        favorites: '收藏',
+        notPrinted: '未打印',
+        printed: '已打印',
+        failed: '失败的打印',
+        duplicates: '重复项',
+      },
+      archivesDeletedCount_one: '已删除 {{count}} 个归档',
+      archivesDeletedCount_other: '已删除 {{count}} 个归档',
+      toggledFavoritesCount_one: '已切换 {{count}} 个归档的收藏状态',
+      toggledFavoritesCount_other: '已切换 {{count}} 个归档的收藏状态',
+      compareCount: '比较（{{count}}）',
+      upload3mf: '上传 3MF',
+      fileTypeSliced: '已切片（GCODE）',
+      fileTypeSource: '仅源文件',
+      hideFailed: '隐藏失败',
+      allTags: '所有标签',
+      colors: '颜色：',
+      matchAnyColor: '匹配任一所选颜色',
+      matchAllColors: '匹配全部所选颜色',
+      createdAutomatically: '打印完成后会自动创建归档',
+      noPrinter: '无打印机',
     },
     list: {
       name: '名称',
@@ -1402,6 +1487,23 @@ export default {
         cancelled: '已取消',
         skipped: '已跳过',
       },
+    },
+    batchProject: {
+      added_one: '已将 {{count}} 个归档添加到"{{name}}"',
+      added_other: '已将 {{count}} 个归档添加到"{{name}}"',
+      assignFailed: '分配项目失败',
+      removed_one: '已从项目中移除 {{count}} 个归档',
+      removed_other: '已从项目中移除 {{count}} 个归档',
+      removeFailed: '从项目中移除失败',
+      title: '分配到项目',
+      assignSelected_one: '将 {{count}} 个所选归档分配到项目',
+      assignSelected_other: '将 {{count}} 个所选归档分配到项目',
+      removeFromProject: '从项目中移除',
+      clearAssignment: '清除项目分配',
+      orAssignTo: '或分配到',
+      archiveCount_one: '{{count}} 个归档',
+      archiveCount_other: '{{count}} 个归档',
+      noProjects: '暂无项目。请在项目页面中创建。',
     },
   },
 
@@ -1822,6 +1924,9 @@ export default {
       noEditItems: '您没有编辑队列项目的权限',
       noCancelItems: '您没有取消队列项目的权限',
     },
+    selectPlateToPrint: '选择要打印的打印板',
+    selectPlatesToPrint: '选择要打印的打印板',
+    plateSelectionRequired: '需要选择',
   },
 
   // Statistics page
@@ -1959,6 +2064,23 @@ export default {
     allUsers: '所有用户',
     noUser: '无用户（系统）',
     filterByUser: '按用户筛选',
+    costAvg: '平均 {{cost}}',
+    filamentTooltip: '耗材',
+    usageTooltip: '用量',
+    weekdays: {
+      mon: '周一',
+      tue: '周二',
+      wed: '周三',
+      thu: '周四',
+      fri: '周五',
+      sat: '周六',
+      sun: '周日',
+    },
+    heatmapCellTitle_one: '{{day}} {{hour}}：{{count}} 次打印',
+    heatmapCellTitle_other: '{{day}} {{hour}}：{{count}} 次打印',
+    heatmapLess: '少',
+    heatmapMore: '多',
+    weekOf: '{{date}} 当周',
   },
 
   // Maintenance page
@@ -2104,6 +2226,7 @@ export default {
     deleteEntryMessage: '{{date}} 的“{{task}}”将从维护日志中永久删除。该任务的上次重置保持不变。',
     entryDeleted: '日志条目已删除',
     deleteFailed: '删除失败：{{error}}',
+    ok: '正常',
   },
 
   // Settings page
@@ -2850,6 +2973,20 @@ export default {
       cameraConnectedCoalesced: '摄像头已连接{{resolution}}（与正在进行的抓取共享）',
       cameraConnectedLiveView: '摄像头工作正常{{resolution}}（画面来自正在使用摄像头的实时画面）',
       saveFailed: '保存失败',
+      storageRefreshFailed: '刷新存储用量失败',
+      apiKeyCreateFailed: '创建 API 密钥失败：{{message}}',
+      apiKeyDeleteFailed: '删除 API 密钥失败：{{message}}',
+      emailRequiredAdvancedAuth: '启用高级认证时必须填写邮箱',
+      allProvidersTested: '全部 {{tested}} 个提供商测试成功！',
+      providersSucceeded: '{{success}}/{{tested}} 个提供商成功',
+      testProvidersFailed: '测试提供商失败：{{message}}',
+      allPlugsTurnedOn: '全部 {{success}} 个插座已开启',
+      allPlugsTurnedOff: '全部 {{success}} 个插座已关闭',
+      plugsTurnedOnPartial: '{{success}} 个插座已开启，{{failed}} 个失败',
+      plugsTurnedOffPartial: '{{success}} 个插座已关闭，{{failed}} 个失败',
+      failedWithMessage: '失败：{{message}}',
+      saveFailedWithMessage: '保存失败：{{message}}',
+      updatePrinterFailed: '更新打印机失败：{{message}}',
     },
     testConnection: '测试连接',
     catalog: {
@@ -3182,6 +3319,8 @@ export default {
       oidcUnlinkConfirmTitle: '解除账户关联？',
       oidcUnlinkConfirmMessage: '你将无法再使用 {{provider}} 登录。',
       oidcUnlinkConfirmAction: '解除关联',
+      qrCodeAlt: 'TOTP 二维码',
+      codeOrBackupPlaceholder: '000000 或 XXXXXXXX',
     },
     // Session Policy (#1706)
     sessionPolicy: {
@@ -3368,6 +3507,34 @@ export default {
     noSearchResults: '未找到匹配的设置。',
     noTemplatesMatch: '没有模板符合筛选条件。',
     searchPlaceholder: '搜索设置…',
+    rebuildLedgerFailed: '启动账本重建失败',
+    mqttBrokerPlaceholder: 'mqtt.example.com 或 192.168.1.100',
+    clearFilter: '清除筛选',
+    bulkPlugTitleOn: '开启所有插座',
+    bulkPlugTitleOff: '关闭所有插座',
+    bulkPlugMessageOn: '这将开启全部 {{total}} 个已启用的智能插座。',
+    bulkPlugMessageOff: '这将关闭全部 {{total}} 个已启用的智能插座。正在运行的打印机可能会受到影响！',
+    bulkPlugConfirmOn: '全部开启',
+    bulkPlugConfirmOff: '全部关闭',
+    releaseNotesTitle: '发布说明 - v{{version}}',
+    userItemArchives_one: '{{count}} 个归档',
+    userItemArchives_other: '{{count}} 个归档',
+    userItemQueueItems_one: '{{count}} 个队列项目',
+    userItemQueueItems_other: '{{count}} 个队列项目',
+    userItemLibraryFiles_one: '文件管理器中的 {{count}} 个文件',
+    userItemLibraryFiles_other: '文件管理器中的 {{count}} 个文件',
+    spoolmanSyncResult: {
+      success_one: '已成功同步 {{count}} 个料盘',
+      success_other: '已成功同步 {{count}} 个料盘',
+      withErrors_one: '已同步 {{count}} 个料盘，{{errors}}',
+      withErrors_other: '已同步 {{count}} 个料盘，{{errors}}',
+      errorCount_one: '{{count}} 个错误',
+      errorCount_other: '{{count}} 个错误',
+      skipped_one: '已跳过 {{count}} 个料盘',
+      skipped_other: '已跳过 {{count}} 个料盘',
+      andMore: '...以及另外 {{count}} 个',
+      errors: '错误：',
+    },
   },
 
   // Notifications (for push notifications)
@@ -3502,6 +3669,7 @@ export default {
     timestamp: '时间戳',
     direction: '方向',
     all: '全部',
+    autoScroll: '自动滚动',
   },
 
   // Printer File Manager modal (printer internal storage)
@@ -3752,6 +3920,8 @@ export default {
         profile: '配置',
       },
     },
+    chamberLightOnToast: '腔室灯已开启',
+    chamberLightOffToast: '腔室灯已关闭',
   },
 
   // Groups management
@@ -4330,7 +4500,9 @@ export default {
       same: '未更改',
       searchFields: '搜索字段...',
       title: '对比配置文件',
+      gcodeLines: '[{{count}} 行 G-code/脚本]',
     },
+    scrollToTop: '滚动到顶部',
   },
 
   // Support/Debug
@@ -4672,6 +4844,8 @@ export default {
       failedToGenerateThumbnail: '生成缩略图失败：{{error}}',
     },
     filterByUser: '按用户筛选',
+    linkedProjectTitle: '项目：{{name}}（点击更改）',
+    linkedArchiveTitle: '归档：{{name}}（点击更改）',
   },
 
   // Projects
@@ -5207,6 +5381,8 @@ export default {
     disableWeightSyncDesc: '不从 AMS 估计值更新剩余容量。如果您更喜欢 Spoolman 的用量追踪而非 AMS 百分比估计，请使用此选项。新耗材仍将使用 AMS 估计值作为初始重量。',
     reportPartialUsage: '报告失败打印的部分用量',
     reportPartialUsageDesc: '当打印失败或被取消时，根据层进度报告估计的耗材使用量。',
+    linkSlotInfo: 'AMS {{amsId}} T{{trayId}} · 打印机 #{{printerId}}',
+    tagValue: '标签：{{tag}}',
   },
 
   locations: {
@@ -5293,6 +5469,7 @@ export default {
       restorePartial: '已恢复 {{ok}} 个，{{failed}} 个失败',
       restoreAllFailed: '{{count}} 个料盘恢复全部失败 — 已保留选择以便重试',
       invalidHex: '请输入 6 位十六进制字符 (RRGGBB) 或 8 位 (RRGGBBAA)，否则该字段不会应用。',
+      hexPlaceholder: 'RRGGBB 或 RRGGBBAA',
     },
     spoolmanMixedContentTitle: 'Spoolman 无法通过 HTTPS 加载 — 浏览器已阻止混合内容',
     spoolmanMixedContentBody: 'Bambuddy 通过您的反向代理以 HTTPS 提供服务，但您的 Spoolman 地址仍为 HTTP。出于安全考虑，浏览器会阻止混合内容，因此嵌入式 Spoolman 界面无法加载。Spoolman 也必须通过 HTTPS 访问。',
@@ -5831,6 +6008,30 @@ export default {
     assignedSpool: '已分配料盘',
     unassignFailed: '解除料盘分配失败',
     unassignSuccess: '已解除料盘分配',
+    pickerDiagCounts: '已获取 {{fetched}} 个 · 已归档 {{archived}} 个 · 已分配到其他槽位 {{assigned}} 个',
+    pickerDiagFiltered: '{{unassigned}} 个未分配料盘 — 其中 {{filtered}} 个被料槽匹配过滤。请尝试"显示所有料盘"。',
+    tableColumns: {
+      added: '添加时间',
+      encoded: '已编码',
+      lastUsed: '上次使用',
+      location: '位置',
+      gross: '毛重',
+      printedTotal: '累计打印用量',
+      printedSinceWeight: '称重后打印用量',
+      tagId: '标签 ID',
+      dataOrigin: '数据来源',
+      tagType: '关联标签类型',
+    },
+    never: '从未',
+    printerN: '打印机 {{id}}',
+    noScaleMeasurement: '无称重数据',
+    weightCheckMatchTooltip: '秤：{{scale}}g\n计算值：{{calculated}}g\n差值：{{difference}}g（在容差范围内）',
+    weightCheckMismatchTooltip: '秤：{{scale}}g\n计算值：{{calculated}}g\n差值：{{difference}}g（不一致！）',
+    syncScaleWeightTitle: '同步：以称重重量为准并重置跟踪',
+    syncedToScaleWeight: '已将"{{name}}"同步为称重重量',
+    firstPage: '第一页',
+    lastPage: '最后一页',
+    pageOf: '第 {{page}} / {{total}} 页',
   },
 
   // Timelapse
@@ -5988,6 +6189,52 @@ export default {
     costCenter: '成本中心',
     personalDefault: '个人',
     totalCostForQuantity: '合计：{{cost}}',
+    queuedForAnyModel: '已加入队列，可由任意 {{model}} 打印',
+    printerN: '打印机 {{id}}',
+    trayN: '料槽 {{id}}',
+    selectAtLeastOnePrinter: '请至少选择一台打印机',
+    selectTargetModel: '请选择目标打印机型号',
+    crossModelBlocked: '文件是为 {{sliced}} 切片的，无法发送到 {{target}} 打印机',
+    queueItemUpdated: '队列项目已更新',
+    submitFailed: '失败：{{error}}',
+    submitPartial: '{{succeeded}} 个成功，{{failed}} 个失败',
+    printJob: '打印任务',
+    slicedForOtherModel: '文件是为 {{sliced}} 切片的，但将在 {{model}} 上打印',
+    archiveDataUnavailable: '归档数据不可用。源文件可能已被删除。耗材映射已禁用。',
+    operationFailed: '操作未能完成',
+    printerSelector: {
+      customSlotMapping: '自定义槽位映射',
+      selectSlotOption: '-- 选择槽位 --',
+      statePreparing: '准备中',
+      stateFailed: '失败',
+      noActivePrintersAvailable: '没有可用的活动打印机',
+      specificPrinter: '指定打印机',
+      anyModel: '任意 {{model}}',
+      targetModel: '目标型号',
+      slicedForHint: '（为 {{model}} 切片）',
+      selectModelOption: '选择型号...',
+      incompatibleGcodeSuffix: ' — 与 {{model}} G-code 不兼容',
+      crossModelWarning: '文件是为 {{sliced}} 切片的，但将发送到 {{target}} 打印机',
+      crossModelBlocked: '文件是为 {{sliced}} 切片的，无法发送到 {{target}} 打印机 — 请选择兼容的型号',
+      locationFilter: '位置筛选（可选）',
+      anyLocation: '任意位置',
+      schedulerInfo: '调度器将分配给第一台可用的空闲 {{model}} 打印机',
+      schedulerInfoLocation: '调度器将分配给 {{location}} 中第一台可用的空闲 {{model}} 打印机',
+      selectPrinters: '选择打印机',
+      printersSelected_one: '已选择 {{count}} 台打印机',
+      printersSelected_other: '已选择 {{count}} 台打印机',
+      selectAll: '全选',
+      inactive: '（未激活）',
+      customMapping: '自定义映射',
+      matchedCount: '（已匹配 {{matched}}/{{total}}）',
+      auto: '自动',
+      hiddenPrinters_one: '已隐藏 {{count}} 台其他打印机（型号不同）—',
+      hiddenPrinters_other: '已隐藏 {{count}} 台其他打印机（型号不同）—',
+      showAll: '全部显示',
+      showOnlyModel: '仅显示 {{model}} 打印机',
+      selectAtLeastOne: '至少选择一台打印机',
+      selectTargetModel: '选择目标打印机型号',
+    },
   },
 
   // Backup
@@ -6247,6 +6494,19 @@ export default {
     processingPercent: '处理中… {{percent}}%',
     failed: '处理失败',
     cancelled: '已取消处理',
+    loadingVideoInfo: '正在加载视频信息...',
+    title: '编辑延时摄影',
+    trim: '裁剪',
+    speed: '速度',
+    speedOutput: '{{speed}}x（输出：{{duration}}）',
+    musicOverlay: '背景音乐',
+    dropAudio: '拖放音频文件或点击上传',
+    original: '原始：',
+    output: '输出：',
+    outputSummary: '{{duration}} @ {{speed}}x 速度',
+    outputSummaryWithMusic: '{{duration}} @ {{speed}}x 速度 + 背景音乐',
+    processingTimelapse: '正在处理延时摄影...',
+    mayTakeMoments: '这可能需要一点时间',
   },
   // Tags
   tags: {
@@ -6273,6 +6533,11 @@ export default {
     uploading: '上传中...',
     upload: '上传',
     uploadFailed: '上传失败',
+    filesUploaded_one: '已上传 {{count}} 个文件',
+    filesUploaded_other: '已上传 {{count}} 个文件',
+    filesFailed_one: '{{count}} 个文件上传失败',
+    filesFailed_other: '{{count}} 个文件上传失败',
+    partialUpload: '已上传 {{uploaded}} 个，失败 {{failed}} 个',
   },
 
   archivePage: {
@@ -7061,6 +7326,9 @@ export default {
     connectionSuccess: '连接成功',
     noSwitchesInSwitchbar: '开关栏中没有开关',
     enableSwitchbarHint: '在设置 > 智能插座中启用"在开关栏显示"',
+    tasmotaIpRequired: 'Tasmota 插座需要填写 IP 地址',
+    sameAsPowerTopic: '与电源主题相同，或另行指定',
+    examplePlaceholder: '例如 {{value}}',
   },
 
   // Notifications
@@ -7431,6 +7699,22 @@ export default {
     placeholders: {
       linkName: '我的链接',
     },
+    addLink: '添加链接',
+    deleteConfirm: '确定要删除"{{name}}"吗？此操作无法撤销。',
+    invalidImageType: '请选择有效的图片文件（PNG、JPG、GIF、SVG、WebP 或 ICO）',
+    imageTooLarge: '图片文件必须小于 1MB',
+    nameRequired: '名称为必填项',
+    urlRequired: 'URL 为必填项',
+    urlInvalidScheme: 'URL 必须以 http:// 或 https:// 开头',
+    editLink: '编辑链接',
+    addExternalLink: '添加外部链接',
+    nameRequiredLabel: '名称 *',
+    urlRequiredLabel: 'URL *',
+    icon: '图标',
+    customIcon: '自定义图标',
+    customIconAlt: '自定义图标',
+    iconFormatsHint: 'PNG、JPG、GIF、SVG、WebP 或 ICO。最大 1MB。',
+    choosePresetIcon: '或选择预设图标',
   },
 
   // Keyboard Shortcuts Modal
@@ -7455,8 +7739,13 @@ export default {
       newProfile: '新建配置',
       exitSelectionMode: '退出选择模式',
       showHelp: '显示此帮助',
+      openExternal: '打开 {{name}}',
+      goToPage: '前往{{page}}',
+      showCamera: '显示打印机摄像头',
     },
     footer: '按 Esc 或点击外部关闭',
+    rightClick: '右键单击',
+    footerWithKey: '按 <kbd>Esc</kbd> 或点击外部区域关闭',
   },
 
   // Notification Log
@@ -7479,6 +7768,7 @@ export default {
       minutesAgo: '{{minutes}} 分钟前',
       hoursAgo: '{{hours}} 小时前',
     },
+    clearFailed: '清除日志失败：{{message}}',
   },
 
   // Restore/Backup Modal
@@ -7659,7 +7949,23 @@ export default {
     placeholders: {
       requestBody: 'JSON 请求体...',
       searchEndpoints: '搜索端点...',
+      value: '值',
     },
+    validationError: '验证错误',
+    missingRequiredParams: '缺少必填参数：{{params}}',
+    networkError: '网络错误',
+    pathParameters: '路径参数',
+    queryParameters: '查询参数',
+    selectOption: '-- 请选择 --',
+    requestBody: '请求体',
+    execute: '执行',
+    fillIn: '请填写：{{params}}',
+    response: '响应',
+    fetchSchemaFailed: '获取 OpenAPI 架构失败',
+    loadSchemaFailed: '加载 API 架构失败',
+    expandAll: '全部展开',
+    collapseAll: '全部折叠',
+    endpointCount: '{{categories}} 个类别中共 {{endpoints}} 个端点',
   },
 
   // Configure AMS Slot Modal
@@ -7718,12 +8024,19 @@ export default {
     downloadBackup: '下载备份',
     restoreBackup: '恢复备份',
     noBackupsYet: '暂无备份',
+    status: {
+      success: '成功',
+      failed: '失败',
+      skipped: '已跳过',
+      running: '运行中',
+    },
   },
 
   // Email Settings
   emailSettings: {
     placeholders: {
       fromName: 'Bambuddy',
+      appPassword: '应用专用密码',
     },
   },
 
@@ -7732,6 +8045,24 @@ export default {
     searchTags: '搜索标签...',
     renameTag: '重命名标签',
     deleteTag: '删除标签',
+    renamed_one: '已在 {{count}} 个归档中将"{{oldName}}"重命名为"{{newName}}"',
+    renamed_other: '已在 {{count}} 个归档中将"{{oldName}}"重命名为"{{newName}}"',
+    renameFailed: '重命名标签失败',
+    deleted_one: '已从 {{count}} 个归档中删除"{{name}}"',
+    deleted_other: '已从 {{count}} 个归档中删除"{{name}}"',
+    deleteFailed: '删除标签失败',
+    title: '管理标签',
+    sortByCount: '按数量排序',
+    sortByName: '按名称排序',
+    summary: '{{tags}}，共 {{usages}}',
+    tagCount_one: '{{count}} 个标签',
+    tagCount_other: '{{count}} 个标签',
+    usageCount_one: '{{count}} 次使用',
+    usageCount_other: '{{count}} 次使用',
+    noMatch: '没有与搜索匹配的标签',
+    noTags: '未找到标签',
+    confirmDelete_one: '要从 {{count}} 个归档中删除"{{name}}"吗？',
+    confirmDelete_other: '要从 {{count}} 个归档中删除"{{name}}"吗？',
   },
 
   // Notification Template Editor
@@ -7747,11 +8078,33 @@ export default {
     placeholders: {
       newTag: '输入新标签...',
     },
+    failedOnArchive: '归档 {{id}} 处理失败：{{error}}',
+    tagCount_one: '{{count}} 个标签',
+    tagCount_other: '{{count}} 个标签',
+    archiveCount_one: '{{count}} 个归档',
+    archiveCount_other: '{{count}} 个归档',
+    addedToast: '已将 {{tags}}添加到 {{archives}}',
+    removedToast: '已从 {{archives}}移除 {{tags}}',
+    updateFailed: '更新标签失败',
+    addTags: '添加标签',
+    removeTags: '移除标签',
+    addDescription_one: '为 {{count}} 个所选归档添加标签',
+    addDescription_other: '为 {{count}} 个所选归档添加标签',
+    removeDescription_one: '从 {{count}} 个所选归档移除标签',
+    removeDescription_other: '从 {{count}} 个所选归档移除标签',
+    existingTags: '现有标签：',
+    tagsToAdd: '要添加的标签：',
+    tagsToRemove: '要移除的标签：',
+    processing: '处理中...',
   },
 
   // Photo Gallery Modal
   photoGallery: {
     deletePhoto: '删除照片',
+    photoOf: '第 {{current}} / {{total}} 张照片',
+    photoAlt: '照片 {{number}}',
+    thumbnailAlt: '缩略图 {{number}}',
+    deleteConfirm: '删除这张照片？此操作无法撤销。',
   },
 
   // Filament Hover Card
@@ -7763,6 +8116,8 @@ export default {
   kProfilesView: {
     hasNote: '有备注',
     copyProfile: '复制配置',
+    unnamed: '未命名',
+    notePrefix: '备注：{{note}}',
   },
 
   // Layout/Navigation
@@ -7775,6 +8130,10 @@ export default {
   dashboard: {
     dragToReorder: '拖动以重新排列',
     hideWidget: '隐藏小部件',
+    sizeClickToCycle: '尺寸：{{size}} - 点击切换',
+    sizeFull: '全宽',
+    hiddenWidgetsClickToShow: '已隐藏的小组件（点击显示）：',
+    allWidgetsHidden: '所有小组件均已隐藏。',
   },
 
   // Notification Provider Card
@@ -7788,6 +8147,22 @@ export default {
     sortFiles: '排序文件',
     goToParentFolder: '返回上级文件夹',
     threeView: '3D 视图',
+    gcodePreview: 'G-code 预览',
+    notSliced: '未切片',
+    sort: {
+      nameAsc: '名称（A-Z）',
+      nameDesc: '名称（Z-A）',
+      sizeAsc: '大小（从小到大）',
+      sizeDesc: '大小（从大到小）',
+      dateAsc: '日期（最早）',
+      dateDesc: '日期（最新）',
+    },
+    dirs: {
+      root: '根目录',
+      cache: '缓存',
+      models: '模型',
+      timelapse: '延时摄影',
+    },
   },
 
   // Embedded Camera Viewer
@@ -7798,6 +8173,8 @@ export default {
     resetZoom: '重置缩放',
     zoomIn: '放大',
     dragToResize: '拖动调整大小',
+    minimize: '最小化',
+    reconnectingIn: '{{seconds}} 秒后重新连接...',
   },
 
   // Timelapse Viewer
@@ -7824,11 +8201,24 @@ export default {
   logViewer: {
     searchPlaceholder: '搜索消息或日志名称...',
     noLogEntries: '未找到日志条目',
+    title: '应用日志',
+    liveStreamingEntries: '实时流式传输 - {{entries}} 条记录',
+    subtitle: '查看和筛选应用日志',
+    live: '实时',
+    stop: '停止',
+    start: '开始',
+    autoScroll: '自动滚动',
+    logFileEmpty: '日志文件可能为空或已被清除',
+    autoRefreshing: '每 2 秒自动刷新',
+    clickStartHint: '点击开始以启用实时日志流',
   },
 
   // Switchbar Popover
   switchbarPopover: {
     noSwitchesInSwitchbar: '切换栏中没有开关',
+    monitor: '监控',
+    waiting: '等待中',
+    turnOffConfirm: '确定要关闭"{{name}}"吗？',
   },
 
   // Project Page Modal
@@ -7841,6 +8231,13 @@ export default {
       profileTitle: '配置标题',
       profileDescription: '配置描述...',
     },
+    title: '项目页面',
+    loadFailed: '加载项目页面数据失败',
+    noData: '此 3MF 文件中未找到项目页面数据。',
+    noDataHint: '项目页面通常包含在从 MakerWorld 下载的文件中。',
+    printProfile: '打印配置',
+    byUser: '作者：{{name}}',
+    imagesCount: '图片（{{count}}）',
   },
 
   // Spoolman Settings
@@ -7883,6 +8280,7 @@ export default {
       status: '状态',
       backend: '后端',
       connectDisplay: '连接 SpoolBuddy 显示屏以扫描料盘',
+      deviceDisconnected: 'SpoolBuddy 设备已断开连接',
     },
     dashboard: {
       readyToScan: '准备扫描',
@@ -7912,6 +8310,7 @@ export default {
       plateClearedToast: '已将热床标记为已清理',
       plateClearFailed: '无法将热床标记为已清理',
       printers: '打印机',
+      estimatedFilament: '约 {{weight}}g 耗材',
     },
     modal: {
       assignToAms: '分配到 AMS',
@@ -7964,6 +8363,7 @@ export default {
       linkDesc: '将 Spoolman 料盘链接到此槽位',
       unassignDesc: '从此槽位移除库存料盘',
       unlinkDesc: '移除此槽位的 Spoolman 链接',
+      lowFilamentAlert: '耗材不足：{{type}}（{{slot}}）- 剩余 {{remain}}%',
     },
     inventory: {
       search: '搜索耗材...',
@@ -8073,6 +8473,7 @@ export default {
       updateFailed: '更新失败',
       updateWaiting: '更新中...',
       used: '已用',
+      triggerUpdateFailed: '触发更新失败',
     },
     writeTag: {
       writeWith: '写入设备',
@@ -8138,6 +8539,7 @@ export default {
       confirmPlugOff: '关闭 {{name}}？',
       turnOn: '开启',
       turnOff: '关闭',
+      open: '打开快捷菜单',
     },
     diagnostic: {
       clickStart: '点击“运行诊断”开始对以下设备进行硬件诊断：',
@@ -8151,6 +8553,9 @@ export default {
       running: '正在设备上运行诊断...',
       runningBtn: '运行中...',
       scaleTitle: '称重诊断',
+      timedOut: '诊断超时 - 设备未报告结果',
+      exitCode: '退出代码：{{code}}',
+      errorPrefix: '错误：{{error}}',
     },
     errors: {
       quickAddFailed: '添加料盘失败',
@@ -8445,6 +8850,7 @@ export default {
     noActivePrints: '当前没有正在进行的打印。',
     historyTitle: '最近检测',
     noHistory: '暂无检测记录。',
+    printerFallback: '打印机 {{id}}',
   },
   octoeverywhere: {
     title: 'OctoEverywhere AI 检测',
@@ -9046,8 +9452,51 @@ export default {
     // Permissions
     noReadAccess: '您没有查看库存预测的权限。',
     noWriteAccess: '您没有修改预测设置的权限。',
+    unitDays: '天',
+    spoolsOrdered: '已订购 {{spools}}',
+    chartReorderPoint: 'ROP',
+    chartSafetyStock: '安全库存',
+    chartOut: '断货',
+    chartArrives: '+{{amount}} 到货（第 {{days}} 天）',
+    atDailyRate: '按每天 {{rate}}g 计算',
   },
   amsHistory: {
     recordingInfo: '打印机连接期间每 5 分钟记录一次数据',
+  },
+  app: {
+    uiCrash: '界面崩溃',
+  },
+  printCalendar: {
+    days: {
+      sun: '日',
+      mon: '一',
+      tue: '二',
+      wed: '三',
+      thu: '四',
+      fri: '五',
+      sat: '六',
+    },
+    dayTooltip_one: '{{date}}：{{count}} 次打印',
+    dayTooltip_other: '{{date}}：{{count}} 次打印',
+    less: '少',
+    more: '多',
+  },
+  compareArchivesModal: {
+    title: '比较归档（{{count}}）',
+    loadFailed: '加载比较结果失败',
+    setting: '设置项',
+    differencesFound_one: '发现 {{count}} 处差异',
+    differencesFound_other: '发现 {{count}} 处差异',
+    andMore: '...以及另外 {{count}} 项',
+    successFailureAnalysis: '成功/失败分析',
+    successfulCount: '{{count}} 次成功',
+    failedCount: '{{count}} 次失败',
+    noCorrelations: '未发现设置与结果之间的明显关联。',
+    needBothOutcomes: '关联分析需要同时包含成功和失败的打印。',
+  },
+  qrCodeModal: {
+    title: '二维码',
+    scanHint: '扫描以打开此归档',
+    download: '下载二维码',
   },
 };

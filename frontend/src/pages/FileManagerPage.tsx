@@ -1158,7 +1158,9 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
           <button
             onClick={(e) => { e.stopPropagation(); onLink(folder); }}
             className="flex-shrink-0 flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-500/30 transition-colors"
-            title={`${folder.project_name ? `Project: ${folder.project_name}` : `Archive: ${folder.archive_name}`} (click to change)`}
+            title={folder.project_name
+              ? t('fileManager.linkedProjectTitle', { name: folder.project_name })
+              : t('fileManager.linkedArchiveTitle', { name: folder.archive_name })}
           >
             <Link2 className="w-3 h-3" />
             {folder.project_name ? (

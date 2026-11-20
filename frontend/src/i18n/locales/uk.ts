@@ -331,6 +331,7 @@ export default {
       finished: "Готово",
       unknown: "Невідомий",
       title: 'Статус',
+      failed: 'Помилка',
     },
     temperatures: {
       nozzle: "Сопло",
@@ -599,6 +600,8 @@ export default {
       unloadAms3h: 'Вивантаження слота {{n}}. Коли принтер попросить, витягніть філамент з AMS 3H вручну.',
       failedToLoad: "Не вдалося завантажити філамент",
       failedToUnload: "Не вдалося вивантажити філамент",
+      chamberLightOn: 'Світло в камері увімкнено',
+      chamberLightOff: 'Світло в камері вимкнено',
     },
     // Connection status
     connection: {
@@ -649,6 +652,12 @@ export default {
       homeZ: "Запустити автопозиціювання",
       moveAnyway: "Усе одно перемістити",
       homingStarted: "Виконується автопозиціювання принтера…",
+      moveYForward: 'Перемістити по Y вперед',
+      moveXLeft: 'Перемістити по X ліворуч',
+      moveXRight: 'Перемістити по X праворуч',
+      moveYBack: 'Перемістити по Y назад',
+      retractFilament: 'Втягнути філамент',
+      extrudeFilament: 'Видавити філамент',
     },
     // Permissions
     pandaBreath: {
@@ -691,6 +700,9 @@ export default {
       fromPrinterSettings: "З налаштувань принтера",
       modelOptional: "Модель (необов’язково)",
       saveChanges: "Зберегти зміни",
+      hostPlaceholder: '192.168.1.100 або printer.local',
+      seriesGroup: 'Серія {{series}}',
+      locationGroupLabel: 'Розташування / група',
     },
     // Skip objects
     skipObjects: {
@@ -913,6 +925,13 @@ export default {
       labelPlaceholder: "Мітка...",
       clickToEdit: "{{label}} - Натисніть, щоб редагувати",
       clickToAddLabel: "Натисніть, щоб додати мітку",
+      checkTitle: 'Перевірка пластини',
+      refsCount: 'Еталонів: {{count}}/{{max}}',
+      referenceAlt: 'Еталон {{n}}',
+      calibrating: 'Калібрування...',
+      calibrateEmptyPlate: 'Калібрувати порожню пластину',
+      adding: 'Додавання...',
+      addReference: 'Додати еталон ({{count}}/{{max}})',
     },
     // Speed
     speed: {
@@ -1017,6 +1036,7 @@ export default {
       width: "Ширина",
       height: "Висота",
       instruction: "Відрегулюйте область виявлення, щоб сфокусуватися на робочій пластині. Зелене поле в попередньому перегляді показує поточну область.",
+      current: 'Поточна: X={{x}}%, Y={{y}}%, W={{w}}%, H={{h}}%',
     },
     developerModeWarning: "Режим розробника LAN не ввімкнено на: {{names}}. Деякі функції можуть не працювати.",
     howToEnable: "Як увімкнути",
@@ -1028,6 +1048,45 @@ export default {
     networkLabel: 'Мережа',
     noActiveJob: 'Немає активного завдання',
     power: 'Живлення',
+    indicator: {
+      good: 'Добре',
+      fair: 'Задовільно',
+      bad: 'Погано',
+      humidityTitle: 'Вологість: {{value}}% — {{status}}',
+      humidityTitleClickable: 'Вологість: {{value}}% — {{status}} (натисніть, щоб відкрити історію)',
+      temperatureTitle: 'Температура: {{value}}°C — {{status}}',
+      temperatureTitleClickable: 'Температура: {{value}}°C — {{status}} (натисніть, щоб відкрити історію)',
+      customPlaceholder: 'Власне значення',
+      set: 'Задати',
+    },
+    nozzleSlotEmpty: 'Слот {{slot}} — порожньо',
+    unknownModel: 'Невідома модель',
+    wifiTitle: 'Wi-Fi: {{signal}} дБм — {{strength}}',
+    badgeOk: 'Норма',
+    maintenanceBadge: {
+      dueAndSoon: 'Потрібне обслуговування: {{due}}, незабаром: {{soon}} — натисніть, щоб переглянути',
+      due: 'Потрібне обслуговування: {{due}} — натисніть, щоб переглянути',
+      soon: 'Незабаром потрібне обслуговування: {{soon}} — натисніть, щоб переглянути',
+    },
+    startedBy: 'Запустив(-ла): {{user}}',
+    lastPrint: 'Останній: {{name}}',
+    control: {
+      setNozzleTemperatures: 'Задати температуру сопел',
+      leftTemp: 'Ліве сопло',
+      rightTemp: 'Праве сопло',
+      setNozzleTemperature: 'Задати температуру сопла',
+      setBedTemperature: 'Задати температуру столу',
+      setChamberTemperature: 'Задати температуру камери',
+      setNozzleSelection: 'Вибір сопла',
+      setFanSpeed: 'Задати швидкість: {{fan}}',
+    },
+    externalSlotLocation: 'Зовнішній слот {{slot}}',
+    plugTurnOff: 'Вимкнути',
+    plugTurnOn: 'Увімкнути',
+    haRunEntity: 'Запустити {{entity}}',
+    haToggleEntity: 'Перемкнути {{entity}}',
+    noPrintersWithSmartPlugs: 'Немає принтерів із розумними розетками',
+    ungrouped: 'Без групи',
   },
 
   // Archives page
@@ -1273,6 +1332,8 @@ export default {
       download: "Завантажити",
       edit: "Редагувати",
       delete: "Видалити",
+      reprintCount_one: '{{count}} повторний друк',
+      reprintCount_other: 'Повторних друків: {{count}}',
     },
     calendar: {
       today: 'Сьогодні',
@@ -1347,6 +1408,30 @@ export default {
       failedDeleteArchives: "Не вдалося видалити архіви",
       photoDeleted: "Фото видалено",
       failedDeletePhoto: "Не вдалося видалити фото",
+      collections: {
+        all: 'Усі архіви',
+        recent: 'Останні 24 години',
+        favorites: 'Обране',
+        notPrinted: 'Не надруковано',
+        printed: 'Надруковано',
+        failed: 'Невдалі друки',
+        duplicates: 'Дублікати',
+      },
+      archivesDeletedCount_one: 'Видалено {{count}} архів',
+      archivesDeletedCount_other: 'Видалено архівів: {{count}}',
+      toggledFavoritesCount_one: 'Обране змінено для {{count}} архіву',
+      toggledFavoritesCount_other: 'Обране змінено для архівів: {{count}}',
+      compareCount: 'Порівняти ({{count}})',
+      upload3mf: 'Завантажити 3MF',
+      fileTypeSliced: 'Нарізані (GCODE)',
+      fileTypeSource: 'Лише вихідні',
+      hideFailed: 'Приховати невдалі',
+      allTags: 'Усі теги',
+      colors: 'Кольори:',
+      matchAnyColor: 'Збіг із БУДЬ-ЯКИМ вибраним кольором',
+      matchAllColors: 'Збіг з УСІМА вибраними кольорами',
+      createdAutomatically: 'Архіви створюються автоматично після завершення друку',
+      noPrinter: 'Без принтера',
     },
     list: {
       name: "Назва",
@@ -1406,6 +1491,23 @@ export default {
         cancelled: "Скасовано",
         skipped: "Пропущено",
       },
+    },
+    batchProject: {
+      added_one: '{{count}} архів додано до «{{name}}»',
+      added_other: 'Архівів додано до «{{name}}»: {{count}}',
+      assignFailed: 'Не вдалося призначити проєкт',
+      removed_one: '{{count}} архів видалено з проєкту',
+      removed_other: 'Архівів видалено з проєкту: {{count}}',
+      removeFailed: 'Не вдалося видалити з проєкту',
+      title: 'Призначити проєкт',
+      assignSelected_one: 'Призначити проєкт {{count}} вибраному архіву',
+      assignSelected_other: 'Призначити проєкт вибраним архівам ({{count}})',
+      removeFromProject: 'Видалити з проєкту',
+      clearAssignment: 'Скасувати призначення проєкту',
+      orAssignTo: 'або призначити',
+      archiveCount_one: '{{count}} архів',
+      archiveCount_other: 'Архівів: {{count}}',
+      noProjects: 'Проєктів ще немає. Створіть проєкт на сторінці «Проєкти».',
     },
   },
 
@@ -1838,6 +1940,9 @@ export default {
       noEditItems: "Ви не маєте дозволу редагувати елементи черги",
       noCancelItems: "Ви не маєте дозволу на скасування елементів черги",
     },
+    selectPlateToPrint: 'Виберіть пластину для друку',
+    selectPlatesToPrint: 'Виберіть пластини для друку',
+    plateSelectionRequired: 'Потрібно вибрати',
   },
 
   // Statistics page
@@ -1976,6 +2081,23 @@ export default {
     allUsers: "Усі користувачі",
     noUser: "Немає користувача (система)",
     filterByUser: "Фільтрувати за користувачем",
+    costAvg: '{{cost}} у середньому',
+    filamentTooltip: 'Філамент',
+    usageTooltip: 'Витрата',
+    weekdays: {
+      mon: 'Пн',
+      tue: 'Вт',
+      wed: 'Ср',
+      thu: 'Чт',
+      fri: 'Пт',
+      sat: 'Сб',
+      sun: 'Нд',
+    },
+    heatmapCellTitle_one: '{{day}} {{hour}}: {{count}} друк',
+    heatmapCellTitle_other: '{{day}} {{hour}}: друків — {{count}}',
+    heatmapLess: 'Менше',
+    heatmapMore: 'Більше',
+    weekOf: 'Тиждень з {{date}}',
   },
 
   // Maintenance page
@@ -2121,6 +2243,7 @@ export default {
     deleteEntryMessage: '«{{task}}» від {{date}} буде безповоротно видалено з журналу обслуговування. Останнє скидання завдання залишиться без змін.',
     entryDeleted: 'Запис журналу видалено',
     deleteFailed: 'Не вдалося видалити: {{error}}',
+    ok: 'Норма',
   },
 
   // Settings page
@@ -2867,6 +2990,20 @@ export default {
       cameraConnectedCoalesced: "Камера підключена{{resolution}} (спільно з уже виконуваним захопленням)",
       cameraConnectedLiveView: "Камера працює{{resolution}} (кадр із перегляду наживо, який використовує камеру)",
       saveFailed: 'Не вдалося зберегти',
+      storageRefreshFailed: 'Не вдалося оновити дані про використання сховища',
+      apiKeyCreateFailed: 'Не вдалося створити API-ключ: {{message}}',
+      apiKeyDeleteFailed: 'Не вдалося видалити API-ключ: {{message}}',
+      emailRequiredAdvancedAuth: 'Якщо ввімкнено розширену автентифікацію, потрібно вказати електронну пошту',
+      allProvidersTested: 'Усіх провайдерів ({{tested}}) успішно перевірено!',
+      providersSucceeded: 'Успішно: {{success}}/{{tested}} провайдерів',
+      testProvidersFailed: 'Не вдалося перевірити провайдерів: {{message}}',
+      allPlugsTurnedOn: 'Усі розетки ({{success}}) увімкнено',
+      allPlugsTurnedOff: 'Усі розетки ({{success}}) вимкнено',
+      plugsTurnedOnPartial: 'Увімкнено розеток: {{success}}, з помилкою: {{failed}}',
+      plugsTurnedOffPartial: 'Вимкнено розеток: {{success}}, з помилкою: {{failed}}',
+      failedWithMessage: 'Помилка: {{message}}',
+      saveFailedWithMessage: 'Не вдалося зберегти: {{message}}',
+      updatePrinterFailed: 'Не вдалося оновити принтер: {{message}}',
     },
     testConnection: "Тестове підключення",
     catalog: {
@@ -3213,6 +3350,8 @@ export default {
       oidcUnlinkConfirmTitle: "Від'єднати обліковий запис?",
       oidcUnlinkConfirmMessage: "Ви більше не зможете входити через {{provider}}.",
       oidcUnlinkConfirmAction: "Від'єднати",
+      qrCodeAlt: 'QR-код TOTP',
+      codeOrBackupPlaceholder: '000000 або XXXXXXXX',
     },
 
     // Session Policy (#1706) — admin-configurable session lifetime ceiling.
@@ -3408,6 +3547,34 @@ export default {
     noSearchResults: 'Відповідних налаштувань немає.',
     noTemplatesMatch: 'Немає шаблонів, що відповідають фільтру.',
     searchPlaceholder: 'Пошук налаштувань…',
+    rebuildLedgerFailed: 'Не вдалося запустити перебудову журналу',
+    mqttBrokerPlaceholder: 'mqtt.example.com або 192.168.1.100',
+    clearFilter: 'Скинути фільтр',
+    bulkPlugTitleOn: 'Увімкнути всі розетки',
+    bulkPlugTitleOff: 'Вимкнути всі розетки',
+    bulkPlugMessageOn: 'Буде УВІМКНЕНО всі активні розумні розетки ({{total}}).',
+    bulkPlugMessageOff: 'Буде ВИМКНЕНО всі активні розумні розетки ({{total}}). Це може вплинути на принтери, що працюють!',
+    bulkPlugConfirmOn: 'Увімкнути всі',
+    bulkPlugConfirmOff: 'Вимкнути всі',
+    releaseNotesTitle: 'Примітки до випуску — v{{version}}',
+    userItemArchives_one: '{{count}} архів',
+    userItemArchives_other: 'Архівів: {{count}}',
+    userItemQueueItems_one: '{{count}} завдання в черзі',
+    userItemQueueItems_other: 'Завдань у черзі: {{count}}',
+    userItemLibraryFiles_one: '{{count}} файл бібліотеки',
+    userItemLibraryFiles_other: 'Файлів бібліотеки: {{count}}',
+    spoolmanSyncResult: {
+      success_one: 'Успішно синхронізовано {{count}} котушку',
+      success_other: 'Успішно синхронізовано котушок: {{count}}',
+      withErrors_one: 'Синхронізовано {{count}} котушку, помилки: {{errors}}',
+      withErrors_other: 'Синхронізовано котушок: {{count}}, помилки: {{errors}}',
+      errorCount_one: '{{count}} помилка',
+      errorCount_other: '{{count}} помилок',
+      skipped_one: 'Пропущено {{count}} котушку',
+      skipped_other: 'Пропущено котушок: {{count}}',
+      andMore: '...і ще {{count}}',
+      errors: 'Помилки:',
+    },
   },
 
   // Notifications (for push notifications)
@@ -3542,6 +3709,7 @@ export default {
     timestamp: "Мітка часу",
     direction: "Напрямок",
     all: "Усі",
+    autoScroll: 'Автопрокручування',
   },
 
   // Printer File Manager modal (printer internal storage)
@@ -3792,6 +3960,8 @@ export default {
         profile: "Профіль",
       },
     },
+    chamberLightOnToast: 'Світло в камері увімкнено',
+    chamberLightOffToast: 'Світло в камері вимкнено',
   },
 
   // Groups management
@@ -4370,7 +4540,9 @@ export default {
       same: 'без змін',
       searchFields: 'Шукати поля...',
       title: 'Порівняння профілів',
+      gcodeLines: '[рядків G-code/скрипту: {{count}}]',
     },
+    scrollToTop: 'Угору',
   },
 
   // Support/Debug
@@ -4712,6 +4884,8 @@ export default {
       failedToGenerateThumbnail: "Не вдалося створити мініатюру: {{error}}",
     },
     filterByUser: 'Фільтр за користувачем',
+    linkedProjectTitle: 'Проєкт: {{name}} (натисніть, щоб змінити)',
+    linkedArchiveTitle: 'Архів: {{name}} (натисніть, щоб змінити)',
   },
 
   // Projects
@@ -5252,6 +5426,8 @@ export default {
     disableWeightSyncDesc: "Не оновлюйте залишкову ємність із оцінок AMS. Використовуйте це, якщо ви віддаєте перевагу відстеженню використання Spoolman, а не оцінкам на основі відсотка AMS. Нові котушки все ще використовуватимуть оцінку AMS як початкову вагу.",
     reportPartialUsage: "Повідомити про часткове використання для невдалого друку",
     reportPartialUsageDesc: "Якщо друк не вдається або скасовується, повідомте приблизну кількість філаменту, використаної до цього моменту, на основі виконання шару.",
+    linkSlotInfo: 'AMS {{amsId}} T{{trayId}} · Принтер #{{printerId}}',
+    tagValue: 'Мітка: {{tag}}',
   },
 
   locations: {
@@ -5338,6 +5514,7 @@ export default {
       restorePartial: "Відновлено: {{ok}}; не вдалося відновити: {{failed}}",
       restoreAllFailed: "Не вдалося відновити жодну з вибраних котушок ({{count}}). Вибір збережено для повторної спроби.",
       invalidHex: "Введіть 6 шістнадцяткових символів (RRGGBB) або 8 (RRGGBBAA). Інакше поле не застосовуватиметься.",
+      hexPlaceholder: 'RRGGBB або RRGGBBAA',
     },
     spoolmanMixedContentTitle: "Spoolman не може Завантажити через HTTPS — змішаний вміст заблоковано вашим браузером",
     spoolmanMixedContentBody: "Bambuddy обслуговується через HTTPS (через ваш зворотний проксі), але ваш Spoolman URL усе ще звичайний HTTP. Браузери блокують змішаний вміст для безпеки, тому вбудований Spoolman UI не може відтворюватися. Щоб це працювало, Spoolman має бути доступним через HTTPS.",
@@ -5885,6 +6062,30 @@ export default {
     assignedSpool: 'Призначена котушка',
     unassignFailed: 'Не вдалося скасувати призначення котушки',
     unassignSuccess: 'Призначення котушки скасовано',
+    pickerDiagCounts: 'Отримано: {{fetched}} · в архіві: {{archived}} · призначено іншим слотам: {{assigned}}',
+    pickerDiagFiltered: 'Непризначених котушок: {{unassigned}} — відфільтровано за відповідністю лотку: {{filtered}}. Спробуйте «Показати всі котушки».',
+    tableColumns: {
+      added: 'Додано',
+      encoded: 'Записано',
+      lastUsed: 'Останнє використання',
+      location: 'Розташування',
+      gross: 'Брутто',
+      printedTotal: 'Надруковано загалом',
+      printedSinceWeight: 'Надруковано після зважування',
+      tagId: 'ID мітки',
+      dataOrigin: 'Джерело даних',
+      tagType: 'Тип прив\'язаної мітки',
+    },
+    never: 'Ніколи',
+    printerN: 'Принтер {{id}}',
+    noScaleMeasurement: 'Немає вимірювання вагами',
+    weightCheckMatchTooltip: 'Ваги: {{scale}} г\nРозрахунок: {{calculated}} г\nРізниця: {{difference}} г (у межах допуску)',
+    weightCheckMismatchTooltip: 'Ваги: {{scale}} г\nРозрахунок: {{calculated}} г\nРізниця: {{difference}} г (невідповідність!)',
+    syncScaleWeightTitle: 'Синхронізувати: прийняти вагу з ваг і скинути облік',
+    syncedToScaleWeight: 'Вагу «{{name}}» синхронізовано з вагами',
+    firstPage: 'Перша сторінка',
+    lastPage: 'Остання сторінка',
+    pageOf: 'Сторінка {{page}} з {{total}}',
   },
 
   // Timelapse
@@ -6042,6 +6243,52 @@ export default {
     costCenter: 'Центр витрат',
     personalDefault: 'Особистий',
     totalCostForQuantity: 'усього: {{cost}}',
+    queuedForAnyModel: 'У черзі для будь-якого {{model}}',
+    printerN: 'Принтер {{id}}',
+    trayN: 'Лоток {{id}}',
+    selectAtLeastOnePrinter: 'Виберіть принаймні один принтер',
+    selectTargetModel: 'Виберіть цільову модель принтера',
+    crossModelBlocked: 'Файл нарізано для {{sliced}}, і його не можна надіслати на принтери {{target}}',
+    queueItemUpdated: 'Завдання в черзі оновлено',
+    submitFailed: 'Помилка: {{error}}',
+    submitPartial: 'Успішно: {{succeeded}}, з помилкою: {{failed}}',
+    printJob: 'Завдання друку',
+    slicedForOtherModel: 'Файл нарізано для {{sliced}}, але друк буде на {{model}}',
+    archiveDataUnavailable: 'Дані архіву недоступні. Можливо, вихідний файл було видалено. Зіставлення філаменту вимкнено.',
+    operationFailed: 'Не вдалося виконати операцію',
+    printerSelector: {
+      customSlotMapping: 'Власне зіставлення слотів',
+      selectSlotOption: '-- Виберіть слот --',
+      statePreparing: 'Підготовка',
+      stateFailed: 'Помилка',
+      noActivePrintersAvailable: 'Немає доступних активних принтерів',
+      specificPrinter: 'Конкретний принтер',
+      anyModel: 'Будь-який {{model}}',
+      targetModel: 'Цільова модель',
+      slicedForHint: '(нарізано для {{model}})',
+      selectModelOption: 'Виберіть модель...',
+      incompatibleGcodeSuffix: ' — несумісно з G-code для {{model}}',
+      crossModelWarning: 'Файл нарізано для {{sliced}}, але його буде надіслано на принтер {{target}}',
+      crossModelBlocked: 'Файл нарізано для {{sliced}}, і його не можна надіслати на принтери {{target}} — виберіть сумісну модель',
+      locationFilter: 'Фільтр за розташуванням (необов\'язково)',
+      anyLocation: 'Будь-яке розташування',
+      schedulerInfo: 'Планувальник призначить перший вільний принтер {{model}}',
+      schedulerInfoLocation: 'Планувальник призначить перший вільний принтер {{model}} у розташуванні {{location}}',
+      selectPrinters: 'Виберіть принтери',
+      printersSelected_one: 'Вибрано {{count}} принтер',
+      printersSelected_other: 'Вибрано принтерів: {{count}}',
+      selectAll: 'Вибрати всі',
+      inactive: '(неактивний)',
+      customMapping: 'Власне зіставлення',
+      matchedCount: '(зіставлено {{matched}}/{{total}})',
+      auto: 'Авто',
+      hiddenPrinters_one: 'Приховано {{count}} принтер іншої моделі —',
+      hiddenPrinters_other: 'Приховано принтерів іншої моделі: {{count}} —',
+      showAll: 'показати всі',
+      showOnlyModel: 'Показувати лише принтери {{model}}',
+      selectAtLeastOne: 'Виберіть принаймні один принтер',
+      selectTargetModel: 'Виберіть цільову модель принтера',
+    },
   },
 
   // Backup
@@ -6301,6 +6548,19 @@ export default {
     processingPercent: "Обробка… {{percent}}%",
     failed: "Не вдалося обробити",
     cancelled: "Обробку скасовано",
+    loadingVideoInfo: 'Завантаження відомостей про відео...',
+    title: 'Редагування таймлапсу',
+    trim: 'Обрізання',
+    speed: 'Швидкість',
+    speedOutput: '{{speed}}x (результат: {{duration}})',
+    musicOverlay: 'Накладання музики',
+    dropAudio: 'Перетягніть аудіофайл або натисніть, щоб завантажити',
+    original: 'Оригінал:',
+    output: 'Результат:',
+    outputSummary: '{{duration}} зі швидкістю {{speed}}x',
+    outputSummaryWithMusic: '{{duration}} зі швидкістю {{speed}}x + накладання музики',
+    processingTimelapse: 'Обробка таймлапсу...',
+    mayTakeMoments: 'Це може зайняти деякий час',
   },
   // Tags
   tags: {
@@ -6327,6 +6587,11 @@ export default {
     uploading: "Вивантаження...",
     upload: "Вивантажити",
     uploadFailed: "Не вдалося вивантажити",
+    filesUploaded_one: 'Завантажено {{count}} файл',
+    filesUploaded_other: 'Завантажено файлів: {{count}}',
+    filesFailed_one: 'Не вдалося завантажити {{count}} файл',
+    filesFailed_other: 'Не вдалося завантажити файлів: {{count}}',
+    partialUpload: 'Завантажено: {{uploaded}}, з помилкою: {{failed}}',
   },
 
   archivePage: {
@@ -7116,6 +7381,9 @@ export default {
     connectionSuccess: "Підключення успішне",
     noSwitchesInSwitchbar: "На панелі перемикачів немає розеток",
     enableSwitchbarHint: "Увімкніть «Показувати на панелі перемикачів» у розділі «Налаштування → Розумні розетки».",
+    tasmotaIpRequired: 'Для розеток Tasmota потрібно вказати IP-адресу',
+    sameAsPowerTopic: 'Такий самий, як топік живлення, або інший',
+    examplePlaceholder: 'напр. {{value}}',
   },
 
   // Notifications
@@ -7487,6 +7755,22 @@ export default {
     placeholders: {
       linkName: "Моє посилання",
     },
+    addLink: 'Додати посилання',
+    deleteConfirm: 'Ви впевнені, що хочете видалити «{{name}}»? Цю дію не можна скасувати.',
+    invalidImageType: 'Виберіть дійсний файл зображення (PNG, JPG, GIF, SVG, WebP або ICO)',
+    imageTooLarge: 'Розмір файлу зображення має бути менше 1 МБ',
+    nameRequired: 'Назва обов\'язкова',
+    urlRequired: 'URL обов\'язковий',
+    urlInvalidScheme: 'URL має починатися з http:// або https://',
+    editLink: 'Редагувати посилання',
+    addExternalLink: 'Додати зовнішнє посилання',
+    nameRequiredLabel: 'Назва *',
+    urlRequiredLabel: 'URL *',
+    icon: 'Значок',
+    customIcon: 'Власний значок',
+    customIconAlt: 'Власний значок',
+    iconFormatsHint: 'PNG, JPG, GIF, SVG, WebP або ICO. Не більше 1 МБ.',
+    choosePresetIcon: 'Або виберіть готовий значок',
   },
 
   // Keyboard Shortcuts Modal
@@ -7511,8 +7795,13 @@ export default {
       newProfile: "Новий профіль",
       exitSelectionMode: "Вийти з режиму вибору",
       showHelp: "Покажіть цю довідку",
+      openExternal: 'Відкрити {{name}}',
+      goToPage: 'Перейти: {{page}}',
+      showCamera: 'Показати камеру принтера',
     },
     footer: "Натисніть Esc або клацніть зовні, щоб закрити",
+    rightClick: 'Правий клік',
+    footerWithKey: 'Натисніть <kbd>Esc</kbd> або клацніть зовні, щоб закрити',
   },
 
   // Notification Log
@@ -7535,6 +7824,7 @@ export default {
       minutesAgo: "{{minutes}}хв тому",
       hoursAgo: "{{hours}} год тому",
     },
+    clearFailed: 'Не вдалося очистити журнал: {{message}}',
   },
 
   // Restore/Backup Modal
@@ -7715,7 +8005,23 @@ export default {
     placeholders: {
       requestBody: "JSON тіло запиту...",
       searchEndpoints: "Пошук кінцевих точок...",
+      value: 'значення',
     },
+    validationError: 'Помилка валідації',
+    missingRequiredParams: 'Не вказано обов\'язкові параметри: {{params}}',
+    networkError: 'Помилка мережі',
+    pathParameters: 'Параметри шляху',
+    queryParameters: 'Параметри запиту',
+    selectOption: '-- Виберіть --',
+    requestBody: 'Тіло запиту',
+    execute: 'Виконати',
+    fillIn: 'Заповніть: {{params}}',
+    response: 'Відповідь',
+    fetchSchemaFailed: 'Не вдалося отримати схему OpenAPI',
+    loadSchemaFailed: 'Не вдалося завантажити схему API',
+    expandAll: 'Розгорнути всі',
+    collapseAll: 'Згорнути всі',
+    endpointCount: 'Кінцевих точок: {{endpoints}}, категорій: {{categories}}',
   },
 
   // Configure AMS Slot Modal
@@ -7774,12 +8080,19 @@ export default {
     downloadBackup: "Завантажити резервну копію",
     restoreBackup: "Відновити резервну копію",
     noBackupsYet: "Резервних копій ще немає",
+    status: {
+      success: 'Успішно',
+      failed: 'Помилка',
+      skipped: 'Пропущено',
+      running: 'Виконується',
+    },
   },
 
   // Email Settings
   emailSettings: {
     placeholders: {
       fromName: "BamBuddy",
+      appPassword: 'Пароль застосунку',
     },
   },
 
@@ -7788,6 +8101,24 @@ export default {
     searchTags: "Пошук тегів...",
     renameTag: "Перейменувати тег",
     deleteTag: "Видалити тег",
+    renamed_one: '«{{oldName}}» перейменовано на «{{newName}}» у {{count}} архіві',
+    renamed_other: '«{{oldName}}» перейменовано на «{{newName}}» (архівів: {{count}})',
+    renameFailed: 'Не вдалося перейменувати тег',
+    deleted_one: '«{{name}}» видалено з {{count}} архіву',
+    deleted_other: '«{{name}}» видалено з архівів: {{count}}',
+    deleteFailed: 'Не вдалося видалити тег',
+    title: 'Керування тегами',
+    sortByCount: 'Сортувати за кількістю',
+    sortByName: 'Сортувати за назвою',
+    summary: '{{tags}}, {{usages}}',
+    tagCount_one: '{{count}} тег',
+    tagCount_other: 'тегів: {{count}}',
+    usageCount_one: '{{count}} використання',
+    usageCount_other: 'використань: {{count}}',
+    noMatch: 'Немає тегів, що відповідають пошуку',
+    noTags: 'Теги не знайдено',
+    confirmDelete_one: 'Видалити «{{name}}» з {{count}} архіву?',
+    confirmDelete_other: 'Видалити «{{name}}» з архівів ({{count}})?',
   },
 
   // Notification Template Editor
@@ -7803,11 +8134,33 @@ export default {
     placeholders: {
       newTag: "Введіть новий тег...",
     },
+    failedOnArchive: 'Помилка в архіві {{id}}: {{error}}',
+    tagCount_one: '{{count}} тег',
+    tagCount_other: 'тегів: {{count}}',
+    archiveCount_one: '{{count}} архів',
+    archiveCount_other: 'архівів: {{count}}',
+    addedToast: 'Теги додано ({{tags}}; {{archives}})',
+    removedToast: 'Теги видалено ({{tags}}; {{archives}})',
+    updateFailed: 'Не вдалося оновити теги',
+    addTags: 'Додати теги',
+    removeTags: 'Видалити теги',
+    addDescription_one: 'Додати теги до {{count}} вибраного архіву',
+    addDescription_other: 'Додати теги до вибраних архівів ({{count}})',
+    removeDescription_one: 'Видалити теги з {{count}} вибраного архіву',
+    removeDescription_other: 'Видалити теги з вибраних архівів ({{count}})',
+    existingTags: 'Наявні теги:',
+    tagsToAdd: 'Теги для додавання:',
+    tagsToRemove: 'Теги для видалення:',
+    processing: 'Обробка...',
   },
 
   // Photo Gallery Modal
   photoGallery: {
     deletePhoto: "Видалити фото",
+    photoOf: 'Фото {{current}} з {{total}}',
+    photoAlt: 'Фото {{number}}',
+    thumbnailAlt: 'Мініатюра {{number}}',
+    deleteConfirm: 'Видалити це фото? Цю дію не можна скасувати.',
   },
 
   // Filament Hover Card
@@ -7819,6 +8172,8 @@ export default {
   kProfilesView: {
     hasNote: "Має примітку",
     copyProfile: "Копіювати профіль",
+    unnamed: 'Без назви',
+    notePrefix: 'Примітка: {{note}}',
   },
 
   // Layout/Navigation
@@ -7831,6 +8186,10 @@ export default {
   dashboard: {
     dragToReorder: "Перетягніть, щоб змінити порядок",
     hideWidget: "Сховати віджет",
+    sizeClickToCycle: 'Розмір: {{size}} — натисніть, щоб змінити',
+    sizeFull: 'Повний',
+    hiddenWidgetsClickToShow: 'Приховані віджети (натисніть, щоб показати):',
+    allWidgetsHidden: 'Усі віджети приховано.',
   },
 
   // Notification Provider Card
@@ -7844,6 +8203,22 @@ export default {
     sortFiles: "Сортування файлів",
     goToParentFolder: "Перейти до батьківської папки",
     threeView: "3D перегляд",
+    gcodePreview: 'Попередній перегляд G-code',
+    notSliced: 'не нарізано',
+    sort: {
+      nameAsc: 'Назва (А–Я)',
+      nameDesc: 'Назва (Я–А)',
+      sizeAsc: 'Розмір (спочатку менші)',
+      sizeDesc: 'Розмір (спочатку більші)',
+      dateAsc: 'Дата (спочатку старіші)',
+      dateDesc: 'Дата (спочатку новіші)',
+    },
+    dirs: {
+      root: 'Корінь',
+      cache: 'Кеш',
+      models: 'Моделі',
+      timelapse: 'Таймлапси',
+    },
   },
 
   // Embedded Camera Viewer
@@ -7854,6 +8229,8 @@ export default {
     resetZoom: "Скинути масштаб",
     zoomIn: "Збільшити",
     dragToResize: "Перетягніть, щоб змінити розмір",
+    minimize: 'Згорнути',
+    reconnectingIn: 'Повторне підключення через {{seconds}} с...',
   },
 
   // Timelapse Viewer
@@ -7880,11 +8257,24 @@ export default {
   logViewer: {
     searchPlaceholder: "Шукати повідомлення або назву реєстратора...",
     noLogEntries: "Записів у журналі не знайдено",
+    title: 'Журнал застосунку',
+    liveStreamingEntries: 'Трансляція наживо — записів: {{entries}}',
+    subtitle: 'Перегляд і фільтрування журналу застосунку',
+    live: 'Наживо',
+    stop: 'Стоп',
+    start: 'Старт',
+    autoScroll: 'Автопрокручування',
+    logFileEmpty: 'Файл журналу може бути порожнім або очищеним',
+    autoRefreshing: 'Автооновлення кожні 2 секунди',
+    clickStartHint: 'Натисніть «Старт», щоб увімкнути трансляцію журналу наживо',
   },
 
   // Switchbar Popover
   switchbarPopover: {
     noSwitchesInSwitchbar: "На панелі перемикачів немає",
+    monitor: 'Моніторинг',
+    waiting: 'Очікування',
+    turnOffConfirm: 'Ви впевнені, що хочете вимкнути «{{name}}»?',
   },
 
   // Project Page Modal
@@ -7897,6 +8287,13 @@ export default {
       profileTitle: "Назва профілю",
       profileDescription: "Опис профілю...",
     },
+    title: 'Сторінка проєкту',
+    loadFailed: 'Не вдалося завантажити дані сторінки проєкту',
+    noData: 'У цьому файлі 3MF немає даних сторінки проєкту.',
+    noDataHint: 'Сторінки проєкту зазвичай містяться у файлах, завантажених із MakerWorld.',
+    printProfile: 'Профіль друку',
+    byUser: 'автор: {{name}}',
+    imagesCount: 'Зображення ({{count}})',
   },
 
   // Spoolman Settings
@@ -7939,6 +8336,7 @@ export default {
       status: "Статус",
       backend: 'Бекенд',
       connectDisplay: 'Підключіть дисплей SpoolBuddy, щоб сканувати котушки',
+      deviceDisconnected: 'Пристрій SpoolBuddy від\'єднано',
     },
     dashboard: {
       readyToScan: "Готовий до сканування",
@@ -7968,6 +8366,7 @@ export default {
       plateClearedToast: "Друкарська пластина позначена як очищена",
       plateClearFailed: "Не вдалося позначити пластину як очищену",
       printers: 'Принтери',
+      estimatedFilament: '~{{weight}} г філаменту',
     },
     modal: {
       assignToAms: "Призначити AMS",
@@ -8020,6 +8419,7 @@ export default {
       linkDesc: 'Прив’язати котушку Spoolman до цього слота',
       unassignDesc: 'Прибрати котушку з інвентарю з цього слота',
       unlinkDesc: 'Видалити прив’язку Spoolman з цього слота',
+      lowFilamentAlert: 'Мало філаменту: {{type}} ({{slot}}) — залишилося {{remain}}%',
     },
     inventory: {
       search: "Пошук котушок...",
@@ -8129,6 +8529,7 @@ export default {
       updateFailed: 'Помилка оновлення',
       updateWaiting: 'Оновлення...',
       used: 'Зайнято',
+      triggerUpdateFailed: 'Не вдалося запустити оновлення',
     },
     writeTag: {
       writeWith: 'Записати за допомогою',
@@ -8194,6 +8595,7 @@ export default {
       confirmPlugOff: "Вимкнути {{name}}?",
       turnOn: "Увімкнути",
       turnOff: "Вимкнути",
+      open: 'Відкрити швидке меню',
     },
     diagnostic: {
       clickStart: 'Натисніть «Запустити діагностику», щоб почати діагностику обладнання на пристрої',
@@ -8207,6 +8609,9 @@ export default {
       running: 'Виконується діагностика на пристрої...',
       runningBtn: 'Виконується...',
       scaleTitle: 'Діагностика ваг',
+      timedOut: 'Час діагностики вичерпано — пристрій не надіслав результатів',
+      exitCode: 'Код завершення: {{code}}',
+      errorPrefix: 'ПОМИЛКА: {{error}}',
     },
     errors: {
       quickAddFailed: 'Не вдалося додати котушку',
@@ -8501,6 +8906,7 @@ export default {
     noActivePrints: "Зараз немає роздруківок.",
     historyTitle: "Останні виявлення",
     noHistory: "Виявлень ще немає.",
+    printerFallback: 'Принтер {{id}}',
   },
 
   octoeverywhere: {
@@ -9104,8 +9510,51 @@ export default {
     // Permissions
     noReadAccess: "Ви не маєте дозволу переглядати прогнози запасів.",
     noWriteAccess: "Ви не маєте дозволу змінювати налаштування прогнозу.",
+    unitDays: 'дн.',
+    spoolsOrdered: '{{spools}} — замовлено',
+    chartReorderPoint: 'ROP',
+    chartSafetyStock: 'SS',
+    chartOut: 'ДЕФІЦИТ',
+    chartArrives: '+{{amount}} надійде (день {{days}})',
+    atDailyRate: 'при {{rate}} г/день',
   },
   amsHistory: {
     recordingInfo: 'Дані записуються кожні 5 хвилин, поки принтер підключено',
+  },
+  app: {
+    uiCrash: 'Збій інтерфейсу',
+  },
+  printCalendar: {
+    days: {
+      sun: 'Нд',
+      mon: 'Пн',
+      tue: 'Вт',
+      wed: 'Ср',
+      thu: 'Чт',
+      fri: 'Пт',
+      sat: 'Сб',
+    },
+    dayTooltip_one: '{{date}}: {{count}} друк',
+    dayTooltip_other: '{{date}}: друків — {{count}}',
+    less: 'Менше',
+    more: 'Більше',
+  },
+  compareArchivesModal: {
+    title: 'Порівняння архівів ({{count}})',
+    loadFailed: 'Не вдалося завантажити порівняння',
+    setting: 'Параметр',
+    differencesFound_one: 'Знайдено {{count}} відмінність',
+    differencesFound_other: 'Знайдено відмінностей: {{count}}',
+    andMore: '...і ще {{count}}',
+    successFailureAnalysis: 'Аналіз успішних і невдалих друків',
+    successfulCount: 'Успішних: {{count}}',
+    failedCount: 'Невдалих: {{count}}',
+    noCorrelations: 'Чіткого зв\'язку між параметрами та результатами не знайдено.',
+    needBothOutcomes: 'Для аналізу зв\'язків потрібні як успішні, так і невдалі друки.',
+  },
+  qrCodeModal: {
+    title: 'QR-код',
+    scanHint: 'Скануйте, щоб відкрити цей архів',
+    download: 'Завантажити QR-код',
   },
 };

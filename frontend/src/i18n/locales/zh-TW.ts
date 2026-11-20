@@ -331,6 +331,7 @@ export default {
       finished: '已完成',
       unknown: '未知',
       title: '狀態',
+      failed: '失敗',
     },
     temperatures: {
       nozzle: '噴嘴',
@@ -596,6 +597,8 @@ export default {
       unloadAms3h: '正在退出槽位 {{n}} 的線材。印表機提示時，請手動將線材從 AMS 3H 拉出。',
       failedToLoad: '載入耗材失敗',
       failedToUnload: '卸載耗材失敗',
+      chamberLightOn: '腔室燈已開啟',
+      chamberLightOff: '腔室燈已關閉',
     },
     // Connection status
     connection: {
@@ -646,6 +649,12 @@ export default {
       homeZ: '自動歸零',
       moveAnyway: '強制移動',
       homingStarted: '印表機自動歸零中…',
+      moveYForward: 'Y 軸向前移動',
+      moveXLeft: 'X 軸向左移動',
+      moveXRight: 'X 軸向右移動',
+      moveYBack: 'Y 軸向後移動',
+      retractFilament: '回抽耗材',
+      extrudeFilament: '擠出耗材',
     },
     // Permissions
     pandaBreath: {
@@ -688,6 +697,9 @@ export default {
       fromPrinterSettings: '來自印表機設定',
       modelOptional: '型號（可選）',
       saveChanges: '儲存更改',
+      hostPlaceholder: '192.168.1.100 或 printer.local',
+      seriesGroup: '{{series}} 系列',
+      locationGroupLabel: '位置 / 群組',
     },
     // Skip objects
     skipObjects: {
@@ -909,6 +921,13 @@ export default {
       labelPlaceholder: '標籤...',
       clickToEdit: '{{label}} - 點選編輯',
       clickToAddLabel: '點選新增標籤',
+      checkTitle: '列印板檢查',
+      refsCount: '{{count}}/{{max}} 張參考圖',
+      referenceAlt: '參考圖 {{n}}',
+      calibrating: '校正中...',
+      calibrateEmptyPlate: '校正空列印板',
+      adding: '新增中...',
+      addReference: '新增參考圖（{{count}}/{{max}}）',
     },
     // Speed
     speed: {
@@ -1013,6 +1032,7 @@ export default {
       width: '寬度',
       height: '高度',
       instruction: '調整檢測區域以聚焦到列印板。預覽中的綠色框顯示目前區域。',
+      current: '目前：X={{x}}%，Y={{y}}%，W={{w}}%，H={{h}}%',
     },
     developerModeWarning: '以下印表機未啟用開發者區域網路模式：{{names}}。某些功能可能無法使用。',
     howToEnable: '如何啟用',
@@ -1024,6 +1044,45 @@ export default {
     networkLabel: '網路',
     noActiveJob: '無進行中的工作',
     power: '電源',
+    indicator: {
+      good: '良好',
+      fair: '一般',
+      bad: '不佳',
+      humidityTitle: '濕度：{{value}}% - {{status}}',
+      humidityTitleClickable: '濕度：{{value}}% - {{status}}（點選檢視歷史記錄）',
+      temperatureTitle: '溫度：{{value}}°C - {{status}}',
+      temperatureTitleClickable: '溫度：{{value}}°C - {{status}}（點選檢視歷史記錄）',
+      customPlaceholder: '自訂',
+      set: '設定',
+    },
+    nozzleSlotEmpty: '槽位 {{slot}} — 空',
+    unknownModel: '未知型號',
+    wifiTitle: 'WiFi：{{signal}} dBm - {{strength}}',
+    badgeOk: '正常',
+    maintenanceBadge: {
+      dueAndSoon: '{{due}} 項維護到期，{{soon}} 項即將到期 - 點選檢視',
+      due: '{{due}} 項維護到期 - 點選檢視',
+      soon: '{{soon}} 項即將到期 - 點選檢視',
+    },
+    startedBy: '由 {{user}} 啟動',
+    lastPrint: '上次：{{name}}',
+    control: {
+      setNozzleTemperatures: '設定噴嘴溫度',
+      leftTemp: '左側溫度',
+      rightTemp: '右側溫度',
+      setNozzleTemperature: '設定噴嘴溫度',
+      setBedTemperature: '設定熱床溫度',
+      setChamberTemperature: '設定腔室溫度',
+      setNozzleSelection: '設定噴嘴選擇',
+      setFanSpeed: '設定{{fan}}轉速',
+    },
+    externalSlotLocation: '外部槽位 {{slot}}',
+    plugTurnOff: '關閉',
+    plugTurnOn: '開啟',
+    haRunEntity: '執行 {{entity}}',
+    haToggleEntity: '切換 {{entity}}',
+    noPrintersWithSmartPlugs: '沒有配備智慧插座的印表機',
+    ungrouped: '未分組',
   },
 
   // Archives page
@@ -1269,6 +1328,8 @@ export default {
       download: '下載',
       edit: '編輯',
       delete: '刪除',
+      reprintCount_one: '重新列印 {{count}} 次',
+      reprintCount_other: '重新列印 {{count}} 次',
     },
     calendar: {
       today: '今天',
@@ -1343,6 +1404,30 @@ export default {
       failedDeleteArchives: '刪除歸檔失敗',
       photoDeleted: '照片已刪除',
       failedDeletePhoto: '刪除照片失敗',
+      collections: {
+        all: '所有歸檔',
+        recent: '最近 24 小時',
+        favorites: '收藏',
+        notPrinted: '未列印',
+        printed: '已列印',
+        failed: '失敗的列印',
+        duplicates: '重複項目',
+      },
+      archivesDeletedCount_one: '已刪除 {{count}} 個歸檔',
+      archivesDeletedCount_other: '已刪除 {{count}} 個歸檔',
+      toggledFavoritesCount_one: '已切換 {{count}} 個歸檔的收藏狀態',
+      toggledFavoritesCount_other: '已切換 {{count}} 個歸檔的收藏狀態',
+      compareCount: '比較（{{count}}）',
+      upload3mf: '上傳 3MF',
+      fileTypeSliced: '已切片（GCODE）',
+      fileTypeSource: '僅原始檔',
+      hideFailed: '隱藏失敗',
+      allTags: '所有標籤',
+      colors: '顏色：',
+      matchAnyColor: '符合任一所選顏色',
+      matchAllColors: '符合全部所選顏色',
+      createdAutomatically: '列印完成後會自動建立歸檔',
+      noPrinter: '無印表機',
     },
     list: {
       name: '名稱',
@@ -1402,6 +1487,23 @@ export default {
         cancelled: '已取消',
         skipped: '已略過',
       },
+    },
+    batchProject: {
+      added_one: '已將 {{count}} 個歸檔新增到"{{name}}"',
+      added_other: '已將 {{count}} 個歸檔新增到"{{name}}"',
+      assignFailed: '指派專案失敗',
+      removed_one: '已從專案中移除 {{count}} 個歸檔',
+      removed_other: '已從專案中移除 {{count}} 個歸檔',
+      removeFailed: '從專案中移除失敗',
+      title: '指派到專案',
+      assignSelected_one: '將 {{count}} 個所選歸檔指派到專案',
+      assignSelected_other: '將 {{count}} 個所選歸檔指派到專案',
+      removeFromProject: '從專案中移除',
+      clearAssignment: '清除專案指派',
+      orAssignTo: '或指派到',
+      archiveCount_one: '{{count}} 個歸檔',
+      archiveCount_other: '{{count}} 個歸檔',
+      noProjects: '尚無專案。請在專案頁面中建立。',
     },
   },
 
@@ -1822,6 +1924,9 @@ export default {
       noEditItems: '您沒有編輯佇列項目的權限',
       noCancelItems: '您沒有取消佇列項目的權限',
     },
+    selectPlateToPrint: '選擇要列印的列印板',
+    selectPlatesToPrint: '選擇要列印的列印板',
+    plateSelectionRequired: '需要選擇',
   },
 
   // Statistics page
@@ -1959,6 +2064,23 @@ export default {
     allUsers: '所有使用者',
     noUser: '無使用者（系統）',
     filterByUser: '按使用者篩選',
+    costAvg: '平均 {{cost}}',
+    filamentTooltip: '耗材',
+    usageTooltip: '用量',
+    weekdays: {
+      mon: '週一',
+      tue: '週二',
+      wed: '週三',
+      thu: '週四',
+      fri: '週五',
+      sat: '週六',
+      sun: '週日',
+    },
+    heatmapCellTitle_one: '{{day}} {{hour}}：{{count}} 次列印',
+    heatmapCellTitle_other: '{{day}} {{hour}}：{{count}} 次列印',
+    heatmapLess: '少',
+    heatmapMore: '多',
+    weekOf: '{{date}} 當週',
   },
 
   // Maintenance page
@@ -2104,6 +2226,7 @@ export default {
     deleteEntryMessage: '{{date}} 的「{{task}}」將從維護日誌中永久刪除。該任務的上次重設保持不變。',
     entryDeleted: '日誌項目已刪除',
     deleteFailed: '刪除失敗：{{error}}',
+    ok: '正常',
   },
 
   // Settings page
@@ -2850,6 +2973,20 @@ export default {
       cameraConnectedCoalesced: '攝影機已連線{{resolution}}（與進行中的擷取共用）',
       cameraConnectedLiveView: '攝影機運作正常{{resolution}}（畫面來自正在使用攝影機的即時畫面）',
       saveFailed: '儲存失敗',
+      storageRefreshFailed: '重新整理儲存空間用量失敗',
+      apiKeyCreateFailed: '建立 API 金鑰失敗：{{message}}',
+      apiKeyDeleteFailed: '刪除 API 金鑰失敗：{{message}}',
+      emailRequiredAdvancedAuth: '啟用進階驗證時必須填寫電子郵件',
+      allProvidersTested: '全部 {{tested}} 個提供者測試成功！',
+      providersSucceeded: '{{success}}/{{tested}} 個提供者成功',
+      testProvidersFailed: '測試提供者失敗：{{message}}',
+      allPlugsTurnedOn: '全部 {{success}} 個插座已開啟',
+      allPlugsTurnedOff: '全部 {{success}} 個插座已關閉',
+      plugsTurnedOnPartial: '{{success}} 個插座已開啟，{{failed}} 個失敗',
+      plugsTurnedOffPartial: '{{success}} 個插座已關閉，{{failed}} 個失敗',
+      failedWithMessage: '失敗：{{message}}',
+      saveFailedWithMessage: '儲存失敗：{{message}}',
+      updatePrinterFailed: '更新印表機失敗：{{message}}',
     },
     testConnection: '測試連線',
     catalog: {
@@ -3182,6 +3319,8 @@ export default {
       oidcUnlinkConfirmTitle: '解除帳號連結？',
       oidcUnlinkConfirmMessage: '你將無法再使用 {{provider}} 登入。',
       oidcUnlinkConfirmAction: '解除連結',
+      qrCodeAlt: 'TOTP QR 碼',
+      codeOrBackupPlaceholder: '000000 或 XXXXXXXX',
     },
     // Session Policy (#1706)
     sessionPolicy: {
@@ -3368,6 +3507,34 @@ export default {
     noSearchResults: '沒有符合的設定。',
     noTemplatesMatch: '沒有符合篩選條件的範本。',
     searchPlaceholder: '搜尋設定…',
+    rebuildLedgerFailed: '啟動帳本重建失敗',
+    mqttBrokerPlaceholder: 'mqtt.example.com 或 192.168.1.100',
+    clearFilter: '清除篩選',
+    bulkPlugTitleOn: '開啟所有插座',
+    bulkPlugTitleOff: '關閉所有插座',
+    bulkPlugMessageOn: '這將開啟全部 {{total}} 個已啟用的智慧插座。',
+    bulkPlugMessageOff: '這將關閉全部 {{total}} 個已啟用的智慧插座。正在運作的印表機可能會受到影響！',
+    bulkPlugConfirmOn: '全部開啟',
+    bulkPlugConfirmOff: '全部關閉',
+    releaseNotesTitle: '發布說明 - v{{version}}',
+    userItemArchives_one: '{{count}} 個歸檔',
+    userItemArchives_other: '{{count}} 個歸檔',
+    userItemQueueItems_one: '{{count}} 個佇列項目',
+    userItemQueueItems_other: '{{count}} 個佇列項目',
+    userItemLibraryFiles_one: '檔案管理器中的 {{count}} 個檔案',
+    userItemLibraryFiles_other: '檔案管理器中的 {{count}} 個檔案',
+    spoolmanSyncResult: {
+      success_one: '已成功同步 {{count}} 個料盤',
+      success_other: '已成功同步 {{count}} 個料盤',
+      withErrors_one: '已同步 {{count}} 個料盤，{{errors}}',
+      withErrors_other: '已同步 {{count}} 個料盤，{{errors}}',
+      errorCount_one: '{{count}} 個錯誤',
+      errorCount_other: '{{count}} 個錯誤',
+      skipped_one: '已略過 {{count}} 個料盤',
+      skipped_other: '已略過 {{count}} 個料盤',
+      andMore: '...以及另外 {{count}} 個',
+      errors: '錯誤：',
+    },
   },
 
   // Notifications (for push notifications)
@@ -3502,6 +3669,7 @@ export default {
     timestamp: '時間戳',
     direction: '方向',
     all: '全部',
+    autoScroll: '自動捲動',
   },
 
   // Printer File Manager modal (printer internal storage)
@@ -3752,6 +3920,8 @@ export default {
         profile: '設定檔',
       },
     },
+    chamberLightOnToast: '腔室燈已開啟',
+    chamberLightOffToast: '腔室燈已關閉',
   },
 
   // Groups management
@@ -4330,7 +4500,9 @@ export default {
       same: '未更改',
       searchFields: '搜尋欄位...',
       title: '比較設定檔',
+      gcodeLines: '[{{count}} 行 G-code/指令碼]',
     },
+    scrollToTop: '捲動到頂端',
   },
 
   // Support/Debug
@@ -4672,6 +4844,8 @@ export default {
       failedToGenerateThumbnail: '產生縮圖失敗：{{error}}',
     },
     filterByUser: '按使用者篩選',
+    linkedProjectTitle: '專案：{{name}}（點選變更）',
+    linkedArchiveTitle: '歸檔：{{name}}（點選變更）',
   },
 
   // Projects
@@ -5207,6 +5381,8 @@ export default {
     disableWeightSyncDesc: '不從 AMS 估計值更新剩餘容量。如果您更喜歡 Spoolman 的用量追蹤而非 AMS 百分比估計，請使用此選項。新耗材仍將使用 AMS 估計值作為初始重量。',
     reportPartialUsage: '報告失敗列印的部分用量',
     reportPartialUsageDesc: '當列印失敗或被取消時，根據層進度報告估計的耗材使用量。',
+    linkSlotInfo: 'AMS {{amsId}} T{{trayId}} · 印表機 #{{printerId}}',
+    tagValue: '標籤：{{tag}}',
   },
 
   locations: {
@@ -5293,6 +5469,7 @@ export default {
       restorePartial: '已還原 {{ok}} 個，{{failed}} 個失敗',
       restoreAllFailed: '{{count}} 個料盤還原全部失敗 — 已保留選擇以便重試',
       invalidHex: '請輸入 6 位十六進位字元 (RRGGBB) 或 8 位 (RRGGBBAA)，否則此欄位不會套用。',
+      hexPlaceholder: 'RRGGBB 或 RRGGBBAA',
     },
     spoolmanMixedContentTitle: 'Spoolman 無法透過 HTTPS 載入 — 瀏覽器已封鎖混合內容',
     spoolmanMixedContentBody: 'Bambuddy 透過您的反向代理以 HTTPS 提供服務，但您的 Spoolman 位址仍為 HTTP。基於安全考量，瀏覽器會封鎖混合內容，因此內嵌的 Spoolman 介面無法載入。Spoolman 也必須可透過 HTTPS 存取。',
@@ -5831,6 +6008,30 @@ export default {
     assignedSpool: '已分配耗材',
     unassignFailed: '取消分配耗材失敗',
     unassignSuccess: '已取消分配耗材',
+    pickerDiagCounts: '已取得 {{fetched}} 個 · 已歸檔 {{archived}} 個 · 已指派到其他槽位 {{assigned}} 個',
+    pickerDiagFiltered: '{{unassigned}} 個未指派料盤 — 其中 {{filtered}} 個因料槽比對而被篩除。請嘗試"顯示所有料盤"。',
+    tableColumns: {
+      added: '新增時間',
+      encoded: '已編碼',
+      lastUsed: '上次使用',
+      location: '位置',
+      gross: '毛重',
+      printedTotal: '累計列印用量',
+      printedSinceWeight: '秤重後列印用量',
+      tagId: '標籤 ID',
+      dataOrigin: '資料來源',
+      tagType: '連結標籤類型',
+    },
+    never: '從未',
+    printerN: '印表機 {{id}}',
+    noScaleMeasurement: '無秤重資料',
+    weightCheckMatchTooltip: '磅秤：{{scale}}g\n計算值：{{calculated}}g\n差值：{{difference}}g（在容許範圍內）',
+    weightCheckMismatchTooltip: '磅秤：{{scale}}g\n計算值：{{calculated}}g\n差值：{{difference}}g（不一致！）',
+    syncScaleWeightTitle: '同步：以磅秤重量為準並重設追蹤',
+    syncedToScaleWeight: '已將"{{name}}"同步為磅秤重量',
+    firstPage: '第一頁',
+    lastPage: '最後一頁',
+    pageOf: '第 {{page}} / {{total}} 頁',
   },
 
   // Timelapse
@@ -5988,6 +6189,52 @@ export default {
     costCenter: '成本中心',
     personalDefault: '個人',
     totalCostForQuantity: '合計：{{cost}}',
+    queuedForAnyModel: '已加入佇列，可由任一台 {{model}} 列印',
+    printerN: '印表機 {{id}}',
+    trayN: '料槽 {{id}}',
+    selectAtLeastOnePrinter: '請至少選擇一台印表機',
+    selectTargetModel: '請選擇目標印表機型號',
+    crossModelBlocked: '檔案是為 {{sliced}} 切片的，無法傳送到 {{target}} 印表機',
+    queueItemUpdated: '佇列項目已更新',
+    submitFailed: '失敗：{{error}}',
+    submitPartial: '{{succeeded}} 個成功，{{failed}} 個失敗',
+    printJob: '列印工作',
+    slicedForOtherModel: '檔案是為 {{sliced}} 切片的，但將在 {{model}} 上列印',
+    archiveDataUnavailable: '無法使用歸檔資料。原始檔可能已被刪除。耗材對應已停用。',
+    operationFailed: '無法完成操作',
+    printerSelector: {
+      customSlotMapping: '自訂槽位對應',
+      selectSlotOption: '-- 選擇槽位 --',
+      statePreparing: '準備中',
+      stateFailed: '失敗',
+      noActivePrintersAvailable: '沒有可用的啟用中印表機',
+      specificPrinter: '指定印表機',
+      anyModel: '任一台 {{model}}',
+      targetModel: '目標型號',
+      slicedForHint: '（為 {{model}} 切片）',
+      selectModelOption: '選擇型號...',
+      incompatibleGcodeSuffix: ' — 與 {{model}} G-code 不相容',
+      crossModelWarning: '檔案是為 {{sliced}} 切片的，但將傳送到 {{target}} 印表機',
+      crossModelBlocked: '檔案是為 {{sliced}} 切片的，無法傳送到 {{target}} 印表機 — 請選擇相容的型號',
+      locationFilter: '位置篩選（選填）',
+      anyLocation: '任何位置',
+      schedulerInfo: '排程器將指派給第一台可用的閒置 {{model}} 印表機',
+      schedulerInfoLocation: '排程器將指派給 {{location}} 中第一台可用的閒置 {{model}} 印表機',
+      selectPrinters: '選擇印表機',
+      printersSelected_one: '已選擇 {{count}} 台印表機',
+      printersSelected_other: '已選擇 {{count}} 台印表機',
+      selectAll: '全選',
+      inactive: '（未啟用）',
+      customMapping: '自訂對應',
+      matchedCount: '（已符合 {{matched}}/{{total}}）',
+      auto: '自動',
+      hiddenPrinters_one: '已隱藏 {{count}} 台其他印表機（型號不同）—',
+      hiddenPrinters_other: '已隱藏 {{count}} 台其他印表機（型號不同）—',
+      showAll: '全部顯示',
+      showOnlyModel: '僅顯示 {{model}} 印表機',
+      selectAtLeastOne: '至少選擇一台印表機',
+      selectTargetModel: '選擇目標印表機型號',
+    },
   },
 
   // Backup
@@ -6247,6 +6494,19 @@ export default {
     processingPercent: '處理中… {{percent}}%',
     failed: '處理失敗',
     cancelled: '已取消處理',
+    loadingVideoInfo: '正在載入影片資訊...',
+    title: '編輯縮時攝影',
+    trim: '修剪',
+    speed: '速度',
+    speedOutput: '{{speed}}x（輸出：{{duration}}）',
+    musicOverlay: '背景音樂',
+    dropAudio: '拖放音訊檔案或點選上傳',
+    original: '原始：',
+    output: '輸出：',
+    outputSummary: '{{duration}} @ {{speed}}x 速度',
+    outputSummaryWithMusic: '{{duration}} @ {{speed}}x 速度 + 背景音樂',
+    processingTimelapse: '正在處理縮時攝影...',
+    mayTakeMoments: '這可能需要一點時間',
   },
   // Tags
   tags: {
@@ -6273,6 +6533,11 @@ export default {
     uploading: '上傳中...',
     upload: '上傳',
     uploadFailed: '上傳失敗',
+    filesUploaded_one: '已上傳 {{count}} 個檔案',
+    filesUploaded_other: '已上傳 {{count}} 個檔案',
+    filesFailed_one: '{{count}} 個檔案上傳失敗',
+    filesFailed_other: '{{count}} 個檔案上傳失敗',
+    partialUpload: '已上傳 {{uploaded}} 個，失敗 {{failed}} 個',
   },
 
   archivePage: {
@@ -7061,6 +7326,9 @@ export default {
     connectionSuccess: '連線成功',
     noSwitchesInSwitchbar: '開關欄中沒有開關',
     enableSwitchbarHint: '在設定 > 智慧插座中啟用"在開關欄顯示"',
+    tasmotaIpRequired: 'Tasmota 插座需要填寫 IP 位址',
+    sameAsPowerTopic: '與電源主題相同，或另行指定',
+    examplePlaceholder: '例如 {{value}}',
   },
 
   // Notifications
@@ -7431,6 +7699,22 @@ export default {
     placeholders: {
       linkName: '我的連結',
     },
+    addLink: '新增連結',
+    deleteConfirm: '確定要刪除"{{name}}"嗎？此操作無法復原。',
+    invalidImageType: '請選擇有效的圖片檔案（PNG、JPG、GIF、SVG、WebP 或 ICO）',
+    imageTooLarge: '圖片檔案必須小於 1MB',
+    nameRequired: '名稱為必填欄位',
+    urlRequired: 'URL 為必填欄位',
+    urlInvalidScheme: 'URL 必須以 http:// 或 https:// 開頭',
+    editLink: '編輯連結',
+    addExternalLink: '新增外部連結',
+    nameRequiredLabel: '名稱 *',
+    urlRequiredLabel: 'URL *',
+    icon: '圖示',
+    customIcon: '自訂圖示',
+    customIconAlt: '自訂圖示',
+    iconFormatsHint: 'PNG、JPG、GIF、SVG、WebP 或 ICO。最大 1MB。',
+    choosePresetIcon: '或選擇預設圖示',
   },
 
   // Keyboard Shortcuts Modal
@@ -7455,8 +7739,13 @@ export default {
       newProfile: '新增設定',
       exitSelectionMode: '結束選擇模式',
       showHelp: '顯示此協助',
+      openExternal: '開啟 {{name}}',
+      goToPage: '前往{{page}}',
+      showCamera: '顯示印表機攝影機',
     },
     footer: '按 Esc 或點選外部關閉',
+    rightClick: '按右鍵',
+    footerWithKey: '按 <kbd>Esc</kbd> 或點選外部區域關閉',
   },
 
   // Notification Log
@@ -7479,6 +7768,7 @@ export default {
       minutesAgo: '{{minutes}} 分鐘前',
       hoursAgo: '{{hours}} 小時前',
     },
+    clearFailed: '清除記錄失敗：{{message}}',
   },
 
   // Restore/Backup Modal
@@ -7659,7 +7949,23 @@ export default {
     placeholders: {
       requestBody: 'JSON 請求體...',
       searchEndpoints: '搜尋端點...',
+      value: '值',
     },
+    validationError: '驗證錯誤',
+    missingRequiredParams: '缺少必填參數：{{params}}',
+    networkError: '網路錯誤',
+    pathParameters: '路徑參數',
+    queryParameters: '查詢參數',
+    selectOption: '-- 請選擇 --',
+    requestBody: '請求內容',
+    execute: '執行',
+    fillIn: '請填寫：{{params}}',
+    response: '回應',
+    fetchSchemaFailed: '取得 OpenAPI 結構描述失敗',
+    loadSchemaFailed: '載入 API 結構描述失敗',
+    expandAll: '全部展開',
+    collapseAll: '全部摺疊',
+    endpointCount: '{{categories}} 個類別中共 {{endpoints}} 個端點',
   },
 
   // Configure AMS Slot Modal
@@ -7718,12 +8024,19 @@ export default {
     downloadBackup: '下載備份',
     restoreBackup: '恢復備份',
     noBackupsYet: '尚無備份',
+    status: {
+      success: '成功',
+      failed: '失敗',
+      skipped: '已略過',
+      running: '執行中',
+    },
   },
 
   // Email Settings
   emailSettings: {
     placeholders: {
       fromName: 'Bambuddy',
+      appPassword: '應用程式密碼',
     },
   },
 
@@ -7732,6 +8045,24 @@ export default {
     searchTags: '搜尋標籤...',
     renameTag: '重新命名標籤',
     deleteTag: '刪除標籤',
+    renamed_one: '已在 {{count}} 個歸檔中將"{{oldName}}"重新命名為"{{newName}}"',
+    renamed_other: '已在 {{count}} 個歸檔中將"{{oldName}}"重新命名為"{{newName}}"',
+    renameFailed: '重新命名標籤失敗',
+    deleted_one: '已從 {{count}} 個歸檔中刪除"{{name}}"',
+    deleted_other: '已從 {{count}} 個歸檔中刪除"{{name}}"',
+    deleteFailed: '刪除標籤失敗',
+    title: '管理標籤',
+    sortByCount: '依數量排序',
+    sortByName: '依名稱排序',
+    summary: '{{tags}}，共 {{usages}}',
+    tagCount_one: '{{count}} 個標籤',
+    tagCount_other: '{{count}} 個標籤',
+    usageCount_one: '{{count}} 次使用',
+    usageCount_other: '{{count}} 次使用',
+    noMatch: '沒有符合搜尋的標籤',
+    noTags: '找不到標籤',
+    confirmDelete_one: '要從 {{count}} 個歸檔中刪除"{{name}}"嗎？',
+    confirmDelete_other: '要從 {{count}} 個歸檔中刪除"{{name}}"嗎？',
   },
 
   // Notification Template Editor
@@ -7747,11 +8078,33 @@ export default {
     placeholders: {
       newTag: '輸入新標籤...',
     },
+    failedOnArchive: '歸檔 {{id}} 處理失敗：{{error}}',
+    tagCount_one: '{{count}} 個標籤',
+    tagCount_other: '{{count}} 個標籤',
+    archiveCount_one: '{{count}} 個歸檔',
+    archiveCount_other: '{{count}} 個歸檔',
+    addedToast: '已將 {{tags}}新增到 {{archives}}',
+    removedToast: '已從 {{archives}}移除 {{tags}}',
+    updateFailed: '更新標籤失敗',
+    addTags: '新增標籤',
+    removeTags: '移除標籤',
+    addDescription_one: '為 {{count}} 個所選歸檔新增標籤',
+    addDescription_other: '為 {{count}} 個所選歸檔新增標籤',
+    removeDescription_one: '從 {{count}} 個所選歸檔移除標籤',
+    removeDescription_other: '從 {{count}} 個所選歸檔移除標籤',
+    existingTags: '現有標籤：',
+    tagsToAdd: '要新增的標籤：',
+    tagsToRemove: '要移除的標籤：',
+    processing: '處理中...',
   },
 
   // Photo Gallery Modal
   photoGallery: {
     deletePhoto: '刪除照片',
+    photoOf: '第 {{current}} / {{total}} 張照片',
+    photoAlt: '照片 {{number}}',
+    thumbnailAlt: '縮圖 {{number}}',
+    deleteConfirm: '要刪除這張照片嗎？此操作無法復原。',
   },
 
   // Filament Hover Card
@@ -7763,6 +8116,8 @@ export default {
   kProfilesView: {
     hasNote: '有備註',
     copyProfile: '複製設定',
+    unnamed: '未命名',
+    notePrefix: '備註：{{note}}',
   },
 
   // Layout/Navigation
@@ -7775,6 +8130,10 @@ export default {
   dashboard: {
     dragToReorder: '拖曳以重新排列',
     hideWidget: '隱藏小工具',
+    sizeClickToCycle: '尺寸：{{size}} - 點選切換',
+    sizeFull: '全寬',
+    hiddenWidgetsClickToShow: '已隱藏的小工具（點選顯示）：',
+    allWidgetsHidden: '所有小工具皆已隱藏。',
   },
 
   // Notification Provider Card
@@ -7788,6 +8147,22 @@ export default {
     sortFiles: '排序檔案',
     goToParentFolder: '返回上級資料夾',
     threeView: '3D 檢視',
+    gcodePreview: 'G-code 預覽',
+    notSliced: '未切片',
+    sort: {
+      nameAsc: '名稱（A-Z）',
+      nameDesc: '名稱（Z-A）',
+      sizeAsc: '大小（由小到大）',
+      sizeDesc: '大小（由大到小）',
+      dateAsc: '日期（最舊）',
+      dateDesc: '日期（最新）',
+    },
+    dirs: {
+      root: '根目錄',
+      cache: '快取',
+      models: '模型',
+      timelapse: '縮時攝影',
+    },
   },
 
   // Embedded Camera Viewer
@@ -7798,6 +8173,8 @@ export default {
     resetZoom: '重設縮放',
     zoomIn: '放大',
     dragToResize: '拖曳調整大小',
+    minimize: '最小化',
+    reconnectingIn: '{{seconds}} 秒後重新連線...',
   },
 
   // Timelapse Viewer
@@ -7824,11 +8201,24 @@ export default {
   logViewer: {
     searchPlaceholder: '搜尋訊息或日誌名稱...',
     noLogEntries: '未找到日誌條目',
+    title: '應用程式記錄',
+    liveStreamingEntries: '即時串流 - {{entries}} 筆記錄',
+    subtitle: '檢視並篩選應用程式記錄',
+    live: '即時',
+    stop: '停止',
+    start: '開始',
+    autoScroll: '自動捲動',
+    logFileEmpty: '記錄檔可能為空或已被清除',
+    autoRefreshing: '每 2 秒自動重新整理',
+    clickStartHint: '點選開始以啟用即時記錄串流',
   },
 
   // Switchbar Popover
   switchbarPopover: {
     noSwitchesInSwitchbar: '切換欄中沒有開關',
+    monitor: '監控',
+    waiting: '等待中',
+    turnOffConfirm: '確定要關閉"{{name}}"嗎？',
   },
 
   // Project Page Modal
@@ -7841,6 +8231,13 @@ export default {
       profileTitle: '設定標題',
       profileDescription: '設定描述...',
     },
+    title: '專案頁面',
+    loadFailed: '載入專案頁面資料失敗',
+    noData: '此 3MF 檔案中找不到專案頁面資料。',
+    noDataHint: '專案頁面通常包含在從 MakerWorld 下載的檔案中。',
+    printProfile: '列印設定檔',
+    byUser: '作者：{{name}}',
+    imagesCount: '圖片（{{count}}）',
   },
 
   // Spoolman Settings
@@ -7883,6 +8280,7 @@ export default {
       status: '狀態',
       backend: '後端',
       connectDisplay: '連接 SpoolBuddy 顯示器以掃描耗材',
+      deviceDisconnected: 'SpoolBuddy 裝置已中斷連線',
     },
     dashboard: {
       readyToScan: '準備掃描',
@@ -7912,6 +8310,7 @@ export default {
       plateClearedToast: '已將熱床標記為已清理',
       plateClearFailed: '無法將熱床標記為已清理',
       printers: '印表機',
+      estimatedFilament: '約 {{weight}}g 耗材',
     },
     modal: {
       assignToAms: '分配到 AMS',
@@ -7964,6 +8363,7 @@ export default {
       linkDesc: '將 Spoolman 耗材連結到此槽位',
       unassignDesc: '從此槽位移除庫存耗材',
       unlinkDesc: '移除此槽位的 Spoolman 連結',
+      lowFilamentAlert: '耗材不足：{{type}}（{{slot}}）- 剩餘 {{remain}}%',
     },
     inventory: {
       search: '搜尋耗材...',
@@ -8073,6 +8473,7 @@ export default {
       updateFailed: '更新失敗',
       updateWaiting: '更新中...',
       used: '已使用',
+      triggerUpdateFailed: '觸發更新失敗',
     },
     writeTag: {
       writeWith: '寫入裝置',
@@ -8138,6 +8539,7 @@ export default {
       confirmPlugOff: '關閉 {{name}}？',
       turnOn: '開啟',
       turnOff: '關閉',
+      open: '開啟快速選單',
     },
     diagnostic: {
       clickStart: '點選「執行診斷」以開始對下列裝置進行硬體診斷：',
@@ -8151,6 +8553,9 @@ export default {
       running: '正在裝置上執行診斷...',
       runningBtn: '執行中...',
       scaleTitle: '磅秤診斷',
+      timedOut: '診斷逾時 - 裝置未回報結果',
+      exitCode: '結束代碼：{{code}}',
+      errorPrefix: '錯誤：{{error}}',
     },
     errors: {
       quickAddFailed: '新增耗材失敗',
@@ -8445,6 +8850,7 @@ export default {
     noActivePrints: '目前沒有正在進行的列印。',
     historyTitle: '最近檢測',
     noHistory: '尚無檢測紀錄。',
+    printerFallback: '印表機 {{id}}',
   },
   octoeverywhere: {
     title: 'OctoEverywhere AI 偵測',
@@ -9046,8 +9452,51 @@ export default {
     // Permissions
     noReadAccess: '您沒有查看庫存預測的權限。',
     noWriteAccess: '您沒有修改預測設定的權限。',
+    unitDays: '天',
+    spoolsOrdered: '已訂購 {{spools}}',
+    chartReorderPoint: 'ROP',
+    chartSafetyStock: '安全庫存',
+    chartOut: '斷貨',
+    chartArrives: '+{{amount}} 到貨（第 {{days}} 天）',
+    atDailyRate: '以每天 {{rate}}g 計算',
   },
   amsHistory: {
     recordingInfo: '印表機連線期間每 5 分鐘記錄一次資料',
+  },
+  app: {
+    uiCrash: '介面當機',
+  },
+  printCalendar: {
+    days: {
+      sun: '日',
+      mon: '一',
+      tue: '二',
+      wed: '三',
+      thu: '四',
+      fri: '五',
+      sat: '六',
+    },
+    dayTooltip_one: '{{date}}：{{count}} 次列印',
+    dayTooltip_other: '{{date}}：{{count}} 次列印',
+    less: '少',
+    more: '多',
+  },
+  compareArchivesModal: {
+    title: '比較歸檔（{{count}}）',
+    loadFailed: '載入比較結果失敗',
+    setting: '設定項目',
+    differencesFound_one: '發現 {{count}} 處差異',
+    differencesFound_other: '發現 {{count}} 處差異',
+    andMore: '...以及另外 {{count}} 項',
+    successFailureAnalysis: '成功/失敗分析',
+    successfulCount: '{{count}} 次成功',
+    failedCount: '{{count}} 次失敗',
+    noCorrelations: '未發現設定與結果之間有明顯關聯。',
+    needBothOutcomes: '關聯分析需要同時包含成功與失敗的列印。',
+  },
+  qrCodeModal: {
+    title: 'QR 碼',
+    scanHint: '掃描以開啟此歸檔',
+    download: '下載 QR 碼',
   },
 };

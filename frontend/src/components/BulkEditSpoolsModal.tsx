@@ -433,7 +433,7 @@ export function BulkEditSpoolsModal({
               disabled={isPending}
               value={value}
               onChange={(e) => setField(f.id, e.target.value.replace(/^#/, '').toUpperCase())}
-              placeholder="RRGGBB or RRGGBBAA"
+              placeholder={t('inventory.bulk.hexPlaceholder')}
               className={`flex-1 px-3 py-2 bg-bambu-dark border rounded-lg text-white placeholder-bambu-gray/50 focus:outline-none ${isInvalid ? 'border-red-500 focus:border-red-500' : 'border-bambu-dark-tertiary focus:border-bambu-green'}`}
               pattern={f.pattern}
             />

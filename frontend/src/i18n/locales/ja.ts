@@ -330,6 +330,7 @@ export default {
       finished: '完了',
       unknown: '不明',
       title: 'ステータス',
+      failed: '失敗',
     },
     temperatures: {
       nozzle: 'ノズル',
@@ -595,6 +596,8 @@ export default {
       unloadAms3h: 'スロット {{n}} をアンロード中です。プリンターに指示されたら、AMS 3H からフィラメントを手で引き戻してください。',
       failedToLoad: 'フィラメントのロードに失敗',
       failedToUnload: 'フィラメントのアンロードに失敗',
+      chamberLightOn: 'チャンバーライトをオンにしました',
+      chamberLightOff: 'チャンバーライトをオフにしました',
     },
     // Connection status
     connection: {
@@ -645,6 +648,12 @@ export default {
       homeZ: 'オートホーミング',
       moveAnyway: 'このまま移動',
       homingStarted: 'プリンターをオートホーミング中…',
+      moveYForward: 'Yを前方へ移動',
+      moveXLeft: 'Xを左へ移動',
+      moveXRight: 'Xを右へ移動',
+      moveYBack: 'Yを後方へ移動',
+      retractFilament: 'フィラメントを引き戻す',
+      extrudeFilament: 'フィラメントを押し出す',
     },
     // Permissions
     pandaBreath: {
@@ -687,6 +696,9 @@ export default {
       fromPrinterSettings: 'プリンターの設定から取得',
       modelOptional: 'モデル（任意）',
       saveChanges: '変更を保存',
+      hostPlaceholder: '192.168.1.100 または printer.local',
+      seriesGroup: '{{series}}シリーズ',
+      locationGroupLabel: 'ロケーション / グループ',
     },
     // Skip objects
     skipObjects: {
@@ -908,6 +920,13 @@ export default {
       labelPlaceholder: 'ラベル...',
       clickToEdit: '{{label}} - クリックして編集',
       clickToAddLabel: 'クリックしてラベルを追加',
+      checkTitle: 'ビルドプレートチェック',
+      refsCount: 'リファレンス {{count}}/{{max}}',
+      referenceAlt: 'リファレンス{{n}}',
+      calibrating: 'キャリブレーション中...',
+      calibrateEmptyPlate: '空のプレートをキャリブレーション',
+      adding: '追加中...',
+      addReference: 'リファレンスを追加 ({{count}}/{{max}})',
     },
     // Speed
     speed: {
@@ -1012,6 +1031,7 @@ export default {
       width: '幅',
       height: '高さ',
       instruction: 'ビルドプレートに焦点を合わせるように検出エリアを調整してください。プレビューの緑の枠が現在のエリアを示しています。',
+      current: '現在: X={{x}}%, Y={{y}}%, W={{w}}%, H={{h}}%',
     },
     developerModeWarning: '開発者LANモードが有効になっていません: {{names}}。一部の機能が動作しない可能性があります。',
     howToEnable: '有効化方法',
@@ -1023,6 +1043,45 @@ export default {
     networkLabel: 'ネットワーク',
     noActiveJob: '実行中のジョブはありません',
     power: '電源',
+    indicator: {
+      good: '良好',
+      fair: '普通',
+      bad: '不良',
+      humidityTitle: '湿度: {{value}}% - {{status}}',
+      humidityTitleClickable: '湿度: {{value}}% - {{status}} (クリックで履歴を表示)',
+      temperatureTitle: '温度: {{value}}°C - {{status}}',
+      temperatureTitleClickable: '温度: {{value}}°C - {{status}} (クリックで履歴を表示)',
+      customPlaceholder: 'カスタム',
+      set: '設定',
+    },
+    nozzleSlotEmpty: 'スロット{{slot}} — 空',
+    unknownModel: '不明なモデル',
+    wifiTitle: 'WiFi: {{signal}} dBm - {{strength}}',
+    badgeOk: '正常',
+    maintenanceBadge: {
+      dueAndSoon: 'メンテナンス期限 {{due}}件、まもなく期限 {{soon}}件 - クリックで表示',
+      due: 'メンテナンス期限 {{due}}件 - クリックで表示',
+      soon: 'まもなく期限 {{soon}}件 - クリックで表示',
+    },
+    startedBy: '開始者: {{user}}',
+    lastPrint: '前回: {{name}}',
+    control: {
+      setNozzleTemperatures: 'ノズル温度を設定',
+      leftTemp: '左温度',
+      rightTemp: '右温度',
+      setNozzleTemperature: 'ノズル温度を設定',
+      setBedTemperature: 'ベッド温度を設定',
+      setChamberTemperature: 'チャンバー温度を設定',
+      setNozzleSelection: 'ノズル選択を設定',
+      setFanSpeed: '{{fan}}の速度を設定',
+    },
+    externalSlotLocation: '外部スロット{{slot}}',
+    plugTurnOff: 'オフにする',
+    plugTurnOn: 'オンにする',
+    haRunEntity: '{{entity}}を実行',
+    haToggleEntity: '{{entity}}を切り替え',
+    noPrintersWithSmartPlugs: 'スマートプラグ付きのプリンターはありません',
+    ungrouped: 'グループなし',
   },
 
   // Archives page
@@ -1268,6 +1327,8 @@ export default {
       download: 'ダウンロード',
       edit: '編集',
       delete: '削除',
+      reprintCount_one: '再印刷 {{count}}回',
+      reprintCount_other: '再印刷 {{count}}回',
     },
     calendar: {
       today: '今日',
@@ -1342,6 +1403,30 @@ export default {
       failedDeleteArchives: 'アーカイブの削除に失敗しました',
       photoDeleted: '写真を削除しました',
       failedDeletePhoto: '写真の削除に失敗しました',
+      collections: {
+        all: 'すべてのアーカイブ',
+        recent: '過去24時間',
+        favorites: 'お気に入り',
+        notPrinted: '未印刷',
+        printed: '印刷済み',
+        failed: '失敗した印刷',
+        duplicates: '重複',
+      },
+      archivesDeletedCount_one: '{{count}}件のアーカイブを削除しました',
+      archivesDeletedCount_other: '{{count}}件のアーカイブを削除しました',
+      toggledFavoritesCount_one: '{{count}}件のアーカイブのお気に入りを切り替えました',
+      toggledFavoritesCount_other: '{{count}}件のアーカイブのお気に入りを切り替えました',
+      compareCount: '比較 ({{count}})',
+      upload3mf: '3MFをアップロード',
+      fileTypeSliced: 'スライス済み (GCODE)',
+      fileTypeSource: 'ソースのみ',
+      hideFailed: '失敗を非表示',
+      allTags: 'すべてのタグ',
+      colors: '色:',
+      matchAnyColor: '選択した色の「いずれか」に一致',
+      matchAllColors: '選択した色の「すべて」に一致',
+      createdAutomatically: 'アーカイブは印刷完了時に自動的に作成されます',
+      noPrinter: 'プリンターなし',
     },
     list: {
       name: '名前',
@@ -1401,6 +1486,23 @@ export default {
         cancelled: 'キャンセル',
         skipped: 'スキップ',
       },
+    },
+    batchProject: {
+      added_one: '{{count}}件のアーカイブを「{{name}}」に追加しました',
+      added_other: '{{count}}件のアーカイブを「{{name}}」に追加しました',
+      assignFailed: 'プロジェクトの割り当てに失敗しました',
+      removed_one: '{{count}}件のアーカイブをプロジェクトから外しました',
+      removed_other: '{{count}}件のアーカイブをプロジェクトから外しました',
+      removeFailed: 'プロジェクトから外せませんでした',
+      title: 'プロジェクトに割り当て',
+      assignSelected_one: '選択した{{count}}件のアーカイブをプロジェクトに割り当て',
+      assignSelected_other: '選択した{{count}}件のアーカイブをプロジェクトに割り当て',
+      removeFromProject: 'プロジェクトから外す',
+      clearAssignment: 'プロジェクトの割り当てを解除',
+      orAssignTo: 'または割り当て先',
+      archiveCount_one: '{{count}}件のアーカイブ',
+      archiveCount_other: '{{count}}件のアーカイブ',
+      noProjects: 'プロジェクトはまだありません。プロジェクトページから作成してください。',
     },
   },
 
@@ -1821,6 +1923,9 @@ export default {
       noEditItems: 'キューアイテムを編集する権限がありません',
       noCancelItems: 'キューアイテムをキャンセルする権限がありません',
     },
+    selectPlateToPrint: '印刷するプレートを選択',
+    selectPlatesToPrint: '印刷するプレートを選択',
+    plateSelectionRequired: '選択が必要です',
   },
 
   // Statistics page
@@ -1959,6 +2064,23 @@ export default {
     allUsers: '全ユーザー',
     noUser: 'ユーザーなし（システム）',
     filterByUser: 'ユーザーでフィルター',
+    costAvg: '平均 {{cost}}',
+    filamentTooltip: 'フィラメント',
+    usageTooltip: '使用量',
+    weekdays: {
+      mon: '月',
+      tue: '火',
+      wed: '水',
+      thu: '木',
+      fri: '金',
+      sat: '土',
+      sun: '日',
+    },
+    heatmapCellTitle_one: '{{day}} {{hour}}: {{count}}件の印刷',
+    heatmapCellTitle_other: '{{day}} {{hour}}: {{count}}件の印刷',
+    heatmapLess: '少',
+    heatmapMore: '多',
+    weekOf: '{{date}}の週',
   },
 
   // Maintenance page
@@ -2104,6 +2226,7 @@ export default {
     deleteEntryMessage: '{{date}} の「{{task}}」をメンテナンスログから完全に削除します。タスクの最終リセットはそのまま残ります。',
     entryDeleted: 'ログエントリーを削除しました',
     deleteFailed: '削除に失敗しました: {{error}}',
+    ok: '正常',
   },
 
   // Settings page
@@ -2849,6 +2972,20 @@ export default {
       cameraConnectedCoalesced: 'カメラ接続{{resolution}}（実行中のキャプチャと共有）',
       cameraConnectedLiveView: 'カメラは動作しています{{resolution}}（カメラを使用中のライブビューの映像）',
       saveFailed: '保存に失敗しました',
+      storageRefreshFailed: 'ストレージ使用量の更新に失敗しました',
+      apiKeyCreateFailed: 'APIキーの作成に失敗しました: {{message}}',
+      apiKeyDeleteFailed: 'APIキーの削除に失敗しました: {{message}}',
+      emailRequiredAdvancedAuth: '高度な認証が有効な場合、メールアドレスは必須です',
+      allProvidersTested: '{{tested}}件すべてのプロバイダーのテストに成功しました！',
+      providersSucceeded: '{{success}}/{{tested}}件のプロバイダーが成功しました',
+      testProvidersFailed: 'プロバイダーのテストに失敗しました: {{message}}',
+      allPlugsTurnedOn: '{{success}}個すべてのプラグをオンにしました',
+      allPlugsTurnedOff: '{{success}}個すべてのプラグをオフにしました',
+      plugsTurnedOnPartial: '{{success}}個のプラグをオンにしました、{{failed}}個失敗',
+      plugsTurnedOffPartial: '{{success}}個のプラグをオフにしました、{{failed}}個失敗',
+      failedWithMessage: '失敗しました: {{message}}',
+      saveFailedWithMessage: '保存に失敗しました: {{message}}',
+      updatePrinterFailed: 'プリンターの更新に失敗しました: {{message}}',
     },
     testConnection: '接続テスト',
     catalog: {
@@ -3195,6 +3332,8 @@ export default {
       oidcUnlinkConfirmTitle: 'アカウントのリンクを解除しますか？',
       oidcUnlinkConfirmMessage: '{{provider}} でサインインできなくなります。',
       oidcUnlinkConfirmAction: 'リンク解除',
+      qrCodeAlt: 'TOTP QRコード',
+      codeOrBackupPlaceholder: '000000 または XXXXXXXX',
     },
     // Session Policy (#1706)
     sessionPolicy: {
@@ -3381,6 +3520,34 @@ export default {
     noSearchResults: '一致する設定がありません。',
     noTemplatesMatch: 'フィルターに一致するテンプレートがありません。',
     searchPlaceholder: '設定を検索…',
+    rebuildLedgerFailed: '台帳の再構築を開始できませんでした',
+    mqttBrokerPlaceholder: 'mqtt.example.com または 192.168.1.100',
+    clearFilter: 'フィルターをクリア',
+    bulkPlugTitleOn: 'すべてのプラグをオン',
+    bulkPlugTitleOff: 'すべてのプラグをオフ',
+    bulkPlugMessageOn: '有効なスマートプラグ{{total}}個をすべてオンにします。',
+    bulkPlugMessageOff: '有効なスマートプラグ{{total}}個をすべてオフにします。稼働中のプリンターに影響する可能性があります！',
+    bulkPlugConfirmOn: 'すべてオン',
+    bulkPlugConfirmOff: 'すべてオフ',
+    releaseNotesTitle: 'リリースノート - v{{version}}',
+    userItemArchives_one: 'アーカイブ {{count}}件',
+    userItemArchives_other: 'アーカイブ {{count}}件',
+    userItemQueueItems_one: 'キューアイテム {{count}}件',
+    userItemQueueItems_other: 'キューアイテム {{count}}件',
+    userItemLibraryFiles_one: 'ライブラリファイル {{count}}件',
+    userItemLibraryFiles_other: 'ライブラリファイル {{count}}件',
+    spoolmanSyncResult: {
+      success_one: '{{count}}個のスプールを同期しました',
+      success_other: '{{count}}個のスプールを同期しました',
+      withErrors_one: '{{count}}個のスプールを同期しました ({{errors}})',
+      withErrors_other: '{{count}}個のスプールを同期しました ({{errors}})',
+      errorCount_one: 'エラー{{count}}件',
+      errorCount_other: 'エラー{{count}}件',
+      skipped_one: '{{count}}個のスプールをスキップしました',
+      skipped_other: '{{count}}個のスプールをスキップしました',
+      andMore: '...他{{count}}件',
+      errors: 'エラー:',
+    },
   },
 
   // Notifications (for push notifications)
@@ -3515,6 +3682,7 @@ export default {
     timestamp: 'タイムスタンプ',
     direction: '方向',
     all: 'すべて',
+    autoScroll: '自動スクロール',
   },
 
   // Printer File Manager modal (printer internal storage)
@@ -3765,6 +3933,8 @@ export default {
         profile: 'プロファイル',
       },
     },
+    chamberLightOnToast: 'チャンバーライトをオンにしました',
+    chamberLightOffToast: 'チャンバーライトをオフにしました',
   },
 
   // Groups management
@@ -4343,7 +4513,9 @@ export default {
       same: '変更なし',
       searchFields: 'フィールドを検索...',
       title: 'プロファイルを比較',
+      gcodeLines: '[G-code/スクリプト {{count}}行]',
     },
+    scrollToTop: 'トップへスクロール',
   },
 
   // Support/Debug
@@ -4685,6 +4857,8 @@ export default {
       failedToGenerateThumbnail: 'サムネイルの生成に失敗: {{error}}',
     },
     filterByUser: 'ユーザーでフィルター',
+    linkedProjectTitle: 'プロジェクト: {{name}} (クリックで変更)',
+    linkedArchiveTitle: 'アーカイブ: {{name}} (クリックで変更)',
   },
 
   // Projects
@@ -5220,6 +5394,8 @@ export default {
     disableWeightSyncDesc: 'AMS推定値から残量を更新しません。AMSの割合ベースの推定よりもSpoolmanの使用量追跡を優先する場合に使用してください。新しいスプールは引き続きAMS推定値を初期重量として使用します。',
     reportPartialUsage: '失敗した印刷の部分使用量を報告',
     reportPartialUsageDesc: '印刷が失敗またはキャンセルされた場合、レイヤー進捗に基づいてその時点までの推定フィラメント使用量を報告します。',
+    linkSlotInfo: 'AMS {{amsId}} T{{trayId}} · プリンター #{{printerId}}',
+    tagValue: 'タグ: {{tag}}',
   },
 
   locations: {
@@ -5306,6 +5482,7 @@ export default {
       restorePartial: '{{ok}} 件復元、{{failed}} 件失敗',
       restoreAllFailed: '{{count}} 件すべての復元に失敗しました — 再試行のため選択は維持されます',
       invalidHex: '16進数 6 文字（RRGGBB）または 8 文字（RRGGBBAA）を入力してください。それ以外の場合この項目は適用されません。',
+      hexPlaceholder: 'RRGGBB または RRGGBBAA',
     },
     spoolmanMixedContentTitle: 'Spoolman を HTTPS で読み込めません — ブラウザが混在コンテンツをブロックしています',
     spoolmanMixedContentBody: 'Bambuddy はリバースプロキシ経由で HTTPS 配信されていますが、Spoolman の URL は HTTP のままです。ブラウザはセキュリティ上の理由で混在コンテンツをブロックするため、埋め込みの Spoolman UI を表示できません。Spoolman も HTTPS でアクセスできる必要があります。',
@@ -5845,6 +6022,30 @@ export default {
     assignedSpool: '割り当て済みスプール',
     unassignFailed: 'スプールの割り当て解除に失敗しました',
     unassignSuccess: 'スプールの割り当てを解除しました',
+    pickerDiagCounts: '取得 {{fetched}}件 · アーカイブ済み {{archived}}件 · 他のスロットに割り当て済み {{assigned}}件',
+    pickerDiagFiltered: '未割り当てのスプール {{unassigned}}件 — トレイ一致で {{filtered}}件を除外。「すべてのスプールを表示」をお試しください。',
+    tableColumns: {
+      added: '追加日',
+      encoded: '書き込み日',
+      lastUsed: '最終使用',
+      location: 'ロケーション',
+      gross: '総重量',
+      printedTotal: '印刷合計',
+      printedSinceWeight: '計量後の印刷量',
+      tagId: 'タグID',
+      dataOrigin: 'データ元',
+      tagType: 'リンク済みタグの種類',
+    },
+    never: 'なし',
+    printerN: 'プリンター{{id}}',
+    noScaleMeasurement: 'スケールの計測値がありません',
+    weightCheckMatchTooltip: 'スケール: {{scale}}g\n計算値: {{calculated}}g\n差: {{difference}}g (許容範囲内)',
+    weightCheckMismatchTooltip: 'スケール: {{scale}}g\n計算値: {{calculated}}g\n差: {{difference}}g (不一致！)',
+    syncScaleWeightTitle: '同期: スケールの重量を採用して追跡をリセット',
+    syncedToScaleWeight: '「{{name}}」をスケールの重量に同期しました',
+    firstPage: '最初のページ',
+    lastPage: '最後のページ',
+    pageOf: '{{page}} / {{total}}ページ',
   },
 
   // Timelapse
@@ -6002,6 +6203,52 @@ export default {
     costCenter: 'コストセンター',
     personalDefault: '個人',
     totalCostForQuantity: '合計: {{cost}}',
+    queuedForAnyModel: '任意の{{model}}向けにキューに追加',
+    printerN: 'プリンター{{id}}',
+    trayN: 'トレイ{{id}}',
+    selectAtLeastOnePrinter: 'プリンターを1台以上選択してください',
+    selectTargetModel: '対象のプリンターモデルを選択してください',
+    crossModelBlocked: 'このファイルは{{sliced}}用にスライスされているため、{{target}}プリンターには送信できません',
+    queueItemUpdated: 'キューアイテムを更新しました',
+    submitFailed: '失敗しました: {{error}}',
+    submitPartial: '{{succeeded}}件成功、{{failed}}件失敗',
+    printJob: '印刷ジョブ',
+    slicedForOtherModel: 'このファイルは{{sliced}}用にスライスされていますが、{{model}}で印刷します',
+    archiveDataUnavailable: 'アーカイブデータを利用できません。ソースファイルが削除された可能性があります。フィラメントマッピングは無効です。',
+    operationFailed: '操作を完了できませんでした',
+    printerSelector: {
+      customSlotMapping: 'カスタムスロットマッピング',
+      selectSlotOption: '-- スロットを選択 --',
+      statePreparing: '準備中',
+      stateFailed: '失敗',
+      noActivePrintersAvailable: '利用可能なアクティブなプリンターがありません',
+      specificPrinter: '特定のプリンター',
+      anyModel: '任意の{{model}}',
+      targetModel: '対象モデル',
+      slicedForHint: '({{model}}用にスライス)',
+      selectModelOption: 'モデルを選択...',
+      incompatibleGcodeSuffix: ' — {{model}}のG-codeと互換性なし',
+      crossModelWarning: 'このファイルは{{sliced}}用にスライスされていますが、{{target}}プリンターに送信されます',
+      crossModelBlocked: 'このファイルは{{sliced}}用にスライスされているため、{{target}}プリンターには送信できません — 互換性のあるモデルを選択してください',
+      locationFilter: 'ロケーションフィルター (任意)',
+      anyLocation: '任意のロケーション',
+      schedulerInfo: 'スケジューラーが最初に空いたアイドル状態の{{model}}プリンターに割り当てます',
+      schedulerInfoLocation: 'スケジューラーが{{location}}内で最初に空いたアイドル状態の{{model}}プリンターに割り当てます',
+      selectPrinters: 'プリンターを選択',
+      printersSelected_one: '{{count}}台のプリンターを選択中',
+      printersSelected_other: '{{count}}台のプリンターを選択中',
+      selectAll: 'すべて選択',
+      inactive: '(非アクティブ)',
+      customMapping: 'カスタムマッピング',
+      matchedCount: '({{matched}}/{{total}} 一致)',
+      auto: '自動',
+      hiddenPrinters_one: '他の{{count}}台のプリンターを非表示 (別モデル) —',
+      hiddenPrinters_other: '他の{{count}}台のプリンターを非表示 (別モデル) —',
+      showAll: 'すべて表示',
+      showOnlyModel: '{{model}}プリンターのみ表示',
+      selectAtLeastOne: 'プリンターを1台以上選択',
+      selectTargetModel: '対象のプリンターモデルを選択',
+    },
   },
 
   // Backup
@@ -6261,6 +6508,19 @@ export default {
     processingPercent: '処理中… {{percent}}%',
     failed: '処理に失敗しました',
     cancelled: '処理をキャンセルしました',
+    loadingVideoInfo: '動画情報を読み込み中...',
+    title: 'タイムラプスを編集',
+    trim: 'トリミング',
+    speed: '速度',
+    speedOutput: '{{speed}}x (出力: {{duration}})',
+    musicOverlay: '音楽オーバーレイ',
+    dropAudio: '音声ファイルをドロップするか、クリックしてアップロード',
+    original: '元:',
+    output: '出力:',
+    outputSummary: '{{duration}} @ {{speed}}x速',
+    outputSummaryWithMusic: '{{duration}} @ {{speed}}x速 + 音楽オーバーレイ',
+    processingTimelapse: 'タイムラプスを処理中...',
+    mayTakeMoments: 'しばらく時間がかかる場合があります',
   },
   // Tags
   tags: {
@@ -6287,6 +6547,11 @@ export default {
     uploading: 'アップロード中...',
     upload: 'アップロード',
     uploadFailed: 'アップロード失敗',
+    filesUploaded_one: '{{count}}件のファイルをアップロードしました',
+    filesUploaded_other: '{{count}}件のファイルをアップロードしました',
+    filesFailed_one: '{{count}}件のファイルのアップロードに失敗しました',
+    filesFailed_other: '{{count}}件のファイルのアップロードに失敗しました',
+    partialUpload: '{{uploaded}}件アップロード、{{failed}}件失敗',
   },
 
   archivePage: {
@@ -7076,6 +7341,9 @@ export default {
     connectionSuccess: '接続成功',
     noSwitchesInSwitchbar: 'スイッチバーにスイッチがありません',
     enableSwitchbarHint: '設定 > スマートプラグで「スイッチバーに表示」を有効にしてください',
+    tasmotaIpRequired: 'TasmotaプラグにはIPアドレスが必要です',
+    sameAsPowerTopic: '電源トピックと同じ、または別のもの',
+    examplePlaceholder: '例: {{value}}',
   },
 
   // Notifications
@@ -7447,6 +7715,22 @@ export default {
     placeholders: {
       linkName: 'マイリンク',
     },
+    addLink: 'リンクを追加',
+    deleteConfirm: '「{{name}}」を削除してもよろしいですか？この操作は元に戻せません。',
+    invalidImageType: '有効な画像ファイル (PNG、JPG、GIF、SVG、WebP、ICO) を選択してください',
+    imageTooLarge: '画像ファイルは1MB未満である必要があります',
+    nameRequired: '名前は必須です',
+    urlRequired: 'URLは必須です',
+    urlInvalidScheme: 'URLは http:// または https:// で始まる必要があります',
+    editLink: 'リンクを編集',
+    addExternalLink: '外部リンクを追加',
+    nameRequiredLabel: '名前 *',
+    urlRequiredLabel: 'URL *',
+    icon: 'アイコン',
+    customIcon: 'カスタムアイコン',
+    customIconAlt: 'カスタムアイコン',
+    iconFormatsHint: 'PNG、JPG、GIF、SVG、WebP、ICO。最大1MB。',
+    choosePresetIcon: 'またはプリセットアイコンを選択',
   },
 
   // Keyboard Shortcuts Modal
@@ -7471,8 +7755,13 @@ export default {
       newProfile: '新しいプロファイル',
       exitSelectionMode: '選択モードを終了',
       showHelp: 'このヘルプを表示',
+      openExternal: '{{name}}を開く',
+      goToPage: '{{page}}へ移動',
+      showCamera: 'プリンターのカメラを表示',
     },
     footer: 'Escキーを押すか外側をクリックして閉じます',
+    rightClick: '右クリック',
+    footerWithKey: '<kbd>Esc</kbd>キーを押すか外側をクリックして閉じます',
   },
 
   // Notification Log
@@ -7495,6 +7784,7 @@ export default {
       minutesAgo: '{{minutes}}分前',
       hoursAgo: '{{hours}}時間前',
     },
+    clearFailed: 'ログのクリアに失敗しました: {{message}}',
   },
 
   // Restore/Backup Modal
@@ -7675,7 +7965,23 @@ export default {
     placeholders: {
       requestBody: 'JSONリクエストボディ...',
       searchEndpoints: 'エンドポイントを検索...',
+      value: '値',
     },
+    validationError: '検証エラー',
+    missingRequiredParams: '必須パラメーターがありません: {{params}}',
+    networkError: 'ネットワークエラー',
+    pathParameters: 'パスパラメーター',
+    queryParameters: 'クエリパラメーター',
+    selectOption: '-- 選択 --',
+    requestBody: 'リクエストボディ',
+    execute: '実行',
+    fillIn: '入力してください: {{params}}',
+    response: 'レスポンス',
+    fetchSchemaFailed: 'OpenAPIスキーマの取得に失敗しました',
+    loadSchemaFailed: 'APIスキーマの読み込みに失敗しました',
+    expandAll: 'すべて展開',
+    collapseAll: 'すべて折りたたむ',
+    endpointCount: '{{categories}}カテゴリ・{{endpoints}}エンドポイント',
   },
 
   // Configure AMS Slot Modal
@@ -7734,12 +8040,19 @@ export default {
     downloadBackup: 'バックアップをダウンロード',
     restoreBackup: 'バックアップを復元',
     noBackupsYet: 'バックアップはまだありません',
+    status: {
+      success: '成功',
+      failed: '失敗',
+      skipped: 'スキップ',
+      running: '実行中',
+    },
   },
 
   // Email Settings
   emailSettings: {
     placeholders: {
       fromName: 'Bambuddy',
+      appPassword: 'アプリパスワード',
     },
   },
 
@@ -7748,6 +8061,24 @@ export default {
     searchTags: 'タグを検索...',
     renameTag: 'タグ名を変更',
     deleteTag: 'タグを削除',
+    renamed_one: '{{count}}件のアーカイブで「{{oldName}}」を「{{newName}}」に名前変更しました',
+    renamed_other: '{{count}}件のアーカイブで「{{oldName}}」を「{{newName}}」に名前変更しました',
+    renameFailed: 'タグの名前変更に失敗しました',
+    deleted_one: '{{count}}件のアーカイブから「{{name}}」を削除しました',
+    deleted_other: '{{count}}件のアーカイブから「{{name}}」を削除しました',
+    deleteFailed: 'タグの削除に失敗しました',
+    title: 'タグを管理',
+    sortByCount: '件数で並べ替え',
+    sortByName: '名前で並べ替え',
+    summary: '{{tags}} / {{usages}}',
+    tagCount_one: '{{count}}個のタグ',
+    tagCount_other: '{{count}}個のタグ',
+    usageCount_one: '{{count}}回の使用',
+    usageCount_other: '{{count}}回の使用',
+    noMatch: '検索に一致するタグはありません',
+    noTags: 'タグが見つかりません',
+    confirmDelete_one: '{{count}}件のアーカイブから「{{name}}」を削除しますか？',
+    confirmDelete_other: '{{count}}件のアーカイブから「{{name}}」を削除しますか？',
   },
 
   // Notification Template Editor
@@ -7763,11 +8094,33 @@ export default {
     placeholders: {
       newTag: '新しいタグを入力...',
     },
+    failedOnArchive: 'アーカイブ{{id}}で失敗しました: {{error}}',
+    tagCount_one: '{{count}}個のタグ',
+    tagCount_other: '{{count}}個のタグ',
+    archiveCount_one: '{{count}}件のアーカイブ',
+    archiveCount_other: '{{count}}件のアーカイブ',
+    addedToast: '{{archives}}に{{tags}}を追加しました',
+    removedToast: '{{archives}}から{{tags}}を削除しました',
+    updateFailed: 'タグの更新に失敗しました',
+    addTags: 'タグを追加',
+    removeTags: 'タグを削除',
+    addDescription_one: '選択した{{count}}件のアーカイブにタグを追加',
+    addDescription_other: '選択した{{count}}件のアーカイブにタグを追加',
+    removeDescription_one: '選択した{{count}}件のアーカイブからタグを削除',
+    removeDescription_other: '選択した{{count}}件のアーカイブからタグを削除',
+    existingTags: '既存のタグ:',
+    tagsToAdd: '追加するタグ:',
+    tagsToRemove: '削除するタグ:',
+    processing: '処理中...',
   },
 
   // Photo Gallery Modal
   photoGallery: {
     deletePhoto: '写真を削除',
+    photoOf: '写真 {{current}} / {{total}}',
+    photoAlt: '写真{{number}}',
+    thumbnailAlt: 'サムネイル{{number}}',
+    deleteConfirm: 'この写真を削除しますか？この操作は元に戻せません。',
   },
 
   // Filament Hover Card
@@ -7779,6 +8132,8 @@ export default {
   kProfilesView: {
     hasNote: 'メモあり',
     copyProfile: 'プロファイルをコピー',
+    unnamed: '名前なし',
+    notePrefix: 'メモ: {{note}}',
   },
 
   // Layout/Navigation
@@ -7791,6 +8146,10 @@ export default {
   dashboard: {
     dragToReorder: 'ドラッグして並べ替え',
     hideWidget: 'ウィジェットを非表示',
+    sizeClickToCycle: 'サイズ: {{size}} - クリックで切り替え',
+    sizeFull: 'フル',
+    hiddenWidgetsClickToShow: '非表示のウィジェット (クリックで表示):',
+    allWidgetsHidden: 'すべてのウィジェットが非表示です。',
   },
 
   // Notification Provider Card
@@ -7804,6 +8163,22 @@ export default {
     sortFiles: 'ファイルを並べ替え',
     goToParentFolder: '親フォルダーへ移動',
     threeView: '3Dビュー',
+    gcodePreview: 'G-codeプレビュー',
+    notSliced: '未スライス',
+    sort: {
+      nameAsc: '名前 (A-Z)',
+      nameDesc: '名前 (Z-A)',
+      sizeAsc: 'サイズ (小さい順)',
+      sizeDesc: 'サイズ (大きい順)',
+      dateAsc: '日付 (古い順)',
+      dateDesc: '日付 (新しい順)',
+    },
+    dirs: {
+      root: 'ルート',
+      cache: 'キャッシュ',
+      models: 'モデル',
+      timelapse: 'タイムラプス',
+    },
   },
 
   // Embedded Camera Viewer
@@ -7814,6 +8189,8 @@ export default {
     resetZoom: 'ズームをリセット',
     zoomIn: 'ズームイン',
     dragToResize: 'ドラッグしてサイズ変更',
+    minimize: '最小化',
+    reconnectingIn: '{{seconds}}秒後に再接続します...',
   },
 
   // Timelapse Viewer
@@ -7840,11 +8217,24 @@ export default {
   logViewer: {
     searchPlaceholder: 'メッセージまたはロガー名を検索...',
     noLogEntries: 'ログエントリが見つかりません',
+    title: 'アプリケーションログ',
+    liveStreamingEntries: 'ライブストリーミング - {{entries}}件',
+    subtitle: 'アプリケーションログの表示とフィルター',
+    live: 'ライブ',
+    stop: '停止',
+    start: '開始',
+    autoScroll: '自動スクロール',
+    logFileEmpty: 'ログファイルが空か、クリアされた可能性があります',
+    autoRefreshing: '2秒ごとに自動更新中',
+    clickStartHint: '「開始」をクリックしてライブログストリーミングを有効にします',
   },
 
   // Switchbar Popover
   switchbarPopover: {
     noSwitchesInSwitchbar: 'スイッチバーにスイッチがありません',
+    monitor: '監視',
+    waiting: '待機中',
+    turnOffConfirm: '「{{name}}」をオフにしてもよろしいですか？',
   },
 
   // Project Page Modal
@@ -7857,6 +8247,13 @@ export default {
       profileTitle: 'プロファイルタイトル',
       profileDescription: 'プロファイルの説明...',
     },
+    title: 'プロジェクトページ',
+    loadFailed: 'プロジェクトページのデータの読み込みに失敗しました',
+    noData: 'この3MFファイルにはプロジェクトページのデータがありません。',
+    noDataHint: 'プロジェクトページは通常、MakerWorldからダウンロードしたファイルに含まれています。',
+    printProfile: '印刷プロファイル',
+    byUser: '作成者: {{name}}',
+    imagesCount: '画像 ({{count}})',
   },
 
   // Spoolman Settings
@@ -7899,6 +8296,7 @@ export default {
       status: 'ステータス',
       backend: 'バックエンド',
       connectDisplay: 'スプールをスキャンするにはSpoolBuddyディスプレイを接続してください',
+      deviceDisconnected: 'SpoolBuddyデバイスが切断されました',
     },
     dashboard: {
       readyToScan: 'スキャン準備完了',
@@ -7928,6 +8326,7 @@ export default {
       plateClearedToast: 'プレートを片付け済みにしました',
       plateClearFailed: 'プレートを片付け済みにできませんでした',
       printers: 'プリンター',
+      estimatedFilament: 'フィラメント 約{{weight}}g',
     },
     modal: {
       assignToAms: 'AMSに割り当て',
@@ -7980,6 +8379,7 @@ export default {
       linkDesc: 'Spoolmanのスプールをこのスロットにリンク',
       unassignDesc: 'このスロットからインベントリのスプールを外す',
       unlinkDesc: 'このスロットのSpoolmanリンクを解除',
+      lowFilamentAlert: 'フィラメント残量低下: {{type}} ({{slot}}) - 残り{{remain}}%',
     },
     inventory: {
       search: 'スプールを検索...',
@@ -8089,6 +8489,7 @@ export default {
       updateFailed: 'アップデートに失敗しました',
       updateWaiting: 'アップデート中...',
       used: '使用中',
+      triggerUpdateFailed: 'アップデートの開始に失敗しました',
     },
     writeTag: {
       writeWith: '書き込みに使うデバイス',
@@ -8154,6 +8555,7 @@ export default {
       confirmPlugOff: '{{name}}をオフにしますか？',
       turnOn: 'オン',
       turnOff: 'オフ',
+      open: 'クイックメニューを開く',
     },
     diagnostic: {
       clickStart: '「診断を実行」をクリックすると、次のデバイスでハードウェア診断を開始します:',
@@ -8167,6 +8569,9 @@ export default {
       running: 'デバイスで診断を実行中...',
       runningBtn: '実行中...',
       scaleTitle: 'スケール診断',
+      timedOut: '診断がタイムアウトしました - デバイスから結果が報告されませんでした',
+      exitCode: '終了コード: {{code}}',
+      errorPrefix: 'エラー: {{error}}',
     },
     errors: {
       quickAddFailed: 'スプールの追加に失敗しました',
@@ -8461,6 +8866,7 @@ export default {
     noActivePrints: '現在、実行中の印刷はありません。',
     historyTitle: '最近の検出',
     noHistory: 'まだ検出はありません。',
+    printerFallback: 'プリンター{{id}}',
   },
   octoeverywhere: {
     title: 'OctoEverywhere AI 検出',
@@ -9062,8 +9468,51 @@ export default {
     // Permissions
     noReadAccess: '在庫予測を閲覧する権限がありません。',
     noWriteAccess: '予測設定を変更する権限がありません。',
+    unitDays: '日',
+    spoolsOrdered: '{{spools}}を注文済み',
+    chartReorderPoint: '発注点',
+    chartSafetyStock: '安全在庫',
+    chartOut: '品切れ',
+    chartArrives: '+{{amount}} 入荷 ({{days}}日目)',
+    atDailyRate: '{{rate}}g/日のペースで',
   },
   amsHistory: {
     recordingInfo: 'プリンターの接続中は5分ごとにデータが記録されます',
+  },
+  app: {
+    uiCrash: 'UIクラッシュ',
+  },
+  printCalendar: {
+    days: {
+      sun: '日',
+      mon: '月',
+      tue: '火',
+      wed: '水',
+      thu: '木',
+      fri: '金',
+      sat: '土',
+    },
+    dayTooltip_one: '{{date}}: {{count}}件の印刷',
+    dayTooltip_other: '{{date}}: {{count}}件の印刷',
+    less: '少',
+    more: '多',
+  },
+  compareArchivesModal: {
+    title: 'アーカイブを比較 ({{count}})',
+    loadFailed: '比較の読み込みに失敗しました',
+    setting: '設定',
+    differencesFound_one: '{{count}}件の相違点が見つかりました',
+    differencesFound_other: '{{count}}件の相違点が見つかりました',
+    andMore: '...他{{count}}件',
+    successFailureAnalysis: '成功/失敗の分析',
+    successfulCount: '成功 {{count}}件',
+    failedCount: '失敗 {{count}}件',
+    noCorrelations: '設定と結果の間に明確な相関は見つかりませんでした。',
+    needBothOutcomes: '相関分析には成功した印刷と失敗した印刷の両方が必要です。',
+  },
+  qrCodeModal: {
+    title: 'QRコード',
+    scanHint: 'スキャンしてこのアーカイブを開く',
+    download: 'QRコードをダウンロード',
   },
 };

@@ -333,6 +333,7 @@ export default {
       finished: 'Finished',
       unknown: 'Unknown',
       title: 'Status',
+      failed: 'Failed',
     },
     temperatures: {
       nozzle: 'Nozzle',
@@ -601,6 +602,8 @@ export default {
       unloadAms3h: 'Unloading slot {{n}}. When the printer asks, pull the filament back out of the AMS 3H by hand.',
       failedToLoad: 'Failed to load filament',
       failedToUnload: 'Failed to unload filament',
+      chamberLightOn: 'Chamber light on',
+      chamberLightOff: 'Chamber light off',
     },
     // Connection status
     connection: {
@@ -651,6 +654,12 @@ export default {
       homeZ: 'Auto Home',
       moveAnyway: 'Move anyway',
       homingStarted: 'Auto-homing printer…',
+      moveYForward: 'Move Y forward',
+      moveXLeft: 'Move X left',
+      moveXRight: 'Move X right',
+      moveYBack: 'Move Y back',
+      retractFilament: 'Retract filament',
+      extrudeFilament: 'Extrude filament',
     },
     // Permissions
     pandaBreath: {
@@ -693,6 +702,9 @@ export default {
       fromPrinterSettings: 'From printer settings',
       modelOptional: 'Model (optional)',
       saveChanges: 'Save Changes',
+      hostPlaceholder: '192.168.1.100 or printer.local',
+      seriesGroup: '{{series}} Series',
+      locationGroupLabel: 'Location / Group',
     },
     // Skip objects
     skipObjects: {
@@ -916,6 +928,13 @@ export default {
       labelPlaceholder: 'Label...',
       clickToEdit: '{{label}} - Click to edit',
       clickToAddLabel: 'Click to add label',
+      checkTitle: 'Build Plate Check',
+      refsCount: '{{count}}/{{max}} refs',
+      referenceAlt: 'Reference {{n}}',
+      calibrating: 'Calibrating...',
+      calibrateEmptyPlate: 'Calibrate Empty Plate',
+      adding: 'Adding...',
+      addReference: 'Add Reference ({{count}}/{{max}})',
     },
     // Speed
     speed: {
@@ -1020,6 +1039,7 @@ export default {
       width: 'Width',
       height: 'Height',
       instruction: 'Adjust the detection area to focus on the build plate. The green box in the preview shows the current area.',
+      current: 'Current: X={{x}}%, Y={{y}}%, W={{w}}%, H={{h}}%',
     },
     developerModeWarning: 'Developer LAN mode is not enabled on: {{names}}. Some features may not work.',
     howToEnable: 'How to enable',
@@ -1031,6 +1051,45 @@ export default {
     networkLabel: 'Network',
     noActiveJob: 'No active job',
     power: 'Power',
+    indicator: {
+      good: 'Good',
+      fair: 'Fair',
+      bad: 'Bad',
+      humidityTitle: 'Humidity: {{value}}% - {{status}}',
+      humidityTitleClickable: 'Humidity: {{value}}% - {{status}} (click for history)',
+      temperatureTitle: 'Temperature: {{value}}°C - {{status}}',
+      temperatureTitleClickable: 'Temperature: {{value}}°C - {{status}} (click for history)',
+      customPlaceholder: 'Custom',
+      set: 'Set',
+    },
+    nozzleSlotEmpty: 'Slot {{slot}} — Empty',
+    unknownModel: 'Unknown Model',
+    wifiTitle: 'WiFi: {{signal}} dBm - {{strength}}',
+    badgeOk: 'OK',
+    maintenanceBadge: {
+      dueAndSoon: '{{due}} maintenance due, {{soon}} due soon - Click to view',
+      due: '{{due}} maintenance due - Click to view',
+      soon: '{{soon}} due soon - Click to view',
+    },
+    startedBy: 'Started by {{user}}',
+    lastPrint: 'Last: {{name}}',
+    control: {
+      setNozzleTemperatures: 'Set Nozzle Temperatures',
+      leftTemp: 'Left Temp',
+      rightTemp: 'Right Temp',
+      setNozzleTemperature: 'Set Nozzle Temperature',
+      setBedTemperature: 'Set Bed Temperature',
+      setChamberTemperature: 'Set Chamber Temperature',
+      setNozzleSelection: 'Set Nozzle Selection',
+      setFanSpeed: 'Set {{fan}} Speed',
+    },
+    externalSlotLocation: 'External Slot {{slot}}',
+    plugTurnOff: 'Turn off',
+    plugTurnOn: 'Turn on',
+    haRunEntity: 'Run {{entity}}',
+    haToggleEntity: 'Toggle {{entity}}',
+    noPrintersWithSmartPlugs: 'No printers with smart plugs',
+    ungrouped: 'Ungrouped',
   },
 
   // Archives page
@@ -1276,6 +1335,8 @@ export default {
       download: 'Download',
       edit: 'Edit',
       delete: 'Delete',
+      reprintCount_one: '{{count}} reprint',
+      reprintCount_other: '{{count}} reprints',
     },
     calendar: {
       today: 'Today',
@@ -1350,6 +1411,30 @@ export default {
       failedDeleteArchives: 'Failed to delete archives',
       photoDeleted: 'Photo deleted',
       failedDeletePhoto: 'Failed to delete photo',
+      collections: {
+        all: 'All Archives',
+        recent: 'Last 24 Hours',
+        favorites: 'Favorites',
+        notPrinted: 'Not Printed',
+        printed: 'Printed',
+        failed: 'Failed Prints',
+        duplicates: 'Duplicates',
+      },
+      archivesDeletedCount_one: '{{count}} archive deleted',
+      archivesDeletedCount_other: '{{count}} archives deleted',
+      toggledFavoritesCount_one: 'Toggled favorites for {{count}} archive',
+      toggledFavoritesCount_other: 'Toggled favorites for {{count}} archives',
+      compareCount: 'Compare ({{count}})',
+      upload3mf: 'Upload 3MF',
+      fileTypeSliced: 'Sliced (GCODE)',
+      fileTypeSource: 'Source Only',
+      hideFailed: 'Hide Failed',
+      allTags: 'All Tags',
+      colors: 'Colors:',
+      matchAnyColor: 'Match ANY selected color',
+      matchAllColors: 'Match ALL selected colors',
+      createdAutomatically: 'Archives are created automatically when prints complete',
+      noPrinter: 'No Printer',
     },
     list: {
       name: 'Name',
@@ -1409,6 +1494,23 @@ export default {
         cancelled: 'Cancelled',
         skipped: 'Skipped',
       },
+    },
+    batchProject: {
+      added_one: 'Added {{count}} archive to "{{name}}"',
+      added_other: 'Added {{count}} archives to "{{name}}"',
+      assignFailed: 'Failed to assign project',
+      removed_one: 'Removed {{count}} archive from project',
+      removed_other: 'Removed {{count}} archives from project',
+      removeFailed: 'Failed to remove from project',
+      title: 'Assign to Project',
+      assignSelected_one: 'Assign {{count}} selected archive to a project',
+      assignSelected_other: 'Assign {{count}} selected archives to a project',
+      removeFromProject: 'Remove from project',
+      clearAssignment: 'Clear project assignment',
+      orAssignTo: 'or assign to',
+      archiveCount_one: '{{count}} archive',
+      archiveCount_other: '{{count}} archives',
+      noProjects: 'No projects yet. Create one from the Projects page.',
     },
   },
 
@@ -1841,6 +1943,9 @@ export default {
       noEditItems: 'You do not have permission to edit queue items',
       noCancelItems: 'You do not have permission to cancel queue items',
     },
+    selectPlateToPrint: 'Select Plate to Print',
+    selectPlatesToPrint: 'Select Plates to Print',
+    plateSelectionRequired: 'Selection required',
   },
 
   // Statistics page
@@ -1980,6 +2085,23 @@ export default {
     allUsers: 'All Users',
     noUser: 'No User (System)',
     filterByUser: 'Filter by User',
+    costAvg: '{{cost}} avg',
+    filamentTooltip: 'Filament',
+    usageTooltip: 'Usage',
+    weekdays: {
+      mon: 'Mon',
+      tue: 'Tue',
+      wed: 'Wed',
+      thu: 'Thu',
+      fri: 'Fri',
+      sat: 'Sat',
+      sun: 'Sun',
+    },
+    heatmapCellTitle_one: '{{day}} {{hour}}: {{count}} print',
+    heatmapCellTitle_other: '{{day}} {{hour}}: {{count}} prints',
+    heatmapLess: 'Less',
+    heatmapMore: 'More',
+    weekOf: 'Week of {{date}}',
   },
 
   // Maintenance page
@@ -2125,6 +2247,7 @@ export default {
     deleteEntryMessage: '"{{task}}" from {{date}} is permanently removed from the maintenance log. The task\'s last reset stays as it is.',
     entryDeleted: 'Log entry deleted',
     deleteFailed: 'Delete failed: {{error}}',
+    ok: 'OK',
   },
 
   // Settings page
@@ -2872,6 +2995,20 @@ export default {
       cameraConnectedCoalesced: 'Camera connected{{resolution}} (shared with a capture already running)',
       cameraConnectedLiveView: 'Camera works{{resolution}} (frame from the live view, which is using the camera)',
       saveFailed: 'Save failed',
+      storageRefreshFailed: 'Failed to refresh storage usage',
+      apiKeyCreateFailed: 'Failed to create API key: {{message}}',
+      apiKeyDeleteFailed: 'Failed to delete API key: {{message}}',
+      emailRequiredAdvancedAuth: 'Email is required when advanced authentication is enabled',
+      allProvidersTested: 'All {{tested}} providers tested successfully!',
+      providersSucceeded: '{{success}}/{{tested}} providers succeeded',
+      testProvidersFailed: 'Failed to test providers: {{message}}',
+      allPlugsTurnedOn: 'All {{success}} plugs turned on',
+      allPlugsTurnedOff: 'All {{success}} plugs turned off',
+      plugsTurnedOnPartial: '{{success}} plugs turned on, {{failed}} failed',
+      plugsTurnedOffPartial: '{{success}} plugs turned off, {{failed}} failed',
+      failedWithMessage: 'Failed: {{message}}',
+      saveFailedWithMessage: 'Failed to save: {{message}}',
+      updatePrinterFailed: 'Failed to update printer: {{message}}',
     },
     testConnection: 'Test Connection',
     catalog: {
@@ -3218,6 +3355,8 @@ export default {
       oidcUnlinkConfirmTitle: 'Unlink account?',
       oidcUnlinkConfirmMessage: 'You will no longer be able to sign in with {{provider}}.',
       oidcUnlinkConfirmAction: 'Unlink',
+      qrCodeAlt: 'TOTP QR Code',
+      codeOrBackupPlaceholder: '000000 or XXXXXXXX',
     },
 
     // Session Policy (#1706) — admin-configurable session lifetime ceiling.
@@ -3413,6 +3552,34 @@ export default {
     noSearchResults: 'No matching settings.',
     noTemplatesMatch: 'No templates match your filter.',
     searchPlaceholder: 'Search settings…',
+    rebuildLedgerFailed: 'Failed to start ledger rebuild',
+    mqttBrokerPlaceholder: 'mqtt.example.com or 192.168.1.100',
+    clearFilter: 'Clear filter',
+    bulkPlugTitleOn: 'Turn All Plugs On',
+    bulkPlugTitleOff: 'Turn All Plugs Off',
+    bulkPlugMessageOn: 'This will turn ON all {{total}} enabled smart plugs.',
+    bulkPlugMessageOff: 'This will turn OFF all {{total}} enabled smart plugs. Any running printers may be affected!',
+    bulkPlugConfirmOn: 'Turn All On',
+    bulkPlugConfirmOff: 'Turn All Off',
+    releaseNotesTitle: 'Release Notes - v{{version}}',
+    userItemArchives_one: '{{count}} archive',
+    userItemArchives_other: '{{count}} archives',
+    userItemQueueItems_one: '{{count}} queue item',
+    userItemQueueItems_other: '{{count}} queue items',
+    userItemLibraryFiles_one: '{{count}} library file',
+    userItemLibraryFiles_other: '{{count}} library files',
+    spoolmanSyncResult: {
+      success_one: 'Synced {{count}} spool successfully',
+      success_other: 'Synced {{count}} spools successfully',
+      withErrors_one: 'Synced {{count}} spool with {{errors}}',
+      withErrors_other: 'Synced {{count}} spools with {{errors}}',
+      errorCount_one: '{{count}} error',
+      errorCount_other: '{{count}} errors',
+      skipped_one: '{{count}} spool skipped',
+      skipped_other: '{{count}} spools skipped',
+      andMore: '...and {{count}} more',
+      errors: 'Errors:',
+    },
   },
 
   // Notifications (for push notifications)
@@ -3547,6 +3714,7 @@ export default {
     timestamp: 'Timestamp',
     direction: 'Direction',
     all: 'All',
+    autoScroll: 'Auto-scroll',
   },
 
   // Printer File Manager modal (printer internal storage)
@@ -3797,6 +3965,8 @@ export default {
         profile: 'Profile',
       },
     },
+    chamberLightOnToast: 'Chamber light on',
+    chamberLightOffToast: 'Chamber light off',
   },
 
   // Groups management
@@ -4375,7 +4545,9 @@ export default {
       same: 'Unchanged',
       searchFields: 'Search fields...',
       title: 'Compare profiles',
+      gcodeLines: '[{{count}} lines of G-code/script]',
     },
+    scrollToTop: 'Scroll to top',
   },
 
   // Support/Debug
@@ -4717,6 +4889,8 @@ export default {
       failedToGenerateThumbnail: 'Failed to generate thumbnail: {{error}}',
     },
     filterByUser: 'Filter by user',
+    linkedProjectTitle: 'Project: {{name}} (click to change)',
+    linkedArchiveTitle: 'Archive: {{name}} (click to change)',
   },
 
   // Projects
@@ -5257,6 +5431,8 @@ export default {
     disableWeightSyncDesc: "Don't update remaining capacity from AMS estimates. Use this if you prefer Spoolman's usage tracking over AMS percentage-based estimates. New spools will still use the AMS estimate as their initial weight.",
     reportPartialUsage: 'Report Partial Usage for Failed Prints',
     reportPartialUsageDesc: 'When a print fails or is cancelled, report the estimated filament used up to that point based on layer progress.',
+    linkSlotInfo: 'AMS {{amsId}} T{{trayId}} · Printer #{{printerId}}',
+    tagValue: 'Tag: {{tag}}',
   },
 
   locations: {
@@ -5344,6 +5520,7 @@ export default {
       restorePartial: '{{ok}} spools restored, {{failed}} failed',
       restoreAllFailed: 'All {{count}} spool restores failed — selection kept so you can retry',
       invalidHex: 'Enter 6 hex characters (RRGGBB) or 8 (RRGGBBAA). The field will not be applied otherwise.',
+      hexPlaceholder: 'RRGGBB or RRGGBBAA',
     },
     spoolmanMixedContentTitle: 'Spoolman can\'t load over HTTPS — mixed-content blocked by your browser',
     spoolmanMixedContentBody: 'Bambuddy is served over HTTPS (via your reverse proxy), but your Spoolman URL is still plain HTTP. Browsers block mixed content for security, so the embedded Spoolman UI can\'t render. Spoolman needs to be reachable over HTTPS for this to work.',
@@ -5892,6 +6069,30 @@ export default {
     assignedSpool: 'Assigned spool',
     unassignFailed: 'Failed to unassign spool',
     unassignSuccess: 'Spool unassigned',
+    pickerDiagCounts: '{{fetched}} fetched · {{archived}} archived · {{assigned}} assigned to other slots',
+    pickerDiagFiltered: '{{unassigned}} unassigned spools — {{filtered}} filtered by tray match. Try "Show all spools".',
+    tableColumns: {
+      added: 'Added',
+      encoded: 'Encoded',
+      lastUsed: 'Last Used',
+      location: 'Location',
+      gross: 'Gross',
+      printedTotal: 'Printed Total',
+      printedSinceWeight: 'Printed Since Weight',
+      tagId: 'Tag ID',
+      dataOrigin: 'Data Origin',
+      tagType: 'Linked Tag Type',
+    },
+    never: 'Never',
+    printerN: 'Printer {{id}}',
+    noScaleMeasurement: 'No scale measurement',
+    weightCheckMatchTooltip: 'Scale: {{scale}}g\nCalculated: {{calculated}}g\nDifference: {{difference}}g (within tolerance)',
+    weightCheckMismatchTooltip: 'Scale: {{scale}}g\nCalculated: {{calculated}}g\nDifference: {{difference}}g (mismatch!)',
+    syncScaleWeightTitle: 'Sync: trust scale weight and reset tracking',
+    syncedToScaleWeight: 'Synced "{{name}}" to scale weight',
+    firstPage: 'First page',
+    lastPage: 'Last page',
+    pageOf: 'Page {{page}} of {{total}}',
   },
 
   // Timelapse
@@ -6049,6 +6250,52 @@ export default {
     costCenter: 'Cost center',
     personalDefault: 'Personal',
     totalCostForQuantity: 'total: {{cost}}',
+    queuedForAnyModel: 'Queued for any {{model}}',
+    printerN: 'Printer {{id}}',
+    trayN: 'Tray {{id}}',
+    selectAtLeastOnePrinter: 'Please select at least one printer',
+    selectTargetModel: 'Please select a target printer model',
+    crossModelBlocked: 'File was sliced for {{sliced}} and cannot be dispatched to {{target}} printers',
+    queueItemUpdated: 'Queue item updated',
+    submitFailed: 'Failed: {{error}}',
+    submitPartial: '{{succeeded}} succeeded, {{failed}} failed',
+    printJob: 'Print Job',
+    slicedForOtherModel: 'File was sliced for {{sliced}}, but printing on {{model}}',
+    archiveDataUnavailable: 'Archive data unavailable. The source file may have been deleted. Filament mapping is disabled.',
+    operationFailed: 'Failed to complete operation',
+    printerSelector: {
+      customSlotMapping: 'Custom slot mapping',
+      selectSlotOption: '-- Select slot --',
+      statePreparing: 'Preparing',
+      stateFailed: 'Failed',
+      noActivePrintersAvailable: 'No active printers available',
+      specificPrinter: 'Specific Printer',
+      anyModel: 'Any {{model}}',
+      targetModel: 'Target Model',
+      slicedForHint: '(sliced for {{model}})',
+      selectModelOption: 'Select a model...',
+      incompatibleGcodeSuffix: ' — incompatible with {{model}} G-code',
+      crossModelWarning: 'File was sliced for {{sliced}}, but will be dispatched to a {{target}} printer',
+      crossModelBlocked: 'File was sliced for {{sliced}} and cannot be dispatched to {{target}} printers — select a compatible model',
+      locationFilter: 'Location Filter (optional)',
+      anyLocation: 'Any location',
+      schedulerInfo: 'Scheduler will assign to first available idle {{model}} printer',
+      schedulerInfoLocation: 'Scheduler will assign to first available idle {{model}} printer in {{location}}',
+      selectPrinters: 'Select printers',
+      printersSelected_one: '{{count}} printer selected',
+      printersSelected_other: '{{count}} printers selected',
+      selectAll: 'Select all',
+      inactive: '(inactive)',
+      customMapping: 'Custom mapping',
+      matchedCount: '({{matched}}/{{total}} matched)',
+      auto: 'Auto',
+      hiddenPrinters_one: '{{count}} other printer hidden (different model) —',
+      hiddenPrinters_other: '{{count}} other printers hidden (different model) —',
+      showAll: 'show all',
+      showOnlyModel: 'Show only {{model}} printers',
+      selectAtLeastOne: 'Select at least one printer',
+      selectTargetModel: 'Select a target printer model',
+    },
   },
 
   // Backup
@@ -6313,6 +6560,19 @@ export default {
     processingPercent: 'Processing… {{percent}}%',
     failed: 'Processing failed',
     cancelled: 'Processing cancelled',
+    loadingVideoInfo: 'Loading video info...',
+    title: 'Edit Timelapse',
+    trim: 'Trim',
+    speed: 'Speed',
+    speedOutput: '{{speed}}x (output: {{duration}})',
+    musicOverlay: 'Music Overlay',
+    dropAudio: 'Drop audio file or click to upload',
+    original: 'Original:',
+    output: 'Output:',
+    outputSummary: '{{duration}} @ {{speed}}x speed',
+    outputSummaryWithMusic: '{{duration}} @ {{speed}}x speed + music overlay',
+    processingTimelapse: 'Processing timelapse...',
+    mayTakeMoments: 'This may take a few moments',
   },
   // Tags
   tags: {
@@ -6339,6 +6599,11 @@ export default {
     uploading: 'Uploading...',
     upload: 'Upload',
     uploadFailed: 'Upload failed',
+    filesUploaded_one: '{{count}} file uploaded',
+    filesUploaded_other: '{{count}} files uploaded',
+    filesFailed_one: 'Failed to upload {{count}} file',
+    filesFailed_other: 'Failed to upload {{count}} files',
+    partialUpload: '{{uploaded}} uploaded, {{failed}} failed',
   },
 
   // Post-print outcome confirmation dialog (#1898)
@@ -7128,6 +7393,9 @@ export default {
     connectionSuccess: 'Connection successful',
     noSwitchesInSwitchbar: 'No switches in switchbar',
     enableSwitchbarHint: 'Enable "Show in Switchbar" in Settings > Smart Plugs',
+    tasmotaIpRequired: 'IP address is required for Tasmota plugs',
+    sameAsPowerTopic: 'Same as power topic, or different',
+    examplePlaceholder: 'e.g. {{value}}',
   },
 
   // Notifications
@@ -7499,6 +7767,22 @@ export default {
     placeholders: {
       linkName: 'My Link',
     },
+    addLink: 'Add Link',
+    deleteConfirm: 'Are you sure you want to delete "{{name}}"? This action cannot be undone.',
+    invalidImageType: 'Please select a valid image file (PNG, JPG, GIF, SVG, WebP, or ICO)',
+    imageTooLarge: 'Image file must be less than 1MB',
+    nameRequired: 'Name is required',
+    urlRequired: 'URL is required',
+    urlInvalidScheme: 'URL must start with http:// or https://',
+    editLink: 'Edit Link',
+    addExternalLink: 'Add External Link',
+    nameRequiredLabel: 'Name *',
+    urlRequiredLabel: 'URL *',
+    icon: 'Icon',
+    customIcon: 'Custom Icon',
+    customIconAlt: 'Custom icon',
+    iconFormatsHint: 'PNG, JPG, GIF, SVG, WebP, or ICO. Max 1MB.',
+    choosePresetIcon: 'Or choose a preset icon',
   },
 
   // Keyboard Shortcuts Modal
@@ -7523,8 +7807,13 @@ export default {
       newProfile: 'New profile',
       exitSelectionMode: 'Exit selection mode',
       showHelp: 'Show this help',
+      openExternal: 'Open {{name}}',
+      goToPage: 'Go to {{page}}',
+      showCamera: 'Show a printer\'s camera',
     },
     footer: 'Press Esc or click outside to close',
+    rightClick: 'Right-click',
+    footerWithKey: 'Press <kbd>Esc</kbd> or click outside to close',
   },
 
   // Notification Log
@@ -7547,6 +7836,7 @@ export default {
       minutesAgo: '{{minutes}}m ago',
       hoursAgo: '{{hours}}h ago',
     },
+    clearFailed: 'Failed to clear logs: {{message}}',
   },
 
   // Restore/Backup Modal
@@ -7727,7 +8017,23 @@ export default {
     placeholders: {
       requestBody: 'JSON request body...',
       searchEndpoints: 'Search endpoints...',
+      value: 'value',
     },
+    validationError: 'Validation Error',
+    missingRequiredParams: 'Missing required parameters: {{params}}',
+    networkError: 'Network Error',
+    pathParameters: 'Path Parameters',
+    queryParameters: 'Query Parameters',
+    selectOption: '-- Select --',
+    requestBody: 'Request Body',
+    execute: 'Execute',
+    fillIn: 'Fill in: {{params}}',
+    response: 'Response',
+    fetchSchemaFailed: 'Failed to fetch OpenAPI schema',
+    loadSchemaFailed: 'Failed to load API schema',
+    expandAll: 'Expand All',
+    collapseAll: 'Collapse All',
+    endpointCount: '{{endpoints}} endpoints in {{categories}} categories',
   },
 
   // Configure AMS Slot Modal
@@ -7786,12 +8092,19 @@ export default {
     downloadBackup: 'Download Backup',
     restoreBackup: 'Restore Backup',
     noBackupsYet: 'No backups yet',
+    status: {
+      success: 'Success',
+      failed: 'Failed',
+      skipped: 'Skipped',
+      running: 'Running',
+    },
   },
 
   // Email Settings
   emailSettings: {
     placeholders: {
       fromName: 'BamBuddy',
+      appPassword: 'App password',
     },
   },
 
@@ -7800,6 +8113,24 @@ export default {
     searchTags: 'Search tags...',
     renameTag: 'Rename tag',
     deleteTag: 'Delete tag',
+    renamed_one: 'Renamed "{{oldName}}" to "{{newName}}" in {{count}} archive',
+    renamed_other: 'Renamed "{{oldName}}" to "{{newName}}" in {{count}} archives',
+    renameFailed: 'Failed to rename tag',
+    deleted_one: 'Deleted "{{name}}" from {{count}} archive',
+    deleted_other: 'Deleted "{{name}}" from {{count}} archives',
+    deleteFailed: 'Failed to delete tag',
+    title: 'Manage Tags',
+    sortByCount: 'Sort by Count',
+    sortByName: 'Sort by Name',
+    summary: '{{tags}} across {{usages}}',
+    tagCount_one: '{{count}} tag',
+    tagCount_other: '{{count}} tags',
+    usageCount_one: '{{count}} usage',
+    usageCount_other: '{{count}} usages',
+    noMatch: 'No tags match your search',
+    noTags: 'No tags found',
+    confirmDelete_one: 'Delete "{{name}}" from {{count}} archive?',
+    confirmDelete_other: 'Delete "{{name}}" from {{count}} archives?',
   },
 
   // Notification Template Editor
@@ -7815,11 +8146,33 @@ export default {
     placeholders: {
       newTag: 'Enter new tag...',
     },
+    failedOnArchive: 'Failed on archive {{id}}: {{error}}',
+    tagCount_one: '{{count}} tag',
+    tagCount_other: '{{count}} tags',
+    archiveCount_one: '{{count}} archive',
+    archiveCount_other: '{{count}} archives',
+    addedToast: 'Added {{tags}} to {{archives}}',
+    removedToast: 'Removed {{tags}} from {{archives}}',
+    updateFailed: 'Failed to update tags',
+    addTags: 'Add Tags',
+    removeTags: 'Remove Tags',
+    addDescription_one: 'Add tags for {{count}} selected archive',
+    addDescription_other: 'Add tags for {{count}} selected archives',
+    removeDescription_one: 'Remove tags for {{count}} selected archive',
+    removeDescription_other: 'Remove tags for {{count}} selected archives',
+    existingTags: 'Existing tags:',
+    tagsToAdd: 'Tags to add:',
+    tagsToRemove: 'Tags to remove:',
+    processing: 'Processing...',
   },
 
   // Photo Gallery Modal
   photoGallery: {
     deletePhoto: 'Delete Photo',
+    photoOf: 'Photo {{current}} of {{total}}',
+    photoAlt: 'Photo {{number}}',
+    thumbnailAlt: 'Thumbnail {{number}}',
+    deleteConfirm: 'Delete this photo? This cannot be undone.',
   },
 
   // Filament Hover Card
@@ -7831,6 +8184,8 @@ export default {
   kProfilesView: {
     hasNote: 'Has note',
     copyProfile: 'Copy profile',
+    unnamed: 'Unnamed',
+    notePrefix: 'Note: {{note}}',
   },
 
   // Layout/Navigation
@@ -7843,6 +8198,10 @@ export default {
   dashboard: {
     dragToReorder: 'Drag to reorder',
     hideWidget: 'Hide widget',
+    sizeClickToCycle: 'Size: {{size}} - Click to cycle',
+    sizeFull: 'Full',
+    hiddenWidgetsClickToShow: 'Hidden widgets (click to show):',
+    allWidgetsHidden: 'All widgets are hidden.',
   },
 
   // Notification Provider Card
@@ -7856,6 +8215,22 @@ export default {
     sortFiles: 'Sort files',
     goToParentFolder: 'Go to parent folder',
     threeView: '3D View',
+    gcodePreview: 'G-code Preview',
+    notSliced: 'not sliced',
+    sort: {
+      nameAsc: 'Name (A-Z)',
+      nameDesc: 'Name (Z-A)',
+      sizeAsc: 'Size (smallest)',
+      sizeDesc: 'Size (largest)',
+      dateAsc: 'Date (oldest)',
+      dateDesc: 'Date (newest)',
+    },
+    dirs: {
+      root: 'Root',
+      cache: 'Cache',
+      models: 'Models',
+      timelapse: 'Timelapse',
+    },
   },
 
   // Embedded Camera Viewer
@@ -7866,6 +8241,8 @@ export default {
     resetZoom: 'Reset zoom',
     zoomIn: 'Zoom in',
     dragToResize: 'Drag to resize',
+    minimize: 'Minimize',
+    reconnectingIn: 'Reconnecting in {{seconds}}s...',
   },
 
   // Timelapse Viewer
@@ -7892,11 +8269,24 @@ export default {
   logViewer: {
     searchPlaceholder: 'Search message or logger name...',
     noLogEntries: 'No log entries found',
+    title: 'Application Logs',
+    liveStreamingEntries: 'Live streaming - {{entries}} entries',
+    subtitle: 'View and filter application logs',
+    live: 'Live',
+    stop: 'Stop',
+    start: 'Start',
+    autoScroll: 'Auto-scroll',
+    logFileEmpty: 'Log file may be empty or cleared',
+    autoRefreshing: 'Auto-refreshing every 2 seconds',
+    clickStartHint: 'Click Start to enable live log streaming',
   },
 
   // Switchbar Popover
   switchbarPopover: {
     noSwitchesInSwitchbar: 'No switches in switchbar',
+    monitor: 'Monitor',
+    waiting: 'Waiting',
+    turnOffConfirm: 'Are you sure you want to turn off "{{name}}"?',
   },
 
   // Project Page Modal
@@ -7909,6 +8299,13 @@ export default {
       profileTitle: 'Profile Title',
       profileDescription: 'Profile description...',
     },
+    title: 'Project Page',
+    loadFailed: 'Failed to load project page data',
+    noData: 'No project page data found in this 3MF file.',
+    noDataHint: 'Project pages are typically included in files downloaded from MakerWorld.',
+    printProfile: 'Print Profile',
+    byUser: 'by {{name}}',
+    imagesCount: 'Images ({{count}})',
   },
 
   // Spoolman Settings
@@ -7951,6 +8348,7 @@ export default {
       status: 'Status',
       backend: 'Backend',
       connectDisplay: 'Connect the SpoolBuddy display to scan spools',
+      deviceDisconnected: 'SpoolBuddy device disconnected',
     },
     dashboard: {
       readyToScan: 'Ready to scan',
@@ -7980,6 +8378,7 @@ export default {
       plateClearedToast: 'Plate marked as cleared',
       plateClearFailed: 'Could not mark plate as cleared',
       printers: 'Printers',
+      estimatedFilament: '~{{weight}}g filament',
     },
     modal: {
       assignToAms: 'Assign to AMS',
@@ -8032,6 +8431,7 @@ export default {
       linkDesc: 'Link a Spoolman spool to this slot',
       unassignDesc: 'Remove inventory spool from this slot',
       unlinkDesc: 'Remove Spoolman link from this slot',
+      lowFilamentAlert: 'Low Filament: {{type}} ({{slot}}) - {{remain}}% remaining',
     },
     inventory: {
       search: 'Search spools...',
@@ -8141,6 +8541,7 @@ export default {
       updateFailed: 'Update failed',
       updateWaiting: 'Updating...',
       used: 'Used',
+      triggerUpdateFailed: 'Failed to trigger update',
     },
     writeTag: {
       writeWith: 'Write with',
@@ -8206,6 +8607,7 @@ export default {
       confirmPlugOff: 'Turn off {{name}}?',
       turnOn: 'Turn On',
       turnOff: 'Turn Off',
+      open: 'Open quick menu',
     },
     diagnostic: {
       clickStart: 'Click "Run Diagnostic" to start the hardware diagnostic on',
@@ -8219,6 +8621,9 @@ export default {
       running: 'Running diagnostic on device...',
       runningBtn: 'Running...',
       scaleTitle: 'Scale Diagnostic',
+      timedOut: 'Diagnostic timed out - device did not report results',
+      exitCode: 'Exit code: {{code}}',
+      errorPrefix: 'ERROR: {{error}}',
     },
     errors: {
       quickAddFailed: 'Failed to add spool',
@@ -8513,6 +8918,7 @@ export default {
     noActivePrints: 'No prints currently running.',
     historyTitle: 'Recent Detections',
     noHistory: 'No detections yet.',
+    printerFallback: 'Printer {{id}}',
   },
 
   octoeverywhere: {
@@ -9116,8 +9522,51 @@ export default {
     // Permissions
     noReadAccess: 'You do not have permission to view inventory forecasts.',
     noWriteAccess: 'You do not have permission to modify forecast settings.',
+    unitDays: 'days',
+    spoolsOrdered: '{{spools}} ordered',
+    chartReorderPoint: 'ROP',
+    chartSafetyStock: 'SS',
+    chartOut: 'OUT',
+    chartArrives: '+{{amount}} arrives (d{{days}})',
+    atDailyRate: 'at {{rate}}g/day',
   },
   amsHistory: {
     recordingInfo: 'Data is recorded every 5 minutes while the printer is connected',
+  },
+  app: {
+    uiCrash: 'UI Crash',
+  },
+  printCalendar: {
+    days: {
+      sun: 'Sun',
+      mon: 'Mon',
+      tue: 'Tue',
+      wed: 'Wed',
+      thu: 'Thu',
+      fri: 'Fri',
+      sat: 'Sat',
+    },
+    dayTooltip_one: '{{date}}: {{count}} print',
+    dayTooltip_other: '{{date}}: {{count}} prints',
+    less: 'Less',
+    more: 'More',
+  },
+  compareArchivesModal: {
+    title: 'Compare Archives ({{count}})',
+    loadFailed: 'Failed to load comparison',
+    setting: 'Setting',
+    differencesFound_one: '{{count}} Difference Found',
+    differencesFound_other: '{{count}} Differences Found',
+    andMore: '...and {{count}} more',
+    successFailureAnalysis: 'Success/Failure Analysis',
+    successfulCount: '{{count}} successful',
+    failedCount: '{{count}} failed',
+    noCorrelations: 'No clear correlations found between settings and outcomes.',
+    needBothOutcomes: 'Need both successful and failed prints for correlation analysis.',
+  },
+  qrCodeModal: {
+    title: 'QR Code',
+    scanHint: 'Scan to open this archive',
+    download: 'Download QR Code',
   },
 };

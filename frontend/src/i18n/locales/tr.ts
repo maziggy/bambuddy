@@ -331,6 +331,7 @@ export default {
       finished: 'Tamamlandı',
       unknown: 'Bilinmiyor',
       title: 'Durum',
+      failed: 'Başarısız',
     },
     temperatures: {
       nozzle: 'Nozul',
@@ -596,6 +597,8 @@ export default {
       unloadAms3h: '{{n}} numaralı yuva boşaltılıyor. Yazıcı istediğinde filamenti AMS 3H\'ten elle geri çekin.',
       failedToLoad: 'Filament yüklenemedi',
       failedToUnload: 'Filament çıkarılamadı',
+      chamberLightOn: 'Hazne ışığı açık',
+      chamberLightOff: 'Hazne ışığı kapalı',
     },
     // Bağlantı durumu
     connection: {
@@ -646,6 +649,12 @@ export default {
       homeZ: 'Otomatik Sıfırla',
       moveAnyway: 'Yine de hareket ettir',
       homingStarted: 'Yazıcı otomatik sıfırlanıyor…',
+      moveYForward: 'Y\'yi ileri taşı',
+      moveXLeft: 'X\'i sola taşı',
+      moveXRight: 'X\'i sağa taşı',
+      moveYBack: 'Y\'yi geri taşı',
+      retractFilament: 'Filamenti geri çek',
+      extrudeFilament: 'Filament ekstrüde et',
     },
     // İzinler
     pandaBreath: {
@@ -688,6 +697,9 @@ export default {
       fromPrinterSettings: 'Yazıcı ayarlarından',
       modelOptional: 'Model (isteğe bağlı)',
       saveChanges: 'Değişiklikleri Kaydet',
+      hostPlaceholder: '192.168.1.100 veya yazici.local',
+      seriesGroup: '{{series}} Serisi',
+      locationGroupLabel: 'Konum / Grup',
     },
     // Nesneleri atla
     skipObjects: {
@@ -909,6 +921,13 @@ export default {
       labelPlaceholder: 'Etiket...',
       clickToEdit: '{{label}} - Düzenlemek için tıklayın',
       clickToAddLabel: 'Etiket eklemek için tıklayın',
+      checkTitle: 'Baskı Plakası Kontrolü',
+      refsCount: '{{count}}/{{max}} referans',
+      referenceAlt: 'Referans {{n}}',
+      calibrating: 'Kalibre ediliyor...',
+      calibrateEmptyPlate: 'Boş Plakayı Kalibre Et',
+      adding: 'Ekleniyor...',
+      addReference: 'Referans Ekle ({{count}}/{{max}})',
     },
     // Hız
     speed: {
@@ -1013,6 +1032,7 @@ export default {
       width: 'Genişlik',
       height: 'Yükseklik',
       instruction: 'Baskı plakasına odaklanmak için algılama alanını ayarlayın. Önizlemedeki yeşil kutu mevcut alanı gösterir.',
+      current: 'Geçerli: X=%{{x}}, Y=%{{y}}, Gen=%{{w}}, Yük=%{{h}}',
     },
     developerModeWarning: 'Geliştirici LAN modu şunlarda etkin değil: {{names}}. Bazı özellikler çalışmayabilir.',
     howToEnable: 'Nasıl etkinleştirilir',
@@ -1024,6 +1044,45 @@ export default {
     networkLabel: 'Ağ',
     noActiveJob: 'Etkin iş yok',
     power: 'Güç',
+    indicator: {
+      good: 'İyi',
+      fair: 'Orta',
+      bad: 'Kötü',
+      humidityTitle: 'Nem: %{{value}} - {{status}}',
+      humidityTitleClickable: 'Nem: %{{value}} - {{status}} (geçmiş için tıklayın)',
+      temperatureTitle: 'Sıcaklık: {{value}}°C - {{status}}',
+      temperatureTitleClickable: 'Sıcaklık: {{value}}°C - {{status}} (geçmiş için tıklayın)',
+      customPlaceholder: 'Özel',
+      set: 'Ayarla',
+    },
+    nozzleSlotEmpty: 'Yuva {{slot}} — Boş',
+    unknownModel: 'Bilinmeyen Model',
+    wifiTitle: 'Wi-Fi: {{signal}} dBm - {{strength}}',
+    badgeOk: 'Tamam',
+    maintenanceBadge: {
+      dueAndSoon: '{{due}} bakımın zamanı geldi, {{soon}} bakım yaklaşıyor - Görüntülemek için tıklayın',
+      due: '{{due}} bakımın zamanı geldi - Görüntülemek için tıklayın',
+      soon: '{{soon}} bakım yaklaşıyor - Görüntülemek için tıklayın',
+    },
+    startedBy: 'Başlatan: {{user}}',
+    lastPrint: 'Son: {{name}}',
+    control: {
+      setNozzleTemperatures: 'Nozul Sıcaklıklarını Ayarla',
+      leftTemp: 'Sol Sıcaklık',
+      rightTemp: 'Sağ Sıcaklık',
+      setNozzleTemperature: 'Nozul Sıcaklığını Ayarla',
+      setBedTemperature: 'Tabla Sıcaklığını Ayarla',
+      setChamberTemperature: 'Hazne Sıcaklığını Ayarla',
+      setNozzleSelection: 'Nozul Seçimini Ayarla',
+      setFanSpeed: '{{fan}} Hızını Ayarla',
+    },
+    externalSlotLocation: 'Harici Yuva {{slot}}',
+    plugTurnOff: 'Kapat',
+    plugTurnOn: 'Aç',
+    haRunEntity: '{{entity}} çalıştır',
+    haToggleEntity: '{{entity}} aç/kapat',
+    noPrintersWithSmartPlugs: 'Akıllı prizli yazıcı yok',
+    ungrouped: 'Gruplanmamış',
   },
 
   // Arşivler sayfası
@@ -1269,6 +1328,8 @@ export default {
       download: 'İndir',
       edit: 'Düzenle',
       delete: 'Sil',
+      reprintCount_one: '{{count}} yeniden baskı',
+      reprintCount_other: '{{count}} yeniden baskı',
     },
     calendar: {
       today: 'Bugün',
@@ -1343,6 +1404,30 @@ export default {
       failedDeleteArchives: 'Arşivler silinemedi',
       photoDeleted: 'Fotoğraf silindi',
       failedDeletePhoto: 'Fotoğraf silinemedi',
+      collections: {
+        all: 'Tüm Arşivler',
+        recent: 'Son 24 Saat',
+        favorites: 'Favoriler',
+        notPrinted: 'Yazdırılmamış',
+        printed: 'Yazdırılmış',
+        failed: 'Başarısız Baskılar',
+        duplicates: 'Kopyalar',
+      },
+      archivesDeletedCount_one: '{{count}} arşiv silindi',
+      archivesDeletedCount_other: '{{count}} arşiv silindi',
+      toggledFavoritesCount_one: '{{count}} arşivin favori durumu değiştirildi',
+      toggledFavoritesCount_other: '{{count}} arşivin favori durumu değiştirildi',
+      compareCount: 'Karşılaştır ({{count}})',
+      upload3mf: '3MF Yükle',
+      fileTypeSliced: 'Dilimlenmiş (GCODE)',
+      fileTypeSource: 'Yalnızca Kaynak',
+      hideFailed: 'Başarısızları Gizle',
+      allTags: 'Tüm Etiketler',
+      colors: 'Renkler:',
+      matchAnyColor: 'Seçili renklerden HERHANGİ BİRİYLE eşleş',
+      matchAllColors: 'Seçili renklerin TÜMÜYLE eşleş',
+      createdAutomatically: 'Arşivler, baskılar tamamlandığında otomatik olarak oluşturulur',
+      noPrinter: 'Yazıcı Yok',
     },
     list: {
       name: 'Ad',
@@ -1402,6 +1487,23 @@ export default {
         cancelled: 'İptal edildi',
         skipped: 'Atlandı',
       },
+    },
+    batchProject: {
+      added_one: '{{count}} arşiv "{{name}}" projesine eklendi',
+      added_other: '{{count}} arşiv "{{name}}" projesine eklendi',
+      assignFailed: 'Proje atanamadı',
+      removed_one: '{{count}} arşiv projeden kaldırıldı',
+      removed_other: '{{count}} arşiv projeden kaldırıldı',
+      removeFailed: 'Projeden kaldırılamadı',
+      title: 'Projeye Ata',
+      assignSelected_one: 'Seçili {{count}} arşivi bir projeye atayın',
+      assignSelected_other: 'Seçili {{count}} arşivi bir projeye atayın',
+      removeFromProject: 'Projeden kaldır',
+      clearAssignment: 'Proje atamasını temizle',
+      orAssignTo: 'veya şuna ata',
+      archiveCount_one: '{{count}} arşiv',
+      archiveCount_other: '{{count}} arşiv',
+      noProjects: 'Henüz proje yok. Projeler sayfasından bir tane oluşturun.',
     },
   },
 
@@ -1822,6 +1924,9 @@ export default {
       noEditItems: 'Kuyruk öğelerini düzenleme izniniz yok',
       noCancelItems: 'Kuyruk öğelerini iptal etme izniniz yok',
     },
+    selectPlateToPrint: 'Yazdırılacak Plakayı Seçin',
+    selectPlatesToPrint: 'Yazdırılacak Plakaları Seçin',
+    plateSelectionRequired: 'Seçim gerekli',
   },
 
 
@@ -1961,6 +2066,23 @@ export default {
     allUsers: 'Tüm Kullanıcılar',
     noUser: 'Kullanıcı Yok (Sistem)',
     filterByUser: 'Kullanıcıya Göre Filtrele',
+    costAvg: 'ort. {{cost}}',
+    filamentTooltip: 'Filament',
+    usageTooltip: 'Kullanım',
+    weekdays: {
+      mon: 'Pzt',
+      tue: 'Sal',
+      wed: 'Çar',
+      thu: 'Per',
+      fri: 'Cum',
+      sat: 'Cmt',
+      sun: 'Paz',
+    },
+    heatmapCellTitle_one: '{{day}} {{hour}}: {{count}} baskı',
+    heatmapCellTitle_other: '{{day}} {{hour}}: {{count}} baskı',
+    heatmapLess: 'Az',
+    heatmapMore: 'Çok',
+    weekOf: '{{date}} haftası',
   },
 
   // Bakım sayfası
@@ -2106,6 +2228,7 @@ export default {
     deleteEntryMessage: '{{date}} tarihli “{{task}}” bakım günlüğünden kalıcı olarak kaldırılır. Görevin son sıfırlaması olduğu gibi kalır.',
     entryDeleted: 'Günlük kaydı silindi',
     deleteFailed: 'Silme başarısız: {{error}}',
+    ok: 'Tamam',
   },
 
   // Ayarlar sayfası
@@ -2853,6 +2976,20 @@ export default {
       cameraConnectedCoalesced: 'Kamera bağlandı{{resolution}} (hâlihazırda süren bir yakalamayla paylaşıldı)',
       cameraConnectedLiveView: 'Kamera çalışıyor{{resolution}} (kamerayı kullanan canlı görüntüden kare)',
       saveFailed: 'Kaydedilemedi',
+      storageRefreshFailed: 'Depolama kullanımı yenilenemedi',
+      apiKeyCreateFailed: 'API anahtarı oluşturulamadı: {{message}}',
+      apiKeyDeleteFailed: 'API anahtarı silinemedi: {{message}}',
+      emailRequiredAdvancedAuth: 'Gelişmiş kimlik doğrulama etkinken e-posta gereklidir',
+      allProvidersTested: '{{tested}} sağlayıcının tümü başarıyla test edildi!',
+      providersSucceeded: '{{success}}/{{tested}} sağlayıcı başarılı',
+      testProvidersFailed: 'Sağlayıcılar test edilemedi: {{message}}',
+      allPlugsTurnedOn: '{{success}} prizin tümü açıldı',
+      allPlugsTurnedOff: '{{success}} prizin tümü kapatıldı',
+      plugsTurnedOnPartial: '{{success}} priz açıldı, {{failed}} başarısız',
+      plugsTurnedOffPartial: '{{success}} priz kapatıldı, {{failed}} başarısız',
+      failedWithMessage: 'Başarısız: {{message}}',
+      saveFailedWithMessage: 'Kaydedilemedi: {{message}}',
+      updatePrinterFailed: 'Yazıcı güncellenemedi: {{message}}',
     },
     testConnection: 'Bağlantıyı Test Et',
     catalog: {
@@ -3199,6 +3336,8 @@ export default {
       oidcUnlinkConfirmTitle: 'Hesap bağlantısı kaldırılsın mı?',
       oidcUnlinkConfirmMessage: 'Artık {{provider}} ile oturum açamayacaksınız.',
       oidcUnlinkConfirmAction: 'Bağlantıyı kaldır',
+      qrCodeAlt: 'TOTP QR Kodu',
+      codeOrBackupPlaceholder: '000000 veya XXXXXXXX',
     },
     // Session Policy (#1706)
     sessionPolicy: {
@@ -3384,6 +3523,34 @@ export default {
     noSearchResults: 'Eşleşen ayar yok.',
     noTemplatesMatch: 'Filtrenizle eşleşen şablon yok.',
     searchPlaceholder: 'Ayarlarda ara…',
+    rebuildLedgerFailed: 'Defter yeniden oluşturma başlatılamadı',
+    mqttBrokerPlaceholder: 'mqtt.example.com veya 192.168.1.100',
+    clearFilter: 'Filtreyi temizle',
+    bulkPlugTitleOn: 'Tüm Prizleri Aç',
+    bulkPlugTitleOff: 'Tüm Prizleri Kapat',
+    bulkPlugMessageOn: 'Bu işlem etkin {{total}} akıllı prizin tümünü AÇACAK.',
+    bulkPlugMessageOff: 'Bu işlem etkin {{total}} akıllı prizin tümünü KAPATACAK. Çalışan yazıcılar etkilenebilir!',
+    bulkPlugConfirmOn: 'Tümünü Aç',
+    bulkPlugConfirmOff: 'Tümünü Kapat',
+    releaseNotesTitle: 'Sürüm Notları - v{{version}}',
+    userItemArchives_one: '{{count}} arşiv',
+    userItemArchives_other: '{{count}} arşiv',
+    userItemQueueItems_one: '{{count}} kuyruk öğesi',
+    userItemQueueItems_other: '{{count}} kuyruk öğesi',
+    userItemLibraryFiles_one: '{{count}} kütüphane dosyası',
+    userItemLibraryFiles_other: '{{count}} kütüphane dosyası',
+    spoolmanSyncResult: {
+      success_one: '{{count}} makara başarıyla senkronize edildi',
+      success_other: '{{count}} makara başarıyla senkronize edildi',
+      withErrors_one: '{{count}} makara senkronize edildi, {{errors}}',
+      withErrors_other: '{{count}} makara senkronize edildi, {{errors}}',
+      errorCount_one: '{{count}} hata',
+      errorCount_other: '{{count}} hata',
+      skipped_one: '{{count}} makara atlandı',
+      skipped_other: '{{count}} makara atlandı',
+      andMore: '...ve {{count}} tane daha',
+      errors: 'Hatalar:',
+    },
   },
 
   // Bildirimler (push bildirimleri için)
@@ -3518,6 +3685,7 @@ export default {
     timestamp: 'Zaman damgası',
     direction: 'Yön',
     all: 'Tümü',
+    autoScroll: 'Otomatik kaydır',
   },
 
   // Yazıcı Dosya Yöneticisi modali (yazıcı dahili deposu)
@@ -3768,6 +3936,8 @@ export default {
         profile: 'Profil',
       },
     },
+    chamberLightOnToast: 'Hazne ışığı açık',
+    chamberLightOffToast: 'Hazne ışığı kapalı',
   },
 
   // Grup yönetimi
@@ -4338,7 +4508,9 @@ export default {
       same: 'değişmedi',
       searchFields: 'Alanlarda ara...',
       title: 'Profilleri karşılaştır',
+      gcodeLines: '[{{count}} satır G-code/betik]',
     },
+    scrollToTop: 'Başa kaydır',
   },
 
   // Destek/Hata Ayıklama
@@ -4680,6 +4852,8 @@ export default {
       failedToGenerateThumbnail: 'Küçük resim oluşturulamadı: {{error}}',
     },
     filterByUser: 'Kullanıcıya göre filtrele',
+    linkedProjectTitle: 'Proje: {{name}} (değiştirmek için tıklayın)',
+    linkedArchiveTitle: 'Arşiv: {{name}} (değiştirmek için tıklayın)',
   },
 
   // Projeler
@@ -5209,6 +5383,8 @@ export default {
     disableWeightSyncDesc: "AMS tahminlerinden kalan kapasiteyi güncelleme. AMS yüzde tabanlı tahminler yerine Spoolman'ın kullanım takibini tercih ediyorsanız bunu kullanın. Yeni makaralar yine de başlangıç ağırlığı olarak AMS tahminini kullanacak.",
     reportPartialUsage: 'Başarısız Baskılar için Kısmi Kullanımı Bildir',
     reportPartialUsageDesc: 'Bir baskı başarısız olduğunda veya iptal edildiğinde, katman ilerlemesine göre o noktaya kadar kullanılan tahmini filamenti bildir.',
+    linkSlotInfo: 'AMS {{amsId}} T{{trayId}} · Yazıcı #{{printerId}}',
+    tagValue: 'Etiket: {{tag}}',
   },
 
   locations: {
@@ -5295,6 +5471,7 @@ export default {
       restorePartial: '{{ok}} makara geri yüklendi, {{failed}} başarısız',
       restoreAllFailed: '{{count}} geri yüklemenin tümü başarısız oldu — yeniden denemek için seçim korundu',
       invalidHex: '6 hex karakter (RRGGBB) veya 8 (RRGGBBAA) girin. Aksi takdirde alan uygulanmaz.',
+      hexPlaceholder: 'RRGGBB veya RRGGBBAA',
     },
     spoolmanMixedContentTitle: 'Spoolman HTTPS üzerinden yüklenemiyor — tarayıcınız tarafından karışık içerik engellendi',
     spoolmanMixedContentBody: 'Bambuddy HTTPS üzerinden sunuluyor (ters proxy\'niz aracılığıyla), ancak Spoolman URL\'niz hâlâ düz HTTP. Tarayıcılar güvenlik için karışık içeriği engeller, bu nedenle gömülü Spoolman arayüzü oluşturulamaz. Bunun çalışması için Spoolman\'in HTTPS üzerinden erişilebilir olması gerekiyor.',
@@ -5821,6 +5998,30 @@ export default {
     assignedSpool: 'Atanan makara',
     unassignFailed: 'Makara ataması kaldırılamadı',
     unassignSuccess: 'Makara ataması kaldırıldı',
+    pickerDiagCounts: '{{fetched}} getirildi · {{archived}} arşivlendi · {{assigned}} diğer yuvalara atandı',
+    pickerDiagFiltered: '{{unassigned}} atanmamış makara — {{filtered}} tanesi tepsi eşleşmesine göre filtrelendi. "Tüm makaraları göster" seçeneğini deneyin.',
+    tableColumns: {
+      added: 'Eklenme',
+      encoded: 'Kodlanma',
+      lastUsed: 'Son Kullanım',
+      location: 'Konum',
+      gross: 'Brüt',
+      printedTotal: 'Toplam Basılan',
+      printedSinceWeight: 'Tartımdan Beri Basılan',
+      tagId: 'Etiket Kimliği',
+      dataOrigin: 'Veri Kaynağı',
+      tagType: 'Bağlı Etiket Türü',
+    },
+    never: 'Hiç',
+    printerN: 'Yazıcı {{id}}',
+    noScaleMeasurement: 'Tartı ölçümü yok',
+    weightCheckMatchTooltip: 'Tartı: {{scale}}g\nHesaplanan: {{calculated}}g\nFark: {{difference}}g (tolerans içinde)',
+    weightCheckMismatchTooltip: 'Tartı: {{scale}}g\nHesaplanan: {{calculated}}g\nFark: {{difference}}g (uyuşmazlık!)',
+    syncScaleWeightTitle: 'Senkronize et: tartı ağırlığını esas al ve takibi sıfırla',
+    syncedToScaleWeight: '"{{name}}" tartı ağırlığına senkronize edildi',
+    firstPage: 'İlk sayfa',
+    lastPage: 'Son sayfa',
+    pageOf: 'Sayfa {{page}} / {{total}}',
   },
 
   // Zaman Atlamalı Video
@@ -5978,6 +6179,52 @@ export default {
     costCenter: 'Masraf merkezi',
     personalDefault: 'Kişisel',
     totalCostForQuantity: 'toplam: {{cost}}',
+    queuedForAnyModel: 'Herhangi bir {{model}} için kuyruğa alındı',
+    printerN: 'Yazıcı {{id}}',
+    trayN: 'Tepsi {{id}}',
+    selectAtLeastOnePrinter: 'Lütfen en az bir yazıcı seçin',
+    selectTargetModel: 'Lütfen hedef yazıcı modelini seçin',
+    crossModelBlocked: 'Dosya {{sliced}} için dilimlendi ve {{target}} yazıcılarına gönderilemez',
+    queueItemUpdated: 'Kuyruk öğesi güncellendi',
+    submitFailed: 'Başarısız: {{error}}',
+    submitPartial: '{{succeeded}} başarılı, {{failed}} başarısız',
+    printJob: 'Baskı İşi',
+    slicedForOtherModel: 'Dosya {{sliced}} için dilimlendi, ancak {{model}} üzerinde yazdırılıyor',
+    archiveDataUnavailable: 'Arşiv verileri kullanılamıyor. Kaynak dosya silinmiş olabilir. Filament eşleme devre dışı.',
+    operationFailed: 'İşlem tamamlanamadı',
+    printerSelector: {
+      customSlotMapping: 'Özel yuva eşleme',
+      selectSlotOption: '-- Yuva seçin --',
+      statePreparing: 'Hazırlanıyor',
+      stateFailed: 'Başarısız',
+      noActivePrintersAvailable: 'Kullanılabilir aktif yazıcı yok',
+      specificPrinter: 'Belirli Yazıcı',
+      anyModel: 'Herhangi bir {{model}}',
+      targetModel: 'Hedef Model',
+      slicedForHint: '({{model}} için dilimlendi)',
+      selectModelOption: 'Bir model seçin...',
+      incompatibleGcodeSuffix: ' — {{model}} G-code\'u ile uyumsuz',
+      crossModelWarning: 'Dosya {{sliced}} için dilimlendi, ancak bir {{target}} yazıcısına gönderilecek',
+      crossModelBlocked: 'Dosya {{sliced}} için dilimlendi ve {{target}} yazıcılarına gönderilemez — uyumlu bir model seçin',
+      locationFilter: 'Konum Filtresi (isteğe bağlı)',
+      anyLocation: 'Herhangi bir konum',
+      schedulerInfo: 'Zamanlayıcı, ilk müsait boştaki {{model}} yazıcısına atayacak',
+      schedulerInfoLocation: 'Zamanlayıcı, {{location}} konumundaki ilk müsait boştaki {{model}} yazıcısına atayacak',
+      selectPrinters: 'Yazıcıları seçin',
+      printersSelected_one: '{{count}} yazıcı seçildi',
+      printersSelected_other: '{{count}} yazıcı seçildi',
+      selectAll: 'Tümünü seç',
+      inactive: '(etkin değil)',
+      customMapping: 'Özel eşleme',
+      matchedCount: '({{matched}}/{{total}} eşleşti)',
+      auto: 'Otomatik',
+      hiddenPrinters_one: '{{count}} diğer yazıcı gizlendi (farklı model) —',
+      hiddenPrinters_other: '{{count}} diğer yazıcı gizlendi (farklı model) —',
+      showAll: 'tümünü göster',
+      showOnlyModel: 'Yalnızca {{model}} yazıcılarını göster',
+      selectAtLeastOne: 'En az bir yazıcı seçin',
+      selectTargetModel: 'Hedef yazıcı modelini seçin',
+    },
   },
 
   // Yedekleme
@@ -6235,6 +6482,19 @@ export default {
     processingPercent: 'İşleniyor… %{{percent}}',
     failed: 'İşleme başarısız oldu',
     cancelled: 'İşleme iptal edildi',
+    loadingVideoInfo: 'Video bilgisi yükleniyor...',
+    title: 'Zaman Atlamalı Videoyu Düzenle',
+    trim: 'Kırp',
+    speed: 'Hız',
+    speedOutput: '{{speed}}x (çıktı: {{duration}})',
+    musicOverlay: 'Müzik Ekle',
+    dropAudio: 'Ses dosyasını bırakın veya yüklemek için tıklayın',
+    original: 'Orijinal:',
+    output: 'Çıktı:',
+    outputSummary: '{{duration}} @ {{speed}}x hız',
+    outputSummaryWithMusic: '{{duration}} @ {{speed}}x hız + müzik',
+    processingTimelapse: 'Zaman atlamalı video işleniyor...',
+    mayTakeMoments: 'Bu birkaç dakika sürebilir',
   },
   // Etiketler
   tags: {
@@ -6261,6 +6521,11 @@ export default {
     uploading: 'Yükleniyor...',
     upload: 'Yükle',
     uploadFailed: 'Yükleme başarısız',
+    filesUploaded_one: '{{count}} dosya yüklendi',
+    filesUploaded_other: '{{count}} dosya yüklendi',
+    filesFailed_one: '{{count}} dosya yüklenemedi',
+    filesFailed_other: '{{count}} dosya yüklenemedi',
+    partialUpload: '{{uploaded}} yüklendi, {{failed}} başarısız',
   },
 
   archivePage: {
@@ -7037,6 +7302,9 @@ export default {
     connectionSuccess: 'Bağlantı başarılı',
     noSwitchesInSwitchbar: 'Anahtar çubuğunda anahtar yok',
     enableSwitchbarHint: 'Ayarlar > Akıllı Prizler\'de "Anahtar Çubuğunda Göster"i etkinleştirin',
+    tasmotaIpRequired: 'Tasmota prizleri için IP adresi gereklidir',
+    sameAsPowerTopic: 'Güç konusuyla aynı veya farklı',
+    examplePlaceholder: 'örn. {{value}}',
   },
 
   // Bildirimler
@@ -7390,6 +7658,22 @@ export default {
     placeholders: {
       linkName: 'Bağlantım',
     },
+    addLink: 'Bağlantı Ekle',
+    deleteConfirm: '"{{name}}" silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.',
+    invalidImageType: 'Lütfen geçerli bir görsel dosyası seçin (PNG, JPG, GIF, SVG, WebP veya ICO)',
+    imageTooLarge: 'Görsel dosyası 1MB\'tan küçük olmalıdır',
+    nameRequired: 'Ad gereklidir',
+    urlRequired: 'URL gereklidir',
+    urlInvalidScheme: 'URL http:// veya https:// ile başlamalıdır',
+    editLink: 'Bağlantıyı Düzenle',
+    addExternalLink: 'Harici Bağlantı Ekle',
+    nameRequiredLabel: 'Ad *',
+    urlRequiredLabel: 'URL *',
+    icon: 'Simge',
+    customIcon: 'Özel Simge',
+    customIconAlt: 'Özel simge',
+    iconFormatsHint: 'PNG, JPG, GIF, SVG, WebP veya ICO. En fazla 1MB.',
+    choosePresetIcon: 'Veya hazır bir simge seçin',
   },
 
   // Klavye Kısayolları Modali
@@ -7414,8 +7698,13 @@ export default {
       newProfile: 'Yeni profil',
       exitSelectionMode: 'Seçim modundan çık',
       showHelp: 'Bu yardımı göster',
+      openExternal: '{{name}} aç',
+      goToPage: '{{page}} sayfasına git',
+      showCamera: 'Bir yazıcının kamerasını göster',
     },
     footer: 'Kapatmak için Esc\'ye basın veya dışarı tıklayın',
+    rightClick: 'Sağ tık',
+    footerWithKey: 'Kapatmak için <kbd>Esc</kbd> tuşuna basın veya dışarı tıklayın',
   },
 
   // Bildirim Günlüğü
@@ -7438,6 +7727,7 @@ export default {
       minutesAgo: '{{minutes}}dk önce',
       hoursAgo: '{{hours}}sa önce',
     },
+    clearFailed: 'Günlükler temizlenemedi: {{message}}',
   },
 
   // Yedeği Geri Yükle/Yedekleme Modali
@@ -7618,7 +7908,23 @@ export default {
     placeholders: {
       requestBody: 'JSON istek gövdesi...',
       searchEndpoints: 'Uç noktalarda ara...',
+      value: 'değer',
     },
+    validationError: 'Doğrulama Hatası',
+    missingRequiredParams: 'Eksik zorunlu parametreler: {{params}}',
+    networkError: 'Ağ Hatası',
+    pathParameters: 'Yol Parametreleri',
+    queryParameters: 'Sorgu Parametreleri',
+    selectOption: '-- Seçin --',
+    requestBody: 'İstek Gövdesi',
+    execute: 'Çalıştır',
+    fillIn: 'Doldurun: {{params}}',
+    response: 'Yanıt',
+    fetchSchemaFailed: 'OpenAPI şeması alınamadı',
+    loadSchemaFailed: 'API şeması yüklenemedi',
+    expandAll: 'Tümünü Genişlet',
+    collapseAll: 'Tümünü Daralt',
+    endpointCount: '{{categories}} kategoride {{endpoints}} uç nokta',
   },
 
   // AMS Yuva Yapılandırma Modali
@@ -7677,12 +7983,19 @@ export default {
     downloadBackup: 'Yedeği İndir',
     restoreBackup: 'Yedeği Geri Yükle',
     noBackupsYet: 'Henüz yedek yok',
+    status: {
+      success: 'Başarılı',
+      failed: 'Başarısız',
+      skipped: 'Atlandı',
+      running: 'Çalışıyor',
+    },
   },
 
   // E-posta Ayarları
   emailSettings: {
     placeholders: {
       fromName: 'BamBuddy',
+      appPassword: 'Uygulama şifresi',
     },
   },
 
@@ -7691,6 +8004,24 @@ export default {
     searchTags: 'Etiketlerde ara...',
     renameTag: 'Etiketi yeniden adlandır',
     deleteTag: 'Etiketi sil',
+    renamed_one: '{{count}} arşivde "{{oldName}}", "{{newName}}" olarak yeniden adlandırıldı',
+    renamed_other: '{{count}} arşivde "{{oldName}}", "{{newName}}" olarak yeniden adlandırıldı',
+    renameFailed: 'Etiket yeniden adlandırılamadı',
+    deleted_one: '"{{name}}" {{count}} arşivden silindi',
+    deleted_other: '"{{name}}" {{count}} arşivden silindi',
+    deleteFailed: 'Etiket silinemedi',
+    title: 'Etiketleri Yönet',
+    sortByCount: 'Sayıya Göre Sırala',
+    sortByName: 'Ada Göre Sırala',
+    summary: '{{tags}}, {{usages}}',
+    tagCount_one: '{{count}} etiket',
+    tagCount_other: '{{count}} etiket',
+    usageCount_one: '{{count}} kullanım',
+    usageCount_other: '{{count}} kullanım',
+    noMatch: 'Aramanızla eşleşen etiket yok',
+    noTags: 'Etiket bulunamadı',
+    confirmDelete_one: '"{{name}}" {{count}} arşivden silinsin mi?',
+    confirmDelete_other: '"{{name}}" {{count}} arşivden silinsin mi?',
   },
 
   // Bildirim Şablon Düzenleyici
@@ -7706,11 +8037,33 @@ export default {
     placeholders: {
       newTag: 'Yeni etiket girin...',
     },
+    failedOnArchive: '{{id}} numaralı arşivde başarısız: {{error}}',
+    tagCount_one: '{{count}} etiket',
+    tagCount_other: '{{count}} etiket',
+    archiveCount_one: '{{count}} arşiv',
+    archiveCount_other: '{{count}} arşiv',
+    addedToast: '{{tags}} eklendi: {{archives}}',
+    removedToast: '{{tags}} kaldırıldı: {{archives}}',
+    updateFailed: 'Etiketler güncellenemedi',
+    addTags: 'Etiket Ekle',
+    removeTags: 'Etiketleri Kaldır',
+    addDescription_one: 'Seçili {{count}} arşive etiket ekleyin',
+    addDescription_other: 'Seçili {{count}} arşive etiket ekleyin',
+    removeDescription_one: 'Seçili {{count}} arşivden etiketleri kaldırın',
+    removeDescription_other: 'Seçili {{count}} arşivden etiketleri kaldırın',
+    existingTags: 'Mevcut etiketler:',
+    tagsToAdd: 'Eklenecek etiketler:',
+    tagsToRemove: 'Kaldırılacak etiketler:',
+    processing: 'İşleniyor...',
   },
 
   // Fotoğraf Galerisi Modali
   photoGallery: {
     deletePhoto: 'Fotoğrafı Sil',
+    photoOf: 'Fotoğraf {{current}} / {{total}}',
+    photoAlt: 'Fotoğraf {{number}}',
+    thumbnailAlt: 'Küçük resim {{number}}',
+    deleteConfirm: 'Bu fotoğraf silinsin mi? Bu işlem geri alınamaz.',
   },
 
   // Filament Hover Kartı
@@ -7722,6 +8075,8 @@ export default {
   kProfilesView: {
     hasNote: 'Notu var',
     copyProfile: 'Profili kopyala',
+    unnamed: 'Adsız',
+    notePrefix: 'Not: {{note}}',
   },
 
   // Düzen/Navigasyon
@@ -7734,6 +8089,10 @@ export default {
   dashboard: {
     dragToReorder: 'Yeniden sıralamak için sürükleyin',
     hideWidget: 'Widget\'ı gizle',
+    sizeClickToCycle: 'Boyut: {{size}} - Değiştirmek için tıklayın',
+    sizeFull: 'Tam',
+    hiddenWidgetsClickToShow: 'Gizli bileşenler (göstermek için tıklayın):',
+    allWidgetsHidden: 'Tüm bileşenler gizli.',
   },
 
   // Bildirim Sağlayıcısı Kartı
@@ -7747,6 +8106,22 @@ export default {
     sortFiles: 'Dosyaları sırala',
     goToParentFolder: 'Üst klasöre git',
     threeView: '3B Görünüm',
+    gcodePreview: 'G-code Önizleme',
+    notSliced: 'dilimlenmemiş',
+    sort: {
+      nameAsc: 'Ad (A-Z)',
+      nameDesc: 'Ad (Z-A)',
+      sizeAsc: 'Boyut (en küçük)',
+      sizeDesc: 'Boyut (en büyük)',
+      dateAsc: 'Tarih (en eski)',
+      dateDesc: 'Tarih (en yeni)',
+    },
+    dirs: {
+      root: 'Kök',
+      cache: 'Önbellek',
+      models: 'Modeller',
+      timelapse: 'Zaman Atlamalı Video',
+    },
   },
 
   // Gömülü Kamera Görüntüleyici
@@ -7757,6 +8132,8 @@ export default {
     resetZoom: 'Yakınlaştırmayı sıfırla',
     zoomIn: 'Yakınlaştır',
     dragToResize: 'Yeniden boyutlandırmak için sürükleyin',
+    minimize: 'Küçült',
+    reconnectingIn: '{{seconds}} sn içinde yeniden bağlanılıyor...',
   },
 
   // Zaman Atlamalı Video Görüntüleyici
@@ -7783,11 +8160,24 @@ export default {
   logViewer: {
     searchPlaceholder: 'Mesaj veya günlükçü adı ara...',
     noLogEntries: 'Günlük kaydı bulunamadı',
+    title: 'Uygulama Günlükleri',
+    liveStreamingEntries: 'Canlı akış - {{entries}} kayıt',
+    subtitle: 'Uygulama günlüklerini görüntüleyin ve filtreleyin',
+    live: 'Canlı',
+    stop: 'Durdur',
+    start: 'Başlat',
+    autoScroll: 'Otomatik kaydır',
+    logFileEmpty: 'Günlük dosyası boş olabilir veya temizlenmiş olabilir',
+    autoRefreshing: 'Her 2 saniyede bir otomatik yenileniyor',
+    clickStartHint: 'Canlı günlük akışını etkinleştirmek için Başlat\'a tıklayın',
   },
 
   // Anahtar Çubuğu Popover
   switchbarPopover: {
     noSwitchesInSwitchbar: 'Anahtar çubuğunda anahtar yok',
+    monitor: 'İzleme',
+    waiting: 'Bekleniyor',
+    turnOffConfirm: '"{{name}}" kapatmak istediğinizden emin misiniz?',
   },
 
   // Proje Sayfası Modali
@@ -7800,6 +8190,13 @@ export default {
       profileTitle: 'Profil Başlığı',
       profileDescription: 'Profil açıklaması...',
     },
+    title: 'Proje Sayfası',
+    loadFailed: 'Proje sayfası verileri yüklenemedi',
+    noData: 'Bu 3MF dosyasında proje sayfası verisi bulunamadı.',
+    noDataHint: 'Proje sayfaları genellikle MakerWorld\'den indirilen dosyalarda bulunur.',
+    printProfile: 'Baskı Profili',
+    byUser: '{{name}} tarafından',
+    imagesCount: 'Görseller ({{count}})',
   },
 
   // Spoolman Ayarları
@@ -7842,6 +8239,7 @@ export default {
       status: 'Durum',
       backend: 'Arka Uç',
       connectDisplay: 'Makaraları taramak için SpoolBuddy ekranını bağlayın',
+      deviceDisconnected: 'SpoolBuddy cihazının bağlantısı kesildi',
     },
     dashboard: {
       readyToScan: 'Taramaya hazır',
@@ -7871,6 +8269,7 @@ export default {
       plateClearedToast: 'Plaka temizlendi olarak işaretlendi',
       plateClearFailed: 'Plaka temizlendi olarak işaretlenemedi',
       printers: 'Yazıcılar',
+      estimatedFilament: '~{{weight}}g filament',
     },
     modal: {
       assignToAms: "AMS'e Ata",
@@ -7923,6 +8322,7 @@ export default {
       linkDesc: 'Bu yuvaya bir Spoolman makarası bağlayın',
       unassignDesc: 'Envanter makarasını bu yuvadan kaldırın',
       unlinkDesc: 'Spoolman bağlantısını bu yuvadan kaldırın',
+      lowFilamentAlert: 'Düşük Filament: {{type}} ({{slot}}) - %{{remain}} kaldı',
     },
     inventory: {
       search: 'Makaralarda ara...',
@@ -8027,6 +8427,7 @@ export default {
       updateFailed: 'Güncelleme başarısız',
       updateWaiting: 'Güncelleniyor...',
       used: 'Kullanılan',
+      triggerUpdateFailed: 'Güncelleme başlatılamadı',
     },
     writeTag: {
       writeWith: 'Şununla yaz',
@@ -8092,6 +8493,7 @@ export default {
       confirmPlugOff: '{{name}} kapatılsın mı?',
       turnOn: 'Aç',
       turnOff: 'Kapat',
+      open: 'Hızlı menüyü aç',
     },
     diagnostic: {
       clickStart: 'Donanım tanılamasını başlatmak için "Tanılamayı Çalıştır"a tıklayın. Cihaz:',
@@ -8105,6 +8507,9 @@ export default {
       running: 'Cihazda tanılama çalışıyor...',
       runningBtn: 'Çalışıyor...',
       scaleTitle: 'Tartı Tanılaması',
+      timedOut: 'Tanılama zaman aşımına uğradı - cihaz sonuç bildirmedi',
+      exitCode: 'Çıkış kodu: {{code}}',
+      errorPrefix: 'HATA: {{error}}',
     },
     errors: {
       quickAddFailed: 'Makara eklenemedi',
@@ -8399,6 +8804,7 @@ export default {
     noActivePrints: 'Şu anda çalışan baskı yok.',
     historyTitle: 'Son Algılamalar',
     noHistory: 'Henüz algılama yok.',
+    printerFallback: 'Yazıcı {{id}}',
   },
 
   octoeverywhere: {
@@ -8990,8 +9396,51 @@ export default {
     bridgeGap: 'boşluğu kapatmak için.',
     noReadAccess: 'Envanter tahminlerini görüntüleme izniniz yok.',
     noWriteAccess: 'Tahmin ayarlarını değiştirme izniniz yok.',
+    unitDays: 'gün',
+    spoolsOrdered: '{{spools}} sipariş edildi',
+    chartReorderPoint: 'ROP',
+    chartSafetyStock: 'GS',
+    chartOut: 'BİTER',
+    chartArrives: '+{{amount}} gelir (g{{days}})',
+    atDailyRate: '{{rate}}g/gün hızla',
   },
   amsHistory: {
     recordingInfo: 'Yazıcı bağlıyken veriler her 5 dakikada bir kaydedilir',
+  },
+  app: {
+    uiCrash: 'Arayüz Çökmesi',
+  },
+  printCalendar: {
+    days: {
+      sun: 'Paz',
+      mon: 'Pzt',
+      tue: 'Sal',
+      wed: 'Çar',
+      thu: 'Per',
+      fri: 'Cum',
+      sat: 'Cmt',
+    },
+    dayTooltip_one: '{{date}}: {{count}} baskı',
+    dayTooltip_other: '{{date}}: {{count}} baskı',
+    less: 'Az',
+    more: 'Çok',
+  },
+  compareArchivesModal: {
+    title: 'Arşivleri Karşılaştır ({{count}})',
+    loadFailed: 'Karşılaştırma yüklenemedi',
+    setting: 'Ayar',
+    differencesFound_one: '{{count}} Fark Bulundu',
+    differencesFound_other: '{{count}} Fark Bulundu',
+    andMore: '...ve {{count}} tane daha',
+    successFailureAnalysis: 'Başarı/Başarısızlık Analizi',
+    successfulCount: '{{count}} başarılı',
+    failedCount: '{{count}} başarısız',
+    noCorrelations: 'Ayarlar ile sonuçlar arasında belirgin bir ilişki bulunamadı.',
+    needBothOutcomes: 'İlişki analizi için hem başarılı hem de başarısız baskılar gerekir.',
+  },
+  qrCodeModal: {
+    title: 'QR Kodu',
+    scanHint: 'Bu arşivi açmak için tarayın',
+    download: 'QR Kodunu İndir',
   },
 };

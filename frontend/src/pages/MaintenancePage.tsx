@@ -1090,7 +1090,7 @@ function SettingsSection({
                                 className="w-16 px-2 py-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-xs"
                                 min="1"
                               />
-                              <Button size="sm" onClick={() => handleSaveInterval(item.id, defaultInterval, defaultIntervalType)}>OK</Button>
+                              <Button size="sm" onClick={() => handleSaveInterval(item.id, defaultInterval, defaultIntervalType)}>{t('maintenance.ok')}</Button>
                             </div>
                           ) : (
                             <button

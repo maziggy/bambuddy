@@ -180,7 +180,7 @@ export function MQTTDebugModal({ printerId, printerName, onClose }: MQTTDebugMod
                 onChange={(e) => setAutoScroll(e.target.checked)}
                 className="rounded border-bambu-dark-tertiary"
               />
-              Auto-scroll
+              {t('mqttDebug.autoScroll')}
             </label>
             <span className="text-sm text-bambu-gray">
               {filteredLogs.length}/{logs.length}

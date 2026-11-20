@@ -331,6 +331,7 @@ export default {
       finished: 'Färdig',
       unknown: 'Okänd',
       title: 'Status',
+      failed: 'Misslyckad',
     },
     temperatures: {
       nozzle: 'Munstycke',
@@ -599,6 +600,8 @@ export default {
       unloadAms3h: 'Matar ut fack {{n}}. När skrivaren ber om det drar du ut filamentet ur AMS 3H för hand.',
       failedToLoad: 'Kunde inte ladda filament',
       failedToUnload: 'Kunde inte ladda ur filament',
+      chamberLightOn: 'Kammarljus på',
+      chamberLightOff: 'Kammarljus av',
     },
     // Connection status
     connection: {
@@ -649,6 +652,12 @@ export default {
       homeZ: 'Auto-riktning',
       moveAnyway: 'Flytta ändå',
       homingStarted: 'Auto-riktning pågår…',
+      moveYForward: 'Flytta Y framåt',
+      moveXLeft: 'Flytta X åt vänster',
+      moveXRight: 'Flytta X åt höger',
+      moveYBack: 'Flytta Y bakåt',
+      retractFilament: 'Dra tillbaka filament',
+      extrudeFilament: 'Extrudera filament',
     },
     // Permissions
     pandaBreath: {
@@ -691,6 +700,9 @@ export default {
       fromPrinterSettings: 'Från skrivarens inställningar',
       modelOptional: 'Modell (valfritt)',
       saveChanges: 'Spara ändringar',
+      hostPlaceholder: '192.168.1.100 eller skrivare.local',
+      seriesGroup: '{{series}}-serien',
+      locationGroupLabel: 'Plats / grupp',
     },
     // Skip objects
     skipObjects: {
@@ -914,6 +926,13 @@ export default {
       labelPlaceholder: 'Etikett...',
       clickToEdit: '{{label}} – Klicka för att redigera',
       clickToAddLabel: 'Klicka för att lägga till etikett',
+      checkTitle: 'Kontroll av byggplatta',
+      refsCount: '{{count}}/{{max}} referenser',
+      referenceAlt: 'Referens {{n}}',
+      calibrating: 'Kalibrerar...',
+      calibrateEmptyPlate: 'Kalibrera tom platta',
+      adding: 'Lägger till...',
+      addReference: 'Lägg till referens ({{count}}/{{max}})',
     },
     // Speed
     speed: {
@@ -1018,6 +1037,7 @@ export default {
       width: 'Bredd',
       height: 'Höjd',
       instruction: 'Justera detekteringsområdet för att fokusera på byggplattan. Den gröna rutan i förhandsvisningen visar det aktuella området.',
+      current: 'Aktuell: X={{x}} %, Y={{y}} %, B={{w}} %, H={{h}} %',
     },
     developerModeWarning: 'Utvecklar-LAN-läge är inte aktiverat på: {{names}}. Vissa funktioner kommer kanske inte att fungera.',
     howToEnable: 'Hur man aktiverar',
@@ -1029,6 +1049,45 @@ export default {
     networkLabel: 'Nätverk',
     noActiveJob: 'Inget aktivt jobb',
     power: 'Ström',
+    indicator: {
+      good: 'Bra',
+      fair: 'Godtagbar',
+      bad: 'Dålig',
+      humidityTitle: 'Luftfuktighet: {{value}} % - {{status}}',
+      humidityTitleClickable: 'Luftfuktighet: {{value}} % - {{status}} (klicka för historik)',
+      temperatureTitle: 'Temperatur: {{value}} °C - {{status}}',
+      temperatureTitleClickable: 'Temperatur: {{value}} °C - {{status}} (klicka för historik)',
+      customPlaceholder: 'Anpassad',
+      set: 'Ställ in',
+    },
+    nozzleSlotEmpty: 'Fack {{slot}} — Tomt',
+    unknownModel: 'Okänd modell',
+    wifiTitle: 'Wi-Fi: {{signal}} dBm - {{strength}}',
+    badgeOk: 'OK',
+    maintenanceBadge: {
+      dueAndSoon: '{{due}} underhåll förfallna, {{soon}} förfaller snart - Klicka för att visa',
+      due: '{{due}} underhåll förfallna - Klicka för att visa',
+      soon: '{{soon}} förfaller snart - Klicka för att visa',
+    },
+    startedBy: 'Startad av {{user}}',
+    lastPrint: 'Senaste: {{name}}',
+    control: {
+      setNozzleTemperatures: 'Ställ in munstyckstemperaturer',
+      leftTemp: 'Vänster temp.',
+      rightTemp: 'Höger temp.',
+      setNozzleTemperature: 'Ställ in munstyckstemperatur',
+      setBedTemperature: 'Ställ in byggplattans temperatur',
+      setChamberTemperature: 'Ställ in kammartemperatur',
+      setNozzleSelection: 'Välj munstycke',
+      setFanSpeed: 'Ställ in hastighet för {{fan}}',
+    },
+    externalSlotLocation: 'Externt fack {{slot}}',
+    plugTurnOff: 'Stäng av',
+    plugTurnOn: 'Slå på',
+    haRunEntity: 'Kör {{entity}}',
+    haToggleEntity: 'Växla {{entity}}',
+    noPrintersWithSmartPlugs: 'Inga skrivare med smarta kontakter',
+    ungrouped: 'Ogrupperade',
   },
 
   // Archives page
@@ -1274,6 +1333,8 @@ export default {
       download: 'Ladda ner',
       edit: 'Redigera',
       delete: 'Ta bort',
+      reprintCount_one: '{{count}} omutskrift',
+      reprintCount_other: '{{count}} omutskrifter',
     },
     calendar: {
       today: 'Idag',
@@ -1348,6 +1409,30 @@ export default {
       failedDeleteArchives: 'Kunde inte ta bort arkiv',
       photoDeleted: 'Foto borttaget',
       failedDeletePhoto: 'Kunde inte ta bort foto',
+      collections: {
+        all: 'Alla arkiv',
+        recent: 'Senaste 24 timmarna',
+        favorites: 'Favoriter',
+        notPrinted: 'Ej utskrivna',
+        printed: 'Utskrivna',
+        failed: 'Misslyckade utskrifter',
+        duplicates: 'Dubbletter',
+      },
+      archivesDeletedCount_one: '{{count}} arkiv borttaget',
+      archivesDeletedCount_other: '{{count}} arkiv borttagna',
+      toggledFavoritesCount_one: 'Favoritstatus växlad för {{count}} arkiv',
+      toggledFavoritesCount_other: 'Favoritstatus växlad för {{count}} arkiv',
+      compareCount: 'Jämför ({{count}})',
+      upload3mf: 'Ladda upp 3MF',
+      fileTypeSliced: 'Slicad (GCODE)',
+      fileTypeSource: 'Endast källfil',
+      hideFailed: 'Dölj misslyckade',
+      allTags: 'Alla taggar',
+      colors: 'Färger:',
+      matchAnyColor: 'Matcha NÅGON av valda färger',
+      matchAllColors: 'Matcha ALLA valda färger',
+      createdAutomatically: 'Arkiv skapas automatiskt när utskrifter slutförs',
+      noPrinter: 'Ingen skrivare',
     },
     list: {
       name: 'Namn',
@@ -1407,6 +1492,23 @@ export default {
         cancelled: 'Avbruten',
         skipped: 'Hoppad över',
       },
+    },
+    batchProject: {
+      added_one: 'Lade till {{count}} arkiv i "{{name}}"',
+      added_other: 'Lade till {{count}} arkiv i "{{name}}"',
+      assignFailed: 'Det gick inte att tilldela projekt',
+      removed_one: 'Tog bort {{count}} arkiv från projektet',
+      removed_other: 'Tog bort {{count}} arkiv från projektet',
+      removeFailed: 'Det gick inte att ta bort från projektet',
+      title: 'Tilldela till projekt',
+      assignSelected_one: 'Tilldela {{count}} valt arkiv till ett projekt',
+      assignSelected_other: 'Tilldela {{count}} valda arkiv till ett projekt',
+      removeFromProject: 'Ta bort från projekt',
+      clearAssignment: 'Rensa projekttilldelning',
+      orAssignTo: 'eller tilldela till',
+      archiveCount_one: '{{count}} arkiv',
+      archiveCount_other: '{{count}} arkiv',
+      noProjects: 'Inga projekt än. Skapa ett från sidan Projekt.',
     },
   },
 
@@ -1839,6 +1941,9 @@ export default {
       noEditItems: 'Du har inte behörighet att redigera köposter',
       noCancelItems: 'Du har inte behörighet att avbryta köposter',
     },
+    selectPlateToPrint: 'Välj platta att skriva ut',
+    selectPlatesToPrint: 'Välj plattor att skriva ut',
+    plateSelectionRequired: 'Val krävs',
   },
 
   // Statistics page
@@ -1977,6 +2082,23 @@ export default {
     allUsers: 'Alla användare',
     noUser: 'Ingen användare (System)',
     filterByUser: 'Filtrera efter användare',
+    costAvg: '{{cost}} i snitt',
+    filamentTooltip: 'Filament',
+    usageTooltip: 'Förbrukning',
+    weekdays: {
+      mon: 'Mån',
+      tue: 'Tis',
+      wed: 'Ons',
+      thu: 'Tor',
+      fri: 'Fre',
+      sat: 'Lör',
+      sun: 'Sön',
+    },
+    heatmapCellTitle_one: '{{day}} {{hour}}: {{count}} utskrift',
+    heatmapCellTitle_other: '{{day}} {{hour}}: {{count}} utskrifter',
+    heatmapLess: 'Mindre',
+    heatmapMore: 'Mer',
+    weekOf: 'Vecka från {{date}}',
   },
 
   // Maintenance page
@@ -2122,6 +2244,7 @@ export default {
     deleteEntryMessage: '”{{task}}” från {{date}} tas bort permanent ur underhållsloggen. Uppgiftens senaste återställning ändras inte.',
     entryDeleted: 'Loggposten har tagits bort',
     deleteFailed: 'Borttagningen misslyckades: {{error}}',
+    ok: 'OK',
   },
 
   // Settings page
@@ -2902,6 +3025,20 @@ export default {
       cameraConnectedCoalesced: 'Kamera ansluten{{resolution}} (delad med en pågående inspelning)',
       cameraConnectedLiveView: 'Kameran fungerar{{resolution}} (bild från livevyn, som använder kameran)',
       saveFailed: 'Det gick inte att spara',
+      storageRefreshFailed: 'Det gick inte att uppdatera lagringsanvändningen',
+      apiKeyCreateFailed: 'Det gick inte att skapa API-nyckel: {{message}}',
+      apiKeyDeleteFailed: 'Det gick inte att ta bort API-nyckel: {{message}}',
+      emailRequiredAdvancedAuth: 'E-post krävs när avancerad autentisering är aktiverad',
+      allProvidersTested: 'Alla {{tested}} leverantörer testades utan fel!',
+      providersSucceeded: '{{success}}/{{tested}} leverantörer lyckades',
+      testProvidersFailed: 'Det gick inte att testa leverantörer: {{message}}',
+      allPlugsTurnedOn: 'Alla {{success}} kontakter påslagna',
+      allPlugsTurnedOff: 'Alla {{success}} kontakter avstängda',
+      plugsTurnedOnPartial: '{{success}} kontakter påslagna, {{failed}} misslyckades',
+      plugsTurnedOffPartial: '{{success}} kontakter avstängda, {{failed}} misslyckades',
+      failedWithMessage: 'Misslyckades: {{message}}',
+      saveFailedWithMessage: 'Det gick inte att spara: {{message}}',
+      updatePrinterFailed: 'Det gick inte att uppdatera skrivaren: {{message}}',
     },
     testConnection: 'Testa anslutning',
     catalog: {
@@ -3248,6 +3385,8 @@ export default {
       oidcUnlinkConfirmTitle: 'Koppla bort kontot?',
       oidcUnlinkConfirmMessage: 'Du kan inte längre logga in med {{provider}}.',
       oidcUnlinkConfirmAction: 'Koppla bort',
+      qrCodeAlt: 'TOTP-QR-kod',
+      codeOrBackupPlaceholder: '000000 eller XXXXXXXX',
     },
 
     // Session Policy (#1706) — admin-configurable session lifetime ceiling.
@@ -3443,6 +3582,34 @@ export default {
     noSearchResults: 'Inga matchande inställningar.',
     noTemplatesMatch: 'Inga mallar matchar ditt filter.',
     searchPlaceholder: 'Sök inställningar…',
+    rebuildLedgerFailed: 'Det gick inte att starta regenereringen av bokföringen',
+    mqttBrokerPlaceholder: 'mqtt.example.com eller 192.168.1.100',
+    clearFilter: 'Rensa filter',
+    bulkPlugTitleOn: 'Slå på alla kontakter',
+    bulkPlugTitleOff: 'Stäng av alla kontakter',
+    bulkPlugMessageOn: 'Detta SLÅR PÅ alla {{total}} aktiverade smarta kontakter.',
+    bulkPlugMessageOff: 'Detta STÄNGER AV alla {{total}} aktiverade smarta kontakter. Skrivare som skriver ut kan påverkas!',
+    bulkPlugConfirmOn: 'Slå på alla',
+    bulkPlugConfirmOff: 'Stäng av alla',
+    releaseNotesTitle: 'Versionsinformation - v{{version}}',
+    userItemArchives_one: '{{count}} arkiv',
+    userItemArchives_other: '{{count}} arkiv',
+    userItemQueueItems_one: '{{count}} köobjekt',
+    userItemQueueItems_other: '{{count}} köobjekt',
+    userItemLibraryFiles_one: '{{count}} biblioteksfil',
+    userItemLibraryFiles_other: '{{count}} biblioteksfiler',
+    spoolmanSyncResult: {
+      success_one: '{{count}} rulle synkroniserades',
+      success_other: '{{count}} rullar synkroniserades',
+      withErrors_one: '{{count}} rulle synkroniserades med {{errors}}',
+      withErrors_other: '{{count}} rullar synkroniserades med {{errors}}',
+      errorCount_one: '{{count}} fel',
+      errorCount_other: '{{count}} fel',
+      skipped_one: '{{count}} rulle hoppades över',
+      skipped_other: '{{count}} rullar hoppades över',
+      andMore: '...och {{count}} till',
+      errors: 'Fel:',
+    },
   },
 
   // Notifications (for push notifications)
@@ -3577,6 +3744,7 @@ errors: {
     timestamp: 'Tidsstämpel',
     direction: 'Riktning',
     all: 'Alla',
+    autoScroll: 'Rulla automatiskt',
   },
 
   // Printer File Manager modal (printer internal storage)
@@ -3827,6 +3995,8 @@ errors: {
         profile: 'Profil',
       },
     },
+    chamberLightOnToast: 'Kammarljus på',
+    chamberLightOffToast: 'Kammarljus av',
   },
 
   // Groups management
@@ -4405,7 +4575,9 @@ errors: {
       same: 'Oförändrat',
       searchFields: 'Sök fält...',
       title: 'Jämför profiler',
+      gcodeLines: '[{{count}} rader G-kod/skript]',
     },
+    scrollToTop: 'Rulla till toppen',
   },
 
   // Support/Debug
@@ -4747,6 +4919,8 @@ errors: {
       failedToGenerateThumbnail: 'Kunde inte generera minibild: {{error}}',
     },
     filterByUser: 'Filtrera efter användare',
+    linkedProjectTitle: 'Projekt: {{name}} (klicka för att ändra)',
+    linkedArchiveTitle: 'Arkiv: {{name}} (klicka för att ändra)',
   },
 
   // Projects
@@ -5287,6 +5461,8 @@ errors: {
     disableWeightSyncDesc: 'Uppdatera inte återstående kapacitet från AMS-uppskattningar. Använd detta om du föredrar Spoolmans användningsspårning framför AMS-procentbaserade uppskattningar. Nya rullar kommer fortfarande att använda AMS-uppskattningen som sin initiala vikt.',
     reportPartialUsage: 'Rapportera partiell användning för misslyckade utskrifter',
     reportPartialUsageDesc: 'När en utskrift misslyckas eller avbryts, rapportera den uppskattade filamentanvändningen fram till den punkten baserat på skiktförloppet.',
+    linkSlotInfo: 'AMS {{amsId}} T{{trayId}} · Skrivare #{{printerId}}',
+    tagValue: 'Tagg: {{tag}}',
   },
 
   locations: {
@@ -5374,6 +5550,7 @@ errors: {
       restorePartial: '{{ok}} rullar återställda, {{failed}} misslyckades',
       restoreAllFailed: 'Alla {{count}} rullåterställningar misslyckades — val bevaras så att du kan försöka igen',
       invalidHex: 'Ange 6 hex-tecken (RRGGBB) eller 8 (RRGGBBAA). Fältet kommer inte att tillämpas annars.',
+      hexPlaceholder: 'RRGGBB eller RRGGBBAA',
     },
     spoolmanMixedContentTitle: 'Spoolman kan inte laddas över HTTPS — blandat innehåll blockeras av din webbläsare',
     spoolmanMixedContentBody: 'Bambuddy serveras över HTTPS (via din omvända proxy), men din Spoolman-URL är fortfarande vanlig HTTP. Webbläsare blockerar blandat innehåll av säkerhetsskäl, så det inbäddade Spoolman-gränssnittet kan inte renderas. Spoolman måste vara åtkomligt över HTTPS för att detta ska fungera.',
@@ -5921,6 +6098,30 @@ errors: {
     assignedSpool: 'Tilldelad rulle',
     unassignFailed: 'Kunde inte ta bort tilldelningen av rullen',
     unassignSuccess: 'Rullens tilldelning borttagen',
+    pickerDiagCounts: '{{fetched}} hämtade · {{archived}} arkiverade · {{assigned}} tilldelade andra fack',
+    pickerDiagFiltered: '{{unassigned}} otilldelade rullar — {{filtered}} bortfiltrerade av facksmatchning. Prova "Visa alla rullar".',
+    tableColumns: {
+      added: 'Tillagd',
+      encoded: 'Kodad',
+      lastUsed: 'Senast använd',
+      location: 'Plats',
+      gross: 'Brutto',
+      printedTotal: 'Utskrivet totalt',
+      printedSinceWeight: 'Utskrivet sedan vägning',
+      tagId: 'Tagg-ID',
+      dataOrigin: 'Datakälla',
+      tagType: 'Typ av länkad tagg',
+    },
+    never: 'Aldrig',
+    printerN: 'Skrivare {{id}}',
+    noScaleMeasurement: 'Ingen vågmätning',
+    weightCheckMatchTooltip: 'Våg: {{scale}} g\nBeräknat: {{calculated}} g\nSkillnad: {{difference}} g (inom tolerans)',
+    weightCheckMismatchTooltip: 'Våg: {{scale}} g\nBeräknat: {{calculated}} g\nSkillnad: {{difference}} g (avvikelse!)',
+    syncScaleWeightTitle: 'Synka: lita på vågens vikt och nollställ spårningen',
+    syncedToScaleWeight: '"{{name}}" synkad till vågens vikt',
+    firstPage: 'Första sidan',
+    lastPage: 'Sista sidan',
+    pageOf: 'Sida {{page}} av {{total}}',
   },
 
   // Timelapse
@@ -6078,6 +6279,52 @@ errors: {
     costCenter: 'Kostnadsställe',
     personalDefault: 'Personligt',
     totalCostForQuantity: 'totalt: {{cost}}',
+    queuedForAnyModel: 'Köad för valfri {{model}}',
+    printerN: 'Skrivare {{id}}',
+    trayN: 'Fack {{id}}',
+    selectAtLeastOnePrinter: 'Välj minst en skrivare',
+    selectTargetModel: 'Välj en målskrivarmodell',
+    crossModelBlocked: 'Filen slicades för {{sliced}} och kan inte skickas till {{target}}-skrivare',
+    queueItemUpdated: 'Köobjektet uppdaterat',
+    submitFailed: 'Misslyckades: {{error}}',
+    submitPartial: '{{succeeded}} lyckades, {{failed}} misslyckades',
+    printJob: 'Utskriftsjobb',
+    slicedForOtherModel: 'Filen slicades för {{sliced}}, men skrivs ut på {{model}}',
+    archiveDataUnavailable: 'Arkivdata är inte tillgänglig. Källfilen kan ha tagits bort. Filamentmappning är inaktiverad.',
+    operationFailed: 'Det gick inte att slutföra åtgärden',
+    printerSelector: {
+      customSlotMapping: 'Anpassad facksmappning',
+      selectSlotOption: '-- Välj fack --',
+      statePreparing: 'Förbereder',
+      stateFailed: 'Misslyckad',
+      noActivePrintersAvailable: 'Inga aktiva skrivare tillgängliga',
+      specificPrinter: 'Specifik skrivare',
+      anyModel: 'Valfri {{model}}',
+      targetModel: 'Målmodell',
+      slicedForHint: '(slicad för {{model}})',
+      selectModelOption: 'Välj en modell...',
+      incompatibleGcodeSuffix: ' — inte kompatibel med {{model}}-G-kod',
+      crossModelWarning: 'Filen slicades för {{sliced}}, men kommer att skickas till en {{target}}-skrivare',
+      crossModelBlocked: 'Filen slicades för {{sliced}} och kan inte skickas till {{target}}-skrivare — välj en kompatibel modell',
+      locationFilter: 'Platsfilter (valfritt)',
+      anyLocation: 'Valfri plats',
+      schedulerInfo: 'Schemaläggaren tilldelar den första lediga {{model}}-skrivaren',
+      schedulerInfoLocation: 'Schemaläggaren tilldelar den första lediga {{model}}-skrivaren i {{location}}',
+      selectPrinters: 'Välj skrivare',
+      printersSelected_one: '{{count}} skrivare vald',
+      printersSelected_other: '{{count}} skrivare valda',
+      selectAll: 'Välj alla',
+      inactive: '(inaktiv)',
+      customMapping: 'Anpassad mappning',
+      matchedCount: '({{matched}}/{{total}} matchade)',
+      auto: 'Automatisk',
+      hiddenPrinters_one: '{{count}} annan skrivare dold (annan modell) —',
+      hiddenPrinters_other: '{{count}} andra skrivare dolda (annan modell) —',
+      showAll: 'visa alla',
+      showOnlyModel: 'Visa endast {{model}}-skrivare',
+      selectAtLeastOne: 'Välj minst en skrivare',
+      selectTargetModel: 'Välj en målskrivarmodell',
+    },
   },
 
   // Backup
@@ -6342,6 +6589,19 @@ errors: {
     processingPercent: 'Bearbetar… {{percent}} %',
     failed: 'Bearbetningen misslyckades',
     cancelled: 'Bearbetningen avbröts',
+    loadingVideoInfo: 'Läser in videoinformation...',
+    title: 'Redigera timelapse',
+    trim: 'Beskär',
+    speed: 'Hastighet',
+    speedOutput: '{{speed}}x (resultat: {{duration}})',
+    musicOverlay: 'Bakgrundsmusik',
+    dropAudio: 'Släpp en ljudfil eller klicka för att ladda upp',
+    original: 'Original:',
+    output: 'Resultat:',
+    outputSummary: '{{duration}} i {{speed}}x hastighet',
+    outputSummaryWithMusic: '{{duration}} i {{speed}}x hastighet + bakgrundsmusik',
+    processingTimelapse: 'Bearbetar timelapse...',
+    mayTakeMoments: 'Detta kan ta en liten stund',
   },
   // Tags
   tags: {
@@ -6368,6 +6628,11 @@ errors: {
     uploading: 'Laddar upp...',
     upload: 'Ladda upp',
     uploadFailed: 'Kunde inte ladda upp',
+    filesUploaded_one: '{{count}} fil uppladdad',
+    filesUploaded_other: '{{count}} filer uppladdade',
+    filesFailed_one: 'Det gick inte att ladda upp {{count}} fil',
+    filesFailed_other: 'Det gick inte att ladda upp {{count}} filer',
+    partialUpload: '{{uploaded}} uppladdade, {{failed}} misslyckades',
   },
 
   // Post-print outcome confirmation dialog (#1898)
@@ -7157,6 +7422,9 @@ errors: {
     connectionSuccess: 'Anslutning lyckades',
     noSwitchesInSwitchbar: 'Inga växlar i kontaktpanelen',
     enableSwitchbarHint: 'Aktivera "Visa i kontaktpanel" i Inställningar > Kontakter',
+    tasmotaIpRequired: 'IP-adress krävs för Tasmota-kontakter',
+    sameAsPowerTopic: 'Samma som power-topic, eller annat',
+    examplePlaceholder: 't.ex. {{value}}',
   },
 
   // Notifications
@@ -7528,6 +7796,22 @@ errors: {
     placeholders: {
       linkName: 'Min länk',
     },
+    addLink: 'Lägg till länk',
+    deleteConfirm: 'Är du säker på att du vill ta bort "{{name}}"? Denna åtgärd kan inte ångras.',
+    invalidImageType: 'Välj en giltig bildfil (PNG, JPG, GIF, SVG, WebP eller ICO)',
+    imageTooLarge: 'Bildfilen måste vara mindre än 1 MB',
+    nameRequired: 'Namn krävs',
+    urlRequired: 'URL krävs',
+    urlInvalidScheme: 'URL:en måste börja med http:// eller https://',
+    editLink: 'Redigera länk',
+    addExternalLink: 'Lägg till extern länk',
+    nameRequiredLabel: 'Namn *',
+    urlRequiredLabel: 'URL *',
+    icon: 'Ikon',
+    customIcon: 'Anpassad ikon',
+    customIconAlt: 'Anpassad ikon',
+    iconFormatsHint: 'PNG, JPG, GIF, SVG, WebP eller ICO. Max 1 MB.',
+    choosePresetIcon: 'Eller välj en förinställd ikon',
   },
 
   // Keyboard Shortcuts Modal
@@ -7552,8 +7836,13 @@ errors: {
       newProfile: 'Ny profil',
       exitSelectionMode: 'Avsluta urvalsläge',
       showHelp: 'Visa denna hjälp',
+      openExternal: 'Öppna {{name}}',
+      goToPage: 'Gå till {{page}}',
+      showCamera: 'Visa en skrivares kamera',
     },
     footer: 'Tryck på Esc eller klicka utanför för att stänga',
+    rightClick: 'Högerklick',
+    footerWithKey: 'Tryck på <kbd>Esc</kbd> eller klicka utanför för att stänga',
   },
 
   // Notification Log
@@ -7576,6 +7865,7 @@ errors: {
       minutesAgo: '{{minutes}}m sedan',
       hoursAgo: '{{hours}}t sedan',
     },
+    clearFailed: 'Det gick inte att rensa loggarna: {{message}}',
   },
 
   // Restore/Backup Modal
@@ -7756,7 +8046,23 @@ errors: {
     placeholders: {
       requestBody: 'JSON-förfrågningsinnehåll...',
       searchEndpoints: 'Sök ändpunkter...',
+      value: 'värde',
     },
+    validationError: 'Valideringsfel',
+    missingRequiredParams: 'Obligatoriska parametrar saknas: {{params}}',
+    networkError: 'Nätverksfel',
+    pathParameters: 'Sökvägsparametrar',
+    queryParameters: 'Frågeparametrar',
+    selectOption: '-- Välj --',
+    requestBody: 'Förfrågningsinnehåll',
+    execute: 'Kör',
+    fillIn: 'Fyll i: {{params}}',
+    response: 'Svar',
+    fetchSchemaFailed: 'Det gick inte att hämta OpenAPI-schemat',
+    loadSchemaFailed: 'Det gick inte att läsa in API-schemat',
+    expandAll: 'Expandera alla',
+    collapseAll: 'Fäll ihop alla',
+    endpointCount: '{{endpoints}} ändpunkter i {{categories}} kategorier',
   },
 
   // Configure AMS Slot Modal
@@ -7815,12 +8121,19 @@ errors: {
     downloadBackup: 'Ladda ner säkerhetskopia',
     restoreBackup: 'Återställ säkerhetskopia',
     noBackupsYet: 'Inga säkerhetskopior än',
+    status: {
+      success: 'Lyckades',
+      failed: 'Misslyckades',
+      skipped: 'Hoppades över',
+      running: 'Pågår',
+    },
   },
 
   // Email Settings
   emailSettings: {
     placeholders: {
       fromName: 'Bambuddy',
+      appPassword: 'Applösenord',
     },
   },
 
@@ -7829,6 +8142,24 @@ errors: {
     searchTags: 'Sök taggar...',
     renameTag: 'Döp om tagg',
     deleteTag: 'Ta bort tagg',
+    renamed_one: 'Döpte om "{{oldName}}" till "{{newName}}" i {{count}} arkiv',
+    renamed_other: 'Döpte om "{{oldName}}" till "{{newName}}" i {{count}} arkiv',
+    renameFailed: 'Det gick inte att döpa om taggen',
+    deleted_one: 'Tog bort "{{name}}" från {{count}} arkiv',
+    deleted_other: 'Tog bort "{{name}}" från {{count}} arkiv',
+    deleteFailed: 'Det gick inte att ta bort taggen',
+    title: 'Hantera taggar',
+    sortByCount: 'Sortera efter antal',
+    sortByName: 'Sortera efter namn',
+    summary: '{{tags}} i {{usages}}',
+    tagCount_one: '{{count}} tagg',
+    tagCount_other: '{{count}} taggar',
+    usageCount_one: '{{count}} användning',
+    usageCount_other: '{{count}} användningar',
+    noMatch: 'Inga taggar matchar din sökning',
+    noTags: 'Inga taggar hittades',
+    confirmDelete_one: 'Ta bort "{{name}}" från {{count}} arkiv?',
+    confirmDelete_other: 'Ta bort "{{name}}" från {{count}} arkiv?',
   },
 
   // Notification Template Editor
@@ -7844,11 +8175,33 @@ errors: {
     placeholders: {
       newTag: 'Ange ny tagg...',
     },
+    failedOnArchive: 'Misslyckades för arkiv {{id}}: {{error}}',
+    tagCount_one: '{{count}} tagg',
+    tagCount_other: '{{count}} taggar',
+    archiveCount_one: '{{count}} arkiv',
+    archiveCount_other: '{{count}} arkiv',
+    addedToast: 'Lade till {{tags}} i {{archives}}',
+    removedToast: 'Tog bort {{tags}} från {{archives}}',
+    updateFailed: 'Det gick inte att uppdatera taggar',
+    addTags: 'Lägg till taggar',
+    removeTags: 'Ta bort taggar',
+    addDescription_one: 'Lägg till taggar för {{count}} valt arkiv',
+    addDescription_other: 'Lägg till taggar för {{count}} valda arkiv',
+    removeDescription_one: 'Ta bort taggar för {{count}} valt arkiv',
+    removeDescription_other: 'Ta bort taggar för {{count}} valda arkiv',
+    existingTags: 'Befintliga taggar:',
+    tagsToAdd: 'Taggar att lägga till:',
+    tagsToRemove: 'Taggar att ta bort:',
+    processing: 'Bearbetar...',
   },
 
   // Photo Gallery Modal
   photoGallery: {
     deletePhoto: 'Ta bort foto',
+    photoOf: 'Foto {{current}} av {{total}}',
+    photoAlt: 'Foto {{number}}',
+    thumbnailAlt: 'Miniatyr {{number}}',
+    deleteConfirm: 'Ta bort detta foto? Detta kan inte ångras.',
   },
 
   // Filament Hover Card
@@ -7860,6 +8213,8 @@ errors: {
   kProfilesView: {
     hasNote: 'Har anteckning',
     copyProfile: 'Kopiera profil',
+    unnamed: 'Namnlös',
+    notePrefix: 'Anteckning: {{note}}',
   },
 
   // Layout/Navigation
@@ -7872,6 +8227,10 @@ errors: {
   dashboard: {
     dragToReorder: 'Dra för att omordna',
     hideWidget: 'Dölj widget',
+    sizeClickToCycle: 'Storlek: {{size}} - Klicka för att växla',
+    sizeFull: 'Full',
+    hiddenWidgetsClickToShow: 'Dolda widgetar (klicka för att visa):',
+    allWidgetsHidden: 'Alla widgetar är dolda.',
   },
 
   // Notification Provider Card
@@ -7885,6 +8244,22 @@ errors: {
     sortFiles: 'Sortera filer',
     goToParentFolder: 'Gå till överordnad mapp',
     threeView: '3D-vy',
+    gcodePreview: 'G-kod-förhandsvisning',
+    notSliced: 'inte slicad',
+    sort: {
+      nameAsc: 'Namn (A-Ö)',
+      nameDesc: 'Namn (Ö-A)',
+      sizeAsc: 'Storlek (minst)',
+      sizeDesc: 'Storlek (störst)',
+      dateAsc: 'Datum (äldst)',
+      dateDesc: 'Datum (nyast)',
+    },
+    dirs: {
+      root: 'Rot',
+      cache: 'Cache',
+      models: 'Modeller',
+      timelapse: 'Timelapse',
+    },
   },
 
   // Embedded Camera Viewer
@@ -7895,6 +8270,8 @@ errors: {
     resetZoom: 'Återställ zoom',
     zoomIn: 'Zooma in',
     dragToResize: 'Dra för att ändra storlek',
+    minimize: 'Minimera',
+    reconnectingIn: 'Återansluter om {{seconds}} s...',
   },
 
   // Timelapse Viewer
@@ -7921,11 +8298,24 @@ errors: {
   logViewer: {
     searchPlaceholder: 'Sök meddelande eller loggnamn...',
     noLogEntries: 'Inga loggposter hittade',
+    title: 'Programloggar',
+    liveStreamingEntries: 'Direktströmning - {{entries}} poster',
+    subtitle: 'Visa och filtrera programloggar',
+    live: 'Direkt',
+    stop: 'Stoppa',
+    start: 'Starta',
+    autoScroll: 'Rulla automatiskt',
+    logFileEmpty: 'Loggfilen kan vara tom eller rensad',
+    autoRefreshing: 'Uppdateras automatiskt varannan sekund',
+    clickStartHint: 'Klicka på Starta för att aktivera direktströmning av loggar',
   },
 
   // Switchbar Popover
   switchbarPopover: {
     noSwitchesInSwitchbar: 'Inga växlar i kontaktpanelen',
+    monitor: 'Övervaka',
+    waiting: 'Väntar',
+    turnOffConfirm: 'Är du säker på att du vill stänga av "{{name}}"?',
   },
 
   // Project Page Modal
@@ -7938,6 +8328,13 @@ errors: {
       profileTitle: 'Profilnamn',
       profileDescription: 'Profilbeskrivning...',
     },
+    title: 'Projektsida',
+    loadFailed: 'Det gick inte att läsa in projektsidans data',
+    noData: 'Ingen projektsidesdata hittades i denna 3MF-fil.',
+    noDataHint: 'Projektsidor ingår vanligtvis i filer som laddats ner från MakerWorld.',
+    printProfile: 'Utskriftsprofil',
+    byUser: 'av {{name}}',
+    imagesCount: 'Bilder ({{count}})',
   },
 
   // Spoolman Settings
@@ -7980,6 +8377,7 @@ errors: {
       status: 'Status',
       backend: 'Backend',
       connectDisplay: 'Anslut SpoolBuddy-skärmen för att skanna rullar',
+      deviceDisconnected: 'SpoolBuddy-enheten är frånkopplad',
     },
     dashboard: {
       readyToScan: 'Redo att skanna',
@@ -8009,6 +8407,7 @@ errors: {
       plateClearedToast: 'Platta markerad som rensad',
       plateClearFailed: 'Kunde inte markera platta som rensad',
       printers: 'Skrivare',
+      estimatedFilament: '~{{weight}} g filament',
     },
     modal: {
       assignToAms: 'Tilldela till AMS',
@@ -8061,6 +8460,7 @@ errors: {
       linkDesc: 'Länka en Spoolman-rulle till detta fack',
       unassignDesc: 'Ta bort inventarierulle från detta fack',
       unlinkDesc: 'Ta bort Spoolman-länken från detta fack',
+      lowFilamentAlert: 'Lite filament: {{type}} ({{slot}}) - {{remain}} % kvar',
     },
     inventory: {
       search: 'Sök rullar...',
@@ -8170,6 +8570,7 @@ errors: {
       updateFailed: 'Uppdateringen misslyckades',
       updateWaiting: 'Uppdaterar...',
       used: 'Använt',
+      triggerUpdateFailed: 'Det gick inte att starta uppdateringen',
     },
     writeTag: {
       writeWith: 'Skriv med',
@@ -8235,6 +8636,7 @@ errors: {
       confirmPlugOff: 'Stäng av {{name}}?',
       turnOn: 'Sätt på',
       turnOff: 'Stäng av',
+      open: 'Öppna snabbmeny',
     },
     diagnostic: {
       clickStart: 'Klicka på "Kör diagnostik" för att starta hårdvarudiagnostiken. Enhet:',
@@ -8248,6 +8650,9 @@ errors: {
       running: 'Kör diagnostik på enheten...',
       runningBtn: 'Kör...',
       scaleTitle: 'Vågdiagnostik',
+      timedOut: 'Diagnostiken tog för lång tid - enheten rapporterade inga resultat',
+      exitCode: 'Slutkod: {{code}}',
+      errorPrefix: 'FEL: {{error}}',
     },
     errors: {
       quickAddFailed: 'Kunde inte lägga till rulle',
@@ -8542,6 +8947,7 @@ errors: {
     noActivePrints: 'Inga utskrifter körs för närvarande.',
     historyTitle: 'Senaste upptäckter',
     noHistory: 'Inga upptäckter än.',
+    printerFallback: 'Skrivare {{id}}',
   },
 
   octoeverywhere: {
@@ -9145,8 +9551,51 @@ errors: {
     // Permissions
     noReadAccess: 'Du har inte behörighet att visa lagerprognoser.',
     noWriteAccess: 'Du har inte behörighet att modifiera prognosinställningar.',
+    unitDays: 'dagar',
+    spoolsOrdered: '{{spools}} beställda',
+    chartReorderPoint: 'ROP',
+    chartSafetyStock: 'RL',
+    chartOut: 'SLUT',
+    chartArrives: '+{{amount}} anländer (d{{days}})',
+    atDailyRate: 'med {{rate}} g/dag',
   },
   amsHistory: {
     recordingInfo: 'Data registreras var 5:e minut medan skrivaren är ansluten',
+  },
+  app: {
+    uiCrash: 'Gränssnittskrasch',
+  },
+  printCalendar: {
+    days: {
+      sun: 'Sön',
+      mon: 'Mån',
+      tue: 'Tis',
+      wed: 'Ons',
+      thu: 'Tor',
+      fri: 'Fre',
+      sat: 'Lör',
+    },
+    dayTooltip_one: '{{date}}: {{count}} utskrift',
+    dayTooltip_other: '{{date}}: {{count}} utskrifter',
+    less: 'Mindre',
+    more: 'Mer',
+  },
+  compareArchivesModal: {
+    title: 'Jämför arkiv ({{count}})',
+    loadFailed: 'Det gick inte att läsa in jämförelsen',
+    setting: 'Inställning',
+    differencesFound_one: '{{count}} skillnad hittad',
+    differencesFound_other: '{{count}} skillnader hittade',
+    andMore: '...och {{count}} till',
+    successFailureAnalysis: 'Analys av lyckade/misslyckade',
+    successfulCount: '{{count}} lyckade',
+    failedCount: '{{count}} misslyckade',
+    noCorrelations: 'Inga tydliga samband hittades mellan inställningar och resultat.',
+    needBothOutcomes: 'Sambandsanalys kräver både lyckade och misslyckade utskrifter.',
+  },
+  qrCodeModal: {
+    title: 'QR-kod',
+    scanHint: 'Skanna för att öppna detta arkiv',
+    download: 'Ladda ner QR-kod',
   },
 };

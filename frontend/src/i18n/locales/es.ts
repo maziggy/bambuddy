@@ -331,6 +331,7 @@ export default {
       finished: 'Finalizada',
       unknown: 'Desconocido',
       title: 'Estado',
+      failed: 'Fallida',
     },
     temperatures: {
       nozzle: 'Boquilla',
@@ -596,6 +597,8 @@ export default {
       unloadAms3h: 'Descargando la ranura {{n}}. Cuando la impresora lo pida, retira a mano el filamento del AMS 3H.',
       failedToLoad: 'Error al cargar el filamento',
       failedToUnload: 'Error al descargar el filamento',
+      chamberLightOn: 'Luz de la cámara encendida',
+      chamberLightOff: 'Luz de la cámara apagada',
     },
     // Connection status
     connection: {
@@ -646,6 +649,12 @@ export default {
       homeZ: 'Autoorigen',
       moveAnyway: 'Mover de todos modos',
       homingStarted: 'Llevando la impresora al origen…',
+      moveYForward: 'Mover Y hacia delante',
+      moveXLeft: 'Mover X a la izquierda',
+      moveXRight: 'Mover X a la derecha',
+      moveYBack: 'Mover Y hacia atrás',
+      retractFilament: 'Retraer filamento',
+      extrudeFilament: 'Extruir filamento',
     },
     // Permissions
     pandaBreath: {
@@ -688,6 +697,9 @@ export default {
       fromPrinterSettings: 'Desde los ajustes de la impresora',
       modelOptional: 'Modelo (opcional)',
       saveChanges: 'Guardar cambios',
+      hostPlaceholder: '192.168.1.100 o impresora.local',
+      seriesGroup: 'Serie {{series}}',
+      locationGroupLabel: 'Ubicación / Grupo',
     },
     // Skip objects
     skipObjects: {
@@ -909,6 +921,13 @@ export default {
       labelPlaceholder: 'Etiqueta...',
       clickToEdit: '{{label}} - Haga clic para editar',
       clickToAddLabel: 'Haga clic para añadir una etiqueta',
+      checkTitle: 'Comprobación de la placa',
+      refsCount: '{{count}}/{{max}} ref.',
+      referenceAlt: 'Referencia {{n}}',
+      calibrating: 'Calibrando...',
+      calibrateEmptyPlate: 'Calibrar placa vacía',
+      adding: 'Añadiendo...',
+      addReference: 'Añadir referencia ({{count}}/{{max}})',
     },
     // Speed
     speed: {
@@ -1013,6 +1032,7 @@ export default {
       width: 'Anchura',
       height: 'Altura',
       instruction: 'Ajuste el área de detección para centrarse en la cama de impresión. El recuadro verde de la vista previa muestra el área actual.',
+      current: 'Actual: X={{x}}%, Y={{y}}%, An={{w}}%, Al={{h}}%',
     },
     developerModeWarning: 'El modo desarrollador LAN no está activado en: {{names}}. Es posible que algunas funciones no funcionen.',
     howToEnable: 'Cómo activarlo',
@@ -1024,6 +1044,45 @@ export default {
     networkLabel: 'Red',
     noActiveJob: 'Ningún trabajo activo',
     power: 'Alimentación',
+    indicator: {
+      good: 'Bueno',
+      fair: 'Regular',
+      bad: 'Malo',
+      humidityTitle: 'Humedad: {{value}}% - {{status}}',
+      humidityTitleClickable: 'Humedad: {{value}}% - {{status}} (clic para ver el historial)',
+      temperatureTitle: 'Temperatura: {{value}}°C - {{status}}',
+      temperatureTitleClickable: 'Temperatura: {{value}}°C - {{status}} (clic para ver el historial)',
+      customPlaceholder: 'Personalizado',
+      set: 'Aplicar',
+    },
+    nozzleSlotEmpty: 'Ranura {{slot}} — Vacía',
+    unknownModel: 'Modelo desconocido',
+    wifiTitle: 'WiFi: {{signal}} dBm - {{strength}}',
+    badgeOk: 'Correcto',
+    maintenanceBadge: {
+      dueAndSoon: '{{due}} mantenimientos pendientes, {{soon}} próximos - Haga clic para ver',
+      due: '{{due}} mantenimientos pendientes - Haga clic para ver',
+      soon: '{{soon}} próximos - Haga clic para ver',
+    },
+    startedBy: 'Iniciada por {{user}}',
+    lastPrint: 'Última: {{name}}',
+    control: {
+      setNozzleTemperatures: 'Establecer temperaturas de las boquillas',
+      leftTemp: 'Temp. izquierda',
+      rightTemp: 'Temp. derecha',
+      setNozzleTemperature: 'Establecer temperatura de la boquilla',
+      setBedTemperature: 'Establecer temperatura de la cama',
+      setChamberTemperature: 'Establecer temperatura de la cámara',
+      setNozzleSelection: 'Establecer selección de boquilla',
+      setFanSpeed: 'Establecer velocidad de {{fan}}',
+    },
+    externalSlotLocation: 'Ranura externa {{slot}}',
+    plugTurnOff: 'Apagar',
+    plugTurnOn: 'Encender',
+    haRunEntity: 'Ejecutar {{entity}}',
+    haToggleEntity: 'Alternar {{entity}}',
+    noPrintersWithSmartPlugs: 'No hay impresoras con enchufes inteligentes',
+    ungrouped: 'Sin grupo',
   },
 
   // Archives page
@@ -1269,6 +1328,8 @@ export default {
       download: 'Descargar',
       edit: 'Editar',
       delete: 'Eliminar',
+      reprintCount_one: '{{count}} reimpresión',
+      reprintCount_other: '{{count}} reimpresiones',
     },
     calendar: {
       today: 'Hoy',
@@ -1343,6 +1404,30 @@ export default {
       failedDeleteArchives: 'Error al eliminar los archivos',
       photoDeleted: 'Foto eliminada',
       failedDeletePhoto: 'Error al eliminar la foto',
+      collections: {
+        all: 'Todos los archivos',
+        recent: 'Últimas 24 horas',
+        favorites: 'Favoritos',
+        notPrinted: 'No impresos',
+        printed: 'Impresos',
+        failed: 'Impresiones fallidas',
+        duplicates: 'Duplicados',
+      },
+      archivesDeletedCount_one: '{{count}} archivo eliminado',
+      archivesDeletedCount_other: '{{count}} archivos eliminados',
+      toggledFavoritesCount_one: 'Favorito alternado en {{count}} archivo',
+      toggledFavoritesCount_other: 'Favoritos alternados en {{count}} archivos',
+      compareCount: 'Comparar ({{count}})',
+      upload3mf: 'Subir 3MF',
+      fileTypeSliced: 'Laminado (GCODE)',
+      fileTypeSource: 'Solo fuente',
+      hideFailed: 'Ocultar fallidas',
+      allTags: 'Todas las etiquetas',
+      colors: 'Colores:',
+      matchAnyColor: 'Coincidir con CUALQUIER color seleccionado',
+      matchAllColors: 'Coincidir con TODOS los colores seleccionados',
+      createdAutomatically: 'Los archivos se crean automáticamente al terminar las impresiones',
+      noPrinter: 'Sin impresora',
     },
     list: {
       name: 'Nombre',
@@ -1402,6 +1487,23 @@ export default {
         cancelled: 'Cancelada',
         skipped: 'Omitida',
       },
+    },
+    batchProject: {
+      added_one: '{{count}} archivo añadido a "{{name}}"',
+      added_other: '{{count}} archivos añadidos a "{{name}}"',
+      assignFailed: 'Error al asignar el proyecto',
+      removed_one: '{{count}} archivo quitado del proyecto',
+      removed_other: '{{count}} archivos quitados del proyecto',
+      removeFailed: 'Error al quitar del proyecto',
+      title: 'Asignar a proyecto',
+      assignSelected_one: 'Asignar {{count}} archivo seleccionado a un proyecto',
+      assignSelected_other: 'Asignar {{count}} archivos seleccionados a un proyecto',
+      removeFromProject: 'Quitar del proyecto',
+      clearAssignment: 'Borrar asignación de proyecto',
+      orAssignTo: 'o asignar a',
+      archiveCount_one: '{{count}} archivo',
+      archiveCount_other: '{{count}} archivos',
+      noProjects: 'Aún no hay proyectos. Cree uno desde la página Proyectos.',
     },
   },
 
@@ -1822,6 +1924,9 @@ export default {
       noEditItems: 'No tiene permiso para editar elementos de la cola',
       noCancelItems: 'No tiene permiso para cancelar elementos de la cola',
     },
+    selectPlateToPrint: 'Seleccionar placa para imprimir',
+    selectPlatesToPrint: 'Seleccionar placas para imprimir',
+    plateSelectionRequired: 'Selección obligatoria',
   },
 
   // Statistics page
@@ -1961,6 +2066,23 @@ export default {
     allUsers: 'Todos los usuarios',
     noUser: 'Sin usuario (sistema)',
     filterByUser: 'Filtrar por usuario',
+    costAvg: '{{cost}} de media',
+    filamentTooltip: 'Filamento',
+    usageTooltip: 'Consumo',
+    weekdays: {
+      mon: 'Lun',
+      tue: 'Mar',
+      wed: 'Mié',
+      thu: 'Jue',
+      fri: 'Vie',
+      sat: 'Sáb',
+      sun: 'Dom',
+    },
+    heatmapCellTitle_one: '{{day}} {{hour}}: {{count}} impresión',
+    heatmapCellTitle_other: '{{day}} {{hour}}: {{count}} impresiones',
+    heatmapLess: 'Menos',
+    heatmapMore: 'Más',
+    weekOf: 'Semana del {{date}}',
   },
 
   // Maintenance page
@@ -2106,6 +2228,7 @@ export default {
     deleteEntryMessage: '«{{task}}» del {{date}} se elimina definitivamente del registro de mantenimiento. El último restablecimiento de la tarea no cambia.',
     entryDeleted: 'Entrada del registro eliminada',
     deleteFailed: 'Error al eliminar: {{error}}',
+    ok: 'Correcto',
   },
 
   // Settings page
@@ -2852,6 +2975,20 @@ export default {
       cameraConnectedCoalesced: 'Cámara conectada{{resolution}} (compartida con una captura ya en curso)',
       cameraConnectedLiveView: 'La cámara funciona{{resolution}} (imagen de la vista en directo, que está usando la cámara)',
       saveFailed: 'Error al guardar',
+      storageRefreshFailed: 'Error al actualizar el uso del almacenamiento',
+      apiKeyCreateFailed: 'Error al crear la clave API: {{message}}',
+      apiKeyDeleteFailed: 'Error al eliminar la clave API: {{message}}',
+      emailRequiredAdvancedAuth: 'El correo electrónico es obligatorio cuando la autenticación avanzada está activada',
+      allProvidersTested: '¡Los {{tested}} proveedores se probaron correctamente!',
+      providersSucceeded: '{{success}}/{{tested}} proveedores correctos',
+      testProvidersFailed: 'Error al probar los proveedores: {{message}}',
+      allPlugsTurnedOn: 'Los {{success}} enchufes se encendieron',
+      allPlugsTurnedOff: 'Los {{success}} enchufes se apagaron',
+      plugsTurnedOnPartial: '{{success}} enchufes encendidos, {{failed}} con error',
+      plugsTurnedOffPartial: '{{success}} enchufes apagados, {{failed}} con error',
+      failedWithMessage: 'Error: {{message}}',
+      saveFailedWithMessage: 'Error al guardar: {{message}}',
+      updatePrinterFailed: 'Error al actualizar la impresora: {{message}}',
     },
     testConnection: 'Probar conexión',
     catalog: {
@@ -3198,6 +3335,8 @@ export default {
       oidcUnlinkConfirmTitle: '¿Desvincular cuenta?',
       oidcUnlinkConfirmMessage: 'Ya no podrás iniciar sesión con {{provider}}.',
       oidcUnlinkConfirmAction: 'Desvincular',
+      qrCodeAlt: 'Código QR de TOTP',
+      codeOrBackupPlaceholder: '000000 o XXXXXXXX',
     },
     // Session Policy (#1706)
     sessionPolicy: {
@@ -3383,6 +3522,34 @@ export default {
     noSearchResults: 'No hay ajustes coincidentes.',
     noTemplatesMatch: 'Ninguna plantilla coincide con su filtro.',
     searchPlaceholder: 'Buscar ajustes…',
+    rebuildLedgerFailed: 'Error al iniciar la reconstrucción del registro',
+    mqttBrokerPlaceholder: 'mqtt.example.com o 192.168.1.100',
+    clearFilter: 'Borrar filtro',
+    bulkPlugTitleOn: 'Encender todos los enchufes',
+    bulkPlugTitleOff: 'Apagar todos los enchufes',
+    bulkPlugMessageOn: 'Esto ENCENDERÁ los {{total}} enchufes inteligentes activados.',
+    bulkPlugMessageOff: 'Esto APAGARÁ los {{total}} enchufes inteligentes activados. ¡Las impresoras en funcionamiento pueden verse afectadas!',
+    bulkPlugConfirmOn: 'Encender todos',
+    bulkPlugConfirmOff: 'Apagar todos',
+    releaseNotesTitle: 'Notas de la versión - v{{version}}',
+    userItemArchives_one: '{{count}} archivo',
+    userItemArchives_other: '{{count}} archivos',
+    userItemQueueItems_one: '{{count}} elemento en cola',
+    userItemQueueItems_other: '{{count}} elementos en cola',
+    userItemLibraryFiles_one: '{{count}} archivo de la biblioteca',
+    userItemLibraryFiles_other: '{{count}} archivos de la biblioteca',
+    spoolmanSyncResult: {
+      success_one: '{{count}} bobina sincronizada correctamente',
+      success_other: '{{count}} bobinas sincronizadas correctamente',
+      withErrors_one: '{{count}} bobina sincronizada con {{errors}}',
+      withErrors_other: '{{count}} bobinas sincronizadas con {{errors}}',
+      errorCount_one: '{{count}} error',
+      errorCount_other: '{{count}} errores',
+      skipped_one: '{{count}} bobina omitida',
+      skipped_other: '{{count}} bobinas omitidas',
+      andMore: '...y {{count}} más',
+      errors: 'Errores:',
+    },
   },
 
   // Notifications (for push notifications)
@@ -3517,6 +3684,7 @@ export default {
     timestamp: 'Marca de tiempo',
     direction: 'Dirección',
     all: 'Todos',
+    autoScroll: 'Desplazamiento automático',
   },
 
   // Printer File Manager modal (printer internal storage)
@@ -3767,6 +3935,8 @@ export default {
         profile: 'Perfil',
       },
     },
+    chamberLightOnToast: 'Luz de la cámara encendida',
+    chamberLightOffToast: 'Luz de la cámara apagada',
   },
 
   // Groups management
@@ -4345,7 +4515,9 @@ export default {
       same: 'Sin cambios',
       searchFields: 'Buscar campos...',
       title: 'Comparar perfiles',
+      gcodeLines: '[{{count}} líneas de G-code/script]',
     },
+    scrollToTop: 'Volver arriba',
   },
 
   // Support/Debug
@@ -4687,6 +4859,8 @@ export default {
       failedToGenerateThumbnail: 'Error al generar la miniatura: {{error}}',
     },
     filterByUser: 'Filtrar por usuario',
+    linkedProjectTitle: 'Proyecto: {{name}} (clic para cambiar)',
+    linkedArchiveTitle: 'Archivo: {{name}} (clic para cambiar)',
   },
 
   // Projects
@@ -5222,6 +5396,8 @@ export default {
     disableWeightSyncDesc: 'No actualizar la capacidad restante a partir de las estimaciones del AMS. Use esto si prefiere el seguimiento del uso de Spoolman a las estimaciones del AMS basadas en porcentajes. Las bobinas nuevas seguirán usando la estimación del AMS como su peso inicial.',
     reportPartialUsage: 'Informar del uso parcial en las impresiones fallidas',
     reportPartialUsageDesc: 'Cuando una impresión falla o se cancela, informar del filamento estimado usado hasta ese punto según el progreso de las capas.',
+    linkSlotInfo: 'AMS {{amsId}} T{{trayId}} · Impresora n.º {{printerId}}',
+    tagValue: 'Etiqueta: {{tag}}',
   },
 
   locations: {
@@ -5308,6 +5484,7 @@ export default {
       restorePartial: '{{ok}} bobinas restauradas, {{failed}} fallidas',
       restoreAllFailed: 'Las {{count}} restauraciones fallaron — la selección se mantiene para reintentar',
       invalidHex: 'Introduzca 6 caracteres hex (RRGGBB) u 8 (RRGGBBAA). De lo contrario el campo no se aplicará.',
+      hexPlaceholder: 'RRGGBB o RRGGBBAA',
     },
     spoolmanMixedContentTitle: 'Spoolman no se puede cargar por HTTPS — contenido mixto bloqueado por su navegador',
     spoolmanMixedContentBody: 'Bambuddy se sirve por HTTPS (mediante su proxy inverso), pero su URL de Spoolman sigue siendo HTTP sin cifrar. Los navegadores bloquean el contenido mixto por seguridad, por lo que la interfaz integrada de Spoolman no se puede mostrar. Spoolman debe ser accesible por HTTPS para que esto funcione.',
@@ -5852,6 +6029,30 @@ export default {
     assignedSpool: 'Bobina asignada',
     unassignFailed: 'Error al desasignar la bobina',
     unassignSuccess: 'Bobina desasignada',
+    pickerDiagCounts: '{{fetched}} obtenidas · {{archived}} archivadas · {{assigned}} asignadas a otras ranuras',
+    pickerDiagFiltered: '{{unassigned}} bobinas sin asignar — {{filtered}} filtradas por coincidencia de bandeja. Pruebe "Mostrar todas las bobinas".',
+    tableColumns: {
+      added: 'Añadida',
+      encoded: 'Codificada',
+      lastUsed: 'Último uso',
+      location: 'Ubicación',
+      gross: 'Bruto',
+      printedTotal: 'Total impreso',
+      printedSinceWeight: 'Impreso desde el pesaje',
+      tagId: 'ID de etiqueta',
+      dataOrigin: 'Origen de los datos',
+      tagType: 'Tipo de etiqueta vinculada',
+    },
+    never: 'Nunca',
+    printerN: 'Impresora {{id}}',
+    noScaleMeasurement: 'Sin medición de báscula',
+    weightCheckMatchTooltip: 'Báscula: {{scale}} g\nCalculado: {{calculated}} g\nDiferencia: {{difference}} g (dentro de la tolerancia)',
+    weightCheckMismatchTooltip: 'Báscula: {{scale}} g\nCalculado: {{calculated}} g\nDiferencia: {{difference}} g (¡no coincide!)',
+    syncScaleWeightTitle: 'Sincronizar: confiar en el peso de la báscula y reiniciar el seguimiento',
+    syncedToScaleWeight: '"{{name}}" sincronizada con el peso de la báscula',
+    firstPage: 'Primera página',
+    lastPage: 'Última página',
+    pageOf: 'Página {{page}} de {{total}}',
   },
 
   // Timelapse
@@ -6009,6 +6210,52 @@ export default {
     costCenter: 'Centro de costes',
     personalDefault: 'Personal',
     totalCostForQuantity: 'total: {{cost}}',
+    queuedForAnyModel: 'En cola para cualquier {{model}}',
+    printerN: 'Impresora {{id}}',
+    trayN: 'Bandeja {{id}}',
+    selectAtLeastOnePrinter: 'Seleccione al menos una impresora',
+    selectTargetModel: 'Seleccione un modelo de impresora de destino',
+    crossModelBlocked: 'El archivo se laminó para {{sliced}} y no se puede enviar a impresoras {{target}}',
+    queueItemUpdated: 'Elemento de la cola actualizado',
+    submitFailed: 'Error: {{error}}',
+    submitPartial: '{{succeeded}} correctos, {{failed}} con error',
+    printJob: 'Trabajo de impresión',
+    slicedForOtherModel: 'El archivo se laminó para {{sliced}}, pero se imprimirá en {{model}}',
+    archiveDataUnavailable: 'Datos del archivo no disponibles. Es posible que el archivo de origen se haya eliminado. La asignación de filamentos está desactivada.',
+    operationFailed: 'No se pudo completar la operación',
+    printerSelector: {
+      customSlotMapping: 'Asignación de ranuras personalizada',
+      selectSlotOption: '-- Seleccionar ranura --',
+      statePreparing: 'Preparando',
+      stateFailed: 'Fallida',
+      noActivePrintersAvailable: 'No hay impresoras activas disponibles',
+      specificPrinter: 'Impresora específica',
+      anyModel: 'Cualquier {{model}}',
+      targetModel: 'Modelo de destino',
+      slicedForHint: '(laminado para {{model}})',
+      selectModelOption: 'Seleccione un modelo...',
+      incompatibleGcodeSuffix: ' — incompatible con el G-code de {{model}}',
+      crossModelWarning: 'El archivo se laminó para {{sliced}}, pero se enviará a una impresora {{target}}',
+      crossModelBlocked: 'El archivo se laminó para {{sliced}} y no se puede enviar a impresoras {{target}} — seleccione un modelo compatible',
+      locationFilter: 'Filtro de ubicación (opcional)',
+      anyLocation: 'Cualquier ubicación',
+      schedulerInfo: 'El planificador asignará la primera impresora {{model}} inactiva disponible',
+      schedulerInfoLocation: 'El planificador asignará la primera impresora {{model}} inactiva disponible en {{location}}',
+      selectPrinters: 'Seleccionar impresoras',
+      printersSelected_one: '{{count}} impresora seleccionada',
+      printersSelected_other: '{{count}} impresoras seleccionadas',
+      selectAll: 'Seleccionar todo',
+      inactive: '(inactiva)',
+      customMapping: 'Asignación personalizada',
+      matchedCount: '({{matched}}/{{total}} coincidentes)',
+      auto: 'Automático',
+      hiddenPrinters_one: '{{count}} impresora más oculta (modelo diferente) —',
+      hiddenPrinters_other: '{{count}} impresoras más ocultas (modelo diferente) —',
+      showAll: 'mostrar todas',
+      showOnlyModel: 'Mostrar solo impresoras {{model}}',
+      selectAtLeastOne: 'Seleccione al menos una impresora',
+      selectTargetModel: 'Seleccione un modelo de impresora de destino',
+    },
   },
 
   // Backup
@@ -6268,6 +6515,19 @@ export default {
     processingPercent: 'Procesando… {{percent}} %',
     failed: 'Error al procesar',
     cancelled: 'Procesamiento cancelado',
+    loadingVideoInfo: 'Cargando información del vídeo...',
+    title: 'Editar time-lapse',
+    trim: 'Recortar',
+    speed: 'Velocidad',
+    speedOutput: '{{speed}}x (salida: {{duration}})',
+    musicOverlay: 'Música superpuesta',
+    dropAudio: 'Suelte un archivo de audio o haga clic para subirlo',
+    original: 'Original:',
+    output: 'Salida:',
+    outputSummary: '{{duration}} a velocidad {{speed}}x',
+    outputSummaryWithMusic: '{{duration}} a velocidad {{speed}}x + música superpuesta',
+    processingTimelapse: 'Procesando time-lapse...',
+    mayTakeMoments: 'Esto puede tardar unos momentos',
   },
   // Tags
   tags: {
@@ -6294,6 +6554,11 @@ export default {
     uploading: 'Subiendo...',
     upload: 'Subir',
     uploadFailed: 'Error al subir',
+    filesUploaded_one: '{{count}} archivo subido',
+    filesUploaded_other: '{{count}} archivos subidos',
+    filesFailed_one: 'Error al subir {{count}} archivo',
+    filesFailed_other: 'Error al subir {{count}} archivos',
+    partialUpload: '{{uploaded}} subidos, {{failed}} con error',
   },
 
   archivePage: {
@@ -7083,6 +7348,9 @@ export default {
     connectionSuccess: 'Conexión correcta',
     noSwitchesInSwitchbar: 'No hay interruptores en la barra de interruptores',
     enableSwitchbarHint: 'Active «Mostrar en la barra de interruptores» en Ajustes > Enchufes inteligentes',
+    tasmotaIpRequired: 'La dirección IP es obligatoria para los enchufes Tasmota',
+    sameAsPowerTopic: 'Igual que el topic de alimentación, o distinto',
+    examplePlaceholder: 'p. ej., {{value}}',
   },
 
   // Notifications
@@ -7454,6 +7722,22 @@ export default {
     placeholders: {
       linkName: 'Mi enlace',
     },
+    addLink: 'Añadir enlace',
+    deleteConfirm: '¿Está seguro de que desea eliminar "{{name}}"? Esta acción no se puede deshacer.',
+    invalidImageType: 'Seleccione un archivo de imagen válido (PNG, JPG, GIF, SVG, WebP o ICO)',
+    imageTooLarge: 'El archivo de imagen debe ocupar menos de 1 MB',
+    nameRequired: 'El nombre es obligatorio',
+    urlRequired: 'La URL es obligatoria',
+    urlInvalidScheme: 'La URL debe empezar por http:// o https://',
+    editLink: 'Editar enlace',
+    addExternalLink: 'Añadir enlace externo',
+    nameRequiredLabel: 'Nombre *',
+    urlRequiredLabel: 'URL *',
+    icon: 'Icono',
+    customIcon: 'Icono personalizado',
+    customIconAlt: 'Icono personalizado',
+    iconFormatsHint: 'PNG, JPG, GIF, SVG, WebP o ICO. Máx. 1 MB.',
+    choosePresetIcon: 'O elija un icono predefinido',
   },
 
   // Keyboard Shortcuts Modal
@@ -7478,8 +7762,13 @@ export default {
       newProfile: 'Nuevo perfil',
       exitSelectionMode: 'Salir del modo de selección',
       showHelp: 'Mostrar esta ayuda',
+      openExternal: 'Abrir {{name}}',
+      goToPage: 'Ir a {{page}}',
+      showCamera: 'Mostrar la cámara de una impresora',
     },
     footer: 'Pulse Esc o haga clic fuera para cerrar',
+    rightClick: 'Clic derecho',
+    footerWithKey: 'Pulse <kbd>Esc</kbd> o haga clic fuera para cerrar',
   },
 
   // Notification Log
@@ -7502,6 +7791,7 @@ export default {
       minutesAgo: 'hace {{minutes}} min',
       hoursAgo: 'hace {{hours}} h',
     },
+    clearFailed: 'Error al borrar los registros: {{message}}',
   },
 
   // Restore/Backup Modal
@@ -7682,7 +7972,23 @@ export default {
     placeholders: {
       requestBody: 'Cuerpo de la solicitud JSON...',
       searchEndpoints: 'Buscar puntos de conexión...',
+      value: 'valor',
     },
+    validationError: 'Error de validación',
+    missingRequiredParams: 'Faltan parámetros obligatorios: {{params}}',
+    networkError: 'Error de red',
+    pathParameters: 'Parámetros de ruta',
+    queryParameters: 'Parámetros de consulta',
+    selectOption: '-- Seleccionar --',
+    requestBody: 'Cuerpo de la solicitud',
+    execute: 'Ejecutar',
+    fillIn: 'Rellene: {{params}}',
+    response: 'Respuesta',
+    fetchSchemaFailed: 'Error al obtener el esquema OpenAPI',
+    loadSchemaFailed: 'Error al cargar el esquema de la API',
+    expandAll: 'Expandir todo',
+    collapseAll: 'Contraer todo',
+    endpointCount: '{{endpoints}} endpoints en {{categories}} categorías',
   },
 
   // Configure AMS Slot Modal
@@ -7741,12 +8047,19 @@ export default {
     downloadBackup: 'Descargar copia de seguridad',
     restoreBackup: 'Restaurar copia de seguridad',
     noBackupsYet: 'Aún no hay copias de seguridad',
+    status: {
+      success: 'Correcto',
+      failed: 'Fallido',
+      skipped: 'Omitido',
+      running: 'En curso',
+    },
   },
 
   // Email Settings
   emailSettings: {
     placeholders: {
       fromName: 'BamBuddy',
+      appPassword: 'Contraseña de aplicación',
     },
   },
 
@@ -7755,6 +8068,24 @@ export default {
     searchTags: 'Buscar etiquetas...',
     renameTag: 'Renombrar etiqueta',
     deleteTag: 'Eliminar etiqueta',
+    renamed_one: '"{{oldName}}" renombrada a "{{newName}}" en {{count}} archivo',
+    renamed_other: '"{{oldName}}" renombrada a "{{newName}}" en {{count}} archivos',
+    renameFailed: 'Error al renombrar la etiqueta',
+    deleted_one: '"{{name}}" eliminada de {{count}} archivo',
+    deleted_other: '"{{name}}" eliminada de {{count}} archivos',
+    deleteFailed: 'Error al eliminar la etiqueta',
+    title: 'Gestionar etiquetas',
+    sortByCount: 'Ordenar por cantidad',
+    sortByName: 'Ordenar por nombre',
+    summary: '{{tags}} en {{usages}}',
+    tagCount_one: '{{count}} etiqueta',
+    tagCount_other: '{{count}} etiquetas',
+    usageCount_one: '{{count}} uso',
+    usageCount_other: '{{count}} usos',
+    noMatch: 'Ninguna etiqueta coincide con la búsqueda',
+    noTags: 'No se encontraron etiquetas',
+    confirmDelete_one: '¿Eliminar "{{name}}" de {{count}} archivo?',
+    confirmDelete_other: '¿Eliminar "{{name}}" de {{count}} archivos?',
   },
 
   // Notification Template Editor
@@ -7770,11 +8101,33 @@ export default {
     placeholders: {
       newTag: 'Introduzca una nueva etiqueta...',
     },
+    failedOnArchive: 'Error en el archivo {{id}}: {{error}}',
+    tagCount_one: '{{count}} etiqueta',
+    tagCount_other: '{{count}} etiquetas',
+    archiveCount_one: '{{count}} archivo',
+    archiveCount_other: '{{count}} archivos',
+    addedToast: 'Se añadieron {{tags}} a {{archives}}',
+    removedToast: 'Se quitaron {{tags}} de {{archives}}',
+    updateFailed: 'Error al actualizar las etiquetas',
+    addTags: 'Añadir etiquetas',
+    removeTags: 'Quitar etiquetas',
+    addDescription_one: 'Añadir etiquetas a {{count}} archivo seleccionado',
+    addDescription_other: 'Añadir etiquetas a {{count}} archivos seleccionados',
+    removeDescription_one: 'Quitar etiquetas de {{count}} archivo seleccionado',
+    removeDescription_other: 'Quitar etiquetas de {{count}} archivos seleccionados',
+    existingTags: 'Etiquetas existentes:',
+    tagsToAdd: 'Etiquetas para añadir:',
+    tagsToRemove: 'Etiquetas para quitar:',
+    processing: 'Procesando...',
   },
 
   // Photo Gallery Modal
   photoGallery: {
     deletePhoto: 'Eliminar foto',
+    photoOf: 'Foto {{current}} de {{total}}',
+    photoAlt: 'Foto {{number}}',
+    thumbnailAlt: 'Miniatura {{number}}',
+    deleteConfirm: '¿Eliminar esta foto? Esta acción no se puede deshacer.',
   },
 
   // Filament Hover Card
@@ -7786,6 +8139,8 @@ export default {
   kProfilesView: {
     hasNote: 'Tiene nota',
     copyProfile: 'Copiar perfil',
+    unnamed: 'Sin nombre',
+    notePrefix: 'Nota: {{note}}',
   },
 
   // Layout/Navigation
@@ -7798,6 +8153,10 @@ export default {
   dashboard: {
     dragToReorder: 'Arrastre para reordenar',
     hideWidget: 'Ocultar widget',
+    sizeClickToCycle: 'Tamaño: {{size}} - Haga clic para cambiar',
+    sizeFull: 'Completo',
+    hiddenWidgetsClickToShow: 'Widgets ocultos (haga clic para mostrar):',
+    allWidgetsHidden: 'Todos los widgets están ocultos.',
   },
 
   // Notification Provider Card
@@ -7811,6 +8170,22 @@ export default {
     sortFiles: 'Ordenar archivos',
     goToParentFolder: 'Ir a la carpeta superior',
     threeView: 'Vista 3D',
+    gcodePreview: 'Vista previa del G-code',
+    notSliced: 'sin laminar',
+    sort: {
+      nameAsc: 'Nombre (A-Z)',
+      nameDesc: 'Nombre (Z-A)',
+      sizeAsc: 'Tamaño (menor)',
+      sizeDesc: 'Tamaño (mayor)',
+      dateAsc: 'Fecha (más antiguo)',
+      dateDesc: 'Fecha (más reciente)',
+    },
+    dirs: {
+      root: 'Raíz',
+      cache: 'Caché',
+      models: 'Modelos',
+      timelapse: 'Time-lapse',
+    },
   },
 
   // Embedded Camera Viewer
@@ -7821,6 +8196,8 @@ export default {
     resetZoom: 'Restablecer el zoom',
     zoomIn: 'Acercar',
     dragToResize: 'Arrastre para redimensionar',
+    minimize: 'Minimizar',
+    reconnectingIn: 'Reconectando en {{seconds}} s...',
   },
 
   // Timelapse Viewer
@@ -7847,11 +8224,24 @@ export default {
   logViewer: {
     searchPlaceholder: 'Buscar mensaje o nombre del registrador...',
     noLogEntries: 'No se encontraron entradas de registro',
+    title: 'Registros de la aplicación',
+    liveStreamingEntries: 'En directo - {{entries}} entradas',
+    subtitle: 'Ver y filtrar los registros de la aplicación',
+    live: 'En directo',
+    stop: 'Detener',
+    start: 'Iniciar',
+    autoScroll: 'Desplazamiento automático',
+    logFileEmpty: 'Puede que el archivo de registro esté vacío o se haya borrado',
+    autoRefreshing: 'Actualizando automáticamente cada 2 segundos',
+    clickStartHint: 'Haga clic en Iniciar para activar los registros en directo',
   },
 
   // Switchbar Popover
   switchbarPopover: {
     noSwitchesInSwitchbar: 'No hay interruptores en la barra de interruptores',
+    monitor: 'Supervisión',
+    waiting: 'Esperando',
+    turnOffConfirm: '¿Está seguro de que desea apagar "{{name}}"?',
   },
 
   // Project Page Modal
@@ -7864,6 +8254,13 @@ export default {
       profileTitle: 'Título del perfil',
       profileDescription: 'Descripción del perfil...',
     },
+    title: 'Página del proyecto',
+    loadFailed: 'Error al cargar los datos de la página del proyecto',
+    noData: 'No se encontraron datos de página del proyecto en este archivo 3MF.',
+    noDataHint: 'Las páginas de proyecto suelen incluirse en los archivos descargados de MakerWorld.',
+    printProfile: 'Perfil de impresión',
+    byUser: 'por {{name}}',
+    imagesCount: 'Imágenes ({{count}})',
   },
 
   // Spoolman Settings
@@ -7906,6 +8303,7 @@ export default {
       status: 'Estado',
       backend: 'Backend',
       connectDisplay: 'Conecte la pantalla de SpoolBuddy para escanear bobinas',
+      deviceDisconnected: 'Dispositivo SpoolBuddy desconectado',
     },
     dashboard: {
       readyToScan: 'Listo para escanear',
@@ -7935,6 +8333,7 @@ export default {
       plateClearedToast: 'Cama marcada como despejada',
       plateClearFailed: 'No se pudo marcar la cama como despejada',
       printers: 'Impresoras',
+      estimatedFilament: '~{{weight}} g de filamento',
     },
     modal: {
       assignToAms: 'Asignar al AMS',
@@ -7987,6 +8386,7 @@ export default {
       linkDesc: 'Vincular una bobina de Spoolman a esta ranura',
       unassignDesc: 'Quitar la bobina del inventario de esta ranura',
       unlinkDesc: 'Quitar el vínculo de Spoolman de esta ranura',
+      lowFilamentAlert: 'Filamento bajo: {{type}} ({{slot}}) - {{remain}}% restante',
     },
     inventory: {
       search: 'Buscar bobinas...',
@@ -8096,6 +8496,7 @@ export default {
       updateFailed: 'Error en la actualización',
       updateWaiting: 'Actualizando...',
       used: 'En uso',
+      triggerUpdateFailed: 'Error al iniciar la actualización',
     },
     writeTag: {
       writeWith: 'Escribir con',
@@ -8161,6 +8562,7 @@ export default {
       confirmPlugOff: '¿Apagar {{name}}?',
       turnOn: 'Encender',
       turnOff: 'Apagar',
+      open: 'Abrir menú rápido',
     },
     diagnostic: {
       clickStart: 'Haga clic en "Ejecutar diagnóstico" para iniciar el diagnóstico de hardware en',
@@ -8174,6 +8576,9 @@ export default {
       running: 'Ejecutando el diagnóstico en el dispositivo...',
       runningBtn: 'Ejecutando...',
       scaleTitle: 'Diagnóstico de la báscula',
+      timedOut: 'Se agotó el tiempo del diagnóstico - el dispositivo no envió resultados',
+      exitCode: 'Código de salida: {{code}}',
+      errorPrefix: 'ERROR: {{error}}',
     },
     errors: {
       quickAddFailed: 'Error al añadir la bobina',
@@ -8468,6 +8873,7 @@ export default {
     noActivePrints: 'No hay impresiones en curso actualmente.',
     historyTitle: 'Detecciones recientes',
     noHistory: 'Aún no hay detecciones.',
+    printerFallback: 'Impresora {{id}}',
   },
 
   octoeverywhere: {
@@ -9071,8 +9477,51 @@ export default {
     // Permissions
     noReadAccess: 'No tiene permiso para ver las previsiones de inventario.',
     noWriteAccess: 'No tiene permiso para modificar los ajustes de previsión.',
+    unitDays: 'días',
+    spoolsOrdered: '{{spools}} pedidas',
+    chartReorderPoint: 'PR',
+    chartSafetyStock: 'ES',
+    chartOut: 'AGOTADO',
+    chartArrives: '+{{amount}} llega (d{{days}})',
+    atDailyRate: 'a {{rate}} g/día',
   },
   amsHistory: {
     recordingInfo: 'Los datos se registran cada 5 minutos mientras la impresora está conectada',
+  },
+  app: {
+    uiCrash: 'Fallo de la interfaz',
+  },
+  printCalendar: {
+    days: {
+      sun: 'Dom',
+      mon: 'Lun',
+      tue: 'Mar',
+      wed: 'Mié',
+      thu: 'Jue',
+      fri: 'Vie',
+      sat: 'Sáb',
+    },
+    dayTooltip_one: '{{date}}: {{count}} impresión',
+    dayTooltip_other: '{{date}}: {{count}} impresiones',
+    less: 'Menos',
+    more: 'Más',
+  },
+  compareArchivesModal: {
+    title: 'Comparar archivos ({{count}})',
+    loadFailed: 'Error al cargar la comparación',
+    setting: 'Ajuste',
+    differencesFound_one: '{{count}} diferencia encontrada',
+    differencesFound_other: '{{count}} diferencias encontradas',
+    andMore: '...y {{count}} más',
+    successFailureAnalysis: 'Análisis de éxitos/fallos',
+    successfulCount: '{{count}} correctas',
+    failedCount: '{{count}} fallidas',
+    noCorrelations: 'No se encontraron correlaciones claras entre los ajustes y los resultados.',
+    needBothOutcomes: 'Se necesitan impresiones correctas y fallidas para el análisis de correlación.',
+  },
+  qrCodeModal: {
+    title: 'Código QR',
+    scanHint: 'Escanee para abrir este archivo',
+    download: 'Descargar código QR',
   },
 };

@@ -472,7 +472,7 @@ function NozzleSlotHoverCard({ slot, index, activeStatus, filamentName, children
           <div className="w-44 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl overflow-hidden backdrop-blur-sm">
             {isEmpty ? (
               <div className="px-3 py-2 text-xs text-bambu-gray text-center whitespace-nowrap">
-                Slot {index + 1} — Empty
+                {t('printers.nozzleSlotEmpty', { slot: index + 1 })}
               </div>
             ) : (
               <div className="p-2.5 space-y-1.5">
@@ -1034,6 +1034,7 @@ interface HumidityIndicatorProps {
 }
 
 function HumidityIndicator({ humidity, goodThreshold = 40, fairThreshold = 60, onClick, compact }: HumidityIndicatorProps) {
+  const { t } = useTranslation();
   const humidityValue = typeof humidity === 'string' ? parseInt(humidity, 10) : humidity;
   const good = typeof goodThreshold === 'number' ? goodThreshold : 40;
   const fair = typeof fairThreshold === 'number' ? fairThreshold : 60;
@@ -1045,16 +1046,16 @@ function HumidityIndicator({ humidity, goodThreshold = 40, fairThreshold = 60, o
 
   if (isNaN(humidityValue)) {
     textColor = '#C3C2C1';
-    statusText = 'Unknown';
+    statusText = t('printers.status.unknown');
   } else if (humidityValue <= good) {
     textColor = '#22a352'; // Green - Good
-    statusText = 'Good';
+    statusText = t('printers.indicator.good');
   } else if (humidityValue <= fair) {
     textColor = '#d4a017'; // Gold - Fair
-    statusText = 'Fair';
+    statusText = t('printers.indicator.fair');
   } else {
     textColor = '#c62828'; // Red - Bad
-    statusText = 'Bad';
+    statusText = t('printers.indicator.bad');
   }
 
   // Fill level based on status: Good=Empty (dry), Fair=Half, Bad=Full (wet)
@@ -1074,7 +1075,9 @@ function HumidityIndicator({ humidity, goodThreshold = 40, fairThreshold = 60, o
       type="button"
       onClick={onClick}
       className={`flex items-center gap-1 ${onClick ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
-      title={`Humidity: ${humidityValue}% - ${statusText}${onClick ? ' (click for history)' : ''}`}
+      title={onClick
+        ? t('printers.indicator.humidityTitleClickable', { value: humidityValue, status: statusText })
+        : t('printers.indicator.humidityTitle', { value: humidityValue, status: statusText })}
     >
       <DropComponent className={compact ? "w-2.5 h-3" : "w-3 h-4"} />
       <span className={`font-medium tabular-nums ${compact ? 'text-[length:var(--pc-t10,10px)]' : 'text-xs'}`} style={{ color: textColor }}>{humidityValue}%</span>
@@ -1092,6 +1095,7 @@ interface TemperatureIndicatorProps {
 }
 
 function TemperatureIndicator({ temp, goodThreshold = 28, fairThreshold = 35, onClick, compact }: TemperatureIndicatorProps) {
+  const { t } = useTranslation();
   // Ensure thresholds are numbers
   const good = typeof goodThreshold === 'number' ? goodThreshold : 28;
   const fair = typeof fairThreshold === 'number' ? fairThreshold : 35;
@@ -1102,15 +1106,15 @@ function TemperatureIndicator({ temp, goodThreshold = 28, fairThreshold = 35, on
 
   if (temp <= good) {
     textColor = '#22a352'; // Green - good (same as humidity)
-    statusText = 'Good';
+    statusText = t('printers.indicator.good');
     ThermoComponent = ThermometerEmpty;
   } else if (temp <= fair) {
     textColor = '#d4a017'; // Gold - fair (same as humidity)
-    statusText = 'Fair';
+    statusText = t('printers.indicator.fair');
     ThermoComponent = ThermometerHalf;
   } else {
     textColor = '#c62828'; // Red - bad (same as humidity)
-    statusText = 'Bad';
+    statusText = t('printers.indicator.bad');
     ThermoComponent = ThermometerFull;
   }
 
@@ -1119,7 +1123,9 @@ function TemperatureIndicator({ temp, goodThreshold = 28, fairThreshold = 35, on
       type="button"
       onClick={onClick}
       className={`flex items-center gap-1 ${onClick ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
-      title={`Temperature: ${temp}°C - ${statusText}${onClick ? ' (click for history)' : ''}`}
+      title={onClick
+        ? t('printers.indicator.temperatureTitleClickable', { value: temp, status: statusText })
+        : t('printers.indicator.temperatureTitle', { value: temp, status: statusText })}
     >
       <ThermoComponent className={compact ? "w-2.5 h-3" : "w-3 h-4"} />
       <span className={`tabular-nums text-right ${compact ? 'text-[length:var(--pc-t10,10px)] w-8' : 'w-12'}`} style={{ color: textColor }}>{temp}°C</span>
@@ -1502,6 +1508,7 @@ function IndicatorControlPopover({
   onSubmit?: (value: number) => void;
   children?: React.ReactNode;
 }) {
+  const { t } = useTranslation();
   const anchorRef = useRef<HTMLSpanElement>(null);
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
   const [customValue, setCustomValue] = useState('');
@@ -1591,7 +1598,7 @@ function IndicatorControlPopover({
                 step={customStep}
                 value={customValue}
                 onChange={e => setCustomValue(e.target.value)}
-                placeholder="Custom"
+                placeholder={t('printers.indicator.customPlaceholder')}
                 className="h-8 min-w-0 flex-1 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark px-2 text-xs text-white placeholder:text-bambu-gray/60 focus:border-bambu-green focus:outline-none"
               />
               <button
@@ -1599,7 +1606,7 @@ function IndicatorControlPopover({
                 disabled={isPending || customValue.trim() === ''}
                 className="h-8 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark px-2 text-xs font-medium text-white transition-colors hover:bg-bambu-dark-tertiary disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Set
+                {t('printers.indicator.set')}
               </button>
             </form>
           </>
@@ -1731,6 +1738,7 @@ function NozzleTemperatureControlBox({
   onSubmit: (value: number) => void;
   options?: Array<{ label: string; value: number }>;
 }) {
+  const { t } = useTranslation();
   const [customValue, setCustomValue] = useState('');
 
   const submitCustom = () => {
@@ -1775,7 +1783,7 @@ function NozzleTemperatureControlBox({
           step={1}
           value={customValue}
           onChange={e => setCustomValue(e.target.value)}
-          placeholder="Custom"
+          placeholder={t('printers.indicator.customPlaceholder')}
           className="h-7 min-w-0 flex-1 rounded-md border border-bambu-dark-tertiary bg-bambu-dark-secondary px-1.5 text-[11px] text-white placeholder:text-bambu-gray/60 focus:border-bambu-green focus:outline-none"
         />
         <button
@@ -1783,7 +1791,7 @@ function NozzleTemperatureControlBox({
           disabled={isPending || customValue.trim() === ''}
           className="h-7 rounded-md border border-bambu-dark-tertiary bg-bambu-dark-secondary px-2 text-[11px] font-medium text-white transition-colors hover:bg-bambu-dark-tertiary disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Set
+          {t('printers.indicator.set')}
         </button>
       </form>
     </div>
@@ -1826,7 +1834,7 @@ function classifyPrinterStatus(
  * Uses stg_cur_name for detailed calibration/preparation stages,
  * otherwise formats the gcode_state nicely.
  */
-function getStatusDisplay(state: string | null | undefined, stg_cur_name: string | null | undefined): string {
+function getStatusDisplay(state: string | null | undefined, stg_cur_name: string | null | undefined, t: (key: string) => string): string {
   // If we have a specific stage name (calibration, heating, etc.), use it
   if (stg_cur_name) {
     return stg_cur_name;
@@ -1835,17 +1843,17 @@ function getStatusDisplay(state: string | null | undefined, stg_cur_name: string
   // Format the gcode_state nicely
   switch (state) {
     case 'RUNNING':
-      return 'Printing';
+      return t('printers.status.printing');
     case 'PAUSE':
-      return 'Paused';
+      return t('printers.status.paused');
     case 'FINISH':
-      return 'Finished';
+      return t('printers.status.finished');
     case 'FAILED':
-      return 'Failed';
+      return t('printers.status.failed');
     case 'IDLE':
-      return 'Idle';
+      return t('printers.status.idle');
     default:
-      return state ? state.charAt(0) + state.slice(1).toLowerCase() : 'Idle';
+      return state ? state.charAt(0) + state.slice(1).toLowerCase() : t('printers.status.idle');
   }
 }
 
@@ -3300,7 +3308,7 @@ function PrinterCard({
       return { previousStatus };
     },
     onSuccess: (_, on) => {
-      showToast(`Chamber light ${on ? 'on' : 'off'}`);
+      showToast(on ? t('printers.toast.chamberLightOn') : t('printers.toast.chamberLightOff'));
     },
     onError: (error: Error, _, context) => {
       // Rollback on error
@@ -4257,7 +4265,7 @@ function PrinterCard({
                   )}
                 </div>
                 <p className="text-sm text-bambu-gray">
-                  {printer.model || 'Unknown Model'}
+                  {printer.model || t('printers.unknownModel')}
                   {/* Nozzle Info - only in expanded. Every fitted size, not
                       just nozzles[0]: the array is indexed by extruder, so on a
                       dual-nozzle machine with two sizes fitted showing the
@@ -4265,7 +4273,7 @@ function PrinterCard({
                       whole printer. Deduplicated, so the usual matching pair
                       still reads as a single "0.4mm". */}
                   {viewMode === 'expanded' && installedNozzleDiameters(status).length > 0 && (
-                    <span className="ml-1.5 text-bambu-gray" title={status?.nozzles?.[0]?.nozzle_type || 'Nozzle'}>
+                    <span className="ml-1.5 text-bambu-gray" title={status?.nozzles?.[0]?.nozzle_type || t('printers.temperatures.nozzle')}>
                       • {installedNozzleDiameters(status).join(' / ')}mm
                     </span>
                   )}
@@ -4349,7 +4357,7 @@ function PrinterCard({
                       ? 'bg-orange-500/20 text-orange-600'
                       : 'bg-status-error/20 text-status-error'
                   }`}
-                  title={`WiFi: ${wifiSignal} dBm - ${t(getWifiStrength(wifiSignal).labelKey)}`}
+                  title={t('printers.wifiTitle', { signal: wifiSignal, strength: t(getWifiStrength(wifiSignal).labelKey) })}
                 >
                   <Signal className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)]" />
                   {wifiSignal}dBm
@@ -4371,7 +4379,7 @@ function PrinterCard({
                     title={t('printers.clickToViewHmsErrors')}
                   >
                     <AlertTriangle className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)]" />
-                    {knownErrors.length > 0 ? knownErrors.length : 'OK'}
+                    {knownErrors.length > 0 ? knownErrors.length : t('printers.badgeOk')}
                   </button>
                 );
               })()}
@@ -4440,14 +4448,18 @@ function PrinterCard({
                   }`}
                   title={
                     maintenanceInfo.due_count > 0 || maintenanceInfo.warning_count > 0
-                      ? `${maintenanceInfo.due_count > 0 ? `${maintenanceInfo.due_count} maintenance due` : ''}${maintenanceInfo.due_count > 0 && maintenanceInfo.warning_count > 0 ? ', ' : ''}${maintenanceInfo.warning_count > 0 ? `${maintenanceInfo.warning_count} due soon` : ''} - Click to view`
+                      ? maintenanceInfo.due_count > 0 && maintenanceInfo.warning_count > 0
+                        ? t('printers.maintenanceBadge.dueAndSoon', { due: maintenanceInfo.due_count, soon: maintenanceInfo.warning_count })
+                        : maintenanceInfo.due_count > 0
+                          ? t('printers.maintenanceBadge.due', { due: maintenanceInfo.due_count })
+                          : t('printers.maintenanceBadge.soon', { soon: maintenanceInfo.warning_count })
                       : t('printers.maintenanceUpToDate')
                   }
                 >
                   <Wrench className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)]" />
                   {maintenanceInfo.due_count > 0 || maintenanceInfo.warning_count > 0
                     ? maintenanceInfo.due_count + maintenanceInfo.warning_count
-                    : 'OK'}
+                    : t('printers.badgeOk')}
                 </button>
               )}
               {/* Queue Count Badge */}
@@ -4560,7 +4572,7 @@ function PrinterCard({
                       setDeleteArchives(true);
                     }}
                   >
-                    Delete
+                    {t('common.delete')}
                   </Button>
                 </div>
               </CardContent>
@@ -4749,7 +4761,7 @@ function PrinterCard({
                         />
                         <div className="flex h-24 max-[520px]:h-20 min-w-0 flex-1 flex-col justify-between pt-1">
                           <div className="flex min-h-[18px] items-center gap-2 pr-8">
-                            <p className="min-w-0 truncate text-sm text-bambu-gray">{getStatusDisplay(status.state, status.stg_cur_name)}</p>
+                            <p className="min-w-0 truncate text-sm text-bambu-gray">{getStatusDisplay(status.state, status.stg_cur_name, t)}</p>
                             {plateStatusPill}
                           </div>
                           <p className={`min-h-[18px] truncate pr-8 text-sm ${printName ? 'text-white' : 'text-bambu-gray/70'}`}>
@@ -4804,7 +4816,7 @@ function PrinterCard({
                                   </span>
                                 )}
                                 {currentPrintUser && (
-                                  <span className="flex items-center gap-1" title={`Started by ${currentPrintUser}`}>
+                                  <span className="flex items-center gap-1" title={t('printers.startedBy', { user: currentPrintUser })}>
                                     <User className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)]" />
                                     {currentPrintUser}
                                   </span>
@@ -4812,7 +4824,7 @@ function PrinterCard({
                               </>
                             ) : lastPrint ? (
                               <p className="truncate" title={lastPrint.print_name || lastPrint.filename}>
-                                Last: {lastPrint.print_name || lastPrint.filename}
+                                {t('printers.lastPrint', { name: lastPrint.print_name || lastPrint.filename })}
                                 {lastPrint.completed_at && (
                                   <span className="ml-1 text-bambu-gray/60">
                                     • {formatDateOnly(lastPrint.completed_at, { month: 'short', day: 'numeric' })}
@@ -4999,7 +5011,7 @@ function PrinterCard({
                       {statusControlMenu === 'nozzle-temp' && (
                         isDualNozzle ? (
                           <IndicatorControlPopover
-                            title="Set Nozzle Temperatures"
+                            title={t('printers.control.setNozzleTemperatures')}
                             widthClass="w-[300px]"
                             popoverWidth={300}
                             popoverHeight={260}
@@ -5008,33 +5020,33 @@ function PrinterCard({
                           >
                             <div className="grid grid-cols-2 gap-2 px-3 py-2.5">
                               <NozzleTemperatureControlBox
-                                label="Left Temp"
+                                label={t('printers.control.leftTemp')}
                                 current={status.temperatures.nozzle}
                                 target={status.temperatures.nozzle_target}
                                 isActive={activeNozzle === 'L'}
                                 isPending={nozzleTemperatureMutation.isPending}
                                 onSubmit={(target) => nozzleTemperatureMutation.mutate({ target, nozzle: 1 })}
-                                options={buildPresetOptions(nozzleTempPresets, 'C')}
+                                options={buildPresetOptions(nozzleTempPresets, 'C', t('common.off'))}
                               />
                               <NozzleTemperatureControlBox
-                                label="Right Temp"
+                                label={t('printers.control.rightTemp')}
                                 current={status.temperatures.nozzle_2}
                                 target={status.temperatures.nozzle_2_target}
                                 isActive={activeNozzle === 'R'}
                                 isPending={nozzleTemperatureMutation.isPending}
                                 onSubmit={(target) => nozzleTemperatureMutation.mutate({ target, nozzle: 0 })}
-                                options={buildPresetOptions(nozzleTempPresets, 'C')}
+                                options={buildPresetOptions(nozzleTempPresets, 'C', t('common.off'))}
                               />
                             </div>
                           </IndicatorControlPopover>
                         ) : (
                           <IndicatorControlPopover
-                            title="Set Nozzle Temperature"
+                            title={t('printers.control.setNozzleTemperature')}
                             unit="°C"
                             customMin={0}
                             customMax={320}
                             isPending={nozzleTemperatureMutation.isPending}
-                            options={buildPresetOptions(nozzleTempPresets, 'C')}
+                            options={buildPresetOptions(nozzleTempPresets, 'C', t('common.off'))}
                             onClose={() => setStatusControlMenu(null)}
                             onSubmit={(target) => nozzleTemperatureMutation.mutate({ target, nozzle: status.active_extruder ?? 0 })}
                           />
@@ -5064,12 +5076,12 @@ function PrinterCard({
                       </p>
                       {statusControlMenu === 'bed-temp' && (
                         <IndicatorControlPopover
-                          title="Set Bed Temperature"
+                          title={t('printers.control.setBedTemperature')}
                           unit="°C"
                           customMin={0}
                           customMax={140}
                           isPending={bedTemperatureMutation.isPending}
-                          options={buildPresetOptions(bedTempPresets, 'C')}
+                          options={buildPresetOptions(bedTempPresets, 'C', t('common.off'))}
                           onClose={() => setStatusControlMenu(null)}
                           onSubmit={(target) => bedTemperatureMutation.mutate(target)}
                         />
@@ -5107,12 +5119,12 @@ function PrinterCard({
                           </p>
                           {hasChamberHeater && statusControlMenu === 'chamber-temp' && (
                             <IndicatorControlPopover
-                              title="Set Chamber Temperature"
+                              title={t('printers.control.setChamberTemperature')}
                               unit="°C"
                               customMin={0}
                               customMax={MAX_CHAMBER_TEMP_C}
                               isPending={chamberTemperatureMutation.isPending}
-                              options={buildPresetOptions(chamberTempPresets, 'C')}
+                              options={buildPresetOptions(chamberTempPresets, 'C', t('common.off'))}
                               onClose={() => setStatusControlMenu(null)}
                               onSubmit={(target) => chamberTemperatureMutation.mutate(target)}
                             />
@@ -5158,14 +5170,14 @@ function PrinterCard({
                           <p className="text-[length:var(--pc-t9,9px)] text-bambu-gray">{t('printers.temperatures.nozzle')}</p>
                           {statusControlMenu === 'nozzle-select' && (
                             <IndicatorControlPopover
-                              title="Set Nozzle Selection"
+                              title={t('printers.control.setNozzleSelection')}
                               widthClass="w-[300px]"
                               popoverWidth={300}
                               popoverHeight={140}
                               isPending={selectExtruderMutation.isPending}
                               options={[
-                                { label: 'Left', value: 1 },
-                                { label: 'Right', value: 0 },
+                                { label: t('common.left'), value: 1 },
+                                { label: t('common.right'), value: 0 },
                               ]}
                               onClose={() => setStatusControlMenu(null)}
                               onSubmit={(extruder) => selectExtruderMutation.mutate(extruder)}
@@ -5201,12 +5213,12 @@ function PrinterCard({
                           </span>
                           {statusControlMenu === `fan-${key}` && (
                             <IndicatorControlPopover
-                              title={`Set ${label} Speed`}
+                              title={t('printers.control.setFanSpeed', { fan: label })}
                               unit="%"
                               customMin={0}
                               customMax={100}
                               isPending={fanSpeedMutation.isPending}
-                              options={buildPresetOptions(fanSpeedPresets, '%')}
+                              options={buildPresetOptions(fanSpeedPresets, '%', t('common.off'))}
                               onClose={() => setStatusControlMenu(null)}
                               onSubmit={(speed) => fanSpeedMutation.mutate({ fan: key as 'part' | 'aux' | 'aux2' | 'chamber', speed })}
                             />
@@ -5370,7 +5382,7 @@ function PrinterCard({
                                         onClick={() => requestXyJog(0, bedJogStep)}
                                         disabled={xyJogMutation.isPending}
                                         className={jogButtonClass}
-                                        aria-label="Move Y forward"
+                                        aria-label={t('printers.bedJog.moveYForward')}
                                       >
                                         <ArrowUp className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
                                       </button>
@@ -5379,7 +5391,7 @@ function PrinterCard({
                                         onClick={() => requestXyJog(-bedJogStep, 0)}
                                         disabled={xyJogMutation.isPending}
                                         className={jogButtonClass}
-                                        aria-label="Move X left"
+                                        aria-label={t('printers.bedJog.moveXLeft')}
                                       >
                                         <ArrowLeft className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
                                       </button>
@@ -5398,7 +5410,7 @@ function PrinterCard({
                                         onClick={() => requestXyJog(bedJogStep, 0)}
                                         disabled={xyJogMutation.isPending}
                                         className={jogButtonClass}
-                                        aria-label="Move X right"
+                                        aria-label={t('printers.bedJog.moveXRight')}
                                       >
                                         <ArrowRight className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
                                       </button>
@@ -5407,7 +5419,7 @@ function PrinterCard({
                                         onClick={() => requestXyJog(0, -bedJogStep)}
                                         disabled={xyJogMutation.isPending}
                                         className={jogButtonClass}
-                                        aria-label="Move Y back"
+                                        aria-label={t('printers.bedJog.moveYBack')}
                                       >
                                         <ArrowDown className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
                                       </button>
@@ -5439,7 +5451,7 @@ function PrinterCard({
                                         onClick={() => requestExtruderJog(-bedJogStep)}
                                         disabled={extruderJogMutation.isPending}
                                         className={jogButtonClass}
-                                        aria-label="Retract filament"
+                                        aria-label={t('printers.bedJog.retractFilament')}
                                       >
                                         <ArrowUp className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
                                       </button>
@@ -5450,7 +5462,7 @@ function PrinterCard({
                                         onClick={() => requestExtruderJog(bedJogStep)}
                                         disabled={extruderJogMutation.isPending}
                                         className={jogButtonClass}
-                                        aria-label="Extrude filament"
+                                        aria-label={t('printers.bedJog.extrudeFilament')}
                                       >
                                         <ArrowDown className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
                                       </button>
@@ -6126,7 +6138,7 @@ function PrinterCard({
                                                   material: tray?.tray_type ?? undefined,
                                                   profile: filamentData.profile,
                                                   color: filamentData.colorHex || '',
-                                                  location: `${cardLabel} Slot ${slotIdx + 1}`,
+                                                  location: t('configureAmsSlot.slotLabel', { ams: cardLabel, slot: slotIdx + 1 }),
                                                 },
                                               }),
                                               onUnassignSpool: (spoolmanSpool && !isBambuLabSpool(tray)) ? () => onUnassignSpoolmanSpool?.(spoolmanSpool.id) : undefined,
@@ -6159,7 +6171,7 @@ function PrinterCard({
                                                 material: tray?.tray_type ?? undefined,
                                                 profile: filamentData.profile,
                                                 color: filamentData.colorHex || '',
-                                                location: `${cardLabel} Slot ${slotIdx + 1}`,
+                                                location: t('configureAmsSlot.slotLabel', { ams: cardLabel, slot: slotIdx + 1 }),
                                               },
                                             }),
                                             onUnassignSpool: (assignment && !isBambuLabSpool(tray)) ? () => onUnassignSpool?.(printer.id, ams.id, slotIdx) : undefined,
@@ -6210,7 +6222,7 @@ function PrinterCard({
                                             material: undefined,
                                             profile: '',
                                             color: '',
-                                            location: `${cardLabel} Slot ${slotIdx + 1}`,
+                                            location: t('configureAmsSlot.slotLabel', { ams: cardLabel, slot: slotIdx + 1 }),
                                             emptyKind,
                                           },
                                         })}
@@ -6940,7 +6952,7 @@ function PrinterCard({
                                           material: undefined,
                                           profile: '',
                                           color: '',
-                                          location: trayLayout.rack ? extLabel : `External Slot ${slotTrayId + 1}`,
+                                          location: trayLayout.rack ? extLabel : t('printers.externalSlotLocation', { slot: slotTrayId + 1 }),
                                           emptyKind,
                                         },
                                       })}
@@ -7050,7 +7062,7 @@ function PrinterCard({
                         ? 'bg-bambu-green/20 text-bambu-green hover:bg-bambu-green/30'
                         : 'bg-bambu-dark-tertiary text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary/80'
                   }`}
-                  title={!hasPermission('smart_plugs:control') ? t('printers.permission.noSmartPlugControl') : (plugStatus?.state === 'ON' ? 'Turn off' : 'Turn on')}
+                  title={!hasPermission('smart_plugs:control') ? t('printers.permission.noSmartPlugControl') : (plugStatus?.state === 'ON' ? t('printers.plugTurnOff') : t('printers.plugTurnOn'))}
                 >
                   <Zap className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
                 </button>
@@ -7077,7 +7089,7 @@ function PrinterCard({
                           }
                         }}
                         disabled={runScriptMutation.isPending}
-                        title={`${isScript ? 'Run' : 'Toggle'} ${script.ha_entity_id}`}
+                        title={isScript ? t('printers.haRunEntity', { entity: script.ha_entity_id }) : t('printers.haToggleEntity', { entity: script.ha_entity_id })}
                         className="px-2 py-0.5 text-xs bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 hover:bg-blue-500/30 rounded transition-colors flex items-center gap-1"
                       >
                         <Play className="w-[var(--pc-i25,0.625rem)] h-[var(--pc-i25,0.625rem)]" />
@@ -7290,11 +7302,11 @@ function PrinterCard({
                   <XCircle className="w-[var(--pc-i5,1.25rem)] h-[var(--pc-i5,1.25rem)] text-yellow-500" />
                 )}
                 <h2 className="text-lg font-semibold text-white">
-                  Build Plate Check
+                  {t('printers.plateDetection.checkTitle')}
                 </h2>
                 {plateCheckResult.reference_count !== undefined && plateCheckResult.max_references && (
                   <span className="text-xs text-bambu-gray bg-bambu-dark-tertiary px-2 py-1 rounded">
-                    {plateCheckResult.reference_count}/{plateCheckResult.max_references} refs
+                    {t('printers.plateDetection.refsCount', { count: plateCheckResult.reference_count, max: plateCheckResult.max_references })}
                   </span>
                 )}
               </div>
@@ -7367,7 +7379,7 @@ function PrinterCard({
                       <div key={ref.index} className="relative group">
                         <img
                           src={api.getPlateReferenceThumbnailUrl(printer.id, ref.index)}
-                          alt={ref.label || `Reference ${ref.index + 1}`}
+                          alt={ref.label || t('printers.plateDetection.referenceAlt', { n: ref.index + 1 })}
                           className="w-full aspect-video object-cover rounded border border-bambu-dark-tertiary"
                         />
                         {/* Delete button */}
@@ -7511,8 +7523,12 @@ function PrinterCard({
                     </div>
                   ) : (
                     <p className="text-xs text-bambu-gray">
-                      Current: X={Math.round((plateCheckResult.roi?.x || 0.15) * 100)}%, Y={Math.round((plateCheckResult.roi?.y || 0.35) * 100)}%,
-                      W={Math.round((plateCheckResult.roi?.w || 0.70) * 100)}%, H={Math.round((plateCheckResult.roi?.h || 0.55) * 100)}%
+                      {t('printers.roi.current', {
+                        x: Math.round((plateCheckResult.roi?.x || 0.15) * 100),
+                        y: Math.round((plateCheckResult.roi?.y || 0.35) * 100),
+                        w: Math.round((plateCheckResult.roi?.w || 0.70) * 100),
+                        h: Math.round((plateCheckResult.roi?.h || 0.55) * 100),
+                      })}
                     </p>
                   )}
                 </div>
@@ -7531,20 +7547,20 @@ function PrinterCard({
                     {isCalibrating ? (
                       <>
                         <Loader2 className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)] mr-2 animate-spin" />
-                        Calibrating...
+                        {t('printers.plateDetection.calibrating')}
                       </>
                     ) : (
-                      'Calibrate Empty Plate'
+                      t('printers.plateDetection.calibrateEmptyPlate')
                     )}
                   </Button>
                 </>
               ) : (
                 <>
                   <Button variant="ghost" onClick={() => handleCalibratePlate()} disabled={isCalibrating}>
-                    {isCalibrating ? 'Adding...' : `Add Reference (${plateReferences?.references.length || 0}/${plateReferences?.max_references || 5})`}
+                    {isCalibrating ? t('printers.plateDetection.adding') : t('printers.plateDetection.addReference', { count: plateReferences?.references.length || 0, max: plateReferences?.max_references || 5 })}
                   </Button>
                   <Button onClick={() => closePlateCheckModal()}>
-                    Close
+                    {t('common.close')}
                   </Button>
                 </>
               )}
@@ -8119,6 +8135,47 @@ function PrinterCard({
   );
 }
 
+/**
+ * A printer's access code, hidden unless shown (#3624). It is eight
+ * characters read off the printer's screen, some easy to confuse, and a typo
+ * was only found by the failed connection check.
+ */
+function AccessCodeInput({
+  value,
+  onChange,
+  placeholder,
+  required,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  required?: boolean;
+}) {
+  const { t } = useTranslation();
+  const [shown, setShown] = useState(false);
+  return (
+    <div className="relative">
+      <input
+        type={shown ? 'text' : 'password'}
+        required={required}
+        aria-label={t('printers.accessCode')}
+        className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none pr-10"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+      />
+      <button
+        type="button"
+        onClick={() => setShown(!shown)}
+        className="absolute right-2 top-1/2 -translate-y-1/2 text-bambu-gray hover:text-white"
+        aria-label={shown ? t('printers.hideAccessCode') : t('printers.showAccessCode')}
+      >
+        {shown ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+      </button>
+    </div>
+  );
+}
+
 export function AddPrinterModal({
   onClose,
   onAdd,
@@ -8162,6 +8219,14 @@ export function AddPrinterModal({
   // failed result awaiting an explicit "save anyway".
   const [checkingSave, setCheckingSave] = useState(false);
   const [saveWarning, setSaveWarning] = useState<PrinterDiagnosticResult | null>(null);
+
+  // A field the connection check reads was changed: its warning is about
+  // values no longer in the form, so it goes, and the next save checks the
+  // new ones (#3624).
+  const setCheckedFields = (patch: Partial<typeof form>) => {
+    setForm((f) => ({ ...f, ...patch }));
+    setSaveWarning(null);
+  };
 
   // Fetch discovery info on mount + restore the last custom CIDR the user
   // typed (kept in localStorage so they don't retype `10.1.1.0/24` every
@@ -8297,8 +8362,7 @@ export function AddPrinterModal({
   const selectPrinter = (printer: DiscoveredPrinter) => {
     // Don't pre-fill serial if it's a placeholder (unknown-*) - user needs to enter actual serial
     const serialNumber = printer.serial.startsWith('unknown-') ? '' : printer.serial;
-    setForm({
-      ...form,
+    setCheckedFields({
       name: printer.name || '',
       serial_number: serialNumber,
       ip_address: printer.ip_address,
@@ -8482,8 +8546,8 @@ export function AddPrinterModal({
                 pattern="(\d{1,3}(\.\d{1,3}){3}|[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*)"
                 className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                 value={form.ip_address}
-                onChange={(e) => setForm({ ...form, ip_address: e.target.value })}
-                placeholder="192.168.1.100 or printer.local"
+                onChange={(e) => setCheckedFields({ ip_address: e.target.value })}
+                placeholder={t('printers.modal.hostPlaceholder')}
               />
             </div>
             <div>
@@ -8493,18 +8557,16 @@ export function AddPrinterModal({
                 required
                 className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                 value={form.serial_number}
-                onChange={(e) => setForm({ ...form, serial_number: e.target.value })}
+                onChange={(e) => setCheckedFields({ serial_number: e.target.value })}
                 placeholder="01P00A000000000"
               />
             </div>
             <div>
               <label className="block text-sm text-bambu-gray mb-1">{t('printers.accessCode')}</label>
-              <input
-                type="password"
+              <AccessCodeInput
                 required
-                className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                 value={form.access_code}
-                onChange={(e) => setForm({ ...form, access_code: e.target.value })}
+                onChange={(access_code) => setCheckedFields({ access_code })}
                 placeholder={t('printers.modal.fromPrinterSettings')}
               />
             </div>
@@ -8516,33 +8578,33 @@ export function AddPrinterModal({
                 onChange={(e) => setForm({ ...form, model: e.target.value })}
               >
                 <option value="">{t('printers.modal.selectModel')}</option>
-                <optgroup label="A1 Series">
+                <optgroup label={t('printers.modal.seriesGroup', { series: 'A1' })}>
                   <option value="A1">A1</option>
                   <option value="A1 Mini">A1 Mini</option>
                 </optgroup>
-                <optgroup label="A2 Series">
+                <optgroup label={t('printers.modal.seriesGroup', { series: 'A2' })}>
                   <option value="A2L">A2L</option>
                 </optgroup>
-                <optgroup label="H2 Series">
+                <optgroup label={t('printers.modal.seriesGroup', { series: 'H2' })}>
                   <option value="H2C">H2C</option>
                   <option value="H2D">H2D</option>
                   <option value="H2D Pro">H2D Pro</option>
                   <option value="H2S">H2S</option>
                 </optgroup>
-                <optgroup label="H3 Series">
+                <optgroup label={t('printers.modal.seriesGroup', { series: 'H3' })}>
                   <option value="H3C">H3C</option>
                 </optgroup>
-                <optgroup label="P Series">
+                <optgroup label={t('printers.modal.seriesGroup', { series: 'P' })}>
                   <option value="P1P">P1P</option>
                   <option value="P1S">P1S</option>
                   <option value="P2S">P2S</option>
                 </optgroup>
-                <optgroup label="X1 Series">
+                <optgroup label={t('printers.modal.seriesGroup', { series: 'X1' })}>
                   <option value="X1">X1</option>
                   <option value="X1C">X1 Carbon</option>
                   <option value="X1E">X1E</option>
                 </optgroup>
-                <optgroup label="X2 Series">
+                <optgroup label={t('printers.modal.seriesGroup', { series: 'X2' })}>
                   <option value="X2D">X2D</option>
                 </optgroup>
               </select>
@@ -8588,13 +8650,10 @@ export function AddPrinterModal({
                 </div>
                 <DiagnosticChecklist result={saveWarning} />
                 <div className="flex gap-3">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => setSaveWarning(null)}
-                    className="flex-1"
-                  >
-                    {t('printers.addPreflight.back')}
+                  {/* Runs the check again on the form's values: the printer
+                      may just have been switched on (#3624). */}
+                  <Button type="submit" variant="secondary" disabled={checkingSave} className="flex-1">
+                    {checkingSave ? t('printers.addPreflight.checking') : t('printers.addPreflight.checkAgain')}
                   </Button>
                   <Button type="button" onClick={() => onAdd(form)} className="flex-1">
                     {t('printers.addPreflight.saveAnyway')}
@@ -8973,6 +9032,14 @@ function EditPrinterModal({
   const [checkingSave, setCheckingSave] = useState(false);
   const [saveWarning, setSaveWarning] = useState<PrinterDiagnosticResult | null>(null);
 
+  // A field the connection check reads was changed: its warning is about
+  // values no longer in the form, so it goes, and the next save checks the
+  // new ones (#3624).
+  const setCheckedFields = (patch: Partial<typeof form>) => {
+    setForm((f) => ({ ...f, ...patch }));
+    setSaveWarning(null);
+  };
+
   const updateMutation = useMutation({
     mutationFn: (data: Partial<PrinterCreate>) => api.updatePrinter(printer.id, data),
     onSuccess: () => {
@@ -9075,8 +9142,8 @@ function EditPrinterModal({
                 pattern="(\d{1,3}(\.\d{1,3}){3}|[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*)"
                 className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                 value={form.ip_address}
-                onChange={(e) => setForm({ ...form, ip_address: e.target.value })}
-                placeholder="192.168.1.100 or printer.local"
+                onChange={(e) => setCheckedFields({ ip_address: e.target.value })}
+                placeholder={t('printers.modal.hostPlaceholder')}
               />
             </div>
             <div>
@@ -9091,11 +9158,9 @@ function EditPrinterModal({
             </div>
             <div>
               <label className="block text-sm text-bambu-gray mb-1">{t('printers.accessCode')}</label>
-              <input
-                type="password"
-                className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+              <AccessCodeInput
                 value={form.access_code}
-                onChange={(e) => setForm({ ...form, access_code: e.target.value })}
+                onChange={(access_code) => setCheckedFields({ access_code })}
                 placeholder={t('printers.accessCodePlaceholder')}
               />
             </div>
@@ -9107,39 +9172,39 @@ function EditPrinterModal({
                 onChange={(e) => setForm({ ...form, model: e.target.value })}
               >
                 <option value="">{t('printers.modal.selectModel')}</option>
-                <optgroup label="A1 Series">
+                <optgroup label={t('printers.modal.seriesGroup', { series: 'A1' })}>
                   <option value="A1">A1</option>
                   <option value="A1 Mini">A1 Mini</option>
                 </optgroup>
-                <optgroup label="A2 Series">
+                <optgroup label={t('printers.modal.seriesGroup', { series: 'A2' })}>
                   <option value="A2L">A2L</option>
                 </optgroup>
-                <optgroup label="H2 Series">
+                <optgroup label={t('printers.modal.seriesGroup', { series: 'H2' })}>
                   <option value="H2C">H2C</option>
                   <option value="H2D">H2D</option>
                   <option value="H2D Pro">H2D Pro</option>
                   <option value="H2S">H2S</option>
                 </optgroup>
-                <optgroup label="H3 Series">
+                <optgroup label={t('printers.modal.seriesGroup', { series: 'H3' })}>
                   <option value="H3C">H3C</option>
                 </optgroup>
-                <optgroup label="P Series">
+                <optgroup label={t('printers.modal.seriesGroup', { series: 'P' })}>
                   <option value="P1P">P1P</option>
                   <option value="P1S">P1S</option>
                   <option value="P2S">P2S</option>
                 </optgroup>
-                <optgroup label="X1 Series">
+                <optgroup label={t('printers.modal.seriesGroup', { series: 'X1' })}>
                   <option value="X1">X1</option>
                   <option value="X1C">X1 Carbon</option>
                   <option value="X1E">X1E</option>
                 </optgroup>
-                <optgroup label="X2 Series">
+                <optgroup label={t('printers.modal.seriesGroup', { series: 'X2' })}>
                   <option value="X2D">X2D</option>
                 </optgroup>
               </select>
             </div>
             <div>
-              <label className="block text-sm text-bambu-gray mb-1">Location / Group</label>
+              <label className="block text-sm text-bambu-gray mb-1">{t('printers.modal.locationGroupLabel')}</label>
               <input
                 type="text"
                 className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
@@ -9286,13 +9351,10 @@ function EditPrinterModal({
                 </div>
                 <DiagnosticChecklist result={saveWarning} />
                 <div className="flex gap-3">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => setSaveWarning(null)}
-                    className="flex-1"
-                  >
-                    {t('printers.addPreflight.back')}
+                  {/* Runs the check again on the form's values: the printer
+                      may just have been switched on (#3624). */}
+                  <Button type="submit" variant="secondary" disabled={checkingSave} className="flex-1">
+                    {checkingSave ? t('printers.addPreflight.checking') : t('printers.addPreflight.checkAgain')}
                   </Button>
                   <Button
                     type="button"
@@ -9351,6 +9413,7 @@ function PowerDropdownItem({
   onPowerOn: (plugId: number) => void;
   isPowering: boolean;
 }) {
+  const { t } = useTranslation();
   const isOffline = usePrinterOfflineStatus(printer.id);
 
   // Fetch plug status
@@ -9391,7 +9454,7 @@ function PowerDropdownItem({
         }`}
       >
         <Power className="w-3 h-3" />
-        {isPowering ? '...' : 'On'}
+        {isPowering ? '...' : t('common.on')}
       </button>
     </div>
   );
@@ -10387,7 +10450,7 @@ export function PrintersPage() {
                 ))}
                 {printers?.filter(p => smartPlugByPrinter[p.id]).length === 0 && (
                   <div className="px-3 py-2 text-sm text-bambu-gray">
-                    No printers with smart plugs
+                    {t('printers.noPrintersWithSmartPlugs')}
                   </div>
                 )}
               </div>
@@ -10555,7 +10618,11 @@ export function PrintersPage() {
               : 'bg-bambu-green';
             const label = sortBy === 'status'
               ? t(STATUS_GROUP_META[groupKey]?.labelKey || groupKey)
-              : groupKey;
+              : sortBy === 'location' && groupKey === 'Ungrouped'
+                ? t('printers.ungrouped')
+                : sortBy === 'model' && groupKey === 'Unknown'
+                  ? t('printers.status.unknown')
+                  : groupKey;
 
             return (
               <Collapsible

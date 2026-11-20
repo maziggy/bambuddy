@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, Tag, Pencil, Trash2, Loader2, Search, Check, AlertTriangle } from 'lucide-react';
 import { api } from '../api/client';
@@ -12,6 +13,7 @@ interface TagManagementModalProps {
 }
 
 export function TagManagementModal({ onClose }: TagManagementModalProps) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [search, setSearch] = useState('');
@@ -48,11 +50,11 @@ export function TagManagementModal({ onClose }: TagManagementModalProps) {
     onSuccess: (data, { oldName, newName }) => {
       queryClient.invalidateQueries({ queryKey: ['tags'] });
       queryClient.invalidateQueries({ queryKey: ['archives'] });
-      showToast(`Renamed "${oldName}" to "${newName}" in ${data.affected} archive${data.affected !== 1 ? 's' : ''}`);
+      showToast(t('tagManagement.renamed', { oldName, newName, count: data.affected }));
       setEditingTag(null);
     },
     onError: (error: Error) => {
-      showToast(error.message || 'Failed to rename tag', 'error');
+      showToast(error.message || t('tagManagement.renameFailed'), 'error');
     },
   });
 
@@ -61,11 +63,11 @@ export function TagManagementModal({ onClose }: TagManagementModalProps) {
     onSuccess: (data, name) => {
       queryClient.invalidateQueries({ queryKey: ['tags'] });
       queryClient.invalidateQueries({ queryKey: ['archives'] });
-      showToast(`Deleted "${name}" from ${data.affected} archive${data.affected !== 1 ? 's' : ''}`);
+      showToast(t('tagManagement.deleted', { name, count: data.affected }));
       setDeleteConfirm(null);
     },
     onError: (error: Error) => {
-      showToast(error.message || 'Failed to delete tag', 'error');
+      showToast(error.message || t('tagManagement.deleteFailed'), 'error');
     },
   });
 
@@ -113,7 +115,7 @@ export function TagManagementModal({ onClose }: TagManagementModalProps) {
 
   // Filter and sort tags
   const filteredTags = tags
-    ?.filter(t => t.name.toLowerCase().includes(search.toLowerCase()))
+    ?.filter(tag => tag.name.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => {
       if (sortBy === 'count') {
         return b.count - a.count || a.name.localeCompare(b.name);
@@ -121,7 +123,7 @@ export function TagManagementModal({ onClose }: TagManagementModalProps) {
       return a.name.localeCompare(b.name);
     });
 
-  const totalUsage = tags?.reduce((sum, t) => sum + t.count, 0) || 0;
+  const totalUsage = tags?.reduce((sum, tag) => sum + tag.count, 0) || 0;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -131,7 +133,7 @@ export function TagManagementModal({ onClose }: TagManagementModalProps) {
           <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary flex-shrink-0">
             <div className="flex items-center gap-2">
               <Tag className="w-5 h-5 text-bambu-green" />
-              <h2 className="text-xl font-semibold text-white">Manage Tags</h2>
+              <h2 className="text-xl font-semibold text-white">{t('tagManagement.title')}</h2>
             </div>
             <button
               onClick={onClose}
@@ -148,7 +150,7 @@ export function TagManagementModal({ onClose }: TagManagementModalProps) {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray" />
                 <input
                   type="text"
-                  placeholder="Search tags..."
+                  placeholder={t('tagManagement.searchTags')}
                   className="w-full pl-9 pr-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:border-bambu-green focus:outline-none"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
@@ -159,13 +161,16 @@ export function TagManagementModal({ onClose }: TagManagementModalProps) {
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as 'count' | 'name')}
               >
-                <option value="count">Sort by Count</option>
-                <option value="name">Sort by Name</option>
+                <option value="count">{t('tagManagement.sortByCount')}</option>
+                <option value="name">{t('tagManagement.sortByName')}</option>
               </select>
             </div>
             {tags && (
               <p className="text-xs text-bambu-gray mt-2">
-                {tags.length} tag{tags.length !== 1 ? 's' : ''} across {totalUsage} usage{totalUsage !== 1 ? 's' : ''}
+                {t('tagManagement.summary', {
+                  tags: t('tagManagement.tagCount', { count: tags.length }),
+                  usages: t('tagManagement.usageCount', { count: totalUsage }),
+                })}
               </p>
             )}
           </div>
@@ -178,7 +183,7 @@ export function TagManagementModal({ onClose }: TagManagementModalProps) {
               </div>
             ) : !filteredTags?.length ? (
               <div className="text-center py-8 text-bambu-gray">
-                {search ? 'No tags match your search' : 'No tags found'}
+                {search ? t('tagManagement.noMatch') : t('tagManagement.noTags')}
               </div>
             ) : (
               <div className="space-y-2">
@@ -225,7 +230,7 @@ export function TagManagementModal({ onClose }: TagManagementModalProps) {
                       <div className="flex-1 flex items-center gap-2">
                         <AlertTriangle className="w-4 h-4 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
                         <span className="text-sm text-bambu-gray-light flex-1">
-                          Delete "{tag.name}" from {tag.count} archive{tag.count !== 1 ? 's' : ''}?
+                          {t('tagManagement.confirmDelete', { name: tag.name, count: tag.count })}
                         </span>
                         <Button
                           size="sm"
@@ -261,14 +266,14 @@ export function TagManagementModal({ onClose }: TagManagementModalProps) {
                           <button
                             onClick={() => startEdit(tag)}
                             className="p-1.5 rounded hover:bg-bambu-dark text-bambu-gray hover:text-white transition-colors"
-                            title="Rename tag"
+                            title={t('tagManagement.renameTag')}
                           >
                             <Pencil className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => confirmDelete(tag.name)}
                             className="p-1.5 rounded hover:bg-bambu-dark text-bambu-gray hover:text-red-700 dark:hover:text-red-400 transition-colors"
-                            title="Delete tag"
+                            title={t('tagManagement.deleteTag')}
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -284,7 +289,7 @@ export function TagManagementModal({ onClose }: TagManagementModalProps) {
           {/* Footer */}
           <div className="flex gap-3 p-4 border-t border-bambu-dark-tertiary flex-shrink-0">
             <Button variant="secondary" onClick={onClose} className="flex-1">
-              Close
+              {t('common.close')}
             </Button>
           </div>
         </CardContent>

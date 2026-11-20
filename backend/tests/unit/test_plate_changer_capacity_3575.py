@@ -305,6 +305,43 @@ class TestModelBasedItem:
                 assert await scheduler._find_idle_printer_for_model(db, "X1C", set()) == (1, None)
 
 
+class TestFilamentWaitReservation:
+    """The printer kept free for a job waiting for filament (#3587) is one that can take it."""
+
+    @staticmethod
+    async def _reserved(empty: dict[int, str]) -> int | None:
+        scheduler = PrintScheduler()
+        scheduler._plate_changer_empty = empty
+        printers = [SimpleNamespace(id=pid, name=f"X1C-0{pid}", model="X1C") for pid in (1, 2)]
+        pm = MagicMock()
+        pm.is_connected.return_value = True
+        pm.get_status.return_value = MagicMock(state="IDLE")
+        pm.is_awaiting_plate_clear.return_value = False
+        with (
+            patch(f"{SCHED}.printer_manager", pm),
+            patch(f"{SCHED}._wrong_nozzle_label", MagicMock(return_value=None)),
+            patch.object(scheduler, "_printers_for_model", AsyncMock(return_value=printers)),
+        ):
+            reserved = await scheduler._reservable_printer_for_model(
+                None,
+                [SimpleNamespace(target_model="X1C", sliced_nozzle=None)],
+                set(),
+                SimpleNamespace(target_location=None, require_previous_success=False),
+                None,
+                False,
+            )
+        return reserved.id if reserved else None
+
+    @pytest.mark.asyncio
+    async def test_an_empty_plate_changer_is_not_kept_free(self):
+        assert await self._reserved({}) == 1
+        assert await self._reserved({1: "X1C-01"}) == 2
+
+    @pytest.mark.asyncio
+    async def test_no_printer_is_kept_free_when_every_plate_changer_is_empty(self):
+        assert await self._reserved({1: "X1C-01", 2: "X1C-02"}) is None
+
+
 class TestWake:
     @pytest.mark.asyncio
     async def test_wake_skips_the_empty_printer(self, ctx):

@@ -9722,6 +9722,10 @@ class PrintScheduler:
             ):
                 if printer.id in exclude_ids or not printer_manager.is_connected(printer.id):
                     continue
+                # A plate changer with no plate left takes no work (#3575), so it
+                # is never the printer kept free.
+                if printer.id in self._plate_changer_empty:
+                    continue
                 if not self._is_printer_idle(printer.id, require_plate_clear):
                     continue
                 # The printer the job lands on must have passed its last print

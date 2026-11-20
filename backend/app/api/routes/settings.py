@@ -28,7 +28,13 @@ from backend.app.core.permissions import Permission
 from backend.app.core.printer_scope import PrinterScope
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
-from backend.app.schemas.settings import ADMIN_ONLY_SETTING_KEYS, AppSettings, AppSettingsUpdate
+from backend.app.schemas.settings import (
+    ADMIN_ONLY_SETTING_KEYS,
+    QUEUE_MAX_WAIT_HOURS_MAX,
+    QUEUE_MAX_WAIT_HOURS_MIN,
+    AppSettings,
+    AppSettingsUpdate,
+)
 from backend.app.services import camera_light
 from backend.app.services.secret_fields import SETTINGS_SECRETS, SecretConfigError, mask_fields, merge_partial
 
@@ -198,12 +204,14 @@ _BOOL_SETTING_KEYS = frozenset(
         "per_printer_mapping_expanded",
         "prometheus_enabled",
         "user_notifications_enabled",
+        "notification_submitter_email_enabled",
         "queue_drying_enabled",
         "queue_drying_block",
         "ambient_drying_enabled",
         "print_drying_enabled",
         "require_plate_clear",
         "queue_shortest_first",
+        "queue_loaded_filament_first",
         # default_bed_levelling / default_flow_cali / default_nozzle_offset_cali
         # are tri-state strings (off/on/auto) — parsed via the raw-string else
         # branch; the TriState validator coerces legacy "true"/"false" rows.
@@ -308,6 +316,22 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False, m
                 settings_dict[setting.key] = None
         elif setting.key == "default_printer_id":
             settings_dict[setting.key] = int(setting.value) if setting.value and setting.value != "None" else None
+        elif setting.key == "queue_max_wait_hours":
+            # Nullable int: null (stored as the literal "None") means no limit (#3587).
+            # Read like the scheduler reads it: blanks stripped, a value outside
+            # the accepted range falls back to the default (already in the dict).
+            raw_hours = (setting.value or "").strip()
+            if raw_hours in ("", "None"):
+                settings_dict[setting.key] = None
+            else:
+                try:
+                    hours = int(raw_hours)
+                except ValueError:
+                    hours = None
+                if hours is not None and QUEUE_MAX_WAIT_HOURS_MIN <= hours <= QUEUE_MAX_WAIT_HOURS_MAX:
+                    settings_dict[setting.key] = hours
+                else:
+                    logger.warning("Setting %s has an unusable value; using the default", setting.key)
         elif setting.key == "open_in_slicer":
             # None means "inherit from preferred_slicer" (#1329). The PUT path
             # serializes None as the literal string "None"; strip it back so

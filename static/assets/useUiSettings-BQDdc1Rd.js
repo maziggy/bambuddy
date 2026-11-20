@@ -1,0 +1,1 @@
+import{o as e}from"./client-JZz2uXxV.js";import{t}from"./useQuery-CnAFsxdX.js";import{n}from"./AuthContext-BciNWKbR.js";function r(r={}){let{hasPermission:i}=n(),a=i(`settings:read`);return t({queryKey:a?[`settings`]:[`ui-settings`],queryFn:a?()=>e.getSettings():()=>e.getUiSettings(),...r})}function i(e){return!!(e?.gcode_snippets||e?.has_gcode_snippets)}export{r as n,i as t};

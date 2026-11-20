@@ -1274,8 +1274,9 @@ async def _send_kill_switch_provider_notification(
         async with async_session() as db:
             from backend.app.services.print_log import open_run_on_printer
 
-            # The print it stopped, for {archive_id} / {run_id}: the completion
-            # that would name them skips its notification after this one.
+            # The print it stopped, for {archive_id} / {run_id} / {submitted_by}:
+            # the completion that would name them skips its notification after
+            # this one.
             run = await open_run_on_printer(db, printer_id)
             await notification_service.on_print_complete(
                 printer_id,
@@ -1283,7 +1284,11 @@ async def _send_kill_switch_provider_notification(
                 "stopped",
                 data,
                 db,
-                archive_data={"archive_id": run.archive_id, "run_id": run.id} if run is not None else None,
+                archive_data=(
+                    {"archive_id": run.archive_id, "run_id": run.id, "created_by_id": run.created_by_id}
+                    if run is not None
+                    else None
+                ),
             )
         return True
     except Exception as e:

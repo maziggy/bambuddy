@@ -128,7 +128,7 @@ function CameraView({ onPoppedIn }: { onPoppedIn: () => void }) {
       return { previousStatus };
     },
     onSuccess: (_, on) => {
-      showToast(`Chamber light ${on ? 'on' : 'off'}`);
+      showToast(on ? t('camera.chamberLightOnToast') : t('camera.chamberLightOffToast'));
     },
     onError: (error: Error, _, context) => {
       if (context?.previousStatus) {

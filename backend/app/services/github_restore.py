@@ -278,7 +278,7 @@ _MANYFOLD_CLIENT_ID_KEY = "manyfold_client_id"
 
 # The settings whose saved null (the text "None") the settings reader reads as
 # null. Anywhere else it is refused, as the editor refuses a null.
-_READS_A_SAVED_NULL = frozenset({"ams_temp_alarm", "default_printer_id", "open_in_slicer"})
+_READS_A_SAVED_NULL = frozenset({"ams_temp_alarm", "default_printer_id", "open_in_slicer", "queue_max_wait_hours"})
 
 # Settings that no longer exist. Older backups still hold them; a restore drops
 # them without listing them as skipped.

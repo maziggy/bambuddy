@@ -303,7 +303,7 @@ export function EmailSettings() {
                     type="password"
                     value={smtpSettings.smtp_password || ''}
                     onChange={(e) => setSMTPSettings({ ...smtpSettings, smtp_password: e.target.value })}
-                    placeholder={existingSettings ? '••••••••' : 'App password'}
+                    placeholder={existingSettings ? '••••••••' : t('emailSettings.placeholders.appPassword')}
                     disabled={!smtpSettings.smtp_auth_enabled}
                     className={smtpSettings.smtp_auth_enabled ? inputClasses : disabledInputClasses}
                   />
@@ -381,7 +381,7 @@ export function EmailSettings() {
                     type="text"
                     value={smtpSettings.smtp_from_name}
                     onChange={(e) => setSMTPSettings({ ...smtpSettings, smtp_from_name: e.target.value })}
-                    placeholder="BamBuddy"
+                    placeholder={t('emailSettings.placeholders.fromName')}
                     className={inputClasses}
                   />
                 </div>

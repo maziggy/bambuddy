@@ -84,14 +84,16 @@ export function SpoolBuddyLayout() {
 
   // Update alert based on device state and available updates.
   // Only clear alerts that the layout itself set (not alerts from child pages).
+  const tRef = useRef(t);
+  tRef.current = t;
   const layoutAlertRef = useRef<string | null>(null);
   useEffect(() => {
     if (!effectiveDeviceOnline) {
-      const msg = 'SpoolBuddy device disconnected';
+      const msg = tRef.current('spoolbuddy.status.deviceDisconnected', 'SpoolBuddy device disconnected');
       setAlert({ type: 'warning', message: msg });
       layoutAlertRef.current = msg;
     } else if (updateCheck?.update_available && updateCheck.latest_version) {
-      const msg = `Update available: v${updateCheck.latest_version}`;
+      const msg = tRef.current('nav.updateAvailable', { version: updateCheck.latest_version });
       setAlert({ type: 'info', message: msg });
       layoutAlertRef.current = msg;
     } else if (layoutAlertRef.current) {
@@ -104,8 +106,6 @@ export function SpoolBuddyLayout() {
   // like nothing happened. Its own slot above the page and layout alerts, so
   // it neither replaces them nor is cleared by them, and it clears itself.
   const [scanNotice, setScanNotice] = useState<{ type: 'error'; message: string } | null>(null);
-  const tRef = useRef(t);
-  tRef.current = t;
   useEffect(() => {
     let clearTimer: ReturnType<typeof setTimeout> | undefined;
     const show = (key: string) => () => {
@@ -232,7 +232,7 @@ export function SpoolBuddyLayout() {
         <button
           onClick={() => setQuickMenuOpen(true)}
           className="w-full h-1.5 bg-bambu-dark-secondary flex justify-center items-center shrink-0 touch-none"
-          aria-label="Open quick menu"
+          aria-label={t('spoolbuddy.quickMenu.open')}
         >
           <div className="w-8 h-0.5 rounded-full bg-zinc-600" />
         </button>

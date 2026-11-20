@@ -289,7 +289,7 @@ export function AssignToAmsModal({
   // from the immediate-apply path so we can adjust the success toast.
   const configureMutation = useMutation({
     mutationFn: async ({ amsId, trayId }: { amsId: number; trayId: number }) => {
-      if (!targetPrinterId) throw new Error('No printer selected');
+      if (!targetPrinterId) throw new Error(t('spoolbuddy.ams.noPrinter'));
 
       if (spoolmanMode) {
         return await api.assignSpoolmanSlot({

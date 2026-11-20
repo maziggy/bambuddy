@@ -607,7 +607,7 @@ export function SpoolBuddyDashboard() {
                     <div
                       key={printer.id}
                       className="flex items-center gap-1.5 px-2.5 py-1 bg-zinc-800/50 rounded-lg"
-                      title={`${printer.name} — ${isOnline ? 'Online' : 'Offline'}`}
+                      title={`${printer.name} — ${isOnline ? t('spoolbuddy.status.online') : t('spoolbuddy.status.offline')}`}
                     >
                       <div className={`w-2 h-2 rounded-full shrink-0 ${isOnline ? 'bg-green-500' : 'bg-zinc-600'}`} />
                       <span className="text-xs text-zinc-400 truncate max-w-[100px]">{printer.name}</span>

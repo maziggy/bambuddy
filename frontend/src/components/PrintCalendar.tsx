@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { localDateKey } from '../utils/date';
 
@@ -8,6 +9,7 @@ interface PrintCalendarProps {
 }
 
 export function PrintCalendar({ printDates, months = 3 }: PrintCalendarProps) {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
 
@@ -88,7 +90,7 @@ export function PrintCalendar({ printDates, months = 3 }: PrintCalendarProps) {
     return 'bg-bambu-green';
   };
 
-  const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const dayLabels = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
   // Calculate cell size based on container width
   const numWeeks = weeks.length;
@@ -135,7 +137,7 @@ export function PrintCalendar({ printDates, months = 3 }: PrintCalendarProps) {
                     visibility: i % 2 === 1 ? 'visible' : 'hidden',
                   }}
                 >
-                  {day}
+                  {t(`printCalendar.days.${day}`)}
                 </div>
               ))}
             </div>
@@ -166,7 +168,7 @@ export function PrintCalendar({ printDates, months = 3 }: PrintCalendarProps) {
                       key={dayOfWeek}
                       className={`rounded-sm ${getColor(count)} ${isToday ? 'ring-1 ring-white' : ''}`}
                       style={{ width: cellSize, height: cellSize }}
-                      title={`${day.toLocaleDateString()}: ${count} print${count !== 1 ? 's' : ''}`}
+                      title={t('printCalendar.dayTooltip', { date: day.toLocaleDateString(), count })}
                     />
                   );
                 })}
@@ -176,7 +178,7 @@ export function PrintCalendar({ printDates, months = 3 }: PrintCalendarProps) {
 
           {/* Legend */}
           <div className="flex items-center gap-2 mt-3 text-bambu-gray" style={{ fontSize }}>
-            <span>Less</span>
+            <span>{t('printCalendar.less')}</span>
             <div className="flex" style={{ gap }}>
               <div className="rounded-sm bg-bambu-dark" style={{ width: cellSize, height: cellSize }} />
               <div className="rounded-sm bg-bambu-green/30" style={{ width: cellSize, height: cellSize }} />
@@ -184,7 +186,7 @@ export function PrintCalendar({ printDates, months = 3 }: PrintCalendarProps) {
               <div className="rounded-sm bg-bambu-green/75" style={{ width: cellSize, height: cellSize }} />
               <div className="rounded-sm bg-bambu-green" style={{ width: cellSize, height: cellSize }} />
             </div>
-            <span>More</span>
+            <span>{t('printCalendar.more')}</span>
           </div>
         </div>
       )}

@@ -80,7 +80,7 @@ export function LinkSpoolModal({ isOpen, onClose, tagUid, trayUuid, printerId, a
               {t('spoolman.selectSpool')}
             </h3>
             <p className="text-xs text-bambu-gray mt-1">
-              AMS {amsId} T{trayId} &middot; Printer #{printerId}
+              {t('spoolman.linkSlotInfo', { amsId, trayId, printerId })}
             </p>
           </div>
           <button onClick={onClose} className="p-1 text-bambu-gray hover:text-white rounded transition-colors">
@@ -102,7 +102,7 @@ export function LinkSpoolModal({ isOpen, onClose, tagUid, trayUuid, printerId, a
           </div>
           {(trayUuid || tagUid) && (
             <p className="text-xs text-bambu-gray mt-2 font-mono truncate" title={trayUuid || tagUid}>
-              Tag: {trayUuid || tagUid}
+              {t('spoolman.tagValue', { tag: trayUuid || tagUid })}
             </p>
           )}
         </div>
@@ -135,7 +135,7 @@ export function LinkSpoolModal({ isOpen, onClose, tagUid, trayUuid, printerId, a
                   </div>
                   <div className="text-xs text-bambu-gray truncate">
                     {spool.filament_vendor ? `${spool.filament_vendor} · ` : ''}
-                    {spool.filament_material || 'Unknown'} &middot; #{spool.id}
+                    {spool.filament_material || t('common.unknown')} &middot; #{spool.id}
                   </div>
                 </div>
                 <span className="text-xs text-bambu-gray">

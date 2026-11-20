@@ -111,6 +111,7 @@ from backend.app.services import kprofile_drift, pause_eta, print_dispatch_conte
 from backend.app.services.ams_assignment_lock import get_ams_assignment_lock
 from backend.app.services.archive import ArchiveService, peek_plate_index_in_3mf, swap_plate_suffix
 from backend.app.services.archive_cost_estimate import (
+    price_unpriced_run as _price_unpriced_run,
     schedule_archive_cost_estimate as _schedule_archive_cost_estimate,
     settle_archive_cost_estimate as _settle_archive_cost_estimate,
 )
@@ -1273,8 +1274,9 @@ async def _send_kill_switch_provider_notification(
         async with async_session() as db:
             from backend.app.services.print_log import open_run_on_printer
 
-            # The print it stopped, for {archive_id} / {run_id}: the completion
-            # that would name them skips its notification after this one.
+            # The print it stopped, for {archive_id} / {run_id} / {submitted_by}:
+            # the completion that would name them skips its notification after
+            # this one.
             run = await open_run_on_printer(db, printer_id)
             await notification_service.on_print_complete(
                 printer_id,
@@ -1282,7 +1284,11 @@ async def _send_kill_switch_provider_notification(
                 "stopped",
                 data,
                 db,
-                archive_data={"archive_id": run.archive_id, "run_id": run.id} if run is not None else None,
+                archive_data=(
+                    {"archive_id": run.archive_id, "run_id": run.id, "created_by_id": run.created_by_id}
+                    if run is not None
+                    else None
+                ),
             )
         return True
     except Exception as e:
@@ -1649,6 +1655,24 @@ def _get_start_ams_mapping(data: dict, printer_id: int, archive_id: int | None) 
     if not stored_ams_mapping and archive_id:
         stored_ams_mapping = _print_ams_mappings.get((printer_id, archive_id))
     return stored_ams_mapping
+
+
+def _price_resumed_run(printer_id: int, archive_id: int, data: dict) -> None:
+    """Price the run of a print seen again, if it has no price yet (#3580).
+
+    Its start scheduled the estimate that prices it; a restart before that
+    was written took the estimate with it, and the run was then charged from
+    the archive's first-run cost. The card is left as the start priced it.
+    """
+    _schedule_archive_cost_estimate(
+        printer_id,
+        archive_id,
+        printer_manager,
+        ams_mapping=_get_start_ams_mapping(data, printer_id, archive_id),
+        plate_id=_get_start_plate_id(printer_id, archive_id),
+        session_factory=async_session,
+        run_only=True,
+    )
 
 
 def _get_start_plate_id(printer_id: int, archive_id: int | None) -> int | None:
@@ -5904,6 +5928,7 @@ async def on_print_start(printer_id: int, data: dict):
                 logger.info("Resuming archive %s on subtask_id match (%s)", existing_archive.id, subtask_id)
                 _bind_active_print(printer_id, existing_archive.id, existing_archive.filename, filename, subtask_name)
                 await _open_run_for(existing_archive.id, printer_id, subtask_id)
+                _price_resumed_run(printer_id, existing_archive.id, data)
                 _mark_owned_if_dispatched(existing_archive)
                 if await _run_needs_energy_start(existing_archive, printer_id, db):
                     await _record_energy_start(existing_archive, printer_id, db, context="subtask-resume")
@@ -6006,6 +6031,7 @@ async def on_print_start(printer_id: int, data: dict):
                     existing_archive.subtask_id = subtask_id
                     await db.commit()
                 await _open_run_for(existing_archive.id, printer_id, subtask_id)
+                _price_resumed_run(printer_id, existing_archive.id, data)
                 # Also set up energy tracking if not already tracked (#941: persisted column)
                 if await _run_needs_energy_start(existing_archive, printer_id, db):
                     await _record_energy_start(existing_archive, printer_id, db, context="existing-printing")
@@ -9934,7 +9960,7 @@ async def _close_out_print(printer_id: int, data: dict):
 
     # The start estimate must not outlive the real cost written below (COST-4).
     if archive_id:
-        await _settle_archive_cost_estimate(archive_id)
+        await _settle_archive_cost_estimate(printer_id, archive_id)
 
     # Internal inventory: track AMS remain% deltas (skip if Spoolman handles usage)
     try:
@@ -10199,6 +10225,17 @@ async def _close_out_print(printer_id: int, data: dict):
     # estimate and therefore cannot represent an interrupted run.
     try:
         if data.get("status") in ("completed", "failed", "aborted", "cancelled"):
+            # A run its start did not get to price (a failure within seconds,
+            # a slow Spoolman, a restart) is priced now, before the session
+            # below holds the database: it is charged from that price (#3580).
+            await _price_unpriced_run(
+                printer_id,
+                archive_id,
+                printer_manager,
+                ams_mapping=stored_ams_mapping,
+                plate_id=billing_plate_id,
+                session_factory=async_session,
+            )
             async with async_session() as db:
                 from backend.app.models.archive import PrintArchive
                 from backend.app.services.finance_billing import apply_print_charge_for_archive
@@ -10213,6 +10250,16 @@ async def _close_out_print(printer_id: int, data: dict):
                 if archive and archive.created_by_id is None and _print_user_info:
                     archive.created_by_id = await _print_user_id_if_still_there(db, _print_user_info)
                     await db.flush()
+
+                # What the run was priced at when it started, at the spools
+                # mapped for it (#3580): a reprint is charged at those, not at
+                # the first run's cost the archive keeps. Without one (no run
+                # opened, no mapping, nothing to price it from even now)
+                # the archive's, as before. The grams it was priced for come
+                # with it: a run that did not finish pays its share of those.
+                run_planned_cost = charged_run.planned_cost if charged_run is not None else None
+                if charged_run is not None and run_planned_cost is not None and charged_run.planned_grams:
+                    billing_planned_grams = charged_run.planned_grams
 
                 run_status = data.get("status", "completed")
                 last_progress = data.get("last_progress")
@@ -10235,7 +10282,7 @@ async def _close_out_print(printer_id: int, data: dict):
                     ),
                     print_queue_id=queue_item_id,
                     print_run_id=billing_run_id,
-                    base_cost_override=billing_base_cost,
+                    base_cost_override=run_planned_cost if run_planned_cost is not None else billing_base_cost,
                     filament_usage=filament_usage,
                     run_entry_id=charged_run.id if charged_run is not None else None,
                     run_status=run_status,
@@ -10303,7 +10350,12 @@ async def _close_out_print(printer_id: int, data: dict):
         # closed again by the next reconnect's reconcile.
         nonlocal completed_run_id
         from backend.app.models.archive import PrintArchive
-        from backend.app.services.print_log import discard_open_runs, record_archive_wear, write_log_entry
+        from backend.app.services.print_log import (
+            discard_open_runs,
+            record_archive_wear,
+            run_being_ended,
+            write_log_entry,
+        )
 
         archive = await db.get(PrintArchive, archive_id)
         if archive is None:
@@ -10363,6 +10415,15 @@ async def _close_out_print(printer_id: int, data: dict):
                 _run_cost = spoolman_run_cost
             if _run_cost is None and _run_status == "completed":
                 _run_cost = _est_cost
+                # A run logs what it was priced at when it started, which
+                # is what it was charged (#3580). The archive's cost is its
+                # first run's (#1378), so a later run must not log that
+                # again; and a first run's price is its plate's own, where
+                # the archive's is the card's figure scaled to the plate, and
+                # is 0 on spools priced 0, where the archive's is not.
+                _ending_run = await run_being_ended(db, archive_id, printer_id, archive.started_at)
+                if _ending_run is not None and _ending_run.planned_cost is not None:
+                    _run_cost = _ending_run.planned_cost
 
             from backend.app.models.printer import Printer as _Printer
 

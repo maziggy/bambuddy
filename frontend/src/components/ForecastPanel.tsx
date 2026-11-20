@@ -1328,7 +1328,7 @@ function SafetyMarginField({
           />
           {/* Unit toggle */}
           <div className="flex bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded overflow-hidden text-xs">
-            <button type="button" onClick={() => onUnitChange('days')} className={`px-2 py-1 transition-colors ${unit === 'days' ? 'bg-bambu-green text-white' : 'text-bambu-gray hover:text-white'}`}>days</button>
+            <button type="button" onClick={() => onUnitChange('days')} className={`px-2 py-1 transition-colors ${unit === 'days' ? 'bg-bambu-green text-white' : 'text-bambu-gray hover:text-white'}`}>{t('forecast.unitDays')}</button>
             <button type="button" onClick={() => onUnitChange('g')} className={`px-2 py-1 transition-colors ${unit === 'g' ? 'bg-bambu-green text-white' : 'text-bambu-gray hover:text-white'}`}>g</button>
           </div>
           <button type="submit" disabled={isPending} className="px-2 py-1 bg-bambu-green text-white text-xs rounded hover:bg-bambu-green/80 disabled:opacity-50">{saveLabel}</button>
@@ -1730,7 +1730,7 @@ function CartLogisticsRow({
             : <Check className="w-4 h-4 text-bambu-green/60 flex-shrink-0" />
           }
           <span className="text-sm font-medium text-white truncate">{label}</span>
-          <span className="text-xs text-bambu-gray flex-shrink-0">{t('forecast.spoolCount', { count: item.quantity_spools })} ordered</span>
+          <span className="text-xs text-bambu-gray flex-shrink-0">{t('forecast.spoolsOrdered', { spools: t('forecast.spoolCount', { count: item.quantity_spools }) })}</span>
         </div>
         {canWrite && (
           <button onClick={onRemove} className="p-1 text-bambu-gray hover:text-red-600 dark:hover:text-red-400 transition-colors flex-shrink-0">
@@ -1849,7 +1849,7 @@ function CartLogisticsRow({
                   stroke="#F59E0B"
                   strokeDasharray="5 3"
                   strokeOpacity={0.8}
-                  label={{ value: 'ROP', position: 'insideTopRight', fill: '#F59E0B', fontSize: 9 }}
+                  label={{ value: t('forecast.chartReorderPoint'), position: 'insideTopRight', fill: '#F59E0B', fontSize: 9 }}
                 />
               )}
               {/* Safety stock floor */}
@@ -1859,7 +1859,7 @@ function CartLogisticsRow({
                   stroke="#6B7280"
                   strokeDasharray="3 3"
                   strokeOpacity={0.6}
-                  label={{ value: 'SS', position: 'insideTopRight', fill: '#6B7280', fontSize: 9 }}
+                  label={{ value: t('forecast.chartSafetyStock'), position: 'insideTopRight', fill: '#6B7280', fontSize: 9 }}
                 />
               )}
               {/* Arrival / lead-time-end vertical line */}
@@ -1869,7 +1869,7 @@ function CartLogisticsRow({
                 strokeWidth={1.5}
                 strokeDasharray="4 3"
                 strokeOpacity={0.9}
-                label={{ value: `+${chartData.arrivalG >= 1000 ? `${(chartData.arrivalG / 1000).toFixed(1)}kg` : `${Math.round(chartData.arrivalG)}g`} arrives (d${chartData.lt})`, position: 'insideTopLeft', fill: '#3B82F6', fontSize: 9 }}
+                label={{ value: t('forecast.chartArrives', { amount: chartData.arrivalG >= 1000 ? `${(chartData.arrivalG / 1000).toFixed(1)}kg` : `${Math.round(chartData.arrivalG)}g`, days: chartData.lt }), position: 'insideTopLeft', fill: '#3B82F6', fontSize: 9 }}
               />
               {/* Stock break — only shown when stock hits zero before arrival */}
               {stockBreaksAt !== null && (
@@ -1878,7 +1878,7 @@ function CartLogisticsRow({
                   stroke="#EF4444"
                   strokeWidth={1.5}
                   strokeOpacity={0.9}
-                  label={{ value: 'OUT', position: 'insideTopLeft', fill: '#EF4444', fontSize: 9 }}
+                  label={{ value: t('forecast.chartOut'), position: 'insideTopLeft', fill: '#EF4444', fontSize: 9 }}
                 />
               )}
             </AreaChart>
@@ -1985,7 +1985,7 @@ function AddToCartModal({
                 <div className="flex items-center gap-2 px-3 py-2 bg-bambu-dark-tertiary/50 rounded-lg">
                   <span className="text-xs text-bambu-gray">≈</span>
                   <span className="text-sm font-semibold text-bambu-green">{t('forecast.spoolCount', { count: spoolsForDuration ?? 0 })}</span>
-                  <span className="text-xs text-bambu-gray">at {f.dailyRateG.toFixed(1)}g/day</span>
+                  <span className="text-xs text-bambu-gray">{t('forecast.atDailyRate', { rate: f.dailyRateG.toFixed(1) })}</span>
                 </div>
               ) : (
                 <div className="text-xs text-yellow-700 dark:text-yellow-400 px-1">{t('forecast.noUsageQty')}</div>

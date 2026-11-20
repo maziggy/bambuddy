@@ -48,6 +48,7 @@ interface PrinterFileViewerModalProps {
 }
 
 function PrinterFileViewerModal({ printerId, filePath, filename, onClose }: PrinterFileViewerModalProps) {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<PrinterViewerTab | null>(null);
   const [plates, setPlates] = useState<PlateMetadata[]>([]);
   const [platesLoading, setPlatesLoading] = useState(false);
@@ -105,8 +106,8 @@ function PrinterFileViewerModal({ printerId, filePath, filename, onClose }: Prin
             }`}
           >
             <Box className="w-4 h-4" />
-            3D Model
-            {!hasModel && <span className="text-xs">(not available)</span>}
+            {t('modelViewer.tabs.model')}
+            {!hasModel && <span className="text-xs">({t('modelViewer.notAvailable')})</span>}
           </button>
           <button
             onClick={() => hasGcode && setActiveTab('gcode')}
@@ -120,8 +121,8 @@ function PrinterFileViewerModal({ printerId, filePath, filename, onClose }: Prin
             }`}
           >
             <FileText className="w-4 h-4" />
-            G-code Preview
-            {!hasGcode && <span className="text-xs">(not sliced)</span>}
+            {t('fileManagerModal.gcodePreview')}
+            {!hasGcode && <span className="text-xs">({t('fileManagerModal.notSliced')})</span>}
           </button>
         </div>
 
@@ -132,7 +133,7 @@ function PrinterFileViewerModal({ printerId, filePath, filename, onClose }: Prin
                 <div className="rounded-lg border border-bambu-dark-tertiary bg-bambu-dark p-3">
                   <div className="flex items-center gap-2 text-sm text-bambu-gray mb-2">
                     <Box className="w-4 h-4" />
-                    Plates
+                    {t('modelViewer.plates')}
                     {platesLoading && <Loader2 className="w-3 h-3 animate-spin" />}
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -149,9 +150,9 @@ function PrinterFileViewerModal({ printerId, filePath, filename, onClose }: Prin
                         <Box className="w-5 h-5 text-bambu-gray" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm text-white font-medium truncate">All Plates</p>
+                        <p className="text-sm text-white font-medium truncate">{t('modelViewer.allPlates')}</p>
                         <p className="text-xs text-bambu-gray truncate">
-                          {plates.length} plate{plates.length !== 1 ? 's' : ''}
+                          {t('modelViewer.plateCount', { count: plates.length })}
                         </p>
                       </div>
                       {selectedPlateId == null && (
@@ -172,7 +173,7 @@ function PrinterFileViewerModal({ printerId, filePath, filename, onClose }: Prin
                         {plate.has_thumbnail ? (
                           <img
                             src={api.getPrinterFilePlateThumbnail(printerId, plate.index, filePath)}
-                            alt={`Plate ${plate.index}`}
+                            alt={t('modelViewer.plateNumber', { number: plate.index })}
                             className="w-10 h-10 rounded object-cover bg-bambu-dark-tertiary"
                           />
                         ) : (
@@ -182,12 +183,12 @@ function PrinterFileViewerModal({ printerId, filePath, filename, onClose }: Prin
                         )}
                         <div className="min-w-0 flex-1">
                           <p className="text-sm text-white font-medium truncate">
-                            {plate.name || `Plate ${plate.index}`}
+                            {plate.name || t('modelViewer.plateNumber', { number: plate.index })}
                           </p>
                           <p className="text-xs text-bambu-gray truncate">
                             {plate.objects.length > 0
                               ? plate.objects.slice(0, 2).join(', ') + (plate.objects.length > 2 ? '…' : '')
-                              : `${plate.filaments.length} filament${plate.filaments.length !== 1 ? 's' : ''}`}
+                              : t('modelViewer.filamentCount', { count: plate.filaments.length })}
                           </p>
                         </div>
                         {selectedPlateId === plate.index && (
@@ -198,15 +199,15 @@ function PrinterFileViewerModal({ printerId, filePath, filename, onClose }: Prin
                   </div>
                   {selectedPlate && (
                     <div className="mt-3 text-xs text-bambu-gray flex flex-wrap gap-x-4 gap-y-1">
-                      <span>Plate {selectedPlate.index}</span>
+                      <span>{t('modelViewer.plateNumber', { number: selectedPlate.index })}</span>
                       {selectedPlate.print_time_seconds != null && (
-                        <span>ETA {Math.round(selectedPlate.print_time_seconds / 60)} min</span>
+                        <span>{t('modelViewer.eta', { minutes: Math.round(selectedPlate.print_time_seconds / 60) })}</span>
                       )}
                       {selectedPlate.filament_used_grams != null && (
                         <span>{selectedPlate.filament_used_grams.toFixed(1)} g</span>
                       )}
                       {selectedPlate.filaments.length > 0 && (
-                        <span>{selectedPlate.filaments.length} filament{selectedPlate.filaments.length !== 1 ? 's' : ''}</span>
+                        <span>{t('modelViewer.filamentCount', { count: selectedPlate.filaments.length })}</span>
                       )}
                     </div>
                   )}
@@ -228,7 +229,7 @@ function PrinterFileViewerModal({ printerId, filePath, filename, onClose }: Prin
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-bambu-gray">
-              No preview available for this file
+              {t('modelViewer.noPreview')}
             </div>
           )}
         </div>
@@ -270,13 +271,13 @@ function getFileIcon(filename: string, isDirectory: boolean) {
 
 type SortOption = 'name-asc' | 'name-desc' | 'size-asc' | 'size-desc' | 'date-asc' | 'date-desc';
 
-const SORT_OPTIONS: { value: SortOption; label: string }[] = [
-  { value: 'name-asc', label: 'Name (A-Z)' },
-  { value: 'name-desc', label: 'Name (Z-A)' },
-  { value: 'size-asc', label: 'Size (smallest)' },
-  { value: 'size-desc', label: 'Size (largest)' },
-  { value: 'date-asc', label: 'Date (oldest)' },
-  { value: 'date-desc', label: 'Date (newest)' },
+const SORT_OPTIONS: { value: SortOption; labelKey: string }[] = [
+  { value: 'name-asc', labelKey: 'fileManagerModal.sort.nameAsc' },
+  { value: 'name-desc', labelKey: 'fileManagerModal.sort.nameDesc' },
+  { value: 'size-asc', labelKey: 'fileManagerModal.sort.sizeAsc' },
+  { value: 'size-desc', labelKey: 'fileManagerModal.sort.sizeDesc' },
+  { value: 'date-asc', labelKey: 'fileManagerModal.sort.dateAsc' },
+  { value: 'date-desc', labelKey: 'fileManagerModal.sort.dateDesc' },
 ];
 
 export function FileManagerModal({ printerId, printerName, onClose }: FileManagerModalProps) {
@@ -493,10 +494,10 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
 
   // Quick navigation buttons for common directories
   const quickDirs = [
-    { path: '/', label: 'Root' },
-    { path: '/cache', label: 'Cache' },
-    { path: '/model', label: 'Models' },
-    { path: '/timelapse', label: 'Timelapse' },
+    { path: '/', label: t('fileManagerModal.dirs.root') },
+    { path: '/cache', label: t('fileManagerModal.dirs.cache') },
+    { path: '/model', label: t('fileManagerModal.dirs.models') },
+    { path: '/timelapse', label: t('fileManagerModal.dirs.timelapse') },
   ];
 
   return (
@@ -535,8 +536,8 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
               <button
                 onClick={onClose}
                 className="text-bambu-gray hover:text-white transition-colors"
-                title="Close file manager"
-                aria-label="Close file manager"
+                title={t('fileManagerModal.closeFileManager')}
+                aria-label={t('fileManagerModal.closeFileManager')}
               >
                 <X className="w-5 h-5" />
               </button>
@@ -578,12 +579,12 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as SortOption)}
               className="appearance-none bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm py-1.5 pl-2 pr-6 focus:border-bambu-green focus:outline-none cursor-pointer"
-              title="Sort files"
-              aria-label="Sort files"
+              title={t('fileManagerModal.sortFiles')}
+              aria-label={t('fileManagerModal.sortFiles')}
             >
               {SORT_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
-                  {option.label}
+                  {t(option.labelKey)}
                 </option>
               ))}
             </select>
@@ -606,8 +607,8 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
               onClick={navigateUp}
               disabled={currentPath === '/'}
               className="p-1 rounded hover:bg-bambu-dark-tertiary disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Go to parent folder"
-              aria-label="Go to parent folder"
+              title={t('fileManagerModal.goToParentFolder')}
+              aria-label={t('fileManagerModal.goToParentFolder')}
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
@@ -689,7 +690,7 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
                                   setViewerFile({ path: file.path, name: file.name });
                                 }}
                                 className="p-1 rounded hover:bg-bambu-dark text-bambu-gray hover:text-bambu-green"
-                                title="3D View"
+                                title={t('fileManagerModal.threeView')}
                               >
                                 <Box className="w-4 h-4" />
                               </button>
@@ -726,7 +727,7 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
                     className="flex items-center gap-1 text-xs text-bambu-gray hover:text-white transition-colors"
                   >
                     <MinusSquare className="w-4 h-4" />
-                    Deselect All
+                    {t('common.deselectAll')}
                   </button>
                 ) : (
                   <button
@@ -734,7 +735,7 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
                     className="flex items-center gap-1 text-xs text-bambu-gray hover:text-white transition-colors"
                   >
                     <CheckSquare className="w-4 h-4" />
-                    Select All
+                    {t('common.selectAll')}
                   </button>
                 )}
               </div>
@@ -754,7 +755,7 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
               ) : (
                 <>
                   <Download className="w-4 h-4" />
-                  Download{selectedFiles.size > 1 ? ` (${selectedFiles.size})` : ''}
+                  {t('common.download')}{selectedFiles.size > 1 ? ` (${selectedFiles.size})` : ''}
                 </>
               )}
             </Button>

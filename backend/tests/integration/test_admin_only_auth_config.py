@@ -120,6 +120,8 @@ async def test_a_reset_by_a_settings_manager_leaves_authentication_on(async_clie
         # A full backup written into a folder the web server hands out.
         ("local_backup_path", "/opt/bambuddy/static/img"),
         ("external_url", None),
+        # Every submitter's email to a webhook of the manager's choosing.
+        ("notification_submitter_email_enabled", True),
     ],
 )
 async def test_a_settings_manager_cannot_change_sign_in_settings(async_client: AsyncClient, manager, key, value):

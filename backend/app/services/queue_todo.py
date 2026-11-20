@@ -231,6 +231,8 @@ def build_todo(
                     for f in fils
                 ]
                 entries.append(entry)
+        if not entries:
+            continue
         count += len(entries)
         out_groups.append(
             {

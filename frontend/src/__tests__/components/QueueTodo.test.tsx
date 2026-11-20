@@ -117,6 +117,25 @@ describe('QueueTodoList', () => {
     expect(container.querySelector('[data-testid="queue-todo-list"]')).toBeNull();
   });
 
+  it('leaves out a printer group without entries', () => {
+    const mixed: QueueTodo = {
+      count: 1,
+      groups: [
+        { printer_id: 1, printer_name: 'Empty printer', target_model: null, entries: [] },
+        {
+          printer_id: 2,
+          printer_name: 'Busy printer',
+          target_model: null,
+          entries: [{ kind: 'plate_clear', jobs: [{ id: 10, name: 'Benchy', can_start: false }], filaments: [], printers: [], detail: null }],
+        },
+      ],
+    };
+    const { container } = render(<QueueTodoList todo={mixed} />);
+    expect(container.querySelectorAll('section')).toHaveLength(1);
+    expect(screen.queryByText('Empty printer')).toBeNull();
+    expect(screen.getByText('Busy printer')).toBeTruthy();
+  });
+
   it('links filament/interlock entries to the printer or the queue', () => {
     render(<QueueTodoList todo={todo} />);
     const links = screen.getAllByRole('link');

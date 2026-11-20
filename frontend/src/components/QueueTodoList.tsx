@@ -208,7 +208,7 @@ export function QueueTodoList({ todo, onNavigate, heading = false, overlayZIndex
     <div className={`space-y-3 min-w-0 ${heading ? 'mb-4' : ''}`} data-testid="queue-todo-list">
       {modals}
       {heading && <h2 className="text-sm font-semibold text-bambu-gray-light">{t('queueTodo.title')}</h2>}
-      {todo.groups.map((group) => (
+      {todo.groups.filter((group) => group.entries.length > 0).map((group) => (
         <section
           key={group.printer_id ?? `model-${group.target_model}`}
           className="rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3"

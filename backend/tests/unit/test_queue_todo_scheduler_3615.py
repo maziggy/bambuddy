@@ -131,6 +131,18 @@ class TestNozzle:
         }
         assert build_todo(jobs, {8: "H2D"}, holds, [], {}, [])["count"] == 2
 
+    def test_a_printer_with_nothing_to_do_has_no_group(self):
+        jobs = [
+            TodoJob(1, "Idle", frozenset({7}), 7, None, None, False),
+            TodoJob(2, "Waits", frozenset({8}), 8, None, None, False),
+        ]
+        holds = {2: [FilamentHold(2, 8, None, (TodoFilament("PLA", "#FF0000", ""),))]}
+
+        todo = build_todo(jobs, {7: "Empty", 8: "Busy"}, holds, [], {}, [])
+
+        assert [g["printer_name"] for g in todo["groups"]] == ["Busy"]
+        assert todo["count"] == 1
+
 
 class TestMatcherHolds:
     async def _find(self, ctx, scheduler, *, status=None, **kwargs):

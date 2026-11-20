@@ -1579,6 +1579,12 @@ export default {
 
   // Queue page
   queue: {
+    waiting: {
+      filament: '等待耗材：{{what}}',
+      noMatch: '沒有符合的材料/顏色。正在等待{{what}}',
+      priorityIn: '{{hours}} 小時後優先',
+      hasPriority: '已獲優先權',
+    },
     filamentShort: {
       rowBadge: '所分配料盤的線材不足',
       rowTooltip: '調度程式已標記此項目。點擊播放查看各槽位的不足量，並決定是否仍要列印。',
@@ -2749,6 +2755,13 @@ export default {
     concurrentUploadsDescription: '佇列可同時向多少台印表機傳送檔案。印表機接收檔案的速度很慢（大型列印可能需要數分鐘），而且每台都得排隊等候——因此在印表機較多時，調高此值可避免批次中最後一台印表機等完前面所有傳輸。若網路或 Bambuddy 主機難以負荷並行傳輸，請調低此值。',
     concurrentUploadsLabel: '同時上傳的印表機數量',
     concurrentUploadsHelp: '設為 1 時一次只傳送給一台印表機（舊行為）。預設值為 4。',
+    loadedFilamentFirstTitle: '優先使用已裝載的耗材',
+    loadedFilamentFirst: '優先執行耗材已裝載的工作',
+    loadedFilamentFirstDescription: '耗材未裝在其列印機上的工作會被略過而不是被擱置，待料盤裝好後自動開始；排在其後且條件符合的工作會先執行。佇列順序不會改變。',
+    maxWaitHours: '最長等待時間（小時）',
+    maxWaitHoursHelp: '工作在佇列中停留達到該時間後（從排入佇列或預定開始時起算）將獲得優先權：它下一台可用的列印機會為它保持空閒，直到它的耗材裝載完成，並且只通知您一次。留空表示不限制；此時當工作開始等待時會通知您一次。',
+    maxWaitHoursInvalid: '請輸入 1 到 8760 之間的整數小時數，或留空表示不限制。',
+    maxWaitHoursPlaceholder: '不限制',
     dispatchOrderTitle: '指定機型任務的列印機順序',
     dispatchOrderDescription: '當任務排隊給某機型的任一列印機時，由此設定決定能接收它的列印機中由哪一台接手。忙碌、離線或耗材不足的列印機無論順序如何都會被跳過。',
     dispatchOrderLabel: '選擇列印機',

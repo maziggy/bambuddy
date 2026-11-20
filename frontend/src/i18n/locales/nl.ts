@@ -1591,6 +1591,12 @@ export default {
   queue: {
     title: 'Afdrukwachtrij',
     subtitle: 'Plan en beheer je afdruktaken',
+    waiting: {
+      filament: 'Wachten op filament: {{what}}',
+      noMatch: 'Geen passend materiaal/kleur. Wachten op {{what}}',
+      priorityIn: 'voorrang over {{hours}} u',
+      hasPriority: 'heeft voorrang',
+    },
     filamentShort: {
       rowBadge: 'Onvoldoende filament op de toegewezen spoel',
       rowTooltip: 'De verzendscheduler heeft dit item gemarkeerd. Klik op Afspelen om het tekort per sleuf te bekijken en te bepalen of je toch wilt afdrukken.',
@@ -2769,6 +2775,13 @@ export default {
     concurrentUploadsDescription: 'Hoeveel printers de wachtrij tegelijk bestanden mag sturen. Printers ontvangen bestanden langzaam (een grote afdruk kan enkele minuten duren) en elke printer wacht op zijn beurt — bij een groter printerpark voorkomt een hogere waarde dat de laatste printer in een batch op alle eerdere overdrachten moet wachten. Verlaag dit als je netwerk of Bambuddy-host moeite heeft met parallelle overdrachten.',
     concurrentUploadsLabel: 'Printers tegelijk uploaden',
     concurrentUploadsHelp: '1 verstuurt naar één printer tegelijk (het oude gedrag). Standaard is 4.',
+    loadedFilamentFirstTitle: 'Geladen filament eerst',
+    loadedFilamentFirst: 'Taken met geladen filament eerst uitvoeren',
+    loadedFilamentFirstDescription: 'Een taak waarvan het filament niet in de printer zit, wordt overgeslagen in plaats van vastgehouden en start vanzelf zodra de spoel is geladen; taken erachter die passen, gaan eerst. De volgorde van de wachtrij wordt nooit gewijzigd.',
+    maxWaitHours: 'Maximale wachttijd (uren)',
+    maxWaitHoursHelp: 'Zodra een taak zo lang in de wachtrij staat (geteld vanaf het in de wachtrij zetten of de geplande start), krijgt hij voorrang: de volgende printer die hij kan gebruiken wordt voor hem vrijgehouden totdat zijn filament is geladen, en je krijgt één melding. Laat leeg voor geen limiet; je krijgt dan één melding wanneer een taak begint te wachten.',
+    maxWaitHoursInvalid: 'Voer een geheel aantal uren van 1 tot 8760 in, of laat leeg voor geen limiet.',
+    maxWaitHoursPlaceholder: 'Geen limiet',
     dispatchOrderTitle: 'Printervolgorde voor opdrachten voor een willekeurig model',
     dispatchOrderDescription: 'Wanneer een opdracht voor een willekeurige printer van een model in de wachtrij komt, bepaalt dit welke van de printers die hem kunnen nemen hem krijgt. Een printer die bezig of offline is of weinig filament heeft, wordt overgeslagen, welke volgorde ook.',
     dispatchOrderLabel: 'Kies de printer',

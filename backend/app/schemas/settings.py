@@ -34,6 +34,12 @@ LAN_SERVICE_URL_SETTINGS = ("ha_url", "obico_ml_url", "orcaslicer_api_url", "bam
 _COMPOSE_DIR_ALLOWED = re.compile(r"^[\w \-./\\:~]+$", re.UNICODE)
 _COMPOSE_DIR_MAX_LEN = 512
 
+# "Loaded filament first" maximum wait in hours (#3587): the default and the
+# accepted range, shared by the schema, the settings read-back and the scheduler.
+QUEUE_MAX_WAIT_HOURS_DEFAULT = 48
+QUEUE_MAX_WAIT_HOURS_MIN = 1
+QUEUE_MAX_WAIT_HOURS_MAX = 8760
+
 
 class AppSettings(BaseModel):
     """Application settings schema."""
@@ -499,6 +505,22 @@ class AppSettings(BaseModel):
         default=False,
         description="Shortest Job First — scheduler prioritizes shorter print jobs over longer ones",
     )
+    queue_loaded_filament_first: bool = Field(
+        default=False,
+        description=(
+            "Skip a queued job whose filament is not loaded on its printer instead of holding it, "
+            "so jobs behind it that fit can run first (#3587)"
+        ),
+    )
+    queue_max_wait_hours: int | None = Field(
+        default=QUEUE_MAX_WAIT_HOURS_DEFAULT,
+        ge=QUEUE_MAX_WAIT_HOURS_MIN,
+        le=QUEUE_MAX_WAIT_HOURS_MAX,
+        description=(
+            "With loaded-filament-first: hours after which a skipped job gets priority and its printer is "
+            "kept free for it. null = no limit (#3587)"
+        ),
+    )
     model_dispatch_order: Literal["fewest_hours", "most_hours", "least_recently_used", "priority"] = Field(
         default="fewest_hours",
         description=(
@@ -872,6 +894,8 @@ class AppSettingsUpdate(BaseModel):
     finance_budget_reset_timezone: str | None = None
     require_plate_clear: bool | None = None
     queue_shortest_first: bool | None = None
+    queue_loaded_filament_first: bool | None = None
+    queue_max_wait_hours: int | None = Field(default=None, ge=QUEUE_MAX_WAIT_HOURS_MIN, le=QUEUE_MAX_WAIT_HOURS_MAX)
     queue_max_concurrent_uploads: int | None = Field(default=None, ge=1, le=16)
     preheat_enabled: bool | None = None
     preheat_filament_targets: str | None = None

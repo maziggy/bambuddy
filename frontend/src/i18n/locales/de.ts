@@ -1579,6 +1579,12 @@ export default {
 
   // Queue page
   queue: {
+    waiting: {
+      filament: 'Warten auf Filament: {{what}}',
+      noMatch: 'Kein passendes Material/keine passende Farbe. Warten auf {{what}}',
+      priorityIn: 'Vorrang in {{hours}} Std.',
+      hasPriority: 'hat Vorrang',
+    },
     filamentShort: {
       rowBadge: 'Filament fuer die zugewiesene Spule reicht nicht',
       rowTooltip: 'Der Dispatcher hat diese Position markiert. Klicke auf Play, um den Pro-Slot-Fehlbestand zu sehen und zu entscheiden, ob trotzdem gedruckt werden soll.',
@@ -2749,6 +2755,13 @@ export default {
     concurrentUploadsDescription: 'Wie viele Drucker die Warteschlange gleichzeitig mit Dateien versorgen darf. Drucker nehmen Dateien nur langsam entgegen (ein großer Druck kann mehrere Minuten dauern), und jeder wartet, bis er an der Reihe ist — bei größeren Farmen verhindert ein höherer Wert also, dass der letzte Drucker eines Stapels erst alle anderen Übertragungen abwarten muss. Verringern Sie ihn, wenn Ihr Netzwerk oder der Bambuddy-Host mit parallelen Übertragungen Probleme hat.',
     concurrentUploadsLabel: 'Gleichzeitig belieferte Drucker',
     concurrentUploadsHelp: '1 beliefert immer nur einen Drucker (das bisherige Verhalten). Standard ist 4.',
+    loadedFilamentFirstTitle: 'Geladenes Filament zuerst',
+    loadedFilamentFirst: 'Aufträge mit geladenem Filament zuerst ausführen',
+    loadedFilamentFirstDescription: 'Ein Auftrag, dessen Filament nicht im Drucker geladen ist, wird übersprungen statt angehalten und startet von selbst, sobald die Spule eingelegt ist; nachfolgende Aufträge, die passen, laufen zuerst. Die Reihenfolge der Warteschlange wird nie geändert.',
+    maxWaitHours: 'Maximale Wartezeit (Stunden)',
+    maxWaitHoursHelp: 'Sobald ein Auftrag so lange in der Warteschlange steht (gerechnet ab Einreihung oder geplantem Start), erhält er Vorrang: Der nächste Drucker, den er nutzen könnte, wird für ihn freigehalten, bis sein Filament geladen ist; Sie werden einmal benachrichtigt. Leer lassen für keine Begrenzung; dann werden Sie einmal benachrichtigt, wenn ein Auftrag zu warten beginnt.',
+    maxWaitHoursInvalid: 'Geben Sie eine ganze Zahl von Stunden von 1 bis 8760 ein oder lassen Sie das Feld leer für keine Begrenzung.',
+    maxWaitHoursPlaceholder: 'Keine Begrenzung',
     dispatchOrderTitle: 'Druckerreihenfolge für Aufträge an ein beliebiges Modell',
     dispatchOrderDescription: 'Wird ein Auftrag für irgendeinen Drucker eines Modells eingereiht, entscheidet dies, welcher der möglichen Drucker ihn bekommt. Ein Drucker, der beschäftigt, offline oder knapp an Filament ist, wird übergangen, egal wie die Reihenfolge ist.',
     dispatchOrderLabel: 'Drucker wählen',

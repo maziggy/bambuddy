@@ -1579,6 +1579,12 @@ export default {
 
   // Queue page
   queue: {
+    waiting: {
+      filament: 'En attente de filament : {{what}}',
+      noMatch: 'Aucun matériau/couleur correspondant. En attente de {{what}}',
+      priorityIn: 'priorité dans {{hours}} h',
+      hasPriority: 'est prioritaire',
+    },
     filamentShort: {
       rowBadge: 'Filament insuffisant pour la bobine assignee',
       rowTooltip: "Le planificateur a signale cet element. Cliquez sur Lecture pour voir le deficit par emplacement et decider de lancer quand meme l'impression.",
@@ -2704,6 +2710,13 @@ export default {
     concurrentUploadsDescription: "Nombre d'imprimantes auxquelles la file d'attente peut envoyer des fichiers en même temps. Les imprimantes reçoivent les fichiers lentement (une grosse impression peut prendre plusieurs minutes) et chacune attend son tour : sur un parc important, augmenter cette valeur évite que la dernière imprimante d'un lot doive attendre la fin de tous les transferts précédents. Réduisez-la si votre réseau ou votre hôte Bambuddy supporte mal les transferts parallèles.",
     concurrentUploadsLabel: 'Imprimantes servies simultanément',
     concurrentUploadsHelp: "1 n'envoie qu'à une imprimante à la fois (l'ancien comportement). Valeur par défaut : 4.",
+    loadedFilamentFirstTitle: 'Filament chargé d\'abord',
+    loadedFilamentFirst: 'Lancer d\'abord les tâches dont le filament est chargé',
+    loadedFilamentFirstDescription: 'Une tâche dont le filament n\'est pas chargé sur son imprimante est ignorée au lieu d\'être mise en attente et démarre d\'elle-même dès que la bobine est chargée ; les tâches suivantes qui conviennent passent en premier. L\'ordre de la file n\'est jamais modifié.',
+    maxWaitHours: 'Attente maximale (heures)',
+    maxWaitHoursHelp: 'Lorsqu\'une tâche est dans la file depuis ce délai (compté depuis sa mise en file ou son démarrage planifié), elle devient prioritaire : la prochaine imprimante qu\'elle pourrait utiliser lui est réservée jusqu\'à ce que son filament soit chargé, et vous recevez une notification. Laissez vide pour ne pas limiter ; vous êtes alors notifié une fois lorsqu\'une tâche commence à attendre.',
+    maxWaitHoursInvalid: 'Saisissez un nombre entier d\'heures de 1 à 8760, ou laissez vide pour ne pas limiter.',
+    maxWaitHoursPlaceholder: 'Aucune limite',
     dispatchOrderTitle: 'Ordre des imprimantes pour les travaux de modèle quelconque',
     dispatchOrderDescription: "Quand un travail est mis en file pour n'importe quelle imprimante d'un modèle, ce réglage décide laquelle de celles qui peuvent le prendre le reçoit. Une imprimante occupée, hors ligne ou à court de filament est passée, quel que soit l'ordre.",
     dispatchOrderLabel: "Choisir l'imprimante",

@@ -1579,6 +1579,12 @@ export default {
 
   // Queue page
   queue: {
+    waiting: {
+      filament: '等待耗材：{{what}}',
+      noMatch: '没有匹配的材料/颜色。正在等待{{what}}',
+      priorityIn: '{{hours}} 小时后优先',
+      hasPriority: '已获优先权',
+    },
     filamentShort: {
       rowBadge: '所分配料盘的耀丝不足',
       rowTooltip: '调度程序已标记该项。点击播放查看各插槽的赤字并决定是否仍要打印。',
@@ -2749,6 +2755,13 @@ export default {
     concurrentUploadsDescription: '队列可以同时向多少台打印机发送文件。打印机接收文件很慢（大型打印可能需要几分钟），并且每台都要排队等候——因此在打印机较多时，调高该值可以避免批次中最后一台打印机等完前面所有传输。如果网络或 Bambuddy 主机难以承受并行传输，请调低该值。',
     concurrentUploadsLabel: '同时上传的打印机数量',
     concurrentUploadsHelp: '设为 1 时一次只向一台打印机发送（旧行为）。默认值为 4。',
+    loadedFilamentFirstTitle: '优先使用已装载的耗材',
+    loadedFilamentFirst: '优先运行耗材已装载的任务',
+    loadedFilamentFirstDescription: '耗材未装在其打印机上的任务会被跳过而不是被挂起，待料盘装好后自动开始；排在其后且条件满足的任务会先运行。队列顺序不会改变。',
+    maxWaitHours: '最长等待时间（小时）',
+    maxWaitHoursHelp: '任务在队列中停留达到该时间后（从入队或计划开始时起算）将获得优先权：它下一台可用的打印机会为它保持空闲，直到它的耗材装载完成，并且只通知您一次。留空表示不限制；此时当任务开始等待时会通知您一次。',
+    maxWaitHoursInvalid: '请输入 1 到 8760 之间的整数小时数，或留空表示不限制。',
+    maxWaitHoursPlaceholder: '不限制',
     dispatchOrderTitle: '指定机型任务的打印机顺序',
     dispatchOrderDescription: '当任务排队给某机型的任意打印机时，由此设置决定在能接收它的打印机中由哪一台接手。忙碌、离线或耗材不足的打印机无论顺序如何都会被跳过。',
     dispatchOrderLabel: '选择打印机',

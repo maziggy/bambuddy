@@ -99,10 +99,20 @@ APPLIED: frozenset[tuple[str, str]] = frozenset(
         # A profile default's K profile would select a calibration slot on
         # the next printer given the id (#1326).
         ("filament_profile_default_k_profile", "printer_id"),
+        # The maintenance log outlives its printer; the next printer given the
+        # id would take over its history.
+        ("maintenance_log_entries", "printer_id"),
         # filament_profile_default: the next default given the id would take
         # over its presets and K profiles (#1326).
         ("filament_profile_default_k_profile", "profile_default_id"),
         ("filament_profile_default_preset", "profile_default_id"),
+        # maintenance_types: the log keeps a deleted custom task's entries; the
+        # next task given the id would take them over.
+        ("maintenance_log_entries", "maintenance_type_id"),
+        # maintenance_history goes with its printer task; the next reset given
+        # the id, maybe on another printer, would have its history deleted
+        # with this entry.
+        ("maintenance_log_entries", "history_id"),
         # external_links: the next link given the id would show the count an
         # app reported for the deleted one.
         ("external_link_badges", "link_id"),
@@ -123,6 +133,7 @@ APPLIED: frozenset[tuple[str, str]] = frozenset(
         ("library_files", "created_by_id"),
         ("library_folders", "created_by_id"),
         ("long_lived_tokens", "user_id"),
+        ("maintenance_log_entries", "performed_by_id"),
         ("pipeline_runs", "created_by"),
         ("print_archives", "created_by_id"),
         ("print_batches", "created_by_id"),
@@ -130,6 +141,9 @@ APPLIED: frozenset[tuple[str, str]] = frozenset(
         ("print_queue", "created_by_id"),
         ("scheduled_dryings", "created_by_id"),
         ("slicer_pipelines", "created_by"),
+        # A new user given the id would have their cloud sign-in used for the
+        # slot's preset (#3519).
+        ("spool_assignment", "assigned_by_user_id"),
         ("sponsor_toast_state", "user_id"),
         ("user_email_preferences", "user_id"),
         ("user_groups", "user_id"),

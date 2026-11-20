@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Search, Loader2, ChevronDown, Cloud, CloudOff } from 'lucide-react';
+import { Search, Loader2, ChevronDown, Cloud, CloudOff, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { FilamentSectionProps, FilamentOption } from './types';
 import { KNOWN_VARIANTS } from './constants';
@@ -52,6 +52,11 @@ export function FilamentSection({
 }: FilamentSectionProps) {
   const { t } = useTranslation();
   const [presetDropdownOpen, setPresetDropdownOpen] = useState(false);
+  // What is typed into the open preset list. Kept apart from presetInputValue,
+  // which is the chosen preset's name and is what gets saved: closing the list
+  // without picking shows that name again, and search text never becomes the
+  // name (#3596).
+  const [presetSearch, setPresetSearch] = useState('');
   const [brandDropdownOpen, setBrandDropdownOpen] = useState(false);
   const [subtypeDropdownOpen, setSubtypeDropdownOpen] = useState(false);
   const [materialDropdownOpen, setMaterialDropdownOpen] = useState(false);
@@ -91,13 +96,13 @@ export function FilamentSection({
 
   // Filtered presets based on search
   const filteredPresets = useMemo(() => {
-    if (!presetInputValue) return filamentOptions;
-    const search = presetInputValue.toLowerCase();
+    if (!presetSearch) return filamentOptions;
+    const search = presetSearch.toLowerCase();
     return filamentOptions.filter(o =>
       o.displayName.toLowerCase().includes(search) ||
       o.code.toLowerCase().includes(search),
     );
-  }, [filamentOptions, presetInputValue]);
+  }, [filamentOptions, presetSearch]);
 
   // Filtered brands
   const filteredBrands = useMemo(() => {
@@ -155,6 +160,7 @@ export function FilamentSection({
     updateField('slicer_filament', option.code);
     setPresetInputValue(option.displayName);
     setPresetDropdownOpen(false);
+    setPresetSearch('');
 
     // Auto-fill material, brand and subtype from the preset name — but only
     // where the value is still empty or was itself put there by the previously
@@ -249,18 +255,35 @@ export function FilamentSection({
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray/50 pointer-events-none" />
             <input
               type="text"
-              className="w-full pl-9 pr-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder:text-bambu-gray/50 focus:outline-none focus:border-bambu-green"
+              className={`w-full pl-9 ${formData.slicer_filament ? 'pr-9' : 'pr-3'} py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder:text-bambu-gray/50 focus:outline-none focus:border-bambu-green`}
               placeholder={t('inventory.searchPresets')}
-              value={presetInputValue}
+              value={presetDropdownOpen ? presetSearch : presetInputValue}
               onChange={(e) => {
-                setPresetInputValue(e.target.value);
+                setPresetSearch(e.target.value);
                 setPresetDropdownOpen(true);
               }}
               onFocus={() => {
                 setPresetDropdownOpen(true);
-                setPresetInputValue('');
+                setPresetSearch('');
               }}
             />
+            {/* Removing the preset is how a spool goes back to Stock (#3596). */}
+            {formData.slicer_filament && (
+              <button
+                type="button"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-bambu-gray hover:text-white"
+                title={t('inventory.clearPreset')}
+                aria-label={t('inventory.clearPreset')}
+                onClick={() => {
+                  updateField('slicer_filament', '');
+                  setPresetInputValue('');
+                  setPresetSearch('');
+                  setPresetDropdownOpen(false);
+                }}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
             {presetDropdownOpen && (
               <div className="absolute z-50 w-full mt-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg max-h-64 overflow-y-auto">
                 {filteredPresets.length === 0 ? (

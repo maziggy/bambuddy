@@ -97,6 +97,16 @@ async def _run(
 
     with (
         patch("backend.app.api.routes.settings.get_setting", new=AsyncMock(side_effect=_setting)),
+        # The fallback runs only for the file's own printer (#3535): the
+        # source and the target name the same one.
+        patch(
+            "backend.app.services.slicer_3mf_convert.extract_source_printer_model",
+            return_value="X2D" if embedded_fallback else None,
+        ),
+        patch(
+            "backend.app.api.routes.library._resolve_target_printer_model",
+            new=AsyncMock(return_value="X2D" if embedded_fallback else None),
+        ),
         patch(
             "backend.app.services.preset_resolver.resolve_preset_ref",
             new=AsyncMock(return_value=json.dumps({"name": "x", "from": "system", "type": "machine"})),

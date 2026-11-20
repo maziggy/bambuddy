@@ -185,9 +185,15 @@ class _UploadRecorder:
 
     Without ``assemble`` — for the tests whose assertion is an upper bound, where
     nothing has to assemble — the call just sleeps.
+
+    With ``hold=True`` the call stays open until the test calls ``release()``.
+    That is for the tests that run a second pass "while the upload is still in
+    flight": a sleep only makes that true if the pass ends before the sleep
+    does, and on a loaded runner one pass took over a second, so the upload had
+    finished, the pool was free again and the pass launched the next one.
     """
 
-    def __init__(self, *, fail_for_ip: str | None = None, assemble: bool = False):
+    def __init__(self, *, fail_for_ip: str | None = None, assemble: bool = False, hold: bool = False):
         self.in_flight = 0
         self.peak = 0
         self.order: list[str] = []
@@ -196,6 +202,24 @@ class _UploadRecorder:
         self.scheduler = None  # bound by _scheduler_ctx when assemble is on
         self._deadline = 0.0
         self._assembled = False
+        self._released = asyncio.Event()
+        if not hold:
+            self._released.set()
+
+    def release(self):
+        """Let held uploads finish, and later ones go straight through."""
+        self._released.set()
+
+    async def arrived(self, count: int):
+        """Wait until ``count`` uploads are open, bounded like a batch.
+
+        check_queue returns before its dispatches reach the upload, so releasing
+        straight after it lets each one through as it arrives and none overlap.
+        """
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + _BATCH_DEADLINE_SECONDS
+        while self.in_flight < count and loop.time() < deadline:
+            await asyncio.sleep(0.005)
 
     async def _await_batch(self):
         """Hold until every upload this pass launched has reached this point.
@@ -223,6 +247,8 @@ class _UploadRecorder:
         try:
             if self.assemble:
                 await self._await_batch()
+            elif not self._released.is_set():
+                await self._released.wait()
             else:
                 await asyncio.sleep(UPLOAD_SECONDS)
             if self.fail_for_ip is not None and ip_address == self.fail_for_ip:
@@ -382,7 +408,7 @@ async def test_freed_slot_is_refilled_on_the_next_tick(farm):
     finishes, the next tick fills the freed slot with printer B.
     """
     ctx = await farm(2, max_concurrent=1)
-    upload = _UploadRecorder()
+    upload = _UploadRecorder(hold=True)
 
     async with _scheduler_ctx(ctx, upload) as scheduler:
         # Tick 1: one slot, one launch. Don't drain — A is now "in flight".
@@ -394,6 +420,7 @@ async def test_freed_slot_is_refilled_on_the_next_tick(farm):
         assert len(scheduler._inflight) == 1, "a full pool must not launch a second upload"
 
         # A completes, freeing the slot.
+        upload.release()
         await _drain(scheduler)
         assert not scheduler._inflight
 
@@ -415,7 +442,7 @@ async def test_inflight_item_and_printer_are_excluded_from_reselection(farm):
     exclusion, not the DB status.
     """
     ctx = await farm(1, max_concurrent=4)
-    upload = _UploadRecorder()
+    upload = _UploadRecorder(hold=True)
 
     async with _scheduler_ctx(ctx, upload) as scheduler:
         await scheduler.check_queue()
@@ -427,6 +454,7 @@ async def test_inflight_item_and_printer_are_excluded_from_reselection(farm):
         await scheduler.check_queue()
         assert set(scheduler._inflight) == inflight_before, "an in-flight item was re-selected"
 
+        upload.release()
         await _drain(scheduler)
 
     assert await _statuses(ctx) == ["printing"]
@@ -444,7 +472,7 @@ async def test_inflight_printer_is_kept_out_of_auto_drying(farm):
     """
     ctx = await farm(1, max_concurrent=4)
     printer_id = ctx.printer_ids[0]
-    upload = _UploadRecorder()
+    upload = _UploadRecorder(hold=True)
 
     async with _scheduler_ctx(ctx, upload) as scheduler:
         await scheduler.check_queue()  # launch the only item; now in flight
@@ -458,6 +486,7 @@ async def test_inflight_printer_is_kept_out_of_auto_drying(farm):
         busy_arg = scheduler._check_auto_drying.await_args.args[2]
         assert printer_id in busy_arg, "the in-flight printer must be excluded from auto-drying"
 
+        upload.release()
         await _drain(scheduler)
 
 
@@ -537,10 +566,10 @@ async def test_check_queue_returns_without_awaiting_the_uploads(farm):
     and returns True so the run loop keeps ticking fast while they drain.
     """
     ctx = await farm(3, max_concurrent=3)
-    # Not assembling: this test reads the rows while the uploads are open, and
-    # an assembled batch releases as soon as it is complete, which would let the
-    # dispatches flip those rows to 'printing' mid-assertion.
-    upload = _UploadRecorder()
+    # Held, not assembled: this test reads the rows while the uploads are open,
+    # and an assembled batch releases as soon as it is complete, which would let
+    # the dispatches flip those rows to 'printing' mid-assertion.
+    upload = _UploadRecorder(hold=True)
 
     async with _scheduler_ctx(ctx, upload) as scheduler:
         result = await scheduler.check_queue()
@@ -550,6 +579,8 @@ async def test_check_queue_returns_without_awaiting_the_uploads(farm):
         assert len(scheduler._inflight) == 3
         assert await _statuses(ctx) == ["pending"] * 3
 
+        await upload.arrived(3)
+        upload.release()
         await _drain(scheduler)
 
     assert await _statuses(ctx) == ["printing"] * 3

@@ -1,5 +1,7 @@
-# Build frontend
-FROM node:22-bookworm-slim AS frontend-builder
+# Build frontend. Its output is plain JS/CSS, the same on every architecture,
+# so it is built natively on the build host: under QEMU emulation the arm64
+# vite build ran for hours or hung.
+FROM --platform=$BUILDPLATFORM node:22-bookworm-slim AS frontend-builder
 
 WORKDIR /app/frontend
 

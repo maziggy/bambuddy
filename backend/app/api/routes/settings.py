@@ -1,3 +1,4 @@
+import asyncio
 import io
 import json
 import logging
@@ -913,6 +914,120 @@ async def get_homeassistant_settings(db: AsyncSession) -> dict:
     }
 
 
+# The file steps of a backup and a restore run in a worker thread. On the
+# event loop they froze the whole server for as long as they took -- no page,
+# no websocket, no printer message -- and with a large archive folder that was
+# over half a minute, long enough for the loop watchdog to dump every thread.
+
+
+def _copy_backup_dirs(dirs_to_backup: list[tuple[str, Path]], temp_path: Path) -> None:
+    """Copy each data directory that has anything in it into the backup folder."""
+    import shutil
+
+    for name, src_dir in dirs_to_backup:
+        if src_dir.exists() and any(src_dir.iterdir()):
+            try:
+                shutil.copytree(
+                    src_dir, temp_path / name
+                )  # SEC-PATH-OK: name iterates the dirs_to_backup tuple of constant strings ("archive", "virtual_printer", ...)
+            except shutil.Error as e:
+                logger.warning("Some files in %s could not be copied: %s", name, e)
+            except PermissionError as e:
+                logger.warning("Permission denied copying %s: %s", name, e)
+
+
+def _write_backup_zip(temp_path: Path, zip_file: Path) -> None:
+    """Zip every file under temp_path into zip_file, paths relative to temp_path."""
+    with zipfile.ZipFile(zip_file, "w", zipfile.ZIP_DEFLATED) as zf:
+        for file_path in temp_path.rglob("*"):
+            if file_path.is_file():
+                arcname = file_path.relative_to(temp_path)
+                zf.write(file_path, arcname)
+
+
+def _extract_backup_zip(content: bytes, temp_path: Path) -> None:
+    """Extract a backup ZIP into temp_path, refusing any entry that escapes it.
+
+    Raises HTTPException(400) for an unsafe path or a file that is not a ZIP.
+    """
+    from fastapi import HTTPException
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(content), "r") as zf:
+            for name in zf.namelist():
+                # Reject path-traversal payloads: any entry whose resolved
+                # path escapes temp_path would allow writing arbitrary files
+                # on the host (ZipSlip / CVE-2006-5456).
+                dest = (
+                    temp_path / name
+                ).resolve()  # SEC-PATH-OK: is_relative_to containment check below before extractall
+                # is_relative_to (Python 3.9+) covers both relative
+                # path-traversal (../etc/passwd) and absolute-path overrides
+                # (/etc/passwd) — str.startswith was vulnerable to
+                # prefix-collision attacks (e.g. /tmp/abc_evil/file passing
+                # a /tmp/abc prefix check).
+                if not dest.is_relative_to(temp_path.resolve()):
+                    raise HTTPException(400, f"Invalid backup: unsafe path in ZIP: {name!r}")
+            zf.extractall(temp_path)
+    except zipfile.BadZipFile:
+        raise HTTPException(400, "Invalid backup file: not a valid ZIP")
+
+
+def _restore_data_dirs(dirs_to_restore: list[tuple[str, Path]], temp_path: Path) -> list[str]:
+    """Replace each data directory's contents with the backup's.
+
+    Clears the contents, not the directory itself, which may be a Docker
+    mount. Returns the names of the directories that could not be restored.
+    """
+    import shutil
+
+    skipped_dirs = []
+    for name, dest_dir in dirs_to_restore:
+        src_dir = (
+            temp_path / name
+        )  # SEC-PATH-OK: name iterates the dirs_to_restore tuple of constant strings ("archive", "virtual_printer", ...)
+        if src_dir.exists():
+            logger.info("Restoring %s directory...", name)
+            try:
+                if dest_dir.exists():
+                    for item in dest_dir.iterdir():
+                        try:
+                            if item.is_dir():
+                                shutil.rmtree(item)
+                            else:
+                                item.unlink()
+                        except OSError as e:
+                            logger.warning("Could not delete %s: %s", item, e)
+                else:
+                    dest_dir.mkdir(parents=True, exist_ok=True)
+                # Copy contents from backup
+                for item in src_dir.iterdir():
+                    dest_item = dest_dir / item.name
+                    if item.is_dir():
+                        shutil.copytree(item, dest_item)
+                    else:
+                        shutil.copy2(item, dest_item)
+            except OSError as e:
+                logger.warning("Could not restore %s directory: %s", name, e)
+                skipped_dirs.append(name)
+    return skipped_dirs
+
+
+def _restore_sqlite_db(backup_db: Path, db_path: Path) -> None:
+    """Copy the backup into the live SQLite database with the online backup API."""
+    import sqlite3
+
+    src_conn = sqlite3.connect(str(backup_db))
+    try:
+        dst_conn = sqlite3.connect(str(db_path))
+        try:
+            src_conn.backup(dst_conn)
+        finally:
+            dst_conn.close()
+    finally:
+        src_conn.close()
+
+
 async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]:
     """Create a complete backup ZIP (database + all data directories).
 
@@ -942,8 +1057,9 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
             async with engine.begin() as conn:
                 await conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
 
-            # Copy database file
-            shutil.copy2(db_path, temp_path / "bambuddy.db")
+            # Copy database file. Off the event loop, like every file step
+            # below: a large file blocked the whole server while it copied.
+            await asyncio.to_thread(shutil.copy2, db_path, temp_path / "bambuddy.db")
         else:
             # PostgreSQL: export to a portable SQLite file via SQLAlchemy.
             # This makes backups restorable on both SQLite and Postgres installs.
@@ -1007,16 +1123,7 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
             ("overlay-branding", base_dir / "overlay-branding"),
         ]
 
-        for name, src_dir in dirs_to_backup:
-            if src_dir.exists() and any(src_dir.iterdir()):
-                try:
-                    shutil.copytree(
-                        src_dir, temp_path / name
-                    )  # SEC-PATH-OK: name iterates the dirs_to_backup tuple of constant strings ("archive", "virtual_printer", ...)
-                except shutil.Error as e:
-                    logger.warning("Some files in %s could not be copied: %s", name, e)
-                except PermissionError as e:
-                    logger.warning("Permission denied copying %s: %s", name, e)
+        await asyncio.to_thread(_copy_backup_dirs, dirs_to_backup, temp_path)
 
         # Say which version made this, so a restore that cannot import it can
         # name the versions rather than a list of columns. Backups from before
@@ -1060,11 +1167,7 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
             os.close(fd)
             zip_file = Path(tmp)
 
-        with zipfile.ZipFile(zip_file, "w", zipfile.ZIP_DEFLATED) as zf:
-            for file_path in temp_path.rglob("*"):
-                if file_path.is_file():
-                    arcname = file_path.relative_to(temp_path)
-                    zf.write(file_path, arcname)
+        await asyncio.to_thread(_write_backup_zip, temp_path, zip_file)
 
     return zip_file, filename
 
@@ -1519,7 +1622,6 @@ async def restore_backup(
     Replaces the database and all data directories from the backup ZIP.
     Requires a restart after restore.
     """
-    import shutil
     import tempfile
 
     from fastapi import HTTPException
@@ -1540,25 +1642,7 @@ async def restore_backup(
         if not file.filename or not file.filename.endswith(".zip"):
             raise HTTPException(400, "Invalid backup file: must be a .zip file")
 
-        try:
-            with zipfile.ZipFile(io.BytesIO(content), "r") as zf:
-                for name in zf.namelist():
-                    # Reject path-traversal payloads: any entry whose resolved
-                    # path escapes temp_path would allow writing arbitrary files
-                    # on the host (ZipSlip / CVE-2006-5456).
-                    dest = (
-                        temp_path / name
-                    ).resolve()  # SEC-PATH-OK: is_relative_to containment check below before extractall
-                    # is_relative_to (Python 3.9+) covers both relative
-                    # path-traversal (../etc/passwd) and absolute-path overrides
-                    # (/etc/passwd) — str.startswith was vulnerable to
-                    # prefix-collision attacks (e.g. /tmp/abc_evil/file passing
-                    # a /tmp/abc prefix check).
-                    if not dest.is_relative_to(temp_path.resolve()):
-                        raise HTTPException(400, f"Invalid backup: unsafe path in ZIP: {name!r}")
-                zf.extractall(temp_path)
-        except zipfile.BadZipFile:
-            raise HTTPException(400, "Invalid backup file: not a valid ZIP")
+        await asyncio.to_thread(_extract_backup_zip, content, temp_path)
 
         # 2. Validate backup
         backup_db = temp_path / "bambuddy.db"
@@ -1590,8 +1674,6 @@ async def restore_backup(
                 raise HTTPException(400, f"Invalid backup: bambuddy.db is not readable ({exc})") from exc
 
         try:
-            import asyncio
-
             # 3. Stop the virtual printers if running (releases file locks).
             # stop_all, not the legacy configure(): that ignores its arguments
             # and re-syncs from the database not yet replaced, so their FTP,
@@ -1710,17 +1792,7 @@ async def restore_backup(
                 # own WAL — so concurrent open sessions see their own
                 # snapshot until they close (transaction isolation) but
                 # can't corrupt the restored state.
-                import sqlite3
-
-                src_conn = sqlite3.connect(str(backup_db))
-                try:
-                    dst_conn = sqlite3.connect(str(db_path))
-                    try:
-                        src_conn.backup(dst_conn)
-                    finally:
-                        dst_conn.close()
-                finally:
-                    src_conn.close()
+                await asyncio.to_thread(_restore_sqlite_db, backup_db, db_path)
             else:
                 # Import SQLite backup into PostgreSQL
                 logger.info("Importing SQLite backup into PostgreSQL...")
@@ -1737,36 +1809,7 @@ async def restore_backup(
                 ("overlay-branding", base_dir / "overlay-branding"),
             ]
 
-            skipped_dirs = []
-            for name, dest_dir in dirs_to_restore:
-                src_dir = (
-                    temp_path / name
-                )  # SEC-PATH-OK: name iterates the dirs_to_restore tuple of constant strings ("archive", "virtual_printer", ...)
-                if src_dir.exists():
-                    logger.info("Restoring %s directory...", name)
-                    try:
-                        # Clear destination contents (not the dir itself - may be Docker mount)
-                        if dest_dir.exists():
-                            for item in dest_dir.iterdir():
-                                try:
-                                    if item.is_dir():
-                                        shutil.rmtree(item)
-                                    else:
-                                        item.unlink()
-                                except OSError as e:
-                                    logger.warning("Could not delete %s: %s", item, e)
-                        else:
-                            dest_dir.mkdir(parents=True, exist_ok=True)
-                        # Copy contents from backup
-                        for item in src_dir.iterdir():
-                            dest_item = dest_dir / item.name
-                            if item.is_dir():
-                                shutil.copytree(item, dest_item)
-                            else:
-                                shutil.copy2(item, dest_item)
-                    except OSError as e:
-                        logger.warning("Could not restore %s directory: %s", name, e)
-                        skipped_dirs.append(name)
+            skipped_dirs = await asyncio.to_thread(_restore_data_dirs, dirs_to_restore, temp_path)
 
             # 7. Reset the encryption singleton so the migration that runs
             # inside init_db() picks up the restored key file (if a new one

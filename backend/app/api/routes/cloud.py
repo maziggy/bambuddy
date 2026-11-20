@@ -1312,6 +1312,40 @@ def _load_fields(preset_type: str) -> dict:
     return data
 
 
+def _with_slicer_material_types(data: dict, preferred_slicer: str | None) -> dict:
+    """The filament field definitions with the Material type dropdown of the preferred slicer (#2928).
+
+    The two slicers do not accept the same ``filament_type`` values (Orca has
+    SBS, Bambu Studio has TPU-AMS), so a profile made here starts from what the
+    slicer the user picked understands. A preferred slicer that is not set
+    counts as Bambu Studio, as everywhere else; one that is not known leaves the
+    list as the field file has it. Only this dropdown changes, and a profile's
+    own ``filament_type`` is never rewritten (the editor adds the value a profile
+    already has when it is not in the list).
+    """
+    if "slicer_filament_types" not in _fields_cache:
+        with open(FIELDS_DATA_DIR / "slicer_filament_types.json", encoding="utf-8") as f:
+            _fields_cache["slicer_filament_types"] = json.load(f)
+    entry = _fields_cache["slicer_filament_types"].get(preferred_slicer or "bambu_studio")
+    if not isinstance(entry, dict):
+        return data
+    options = [{"value": value, "label": value} for value in entry["values"]]
+    fields = [
+        {**field, "options": options} if field.get("key") == "filament_type" else field
+        for field in data.get("fields", [])
+    ]
+    return {**data, "fields": fields}
+
+
+async def _preset_fields(db: AsyncSession, preset_type: str) -> dict:
+    from backend.app.api.routes.settings import get_setting
+
+    data = _load_fields(preset_type)
+    if preset_type != "filament":
+        return data
+    return _with_slicer_material_types(data, await get_setting(db, "preferred_slicer"))
+
+
 @router.get("/builtin-filaments")
 async def get_builtin_filaments(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
@@ -1424,10 +1458,14 @@ async def _build_filament_id_map(user: User | None, account: int | None) -> dict
 @router.get("/fields/{preset_type}")
 async def get_preset_fields(
     preset_type: Literal["filament", "print", "process", "printer"],
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
 ):
     """
     Get field definitions for a preset type.
+
+    For ``filament`` the Material type options are those of the preferred
+    slicer (Settings → Slicer): Bambu Studio's or OrcaSlicer's.
 
     Returns a list of field definitions including:
     - key: The setting key name
@@ -1439,12 +1477,12 @@ async def get_preset_fields(
     - unit: Unit of measurement (if applicable)
     - min/max/step: For number fields, validation constraints
     """
-    data = _load_fields(preset_type)
-    return data
+    return await _preset_fields(db, preset_type)
 
 
 @router.get("/fields")
 async def get_all_preset_fields(
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
 ):
     """
@@ -1453,7 +1491,7 @@ async def get_all_preset_fields(
     Returns field definitions organized by type.
     """
     return {
-        "filament": _load_fields("filament"),
+        "filament": await _preset_fields(db, "filament"),
         "process": _load_fields("process"),
         "printer": _load_fields("printer"),
     }

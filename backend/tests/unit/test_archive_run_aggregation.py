@@ -605,3 +605,83 @@ async def test_a_run_without_an_estimate_shows_no_reconnect_gap(
     assert (row["actual_time_seconds"], row["time_accuracy"]) == (None, None)
     body = (await async_client.get("/api/v1/archives/stats")).json()
     assert body["average_time_accuracy"] is None
+
+
+def _plate_run(archive, day: int, *, grams: float, cost: float, energy_kwh=None, energy_cost=None) -> PrintLogEntry:
+    started = datetime(2026, 11, day, 10, 0, tzinfo=timezone.utc)
+    return PrintLogEntry(
+        archive_id=archive.id,
+        printer_id=archive.printer_id,
+        status="completed",
+        started_at=started,
+        completed_at=started,
+        duration_seconds=3600,
+        filament_used_grams=grams,
+        cost=cost,
+        energy_kwh=energy_kwh,
+        energy_cost=energy_cost,
+        created_at=started,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_an_archive_printed_plate_by_plate_carries_what_all_its_prints_cost(
+    async_client: AsyncClient, archive_factory, printer_factory, db_session
+):
+    """Each plate of a multi-plate file is a run of one archive (#3609).
+
+    The archive keeps the file's filament and the first print's energy; the
+    totals are what the card shows, and what Statistics adds up.
+    """
+    printer = await printer_factory()
+    archive = await archive_factory(
+        printer.id,
+        status="completed",
+        filament_used_grams=837.0,  # the whole file, all plates
+        cost=45.17,
+        energy_kwh=0.2,
+        energy_cost=0.24,  # the first plate's
+        with_run=False,
+    )
+    db_session.add_all(
+        [
+            _plate_run(archive, 1, grams=120.0, cost=6.8, energy_kwh=0.2, energy_cost=0.24),
+            _plate_run(archive, 2, grams=150.0, cost=8.5, energy_kwh=0.5, energy_cost=0.61),
+            _plate_run(archive, 3, grams=90.0, cost=5.1, energy_kwh=0.3, energy_cost=0.38),
+        ]
+    )
+    await db_session.commit()
+
+    body = (await async_client.get(f"/api/v1/archives/{archive.id}")).json()
+
+    assert body["run_count"] == 3
+    assert body["total_filament_actual_grams"] == pytest.approx(360.0)
+    assert body["total_cost"] == pytest.approx(20.4)
+    assert body["total_energy_kwh"] == pytest.approx(1.0)
+    assert body["total_energy_cost"] == pytest.approx(1.23)
+    # The archive's own figures are unchanged (#1378).
+    assert body["cost"] == pytest.approx(45.17)
+    assert body["energy_cost"] == pytest.approx(0.24)
+
+    stats = (await async_client.get("/api/v1/archives/stats")).json()
+    assert stats["total_cost"] == pytest.approx(body["total_cost"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_no_energy_total_when_no_print_measured_any(
+    async_client: AsyncClient, archive_factory, printer_factory, db_session
+):
+    printer = await printer_factory()
+    archive = await archive_factory(printer.id, status="completed", with_run=False)
+    db_session.add_all([_plate_run(archive, 1, grams=10.0, cost=1.0), _plate_run(archive, 2, grams=10.0, cost=1.0)])
+    await db_session.commit()
+
+    body = (await async_client.get("/api/v1/archives/")).json()
+    row = next(a for a in body if a["id"] == archive.id)
+
+    assert row["total_cost"] == pytest.approx(2.0)
+    # Unknown, not zero: no smart plug measured either print.
+    assert row["total_energy_kwh"] is None
+    assert row["total_energy_cost"] is None

@@ -49,7 +49,7 @@ from backend.app.utils.filament_ids import (
     filament_id_to_setting_id,
     normalize_slicer_filament,
 )
-from backend.app.utils.filament_types import nozzle_temp_range, printer_filament_type
+from backend.app.utils.filament_types import nozzle_temp_range, printer_filament_type, support_filament_type
 
 logger = logging.getLogger(__name__)
 
@@ -1077,6 +1077,10 @@ async def link_spool(
                     tray_sub_brands = sub_brand_override
                 if type_override:
                     tray_type = printer_filament_type(type_override)
+                # A support material keeps the slicer's suffix ("PLA-S") (#3559).
+                tray_type = support_filament_type(
+                    tray_type, tray_info_idx, f"{slot_slicer_filament_name or ''} {tray_sub_brands}"
+                )
 
                 # The spool's own wording is tried first and the reduced type
                 # only as a further fallback, so a material that already

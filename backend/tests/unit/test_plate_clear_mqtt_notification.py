@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from backend.app.services.bambu_mqtt import PrinterState
 from backend.app.services.mqtt_relay import MQTTRelayService
 from backend.app.services.printer_manager import PrinterManager
 
@@ -25,8 +26,8 @@ def _relay() -> MQTTRelayService:
     return relay
 
 
-def _state() -> SimpleNamespace:
-    return SimpleNamespace(
+def _state() -> PrinterState:
+    return PrinterState(
         connected=True,
         state="FINISH",
         progress=100,

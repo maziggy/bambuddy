@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.tasks import spawn_background_task
 from backend.app.services.homeassistant import homeassistant_service
 from backend.app.services.mqtt_relay import mqtt_relay
-from backend.app.services.plug_energy import get_plug_energy
+from backend.app.services.plug_energy import get_plug_energy, mqtt_has_lifetime_counter
 from backend.app.services.printer_manager import printer_manager
 from backend.app.services.rest_smart_plug import rest_smart_plug_service
 from backend.app.services.tasmota import tasmota_service
@@ -68,6 +68,23 @@ def _is_script_plug(plug) -> bool:
         and bool(getattr(plug, "ha_entity_id", None))
         and plug.ha_entity_id.startswith("script.")
     )
+
+
+def is_monitor_only(plug) -> bool:
+    """An MQTT plug: Bambuddy subscribes to it and never publishes, so it can
+    be neither turned on nor off (#3583). Its auto on / auto off default to on
+    and the UI hides both, so every switching path must skip it itself."""
+    return getattr(plug, "plug_type", None) == "mqtt"
+
+
+def can_turn_off(plug) -> bool:
+    """Whether an automatic turn-off can switch this plug off (#3583).
+
+    Not a Home Assistant script, which can only be run, and not a monitor-only
+    MQTT plug. Turning on is narrower on purpose: a script linked to a printer
+    is run by the auto-on paths, so they skip only :func:`is_monitor_only`.
+    """
+    return not _is_script_plug(plug) and not is_monitor_only(plug)
 
 
 async def run_linked_scripts(printer_id: int, plug_state: str, db: AsyncSession) -> None:
@@ -329,14 +346,18 @@ class SmartPlugManager:
             price = await current_price(db, remember=True)
             captured = 0
             for plug in plugs:
-                # MQTT plugs only publish a "today" counter that resets at midnight —
-                # they can never feed cumulative snapshots, so skip them outright to
-                # avoid a noisy tasmota-service fallback attempt on an IP-less plug.
-                if plug.plug_type == "mqtt":
+                # An MQTT plug feeds the snapshots only with its lifetime counter
+                # (#3582); its one legacy energy value may be a daily counter that
+                # resets at midnight. Read through get_plug_energy, not the
+                # service lookup, which would fall back to Tasmota on an IP-less plug.
+                if plug.plug_type == "mqtt" and not mqtt_has_lifetime_counter(plug):
                     continue
                 try:
-                    service = await self.get_service_for_plug(plug, db)
-                    energy = await service.get_energy(plug)
+                    if plug.plug_type == "mqtt":
+                        energy = await get_plug_energy(plug, db)
+                    else:
+                        service = await self.get_service_for_plug(plug, db)
+                        energy = await service.get_energy(plug)
                 except Exception as e:
                     logger.debug("Snapshot: failed to read energy from plug %s: %s", plug.id, e)
                     continue
@@ -375,6 +396,9 @@ class SmartPlugManager:
             plugs = result.scalars().all()
 
             for plug in plugs:
+                # A schedule cannot switch a monitor-only MQTT plug (#3583).
+                if is_monitor_only(plug):
+                    continue
                 service = await self.get_service_for_plug(plug, db)
 
                 # Check if we should turn on
@@ -441,6 +465,10 @@ class SmartPlugManager:
                 logger.debug("Smart plug '%s' auto_on is disabled", plug.name)
                 continue
 
+            if is_monitor_only(plug):
+                logger.debug("Smart plug '%s' is monitor-only, skipping auto-on", plug.name)
+                continue
+
             # Turn on the plug
             logger.info("Print started on printer %s, turning on plug '%s'", printer_id, plug.name)
             try:
@@ -488,9 +516,10 @@ class SmartPlugManager:
                 logger.debug("Smart plug '%s' auto_off is disabled", plug.name)
                 continue
 
-            # Skip auto-off for HA script entities (scripts can only be triggered, not turned off)
-            if plug.plug_type == "homeassistant" and plug.ha_entity_id and plug.ha_entity_id.startswith("script."):
-                logger.debug("Smart plug '%s' is a HA script entity, skipping auto-off", plug.name)
+            # Skip auto-off for HA script entities (scripts can only be triggered,
+            # not turned off) and monitor-only MQTT plugs (#3583).
+            if not can_turn_off(plug):
+                logger.debug("Smart plug '%s' cannot be switched off, skipping auto-off", plug.name)
                 continue
 
             logger.info(
@@ -535,8 +564,8 @@ class SmartPlugManager:
             if not plug.enabled:
                 logger.debug("Smart plug '%s' is disabled, skipping queue auto-off", plug.name)
                 continue
-            if plug.plug_type == "homeassistant" and plug.ha_entity_id and plug.ha_entity_id.startswith("script."):
-                logger.debug("Smart plug '%s' is a HA script entity, skipping queue auto-off", plug.name)
+            if not can_turn_off(plug):
+                logger.debug("Smart plug '%s' cannot be switched off, skipping queue auto-off", plug.name)
                 continue
             logger.info(
                 "Queue job finished on printer %s, scheduling turn-off for plug '%s'",
@@ -570,10 +599,10 @@ class SmartPlugManager:
                 logger.debug("Smart plug '%s' auto_off_after_drying is disabled, skipping", plug.name)
                 continue
 
-            # HA script entities can only be triggered, not turned off — same
-            # guard the print-finish path uses.
-            if plug.plug_type == "homeassistant" and plug.ha_entity_id and plug.ha_entity_id.startswith("script."):
-                logger.debug("Smart plug '%s' is a HA script entity, skipping drying auto-off", plug.name)
+            # HA script entities can only be triggered, not turned off, and MQTT
+            # plugs not switched at all — same guard the print-finish path uses.
+            if not can_turn_off(plug):
+                logger.debug("Smart plug '%s' cannot be switched off, skipping drying auto-off", plug.name)
                 continue
 
             logger.info(
@@ -918,6 +947,14 @@ class SmartPlugManager:
                 pending_plugs = result.scalars().all()
 
                 for plug in pending_plugs:
+                    # A pending off left on an MQTT plug by an earlier version
+                    # can never run (#3583): clear it.
+                    if is_monitor_only(plug):
+                        plug.auto_off_pending = False
+                        plug.auto_off_pending_since = None
+                        await db.commit()
+                        continue
+
                     # Check how long it's been pending (timeout after 2 hours)
                     if plug.auto_off_pending_since:
                         pending_since = to_naive_utc(plug.auto_off_pending_since)

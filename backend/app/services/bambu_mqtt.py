@@ -1039,6 +1039,11 @@ _HMS_USER_ACTION_CODES: frozenset[str] = frozenset(
 # "0500_0007", which matches nothing in any catalog.
 HMS_MQTT_VERIFY_FAILED: str = "0500050000010007"
 
+# Command responses whose content the debug log leaves out (#3531). push_status
+# is the printer's status, arriving every second and logged field by field;
+# project_file carries the download URL of a print, which may be a signed one.
+_COMMANDS_LOGGED_BY_NAME_ONLY: frozenset[str] = frozenset({"push_status", "project_file"})
+
 
 @dataclass
 class KProfile:
@@ -1726,6 +1731,10 @@ class BambuMQTTClient:
         self._message_log: deque[MQTTLogEntry] = deque(maxlen=100)
         self._logging_enabled: bool = False
         self._last_message_time: float = 0.0  # Track when we last received a message
+        # Bambuddy's own FTP uploads to this printer (#3538): an A1 publishes
+        # nothing while it receives a large file, which is not a stale link.
+        self._uploads_in_flight: int = 0
+        self._last_upload_end: float = 0.0
         # Count of report-topic messages received since the last (re)connect.
         # Lets check_staleness() distinguish "printer never sent a status
         # report" (typically a wrong / mis-cased serial) from a normal quiet
@@ -1906,11 +1915,29 @@ class BambuMQTTClient:
     # Maximum time (seconds) without a message before considering connection stale
     STALE_TIMEOUT = 60.0
 
+    def begin_upload(self) -> None:
+        """Bambuddy starts an FTP upload to this printer (#3538)."""
+        self._uploads_in_flight += 1
+
+    def end_upload(self) -> None:
+        """The upload is over; the printer gets STALE_TIMEOUT from now to speak."""
+        self._uploads_in_flight = max(0, self._uploads_in_flight - 1)
+        self._last_upload_end = time.time()
+
     def is_stale(self) -> bool:
-        """Check if the connection is stale (no messages for too long)."""
+        """Check if the connection is stale (no messages for too long).
+
+        Not while Bambuddy is uploading to the printer, nor within
+        STALE_TIMEOUT after: an A1 says nothing over MQTT while it receives a
+        large file, and the forced reconnect that silence used to trigger
+        landed just before the print command, which then found the printer
+        disconnected and failed the job (#3538).
+        """
         if self._last_message_time == 0:
             return False  # Never received a message yet
-        time_since_last = time.time() - self._last_message_time
+        if self._uploads_in_flight > 0:
+            return False
+        time_since_last = time.time() - max(self._last_message_time, self._last_upload_end)
         return time_since_last > self.STALE_TIMEOUT
 
     def mark_power_off(self) -> bool:
@@ -2845,6 +2872,14 @@ class BambuMQTTClient:
             if "command" in print_data:
                 cmd = print_data.get("command")
                 logger.debug("[%s] Received command response: %s", self.serial_number, cmd)
+                if cmd not in _COMMANDS_LOGGED_BY_NAME_ONLY:
+                    # The printer reports back commands sent from its own
+                    # screen too, and this is the only place their content can
+                    # be seen: H3C Unload All is one command whose fields are
+                    # not documented anywhere (#3531).
+                    logger.debug(
+                        "[%s] %s content: %s", self.serial_number, cmd, json.dumps(print_data, default=str)[:4000]
+                    )
                 if cmd in ("extrusion_cali_set", "extrusion_cali_del"):
                     # INFO, not debug: this is the printer's verdict on a write
                     # the user just made, and it was invisible in support

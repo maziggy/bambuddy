@@ -16,7 +16,7 @@ from backend.app.core.printer_scope import group_location_names, group_printer_i
 from backend.app.core.websocket import ws_manager
 from backend.app.models.group import Group, group_locations, group_printers
 from backend.app.models.printer import Printer
-from backend.app.models.user import User
+from backend.app.models.user import ADMIN_GROUP_NAME, User
 from backend.app.schemas.group import (
     GroupCreate,
     GroupDetailResponse,
@@ -407,6 +407,9 @@ async def add_user_to_group(
         )
 
     group.users.append(user)
+    # The legacy role follows Administrators membership (#3533).
+    if group.name == ADMIN_GROUP_NAME:
+        user.role = "admin"
     await db.commit()
     await ws_manager.refresh_printer_scopes()
 
@@ -445,6 +448,17 @@ async def remove_user_from_group(
             detail="User is not in this group",
         )
 
+    if group.name == ADMIN_GROUP_NAME:
+        # Leaving Administrators takes the admin rights with it, so the role
+        # follows (#3533) -- unless that leaves no active admin.
+        from backend.app.api.routes.users import _other_active_admins
+
+        if user.is_active and not await _other_active_admins(db, user.id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot remove admin rights from the last admin user",
+            )
+        user.role = "user"
     group.users.remove(user)
     await db.commit()
     # They may lose printers, or websocket:connect itself

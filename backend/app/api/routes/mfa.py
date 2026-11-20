@@ -2102,6 +2102,7 @@ async def oidc_callback(
                         is_active=True,
                         groups=[default_group] if default_group else [],
                     )
+                    new_user.sync_role_to_groups()
                     db.add(new_user)
                     await db.flush()
 

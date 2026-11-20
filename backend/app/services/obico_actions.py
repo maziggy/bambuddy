@@ -63,7 +63,7 @@ def _pause_print(printer_id: int) -> None:
 
 async def _turn_off_linked_plugs(printer_id: int) -> None:
     from backend.app.services.smart_plug_manager import (
-        _is_script_plug,
+        can_turn_off,
         publish_plug_state,
         run_linked_scripts_after_automatic_switch,
         smart_plug_manager,
@@ -74,8 +74,9 @@ async def _turn_off_linked_plugs(printer_id: int) -> None:
         plugs = await smart_plug_manager._get_plugs_for_printer(printer_id, db)
         for plug in plugs:
             # A script can only be run, not turned off; the "printer turns
-            # off" ones run below, after the plug that feeds the printer.
-            if not plug.enabled or _is_script_plug(plug):
+            # off" ones run below, after the plug that feeds the printer. An
+            # MQTT plug cannot be switched at all (#3583).
+            if not plug.enabled or not can_turn_off(plug):
                 continue
             try:
                 service = await smart_plug_manager.get_service_for_plug(plug, db)

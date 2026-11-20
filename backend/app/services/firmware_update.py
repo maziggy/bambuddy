@@ -353,36 +353,38 @@ class FirmwareUpdateService:
             # Get FTP retry settings
             ftp_retry_enabled, ftp_retry_count, ftp_retry_delay, ftp_timeout = await get_ftp_retry_settings()
 
-            if ftp_retry_enabled:
-                success = await with_ftp_retry(
-                    upload_file_async,
-                    ip_address,
-                    access_code,
-                    firmware_path,
-                    remote_path,
-                    progress_callback=on_upload_progress,
-                    socket_timeout=ftp_timeout,
-                    printer_model=model,
-                    # Someone pressed "update firmware" and is watching a
-                    # progress bar. Bounded and user-initiated, like a print
-                    # dispatch, so it does not spend its retries on a cool-off
-                    # meant for the background sweeps (#2898).
-                    respect_handshake_cooloff=False,
-                    max_retries=ftp_retry_count,
-                    retry_delay=ftp_retry_delay,
-                    operation_name=f"Upload firmware to printer {printer_id}",
-                )
-            else:
-                success = await upload_file_async(
-                    ip_address,
-                    access_code,
-                    firmware_path,
-                    remote_path,
-                    progress_callback=on_upload_progress,
-                    socket_timeout=ftp_timeout,
-                    printer_model=model,
-                    respect_handshake_cooloff=False,
-                )
+            # Quiet MQTT while the printer receives the file is no stale link (#3538).
+            with printer_manager.uploading(printer_id):
+                if ftp_retry_enabled:
+                    success = await with_ftp_retry(
+                        upload_file_async,
+                        ip_address,
+                        access_code,
+                        firmware_path,
+                        remote_path,
+                        progress_callback=on_upload_progress,
+                        socket_timeout=ftp_timeout,
+                        printer_model=model,
+                        # Someone pressed "update firmware" and is watching a
+                        # progress bar. Bounded and user-initiated, like a print
+                        # dispatch, so it does not spend its retries on a cool-off
+                        # meant for the background sweeps (#2898).
+                        respect_handshake_cooloff=False,
+                        max_retries=ftp_retry_count,
+                        retry_delay=ftp_retry_delay,
+                        operation_name=f"Upload firmware to printer {printer_id}",
+                    )
+                else:
+                    success = await upload_file_async(
+                        ip_address,
+                        access_code,
+                        firmware_path,
+                        remote_path,
+                        progress_callback=on_upload_progress,
+                        socket_timeout=ftp_timeout,
+                        printer_model=model,
+                        respect_handshake_cooloff=False,
+                    )
 
             if not success:
                 raise Exception("Failed to upload firmware to printer")

@@ -490,6 +490,7 @@ export interface Printer {
   plate_detection_enabled: boolean;  // Check plate before print
   plate_detection_roi?: PlateDetectionROI;  // ROI for plate detection
   wear_cost_per_hour: number | null;  // Wear cost per printing hour (#694)
+  dispatch_priority: number | null;  // Place in the pick order of any-model jobs, lowest first (#2915)
   wled_config: WLEDConfig | null;
   created_at: string;
   updated_at: string;
@@ -823,6 +824,7 @@ export interface PrinterCreate {
   plate_detection_enabled?: boolean;
   plate_detection_roi?: PlateDetectionROI;
   wear_cost_per_hour?: number | null;
+  dispatch_priority?: number | null;
   wled_config?: WLEDConfig | null;
 }
 
@@ -982,6 +984,13 @@ export interface Archive {
   total_filament_actual_grams: number | null;
   successful_run_count: number;
   failed_run_count: number;
+  // What all its runs cost, summed as Statistics does (#3609); null where no
+  // run has the figure. The archive's own cost and energy stay the file's and
+  // the first run's.
+  total_cost?: number | null;
+  total_energy_kwh?: number | null;
+  total_energy_cost?: number | null;
+  total_wear_cost?: number | null;
 }
 
 export interface ArchiveSlim {
@@ -1477,6 +1486,8 @@ export interface APIKeyCreateResponse extends APIKey {
 export type CalibrationMode = 'off' | 'on' | 'auto';
 
 // Settings types
+export type ModelDispatchOrder = 'fewest_hours' | 'most_hours' | 'least_recently_used' | 'priority';
+
 export interface AppSettings {
   auto_archive: boolean;
   save_thumbnails: boolean;
@@ -1635,6 +1646,8 @@ export interface AppSettings {
   require_plate_clear: boolean;
   // Shortest job first scheduling
   queue_shortest_first: boolean;
+  // Which printer an any-model job takes when several can run it (#2915).
+  model_dispatch_order: ModelDispatchOrder;
   // How many printers the queue may upload to at once (#2555). 1 restores the
   // old strictly-serial behaviour, where every printer waited out every other
   // printer's transfer.
@@ -2440,6 +2453,8 @@ export interface SmartPlug {
   mqtt_energy_topic: string | null;  // Topic for energy data
   mqtt_energy_path: string | null;  // e.g., "energy_l1"
   mqtt_energy_multiplier: number;  // Unit conversion for energy
+  mqtt_energy_total_path: string | null;  // Lifetime counter on the energy topic (#3582)
+  mqtt_energy_total_multiplier: number;
   // State monitoring
   mqtt_state_topic: string | null;  // Topic for state data
   mqtt_state_path: string | null;  // e.g., "state_l1" for ON/OFF
@@ -2521,6 +2536,8 @@ export interface SmartPlugCreate {
   mqtt_energy_topic?: string | null;
   mqtt_energy_path?: string | null;
   mqtt_energy_multiplier?: number;
+  mqtt_energy_total_path?: string | null;
+  mqtt_energy_total_multiplier?: number;
   // State monitoring
   mqtt_state_topic?: string | null;
   mqtt_state_path?: string | null;
@@ -2591,6 +2608,8 @@ export interface SmartPlugUpdate {
   mqtt_energy_topic?: string | null;
   mqtt_energy_path?: string | null;
   mqtt_energy_multiplier?: number;
+  mqtt_energy_total_path?: string | null;
+  mqtt_energy_total_multiplier?: number;
   // MQTT state fields
   mqtt_state_topic?: string | null;
   mqtt_state_path?: string | null;
@@ -4178,6 +4197,8 @@ export interface SpoolmanBulkCreateResult {
 export interface CsvImportRow {
   row_number: number;
   status: 'valid' | 'error' | 'skipped';
+  /** The id the spool is created with (#3520); null gets the next free one. */
+  keeps_id?: number | null;
   reason: string | null;
   material: string | null;
   brand: string | null;
@@ -4503,6 +4524,29 @@ export interface PrinterMaintenanceOverview {
   due_count: number;
   warning_count: number;
 }
+
+// One reset in a printer's maintenance log. The names are as they were at the
+// reset; the ids are null once the printer or custom task is deleted.
+export interface MaintenanceLogEntry {
+  id: number;
+  printer_id: number | null;
+  printer_name: string;
+  maintenance_type_id: number | null;
+  maintenance_type_name: string;
+  hours_at_maintenance: number;
+  notes: string | null;
+  performed_by_id: number | null;
+  performed_by_username: string | null;  // null when authentication was off
+  performed_at: string;
+}
+
+export interface MaintenanceLogPage {
+  items: MaintenanceLogEntry[];
+  total: number;
+}
+
+// Must match MAINTENANCE_NOTES_MAX_LENGTH in backend/app/schemas/maintenance.py.
+export const MAINTENANCE_NOTES_MAX_LENGTH = 10000;
 
 // External Links (sidebar)
 export interface ExternalLink {
@@ -7704,6 +7748,45 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ notes }),
     }),
+  getMaintenanceLog: (printerId: number, options?: { limit?: number; offset?: number }) => {
+    const params = new URLSearchParams();
+    if (options?.limit !== undefined) params.set('limit', String(options.limit));
+    if (options?.offset !== undefined) params.set('offset', String(options.offset));
+    const query = params.toString();
+    return request<MaintenanceLogPage>(`/maintenance/printers/${printerId}/log${query ? `?${query}` : ''}`);
+  },
+  // One printer's log, or with no printer the whole fleet's (deleted printers included).
+  downloadMaintenanceLog: async (printerId?: number): Promise<void> => {
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+    const path = printerId === undefined ? '/maintenance/log/export' : `/maintenance/printers/${printerId}/log/export`;
+    const response = await fetch(`${API_BASE}${path}`, { headers });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    const disposition = response.headers.get('Content-Disposition');
+    const filename = parseContentDispositionFilename(disposition) || 'maintenance_log.csv';
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  },
+  // Deletes the entries older than the given days: one printer's, or with no
+  // printer the whole fleet's (deleted printers included for an unscoped caller).
+  cleanUpMaintenanceLog: (olderThanDays: number, printerId?: number) => {
+    const path = printerId === undefined ? '/maintenance/log' : `/maintenance/printers/${printerId}/log`;
+    return request<{ deleted: number }>(`${path}?older_than_days=${olderThanDays}`, { method: 'DELETE' });
+  },
+  deleteMaintenanceLogEntry: (entryId: number) =>
+    request<{ status: string; id: number }>(`/maintenance/log/${entryId}`, { method: 'DELETE' }),
   setPrinterHours: (printerId: number, totalHours: number) =>
     request<{ printer_id: number; total_hours: number; archive_hours: number; offset_hours: number }>(
       `/maintenance/printers/${printerId}/hours?total_hours=${totalHours}`,

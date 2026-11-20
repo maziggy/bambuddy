@@ -29,6 +29,10 @@ class PrintArchive(Base):
     file_path: Mapped[str] = mapped_column(String(500))
     file_size: Mapped[int] = mapped_column(Integer)
     content_hash: Mapped[str | None] = mapped_column(String(64))  # SHA256 hash for duplicate detection
+    # SHA256 of the file's G-code only (#1634): a slice sent again from the
+    # slicer, in a new 3MF, adds a run to this archive. "" = read, no G-code;
+    # NULL = not read yet. See services/archive_gcode_hash.
+    gcode_hash: Mapped[str | None] = mapped_column(String(64), index=True)
     thumbnail_path: Mapped[str | None] = mapped_column(String(500))
     timelapse_path: Mapped[str | None] = mapped_column(String(500))
     # The plate whose run produced ``timelapse_path`` (#3275). Every plate of a

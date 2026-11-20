@@ -19,6 +19,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useUiSettings } from '../hooks/useUiSettings';
 import { ConfirmModal } from './ConfirmModal';
 import { parseUTCDate } from '../utils/date';
+import { csvCell } from '../utils/csvCell';
 import { ownRecords, timeOf } from '../utils/usageHistory';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -1454,7 +1455,7 @@ function ShoppingListPanel({
         restock,
         i.status,
         i.note ?? '',
-      ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',');
+      ].map((v) => csvCell(v)).join(',');
     });
     const csv = [headers.join(','), ...rows].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });

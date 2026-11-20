@@ -43,6 +43,7 @@ from backend.app.services.discovery import tasmota_scanner
 from backend.app.services.homeassistant import homeassistant_service
 from backend.app.services.mqtt_relay import mqtt_relay
 from backend.app.services.mqtt_smart_plug import subscribe_plug_to_mqtt
+from backend.app.services.plug_energy import mqtt_has_lifetime_counter
 from backend.app.services.plug_energy_history import fill_derived_energy
 from backend.app.services.printer_manager import printer_manager
 from backend.app.services.rest_smart_plug import rest_smart_plug_service
@@ -55,7 +56,12 @@ from backend.app.services.secret_fields import (
     reject_placeholder,
     same_value,
 )
-from backend.app.services.smart_plug_manager import publish_plug_state, run_linked_scripts, smart_plug_manager
+from backend.app.services.smart_plug_manager import (
+    can_turn_off,
+    publish_plug_state,
+    run_linked_scripts,
+    smart_plug_manager,
+)
 from backend.app.services.tasmota import tasmota_service
 from backend.app.utils.local_time import utcnow_naive
 
@@ -218,7 +224,7 @@ def _can_be_switched(plug: SmartPlug) -> bool:
       is exactly the kind that reports watts, so without this it would win the
       power tiebreak below and take the row off a plug that can be switched.
     """
-    return not _is_script_plug(plug) and plug.plug_type != "mqtt"
+    return can_turn_off(plug)
 
 
 def _reports_power(plug: SmartPlug) -> bool:
@@ -675,6 +681,8 @@ async def update_smart_plug(
         "energy_topic": plug.mqtt_energy_topic or plug.mqtt_topic,
         "energy_path": plug.mqtt_energy_path,
         "energy_multiplier": plug.mqtt_energy_multiplier,
+        "energy_total_path": plug.mqtt_energy_total_path,
+        "energy_total_multiplier": plug.mqtt_energy_total_multiplier,
         "state_topic": plug.mqtt_state_topic or plug.mqtt_topic,
         "state_path": plug.mqtt_state_path,
         "state_on_value": plug.mqtt_state_on_value,
@@ -699,6 +707,8 @@ async def update_smart_plug(
             "energy_topic": plug.mqtt_energy_topic or plug.mqtt_topic,
             "energy_path": plug.mqtt_energy_path,
             "energy_multiplier": plug.mqtt_energy_multiplier,
+            "energy_total_path": plug.mqtt_energy_total_path,
+            "energy_total_multiplier": plug.mqtt_energy_total_multiplier,
             "state_topic": plug.mqtt_state_topic or plug.mqtt_topic,
             "state_path": plug.mqtt_state_path,
             "state_on_value": plug.mqtt_state_on_value,
@@ -864,7 +874,13 @@ async def get_plug_status(
                 await db.commit()
 
             energy_data = None
-            if data.power is not None or data.energy is not None:
+            if mqtt_has_lifetime_counter(plug):
+                # Today and Yesterday come from the hourly snapshots when the
+                # topic carries only the lifetime counter (#3582).
+                if data.power is not None or data.energy is not None or data.energy_total is not None:
+                    energy = {"power": data.power, "today": data.energy, "total": data.energy_total}
+                    energy_data = SmartPlugEnergy(**await fill_derived_energy(db, plug.id, energy))
+            elif data.power is not None or data.energy is not None:
                 energy_data = SmartPlugEnergy(
                     power=data.power,
                     today=data.energy,

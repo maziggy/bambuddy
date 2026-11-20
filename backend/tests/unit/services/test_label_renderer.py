@@ -9,6 +9,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import mm
 
 from backend.app.services.label_renderer import (
+    FONT_BOLD,
     LabelData,
     SheetLayout,
     get_sheet_capacity,
@@ -300,7 +301,7 @@ def test_hex_color_code_skipped_when_rgba_invalid():
 
 
 def test_brand_rendered_in_bold_per_809_followup():
-    """#809 follow-up: brand should render in Helvetica-Bold (not regular).
+    """#809 follow-up: brand should render in the bold font (not regular).
     Uncompressed PDFs include font-name tokens like '/F2' tied to a font
     resource; we can grep for the bold font's basename in the resource block.
     """
@@ -315,10 +316,9 @@ def test_brand_rendered_in_bold_per_809_followup():
         )
     ]
     pdf = _render_uncompressed("box_62x29", data)
-    # ReportLab references the bold variant of Helvetica via /Helvetica-Bold
-    # in the font dictionary — both the spool ID (always bold) and the brand
-    # (now bold per #809 follow-up) cause the resource to be embedded.
-    assert b"Helvetica-Bold" in pdf, "label PDF must reference Helvetica-Bold for the brand line"
+    # Both the spool ID (always bold) and the brand (bold per #809 follow-up)
+    # embed the bold font, which the font dictionary names.
+    assert b"LiberationSans-Bold" in pdf, "label PDF must embed the bold font for the brand line"
 
 
 def test_box_template_does_not_truncate_normal_brand_or_name():
@@ -499,7 +499,7 @@ def test_the_smallest_label_has_room_for_a_full_size_spool_id(label_h_mm):
     swatch_w = min(inner_w * 0.18, inner_h, 16 * mm)
     qr = _roomy_qr_size(inner_w, inner_h)
     text_w = inner_w - swatch_w - qr - 2 * 1.5 * mm
-    assert text_w >= stringWidth("#9999", "Helvetica-Bold", 16)
+    assert text_w >= stringWidth("#9999", FONT_BOLD, 16)
     assert MIN_LABEL_H_MM >= 20.0  # the tight layout starts below 20 mm
 
 
@@ -581,3 +581,146 @@ def test_custom_layout_size_and_capacity():
     assert label_size_mm(layout) == (70.0, 36.0)
     assert get_sheet_capacity(layout) == 24
     assert render_labels(layout, [_sample()]).startswith(b"%PDF")
+
+
+# ── Non-Latin-1 text (#3553) ──
+
+
+def _page_texts(pdf: bytes) -> list[str]:
+    import pypdfium2 as pdfium  # noqa: PLC0415
+
+    doc = pdfium.PdfDocument(pdf)
+    try:
+        return [doc[i].get_textpage().get_text_range() for i in range(len(doc))]
+    finally:
+        doc.close()
+
+
+@pytest.mark.parametrize("template", ALL_TEMPLATES)
+def test_polish_and_cyrillic_text_prints_as_written(template):
+    """The PDF base fonts cover only Western European characters: Polish
+    ą ę ł ń ś ź ż and Cyrillic came out as empty boxes."""
+    data = [
+        _sample(
+            7,
+            brand="Żółć",
+            name="Brązowy",
+            material="PLA",
+            subtype="Мат",
+        )
+    ]
+    text = _page_texts(render_labels(template, data))[0]
+    for word in ("Żółć", "Brązowy", "Мат"):
+        assert word in text, f"{word!r} missing from {template}: {text!r}"
+
+
+@pytest.mark.parametrize("template", ALL_TEMPLATES)
+def test_labels_use_no_base_font(template):
+    import re  # noqa: PLC0415
+
+    pdf = render_labels(template, [_sample(3)])
+    fonts = set(re.findall(rb"/BaseFont /(?:[A-Z]{6}\+)?([^\s/>]+)", pdf))
+    assert fonts == {b"LiberationSans", b"LiberationSans-Bold"}, fonts
+
+
+# ── Chinese, Japanese and Korean (#3560) ──
+
+
+def _base_fonts(pdf: bytes) -> set[bytes]:
+    import re  # noqa: PLC0415
+
+    return set(re.findall(rb"/BaseFont /(?:[A-Z]{6}\+)?([^\s/>]+)", pdf))
+
+
+@pytest.mark.parametrize("template", ALL_TEMPLATES)
+def test_chinese_japanese_and_korean_print_as_written(template):
+    """Liberation Sans has no CJK, so a name in Chinese printed as empty boxes
+    (#3560). The characters it lacks are drawn in the fallback fonts, which
+    is what makes them visible -- the text layer alone would read correctly
+    even with boxes on the page, so the fonts are checked too."""
+    data = [_sample(8, brand="拓竹", name="玉白 흰색", material="PLA", subtype="ホワ")]
+    pdf = render_labels(template, data)
+
+    text = "".join(_page_texts(pdf))
+    for word in ("拓竹", "玉白", "PLA", "ホワ", "흰색"):
+        assert word in text, (template, word, text)
+    assert {b"DroidSansFallback", b"NotoSansKR-Regular"} <= _base_fonts(pdf)
+
+
+def test_only_the_characters_the_label_font_lacks_change_font():
+    from backend.app.services.label_renderer import (  # noqa: PLC0415
+        FONT_CJK,
+        FONT_HANGUL,
+        FONT_REGULAR,
+        _font_runs,
+    )
+
+    assert _font_runs("Żółć 玉白 흰색 Мат", FONT_REGULAR) == [
+        (FONT_REGULAR, "Żółć "),
+        (FONT_CJK, "玉白"),
+        (FONT_REGULAR, " "),
+        (FONT_HANGUL, "흰색"),
+        (FONT_REGULAR, " Мат"),
+    ]
+
+
+def test_a_label_in_one_script_embeds_only_the_fallback_it_needs():
+    pdf = render_labels("box_62x29", [_sample(9, name="玉白", material="PLA")])
+
+    fonts = _base_fonts(pdf)
+    assert b"DroidSansFallback" in fonts
+    assert b"NotoSansKR-Regular" not in fonts
+
+
+def test_a_long_chinese_name_is_truncated_by_its_real_width():
+    """Truncation measured the text in Liberation Sans, whose missing-glyph
+    box is narrower than a CJK character, so a long name ran off the label."""
+    import io  # noqa: PLC0415
+
+    from reportlab.pdfgen import canvas  # noqa: PLC0415
+
+    from backend.app.services.label_renderer import FONT_BOLD, _text_width, _truncate_to_width  # noqa: PLC0415
+
+    c = canvas.Canvas(io.BytesIO())
+    text = "很长很长很长很长很长很长很长很长的名字"
+    fitted = _truncate_to_width(c, text, FONT_BOLD, 9, 60)
+
+    assert fitted.endswith("…")
+    assert _text_width(fitted, FONT_BOLD, 9) <= 60
+    assert len(fitted) > 3  # and it still uses the room it has
+
+
+def test_a_short_chinese_name_that_only_looked_short_is_truncated():
+    """Four CJK characters measured as Liberation's missing-glyph boxes are
+    13 pt wide at 9 pt; drawn, they are 36. The early "it fits" check has to
+    measure what is drawn too."""
+    import io  # noqa: PLC0415
+
+    from reportlab.pdfgen import canvas  # noqa: PLC0415
+
+    from backend.app.services.label_renderer import FONT_BOLD, _text_width, _truncate_to_width  # noqa: PLC0415
+
+    fitted = _truncate_to_width(canvas.Canvas(io.BytesIO()), "玉白玉白", FONT_BOLD, 9, 30)
+
+    assert fitted.endswith("…")
+    assert _text_width(fitted, FONT_BOLD, 9) <= 30
+
+
+def test_the_tight_layout_draws_cjk_in_the_fallback_font():
+    """Labels under 20 mm tall use the four-line layout, which draws the brand
+    and material lines itself."""
+    import io  # noqa: PLC0415
+
+    from reportlab.pdfgen import canvas  # noqa: PLC0415
+
+    from backend.app.services.label_renderer import _draw_label  # noqa: PLC0415
+
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=(60 * mm, 15 * mm))
+    _draw_label(c, 0, 0, 60 * mm, 15 * mm, _sample(4, brand="拓竹", material="PLA", subtype="흰색"))
+    c.save()
+    pdf = buf.getvalue()
+
+    text = "".join(_page_texts(pdf))
+    assert "拓竹" in text and "흰색" in text, text
+    assert {b"DroidSansFallback", b"NotoSansKR-Regular"} <= _base_fonts(pdf)

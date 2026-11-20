@@ -20,6 +20,7 @@ from backend.app.services.label_renderer import (
     ALL_LABEL_FIELDS,
     DEFAULT_LABEL_FIELDS,
     LabelData,
+    _breaks_before,
     _draw_label,
     label_size_mm,
     pdf_to_pngs,
@@ -66,14 +67,13 @@ def _text(template: str, data: LabelData, fields=DEFAULT_LABEL_FIELDS) -> bytes:
     c.showPage()
     c.save()
     pdf = buf.getvalue()
-    streams = []
-    for m in re.finditer(rb"stream\r?\n(.*?)endstream", pdf, re.S):
-        # The object's own dictionary sits between its "N 0 obj" and "stream".
-        head = pdf[pdf.rfind(b" obj", 0, m.start()) : m.start()]
-        if b"/Subtype /Image" not in head:
-            streams.append(m.group(1))
-    assert len(streams) == 1, f"expected one page content stream, got {len(streams)}"
-    return streams[0]
+    # The page names its content stream; the embedded fonts and the QR image
+    # are streams of their own.
+    refs = re.findall(rb"/Contents (\d+) 0 R", pdf)
+    assert len(refs) == 1, f"expected one page content stream, got {len(refs)}"
+    m = re.search(rb"(?<!\d)" + refs[0] + rb" 0 obj.*?stream\r?\n(.*?)endstream", pdf, re.S)
+    assert m is not None
+    return m.group(1)
 
 
 def test_default_fields_are_what_labels_always_carried():
@@ -211,3 +211,100 @@ def test_qr_stays_black_and_white_in_the_png():
     qr_region = image.crop((w // 2, 0, w, h))
     greys = sum(1 for v in qr_region.getdata() if 40 < v < 215)
     assert greys / (qr_region.width * qr_region.height) < 0.02
+
+
+# ── Long rows continue on further lines (#3621) ──────────────────────────────
+
+ZH_NAME = "【快打】亚光PETG 哑光黑色 高速"
+
+
+def _lines(
+    data: LabelData, fields=DEFAULT_LABEL_FIELDS, monochrome: bool = True, size_mm: tuple[int, int] = (40, 30)
+) -> list[str]:
+    """The text drawn on a label, 40 x 30 unless given, one entry per line, top to bottom.
+    A line with Chinese is drawn in pieces, one per font, on one baseline."""
+    drawn: dict[float, str] = {}
+    real = rl_canvas.Canvas.drawString
+
+    def record(self, x, y, text, *args, **kwargs):
+        drawn[round(y, 2)] = drawn.get(round(y, 2), "") + text
+        return real(self, x, y, text, *args, **kwargs)
+
+    w, h = size_mm[0] * mm, size_mm[1] * mm
+    c = rl_canvas.Canvas(io.BytesIO(), pagesize=(w, h))
+    with patch.object(rl_canvas.Canvas, "drawString", record):
+        _draw_label(c, 0, 0, w, h, data, monochrome, fields)
+    return [drawn[y] for y in sorted(drawn, reverse=True)]
+
+
+def _name_lines(lines: list[str]) -> list[str]:
+    """The lines between the hex code and the next row or the spool ID."""
+    start = lines.index("#E8F0E0") + 1
+    return [line for line in lines[start:] if line not in ("Shelf 2", "#128")]
+
+
+def test_a_long_chinese_name_continues_on_the_next_lines():
+    lines = _name_lines(_lines(_data(name=ZH_NAME, storage_location=None)))
+
+    assert len(lines) > 1
+    # Nothing is lost but a space where a line breaks.
+    assert "".join(lines).replace(" ", "") == ZH_NAME.replace(" ", "")
+    assert not any(line.endswith("…") for line in lines)
+
+
+def test_a_latin_word_is_not_broken_next_to_chinese():
+    lines = _name_lines(_lines(_data(name=ZH_NAME, storage_location=None)))
+
+    assert any(line.startswith("PETG") or line.endswith("PETG") for line in lines)
+    assert not any(line.startswith("】") for line in lines)
+
+
+def test_a_long_latin_name_breaks_at_spaces():
+    name = "Matte Charcoal Black"
+    lines = _name_lines(_lines(_data(name=name, storage_location=None)))
+
+    assert len(lines) > 1
+    assert " ".join(lines) == name
+
+
+def test_the_row_below_keeps_its_line():
+    """The name takes no line the location needs: it is cut sooner instead."""
+    lines = _lines(_data(name=ZH_NAME, storage_location="Shelf 2"))
+
+    assert "Shelf 2" in lines
+    assert "#128" in lines
+    assert _name_lines(lines)[-1].endswith("…")
+
+
+def test_a_row_takes_at_most_three_lines():
+    """Also on a label with room for more."""
+    lines = _name_lines(_lines(_data(name="Charcoal " * 30, storage_location=None), size_mm=(75, 55)))
+
+    assert len(lines) == 3
+    assert lines[-1].endswith("…")
+
+
+def test_wrapped_lines_stay_above_the_spool_id():
+    drawn: list[tuple[float, str]] = []
+    real = rl_canvas.Canvas.drawString
+
+    def record(self, x, y, text, *args, **kwargs):
+        drawn.append((y, text))
+        return real(self, x, y, text, *args, **kwargs)
+
+    with patch.object(rl_canvas.Canvas, "drawString", record):
+        _text("box_40x30", _data(name="Charcoal " * 12, storage_location=None, note="Dry first " * 6), ALL)
+
+    id_y = next(y for y, text in drawn if text == "#128")
+    assert min(y for y, text in drawn if text != "#128") >= id_y + 16
+
+
+def test_chinese_punctuation_stays_with_its_word():
+    """A line never starts with a closing bracket or comma, nor ends with an
+    opening bracket."""
+    assert not _breaks_before("快打】", 2)
+    assert not _breaks_before("快，打", 1)
+    assert not _breaks_before("【快", 1)
+    assert _breaks_before("快打", 1)
+    assert _breaks_before("光PETG", 1)
+    assert not _breaks_before("PETG", 1)

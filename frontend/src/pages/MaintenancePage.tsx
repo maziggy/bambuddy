@@ -35,14 +35,18 @@ import {
   CircleDot,
   Printer,
   ExternalLink,
+  History,
+  Download,
 } from 'lucide-react';
-import { api } from '../api/client';
+import { api, MAINTENANCE_NOTES_MAX_LENGTH } from '../api/client';
 import type { MaintenanceStatus, PrinterMaintenanceOverview, MaintenanceType, Permission } from '../api/client';
 import { getMaintenanceWikiUrl } from '../utils/maintenanceWikiUrls';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { Toggle } from '../components/Toggle';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { MaintenanceLogModal } from '../components/MaintenanceLogModal';
+import { MaintenanceLogCleanupModal } from '../components/MaintenanceLogCleanupModal';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -136,7 +140,7 @@ function MaintenanceCard({
   t,
 }: {
   item: MaintenanceStatus;
-  onPerform: (id: number) => void;
+  onPerform: (item: MaintenanceStatus) => void;
   onToggle: (id: number, enabled: boolean) => void;
   hasPermission: (permission: Permission) => boolean;
   t: TFunction;
@@ -271,7 +275,7 @@ function MaintenanceCard({
           <Button
             size="sm"
             variant={item.is_due ? 'primary' : 'secondary'}
-            onClick={() => onPerform(item.id)}
+            onClick={() => onPerform(item)}
             disabled={!item.enabled || !hasPermission('maintenance:update')}
             title={!hasPermission('maintenance:update') ? t('maintenance.noPermissionPerform') : undefined}
             className="!px-3"
@@ -295,13 +299,14 @@ function PrinterSection({
   t,
 }: {
   overview: PrinterMaintenanceOverview;
-  onPerform: (id: number) => void;
+  onPerform: (item: MaintenanceStatus) => void;
   onToggle: (id: number, enabled: boolean) => void;
   onSetHours: (printerId: number, hours: number) => void;
   hasPermission: (permission: Permission) => boolean;
   t: TFunction;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [showLog, setShowLog] = useState(false);
   const [editingHours, setEditingHours] = useState(false);
   const [hoursInput, setHoursInput] = useState(overview.total_print_hours.toFixed(1));
 
@@ -328,7 +333,7 @@ function PrinterSection({
     <Card className="overflow-hidden">
       {/* Header */}
       <div className="p-5">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-4">
             <h2 className="text-xl font-semibold text-white">{overview.printer_name}</h2>
             <div className="flex items-center gap-2">
@@ -352,13 +357,25 @@ function PrinterSection({
               )}
             </div>
           </div>
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-bambu-gray hover:text-white hover:bg-bambu-dark rounded-lg transition-colors"
-          >
-            {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            {expanded ? t('common.collapse') : t('common.expand')}
-          </button>
+          <div className="flex items-center gap-1">
+            {hasPermission('maintenance:read') && (
+              <button
+                onClick={() => setShowLog(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-bambu-gray hover:text-white hover:bg-bambu-dark rounded-lg transition-colors"
+                title={t('maintenance.viewLog')}
+              >
+                <History className="w-4 h-4" />
+                {t('maintenance.log')}
+              </button>
+            )}
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-bambu-gray hover:text-white hover:bg-bambu-dark rounded-lg transition-colors"
+            >
+              {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              {expanded ? t('common.collapse') : t('common.expand')}
+            </button>
+          </div>
         </div>
 
         {/* Quick stats row */}
@@ -450,7 +467,61 @@ function PrinterSection({
           </div>
         </CardContent>
       )}
+
+      {showLog && (
+        <MaintenanceLogModal
+          printerId={overview.printer_id}
+          printerName={overview.printer_name}
+          onClose={() => setShowLog(false)}
+        />
+      )}
     </Card>
+  );
+}
+
+// Asks for an optional comment before a reset, which goes into the maintenance log.
+function ResetMaintenanceModal({
+  item,
+  isLoading,
+  onConfirm,
+  onCancel,
+  t,
+}: {
+  item: MaintenanceStatus;
+  isLoading: boolean;
+  onConfirm: (notes: string) => void;
+  onCancel: () => void;
+  t: TFunction;
+}) {
+  const [notes, setNotes] = useState('');
+  return (
+    <ConfirmModal
+      title={t('maintenance.resetDialogTitle', { task: item.maintenance_type_name })}
+      message={t('maintenance.resetDialogMessage', { printer: item.printer_name })}
+      confirmText={t('common.reset')}
+      isLoading={isLoading}
+      // A stray click outside or Escape must not throw a typed comment away.
+      dismissible={notes.trim() === ''}
+      onConfirm={() => onConfirm(notes)}
+      onCancel={onCancel}
+    >
+      <label htmlFor="maintenance-reset-comment" className="block text-sm text-bambu-gray mb-1.5">
+        {t('maintenance.commentLabel')}
+      </label>
+      <textarea
+        id="maintenance-reset-comment"
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        maxLength={MAINTENANCE_NOTES_MAX_LENGTH}
+        rows={3}
+        placeholder={t('maintenance.commentPlaceholder')}
+        className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder-bambu-gray/60 focus:outline-none focus:border-bambu-green resize-y"
+        autoFocus
+      />
+      <div className="text-right text-xs text-bambu-gray mt-1">
+        {notes.length}/{MAINTENANCE_NOTES_MAX_LENGTH}
+      </div>
+    </ConfirmModal>
   );
 }
 
@@ -1089,6 +1160,9 @@ export function MaintenancePage() {
   const { showToast } = useToast();
   const { hasPermission } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('status');
+  const [resetItem, setResetItem] = useState<MaintenanceStatus | null>(null);
+  const [exportingLog, setExportingLog] = useState(false);
+  const [cleanupLogOpen, setCleanupLogOpen] = useState(false);
 
   const { data: overview, isLoading } = useQuery({
     queryKey: ['maintenanceOverview'],
@@ -1103,9 +1177,11 @@ export function MaintenancePage() {
   const performMutation = useMutation({
     mutationFn: ({ id, notes }: { id: number; notes?: string }) =>
       api.performMaintenance(id, notes),
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['maintenanceOverview'] });
       queryClient.invalidateQueries({ queryKey: ['maintenanceSummary'] });
+      queryClient.invalidateQueries({ queryKey: ['maintenanceLog', data.printer_id] });
+      setResetItem(null);
       showToast(t('maintenance.maintenanceComplete'));
     },
     onError: (error: Error) => {
@@ -1204,8 +1280,31 @@ export function MaintenancePage() {
     },
   });
 
-  const handlePerform = (id: number) => {
-    performMutation.mutate({ id });
+  const cleanupLogMutation = useMutation({
+    mutationFn: (olderThanDays: number) => api.cleanUpMaintenanceLog(olderThanDays),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['maintenanceLog'] });
+      setCleanupLogOpen(false);
+      showToast(t('maintenance.cleanUpDone', { deleted: result.deleted }));
+    },
+    onError: (error: Error) => {
+      showToast(t('maintenance.deleteFailed', { error: error.message }), 'error');
+    },
+  });
+
+  const handlePerform = (item: MaintenanceStatus) => {
+    setResetItem(item);
+  };
+
+  const handleExportAllLogs = async () => {
+    setExportingLog(true);
+    try {
+      await api.downloadMaintenanceLog();
+    } catch (error) {
+      showToast(t('maintenance.exportFailed', { error: (error as Error).message }), 'error');
+    } finally {
+      setExportingLog(false);
+    }
   };
 
   const handleToggle = (id: number, enabled: boolean) => {
@@ -1231,10 +1330,37 @@ export function MaintenancePage() {
     <div className="p-4 md:p-8">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-          <Wrench className="w-7 h-7 text-bambu-green" />
-          {t('maintenance.title')}
-        </h1>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+            <Wrench className="w-7 h-7 text-bambu-green" />
+            {t('maintenance.title')}
+          </h1>
+          {activeTab === 'status' && hasPermission('maintenance:read') && (
+            <div className="flex items-center gap-2 flex-wrap">
+              {hasPermission('maintenance:delete') && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setCleanupLogOpen(true)}
+                  title={t('maintenance.cleanUpHint')}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  {t('maintenance.cleanUpLog')}
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={handleExportAllLogs}
+                disabled={exportingLog}
+                title={t('maintenance.exportAllHint')}
+              >
+                {exportingLog ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                {t('maintenance.exportAll')}
+              </Button>
+            </div>
+          )}
+        </div>
         <p className="text-bambu-gray mt-1">
           {activeTab === 'status' ? (
             <>
@@ -1330,6 +1456,24 @@ export function MaintenancePage() {
           onRemoveItem={(itemId) => removeItemMutation.mutate(itemId)}
           hasPermission={hasPermission}
           t={t}
+        />
+      )}
+
+      {resetItem && (
+        <ResetMaintenanceModal
+          item={resetItem}
+          isLoading={performMutation.isPending}
+          onConfirm={(notes) => performMutation.mutate({ id: resetItem.id, notes: notes.trim() || undefined })}
+          onCancel={() => setResetItem(null)}
+          t={t}
+        />
+      )}
+
+      {cleanupLogOpen && (
+        <MaintenanceLogCleanupModal
+          isLoading={cleanupLogMutation.isPending}
+          onConfirm={(days) => cleanupLogMutation.mutate(days)}
+          onCancel={() => setCleanupLogOpen(false)}
         />
       )}
     </div>

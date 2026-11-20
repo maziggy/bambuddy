@@ -452,13 +452,25 @@ class TestUpload:
         assert result is False
         client.disconnect()
 
-    @pytest.mark.parametrize(("server_size", "logged_error"), [(100, True), (1024, False), (None, False)])
+    @pytest.mark.parametrize(
+        ("sizes", "uploaded", "logged_error"),
+        [
+            ([1024], True, False),  # complete at the first read
+            ([None], True, False),  # unreadable: nothing to judge by, proceeds as before
+            # #3538: an A1 still writing the file out reads short at first,
+            # then reaches the full size.
+            ([0, 0, 512, 1024], True, False),
+            # Never complete: no print command for it.
+            ([100], False, True),
+        ],
+    )
     def test_upload_without_a_226_is_checked_on_a_new_connection(
-        self, ftp_client_factory, ftp_server, tmp_path, caplog, server_size, logged_error
+        self, ftp_client_factory, ftp_server, tmp_path, caplog, sizes, uploaded, logged_error
     ):
         """No 226 within the wait (an H2D can take 30+ s) still lets the upload
-        proceed, but its size is read back on a fresh connection, since the
-        old one may be out of step, and a mismatch is logged as an error."""
+        proceed once its size is read back on a fresh connection, since the
+        old one may be out of step. A short size is read again until it
+        matches; one that never does fails the upload so it is retried."""
         import logging
 
         import backend.app.services.bambu_ftp as ftp_mod
@@ -467,6 +479,8 @@ class TestUpload:
         local.write_bytes(b"data" * 256)
         client = ftp_client_factory()
         client.connect()
+        client.UNCONFIRMED_SIZE_POLL_INTERVAL = 0
+        client.UNCONFIRMED_SIZE_POLL_TIMEOUT = 0.2
 
         def never_answers():
             raise TimeoutError("timed out")
@@ -476,16 +490,20 @@ class TestUpload:
 
         def fake_size(c, remote_path):
             checked.append(remote_path)
-            return server_size
+            return sizes[min(len(checked), len(sizes)) - 1]
 
         with (
             patch.object(ftp_mod, "_size_on_new_connection", fake_size),
             caplog.at_level(logging.INFO, logger="backend.app.services.bambu_ftp"),
         ):
-            assert client.upload_file(local, "/cache/test.bin") is True
+            assert client.upload_file(local, "/cache/test.bin") is uploaded
         client.disconnect()
 
-        assert checked == ["/cache/test.bin"]
+        assert set(checked) == {"/cache/test.bin"}
+        if uploaded:
+            assert len(checked) == len(sizes)
+        else:
+            assert client.last_failure.kind is ftp_mod.FtpFailureKind.NETWORK
         errors = [r for r in caplog.records if r.levelno >= logging.ERROR]
         assert bool(errors) is logged_error
 

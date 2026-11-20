@@ -279,12 +279,14 @@ class TestMapSpoolmanSpool:
             **MINIMAL_SPOOL,
             "filament": {
                 **MINIMAL_SPOOL["filament"],
-                "name": "PLA Basic Red",
+                # No finish in the name, so it reads as Bambuddy's own
+                # "<material> <subtype>" and the colour is synthesised (#3561).
+                "name": "PLA Jade White",
                 # No color_name field.
             },
         }
         result = _map_spoolman_spool(spool)
-        assert result["color_name"] == "Basic Red"
+        assert result["color_name"] == "Jade White"
         assert result["color_name_is_synthesized"] is True
 
     def test_color_name_falls_back_to_subtype_when_field_missing(self):
@@ -298,15 +300,15 @@ class TestMapSpoolmanSpool:
             **MINIMAL_SPOOL,
             "filament": {
                 **MINIMAL_SPOOL["filament"],
-                "name": "PLA Basic Red",
+                "name": "PLA Jade White",
                 # No color_name field — the common case for default Spoolman installs.
             },
         }
         result = _map_spoolman_spool(spool)
-        # subtype is filament_name minus material prefix → "Basic Red"
-        assert result["subtype"] == "Basic Red"
+        # No finish in the name: subtype is filament_name minus material prefix.
+        assert result["subtype"] == "Jade White"
         # color_name falls back to subtype.
-        assert result["color_name"] == "Basic Red"
+        assert result["color_name"] == "Jade White"
 
     def test_color_name_read_from_spool_extra_first(self):
         """#1357: the canonical store for color_name is
@@ -354,11 +356,11 @@ class TestMapSpoolmanSpool:
             "extra": {"bambu_color_name": '""'},
             "filament": {
                 **MINIMAL_SPOOL["filament"],
-                "name": "PLA Basic Red",
+                "name": "PLA Jade White",
             },
         }
         result = _map_spoolman_spool(spool)
-        assert result["color_name"] == "Basic Red"
+        assert result["color_name"] == "Jade White"
         assert result["color_name_is_synthesized"] is True
 
     def test_color_name_none_when_both_fields_empty(self):

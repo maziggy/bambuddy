@@ -115,7 +115,7 @@ from backend.app.utils.filament_ids import (
     filament_id_to_setting_id,
     setting_id_to_filament_id,
 )
-from backend.app.utils.filament_types import is_material_name, printer_filament_type
+from backend.app.utils.filament_types import is_material_name, printer_filament_type, support_filament_type
 from backend.app.utils.fts_routing import slot_extruder
 from backend.app.utils.http import build_content_disposition, download_error_response, safe_download_filename
 from backend.app.utils.kprofile_lookup import build_slot_k_resolver
@@ -3065,6 +3065,12 @@ async def configure_ams_slot(
         logger.info("[configure_ams_slot] tray_info_idx %r is a setting id → %r", tray_info_idx, converted)
         setting_id = setting_id or tray_info_idx
         tray_info_idx = converted
+    # A support preset arrives as plain "PLA" -- the dialog reads the type off
+    # the preset name -- where the slicer writes "PLA-S" (#3559).
+    support_type = support_filament_type(tray_type, tray_info_idx, tray_sub_brands)
+    if support_type != tray_type:
+        logger.info("[configure_ams_slot] support filament: tray_type %r → %r", tray_type, support_type)
+        tray_type = support_type
     # The K profile's filament id: it becomes the slot's when they differ
     # (the realignment below), and the printer's calibration table is keyed
     # by filament ids as well.

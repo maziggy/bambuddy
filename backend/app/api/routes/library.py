@@ -4569,6 +4569,9 @@ async def _run_slicer_with_fallback(
     # orthogonal so this decision doesn't interact with the #1337 build-
     # plate override.
     cross_class_arrange = False
+    # Also read by the embedded-settings fallback below (#3535).
+    source_model: str | None = None
+    target_model: str | None = None
     if is_3mf:
         from backend.app.services.slicer_3mf_convert import (
             extract_source_printer_model,
@@ -4818,6 +4821,20 @@ async def _run_slicer_with_fallback(
                 # Retrying would hand back a one-plate result for a job the
                 # user asked to slice as N, which reads as a Bambuddy bug
                 # rather than a slicer failure. Surface the error instead.
+                raise
+            if not source_model or source_model != target_model:
+                # The embedded settings are for the printer the file was
+                # sliced for. On any other target -- or when either side is
+                # unknown -- the fallback hands back G-code for the wrong
+                # printer as a completed slice (#3535). Surface the error.
+                logger.warning(
+                    "Slicer CLI failed on the --load-settings path for %s (%s); no fallback to embedded "
+                    "settings, which are for %s, not %s",
+                    model_filename,
+                    exc,
+                    source_model or "an unknown printer",
+                    target_model or "an unknown printer",
+                )
                 raise
             logger.warning(
                 "Slicer CLI failed on the --load-settings path for %s (%s); retrying with embedded settings",
@@ -5327,6 +5344,10 @@ async def slice_and_persist_as_archive(
     from backend.app.services.print_cost_estimate import refresh_plate_estimates
 
     refresh_plate_estimates(new_archive)
+    # Its G-code, so a print of this slice sent from the slicer joins it (#1634)
+    from backend.app.services.archive_gcode_hash import refresh_gcode_hash_async
+
+    await refresh_gcode_hash_async(new_archive)
     db.add(new_archive)
     await db.commit()
     await db.refresh(new_archive)

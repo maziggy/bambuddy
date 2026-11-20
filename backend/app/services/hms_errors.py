@@ -92,6 +92,31 @@ def alert_level_from_print_error(error: int) -> int:
     return {0x4: 1, 0x8: 2, 0xC: 3}.get((error >> 12) & 0xF, 0)
 
 
+# "The firmware of AMS A does not match the printer": 05XX_0400_0001_0044, where
+# XX is the unit, 00-03 for AMS A-D and 10 for an AMS Lite. A BMCU, the open
+# hardware stand-in for an AMS, raises it for good, which leaves the printer card
+# showing a problem that cannot be cleared (#3269). Only this family is listed.
+# The print errors with similar wording (05XX_409D, 058X_409C, 0500_4033) are not:
+# on some firmware they make the printer refuse the job. Neither are the
+# AMS-HT (0045) or the Laser, Air Pump and Cutting Module (0046-0048) codes.
+AMS_FIRMWARE_MISMATCH_CODES: frozenset[str] = frozenset(
+    f"05{unit:02X}040000010044" for unit in (0x00, 0x01, 0x02, 0x03, 0x10)
+)
+
+_hide_ams_firmware_mismatch = False
+
+
+def set_hide_ams_firmware_mismatch(hide: bool) -> None:
+    """Turn the hiding of the AMS firmware mismatch warning on or off (#3269)."""
+    global _hide_ams_firmware_mismatch
+    _hide_ams_firmware_mismatch = bool(hide)
+
+
+def is_hidden_hms_code(full_code: str | None) -> bool:
+    """Whether an ``hms[]`` fault, by its 16-character code, is hidden by the user's choice."""
+    return _hide_ams_firmware_mismatch and (full_code or "").upper() in AMS_FIRMWARE_MISMATCH_CODES
+
+
 def hms_fault_counts(error) -> bool:
     """Whether a fault counts as a problem: the same rule the frontend's
     ``filterKnownHMSErrors`` applies to the printer card, badge and camera wall.

@@ -483,6 +483,8 @@ export default {
     // Chamber light
     chamberLightOn: 'Kammerbeleuchtung einschalten',
     chamberLightOff: 'Kammerbeleuchtung ausschalten',
+    printerSoundOn: 'Druckertöne einschalten',
+    printerSoundOff: 'Druckertöne ausschalten',
     // Files
     files: 'Dateien',
     browseFiles: 'Druckerdateien durchsuchen',
@@ -578,6 +580,9 @@ export default {
       failedToPausePrint: 'Druck konnte nicht pausiert werden',
       failedToResumePrint: 'Druck konnte nicht fortgesetzt werden',
       failedToControlChamberLight: 'Kammerbeleuchtung konnte nicht gesteuert werden',
+      printerSoundEnabled: 'Druckertöne an',
+      printerSoundDisabled: 'Druckertöne aus',
+      failedToControlPrinterSound: 'Druckertöne konnten nicht geändert werden',
       failedToSetSpeed: 'Druckgeschwindigkeit konnte nicht eingestellt werden',
       failedToUpdateSetting: 'Einstellung konnte nicht aktualisiert werden',
       failedToSkipObjects: 'Objekte konnten nicht übersprungen werden',

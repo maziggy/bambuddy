@@ -488,6 +488,8 @@ export default {
     // Chamber light
     chamberLightOn: 'Włącz oświetlenie komory',
     chamberLightOff: 'Wyłącz oświetlenie komory',
+    printerSoundOn: 'Włącz dźwięki drukarki',
+    printerSoundOff: 'Wyłącz dźwięki drukarki',
     // Files
     files: 'Pliki',
     browseFiles: 'Przeglądaj pliki drukarki',
@@ -583,6 +585,9 @@ export default {
       failedToPausePrint: 'Nie udało się wstrzymać wydruku',
       failedToResumePrint: 'Nie udało się wznowić wydruku',
       failedToControlChamberLight: 'Nie udało się sterować oświetleniem komory',
+      printerSoundEnabled: 'Dźwięki drukarki włączone',
+      printerSoundDisabled: 'Dźwięki drukarki wyłączone',
+      failedToControlPrinterSound: 'Nie udało się zmienić dźwięków drukarki',
       failedToSetSpeed: 'Nie udało się ustawić prędkości druku',
       failedToUpdateSetting: 'Nie udało się zaktualizować ustawienia',
       failedToSkipObjects: 'Nie udało się pominąć obiektów',

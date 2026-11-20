@@ -488,6 +488,8 @@ export default {
     // Chamber light
     chamberLightOn: 'Turn on chamber light',
     chamberLightOff: 'Turn off chamber light',
+    printerSoundOn: 'Turn on printer sounds',
+    printerSoundOff: 'Turn off printer sounds',
     // Files
     files: 'Files',
     browseFiles: 'Browse printer files',
@@ -583,6 +585,9 @@ export default {
       failedToPausePrint: 'Failed to pause print',
       failedToResumePrint: 'Failed to resume print',
       failedToControlChamberLight: 'Failed to control chamber light',
+      printerSoundEnabled: 'Printer sounds on',
+      printerSoundDisabled: 'Printer sounds off',
+      failedToControlPrinterSound: 'Failed to change printer sounds',
       failedToSetSpeed: 'Failed to set print speed',
       failedToUpdateSetting: 'Failed to update setting',
       failedToSkipObjects: 'Failed to skip objects',

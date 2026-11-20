@@ -1578,6 +1578,12 @@ export default {
 
   // Queue page
   queue: {
+    waiting: {
+      filament: 'フィラメント待ち: {{what}}',
+      noMatch: '一致する素材/色がありません。{{what}}を待機中',
+      priorityIn: '{{hours}}時間後に優先',
+      hasPriority: '優先中',
+    },
     filamentShort: {
       rowBadge: '割り当てられたスプールのフィラメントが不足しています',
       rowTooltip: 'スケジューラーがこのアイテムをフラグしました。再生ボタンをクリックしてスロットごとの不足量を確認し、それでも印刷するか判断してください。',
@@ -2433,6 +2439,8 @@ export default {
     userNotificationsEnabled: 'ユーザー通知',
     userNotificationsEnabledDescription: 'ユーザー通知メニューと印刷ジョブイベントのメール通知を有効にします。高度な認証が必要です。',
     userNotificationsDisabledHint: 'ユーザー通知を使用するには高度な認証を有効にしてください。',
+    notificationSubmitterEmail: '通知に送信者のメールアドレスを含める',
+    notificationSubmitterEmailDescription: '印刷通知の {submitted_by_email} を埋めます。通知テンプレートやプロバイダーを編集できるユーザーは、ユーザーのメールアドレスを任意のサーバーに送信できるようになります。',
     notificationProviders: '通知プロバイダー',
     addProvider: 'プロバイダーを追加',
     editProvider: 'プロバイダーを編集',
@@ -2748,6 +2756,13 @@ export default {
     concurrentUploadsDescription: 'キューが同時にファイルを送信できるプリンター数です。プリンターのファイル受信は遅く（大きな造形では数分かかることもあります）、各プリンターは順番を待ちます。台数の多い環境では、この値を上げることで、バッチ内の最後のプリンターが先行するすべての転送を待たずに済みます。ネットワークや Bambuddy ホストが並列転送に耐えられない場合は下げてください。',
     concurrentUploadsLabel: '同時に送信するプリンター数',
     concurrentUploadsHelp: '1 にすると 1 台ずつ送信します（従来の動作）。既定値は 4 です。',
+    loadedFilamentFirstTitle: '装填済みフィラメントを優先',
+    loadedFilamentFirst: 'フィラメントが装填済みのジョブを先に実行する',
+    loadedFilamentFirstDescription: 'フィラメントがプリンターに装填されていないジョブは保留されずにスキップされ、スプールが装填されると自動的に開始されます。後ろにある条件に合うジョブが先に実行されます。キューの順序は変更されません。',
+    maxWaitHours: '最大待機時間（時間）',
+    maxWaitHoursHelp: 'ジョブがキューに入ってからこの時間が経過すると（キュー投入時または予約開始時から計算）、そのジョブが優先されます。使用できる次のプリンターは、フィラメントが装填されるまでそのジョブのために空けたまま確保され、通知は1回届きます。空欄にすると無制限になり、その場合はジョブが待機を始めたときに1回通知されます。',
+    maxWaitHoursInvalid: '1〜8760の整数で時間を入力するか、無制限にする場合は空欄にしてください。',
+    maxWaitHoursPlaceholder: '無制限',
     dispatchOrderTitle: '機種指定ジョブのプリンター順序',
     dispatchOrderDescription: '機種内のどのプリンターでもよいジョブをキューに入れたとき、受け取れるプリンターのうちどれが取るかをこの設定で決めます。使用中、オフライン、フィラメント不足のプリンターは、順序にかかわらず飛ばされます。',
     dispatchOrderLabel: 'プリンターの選び方',

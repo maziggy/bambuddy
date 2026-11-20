@@ -1579,6 +1579,12 @@ export default {
 
   // Queue page
   queue: {
+    waiting: {
+      filament: 'Esperando filamento: {{what}}',
+      noMatch: 'Ningún material/color coincide. Esperando {{what}}',
+      priorityIn: 'prioridad en {{hours}} h',
+      hasPriority: 'tiene prioridad',
+    },
     filamentShort: {
       rowBadge: 'Filamento insuficiente para la bobina asignada',
       rowTooltip: 'El planificador marco este elemento. Pulsa Reproducir para ver el deficit por slot y decidir si imprimir de todos modos.',
@@ -2437,6 +2443,8 @@ export default {
     userNotificationsEnabled: 'Notificaciones de usuario',
     userNotificationsEnabledDescription: 'Activa el menú de notificaciones de usuario y las notificaciones por correo de los eventos de los trabajos de impresión. Requiere autenticación avanzada.',
     userNotificationsDisabledHint: 'Active la autenticación avanzada para usar las notificaciones de usuario.',
+    notificationSubmitterEmail: 'Correo del remitente en las notificaciones',
+    notificationSubmitterEmailDescription: 'Rellena {submitted_by_email} en las notificaciones de impresión. Quien pueda editar plantillas o proveedores de notificaciones podrá enviar los correos de los usuarios a cualquier servidor.',
     notificationProviders: 'Proveedores de notificaciones',
     addProvider: 'Añadir proveedor',
     editProvider: 'Editar proveedor',
@@ -2752,6 +2760,13 @@ export default {
     concurrentUploadsDescription: 'Cuántas impresoras pueden recibir archivos de la cola al mismo tiempo. Las impresoras reciben los archivos lentamente (una impresión grande puede tardar varios minutos) y cada una espera su turno, así que en una granja grande subir este valor evita que la última impresora de un lote tenga que esperar a que terminen todas las transferencias anteriores. Bájalo si tu red o el host de Bambuddy tienen problemas con transferencias en paralelo.',
     concurrentUploadsLabel: 'Impresoras atendidas a la vez',
     concurrentUploadsHelp: '1 envía a una impresora cada vez (el comportamiento anterior). El valor predeterminado es 4.',
+    loadedFilamentFirstTitle: 'Filamento cargado primero',
+    loadedFilamentFirst: 'Ejecutar primero los trabajos cuyo filamento está cargado',
+    loadedFilamentFirstDescription: 'Un trabajo cuyo filamento no está en su impresora se omite en lugar de quedar retenido y arranca solo cuando se carga la bobina; los trabajos posteriores que encajan se ejecutan antes. El orden de la cola nunca se modifica.',
+    maxWaitHours: 'Espera máxima (horas)',
+    maxWaitHoursHelp: 'Cuando un trabajo lleva tanto tiempo en la cola (contado desde que se puso en cola o desde su inicio programado), obtiene prioridad: la siguiente impresora que podría usar se mantiene libre para él hasta que se cargue su filamento, y recibes una notificación. Déjalo vacío para no tener límite; entonces se te avisa una vez cuando un trabajo empieza a esperar.',
+    maxWaitHoursInvalid: 'Introduce un número entero de horas de 1 a 8760 o déjalo vacío para no tener límite.',
+    maxWaitHoursPlaceholder: 'Sin límite',
     dispatchOrderTitle: 'Orden de impresoras para trabajos de cualquier modelo',
     dispatchOrderDescription: 'Cuando un trabajo se pone en cola para cualquier impresora de un modelo, esto decide cuál de las que pueden aceptarlo lo recibe. Una impresora ocupada, sin conexión o con poco filamento se salta, sea cual sea el orden.',
     dispatchOrderLabel: 'Elegir la impresora',

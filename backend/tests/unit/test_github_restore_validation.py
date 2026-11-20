@@ -64,6 +64,7 @@ async def test_a_value_the_editor_refuses_is_not_restored(db_session, key, refus
         ("docker_compose_dir", "/opt/bambuddy"),
         ("auto_archive", "true"),
         ("ams_temp_alarm", "None"),
+        ("queue_max_wait_hours", "12"),
         ("energy_cost_per_kwh", "0.31"),
         ("manyfold_url", "http://manyfold.local"),
         ("manyfold_client_id", "client"),
@@ -202,7 +203,7 @@ async def test_a_saved_null_is_refused_where_the_settings_cannot_read_one(db_ses
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("key", ["ams_temp_alarm", "default_printer_id", "open_in_slicer"])
+@pytest.mark.parametrize("key", ["ams_temp_alarm", "default_printer_id", "open_in_slicer", "queue_max_wait_hours"])
 async def test_a_saved_null_is_restored_where_the_settings_read_one(db_session, key):
     _tally, written, stored = await _restore(db_session, {key: "None"})
 

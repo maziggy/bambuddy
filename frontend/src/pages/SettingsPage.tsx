@@ -102,6 +102,7 @@ registerSettingsSearch({ labelKey: 'settings.dispatchOrderTitle', labelFallback:
 registerSettingsSearch({ labelKey: 'settings.concurrentUploadsTitle', labelFallback: 'Concurrent Uploads', tab: 'queue', keywords: 'concurrent parallel upload transfer ftp queue slow farm simultaneous', anchor: 'card-concurrent-uploads' });
 registerSettingsSearch({ labelKey: 'settings.gcodeInjection', labelFallback: 'G-code Injection', tab: 'queue', keywords: 'gcode injection start end autoprint farmloop swapmod autoclear printflow', anchor: 'card-gcode' });
 registerSettingsSearch({ labelKey: 'settings.slicerCard', labelFallback: 'Slicer', tab: 'queue', keywords: 'slicer orcaslicer bambustudio orca bambu api sidecar url docker preferred', anchor: 'card-slicer' });
+registerSettingsSearch({ labelKey: 'settings.loadedFilamentFirstTitle', labelFallback: 'Loaded Filament First', tab: 'queue', keywords: 'loaded filament first skip wait priority spool reserve starvation queue', anchor: 'card-loaded-filament' });
 registerSettingsSearch({ labelKey: 'settings.queueDrying', tab: 'queue', keywords: 'drying presets temperature time humidity ams', anchor: 'card-drying' });
 registerSettingsSearch({ labelKey: 'settings.filamentChecks', tab: 'filament', keywords: 'filament check warning runout remaining', anchor: 'card-filamentchecks' });
 registerSettingsSearch({ labelKey: 'settings.printModal', tab: 'filament', keywords: 'print modal custom mapping', anchor: 'card-printmodal' });
@@ -288,6 +289,9 @@ export function SettingsPage() {
   // an intermediate value ("", "2" on the way to "25") is not rewritten by the
   // clamp mid-keystroke. Empty/non-numeric on blur reverts to the saved value.
   const [sustainedDraft, setSustainedDraft] = useState<string | null>(null);
+  // Raw text of the max-wait field while it holds something the backend would
+  // refuse (0, negative, > 8760, decimals); null when it mirrors saved settings.
+  const [maxWaitDraft, setMaxWaitDraft] = useState<string | null>(null);
   const [showPlugModal, setShowPlugModal] = useState(false);
   const [editingPlug, setEditingPlug] = useState<SmartPlug | null>(null);
   const [showHASensorModal, setShowHASensorModal] = useState(false);
@@ -1356,6 +1360,7 @@ export function SettingsPage() {
       baseline.prometheus_enabled !== localSettings.prometheus_enabled ||
       baseline.prometheus_token !== localSettings.prometheus_token ||
       (baseline.user_notifications_enabled ?? true) !== (localSettings.user_notifications_enabled ?? true) ||
+      (baseline.notification_submitter_email_enabled ?? false) !== (localSettings.notification_submitter_email_enabled ?? false) ||
       (baseline.default_bed_levelling ?? 'auto') !== (localSettings.default_bed_levelling ?? 'auto') ||
       (baseline.default_flow_cali ?? 'auto') !== (localSettings.default_flow_cali ?? 'auto') ||
       (baseline.default_vibration_cali ?? true) !== (localSettings.default_vibration_cali ?? true) ||
@@ -1369,6 +1374,8 @@ export function SettingsPage() {
       (baseline.stagger_interval_minutes ?? 5) !== (localSettings.stagger_interval_minutes ?? 5) ||
       (baseline.require_plate_clear ?? false) !== (localSettings.require_plate_clear ?? false) ||
       (baseline.queue_max_concurrent_uploads ?? 4) !== (localSettings.queue_max_concurrent_uploads ?? 4) ||
+      (baseline.queue_loaded_filament_first ?? false) !== (localSettings.queue_loaded_filament_first ?? false) ||
+      (baseline.queue_max_wait_hours ?? null) !== (localSettings.queue_max_wait_hours ?? null) ||
       (baseline.model_dispatch_order ?? 'fewest_hours') !== (localSettings.model_dispatch_order ?? 'fewest_hours') ||
       (baseline.preheat_enabled ?? false) !== (localSettings.preheat_enabled ?? false) ||
       (baseline.preheat_filament_targets ?? '') !== (localSettings.preheat_filament_targets ?? '') ||
@@ -1487,6 +1494,7 @@ export function SettingsPage() {
         prometheus_enabled: localSettings.prometheus_enabled,
         prometheus_token: localSettings.prometheus_token,
         user_notifications_enabled: localSettings.user_notifications_enabled,
+        notification_submitter_email_enabled: localSettings.notification_submitter_email_enabled,
         default_bed_levelling: localSettings.default_bed_levelling,
         default_flow_cali: localSettings.default_flow_cali,
         default_vibration_cali: localSettings.default_vibration_cali,
@@ -1500,6 +1508,9 @@ export function SettingsPage() {
         stagger_interval_minutes: localSettings.stagger_interval_minutes,
         require_plate_clear: localSettings.require_plate_clear,
         queue_max_concurrent_uploads: localSettings.queue_max_concurrent_uploads,
+        queue_loaded_filament_first: localSettings.queue_loaded_filament_first ?? false,
+        // null = no limit; never default to 48 here or clearing the field would not stick (#3587)
+        queue_max_wait_hours: localSettings.queue_max_wait_hours ?? null,
         model_dispatch_order: localSettings.model_dispatch_order,
         preheat_enabled: localSettings.preheat_enabled,
         preheat_filament_targets: localSettings.preheat_filament_targets,
@@ -4252,6 +4263,34 @@ export function SettingsPage() {
               </CardContent>
             </Card>
 
+            {/* Submitter email in print notifications (admin-only) */}
+            <Card className="mb-4">
+              <CardContent className="py-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-white text-sm font-medium">{t('settings.notificationSubmitterEmail')}</p>
+                    <p className="text-xs text-bambu-gray">{t('settings.notificationSubmitterEmailDescription')}</p>
+                    {!isAdmin && (
+                      <p id="submitter-email-admin-only" className="text-xs text-bambu-gray mt-1">
+                        {t('settings.adminOnlySetting')}
+                      </p>
+                    )}
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={localSettings.notification_submitter_email_enabled ?? false}
+                      disabled={!isAdmin}
+                      aria-describedby={!isAdmin ? 'submitter-email-admin-only' : undefined}
+                      onChange={(e) => updateSetting('notification_submitter_email_enabled', e.target.checked)}
+                    />
+                    <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green peer-disabled:cursor-not-allowed"></div>
+                  </label>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Test All Results */}
             {testAllResult && (
               <Card className="mb-4">
@@ -6392,6 +6431,77 @@ export function SettingsPage() {
               <p className="text-xs text-bambu-gray mt-1">
                 {t('settings.dispatchOrderHelp', "Fewest hours spreads the wear over the farm. Most hours uses up the machines near replacement first. Idle the longest goes by each printer's last finished print, and one that never printed goes first. By priority follows the Priority field in each printer's settings: the lowest number first, printers without one last.")}
               </p>
+            </CardContent>
+          </Card>
+
+          {/* Loaded filament first with a maximum wait (#3587) */}
+          <Card id="card-loaded-filament">
+            <CardHeader>
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <Layers className="w-4 h-4 text-bambu-green" />
+                {t('settings.loadedFilamentFirstTitle', 'Loaded Filament First')}
+              </h3>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex-1 mr-4">
+                  <p className="text-sm text-white">
+                    {t('settings.loadedFilamentFirst', 'Run jobs whose filament is loaded first')}
+                  </p>
+                  <p className="text-xs text-bambu-gray mt-1">
+                    {t('settings.loadedFilamentFirstDescription', 'A job whose filament is not on its printer is skipped instead of held and starts by itself once the spool is loaded; jobs behind it that fit run first. The queue order is never changed.')}
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.queue_loaded_filament_first ?? false}
+                    onChange={(e) => updateSetting('queue_loaded_filament_first', e.target.checked)}
+                    className="sr-only peer"
+                    aria-label={t('settings.loadedFilamentFirst', 'Run jobs whose filament is loaded first')}
+                  />
+                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                </label>
+              </div>
+              <div className="w-full sm:w-1/2">
+                <label htmlFor="queue_max_wait_hours" className="block text-xs text-bambu-gray mb-1">
+                  {t('settings.maxWaitHours', 'Maximum wait (hours)')}
+                </label>
+                <input
+                  id="queue_max_wait_hours"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  disabled={!(localSettings.queue_loaded_filament_first ?? false)}
+                  value={maxWaitDraft ?? (localSettings.queue_max_wait_hours === undefined ? 48 : (localSettings.queue_max_wait_hours ?? ''))}
+                  placeholder={t('settings.maxWaitHoursPlaceholder', 'No limit')}
+                  onChange={(e) => {
+                    const raw = e.target.value.trim();
+                    if (raw === '') {
+                      setMaxWaitDraft(null);
+                      updateSetting('queue_max_wait_hours', null);
+                      return;
+                    }
+                    // Only whole numbers in range reach the full-page PUT; anything
+                    // else stays a draft (a 422 would also block every later save).
+                    if (/^\d+$/.test(raw) && Number(raw) >= 1 && Number(raw) <= 8760) {
+                      setMaxWaitDraft(null);
+                      updateSetting('queue_max_wait_hours', Number(raw));
+                    } else {
+                      setMaxWaitDraft(e.target.value);
+                    }
+                  }}
+                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+                {maxWaitDraft !== null && (
+                  <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                    {t('settings.maxWaitHoursInvalid', 'Enter a whole number of hours from 1 to 8760, or leave it empty for no limit.')}
+                  </p>
+                )}
+                <p className="text-xs text-bambu-gray mt-1">
+                  {t('settings.maxWaitHoursHelp', 'Once a job has been in the queue this long (counted from when it was queued or its scheduled start), it gets priority: the next printer it could use is kept free for it until its filament is loaded, and you get one notification. Leave empty for no limit; you are then notified once when a job starts waiting.')}
+                </p>
+              </div>
             </CardContent>
           </Card>
 

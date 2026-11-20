@@ -10262,7 +10262,7 @@ class PrintScheduler:
         # Human-readable: this renders on the queue row.
         # It names the printer to load the filament on, unless the job goes back
         # to the pool below and no printer holds it any more (#3590).
-        printer = await self._get_printer(db, held_by)
+        printer = await self._get_printer(db, held_by) if held_by is not None else None
         name = None if release_assignment or printer is None else printer.name
         item.waiting_reason = _unmatched_hold_reason(name if isinstance(name, str) else "", wanted)
         if release_assignment:

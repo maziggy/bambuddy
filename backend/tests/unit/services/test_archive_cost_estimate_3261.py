@@ -408,7 +408,7 @@ class TestCompletionStopsTheEstimate:
         ):
             task = archive_cost_estimate.schedule_archive_cost_estimate(3, 42, "pm")
             await asyncio.sleep(0)
-            await archive_cost_estimate.settle_archive_cost_estimate(42)
+            await archive_cost_estimate.settle_archive_cost_estimate(3, 42)
             blocked.set()
             await asyncio.sleep(0)
 
@@ -417,4 +417,4 @@ class TestCompletionStopsTheEstimate:
 
     @pytest.mark.asyncio
     async def test_settling_with_nothing_running_is_harmless(self):
-        await archive_cost_estimate.settle_archive_cost_estimate(9999)
+        await archive_cost_estimate.settle_archive_cost_estimate(3, 9999)

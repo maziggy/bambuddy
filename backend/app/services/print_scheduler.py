@@ -74,6 +74,7 @@ from backend.app.services.bambu_mqtt import _RACK_NOZZLE_IDS, HMS_MQTT_VERIFY_FA
 from backend.app.services.filament_deficit import FilamentDeficit, compute_deficit_for_queue_item
 from backend.app.services.finance_budget import (
     create_budget_reservation,
+    is_billing_enabled,
     release_budget_reservation,
     validate_print_budget,
 )
@@ -10218,13 +10219,19 @@ class PrintScheduler:
             # the budget reservation.
             archive = await db.get(PrintArchive, item.archive_id) if item.archive_id is not None else None
             library_file = await db.get(LibraryFile, item.library_file_id) if item.library_file_id is not None else None
-            item.estimated_cost = await estimate_queue_source_cost(
-                db,
-                archive=archive,
-                library_file=library_file,
-                plate_id=item.plate_id,
-                ams_mapping=item.ams_mapping,
-                printer_id=item.printer_id,
+            # Only with billing on: nothing reads it otherwise, and pricing it
+            # can mean asking Spoolman (#3580).
+            item.estimated_cost = (
+                await estimate_queue_source_cost(
+                    db,
+                    archive=archive,
+                    library_file=library_file,
+                    plate_id=item.plate_id,
+                    ams_mapping=item.ams_mapping,
+                    printer_id=item.printer_id,
+                )
+                if await is_billing_enabled(db)
+                else None
             )
             await validate_print_budget(
                 db,

@@ -100,6 +100,14 @@ class PrintLogEntry(Base):
     # Ended by a stop that could not reach the printer: logged without word
     # from it. The printer's real end, if it still comes, replaces it.
     ended_offline: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # What this run was expected to cost when it started: its plate's planned
+    # grams at the spools mapped for it (#3580). Billing charges the run from
+    # it, so a reprint is charged at its own spools and not at the first run's
+    # cost the archive keeps (#1378). NULL when the start could not price it.
+    planned_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # The grams ``planned_cost`` was priced for: a run that did not finish is
+    # charged its share of these, of that cost. Written with it.
+    planned_grams: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 @event.listens_for(Session, "do_orm_execute")

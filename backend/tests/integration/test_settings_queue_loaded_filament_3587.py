@@ -34,6 +34,16 @@ async def test_bool_round_trip(async_client: AsyncClient):
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+async def test_null_toggle_is_refused(async_client: AsyncClient, db_session):
+    """null would be stored as "None"; unlike the hours, the toggle has no "no limit"."""
+    await async_client.put(URL, json={"queue_loaded_filament_first": True})
+    response = await async_client.put(URL, json={"queue_loaded_filament_first": None})
+    assert response.status_code == 422
+    assert await _row(db_session, "queue_loaded_filament_first") in ("true", "True")
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_hours_round_trip(async_client: AsyncClient):
     assert (await async_client.put(URL, json={"queue_max_wait_hours": 12})).status_code == 200
     assert (await async_client.get(URL)).json()["queue_max_wait_hours"] == 12

@@ -1158,6 +1158,63 @@ class TestSmartPlugWake:
 
         power_on.assert_awaited_once()
 
+    @staticmethod
+    def _colour_cache(scheduler, trays):
+        """Last-known trays of printer 1 as (type, hex colour) pairs."""
+        reading = {"ams": [{"tray": [{"tray_type": t, "tray_color": c} for t, c in trays]}]}
+        return patch.object(
+            scheduler, "_tray_reading", MagicMock(side_effect=lambda pid: reading if pid == 1 else None)
+        )
+
+    @pytest.mark.asyncio
+    async def test_an_unforced_colour_override_does_not_decline(self, ctx):
+        """A preferred colour is no reason to leave the printer off: switched on, it
+        would map the white PLA and print, as it does with the mode off."""
+        await _mode(ctx)
+        overrides = [{"slot_id": 1, "type": "PLA", "color": "#FF0000", "force_color_match": False}]
+        await _add_item(
+            ctx,
+            printer_id=1,
+            age_hours=49,
+            required_filament_types=json.dumps(["PLA"]),
+            filament_overrides=json.dumps(overrides),
+        )
+        scheduler = PrintScheduler()
+        power_on = AsyncMock(return_value=False)
+        patches = [
+            patch.object(scheduler, "_get_smart_plugs", AsyncMock(return_value=[self._PLUG])),
+            patch.object(scheduler, "_power_on_and_wait", power_on),
+            self._colour_cache(scheduler, [("PLA", "FFFFFFFF")]),
+        ]
+
+        await _run(ctx, scheduler, connected=lambda pid: pid != 1, extra_patches=patches)
+
+        power_on.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_a_forced_colour_override_still_declines(self, ctx):
+        await _mode(ctx)
+        overrides = [{"slot_id": 1, "type": "PLA", "color": "#FF0000", "force_color_match": True}]
+        item_id = await _add_item(
+            ctx,
+            printer_id=1,
+            age_hours=10,
+            required_filament_types=json.dumps(["PLA"]),
+            filament_overrides=json.dumps(overrides),
+        )
+        scheduler = PrintScheduler()
+        power_on = AsyncMock(return_value=False)
+        patches = [
+            patch.object(scheduler, "_get_smart_plugs", AsyncMock(return_value=[self._PLUG])),
+            patch.object(scheduler, "_power_on_and_wait", power_on),
+            self._colour_cache(scheduler, [("PLA", "FFFFFFFF")]),
+        ]
+
+        await _run(ctx, scheduler, connected=lambda pid: pid != 1, extra_patches=patches)
+
+        power_on.assert_not_awaited()
+        assert (await _get(ctx, item_id)).waiting_reason.startswith("Waiting for filament: PLA")
+
     @pytest.mark.asyncio
     async def test_no_cached_trays_wakes_once(self, ctx):
         await _mode(ctx)

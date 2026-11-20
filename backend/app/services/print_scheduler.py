@@ -9800,7 +9800,13 @@ class PrintScheduler:
         if not candidates:
             return None
         required_types, overrides = _filament_constraints(candidates[0])
-        shortfall = self._cached_filament_shortfall(item.printer_id, required_types, overrides)
+        # Only forced colours: a pinned job's unforced override is a preference
+        # the live mapping meets with a similar tray or any tray of the type.
+        # The cached check treats zero exact matches as missing (that rule is
+        # the model matcher's), which would keep the printer off for a job it
+        # would print, and its trays would never refresh while it is off.
+        forced = [o for o in overrides or [] if o.get("force_color_match")]
+        shortfall = self._cached_filament_shortfall(item.printer_id, required_types, forced or None)
         return ", ".join(shortfall) if shortfall else None
 
     async def _filament_wait_wanted(self, db: AsyncSession, item: PrintQueueItem) -> str | None:

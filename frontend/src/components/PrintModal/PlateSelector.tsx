@@ -52,11 +52,11 @@ export function PlateSelector({
     <div className="mb-4">
       <div className="flex items-center gap-2 mb-2">
         <Layers className="w-4 h-4 text-bambu-gray" />
-        <span className="text-sm text-bambu-gray">Select Plate{multiSelect ? 's' : ''} to Print</span>
+        <span className="text-sm text-bambu-gray">{multiSelect ? t('queue.selectPlatesToPrint') : t('queue.selectPlateToPrint')}</span>
         {selectedPlates.size === 0 && (
           <span className="text-xs text-orange-700 dark:text-orange-400 flex items-center gap-1">
             <AlertTriangle className="w-3 h-3" />
-            Selection required
+            {t('queue.plateSelectionRequired')}
           </span>
         )}
         {multiSelect && onSelectAll && onDeselectAll && (

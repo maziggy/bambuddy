@@ -164,7 +164,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
       return { previousStatus };
     },
     onSuccess: (_, on) => {
-      showToast(`Chamber light ${on ? 'on' : 'off'}`);
+      showToast(on ? t('printers.toast.chamberLightOn') : t('printers.toast.chamberLightOff'));
     },
     onError: (error: Error, _, context) => {
       if (context?.previousStatus) {
@@ -637,7 +637,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
             onClick={refresh}
             disabled={streamLoading || isReconnecting}
             className="p-1 hover:bg-bambu-dark-tertiary rounded disabled:opacity-50"
-            title="Refresh stream"
+            title={t('embeddedCameraViewer.refreshStream')}
           >
             <RefreshCw className={`w-3.5 h-3.5 text-bambu-gray ${streamLoading ? 'animate-spin' : ''}`} />
           </button>
@@ -651,7 +651,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
           <button
             onClick={toggleFullscreen}
             className="p-1 hover:bg-bambu-dark-tertiary rounded"
-            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            title={isFullscreen ? t('camera.exitFullscreen') : t('camera.fullscreen')}
           >
             {isFullscreen ? (
               <Minimize className="w-3.5 h-3.5 text-bambu-gray" />
@@ -676,7 +676,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
           <button
             onClick={() => setIsMinimized(!isMinimized)}
             className="p-1 hover:bg-bambu-dark-tertiary rounded"
-            title={isMinimized ? 'Expand' : 'Minimize'}
+            title={isMinimized ? t('common.expand') : t('embeddedCameraViewer.minimize')}
           >
             {isMinimized ? (
               <Maximize2 className="w-3.5 h-3.5 text-bambu-gray" />
@@ -687,7 +687,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
           <button
             onClick={onClose}
             className="p-1 hover:bg-red-500/20 rounded"
-            title="Close"
+            title={t('embeddedCameraViewer.close')}
           >
             <X className="w-3.5 h-3.5 text-bambu-gray hover:text-red-600 dark:hover:text-red-400" />
           </button>
@@ -718,7 +718,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
               <div className="text-center p-2">
                 <WifiOff className="w-6 h-6 text-orange-400 mx-auto mb-2" />
                 <p className="text-xs text-bambu-gray">
-                  Reconnecting in {reconnectCountdown}s...
+                  {t('embeddedCameraViewer.reconnectingIn', { seconds: reconnectCountdown })}
                 </p>
               </div>
             </div>
@@ -748,7 +748,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
           <img
             ref={attachImg}
             key={imageKey}
-            alt="Camera stream"
+            alt={t('camera.cameraStream')}
             className="max-w-full max-h-full object-contain select-none"
             style={{
               transform: `scale(${zoomLevel}) translate(${panOffset.x / zoomLevel}px, ${panOffset.y / zoomLevel}px) rotate(${printer?.camera_rotation || 0}deg)`,
@@ -771,14 +771,14 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
               onClick={handleZoomOut}
               disabled={zoomLevel <= 1}
               className="p-1 hover:bg-white/10 rounded disabled:opacity-30"
-              title="Zoom out"
+              title={t('embeddedCameraViewer.zoomOut')}
             >
               <ZoomOut className="w-3.5 h-3.5 text-white" />
             </button>
             <button
               onClick={resetZoom}
               className="px-1.5 py-0.5 text-xs text-white hover:bg-white/10 rounded min-w-[32px]"
-              title="Reset zoom"
+              title={t('embeddedCameraViewer.resetZoom')}
             >
               {Math.round(zoomLevel * 100)}%
             </button>
@@ -786,7 +786,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
               onClick={handleZoomIn}
               disabled={zoomLevel >= 4}
               className="p-1 hover:bg-white/10 rounded disabled:opacity-30"
-              title="Zoom in"
+              title={t('embeddedCameraViewer.zoomIn')}
             >
               <ZoomIn className="w-3.5 h-3.5 text-white" />
             </button>
@@ -798,7 +798,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
               className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize no-drag hover:bg-white/10 rounded-tl transition-colors"
               onMouseDown={handleResizeMouseDown}
               onTouchStart={handleResizeTouchStart}
-              title="Drag to resize"
+              title={t('embeddedCameraViewer.dragToResize')}
             >
               <svg
                 className="w-6 h-6 text-bambu-gray/70 hover:text-bambu-gray"

@@ -60,7 +60,7 @@ export function NotificationLogViewer({ onClose }: NotificationLogViewerProps) {
       queryClient.invalidateQueries({ queryKey: ['notification-log-stats'] });
     },
     onError: (error: Error) => {
-      showToast(`Failed to clear logs: ${error.message}`, 'error');
+      showToast(t('notificationLog.clearFailed', { message: error.message }), 'error');
     },
   });
 

@@ -135,7 +135,7 @@ function ArchiveGrid({ archives, t }: { archives: Archive[]; t: TFunction }) {
           {archive.thumbnail_path ? (
             <img
               src={api.getArchiveThumbnail(archive.id)}
-              alt={archive.print_name || 'Print'}
+              alt={archive.print_name || t('common.print')}
               className="w-full h-full object-cover"
             />
           ) : (
@@ -158,7 +158,7 @@ function ArchiveGrid({ archives, t }: { archives: Archive[]; t: TFunction }) {
 
           {/* Name overlay on hover */}
           <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <p className="text-xs text-white truncate">{archive.print_name || 'Unknown'}</p>
+            <p className="text-xs text-white truncate">{archive.print_name || t('common.unknown')}</p>
           </div>
         </Link>
       ))}

@@ -58,6 +58,7 @@ interface StatusBadgeProps {
 }
 
 function StatusBadge({ status }: StatusBadgeProps) {
+  const { t } = useTranslation();
   if (!status) return null;
 
   const styles: Record<string, string> = {
@@ -77,7 +78,7 @@ function StatusBadge({ status }: StatusBadgeProps) {
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${styles[status] || 'bg-gray-500/20 text-gray-400'}`}>
       {icons[status]}
-      {status.charAt(0).toUpperCase() + status.slice(1)}
+      {t(`githubBackup.status.${status}`, { defaultValue: status.charAt(0).toUpperCase() + status.slice(1) })}
     </span>
   );
 }
@@ -1134,7 +1135,7 @@ export function GitHubBackupSettings() {
                     URL.revokeObjectURL(url);
                     showToast(t('backup.backupDownloaded'));
                   } catch (e) {
-                    showToast(t('backup.failedToCreateBackup', { message: e instanceof Error ? e.message : 'Unknown error' }), 'error');
+                    showToast(t('backup.failedToCreateBackup', { message: e instanceof Error ? e.message : t('common.unknownError') }), 'error');
                   } finally {
                     setIsExporting(false);
                     setOperationStatus('');
@@ -1239,7 +1240,7 @@ export function GitHubBackupSettings() {
                     queryClient.invalidateQueries({ queryKey: ['settings'] });
                     showToast(t('backup.settingsSaved'));
                   } catch (e) {
-                    showToast(t('backup.failedToSave', { message: e instanceof Error ? e.message : 'Unknown error' }), 'error');
+                    showToast(t('backup.failedToSave', { message: e instanceof Error ? e.message : t('common.unknownError') }), 'error');
                   }
                   refetchLocalStatus();
                 }}
@@ -1265,7 +1266,7 @@ export function GitHubBackupSettings() {
                           await api.updateSettings({ local_backup_schedule: e.target.value });
                           showToast(t('backup.settingsSaved'));
                         } catch (e) {
-                          showToast(t('backup.failedToSave', { message: e instanceof Error ? e.message : 'Unknown error' }), 'error');
+                          showToast(t('backup.failedToSave', { message: e instanceof Error ? e.message : t('common.unknownError') }), 'error');
                         }
                         refetchLocalStatus();
                       }}
@@ -1287,7 +1288,7 @@ export function GitHubBackupSettings() {
                             await api.updateSettings({ local_backup_time: e.target.value });
                             showToast(t('backup.settingsSaved'));
                           } catch (err) {
-                            showToast(t('backup.failedToSave', { message: err instanceof Error ? err.message : 'Unknown error' }), 'error');
+                            showToast(t('backup.failedToSave', { message: err instanceof Error ? err.message : t('common.unknownError') }), 'error');
                           }
                           refetchLocalStatus();
                         }}
@@ -1309,7 +1310,7 @@ export function GitHubBackupSettings() {
                           await api.updateSettings({ local_backup_retention: val });
                           showToast(t('backup.settingsSaved'));
                         } catch (e) {
-                          showToast(t('backup.failedToSave', { message: e instanceof Error ? e.message : 'Unknown error' }), 'error');
+                          showToast(t('backup.failedToSave', { message: e instanceof Error ? e.message : t('common.unknownError') }), 'error');
                         }
                         refetchLocalStatus();
                       }}
@@ -1335,7 +1336,7 @@ export function GitHubBackupSettings() {
                         await api.updateSettings({ local_backup_path: localBackupPath });
                         showToast(t('backup.settingsSaved'));
                       } catch (err) {
-                        showToast(t('backup.failedToSave', { message: err instanceof Error ? err.message : 'Unknown error' }), 'error');
+                        showToast(t('backup.failedToSave', { message: err instanceof Error ? err.message : t('common.unknownError') }), 'error');
                       }
                       refetchLocalStatus();
                       refetchLocalBackups();

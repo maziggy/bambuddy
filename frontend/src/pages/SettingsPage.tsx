@@ -506,7 +506,7 @@ export function SettingsPage() {
       const data = await api.getStorageUsage({ refresh: true });
       queryClient.setQueryData(['storage-usage'], data);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to refresh storage usage';
+      const message = error instanceof Error ? error.message : t('settings.toast.storageRefreshFailed');
       showToast(message, 'error');
     } finally {
       setStorageUsageRefreshing(false);
@@ -594,7 +594,7 @@ export function SettingsPage() {
       showToast(t('settings.toast.apiKeyCreated'));
     },
     onError: (error: Error) => {
-      showToast(`Failed to create API key: ${error.message}`, 'error');
+      showToast(t('settings.toast.apiKeyCreateFailed', { message: error.message }), 'error');
     },
   });
 
@@ -607,7 +607,7 @@ export function SettingsPage() {
       showToast(t('settings.toast.apiKeyDeleted'));
     },
     onError: (error: Error) => {
-      showToast(`Failed to delete API key: ${error.message}`, 'error');
+      showToast(t('settings.toast.apiKeyDeleteFailed', { message: error.message }), 'error');
     },
   });
 
@@ -983,7 +983,7 @@ export function SettingsPage() {
 
     // Email is required when advanced auth is enabled
     if (advancedAuthEnabled && !userFormData.email) {
-      showToast('Email is required when advanced authentication is enabled', 'error');
+      showToast(t('settings.toast.emailRequiredAdvancedAuth'), 'error');
       return;
     }
 
@@ -1107,13 +1107,13 @@ export function SettingsPage() {
       setTestAllResult(data);
       queryClient.invalidateQueries({ queryKey: ['notification-providers'] });
       if (data.failed === 0) {
-        showToast(`All ${data.tested} providers tested successfully!`, 'success');
+        showToast(t('settings.toast.allProvidersTested', { tested: data.tested }), 'success');
       } else {
-        showToast(`${data.success}/${data.tested} providers succeeded`, data.failed > 0 ? 'error' : 'success');
+        showToast(t('settings.toast.providersSucceeded', { success: data.success, tested: data.tested }), data.failed > 0 ? 'error' : 'success');
       }
     },
     onError: (error: Error) => {
-      showToast(`Failed to test providers: ${error.message}`, 'error');
+      showToast(t('settings.toast.testProvidersFailed', { message: error.message }), 'error');
     },
   });
 
@@ -1141,13 +1141,13 @@ export function SettingsPage() {
       queryClient.invalidateQueries({ queryKey: ['smart-plugs'] });
       queryClient.invalidateQueries({ queryKey: ['smart-plugs-energy'] });
       if (data.failed === 0) {
-        showToast(`All ${data.success} plugs turned ${action}`, 'success');
+        showToast(t(action === 'on' ? 'settings.toast.allPlugsTurnedOn' : 'settings.toast.allPlugsTurnedOff', { success: data.success }), 'success');
       } else {
-        showToast(`${data.success} plugs turned ${action}, ${data.failed} failed`, 'error');
+        showToast(t(action === 'on' ? 'settings.toast.plugsTurnedOnPartial' : 'settings.toast.plugsTurnedOffPartial', { success: data.success, failed: data.failed }), 'error');
       }
     },
     onError: (error: Error) => {
-      showToast(`Failed: ${error.message}`, 'error');
+      showToast(t('settings.toast.failedWithMessage', { message: error.message }), 'error');
     },
   });
 
@@ -1240,7 +1240,7 @@ export function SettingsPage() {
       showToast(t('settings.toast.settingsSaved'), 'success');
     },
     onError: (error: Error) => {
-      showToast(`Failed to save: ${error.message}`, 'error');
+      showToast(t('settings.toast.saveFailedWithMessage', { message: error.message }), 'error');
       // No localSettings rollback here — the existing comment above (see
       // onSuccess) already flags that overwriting localSettings would discard
       // in-progress user input (e.g. typing a hostname). The no-permission
@@ -1263,7 +1263,7 @@ export function SettingsPage() {
       showToast(t('settings.toast.cameraSettingsSaved'), 'success');
     },
     onError: (error: Error) => {
-      showToast(`Failed to update printer: ${error.message}`, 'error');
+      showToast(t('settings.toast.updatePrinterFailed', { message: error.message }), 'error');
     },
   });
 
@@ -1769,7 +1769,7 @@ export function SettingsPage() {
             <button
               onClick={() => setSettingsSearch('')}
               className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-bambu-gray hover:text-white"
-              aria-label="Clear"
+              aria-label={t('common.clear')}
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -2562,7 +2562,7 @@ export function SettingsPage() {
                             showToast(t('settings.rebuildLedgerStarted', 'Ledger rebuild started'), 'success');
                             setShowRebuildConfirm(false);
                           } catch (err) {
-                            showToast((err as Error).message || 'Failed to start ledger rebuild', 'error');
+                            showToast((err as Error).message || t('settings.rebuildLedgerFailed'), 'error');
                           } finally {
                             setIsRebuildLoading(false);
                           }
@@ -2916,7 +2916,7 @@ export function SettingsPage() {
                     <div className="flex items-start justify-between">
                       <div>
                         <p className="text-bambu-green font-medium">
-                          Update available: v{updateCheck.latest_version}
+                          {t('settings.updateAvailableVersion', { version: updateCheck.latest_version })}
                         </p>
                         {updateCheck.release_name && updateCheck.release_name !== updateCheck.latest_version && (
                           <p className="text-sm text-bambu-gray mt-1">{updateCheck.release_name}</p>
@@ -3435,7 +3435,7 @@ export function SettingsPage() {
                       type="text"
                       value={localSettings.mqtt_broker ?? ''}
                       onChange={(e) => updateSetting('mqtt_broker', e.target.value)}
-                      placeholder="mqtt.example.com or 192.168.1.100"
+                      placeholder={t('settings.mqttBrokerPlaceholder')}
                       className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                     />
                   </div>
@@ -4363,7 +4363,7 @@ export function SettingsPage() {
                 <button
                   onClick={() => setTemplateFilter('')}
                   className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-bambu-gray hover:text-white"
-                  aria-label="Clear filter"
+                  aria-label={t('settings.clearFilter')}
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -6938,9 +6938,9 @@ export function SettingsPage() {
       {/* Confirm Modal: Bulk Plug Action */}
       {showBulkPlugConfirm && (
         <ConfirmModal
-          title={`Turn All Plugs ${showBulkPlugConfirm === 'on' ? 'On' : 'Off'}`}
-          message={`This will turn ${showBulkPlugConfirm === 'on' ? 'ON' : 'OFF'} all ${smartPlugs?.filter(p => p.enabled).length || 0} enabled smart plugs. ${showBulkPlugConfirm === 'off' ? 'Any running printers may be affected!' : ''}`}
-          confirmText={`Turn All ${showBulkPlugConfirm === 'on' ? 'On' : 'Off'}`}
+          title={showBulkPlugConfirm === 'on' ? t('settings.bulkPlugTitleOn') : t('settings.bulkPlugTitleOff')}
+          message={t(showBulkPlugConfirm === 'on' ? 'settings.bulkPlugMessageOn' : 'settings.bulkPlugMessageOff', { total: smartPlugs?.filter(p => p.enabled).length || 0 })}
+          confirmText={showBulkPlugConfirm === 'on' ? t('settings.bulkPlugConfirmOn') : t('settings.bulkPlugConfirmOff')}
           variant={showBulkPlugConfirm === 'off' ? 'danger' : 'warning'}
           onConfirm={() => {
             const action = showBulkPlugConfirm;
@@ -6961,7 +6961,7 @@ export function SettingsPage() {
             <CardHeader className="flex flex-row items-center justify-between shrink-0">
               <div>
                 <h2 className="text-lg font-semibold text-white">
-                  Release Notes - v{updateCheck.latest_version}
+                  {t('settings.releaseNotesTitle', { version: updateCheck.latest_version })}
                 </h2>
                 {updateCheck.release_name && updateCheck.release_name !== updateCheck.latest_version && (
                   <p className="text-sm text-bambu-gray">{updateCheck.release_name}</p>
@@ -6989,7 +6989,7 @@ export function SettingsPage() {
                 >
                   <Button variant="secondary" className="w-full">
                     <ExternalLink className="w-4 h-4" />
-                    View on GitHub
+                    {t('nav.viewOnGithub')}
                   </Button>
                 </a>
               )}
@@ -6997,7 +6997,7 @@ export function SettingsPage() {
                 onClick={() => setShowReleaseNotes(false)}
                 className="flex-1"
               >
-                Close
+                {t('common.close')}
               </Button>
             </div>
           </Card>
@@ -7997,13 +7997,13 @@ export function SettingsPage() {
                   <p className="text-white">{t('settings.userHasCreated')}</p>
                   <ul className="list-disc list-inside text-bambu-gray space-y-1">
                     {deleteUserItemCounts.archives > 0 && (
-                      <li>{deleteUserItemCounts.archives} archive{deleteUserItemCounts.archives !== 1 ? 's' : ''}</li>
+                      <li>{t('settings.userItemArchives', { count: deleteUserItemCounts.archives })}</li>
                     )}
                     {deleteUserItemCounts.queue_items > 0 && (
-                      <li>{deleteUserItemCounts.queue_items} queue item{deleteUserItemCounts.queue_items !== 1 ? 's' : ''}</li>
+                      <li>{t('settings.userItemQueueItems', { count: deleteUserItemCounts.queue_items })}</li>
                     )}
                     {deleteUserItemCounts.library_files > 0 && (
-                      <li>{deleteUserItemCounts.library_files} library file{deleteUserItemCounts.library_files !== 1 ? 's' : ''}</li>
+                      <li>{t('settings.userItemLibraryFiles', { count: deleteUserItemCounts.library_files })}</li>
                     )}
                   </ul>
                   <p className="text-bambu-gray text-sm">{t('settings.userItemsQuestion')}</p>
@@ -8158,7 +8158,7 @@ export function SettingsPage() {
               <div className="space-y-3">
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
-                    Current Password
+                    {t('changePassword.currentPassword')}
                   </label>
                   <input
                     type="password"
@@ -8171,7 +8171,7 @@ export function SettingsPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
-                    New Password
+                    {t('changePassword.newPassword')}
                   </label>
                   <input
                     type="password"
@@ -8185,7 +8185,7 @@ export function SettingsPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
-                    Confirm New Password
+                    {t('changePassword.confirmPassword')}
                   </label>
                   <input
                     type="password"
@@ -8232,7 +8232,7 @@ export function SettingsPage() {
                       setShowChangePasswordModal(false);
                       setChangePasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
                     } catch (error: unknown) {
-                      const message = error instanceof Error ? error.message : 'Failed to change password';
+                      const message = error instanceof Error ? error.message : t('changePassword.failed');
                       showToast(message, 'error');
                     } finally {
                       setChangePasswordLoading(false);

@@ -503,7 +503,7 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                           handleCopyUuid();
                         }}
                         className="flex items-center gap-1 text-xs text-bambu-gray hover:text-white transition-colors"
-                        title="Copy spool UUID"
+                        title={t('filamentHoverCard.copySpoolUuid')}
                       >
                         <span className="font-mono text-[10px] truncate max-w-[80px]">
                           {data.trayUuid.slice(0, 8)}...

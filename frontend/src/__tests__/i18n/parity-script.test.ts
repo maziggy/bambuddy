@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 // @ts-expect-error -- .mjs script with no type declarations; pure JS import is fine for tests
-import { compareLocales } from '../../../scripts/check-i18n-parity.mjs';
+import { compareLocales, findHardcodedStrings, findMissingCodeKeys } from '../../../scripts/check-i18n-parity.mjs';
 
 type LocaleMap = Map<string, string>;
 
@@ -91,5 +91,76 @@ describe('compareLocales (parity-script self-test)', () => {
     expect(() =>
       compareLocales({ 'zh-CN': toMap({ a: 'x' }) } as Record<string, LocaleMap>),
     ).toThrow(/locales\.en/);
+  });
+});
+
+describe('findMissingCodeKeys (#3631)', () => {
+  const enKeys = new Set(['common.save', 'items.count_one', 'items.count_other', 'tour.steps.first']);
+  const check = (text: string) => findMissingCodeKeys([{ file: 'src/X.tsx', text }], enKeys);
+
+  it('passes keys that exist in en.ts', () => {
+    expect(check("t('common.save'); i18n.t(\"common.save\")")).toEqual([]);
+  });
+
+  it('flags a key missing from en.ts, with or without an inline fallback', () => {
+    expect(check("t('common.saved'); t('spoolbuddy.settings.cores', 'Cores')")).toEqual([
+      'src/X.tsx: common.saved',
+      'src/X.tsx: spoolbuddy.settings.cores',
+    ]);
+  });
+
+  it('accepts a plural base key and a subtree read with returnObjects', () => {
+    expect(check("t('items.count', { count: 2 }); t('tour.steps', { returnObjects: true })")).toEqual([]);
+  });
+
+  it('ignores dynamic and undotted keys', () => {
+    expect(check('t(`status.${s}`); t(key); t(\'plain\'); format(\'a.b\')')).toEqual([]);
+  });
+});
+
+describe('findHardcodedStrings (#3638)', () => {
+  const scan = (text: string, allowed = new Set<string>()) =>
+    findHardcodedStrings([{ file: 'src/X.tsx', text }], allowed);
+
+  it('flags JSX text, shown props and toast messages', () => {
+    const found = scan(
+      [
+        'const A = () => (',
+        '  <div title="Zoom out">',
+        '    <span>Set Bed Temperature</span>',
+        '    <input placeholder={"Search tags"} aria-label="Search" />',
+        '  </div>',
+        ');',
+        "showToast('Saved the file', 'success');",
+        'showToast(`Failed: ${e}`, \'error\');',
+      ].join('\n'),
+    );
+    expect(found).toEqual([
+      'src/X.tsx:2: title "Zoom out"',
+      'src/X.tsx:3: text "Set Bed Temperature"',
+      'src/X.tsx:4: aria-label "Search"',
+      'src/X.tsx:4: placeholder "Search tags"',
+      'src/X.tsx:7: showToast "Saved the file"',
+      'src/X.tsx:8: showToast "Failed: …"',
+    ]);
+  });
+
+  it('passes translated text, technical values and allowlisted strings', () => {
+    const text = [
+      'const A = () => (',
+      "  <div title={t('camera.zoomOut')}>",
+      '    {t(\'a.b\')} <span>mm</span> <span>kWh</span> <code>/api/v1/queue</code>',
+      '    <input placeholder="192.168.1.100 or printer.local" />',
+      '    <input placeholder="sensor.electricity_price" />',
+      '    <span>Spoolman</span> <span>PLA</span> <span>X1 Carbon</span>',
+      '  </div>',
+      ');',
+      'showToast(t(\'common.saved\'));',
+    ].join('\n');
+    expect(scan(text, new Set(['X1 Carbon']))).toEqual([]);
+  });
+
+  it('ignores .ts files', () => {
+    expect(findHardcodedStrings([{ file: 'src/x.ts', text: "showToast('Saved the file')" }], new Set())).toEqual([]);
   });
 });

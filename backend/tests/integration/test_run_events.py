@@ -237,7 +237,11 @@ async def test_the_kill_switch_notification_names_the_print(db_session, printer_
         notify.on_print_complete = AsyncMock()
         assert await main_module._send_kill_switch_provider_notification(printer.id, "A", {"filename": "part.3mf"})
 
-    assert notify.on_print_complete.await_args.kwargs["archive_data"] == {"archive_id": archive_id, "run_id": run_id}
+    assert notify.on_print_complete.await_args.kwargs["archive_data"] == {
+        "archive_id": archive_id,
+        "run_id": run_id,
+        "created_by_id": None,
+    }
 
 
 async def test_a_stop_while_the_printer_is_offline_announces_the_run_end(

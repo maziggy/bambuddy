@@ -33,11 +33,14 @@ function archiveFilamentTypes(filamentType: string | null | undefined): string[]
 
 const COLORS = ['#00ae42', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
-const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+// Keys under printCalendar.days, resolved with t() where the label is built.
+const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const HOUR_SUFFIXES = ['12am', '1am', '2am', '3am', '4am', '5am', '6am', '7am', '8am', '9am', '10am', '11am', '12pm', '1pm', '2pm', '3pm', '4pm', '5pm', '6pm', '7pm', '8pm', '9pm', '10pm', '11pm'];
 
 export function FilamentTrends({ archives, currency = '$', dateFrom, dateTo }: FilamentTrendsProps) {
   const { t } = useTranslation();
+  // archiveFilamentTypes() groups type-less prints under 'Unknown'.
+  const typeLabel = (name: string) => (name === 'Unknown' ? t('common.unknown') : name);
   const [filamentTypeMetric, setFilamentTypeMetric] = useState<Metric>('weight');
   const [colorMetric, setColorMetric] = useState<Metric>('weight');
 
@@ -106,11 +109,11 @@ export function FilamentTrends({ archives, currency = '$', dateFrom, dateTo }: F
         const dt = new Date(datePart);
         const h = parseInt(hourPart, 10);
         const label = multiDay
-          ? `${DAY_NAMES[dt.getDay()]} ${HOUR_SUFFIXES[h]}`
+          ? `${t(`printCalendar.days.${DAY_KEYS[dt.getDay()]}`)} ${HOUR_SUFFIXES[h]}`
           : HOUR_SUFFIXES[h];
         return { ...d, dateLabel: label };
       });
-  }, [archives, spanDays]);
+  }, [archives, spanDays, t]);
 
   // Calculate weekly aggregated data when there are many daily points
   const weeklyData = useMemo(() => {
@@ -136,10 +139,10 @@ export function FilamentTrends({ archives, currency = '$', dateFrom, dateTo }: F
       .sort((a, b) => a.week.localeCompare(b.week))
       .map(d => ({
         date: d.week,
-        dateLabel: `Week of ${new Date(d.week).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
+        dateLabel: t('stats.weekOf', { date: new Date(d.week).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }),
         ...d,
       }));
-  }, [dailyData]);
+  }, [dailyData, t]);
 
   // Usage by filament type
   const filamentTypeData = useMemo(() => {
@@ -280,7 +283,7 @@ export function FilamentTrends({ archives, currency = '$', dateFrom, dateTo }: F
             </p>
           </div>
           <p className="text-xs text-bambu-gray">
-            {currency}{totalPrints > 0 ? (totalCost / totalPrints).toFixed(2) : '0.00'} avg
+            {t('stats.costAvg', { cost: `${currency}${totalPrints > 0 ? (totalCost / totalPrints).toFixed(2) : '0.00'}` })}
           </p>
         </div>
       </div>
@@ -316,7 +319,7 @@ export function FilamentTrends({ archives, currency = '$', dateFrom, dateTo }: F
                   borderRadius: '8px',
                 }}
                 labelStyle={{ color: '#fff' }}
-                formatter={(value) => [`${Number(value ?? 0).toFixed(0)}g`, 'Filament']}
+                formatter={(value) => [`${Number(value ?? 0).toFixed(0)}g`, t('stats.filamentTooltip')]}
               />
               <Area
                 type="monotone"
@@ -421,7 +424,7 @@ export function FilamentTrends({ archives, currency = '$', dateFrom, dateTo }: F
                       filamentTypeMetric === 'weight' ? formatWeight(Number(value ?? 0)) :
                       filamentTypeMetric === 'time' ? `${Number(value ?? 0)}h` :
                       `${value ?? 0}`,
-                      filamentTypeMetric === 'weight' ? 'Usage' : filamentTypeMetric === 'time' ? 'Time' : 'Prints',
+                      filamentTypeMetric === 'weight' ? t('stats.usageTooltip') : filamentTypeMetric === 'time' ? t('stats.filamentByTime') : t('stats.filamentByPrints'),
                     ]}
                   />
                 </PieChart>
@@ -436,7 +439,7 @@ export function FilamentTrends({ archives, currency = '$', dateFrom, dateTo }: F
                         className="w-3 h-3 rounded-sm flex-shrink-0"
                         style={{ backgroundColor: COLORS[index % COLORS.length] }}
                       />
-                      <span className="text-white truncate flex-1">{entry.name}</span>
+                      <span className="text-white truncate flex-1">{typeLabel(entry.name)}</span>
                       <span className="text-bambu-gray flex-shrink-0">
                         {filamentTypeMetric === 'weight' ? formatWeight(entry.value) :
                          filamentTypeMetric === 'time' ? `${entry.value}h` :
@@ -461,7 +464,7 @@ export function FilamentTrends({ archives, currency = '$', dateFrom, dateTo }: F
             <div className="space-y-1.5">
               {filamentSuccessData.map(d => (
                 <div key={d.name} className="flex items-center gap-2 text-sm">
-                  <span className="text-white truncate w-20 flex-shrink-0">{d.name}</span>
+                  <span className="text-white truncate w-20 flex-shrink-0">{typeLabel(d.name)}</span>
                   <div className="flex-1 h-1.5 bg-bambu-dark-secondary rounded-full">
                     <div
                       className={`h-full rounded-full transition-all ${
@@ -549,7 +552,7 @@ export function FilamentTrends({ archives, currency = '$', dateFrom, dateTo }: F
                   })}
                 </div>
                 {colorData.length > 8 && (
-                  <p className="text-[10px] text-bambu-gray mt-1 text-center">+{colorData.length - 8} more</p>
+                  <p className="text-[10px] text-bambu-gray mt-1 text-center">{t('common.more', { count: colorData.length - 8 })}</p>
                 )}
               </div>
             );

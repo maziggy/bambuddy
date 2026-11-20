@@ -67,9 +67,14 @@ from backend.app.schemas.print_queue import (
     QueueVariantSummary,
 )
 from backend.app.services import plate_clear, slicer_ams_pick
+from backend.app.services.archive_cost_estimate import SpoolmanOnce
 from backend.app.services.filament_deficit import compute_deficit_for_queue_item
 from backend.app.services.filament_requirements import overrides_for_plate
-from backend.app.services.finance_budget import release_budget_reservation, validate_print_budget
+from backend.app.services.finance_budget import (
+    is_billing_enabled,
+    release_budget_reservation,
+    validate_print_budget,
+)
 from backend.app.services.ha_sensor_manager import ha_sensor_manager
 from backend.app.services.print_batch import (
     BatchDispatchError,
@@ -404,9 +409,18 @@ async def _trusted_item_estimated_cost(
     printer_id: int | None,
     plate_id: int | None,
     ams_mapping: list[int] | str | None,
+    spoolman_once: SpoolmanOnce | None = None,
 ) -> float | None:
-    """Recompute an existing queue item's cost from its persisted source."""
+    """Recompute an existing queue item's cost from its persisted source.
 
+    None with billing off: the estimate is what the budget check reads and
+    the dispatch reserves, and pricing it can mean asking Spoolman (#3580).
+    A caller pricing more than one item passes them one ``spoolman_once``.
+    """
+
+    if not await is_billing_enabled(db):
+        return None
+    spoolman_once = spoolman_once or SpoolmanOnce()
     if item.archive_id:
         archive = await db.scalar(select(PrintArchive).where(PrintArchive.id == item.archive_id))
         return await estimate_queue_source_cost(
@@ -415,6 +429,7 @@ async def _trusted_item_estimated_cost(
             plate_id=plate_id,
             ams_mapping=ams_mapping,
             printer_id=printer_id,
+            spoolman_once=spoolman_once,
         )
     if item.library_file_id:
         library_file = await db.scalar(LibraryFile.active().where(LibraryFile.id == item.library_file_id))
@@ -424,6 +439,7 @@ async def _trusted_item_estimated_cost(
             plate_id=plate_id,
             ams_mapping=ams_mapping,
             printer_id=printer_id,
+            spoolman_once=spoolman_once,
         )
 
     result = await db.execute(
@@ -438,6 +454,7 @@ async def _trusted_item_estimated_cost(
             plate_id=variant.plate_id,
             ams_mapping=variant.ams_mapping,
             printer_id=printer_id,
+            spoolman_once=spoolman_once,
         )
         for variant, library_file in result.all()
     ]
@@ -1640,43 +1657,6 @@ async def add_to_queue(
         if not project_result.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Project not found")
 
-    # Security boundary: the browser's estimated_cost is only a display hint.
-    # Budget enforcement and the persisted reservation value must be derived
-    # from the server-owned archive/library metadata and spool assignments.
-    if variant_specs:
-        variant_costs = [
-            await estimate_queue_source_cost(
-                db,
-                library_file=variant_file,
-                plate_id=spec.plate_id,
-                ams_mapping=spec.ams_mapping,
-                printer_id=data.printer_id,
-            )
-            for spec, variant_file, _model in variant_specs
-        ]
-        trusted_estimated_cost = (
-            max(cost for cost in variant_costs if cost is not None)
-            if variant_costs and all(cost is not None for cost in variant_costs)
-            else None
-        )
-    else:
-        trusted_estimated_cost = await estimate_queue_source_cost(
-            db,
-            archive=archive,
-            library_file=library_file,
-            plate_id=plate_id,
-            ams_mapping=data.ams_mapping,
-            printer_id=data.printer_id,
-        )
-
-    await validate_print_budget(
-        db,
-        cost_center_id=data.cost_center_id,
-        estimated_cost=trusted_estimated_cost,
-        current_user=actor,
-        quantity=quantity,
-    )
-
     ams_mapping_json = json.dumps(data.ams_mapping) if data.ams_mapping else None
     # Same Text-as-JSON convention for the rack-position pick (#1784).
     nozzle_rack_choice_json = json.dumps(data.nozzle_rack_choice) if data.nozzle_rack_choice else None
@@ -1712,6 +1692,52 @@ async def add_to_queue(
     )
     if ams_mapping_json is None and not wants_live_color_match:
         ams_mapping_json = saved_slicer_ams_mapping(archive, data.printer_id)
+
+    # Security boundary: the browser's estimated_cost is only a display hint.
+    # Budget enforcement and the persisted reservation value must be derived
+    # from the server-owned archive/library metadata and spool assignments.
+    # Priced with the mapping the item is stored with, the slicer's saved one
+    # included (#3580): that is the one its print is charged at. Not priced
+    # with billing off, when nothing reads it.
+    spoolman_once = SpoolmanOnce()
+    if not await is_billing_enabled(db):
+        trusted_estimated_cost = None
+    elif variant_specs:
+        variant_costs = [
+            await estimate_queue_source_cost(
+                db,
+                library_file=variant_file,
+                plate_id=spec.plate_id,
+                ams_mapping=spec.ams_mapping,
+                printer_id=data.printer_id,
+                spoolman_once=spoolman_once,
+            )
+            for spec, variant_file, _model in variant_specs
+        ]
+        trusted_estimated_cost = (
+            max(cost for cost in variant_costs if cost is not None)
+            if variant_costs and all(cost is not None for cost in variant_costs)
+            else None
+        )
+    else:
+        trusted_estimated_cost = await estimate_queue_source_cost(
+            db,
+            archive=archive,
+            library_file=library_file,
+            plate_id=plate_id,
+            ams_mapping=ams_mapping_json,
+            printer_id=data.printer_id,
+            spoolman_once=spoolman_once,
+        )
+
+    await validate_print_budget(
+        db,
+        cost_center_id=data.cost_center_id,
+        estimated_cost=trusted_estimated_cost,
+        current_user=actor,
+        quantity=quantity,
+    )
+
     items = []
     for i in range(quantity):
         item = PrintQueueItem(
@@ -1849,6 +1875,7 @@ async def bulk_update_queue_items(
     updated_count = 0
     skipped_count = 0
     validates_billing_fields = "cost_center_id" in update_data or "estimated_cost" in update_data
+    spoolman_once = SpoolmanOnce()  # one spool list for every item priced below
 
     for item in items:
         # Skip non-pending rows and rows a dispatch worker has claimed (#2615) —
@@ -1888,12 +1915,16 @@ async def bulk_update_queue_items(
             skipped_count += 1
             continue
         if validates_billing_fields:
+            # Priced as it is stored below: on another printer without the
+            # mapping resolved against the one it leaves, as the single edit
+            # prices it. Its tray numbers name other spools there (#3580).
             trusted_estimated_cost = await _trusted_item_estimated_cost(
                 db,
                 item,
                 printer_id=item_update_data.get("printer_id", item.printer_id),
                 plate_id=item.plate_id,
-                ams_mapping=item.ams_mapping,
+                ams_mapping=PRINTER_RESOLVED_DEFAULTS["ams_mapping"] if rebinds else item.ams_mapping,
+                spoolman_once=spoolman_once,
             )
             item_update_data["estimated_cost"] = trusted_estimated_cost
             await validate_print_budget(
@@ -2224,10 +2255,16 @@ async def _validate_copies_budget(
     by_center: dict[int | None, list[PrintQueueItem]] = {}
     for copy in copies:
         by_center.setdefault(copy.cost_center_id, []).append(copy)
+    spoolman_once = SpoolmanOnce()  # one spool list for every copy
     for cost_center_id, center_copies in by_center.items():
         estimates = [
             await _trusted_item_estimated_cost(
-                db, copy, printer_id=copy.printer_id, plate_id=copy.plate_id, ams_mapping=copy.ams_mapping
+                db,
+                copy,
+                printer_id=copy.printer_id,
+                plate_id=copy.plate_id,
+                ams_mapping=copy.ams_mapping,
+                spoolman_once=spoolman_once,
             )
             for copy in center_copies
         ]

@@ -275,7 +275,7 @@ export function TimelapseEditorModal({
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
         <div className="flex items-center gap-3 text-white">
           <Loader2 className="w-6 h-6 animate-spin" />
-          Loading video info...
+          {t('timelapseEditor.loadingVideoInfo')}
         </div>
       </div>
     );
@@ -288,7 +288,7 @@ export function TimelapseEditorModal({
         <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary shrink-0">
           <h3 className="text-lg font-semibold text-white flex items-center gap-2">
             <Film className="w-5 h-5 text-bambu-green" />
-            Edit Timelapse
+            {t('timelapseEditor.title')}
           </h3>
           <div className="flex items-center gap-2">
             {jobRunning && (
@@ -317,7 +317,7 @@ export function TimelapseEditorModal({
               ) : (
                 <>
                   <Save className="w-4 h-4" />
-                  Save
+                  {t('common.save')}
                 </>
               )}
             </Button>
@@ -366,7 +366,7 @@ export function TimelapseEditorModal({
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-sm text-bambu-gray">
               <Scissors className="w-4 h-4" />
-              <span>Trim</span>
+              <span>{t('timelapseEditor.trim')}</span>
               <span className="ml-auto">
                 {formatMediaTime(trimStart)} - {formatMediaTime(trimEnd)} ({formatMediaTime(trimmedDuration)})
               </span>
@@ -481,8 +481,8 @@ export function TimelapseEditorModal({
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-sm text-bambu-gray">
               <Gauge className="w-4 h-4" />
-              <span>Speed</span>
-              <span className="ml-auto">{speed}x (output: {formatMediaTime(outputDuration)})</span>
+              <span>{t('timelapseEditor.speed')}</span>
+              <span className="ml-auto">{t('timelapseEditor.speedOutput', { speed, duration: formatMediaTime(outputDuration) })}</span>
             </div>
             <div className="flex gap-1">
               {SPEED_OPTIONS.map((s) => (
@@ -505,7 +505,7 @@ export function TimelapseEditorModal({
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-sm text-bambu-gray">
               <Music className="w-4 h-4" />
-              <span>Music Overlay</span>
+              <span>{t('timelapseEditor.musicOverlay')}</span>
             </div>
 
             {audioFile ? (
@@ -552,7 +552,7 @@ export function TimelapseEditorModal({
               <label className="flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed border-bambu-dark-tertiary rounded-lg cursor-pointer hover:border-bambu-green/50 transition-colors">
                 <Upload className="w-8 h-8 text-bambu-gray" />
                 <span className="text-sm text-bambu-gray">
-                  Drop audio file or click to upload
+                  {t('timelapseEditor.dropAudio')}
                 </span>
                 <span className="text-xs text-bambu-gray/60">
                   MP3, WAV, M4A, AAC, OGG
@@ -570,11 +570,11 @@ export function TimelapseEditorModal({
           {/* Summary */}
           <div className="p-3 bg-bambu-dark rounded-lg text-sm space-y-1">
             <p className="text-bambu-gray">
-              <span className="text-white">Original:</span> {formatMediaTime(duration)} @ {videoInfo?.width}x{videoInfo?.height}
+              <span className="text-white">{t('timelapseEditor.original')}</span> {formatMediaTime(duration)} @ {videoInfo?.width}x{videoInfo?.height}
             </p>
             <p className="text-bambu-gray">
-              <span className="text-white">Output:</span> {formatMediaTime(outputDuration)} @ {speed}x speed
-              {audioFile && ` + music overlay`}
+              <span className="text-white">{t('timelapseEditor.output')}</span>{' '}
+              {t(audioFile ? 'timelapseEditor.outputSummaryWithMusic' : 'timelapseEditor.outputSummary', { duration: formatMediaTime(outputDuration), speed })}
             </p>
           </div>
         </div>
@@ -583,8 +583,8 @@ export function TimelapseEditorModal({
         {processMutation.isPending && (
           <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center gap-4">
             <Loader2 className="w-12 h-12 text-bambu-green animate-spin" />
-            <p className="text-white text-lg">Processing timelapse...</p>
-            <p className="text-bambu-gray text-sm">This may take a few moments</p>
+            <p className="text-white text-lg">{t('timelapseEditor.processingTimelapse')}</p>
+            <p className="text-bambu-gray text-sm">{t('timelapseEditor.mayTakeMoments')}</p>
           </div>
         )}
       </div>

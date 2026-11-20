@@ -103,6 +103,7 @@ registerSettingsSearch({ labelKey: 'settings.inventoryColoursTitle', labelFallba
 registerSettingsSearch({ labelKey: 'settings.concurrentUploadsTitle', labelFallback: 'Concurrent Uploads', tab: 'queue', keywords: 'concurrent parallel upload transfer ftp queue slow farm simultaneous', anchor: 'card-concurrent-uploads' });
 registerSettingsSearch({ labelKey: 'settings.gcodeInjection', labelFallback: 'G-code Injection', tab: 'queue', keywords: 'gcode injection start end autoprint farmloop swapmod autoclear printflow', anchor: 'card-gcode' });
 registerSettingsSearch({ labelKey: 'settings.slicerCard', labelFallback: 'Slicer', tab: 'queue', keywords: 'slicer orcaslicer bambustudio orca bambu api sidecar url docker preferred', anchor: 'card-slicer' });
+registerSettingsSearch({ labelKey: 'settings.loadedFilamentFirstTitle', labelFallback: 'Loaded Filament First', tab: 'queue', keywords: 'loaded filament first skip wait priority spool reserve starvation queue', anchor: 'card-loaded-filament' });
 registerSettingsSearch({ labelKey: 'settings.queueDrying', tab: 'queue', keywords: 'drying presets temperature time humidity ams', anchor: 'card-drying' });
 registerSettingsSearch({ labelKey: 'settings.filamentChecks', tab: 'filament', keywords: 'filament check warning runout remaining', anchor: 'card-filamentchecks' });
 registerSettingsSearch({ labelKey: 'settings.printModal', tab: 'filament', keywords: 'print modal custom mapping', anchor: 'card-printmodal' });
@@ -289,6 +290,9 @@ export function SettingsPage() {
   // an intermediate value ("", "2" on the way to "25") is not rewritten by the
   // clamp mid-keystroke. Empty/non-numeric on blur reverts to the saved value.
   const [sustainedDraft, setSustainedDraft] = useState<string | null>(null);
+  // Raw text of the max-wait field while it holds something the backend would
+  // refuse (0, negative, > 8760, decimals); null when it mirrors saved settings.
+  const [maxWaitDraft, setMaxWaitDraft] = useState<string | null>(null);
   const [showPlugModal, setShowPlugModal] = useState(false);
   const [editingPlug, setEditingPlug] = useState<SmartPlug | null>(null);
   const [showHASensorModal, setShowHASensorModal] = useState(false);
@@ -503,7 +507,7 @@ export function SettingsPage() {
       const data = await api.getStorageUsage({ refresh: true });
       queryClient.setQueryData(['storage-usage'], data);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to refresh storage usage';
+      const message = error instanceof Error ? error.message : t('settings.toast.storageRefreshFailed');
       showToast(message, 'error');
     } finally {
       setStorageUsageRefreshing(false);
@@ -591,7 +595,7 @@ export function SettingsPage() {
       showToast(t('settings.toast.apiKeyCreated'));
     },
     onError: (error: Error) => {
-      showToast(`Failed to create API key: ${error.message}`, 'error');
+      showToast(t('settings.toast.apiKeyCreateFailed', { message: error.message }), 'error');
     },
   });
 
@@ -604,7 +608,7 @@ export function SettingsPage() {
       showToast(t('settings.toast.apiKeyDeleted'));
     },
     onError: (error: Error) => {
-      showToast(`Failed to delete API key: ${error.message}`, 'error');
+      showToast(t('settings.toast.apiKeyDeleteFailed', { message: error.message }), 'error');
     },
   });
 
@@ -980,7 +984,7 @@ export function SettingsPage() {
 
     // Email is required when advanced auth is enabled
     if (advancedAuthEnabled && !userFormData.email) {
-      showToast('Email is required when advanced authentication is enabled', 'error');
+      showToast(t('settings.toast.emailRequiredAdvancedAuth'), 'error');
       return;
     }
 
@@ -1104,13 +1108,13 @@ export function SettingsPage() {
       setTestAllResult(data);
       queryClient.invalidateQueries({ queryKey: ['notification-providers'] });
       if (data.failed === 0) {
-        showToast(`All ${data.tested} providers tested successfully!`, 'success');
+        showToast(t('settings.toast.allProvidersTested', { tested: data.tested }), 'success');
       } else {
-        showToast(`${data.success}/${data.tested} providers succeeded`, data.failed > 0 ? 'error' : 'success');
+        showToast(t('settings.toast.providersSucceeded', { success: data.success, tested: data.tested }), data.failed > 0 ? 'error' : 'success');
       }
     },
     onError: (error: Error) => {
-      showToast(`Failed to test providers: ${error.message}`, 'error');
+      showToast(t('settings.toast.testProvidersFailed', { message: error.message }), 'error');
     },
   });
 
@@ -1138,13 +1142,13 @@ export function SettingsPage() {
       queryClient.invalidateQueries({ queryKey: ['smart-plugs'] });
       queryClient.invalidateQueries({ queryKey: ['smart-plugs-energy'] });
       if (data.failed === 0) {
-        showToast(`All ${data.success} plugs turned ${action}`, 'success');
+        showToast(t(action === 'on' ? 'settings.toast.allPlugsTurnedOn' : 'settings.toast.allPlugsTurnedOff', { success: data.success }), 'success');
       } else {
-        showToast(`${data.success} plugs turned ${action}, ${data.failed} failed`, 'error');
+        showToast(t(action === 'on' ? 'settings.toast.plugsTurnedOnPartial' : 'settings.toast.plugsTurnedOffPartial', { success: data.success, failed: data.failed }), 'error');
       }
     },
     onError: (error: Error) => {
-      showToast(`Failed: ${error.message}`, 'error');
+      showToast(t('settings.toast.failedWithMessage', { message: error.message }), 'error');
     },
   });
 
@@ -1237,7 +1241,7 @@ export function SettingsPage() {
       showToast(t('settings.toast.settingsSaved'), 'success');
     },
     onError: (error: Error) => {
-      showToast(`Failed to save: ${error.message}`, 'error');
+      showToast(t('settings.toast.saveFailedWithMessage', { message: error.message }), 'error');
       // No localSettings rollback here — the existing comment above (see
       // onSuccess) already flags that overwriting localSettings would discard
       // in-progress user input (e.g. typing a hostname). The no-permission
@@ -1260,7 +1264,7 @@ export function SettingsPage() {
       showToast(t('settings.toast.cameraSettingsSaved'), 'success');
     },
     onError: (error: Error) => {
-      showToast(`Failed to update printer: ${error.message}`, 'error');
+      showToast(t('settings.toast.updatePrinterFailed', { message: error.message }), 'error');
     },
   });
 
@@ -1357,6 +1361,7 @@ export function SettingsPage() {
       baseline.prometheus_enabled !== localSettings.prometheus_enabled ||
       baseline.prometheus_token !== localSettings.prometheus_token ||
       (baseline.user_notifications_enabled ?? true) !== (localSettings.user_notifications_enabled ?? true) ||
+      (baseline.notification_submitter_email_enabled ?? false) !== (localSettings.notification_submitter_email_enabled ?? false) ||
       (baseline.default_bed_levelling ?? 'auto') !== (localSettings.default_bed_levelling ?? 'auto') ||
       (baseline.default_flow_cali ?? 'auto') !== (localSettings.default_flow_cali ?? 'auto') ||
       (baseline.default_vibration_cali ?? true) !== (localSettings.default_vibration_cali ?? true) ||
@@ -1370,6 +1375,8 @@ export function SettingsPage() {
       (baseline.stagger_interval_minutes ?? 5) !== (localSettings.stagger_interval_minutes ?? 5) ||
       (baseline.require_plate_clear ?? false) !== (localSettings.require_plate_clear ?? false) ||
       (baseline.queue_max_concurrent_uploads ?? 4) !== (localSettings.queue_max_concurrent_uploads ?? 4) ||
+      (baseline.queue_loaded_filament_first ?? false) !== (localSettings.queue_loaded_filament_first ?? false) ||
+      (baseline.queue_max_wait_hours ?? null) !== (localSettings.queue_max_wait_hours ?? null) ||
       (baseline.model_dispatch_order ?? 'fewest_hours') !== (localSettings.model_dispatch_order ?? 'fewest_hours') ||
       (baseline.filament_override_inventory ?? false) !== (localSettings.filament_override_inventory ?? false) ||
       (baseline.preheat_enabled ?? false) !== (localSettings.preheat_enabled ?? false) ||
@@ -1489,6 +1496,7 @@ export function SettingsPage() {
         prometheus_enabled: localSettings.prometheus_enabled,
         prometheus_token: localSettings.prometheus_token,
         user_notifications_enabled: localSettings.user_notifications_enabled,
+        notification_submitter_email_enabled: localSettings.notification_submitter_email_enabled,
         default_bed_levelling: localSettings.default_bed_levelling,
         default_flow_cali: localSettings.default_flow_cali,
         default_vibration_cali: localSettings.default_vibration_cali,
@@ -1502,6 +1510,9 @@ export function SettingsPage() {
         stagger_interval_minutes: localSettings.stagger_interval_minutes,
         require_plate_clear: localSettings.require_plate_clear,
         queue_max_concurrent_uploads: localSettings.queue_max_concurrent_uploads,
+        queue_loaded_filament_first: localSettings.queue_loaded_filament_first ?? false,
+        // null = no limit; never default to 48 here or clearing the field would not stick (#3587)
+        queue_max_wait_hours: localSettings.queue_max_wait_hours ?? null,
         model_dispatch_order: localSettings.model_dispatch_order,
         filament_override_inventory: localSettings.filament_override_inventory,
         preheat_enabled: localSettings.preheat_enabled,
@@ -1768,7 +1779,7 @@ export function SettingsPage() {
             <button
               onClick={() => setSettingsSearch('')}
               className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-bambu-gray hover:text-white"
-              aria-label="Clear"
+              aria-label={t('common.clear')}
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -2561,7 +2572,7 @@ export function SettingsPage() {
                             showToast(t('settings.rebuildLedgerStarted', 'Ledger rebuild started'), 'success');
                             setShowRebuildConfirm(false);
                           } catch (err) {
-                            showToast((err as Error).message || 'Failed to start ledger rebuild', 'error');
+                            showToast((err as Error).message || t('settings.rebuildLedgerFailed'), 'error');
                           } finally {
                             setIsRebuildLoading(false);
                           }
@@ -2915,7 +2926,7 @@ export function SettingsPage() {
                     <div className="flex items-start justify-between">
                       <div>
                         <p className="text-bambu-green font-medium">
-                          Update available: v{updateCheck.latest_version}
+                          {t('settings.updateAvailableVersion', { version: updateCheck.latest_version })}
                         </p>
                         {updateCheck.release_name && updateCheck.release_name !== updateCheck.latest_version && (
                           <p className="text-sm text-bambu-gray mt-1">{updateCheck.release_name}</p>
@@ -3434,7 +3445,7 @@ export function SettingsPage() {
                       type="text"
                       value={localSettings.mqtt_broker ?? ''}
                       onChange={(e) => updateSetting('mqtt_broker', e.target.value)}
-                      placeholder="mqtt.example.com or 192.168.1.100"
+                      placeholder={t('settings.mqttBrokerPlaceholder')}
                       className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                     />
                   </div>
@@ -4260,6 +4271,34 @@ export function SettingsPage() {
               </CardContent>
             </Card>
 
+            {/* Submitter email in print notifications (admin-only) */}
+            <Card className="mb-4">
+              <CardContent className="py-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-white text-sm font-medium">{t('settings.notificationSubmitterEmail')}</p>
+                    <p className="text-xs text-bambu-gray">{t('settings.notificationSubmitterEmailDescription')}</p>
+                    {!isAdmin && (
+                      <p id="submitter-email-admin-only" className="text-xs text-bambu-gray mt-1">
+                        {t('settings.adminOnlySetting')}
+                      </p>
+                    )}
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={localSettings.notification_submitter_email_enabled ?? false}
+                      disabled={!isAdmin}
+                      aria-describedby={!isAdmin ? 'submitter-email-admin-only' : undefined}
+                      onChange={(e) => updateSetting('notification_submitter_email_enabled', e.target.checked)}
+                    />
+                    <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green peer-disabled:cursor-not-allowed"></div>
+                  </label>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Test All Results */}
             {testAllResult && (
               <Card className="mb-4">
@@ -4362,7 +4401,7 @@ export function SettingsPage() {
                 <button
                   onClick={() => setTemplateFilter('')}
                   className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-bambu-gray hover:text-white"
-                  aria-label="Clear filter"
+                  aria-label={t('settings.clearFilter')}
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -6403,6 +6442,77 @@ export function SettingsPage() {
             </CardContent>
           </Card>
 
+          {/* Loaded filament first with a maximum wait (#3587) */}
+          <Card id="card-loaded-filament">
+            <CardHeader>
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <Layers className="w-4 h-4 text-bambu-green" />
+                {t('settings.loadedFilamentFirstTitle', 'Loaded Filament First')}
+              </h3>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex-1 mr-4">
+                  <p className="text-sm text-white">
+                    {t('settings.loadedFilamentFirst', 'Run jobs whose filament is loaded first')}
+                  </p>
+                  <p className="text-xs text-bambu-gray mt-1">
+                    {t('settings.loadedFilamentFirstDescription', 'A job whose filament is not on its printer is skipped instead of held and starts by itself once the spool is loaded; jobs behind it that fit run first. The queue order is never changed.')}
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.queue_loaded_filament_first ?? false}
+                    onChange={(e) => updateSetting('queue_loaded_filament_first', e.target.checked)}
+                    className="sr-only peer"
+                    aria-label={t('settings.loadedFilamentFirst', 'Run jobs whose filament is loaded first')}
+                  />
+                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                </label>
+              </div>
+              <div className="w-full sm:w-1/2">
+                <label htmlFor="queue_max_wait_hours" className="block text-xs text-bambu-gray mb-1">
+                  {t('settings.maxWaitHours', 'Maximum wait (hours)')}
+                </label>
+                <input
+                  id="queue_max_wait_hours"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  disabled={!(localSettings.queue_loaded_filament_first ?? false)}
+                  value={maxWaitDraft ?? (localSettings.queue_max_wait_hours === undefined ? 48 : (localSettings.queue_max_wait_hours ?? ''))}
+                  placeholder={t('settings.maxWaitHoursPlaceholder', 'No limit')}
+                  onChange={(e) => {
+                    const raw = e.target.value.trim();
+                    if (raw === '') {
+                      setMaxWaitDraft(null);
+                      updateSetting('queue_max_wait_hours', null);
+                      return;
+                    }
+                    // Only whole numbers in range reach the full-page PUT; anything
+                    // else stays a draft (a 422 would also block every later save).
+                    if (/^\d+$/.test(raw) && Number(raw) >= 1 && Number(raw) <= 8760) {
+                      setMaxWaitDraft(null);
+                      updateSetting('queue_max_wait_hours', Number(raw));
+                    } else {
+                      setMaxWaitDraft(e.target.value);
+                    }
+                  }}
+                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+                {maxWaitDraft !== null && (
+                  <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                    {t('settings.maxWaitHoursInvalid', 'Enter a whole number of hours from 1 to 8760, or leave it empty for no limit.')}
+                  </p>
+                )}
+                <p className="text-xs text-bambu-gray mt-1">
+                  {t('settings.maxWaitHoursHelp', 'Once a job has been in the queue this long (counted from when it was queued or its scheduled start), it gets priority: the next printer it could use is kept free for it until its filament is loaded, and you get one notification. Leave empty for no limit; you are then notified once when a job starts waiting.')}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Inventory colours in the print dialog's filament override (#3590).
               The print dialog has the same switch; this card is the other way in.
               Not offered in Spoolman mode: the built-in inventory is not used there. */}
@@ -6902,9 +7012,9 @@ export function SettingsPage() {
       {/* Confirm Modal: Bulk Plug Action */}
       {showBulkPlugConfirm && (
         <ConfirmModal
-          title={`Turn All Plugs ${showBulkPlugConfirm === 'on' ? 'On' : 'Off'}`}
-          message={`This will turn ${showBulkPlugConfirm === 'on' ? 'ON' : 'OFF'} all ${smartPlugs?.filter(p => p.enabled).length || 0} enabled smart plugs. ${showBulkPlugConfirm === 'off' ? 'Any running printers may be affected!' : ''}`}
-          confirmText={`Turn All ${showBulkPlugConfirm === 'on' ? 'On' : 'Off'}`}
+          title={showBulkPlugConfirm === 'on' ? t('settings.bulkPlugTitleOn') : t('settings.bulkPlugTitleOff')}
+          message={t(showBulkPlugConfirm === 'on' ? 'settings.bulkPlugMessageOn' : 'settings.bulkPlugMessageOff', { total: smartPlugs?.filter(p => p.enabled).length || 0 })}
+          confirmText={showBulkPlugConfirm === 'on' ? t('settings.bulkPlugConfirmOn') : t('settings.bulkPlugConfirmOff')}
           variant={showBulkPlugConfirm === 'off' ? 'danger' : 'warning'}
           onConfirm={() => {
             const action = showBulkPlugConfirm;
@@ -6925,7 +7035,7 @@ export function SettingsPage() {
             <CardHeader className="flex flex-row items-center justify-between shrink-0">
               <div>
                 <h2 className="text-lg font-semibold text-white">
-                  Release Notes - v{updateCheck.latest_version}
+                  {t('settings.releaseNotesTitle', { version: updateCheck.latest_version })}
                 </h2>
                 {updateCheck.release_name && updateCheck.release_name !== updateCheck.latest_version && (
                   <p className="text-sm text-bambu-gray">{updateCheck.release_name}</p>
@@ -6953,7 +7063,7 @@ export function SettingsPage() {
                 >
                   <Button variant="secondary" className="w-full">
                     <ExternalLink className="w-4 h-4" />
-                    View on GitHub
+                    {t('nav.viewOnGithub')}
                   </Button>
                 </a>
               )}
@@ -6961,7 +7071,7 @@ export function SettingsPage() {
                 onClick={() => setShowReleaseNotes(false)}
                 className="flex-1"
               >
-                Close
+                {t('common.close')}
               </Button>
             </div>
           </Card>
@@ -7961,13 +8071,13 @@ export function SettingsPage() {
                   <p className="text-white">{t('settings.userHasCreated')}</p>
                   <ul className="list-disc list-inside text-bambu-gray space-y-1">
                     {deleteUserItemCounts.archives > 0 && (
-                      <li>{deleteUserItemCounts.archives} archive{deleteUserItemCounts.archives !== 1 ? 's' : ''}</li>
+                      <li>{t('settings.userItemArchives', { count: deleteUserItemCounts.archives })}</li>
                     )}
                     {deleteUserItemCounts.queue_items > 0 && (
-                      <li>{deleteUserItemCounts.queue_items} queue item{deleteUserItemCounts.queue_items !== 1 ? 's' : ''}</li>
+                      <li>{t('settings.userItemQueueItems', { count: deleteUserItemCounts.queue_items })}</li>
                     )}
                     {deleteUserItemCounts.library_files > 0 && (
-                      <li>{deleteUserItemCounts.library_files} library file{deleteUserItemCounts.library_files !== 1 ? 's' : ''}</li>
+                      <li>{t('settings.userItemLibraryFiles', { count: deleteUserItemCounts.library_files })}</li>
                     )}
                   </ul>
                   <p className="text-bambu-gray text-sm">{t('settings.userItemsQuestion')}</p>
@@ -8122,7 +8232,7 @@ export function SettingsPage() {
               <div className="space-y-3">
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
-                    Current Password
+                    {t('changePassword.currentPassword')}
                   </label>
                   <input
                     type="password"
@@ -8135,7 +8245,7 @@ export function SettingsPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
-                    New Password
+                    {t('changePassword.newPassword')}
                   </label>
                   <input
                     type="password"
@@ -8149,7 +8259,7 @@ export function SettingsPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
-                    Confirm New Password
+                    {t('changePassword.confirmPassword')}
                   </label>
                   <input
                     type="password"
@@ -8196,7 +8306,7 @@ export function SettingsPage() {
                       setShowChangePasswordModal(false);
                       setChangePasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
                     } catch (error: unknown) {
-                      const message = error instanceof Error ? error.message : 'Failed to change password';
+                      const message = error instanceof Error ? error.message : t('changePassword.failed');
                       showToast(message, 'error');
                     } finally {
                       setChangePasswordLoading(false);

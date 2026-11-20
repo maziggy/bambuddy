@@ -111,7 +111,7 @@ function TOTPSetupWizard({ onDone }: { onDone: () => void }) {
         <div className="flex justify-center">
           <img
             src={`data:image/png;base64,${setupData.qr_code_b64}`}
-            alt="TOTP QR Code"
+            alt={t('settings.twoFa.qrCodeAlt')}
             className="w-48 h-48 rounded-lg"
           />
         </div>
@@ -326,7 +326,7 @@ export function TwoFactorSettings() {
           ) : showDisableTOTP ? (
             <div className="space-y-4">
               <p className="text-bambu-gray-light text-sm">{t('settings.twoFa.disableConfirmHint')}</p>
-              <CodeInput value={disableCode} onChange={setDisableCode} placeholder="000000 or XXXXXXXX" maxLength={8} />
+              <CodeInput value={disableCode} onChange={setDisableCode} placeholder={t('settings.twoFa.codeOrBackupPlaceholder')} maxLength={8} />
               <div className="flex gap-3">
                 <Button variant="secondary" onClick={() => { setShowDisableTOTP(false); setDisableCode(''); }} className="flex-1">
                   {t('common.cancel')}
@@ -344,7 +344,7 @@ export function TwoFactorSettings() {
           ) : showRegenBackup ? (
             <div className="space-y-4">
               <p className="text-bambu-gray-light text-sm">{t('settings.twoFa.regenBackupHint')}</p>
-              <CodeInput value={regenCode} onChange={setRegenCode} placeholder="000000 or XXXXXXXX" maxLength={8} />
+              <CodeInput value={regenCode} onChange={setRegenCode} placeholder={t('settings.twoFa.codeOrBackupPlaceholder')} maxLength={8} />
               <div className="flex gap-3">
                 <Button variant="secondary" onClick={() => { setShowRegenBackup(false); setRegenCode(''); }} className="flex-1">
                   {t('common.cancel')}

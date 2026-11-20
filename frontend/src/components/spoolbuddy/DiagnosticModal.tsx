@@ -61,15 +61,15 @@ export function DiagnosticModal({ type, deviceId, onClose }: DiagnosticModalProp
       }
 
       if (!result) {
-        throw new Error('Diagnostic timed out - device did not report results');
+        throw new Error(t('spoolbuddy.diagnostic.timedOut'));
       }
 
       setOutput(result.output);
       if (!result.success) {
-        setError(`Exit code: ${result.exit_code}`);
+        setError(t('spoolbuddy.diagnostic.exitCode', { code: result.exit_code }));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unknown error');
+      setError(e instanceof Error ? e.message : t('common.unknownError'));
       setOutput('');
     } finally {
       setIsRunning(false);
@@ -97,7 +97,7 @@ export function DiagnosticModal({ type, deviceId, onClose }: DiagnosticModalProp
           <button
             onClick={onClose}
             className="text-zinc-400 hover:text-white transition-colors"
-            aria-label="Close"
+            aria-label={t('spoolbuddy.diagnostic.close', 'Close')}
           >
             <X size={20} />
           </button>
@@ -123,7 +123,7 @@ export function DiagnosticModal({ type, deviceId, onClose }: DiagnosticModalProp
           ) : hasRun ? (
             <div>
               {error ? (
-                <div className="text-red-400">ERROR: {error}</div>
+                <div className="text-red-400">{t('spoolbuddy.diagnostic.errorPrefix', { error })}</div>
               ) : (
                 <span className="text-green-400">{t('spoolbuddy.diagnostic.completed', 'Diagnostic completed successfully.')}</span>
               )}

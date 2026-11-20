@@ -6214,6 +6214,14 @@ async def _run_migrations(conn):
         conn, f"ALTER TABLE smart_plugs ADD COLUMN mqtt_energy_total_multiplier {float_type} NOT NULL DEFAULT '1.0'"
     )
 
+    # Migration: what a run was expected to cost at its start, priced at the
+    # spools mapped for it, and the grams that was priced for (#3580). Billing
+    # charges a reprint from them. Nullable, no backfill: a run without them is
+    # charged from the archive's cost as before. The model's float type on each
+    # dialect.
+    await _safe_execute(conn, f"ALTER TABLE print_log_entries ADD COLUMN planned_cost {float_type}")
+    await _safe_execute(conn, f"ALTER TABLE print_log_entries ADD COLUMN planned_grams {float_type}")
+
     await _backfill_archive_run_photos(conn)
     await _migrate_h3c_queue_tray_ids(conn)
 

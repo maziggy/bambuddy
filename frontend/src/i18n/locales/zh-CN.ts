@@ -147,6 +147,17 @@ export default {
     right: '右',
     run: '运行',
     running: '运行中...',
+  
+    average: '平均',
+    current: '当前',
+    history: '历史记录',
+    humidity: '湿度',
+    max: '最大',
+    min: '最小',
+    saved: '已保存',
+    target: '目标',
+    temperature: '温度',
+    unavailable: '不可用',
   },
 
   finance: {
@@ -238,6 +249,12 @@ export default {
     withdraw: '取款',
     printCharge: '打印费用',
     deleteTransaction: '删除交易',
+  
+    adjustmentFailed: '钱包调整失败',
+    amountMustBePositive: '金额必须大于零',
+    depositSuccess: '充值成功',
+    noEligibleUsers: '没有可用的用户',
+    withdrawSuccess: '提现成功',
   },
 
   // Printers page
@@ -313,6 +330,8 @@ export default {
       error: '错误',
       finished: '已完成',
       unknown: '未知',
+    
+      title: '状态',
     },
     temperatures: {
       nozzle: '喷嘴',
@@ -583,6 +602,8 @@ export default {
     connection: {
       connected: '已连接',
       offline: '离线',
+    
+      ethernet: '以太网',
     },
     plateStatus: {
       markCleared: '将打印板标记为已清理',
@@ -986,6 +1007,10 @@ export default {
     dropNotSliced: '此文件不含已切片的 G-code。请先切片，再打印。',
     dropToPrint: '拖放以打印',
     dropToQueue: '拖放以加入队列',
+  
+    networkLabel: '网络',
+    noActiveJob: '无进行中的任务',
+    power: '电源',
   },
 
   // Archives page
@@ -2763,6 +2788,8 @@ export default {
       cameraConnected: '摄像头已连接{{resolution}}',
       cameraConnectedCoalesced: '摄像头已连接{{resolution}}（与正在进行的抓取共享）',
       cameraConnectedLiveView: '摄像头工作正常{{resolution}}（画面来自正在使用摄像头的实时画面）',
+    
+      saveFailed: '保存失败',
     },
     testConnection: '测试连接',
     catalog: {
@@ -3276,6 +3303,12 @@ export default {
         },
       },
     },
+  
+    filterTemplates: '筛选模板…',
+    gcodeConfigured: '已配置',
+    noSearchResults: '未找到匹配的设置。',
+    noTemplatesMatch: '没有模板符合筛选条件。',
+    searchPlaceholder: '搜索设置…',
   },
 
   // Notifications (for push notifications)
@@ -4128,6 +4161,21 @@ export default {
       clickFieldsToAdd: '点击左侧的字段进行添加',
       saveAsTemplate: '保存为模板',
       jsonTip: '提示：将 .json 文件拖放到此对话框的任意位置以导入设置',
+    
+      commonSettings: '常用设置',
+      currentOverrides: '当前覆盖项',
+      customTemplate: '自定义模板',
+      discoveredFromPresets: '从导入的预设中发现的字段',
+      exportToJson: '将设置导出为 JSON',
+      fileImported: '已从文件导入设置',
+      importFromJson: '从 JSON 导入设置',
+      invalidJson: 'JSON 无效',
+      invalidJsonFile: 'JSON 文件无效',
+      manageTemplatesHint: '在“设置 → 配置文件预设”中管理已保存的模板。',
+      noOverridesToSave: '没有需要保存的覆盖项',
+      noSettingId: '缺少设置 ID',
+      noTemplatesSelected: '暂无可用模板',
+      templateApplied: '已应用模板：',
     },
     cloudView: {
       searchPlaceholder: '搜索预设...',
@@ -4195,6 +4243,21 @@ export default {
         applied: '模板已应用',
       },
     },
+  
+    diff: {
+      added: '新增',
+      changed: '改动',
+      changes: '变更',
+      field: '字段',
+      left: '左侧',
+      noDifferences: '无差异。',
+      noFieldsMatch: '没有字段匹配搜索条件。',
+      removed: '移除',
+      right: '右侧',
+      same: '未更改',
+      searchFields: '搜索字段...',
+      title: '对比配置文件',
+    },
   },
 
   // Support/Debug
@@ -4212,6 +4275,39 @@ export default {
     bundleStepVirtualPrinters: '正在执行虚拟打印机设置检查',
     bundleStepLogScan: '正在扫描最近的日志以查找已知问题',
     bundleStepBuild: '正在构建支持包 ZIP 文件',
+  
+    collectItem1: '应用版本与调试模式',
+    collectItem2: '操作系统、架构、Python 版本',
+    collectItem3: '数据库统计（仅数量）',
+    collectItem4: '打印机机型与喷嘴数量',
+    collectItem5: '非敏感设置（主题、格式）',
+    collectItem6: '调试日志（已脱敏）',
+    collected: '已采集：',
+    debugLogging: '调试日志',
+    debugLoggingDisabled: '普通日志级别',
+    debugLoggingEnabled: '正在采集详细日志',
+    description: '启用调试日志以采集详细信息，然后下载支持包，在反馈问题时附上。',
+    disableDebug: '禁用',
+    enableDebug: '启用',
+    enableDebugFirst: '请先启用调试日志',
+    instructions: '反馈问题的步骤：',
+    notCollected: '不会采集：',
+    notItem1: '打印机名称与序列号',
+    notItem2: '访问码与密码',
+    notItem3: '电子邮箱地址',
+    notItem4: 'API 密钥与令牌',
+    notItem5: 'Webhook 地址',
+    notItem6: '主机名或用户名',
+    notItem7: 'IP 地址',
+    privacyNote: '日志中的电子邮箱替换为 [EMAIL]，打印机名称替换为 [PRINTER]，序列号替换为 [SERIAL]，IP 地址替换为 [IP]。',
+    privacyTitle: '支持包中包含哪些内容？',
+    step1: '启用调试日志',
+    step2: '复现问题',
+    step3: '下载支持包',
+    step4: '将 ZIP 文件附到问题报告中',
+    supportBundle: '支持包',
+    supportBundleDescription: '将系统信息和日志下载为 ZIP 文件',
+    title: '支持与故障排查',
   },
 
   // File manager
@@ -4503,6 +4599,8 @@ export default {
       thumbnailGenerated: '缩略图已生成',
       failedToGenerateThumbnail: '生成缩略图失败：{{error}}',
     },
+  
+    filterByUser: '按用户筛选',
   },
 
   // Projects
@@ -4754,6 +4852,41 @@ export default {
     imageName: '镜像名称',
     platform: '平台',
     architecture: '架构',
+  
+    application: '应用程序',
+    archiveStorage: '归档存储',
+    available: '可用',
+    bootTime: '启动时间',
+    completed: '已完成',
+    connectedPrinters: '已连接打印机',
+    cores: '核心数',
+    cpu: 'CPU',
+    database: '数据库',
+    databaseSize: '数据库大小',
+    dbEngine: '数据库引擎',
+    dbVersion: '版本',
+    failed: '失败',
+    failedToLoad: '系统信息加载失败',
+    filaments: '耗材',
+    fileManagerStorage: '文件管理器',
+    free: '可用',
+    hostname: '主机名',
+    memory: '内存',
+    noPrintersConnected: '未连接打印机',
+    ofTotal: '已连接 {{total}} 台打印机',
+    os: '操作系统',
+    printers: '打印机',
+    printing: '打印中',
+    projects: '项目',
+    python: 'Python',
+    smartPlugs: '智能插座',
+    storage: '存储',
+    subtitle: '监控系统资源与数据库统计',
+    systemDetails: '系统详情',
+    totalArchives: '归档总数',
+    totalFilament: '耗材总用量',
+    totalPrintTime: '总打印时长',
+    usage: '使用率',
   },
 
   // Sponsor surface (System page)
@@ -5028,6 +5161,9 @@ export default {
     confirmDelete: '删除「{{name}}」？',
     confirmDeleteMessage: '此位置将从目录中移除。请先移走线轴。',
     confirmDeleteMessageWithSensors: '此位置将从目录中移除。请先移走线轴。关联的传感器也将被删除。',
+  
+    deleteAria: '删除 {{name}}',
+    editAria: '编辑 {{name}}',
   },
 
   // Inventory
@@ -5622,6 +5758,10 @@ export default {
     noSpoolmanFilaments: 'Spoolman 目录中未找到耗材',
     spoolmanFilamentColorSwatch: '耗材颜色',
     spoolmanCatalogLoadFailed: '无法加载 Spoolman 耗材目录',
+  
+    assignedSpool: '已分配料盘',
+    unassignFailed: '解除料盘分配失败',
+    unassignSuccess: '已解除料盘分配',
   },
 
   // Timelapse
@@ -5773,6 +5913,10 @@ export default {
     noPrintableCostCenters: '没有可用于打印的有效成本中心。请联系管理员授予你打印权限。',
     askForOutcome: '询问打印结果',
     askForOutcomeTitle: '打印完成后询问打印效果如何',
+  
+    costCenter: '成本中心',
+    personalDefault: '个人',
+    totalCostForQuantity: '合计：{{cost}}',
   },
 
   // Backup
@@ -6666,6 +6810,10 @@ export default {
         plugName: '客厅插座',
         mqttStateOnValue: 'ON、true、1',
         mqttSameAsPower: '与功率主题相同，或不同',
+      
+        searchEnergySensors: '搜索能耗传感器...',
+        searchEntities: '搜索实体...',
+        searchPowerSensors: '搜索功率传感器...',
       },
     },
     // SmartPlugCard
@@ -7548,6 +7696,9 @@ export default {
       spoolmanUnavailable: 'Spoolman 不可用，无法查询标签',
       lookupFailed: '标签查询失败',
       status: '状态',
+    
+      backend: '后端',
+      connectDisplay: '连接 SpoolBuddy 显示屏以扫描料盘',
     },
     dashboard: {
       readyToScan: '准备扫描',
@@ -7576,6 +7727,8 @@ export default {
       plateClearAction: '清理',
       plateClearedToast: '已将热床标记为已清理',
       plateClearFailed: '无法将热床标记为已清理',
+    
+      printers: '打印机',
     },
     modal: {
       assignToAms: '分配到 AMS',
@@ -7592,6 +7745,10 @@ export default {
       noPrinterSelected: '选择打印机...',
       noAmsDetected: '此打印机未检测到 AMS',
       slot: '槽位',
+    
+      addAnyway: '仍要添加',
+      quickAddDesc: '将用此 NFC 标签创建一条基础 PLA 耗材记录，之后可在 Bambuddy 中编辑详情。',
+      quickAddHint: '建议先在 Bambuddy 网页界面中添加料盘（填写材料、颜色、品牌），再在此处使用“分配料盘”绑定 NFC 标签。',
     },
     weight: {
       tare: '去皮',
@@ -7620,6 +7777,12 @@ export default {
       active: '活跃',
       slot: '槽位',
       empty: '空',
+    
+      assignDesc: '跟踪库存中的料盘',
+      configureDesc: '设置耗材预设、K 值配置和颜色',
+      linkDesc: '将 Spoolman 料盘链接到此槽位',
+      unassignDesc: '从此槽位移除库存料盘',
+      unlinkDesc: '移除此槽位的 Spoolman 链接',
     },
     inventory: {
       search: '搜索耗材...',
@@ -7627,6 +7790,15 @@ export default {
       noResults: '没有匹配的耗材',
       spools: '个耗材',
       addSpool: '添加耗材',
+    
+      all: '全部',
+      costPerKg: '单价/千克',
+      inAms: '在 AMS 中',
+      kProfiles: 'K 值配置',
+      note: '备注',
+      nozzleTemp: '喷嘴',
+      searchPlaceholder: '搜索料盘...',
+      slicerFilament: '切片耗材',
     },
     settings: {
       // Tabs
@@ -7698,6 +7870,30 @@ export default {
       updateInstructions: '通过 SSH 更新：运行 SpoolBuddy 安装脚本进行升级。',
       upToDate: '已是最新',
       includeBeta: '包含测试版本',
+    
+      applyUpdate: '应用更新',
+      arch: '架构',
+      available: '可用',
+      cores: '核心数',
+      deviceOffline: '设备离线',
+      disk: '磁盘',
+      distro: '发行版',
+      forceUpdate: '强制更新',
+      kernel: '内核',
+      loadAvg: '平均负载',
+      memory: '内存',
+      osInfo: '操作系统',
+      runtime: '运行时',
+      sshDescription: 'SSH 密钥会自动部署。手动设置时，请将此密钥添加到设备的 ~/.ssh/authorized_keys 中。',
+      sshKeyLoading: '加载中...',
+      sshSetup: 'SSH 设置',
+      systemStatsWaiting: '等待系统统计数据...',
+      systemUptime: '运行时间',
+      tabSystem: '系统',
+      temp: '温度',
+      updateFailed: '更新失败',
+      updateWaiting: '更新中...',
+      used: '已用',
     },
     writeTag: {
       writeWith: '写入设备',
@@ -7737,6 +7933,14 @@ export default {
       spoolCreated: '耗材已创建！准备写入。',
       createFailed: '创建耗材失败',
       incompleteDataWarning: '已使用不完整的Spoolman数据写入标签',
+    
+      fullView: '完整',
+      simpleView: '简洁',
+      untagFailed: '移除料盘标签失败',
+      untagSpool: '解除所选料盘标签',
+      untagSuccess: '标签已从料盘移除',
+      untagging: '正在移除标签...',
+      viewMode: '视图',
     },
     quickMenu: {
       printerPower: '打印机电源',
@@ -7756,6 +7960,24 @@ export default {
       confirmPlugOff: '关闭 {{name}}？',
       turnOn: '开启',
       turnOff: '关闭',
+    },
+  
+    errors: {
+      quickAddFailed: '添加料盘失败',
+    },
+  
+    diagnostic: {
+      clickStart: '点击“运行诊断”开始对以下设备进行硬件诊断：',
+      close: '关闭',
+      completed: '诊断成功完成。',
+      nfcTitle: 'NFC 读取器诊断',
+      queuing: '正在设备上排队诊断...\n',
+      readTagTitle: '标签读取诊断',
+      runAgain: '再次运行',
+      runBtn: '运行诊断',
+      running: '正在设备上运行诊断...',
+      runningBtn: '运行中...',
+      scaleTitle: '称重诊断',
     },
   },
 
@@ -8240,6 +8462,8 @@ export default {
     backToFiles: '返回文件管理器',
     plates: '板',
     plateN: '板 {{n}}',
+  
+    notSliced: '此文件尚未切片。',
   },
   libraryTrash: {
     title: '回收站',
@@ -8647,5 +8871,9 @@ export default {
     // Permissions
     noReadAccess: '您没有查看库存预测的权限。',
     noWriteAccess: '您没有修改预测设置的权限。',
+  },
+
+  amsHistory: {
+    recordingInfo: '打印机连接期间每 5 分钟记录一次数据',
   },
 };

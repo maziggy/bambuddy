@@ -147,6 +147,17 @@ export default {
     right: 'Right',
     run: 'Run',
     running: 'Running...',
+  
+    average: 'Average',
+    current: 'Current',
+    history: 'History',
+    humidity: 'Humidity',
+    max: 'Max',
+    min: 'Min',
+    saved: 'Saved',
+    target: 'Target',
+    temperature: 'Temperature',
+    unavailable: 'Unavailable',
   },
 
   finance: {
@@ -238,6 +249,12 @@ export default {
     withdraw: 'Withdraw',
     printCharge: 'Print charge',
     deleteTransaction: 'Delete transaction',
+  
+    adjustmentFailed: 'Wallet adjustment failed',
+    amountMustBePositive: 'Amount must be greater than zero',
+    depositSuccess: 'Deposit successful',
+    noEligibleUsers: 'No eligible users available',
+    withdrawSuccess: 'Withdrawal successful',
   },
 
   // Printers page
@@ -315,6 +332,8 @@ export default {
       error: 'Error',
       finished: 'Finished',
       unknown: 'Unknown',
+    
+      title: 'Status',
     },
     temperatures: {
       nozzle: 'Nozzle',
@@ -588,6 +607,8 @@ export default {
     connection: {
       connected: 'Connected',
       offline: 'Offline',
+    
+      ethernet: 'Ethernet',
     },
     plateStatus: {
       markCleared: 'Mark plate as cleared',
@@ -993,6 +1014,10 @@ export default {
     dropNotSliced: 'This file has no sliced G-code. Slice it first, then print it.',
     dropToPrint: 'Drop to print',
     dropToQueue: 'Drop to queue',
+  
+    networkLabel: 'Network',
+    noActiveJob: 'No active job',
+    power: 'Power',
   },
 
   // Archives page
@@ -2785,6 +2810,8 @@ export default {
       cameraConnected: 'Camera connected{{resolution}}',
       cameraConnectedCoalesced: 'Camera connected{{resolution}} (shared with a capture already running)',
       cameraConnectedLiveView: 'Camera works{{resolution}} (frame from the live view, which is using the camera)',
+    
+      saveFailed: 'Save failed',
     },
     testConnection: 'Test Connection',
     catalog: {
@@ -3321,6 +3348,12 @@ export default {
         },
       },
     },
+  
+    filterTemplates: 'Filter templates…',
+    gcodeConfigured: 'Configured',
+    noSearchResults: 'No matching settings.',
+    noTemplatesMatch: 'No templates match your filter.',
+    searchPlaceholder: 'Search settings…',
   },
 
   // Notifications (for push notifications)
@@ -4173,6 +4206,21 @@ export default {
       clickFieldsToAdd: 'Click fields on the left to add them',
       saveAsTemplate: 'Save as template',
       jsonTip: 'Tip: Drag & drop a .json file anywhere on this modal to import settings',
+    
+      commonSettings: 'Common settings',
+      currentOverrides: 'Current overrides',
+      customTemplate: 'Custom template',
+      discoveredFromPresets: 'Field discovered from imported presets',
+      exportToJson: 'Export settings to JSON',
+      fileImported: 'Settings imported from file',
+      importFromJson: 'Import settings from JSON',
+      invalidJson: 'Invalid JSON',
+      invalidJsonFile: 'Invalid JSON file',
+      manageTemplatesHint: 'Manage saved templates in Settings → Profile Presets.',
+      noOverridesToSave: 'No overrides to save',
+      noSettingId: 'Setting ID is missing',
+      noTemplatesSelected: 'No templates available',
+      templateApplied: 'Template applied:',
     },
     cloudView: {
       searchPlaceholder: 'Search presets...',
@@ -4240,6 +4288,21 @@ export default {
         applied: 'Template applied',
       },
     },
+  
+    diff: {
+      added: 'Added',
+      changed: 'Changed',
+      changes: 'Changes',
+      field: 'Field',
+      left: 'Left',
+      noDifferences: 'No differences.',
+      noFieldsMatch: 'No fields match your search.',
+      removed: 'Removed',
+      right: 'Right',
+      same: 'Unchanged',
+      searchFields: 'Search fields...',
+      title: 'Compare profiles',
+    },
   },
 
   // Support/Debug
@@ -4257,6 +4320,39 @@ export default {
     bundleStepVirtualPrinters: 'Running virtual-printer setup checks',
     bundleStepLogScan: 'Scanning recent logs for known issues',
     bundleStepBuild: 'Building the support bundle ZIP',
+  
+    collectItem1: 'App version and debug mode',
+    collectItem2: 'OS, architecture, Python version',
+    collectItem3: 'Database statistics (counts only)',
+    collectItem4: 'Printer models and nozzle counts',
+    collectItem5: 'Non-sensitive settings (themes, formats)',
+    collectItem6: 'Debug logs (sanitized)',
+    collected: 'Collected:',
+    debugLogging: 'Debug Logging',
+    debugLoggingDisabled: 'Normal logging level',
+    debugLoggingEnabled: 'Capturing detailed logs',
+    description: 'Enable debug logging to capture detailed information, then download a support bundle to share when reporting issues.',
+    disableDebug: 'Disable',
+    enableDebug: 'Enable',
+    enableDebugFirst: 'Enable debug logging first',
+    instructions: 'To report an issue:',
+    notCollected: 'NOT collected:',
+    notItem1: 'Printer names and serial numbers',
+    notItem2: 'Access codes and passwords',
+    notItem3: 'Email addresses',
+    notItem4: 'API keys and tokens',
+    notItem5: 'Webhook URLs',
+    notItem6: 'Your hostname or username',
+    notItem7: 'IP addresses',
+    privacyNote: 'Email addresses in logs are replaced with [EMAIL], printer names with [PRINTER], serial numbers with [SERIAL], and IP addresses with [IP].',
+    privacyTitle: 'What\'s in the support bundle?',
+    step1: 'Enable debug logging',
+    step2: 'Reproduce the issue',
+    step3: 'Download the support bundle',
+    step4: 'Attach the ZIP file to your issue report',
+    supportBundle: 'Support Bundle',
+    supportBundleDescription: 'Download system info and logs as a ZIP file',
+    title: 'Support & Troubleshooting',
   },
 
   // File manager
@@ -4548,6 +4644,8 @@ export default {
       thumbnailGenerated: 'Thumbnail generated',
       failedToGenerateThumbnail: 'Failed to generate thumbnail: {{error}}',
     },
+  
+    filterByUser: 'Filter by user',
   },
 
   // Projects
@@ -4799,6 +4897,41 @@ export default {
     imageName: 'Image Name',
     platform: 'Platform',
     architecture: 'Architecture',
+  
+    application: 'Application',
+    archiveStorage: 'Archive Storage',
+    available: 'available',
+    bootTime: 'Boot Time',
+    completed: 'Completed',
+    connectedPrinters: 'Connected Printers',
+    cores: 'Cores',
+    cpu: 'CPU',
+    database: 'Database',
+    databaseSize: 'Database Size',
+    dbEngine: 'Database Engine',
+    dbVersion: 'Version',
+    failed: 'Failed',
+    failedToLoad: 'Failed to load system information',
+    filaments: 'Filaments',
+    fileManagerStorage: 'File Manager',
+    free: 'free',
+    hostname: 'Hostname',
+    memory: 'Memory',
+    noPrintersConnected: 'No printers connected',
+    ofTotal: 'of {{total}} printers connected',
+    os: 'Operating System',
+    printers: 'Printers',
+    printing: 'Printing',
+    projects: 'Projects',
+    python: 'Python',
+    smartPlugs: 'Smart Plugs',
+    storage: 'Storage',
+    subtitle: 'Monitor system resources and database statistics',
+    systemDetails: 'System Details',
+    totalArchives: 'Total Archives',
+    totalFilament: 'Total Filament Used',
+    totalPrintTime: 'Total Print Time',
+    usage: 'Usage',
   },
 
   // Sponsor surface (System page)
@@ -5079,6 +5212,9 @@ export default {
     confirmDeleteMessage: 'This location will be removed from the catalog. Spools must be moved first.',
     confirmDeleteMessageWithSensors:
       'This location will be removed from the catalog. Spools must be moved first. Connected sensors will also be deleted.',
+  
+    deleteAria: 'Delete {{name}}',
+    editAria: 'Edit {{name}}',
   },
 
   // Inventory
@@ -5683,6 +5819,10 @@ export default {
     noSpoolmanFilaments: 'No filaments found in Spoolman catalog',
     spoolmanFilamentColorSwatch: 'Filament color',
     spoolmanCatalogLoadFailed: 'Failed to load Spoolman filament catalog',
+  
+    assignedSpool: 'Assigned spool',
+    unassignFailed: 'Failed to unassign spool',
+    unassignSuccess: 'Spool unassigned',
   },
 
   // Timelapse
@@ -5834,6 +5974,10 @@ export default {
     noPrintableCostCenters: 'No active cost center is available for printing. Ask an administrator to grant you print access.',
     askForOutcome: 'Ask for Outcome',
     askForOutcomeTitle: 'Ask how the print came out after it completes',
+  
+    costCenter: 'Cost center',
+    personalDefault: 'Personal',
+    totalCostForQuantity: 'total: {{cost}}',
   },
 
   // Backup
@@ -6733,6 +6877,10 @@ export default {
         plugName: 'Living Room Plug',
         mqttStateOnValue: 'ON, true, 1',
         mqttSameAsPower: 'Same as power topic, or different',
+      
+        searchEnergySensors: 'Search energy sensors...',
+        searchEntities: 'Search entities...',
+        searchPowerSensors: 'Search power sensors...',
       },
     },
     // SmartPlugCard
@@ -7616,6 +7764,9 @@ export default {
       spoolmanUnavailable: 'Spoolman is unavailable, so the tag could not be looked up',
       lookupFailed: 'The tag lookup failed',
       status: 'Status',
+    
+      backend: 'Backend',
+      connectDisplay: 'Connect the SpoolBuddy display to scan spools',
     },
     dashboard: {
       readyToScan: 'Ready to scan',
@@ -7644,6 +7795,8 @@ export default {
       plateClearAction: 'Clear',
       plateClearedToast: 'Plate marked as cleared',
       plateClearFailed: 'Could not mark plate as cleared',
+    
+      printers: 'Printers',
     },
     modal: {
       assignToAms: 'Assign to AMS',
@@ -7660,6 +7813,10 @@ export default {
       noPrinterSelected: 'Select a printer...',
       noAmsDetected: 'No AMS detected on this printer',
       slot: 'Slot',
+    
+      addAnyway: 'Add Anyway',
+      quickAddDesc: 'This will create a basic PLA spool entry with this NFC tag. You can edit the details later in Bambuddy.',
+      quickAddHint: 'For best results, add the spool in the Bambuddy web interface first (with material, color, brand), then use "Assign Spool" here to assign the NFC tag.',
     },
     weight: {
       tare: 'Tare',
@@ -7688,6 +7845,12 @@ export default {
       active: 'Active',
       slot: 'Slot',
       empty: 'Empty',
+    
+      assignDesc: 'Track a spool from your inventory',
+      configureDesc: 'Set filament preset, K-profile, and color',
+      linkDesc: 'Link a Spoolman spool to this slot',
+      unassignDesc: 'Remove inventory spool from this slot',
+      unlinkDesc: 'Remove Spoolman link from this slot',
     },
     inventory: {
       search: 'Search spools...',
@@ -7695,6 +7858,15 @@ export default {
       noResults: 'No matching spools',
       spools: 'spools',
       addSpool: 'Add Spool',
+    
+      all: 'All',
+      costPerKg: 'Cost/kg',
+      inAms: 'In AMS',
+      kProfiles: 'K-Profile',
+      note: 'Note',
+      nozzleTemp: 'Nozzle',
+      searchPlaceholder: 'Search spools...',
+      slicerFilament: 'Slicer Filament',
     },
     settings: {
       // Tabs
@@ -7766,6 +7938,30 @@ export default {
       updateInstructions: 'Update via SSH: run the SpoolBuddy install script to upgrade.',
       upToDate: 'Up to date',
       includeBeta: 'Include beta versions',
+    
+      applyUpdate: 'Apply Update',
+      arch: 'Arch',
+      available: 'Free',
+      cores: 'Cores',
+      deviceOffline: 'Device Offline',
+      disk: 'Disk',
+      distro: 'Distro',
+      forceUpdate: 'Force Update',
+      kernel: 'Kernel',
+      loadAvg: 'Load Avg',
+      memory: 'Memory',
+      osInfo: 'OS',
+      runtime: 'Runtime',
+      sshDescription: 'SSH key is deployed automatically. For manual setup, add this key to ~/.ssh/authorized_keys on the device.',
+      sshKeyLoading: 'Loading...',
+      sshSetup: 'SSH Setup',
+      systemStatsWaiting: 'Waiting for system stats...',
+      systemUptime: 'Uptime',
+      tabSystem: 'System',
+      temp: 'Temp',
+      updateFailed: 'Update failed',
+      updateWaiting: 'Updating...',
+      used: 'Used',
     },
     writeTag: {
       writeWith: 'Write with',
@@ -7805,6 +8001,14 @@ export default {
       spoolCreated: 'Spool created! Ready to write.',
       createFailed: 'Failed to create spool',
       incompleteDataWarning: 'Tag written with incomplete Spoolman data',
+    
+      fullView: 'Full',
+      simpleView: 'Simple',
+      untagFailed: 'Failed to remove tag from spool',
+      untagSpool: 'Untag Selected Spool',
+      untagSuccess: 'Tag removed from spool',
+      untagging: 'Removing tag...',
+      viewMode: 'View',
     },
     quickMenu: {
       printerPower: 'Printer Power',
@@ -7824,6 +8028,24 @@ export default {
       confirmPlugOff: 'Turn off {{name}}?',
       turnOn: 'Turn On',
       turnOff: 'Turn Off',
+    },
+  
+    errors: {
+      quickAddFailed: 'Failed to add spool',
+    },
+  
+    diagnostic: {
+      clickStart: 'Click "Run Diagnostic" to start the hardware diagnostic on',
+      close: 'Close',
+      completed: 'Diagnostic completed successfully.',
+      nfcTitle: 'NFC Reader Diagnostic',
+      queuing: 'Queuing diagnostic on device...\n',
+      readTagTitle: 'Read Tag Diagnostic',
+      runAgain: 'Run Again',
+      runBtn: 'Run Diagnostic',
+      running: 'Running diagnostic on device...',
+      runningBtn: 'Running...',
+      scaleTitle: 'Scale Diagnostic',
     },
   },
 
@@ -8309,6 +8531,8 @@ export default {
     backToFiles: 'Back to File Manager',
     plates: 'Plates',
     plateN: 'Plate {{n}}',
+  
+    notSliced: 'This file has not been sliced yet.',
   },
   libraryTrash: {
     title: 'Trash',
@@ -8717,5 +8941,9 @@ export default {
     // Permissions
     noReadAccess: 'You do not have permission to view inventory forecasts.',
     noWriteAccess: 'You do not have permission to modify forecast settings.',
+  },
+
+  amsHistory: {
+    recordingInfo: 'Data is recorded every 5 minutes while the printer is connected',
   },
 };

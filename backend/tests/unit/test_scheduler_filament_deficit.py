@@ -241,3 +241,12 @@ def test_describe_deficit_for_notification_without_slot_or_printer():
         _describe_deficit_for_notification([_deficit(None, None, 12.0)])
         == "Not enough filament: PLA (12 g left, needs 40 g)"
     )
+
+
+def test_describe_deficit_for_notification_without_known_type():
+    from backend.app.services.print_scheduler import _describe_deficit_for_notification
+
+    assert (
+        _describe_deficit_for_notification([_deficit(0, 1, 12.0, material="")], "X1C")
+        == "Not enough filament on X1C: Filament in A2 (12 g left, needs 40 g)"
+    )

@@ -838,7 +838,7 @@ def _describe_deficit_for_notification(
         where = ""
         if d.ams_id is not None and d.tray_id is not None:
             where = f" in {_ams_slot_label(d.ams_id, d.tray_id, layout)}"
-        parts.append(f"{d.filament_type}{where} {_deficit_amounts(d)}")
+        parts.append(f"{d.filament_type or 'Filament'}{where} {_deficit_amounts(d)}")
     on = f" on {printer_name}" if printer_name else ""
     return f"Not enough filament{on}: {', '.join(parts)}"
 

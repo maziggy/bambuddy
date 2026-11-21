@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ams3hDryerGridColumns,
+  ams3hHasLoadedSlot,
   ams3hSlotGridPlacement,
   amsHasLoadedTray,
   amsUnitSlotCount,
@@ -125,5 +126,13 @@ describe('AMS 3H card layout', () => {
     expect(ams3hDryerGridColumns(undefined)).toBeNull();
     expect(ams3hDryerGridColumns([])).toBeNull();
     expect(ams3hDryerGridColumns([4, 6])).toBeNull(); // slots 5 and 7 are in front
+  });
+});
+
+describe('ams3hHasLoadedSlot (#3531)', () => {
+  it('is true only for a slot whose filament is in its hotend (state 27)', () => {
+    expect(ams3hHasLoadedSlot({ tray: [{ state: 26 }, { state: 27 }] })).toBe(true);
+    expect(ams3hHasLoadedSlot({ tray: [{ state: 26 }, { state: 9 }, { state: null }] })).toBe(false);
+    expect(ams3hHasLoadedSlot({ tray: null })).toBe(false);
   });
 });

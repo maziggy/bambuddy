@@ -595,6 +595,7 @@ export default {
       loadInitiated: 'Cargando filamento…',
       unloadInitiated: 'Descargando filamento…',
       unloadAms3h: 'Descargando la ranura {{n}}. Cuando la impresora lo pida, retira a mano el filamento del AMS 3H.',
+      unloadAllAms3h: "Descargando todas las ranuras cargadas. Cuando la impresora lo pida, retira a mano el filamento del AMS 3H.",
       failedToLoad: 'Error al cargar el filamento',
       failedToUnload: 'Error al descargar el filamento',
       chamberLightOn: 'Luz de la cámara encendida',
@@ -604,6 +605,8 @@ export default {
     connection: {
       connected: 'Conectada',
       offline: 'Desconectada',
+      pending: "Comprobando…",
+      unavailable: "Estado no disponible",
       ethernet: 'Ethernet',
     },
     plateStatus: {
@@ -627,6 +630,9 @@ export default {
     ams: {
       load: 'Cargar',
       unload: 'Descargar',
+      unloadAll: "Descargar todo",
+      unloadAllTitle: "¿Descargar todas las ranuras?",
+      unloadAllMessage: "La impresora descarga una tras otra todas las ranuras cargadas del AMS 3H. Cuando lo pida, retira a mano el filamento del AMS 3H, así que quédate junto a la impresora.",
       feedTitle: '¿En qué boquilla cargar {{slot}}?',
       feedPrompt: 'El Filament Track Switch puede dirigir esta ranura a cualquiera de los dos hotends. Elige cuál alimentar.',
       feedLeft: 'Boquilla izquierda',

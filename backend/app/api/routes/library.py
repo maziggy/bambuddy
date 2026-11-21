@@ -24,6 +24,7 @@ from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes.cloud import resolve_api_key_cloud_owner
 from backend.app.api.routes.library_variants import (
+    changeable_group_ids,
     masked_group_names,
     normalize_model_name,
     resolve_variant_model,
@@ -2375,6 +2376,7 @@ async def list_files(
             Permission.LIBRARY_READ_OWN,
         )
     ),
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """List files, optionally filtered by folder or project.
 
@@ -2403,7 +2405,9 @@ async def list_files(
                  return the visible members that the filters left out (other
                  folders), flagged ``variant_elsewhere`` and carrying their
                  ``folder_name``. Every row of a group then reports
-                 ``variant_group_name`` and ``variant_position`` (#3628).
+                 ``variant_group_name``, ``variant_position`` and
+                 ``variant_group_editable``, whether the caller may ungroup it
+                 or take a version out of it (#3628).
     """
     if internal_only and external_only:
         raise HTTPException(
@@ -2462,6 +2466,7 @@ async def list_files(
     # Variant group members the filters left out (#3628): one query for the
     # members, one for the group names, one for their folder names.
     group_names: dict[int, str | None] = {}
+    editable_groups: set[int] = set()
     elsewhere_ids: set[int] = set()
     folder_names: dict[int, str] = {}
     if with_variant_members:
@@ -2493,6 +2498,8 @@ async def list_files(
             )
             # A name equal to a file the caller cannot see is withheld (#3628).
             group_names = await masked_group_names(db, raw_names, user, can_read_all)
+            # Said up front, so the client can disable what the server would refuse.
+            editable_groups = await changeable_group_ids(db, shown_group_ids, actor)
             extra_folder_ids = {m.folder_id for m in extras if m.folder_id is not None}
             if extra_folder_ids:
                 folder_names = dict(
@@ -2573,6 +2580,9 @@ async def list_files(
                 if with_variant_members and f.variant_group_id
                 else None,
                 variant_position=f.variant_position if with_variant_members and f.variant_group_id else None,
+                variant_group_editable=f.variant_group_id in editable_groups
+                if with_variant_members and f.variant_group_id
+                else None,
                 variant_elsewhere=f.id in elsewhere_ids,
                 folder_name=folder_names.get(f.folder_id) if f.id in elsewhere_ids and f.folder_id else None,
                 external_url=f.external_url,

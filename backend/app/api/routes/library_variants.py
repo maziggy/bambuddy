@@ -40,10 +40,10 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import ApiKeyActor, require_ownership_permission
+from backend.app.core.auth import ApiKeyActor, RequestActor, require_ownership_permission
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.library import FileVariantGroup, LibraryFile
@@ -108,18 +108,23 @@ async def _load_files(
     return {f.id: f for f in rows}
 
 
-def _validate_member(lib_file: LibraryFile, explicit_model: str | None) -> str:
-    """Return the member's model, or raise the reason it cannot be one."""
+def _validate_member(lib_file: LibraryFile, explicit_model: str | None, shown_name: str | None = None) -> str:
+    """Return the member's model, or raise the reason it cannot be one.
+
+    ``shown_name`` is what the messages call the file; a caller who may change
+    it but not read it gets a stand-in instead of the filename (#3628).
+    """
+    shown_name = shown_name or lib_file.filename
     if lib_file.file_type not in _PRINTABLE_TYPES:
         raise HTTPException(
             400,
-            f"{lib_file.filename} is not a sliced file — only sliced output can be a print variant",
+            f"{shown_name} is not a sliced file — only sliced output can be a print variant",
         )
     model = resolve_variant_model(lib_file, explicit_model)
     if not model:
         raise HTTPException(
             400,
-            f"{lib_file.filename} does not say which printer it was sliced for — set its target model explicitly",
+            f"{shown_name} does not say which printer it was sliced for — set its target model explicitly",
         )
     if explicit_model:
         # Persist the user's answer, normalized. The group stores no model data
@@ -141,14 +146,29 @@ def visible_members_query(group_ids, user: User | ApiKeyActor | None, can_see_al
     return query
 
 
-def can_read_all_members(user: User | ApiKeyActor | None) -> bool:
+def can_read_all_members(actor: User | ApiKeyActor | None) -> bool:
     """Whether the caller may read every user's files (#3628).
 
     Mutation routes only know ``can_update_all``; what a response may *show*
-    depends on the READ permission. No user means auth is off or an all-scoped
-    API key, which reads everything.
+    depends on the READ permission. Ask this about the request's actor
+    (``RequestActor``), never about the user of an update dependency: that one
+    is None for an API key that may update everything, whatever the key may
+    read. No actor means auth is off.
     """
-    return user is None or user.has_permission(Permission.LIBRARY_READ_ALL.value)
+    return actor is None or actor.has_permission(Permission.LIBRARY_READ_ALL.value)
+
+
+# What a message calls a file the caller may change but not read (#3628).
+_UNREADABLE_FILE = "another file"
+
+
+def shown_filename(lib_file: LibraryFile, actor: User | ApiKeyActor | None, can_see_all: bool) -> str:
+    """The file's name for a message to this caller, or a stand-in when its read hides the file."""
+    if can_see_all or actor is None:
+        return lib_file.filename
+    if actor.id is not None and lib_file.created_by_id == actor.id:
+        return lib_file.filename
+    return _UNREADABLE_FILE
 
 
 async def masked_group_names(
@@ -157,30 +177,75 @@ async def masked_group_names(
     user: User | ApiKeyActor | None,
     can_see_all: bool,
 ) -> dict[int, str | None]:
-    """Group names the caller may see; None where the name would leak (#3628).
+    """Group names the caller may see; None where the name could leak (#3628).
 
-    A group is often named after its first file. When that file belongs to
-    someone the caller cannot read, the name would reveal its filename.
+    A group is named after its first file unless its creator typed a name, and
+    nothing records which. When that file belongs to someone the caller cannot
+    read, the name is its filename. Comparing the name with the members'
+    current filenames does not close that: the file can be renamed, trashed or
+    purged and the group still carries its old name. So a caller who cannot
+    read everything sees a stored name only when they created the group (they
+    typed it, or it comes from a file they could read), or when it is the name
+    of a member they can see now. Otherwise the route falls back to the first
+    member they can see.
     """
     if can_see_all or user is None or not names:
         return dict(names)
-    rows = (
+    if user.id is None:
+        # A key without an owner owns nothing.
+        return dict.fromkeys(names)
+    group_ids = list(names)
+    creators = dict(
+        (
+            await db.execute(
+                select(FileVariantGroup.id, FileVariantGroup.created_by_id).where(FileVariantGroup.id.in_(group_ids))
+            )
+        ).all()
+    )
+    own: dict[int, set[str]] = {}
+    for group_id, filename in (
+        await db.execute(
+            visible_members_query(group_ids, user, False).with_only_columns(
+                LibraryFile.variant_group_id, LibraryFile.filename
+            )
+        )
+    ).all():
+        own.setdefault(group_id, set()).add(filename)
+    return {
+        gid: name if creators.get(gid) == user.id or name in own.get(gid, ()) else None for gid, name in names.items()
+    }
+
+
+async def changeable_group_ids(
+    db: AsyncSession,
+    group_ids: set[int],
+    actor: User | ApiKeyActor | None,
+) -> set[int]:
+    """The groups among ``group_ids`` the caller may change (#3628).
+
+    The rule of :func:`_authorize_group_change`, asked for many groups at once
+    so that a listing can say it up front: everything with update_all, and with
+    update_own the groups whose live members are all the caller's own.
+    """
+    if not group_ids:
+        return set()
+    if actor is None or actor.has_permission(Permission.LIBRARY_UPDATE_ALL.value):
+        return set(group_ids)
+    if actor.id is None or not actor.has_permission(Permission.LIBRARY_UPDATE_OWN.value):
+        return set()
+    counts = (
         await db.execute(
             LibraryFile.active()
-            .where(LibraryFile.variant_group_id.in_(list(names)))
-            .with_only_columns(LibraryFile.variant_group_id, LibraryFile.filename, LibraryFile.created_by_id)
+            .where(LibraryFile.variant_group_id.in_(group_ids))
+            .with_only_columns(
+                LibraryFile.variant_group_id,
+                func.count(LibraryFile.id),
+                func.count(LibraryFile.id).filter(LibraryFile.created_by_id == actor.id),
+            )
+            .group_by(LibraryFile.variant_group_id)
         )
     ).all()
-    hidden: dict[int, set[str]] = {}
-    shown: dict[int, set[str]] = {}
-    for group_id, filename, owner_id in rows:
-        if group_id is None:
-            continue
-        (shown if owner_id == user.id else hidden).setdefault(group_id, set()).add(filename)
-    return {
-        gid: None if name in hidden.get(gid, ()) and name not in shown.get(gid, ()) else name
-        for gid, name in names.items()
-    }
+    return {gid for gid, total, mine in counts if mine > 0 and mine == total}
 
 
 async def _group_response(
@@ -258,7 +323,8 @@ async def _authorize_group_change(
         )
     ).scalar_one_or_none()
     if foreign is not None:
-        raise HTTPException(403, "This variant group contains files of other users")
+        # Says nothing about why: that other files exist is not the caller's to learn.
+        raise HTTPException(403, "You may not change this variant group")
     return group
 
 
@@ -291,9 +357,14 @@ async def create_variant_group(
             Permission.LIBRARY_UPDATE_OWN,
         )
     ),
+    actor: User | ApiKeyActor | None = RequestActor,
 ) -> VariantGroupResponse:
     """Group files as variants of one job, in priority order."""
     user, can_update_all = auth_result
+    readable = can_read_all_members(actor)
+
+    def shown(lib_file: LibraryFile) -> str:
+        return shown_filename(lib_file, actor, readable)
 
     file_ids = [m.library_file_id for m in payload.members]
     if len(set(file_ids)) != len(file_ids):
@@ -304,25 +375,31 @@ async def create_variant_group(
     if missing:
         raise HTTPException(404, f"Library file not found: {missing[0]}")
 
-    already_grouped = [files[fid].filename for fid in file_ids if files[fid].variant_group_id is not None]
+    already_grouped = [shown(files[fid]) for fid in file_ids if files[fid].variant_group_id is not None]
     if already_grouped:
         raise HTTPException(409, f"{already_grouped[0]} already belongs to a variant group")
 
     models: dict[str, str] = {}
     for member in payload.members:
         lib_file = files[member.library_file_id]
-        model = _validate_member(lib_file, member.target_model)
+        model = _validate_member(lib_file, member.target_model, shown(lib_file))
         if model in models:
             raise HTTPException(
                 400,
-                f"{lib_file.filename} and {models[model]} are both sliced for {model} — "
+                f"{shown(lib_file)} and {models[model]} are both sliced for {model} — "
                 "variants must target different printers",
             )
-        models[model] = lib_file.filename
+        models[model] = shown(lib_file)
 
+    # Named after its first file, but only one the caller may read: the name is
+    # shown to its creator from then on.
+    default_name = next(
+        (files[fid].filename for fid in file_ids if shown(files[fid]) == files[fid].filename),
+        "Variant group",
+    )
     group = FileVariantGroup(
-        name=payload.name or files[file_ids[0]].filename,
-        created_by_id=user.id if user else None,
+        name=payload.name or default_name,
+        created_by_id=actor.id if actor else None,
     )
     db.add(group)
     await db.flush()
@@ -333,7 +410,7 @@ async def create_variant_group(
 
     await db.commit()
     logger.info("Created variant group %s with %d members", group.id, len(file_ids))
-    return await _group_response(db, group, user, can_read_all_members(user))
+    return await _group_response(db, group, actor, readable)
 
 
 @router.get("/by-file/{file_id}", response_model=VariantGroupResponse)
@@ -396,6 +473,7 @@ async def update_variant_group(
             Permission.LIBRARY_UPDATE_OWN,
         )
     ),
+    actor: User | ApiKeyActor | None = RequestActor,
 ) -> VariantGroupResponse:
     """Rename the group, re-order its members, or both.
 
@@ -422,7 +500,7 @@ async def update_variant_group(
             files[fid].variant_position = position
 
     await db.commit()
-    return await _group_response(db, group, user, can_read_all_members(user))
+    return await _group_response(db, group, actor, can_read_all_members(actor))
 
 
 @router.post("/{group_id}/members", response_model=VariantGroupResponse)
@@ -436,6 +514,7 @@ async def add_variant_group_member(
             Permission.LIBRARY_UPDATE_OWN,
         )
     ),
+    actor: User | ApiKeyActor | None = RequestActor,
 ) -> VariantGroupResponse:
     """Attach another slice to an existing group.
 
@@ -449,12 +528,14 @@ async def add_variant_group_member(
     lib_file = files.get(payload.library_file_id)
     if not lib_file:
         raise HTTPException(404, "Library file not found")
+    readable = can_read_all_members(actor)
+    added_name = shown_filename(lib_file, actor, readable)
     if lib_file.variant_group_id == group.id:
-        raise HTTPException(409, f"{lib_file.filename} is already in this group")
+        raise HTTPException(409, f"{added_name} is already in this group")
     if lib_file.variant_group_id is not None:
-        raise HTTPException(409, f"{lib_file.filename} already belongs to a variant group")
+        raise HTTPException(409, f"{added_name} already belongs to a variant group")
 
-    model = _validate_member(lib_file, payload.target_model)
+    model = _validate_member(lib_file, payload.target_model, added_name)
 
     existing = (
         (
@@ -467,23 +548,19 @@ async def add_variant_group_member(
         .scalars()
         .all()
     )
-    readable = can_read_all_members(user)
     for other in existing:
         if resolve_variant_model(other) == model:
             # Never name a file the caller cannot read (#3628).
-            other_name = (
-                other.filename if readable or other.created_by_id == getattr(user, "id", None) else "another member"
-            )
             raise HTTPException(
                 400,
-                f"{lib_file.filename} and {other_name} are both sliced for {model} — "
+                f"{added_name} and {shown_filename(other, actor, readable)} are both sliced for {model} — "
                 "variants must target different printers",
             )
 
     lib_file.variant_group_id = group.id
     lib_file.variant_position = len(existing)
     await db.commit()
-    return await _group_response(db, group, user, readable)
+    return await _group_response(db, group, actor, readable)
 
 
 @router.delete("/{group_id}/members/{file_id}", response_model=None, status_code=204)

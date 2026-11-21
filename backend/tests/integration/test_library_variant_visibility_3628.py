@@ -20,10 +20,10 @@ class _GroupFixtures(TestOwnershipPermissionsSetup):
     async def make_group(self, db_session):
         """Create a group whose members are (owner_id, model, deleted) tuples."""
 
-        async def _create(members: list[tuple[int, str, bool]]):
+        async def _create(members: list[tuple[int, str, bool]], created_by: int | None = None, name: str = "bracket"):
             from backend.app.models.library import FileVariantGroup, LibraryFile
 
-            group = FileVariantGroup(name="bracket")
+            group = FileVariantGroup(name=name, created_by_id=created_by)
             db_session.add(group)
             await db_session.flush()
             files = []
@@ -154,7 +154,7 @@ class TestListWithVariantMembers(_GroupFixtures):
     ):
         here, there, nas = folders
         me = auth_setup["operator_user"]["id"]
-        _, files = await make_group([(me, "H2S", False), (me, "H2C", False), (me, "P1S", False)])
+        _, files = await make_group([(me, "H2S", False), (me, "H2C", False), (me, "P1S", False)], created_by=me)
         await self._place(db_session, files, [here.id, there.id, nas.id])
         files[2].is_external = True
         await db_session.commit()
@@ -320,7 +320,7 @@ class TestVariantGroupChangesCheckOwnership(_GroupFixtures):
     async def test_trashed_foreign_member_does_not_block_the_owner(self, async_client, auth_setup, make_group):
         me = auth_setup["operator_user"]["id"]
         other = auth_setup["operator2_user"]["id"]
-        group, files = await make_group([(me, "H2S", False), (me, "H2C", False), (other, "P1S", True)])
+        group, files = await make_group([(me, "H2S", False), (me, "H2C", False), (other, "P1S", True)], created_by=me)
         h = _h(auth_setup["operator_token"])
 
         # Reorder lists the live members only; the trashed one is ignored.
@@ -517,3 +517,330 @@ class TestWithVariantMembersFolderKind(_GroupFixtures):
         assert {f["id"] for f in internal.json()} == {files[0].id, files[1].id}
         external = await async_client.get(f"{base}&external_only=true", headers=h)
         assert {f["id"] for f in external.json()} == {files[2].id}
+
+
+class TestGroupNameNeverLeaksAFilename(_GroupFixtures):
+    """A stored group name is shown only where it cannot be someone else's filename (#3628)."""
+
+    async def _names(self, async_client, group, token):
+        h = _h(token)
+        single = await async_client.get(f"/api/v1/library/variant-groups/{group.id}", headers=h)
+        listing = await async_client.get("/api/v1/library/files?with_variant_members=true", headers=h)
+        return single, listing
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_name_stays_hidden_after_the_other_users_file_is_trashed(
+        self, async_client, auth_setup, make_group, db_session
+    ):
+        me = auth_setup["operator_user"]["id"]
+        other = auth_setup["operator2_user"]["id"]
+        group, files = await make_group(
+            [(other, "H2S", False), (me, "H2C", False), (me, "P1S", False)], created_by=other
+        )
+        leaked = files[0].filename
+        group.name = leaked  # named after the other user's file, as create does
+        files[0].deleted_at = datetime.now(timezone.utc)
+        await db_session.commit()
+
+        single, listing = await self._names(async_client, group, auth_setup["operator_token"])
+        assert single.status_code == 200
+        assert leaked not in single.text and leaked not in listing.text
+        assert single.json()["name"] == files[1].filename
+        assert {f["variant_group_name"] for f in listing.json()} == {None}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_name_stays_hidden_after_the_other_users_file_is_renamed(
+        self, async_client, auth_setup, make_group, db_session
+    ):
+        me = auth_setup["operator_user"]["id"]
+        other = auth_setup["operator2_user"]["id"]
+        group, files = await make_group([(other, "H2S", False), (me, "H2C", False)], created_by=other)
+        leaked = files[0].filename
+        group.name = leaked
+        files[0].filename = "renamed_since.gcode.3mf"
+        await db_session.commit()
+
+        single, listing = await self._names(async_client, group, auth_setup["operator_token"])
+        assert leaked not in single.text and leaked not in listing.text
+        assert single.json()["name"] == files[1].filename
+
+        # Whoever may read everything still sees the stored name.
+        everyone = await async_client.get(
+            f"/api/v1/library/variant-groups/{group.id}", headers=_h(auth_setup["admin_token"])
+        )
+        assert everyone.json()["name"] == leaked
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_creator_and_a_name_of_an_own_file_are_shown(self, async_client, auth_setup, make_group, db_session):
+        me = auth_setup["operator_user"]["id"]
+        other = auth_setup["operator2_user"]["id"]
+        # The caller created the group: its name is theirs to see, whatever it is.
+        typed, _ = await make_group([(me, "H2S", False), (me, "H2C", False)], created_by=me, name="My bracket")
+        # Someone else created it, but it is named after the caller's own file.
+        own_named, files = await make_group([(me, "H2S", False), (me, "H2C", False)], created_by=other)
+        own_named.name = files[0].filename
+        # Someone else created and named it: not shown, falls back to the caller's first file.
+        foreign, foreign_files = await make_group(
+            [(me, "H2S", False), (me, "H2C", False)], created_by=other, name="Somebody's name"
+        )
+        await db_session.commit()
+        h = _h(auth_setup["operator_token"])
+
+        async def name_of(group):
+            return (await async_client.get(f"/api/v1/library/variant-groups/{group.id}", headers=h)).json()["name"]
+
+        assert await name_of(typed) == "My bracket"
+        assert await name_of(own_named) == files[0].filename
+        assert await name_of(foreign) == foreign_files[0].filename
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_created_group_is_named_after_the_first_file_and_shown_to_its_creator(
+        self, async_client, auth_setup, db_session
+    ):
+        from backend.app.models.library import LibraryFile
+
+        me = auth_setup["operator_user"]["id"]
+        files = []
+        for model in ("H2S", "H2C"):
+            f = LibraryFile(
+                filename=f"new_{model}.gcode.3mf",
+                file_path=f"library/new_{model}.gcode.3mf",
+                file_type="gcode.3mf",
+                file_size=1,
+                file_metadata={"sliced_for_model": model},
+                created_by_id=me,
+            )
+            db_session.add(f)
+            files.append(f)
+        await db_session.commit()
+        for f in files:
+            await db_session.refresh(f)
+        h = _h(auth_setup["operator_token"])
+
+        r = await async_client.post(
+            "/api/v1/library/variant-groups",
+            json={"members": [{"library_file_id": f.id} for f in files]},
+            headers=h,
+        )
+        assert r.status_code == 201, r.text
+        assert r.json()["name"] == files[0].filename
+        listing = await async_client.get("/api/v1/library/files?with_variant_members=true", headers=h)
+        assert {f["variant_group_name"] for f in listing.json()} == {files[0].filename}
+
+
+class TestListSaysWhetherAGroupMayBeChanged(_GroupFixtures):
+    """`variant_group_editable` mirrors what the change routes would answer (#3628)."""
+
+    async def _flags(self, async_client, token, query="?with_variant_members=true"):
+        r = await async_client.get(f"/api/v1/library/files{query}", headers=_h(token))
+        assert r.status_code == 200, r.text
+        return {f["id"]: f["variant_group_editable"] for f in r.json()}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_read_own_update_own_user_may_change_only_groups_that_are_all_theirs(
+        self, async_client, auth_setup, make_group
+    ):
+        me = auth_setup["operator_user"]["id"]
+        other = auth_setup["operator2_user"]["id"]
+        _, mine = await make_group([(me, "H2S", False), (me, "H2C", False)])
+        # The default Operators case: sees two own versions, a third is hidden.
+        mixed_group, mixed = await make_group([(me, "H2S", False), (me, "H2C", False), (other, "P1S", False)])
+        # A trashed foreign member blocks nothing, as on the change routes.
+        _, trashed = await make_group([(me, "H2S", False), (me, "H2C", False), (other, "P1S", True)])
+
+        flags = await self._flags(async_client, auth_setup["operator_token"])
+        assert flags == {
+            mine[0].id: True,
+            mine[1].id: True,
+            mixed[0].id: False,
+            mixed[1].id: False,
+            trashed[0].id: True,
+            trashed[1].id: True,
+        }
+
+        # The flag and the server agree, and the refusal names no cause.
+        r = await async_client.delete(
+            f"/api/v1/library/variant-groups/{mixed_group.id}", headers=_h(auth_setup["operator_token"])
+        )
+        assert r.status_code == 403
+        assert r.json()["detail"] == "You may not change this variant group"
+        assert "other" not in r.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_all_may_change_every_group_and_no_update_permission_none(
+        self, async_client, auth_setup, make_group
+    ):
+        me = auth_setup["operator_user"]["id"]
+        other = auth_setup["operator2_user"]["id"]
+        await make_group([(me, "H2S", False), (other, "H2C", False)])
+
+        assert set((await self._flags(async_client, auth_setup["admin_token"])).values()) == {True}
+
+        admin = _h(auth_setup["admin_token"])
+        group = await async_client.post(
+            "/api/v1/groups/", headers=admin, json={"name": "ReadAllOnly", "permissions": ["library:read_all"]}
+        )
+        assert group.status_code in (200, 201)
+        await async_client.post(
+            "/api/v1/users/",
+            headers=admin,
+            json={"username": "looker1", "password": "Lookerpass1!", "group_ids": [group.json()["id"]]},
+        )
+        login = await async_client.post("/api/v1/auth/login", json={"username": "looker1", "password": "Lookerpass1!"})
+        assert set((await self._flags(async_client, login.json()["access_token"])).values()) == {False}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_flag_is_only_sent_with_variant_members(self, async_client, auth_setup, make_group):
+        me = auth_setup["operator_user"]["id"]
+        await make_group([(me, "H2S", False), (me, "H2C", False)])
+        assert set((await self._flags(async_client, auth_setup["operator_token"], "")).values()) == {None}
+
+
+class TestUpdateAllWithReadOwn(_GroupFixtures):
+    """What a caller may change and what it may read are separate questions (#3628).
+
+    update_all with only read_own: it may change any group, and still must not
+    be shown, in a response or in an error, a file its read permission hides.
+    """
+
+    @pytest.fixture
+    async def changer(self, async_client, auth_setup, db_session):
+        """A read_own + update_all user: (token, user id, API key header for a key of theirs)."""
+        from sqlalchemy import select
+
+        from backend.app.core.auth import generate_api_key
+        from backend.app.models.api_key import APIKey
+        from backend.app.models.user import User
+
+        admin = _h(auth_setup["admin_token"])
+        group = await async_client.post(
+            "/api/v1/groups/",
+            headers=admin,
+            json={"name": "ReadOwnUpdateAll", "permissions": ["library:read_own", "library:update_all"]},
+        )
+        assert group.status_code in (200, 201)
+        await async_client.post(
+            "/api/v1/users/",
+            headers=admin,
+            json={"username": "changer1", "password": "Changerpass1!", "group_ids": [group.json()["id"]]},
+        )
+        login = await async_client.post(
+            "/api/v1/auth/login", json={"username": "changer1", "password": "Changerpass1!"}
+        )
+        user_id = await db_session.scalar(select(User.id).where(User.username == "changer1"))
+        full_key, key_hash, key_prefix = generate_api_key()
+        db_session.add(
+            APIKey(
+                name="changer",
+                key_hash=key_hash,
+                key_prefix=key_prefix,
+                user_id=user_id,
+                can_queue=True,
+                can_read_status=True,
+                can_manage_archives=True,
+                can_manage_library=True,
+            )
+        )
+        await db_session.commit()
+        return login.json()["access_token"], user_id, {"X-API-Key": full_key}
+
+    @pytest.fixture
+    async def make_loose(self, db_session):
+        async def _create(owner_id: int, model: str):
+            from backend.app.models.library import LibraryFile
+
+            f = LibraryFile(
+                filename=f"loose_{model}.gcode.3mf",
+                file_path=f"library/loose_{model}.gcode.3mf",
+                file_type="gcode.3mf",
+                file_size=1,
+                file_metadata={"sliced_for_model": model},
+                created_by_id=owner_id,
+            )
+            db_session.add(f)
+            await db_session.commit()
+            await db_session.refresh(f)
+            return f
+
+        return _create
+
+    @staticmethod
+    def _url(group, suffix=""):
+        return f"/api/v1/library/variant-groups/{group.id}{suffix}"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("via", ["session", "api_key"])
+    async def test_change_response_lists_only_what_the_caller_may_read(
+        self, async_client, auth_setup, make_group, changer, via
+    ):
+        token, me, key = changer
+        headers = _h(token) if via == "session" else key
+        other = auth_setup["operator2_user"]["id"]
+        group, files = await make_group([(me, "H2S", False), (other, "H2C", False), (me, "P1S", False)])
+
+        r = await async_client.patch(self._url(group), json={"name": "renamed"}, headers=headers)
+        assert r.status_code == 200, r.text
+        assert [m["library_file_id"] for m in r.json()["members"]] == [files[0].id, files[2].id]
+        assert files[1].filename not in r.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("via", ["session", "api_key"])
+    async def test_collision_message_does_not_name_a_member_the_caller_cannot_read(
+        self, async_client, auth_setup, make_group, make_loose, changer, via
+    ):
+        token, me, key = changer
+        headers = _h(token) if via == "session" else key
+        other = auth_setup["operator2_user"]["id"]
+        group, files = await make_group([(me, "H2S", False), (other, "H2C", False)])
+        mine = await make_loose(me, "H2C")  # collides with the other user's member
+
+        r = await async_client.post(self._url(group, "/members"), json={"library_file_id": mine.id}, headers=headers)
+        assert r.status_code == 400
+        detail = r.json()["detail"]
+        assert "both sliced for H2C" in detail
+        assert mine.filename in detail
+        assert files[1].filename not in detail
+        assert "another file" in detail
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("via", ["session", "api_key"])
+    async def test_messages_about_a_file_the_caller_may_change_but_not_read_do_not_name_it(
+        self, async_client, auth_setup, make_group, make_loose, changer, via
+    ):
+        token, me, key = changer
+        headers = _h(token) if via == "session" else key
+        other = auth_setup["operator2_user"]["id"]
+        group, _ = await make_group([(me, "H2S", False), (me, "H2C", False)])
+        _, taken = await make_group([(other, "X1C", False), (other, "P1S", False)])
+        theirs = await make_loose(other, "H2S")
+
+        # Already in another group.
+        r = await async_client.post(
+            self._url(group, "/members"), json={"library_file_id": taken[0].id}, headers=headers
+        )
+        assert r.status_code == 409 and taken[0].filename not in r.text
+
+        # Collides with the caller's own member: theirs is named, the hidden one is not.
+        r = await async_client.post(self._url(group, "/members"), json={"library_file_id": theirs.id}, headers=headers)
+        assert r.status_code == 400 and theirs.filename not in r.text
+
+        # Creating a group from files it cannot read: no filename in the answer or the name.
+        other_h2c = await make_loose(other, "H2C")
+        r = await async_client.post(
+            "/api/v1/library/variant-groups",
+            json={"members": [{"library_file_id": theirs.id}, {"library_file_id": other_h2c.id}]},
+            headers=headers,
+        )
+        assert r.status_code == 201, r.text
+        assert theirs.filename not in r.text and other_h2c.filename not in r.text
+        assert r.json()["members"] == []

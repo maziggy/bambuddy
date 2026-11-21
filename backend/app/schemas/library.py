@@ -255,11 +255,13 @@ class FileListResponse(BaseModel):
     variant_group_id: int | None = None
     variant_count: int = 0
     # Only filled with ``with_variant_members=true`` (#3628): the group's name and
-    # this file's place in it, whether the row was added because its group is in
+    # this file's place in it, whether the caller may change the group (ungroup
+    # it, take a version out), whether the row was added because its group is in
     # the result although the file itself is in another folder, and that folder's
     # name (only set on those rows).
     variant_group_name: str | None = None
     variant_position: int | None = None
+    variant_group_editable: bool | None = None
     variant_elsewhere: bool = False
     folder_name: str | None = None
 

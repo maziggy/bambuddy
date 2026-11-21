@@ -595,6 +595,7 @@ export default {
       loadInitiated: 'Filament wird geladen…',
       unloadInitiated: 'Filament wird entladen…',
       unloadAms3h: 'Slot {{n}} wird entladen. Sobald der Drucker dazu auffordert, das Filament von Hand aus dem AMS 3H zurückziehen.',
+      unloadAllAms3h: "Alle geladenen Slots werden entladen. Sobald der Drucker dazu auffordert, das Filament von Hand aus dem AMS 3H zurückziehen.",
       failedToLoad: 'Filament konnte nicht geladen werden',
       failedToUnload: 'Filament konnte nicht entladen werden',
       chamberLightOn: 'Kammerbeleuchtung eingeschaltet',
@@ -627,6 +628,9 @@ export default {
     ams: {
       load: 'Laden',
       unload: 'Entladen',
+      unloadAll: "Alle entladen",
+      unloadAllTitle: "Alle Slots entladen?",
+      unloadAllMessage: "Der Drucker entlädt alle geladenen Slots des AMS 3H nacheinander. Sobald er dazu auffordert, das Filament von Hand aus dem AMS 3H zurückziehen. Bleib dafür am Drucker.",
       feedTitle: '{{slot}} in welche Düse laden?',
       feedPrompt: 'Der Filament Track Switch kann diesen Slot zu beiden Hotends leiten. Wähle, welches beschickt werden soll.',
       feedLeft: 'Linke Düse',

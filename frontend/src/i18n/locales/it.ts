@@ -595,6 +595,7 @@ export default {
       loadInitiated: 'Caricamento filamento…',
       unloadInitiated: 'Scaricamento filamento…',
       unloadAms3h: 'Scaricamento dello slot {{n}}. Quando la stampante lo chiede, estrai a mano il filamento dall\'AMS 3H.',
+      unloadAllAms3h: "Scaricamento di tutti gli slot caricati. Quando la stampante lo chiede, estrai a mano il filamento dall'AMS 3H.",
       failedToLoad: 'Caricamento filamento fallito',
       failedToUnload: 'Scaricamento filamento fallito',
       chamberLightOn: 'Luce camera accesa',
@@ -627,6 +628,9 @@ export default {
     ams: {
       load: 'Carica',
       unload: 'Scarica',
+      unloadAll: "Scarica tutto",
+      unloadAllTitle: "Scaricare tutti gli slot?",
+      unloadAllMessage: "La stampante scarica uno dopo l'altro tutti gli slot caricati dell'AMS 3H. Quando lo chiede, estrai a mano il filamento dall'AMS 3H, quindi resta vicino alla stampante.",
       feedTitle: 'Caricare {{slot}} in quale ugello?',
       feedPrompt: 'Il Filament Track Switch può instradare questo slot verso entrambi gli hotend. Scegli quale alimentare.',
       feedLeft: 'Ugello sinistro',

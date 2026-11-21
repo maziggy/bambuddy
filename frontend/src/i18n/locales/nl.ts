@@ -598,6 +598,7 @@ export default {
       loadInitiated: 'Filament laden…',
       unloadInitiated: 'Filament ontladen…',
       unloadAms3h: 'Sleuf {{n}} wordt ontladen. Trek het filament met de hand uit de AMS 3H terug zodra de printer daarom vraagt.',
+      unloadAllAms3h: "Alle geladen sleuven worden ontladen. Trek het filament met de hand uit de AMS 3H terug zodra de printer daarom vraagt.",
       failedToLoad: 'Filament laden mislukt',
       failedToUnload: 'Filament ontladen mislukt',
       chamberLightOn: 'Kamerverlichting aan',
@@ -630,6 +631,9 @@ export default {
     ams: {
       load: 'Laden',
       unload: 'Ontladen',
+      unloadAll: "Alles ontladen",
+      unloadAllTitle: "Alle sleuven ontladen?",
+      unloadAllMessage: "De printer ontlaadt alle geladen sleuven van de AMS 3H na elkaar. Trek het filament met de hand uit de AMS 3H terug zodra de printer daarom vraagt, dus blijf bij de printer.",
       feedTitle: '{{slot}} naar welke nozzle laden?',
       feedPrompt: 'De Filament Track Switch kan dit slot naar beide hotends leiden. Kies welke je wilt voeden.',
       feedLeft: 'Linker nozzle',

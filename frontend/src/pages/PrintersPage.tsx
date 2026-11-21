@@ -199,7 +199,7 @@ import { PrintModal } from '../components/PrintModal';
 import { PrinterInfoModal } from '../components/PrinterInfoModal';
 import { FeedDirectionModal } from '../components/FeedDirectionModal';
 import { plateCheckFailureText } from '../utils/plateCheck';
-import { ams3hDryerGridColumns, ams3hSlotGridPlacement, amsUnitSlotCount, isAms3hUnit, rackExternalLabel, amsHasLoadedTray, getAmsLabel, getEmptySlotKind, getGlobalTrayId, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag, installedNozzleDiameters, isAmsHtUnit, isBambuLabSpool, trayForSlot, resolveSlotNozzleDiameter, resolveSlotExtruder, formatSlotLabel, slotPresetDescribesTray, FTS_INLET_SIDE } from '../utils/amsHelpers';
+import { ams3hDryerGridColumns, ams3hHasLoadedSlot, ams3hSlotGridPlacement, amsUnitSlotCount, isAms3hUnit, rackExternalLabel, amsHasLoadedTray, getAmsLabel, getEmptySlotKind, getGlobalTrayId, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag, installedNozzleDiameters, isAmsHtUnit, isBambuLabSpool, trayForSlot, resolveSlotNozzleDiameter, resolveSlotExtruder, formatSlotLabel, slotPresetDescribesTray, FTS_INLET_SIDE } from '../utils/amsHelpers';
 import { RACK_SLOT_COUNT, externalHotend, externalSlotIndex, isExternalTray, layoutAmsType, locateTray, trayLayoutOf } from '../utils/trayIds';
 import { MAX_CHAMBER_TEMP_C, PANDA_BREATH_MAX_TARGET_C, getPrinterImage, getWifiStrength, filterCompatibleQueueItems, isPrinterCurrentlyDispatchable, IDLE_PRINTER_STATES } from '../utils/printer';
 import { FilamentSlotCircle } from '../components/FilamentSlotCircle';
@@ -2303,6 +2303,7 @@ function PrinterCard({
   const [showFileManager, setShowFileManager] = useState(false);
   const [showMQTTDebug, setShowMQTTDebug] = useState(false);
   const [showPowerOnConfirm, setShowPowerOnConfirm] = useState(false);
+  const [showUnloadAllConfirm, setShowUnloadAllConfirm] = useState(false);
   const [showPowerOffConfirm, setShowPowerOffConfirm] = useState(false);
   const [haToggleConfirm, setHaToggleConfirm] = useState<SmartPlug | null>(null);
   const [showHMSModal, setShowHMSModal] = useState(false);
@@ -3409,6 +3410,15 @@ function PrinterCard({
       }
       showToast(data.message || t('printers.toast.unloadInitiated'));
     },
+    onError: (error: Error) => {
+      showToast(error.message || t('printers.toast.failedToUnload'), 'error');
+    },
+  });
+
+  // H3C: every loaded AMS 3H slot in one command (#3531).
+  const unloadAllAmsMutation = useMutation({
+    mutationFn: () => api.unloadAllAms(printer.id),
+    onSuccess: () => showToast(t('printers.toast.unloadAllAms3h'), 'warning'),
     onError: (error: Error) => {
       showToast(error.message || t('printers.toast.failedToUnload'), 'error');
     },
@@ -5728,6 +5738,22 @@ function PrinterCard({
                                       <Flame className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)]" />
                                     </button>
                                   )}
+                                  {/* H3C Unload all (#3531): only while a slot's filament is in its hotend. */}
+                                  {cardAms3h && ams3hHasLoadedSlot(ams) && hasPermission('printers:control') && (
+                                    <button
+                                      disabled={status.state === 'RUNNING' || unloadAllAmsMutation.isPending}
+                                      onClick={() => setShowUnloadAllConfirm(true)}
+                                      className={`ml-1 flex items-center gap-0.5 px-1 py-0.5 rounded text-[length:var(--pc-t9,9px)] transition-colors ${
+                                        status.state === 'RUNNING'
+                                          ? 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
+                                          : 'bg-bambu-dark text-bambu-gray hover:text-white hover:bg-bambu-dark/80'
+                                      }`}
+                                      title={status.state === 'RUNNING' ? t('printers.bedJog.disabledWhilePrinting') : t('printers.ams.unloadAll')}
+                                      aria-label={t('printers.ams.unloadAll')}
+                                    >
+                                      <LogOut className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)]" />
+                                    </button>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -7459,6 +7485,20 @@ function PrinterCard({
             </div>
           </div>
         </div>
+      )}
+
+      {showUnloadAllConfirm && (
+        <ConfirmModal
+          title={t('printers.ams.unloadAllTitle')}
+          message={t('printers.ams.unloadAllMessage')}
+          confirmText={t('printers.ams.unloadAll')}
+          variant="default"
+          onConfirm={() => {
+            unloadAllAmsMutation.mutate();
+            setShowUnloadAllConfirm(false);
+          }}
+          onCancel={() => setShowUnloadAllConfirm(false)}
+        />
       )}
 
       {/* Power On Confirmation */}

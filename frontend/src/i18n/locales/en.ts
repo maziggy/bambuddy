@@ -600,6 +600,7 @@ export default {
       loadInitiated: 'Loading filament…',
       unloadInitiated: 'Unloading filament…',
       unloadAms3h: 'Unloading slot {{n}}. When the printer asks, pull the filament back out of the AMS 3H by hand.',
+      unloadAllAms3h: "Unloading all loaded slots. When the printer asks, pull the filament back out of the AMS 3H by hand.",
       failedToLoad: 'Failed to load filament',
       failedToUnload: 'Failed to unload filament',
       chamberLightOn: 'Chamber light on',
@@ -632,6 +633,9 @@ export default {
     ams: {
       load: 'Load',
       unload: 'Unload',
+      unloadAll: "Unload all",
+      unloadAllTitle: "Unload all slots?",
+      unloadAllMessage: "The printer unloads every loaded AMS 3H slot, one after another. When it asks, pull the filament back out of the AMS 3H by hand, so stay at the printer.",
       feedTitle: 'Load {{slot}} to which nozzle?',
       feedPrompt: 'The Filament Track Switch can route this slot to either hotend. Choose which one to feed.',
       feedLeft: 'Left nozzle',

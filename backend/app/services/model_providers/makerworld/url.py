@@ -63,6 +63,20 @@ def parse_url(url: str) -> ProviderResourceRef:
     )
 
 
+def model_id_from_source_url(source_url: str | None) -> int | None:
+    """Extract the MakerWorld design id from a library ``source_url``, if any.
+
+    Accepts the canonical shapes written by :func:`canonical_url`
+    (``https://makerworld.com/models/{id}`` and
+    ``…/models/{id}#profileId-{pid}``). Returns ``None`` when the string is
+    empty or has no ``/models/{digits}`` segment.
+    """
+    if not source_url:
+        return None
+    match = _MODEL_ID_RE.search(source_url)
+    return int(match.group(1)) if match else None
+
+
 def canonical_url(ref: ProviderResourceRef) -> str:
     """Build a stable dedupe key for a MakerWorld resource.
 

@@ -2510,14 +2510,6 @@
                     "endColumn": 24,
                     "lineCount": 1
                 }
-            },
-            {
-                "code": "reportArgumentType",
-                "range": {
-                    "startColumn": 46,
-                    "endColumn": 54,
-                    "lineCount": 1
-                }
             }
         ],
         "./backend/app/services/library_folder_access.py": [

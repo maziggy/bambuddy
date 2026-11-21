@@ -14,7 +14,10 @@ const SOURCES = [
 ];
 
 function resolveKey(path: string): unknown {
-  return path.split('.').reduce<unknown>((node, part) => (node as Record<string, unknown> | undefined)?.[part], en);
+  const walk = (p: string) =>
+    p.split('.').reduce<unknown>((node, part) => (node as Record<string, unknown> | undefined)?.[part], en);
+  // A plural key lives under _one/_other (#3612).
+  return walk(path) ?? walk(`${path}_other`);
 }
 
 describe('label picker translation keys', () => {

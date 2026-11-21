@@ -45,6 +45,7 @@ import { SpoolmanSettings } from '../components/SpoolmanSettings';
 import { SpoolCatalogSettings } from '../components/SpoolCatalogSettings';
 import { ColorCatalogSettings } from '../components/ColorCatalogSettings';
 import { ProfileDefaultsSettings } from '../components/ProfileDefaultsSettings';
+import { LabelPrinterSettings } from '../components/LabelPrinterSettings';
 import { ExternalLinksSettings } from '../components/ExternalLinksSettings';
 import { VirtualPrinterList } from '../components/VirtualPrinterList';
 import { SpoolBuddySettings } from '../components/SpoolBuddySettings';
@@ -108,6 +109,7 @@ registerSettingsSearch({ labelKey: 'settings.filamentChecks', tab: 'filament', k
 registerSettingsSearch({ labelKey: 'settings.printModal', tab: 'filament', keywords: 'print modal custom mapping', anchor: 'card-printmodal' });
 registerSettingsSearch({ labelKey: 'settings.amsDisplayThresholds', tab: 'filament', keywords: 'ams humidity temperature threshold history retention', anchor: 'card-amsthresholds' });
 registerSettingsSearch({ labelKey: 'inventory.profileDefaults.title', tab: 'filament', keywords: 'profile default k-profile k factor pressure advance slicer preset new spool', anchor: 'card-profiledefaults' });
+registerSettingsSearch({ labelKey: 'settings.labelPrinter.title', labelFallback: 'Label printer', tab: 'filament', keywords: 'label printer brother ql direct print spool labels tape network', anchor: 'card-label-printer' });
 registerSettingsSearch({ labelKey: 'settings.externalUrl', tab: 'network', keywords: 'external url reverse proxy public notification link', anchor: 'card-externalurl' });
 registerSettingsSearch({ labelKey: 'settings.ftpRetry', tab: 'network', keywords: 'ftp retry upload retries backoff', anchor: 'card-ftpretry' });
 registerSettingsSearch({ labelKey: 'settings.homeAssistant', tab: 'network', keywords: 'home assistant ha hass mqtt integration', anchor: 'card-ha' });
@@ -6827,6 +6829,7 @@ export function SettingsPage() {
 
           {/* Right Column (2/3) - Spool Catalog + Color Catalog */}
           <div className="lg:w-2/3 space-y-3">
+            <LabelPrinterSettings />
             <ProfileDefaultsSettings />
             <SpoolCatalogSettings />
             <ColorCatalogSettings />

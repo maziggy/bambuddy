@@ -210,7 +210,8 @@ async def masked_group_names(
             )
         )
     ).all():
-        own.setdefault(group_id, set()).add(filename)
+        if group_id is not None:
+            own.setdefault(group_id, set()).add(filename)
     return {
         gid: name if creators.get(gid) == user.id or name in own.get(gid, ()) else None for gid, name in names.items()
     }
@@ -245,7 +246,7 @@ async def changeable_group_ids(
             .group_by(LibraryFile.variant_group_id)
         )
     ).all()
-    return {gid for gid, total, mine in counts if mine > 0 and mine == total}
+    return {gid for gid, total, mine in counts if gid is not None and mine > 0 and mine == total}
 
 
 async def _group_response(

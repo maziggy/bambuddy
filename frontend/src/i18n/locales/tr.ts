@@ -3261,6 +3261,15 @@ export default {
     second_other: '{{count}} saniye',
     nSeconds: '{{count}} saniye',
     increaseForWeakWifi: 'Zayıf WiFi\'li yazıcılar için artırın',
+    // Printer Rediscovery
+    printerRediscovery: 'Yazıcı Yeniden Keşfi',
+    printerRediscoveryDescription: 'Çevrimdışı bir yazıcı yeni bir IP adresi aldığında otomatik olarak algılar ve seri numarası ile erişim kodunu doğruladıktan sonra yeniden bağlanır.',
+    enablePrinterRediscovery: 'Otomatik Yeniden Keşfi Etkinleştir',
+    printerRediscoverySsdpDescription: 'Etkin yazıcılar kayıp olduğunda Bambu SSDP duyurularını dinle',
+    printerRediscoverySubnetScan: 'Yedek Alt Ağ Taraması',
+    printerRediscoverySubnetScanDescription: 'SSDP çoklu yayını yönlendiriciler tarafından engellendiğinde yerel alt ağda 8883 portunu düşük hızda yokla',
+    printerRediscoveryScanInterval: 'Minimum Tarama Aralığı (dakika)',
+    printerRediscoveryScanIntervalHint: 'Ağ ekipmanlarının trafiği şüpheli olarak işaretlememesi için alt ağ taramalarını sınırlar (5–60 dk)',
     // Home Assistant
     homeAssistant: 'Home Assistant',
     homeAssistantFullDescription: 'HA\'nın REST API\'si üzerinden akıllı prizleri kontrol etmek için Home Assistant\'a bağlanın. switch, light, input_boolean ve script varlıklarını destekler.',

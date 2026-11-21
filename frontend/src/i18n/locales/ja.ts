@@ -3257,6 +3257,15 @@ export default {
     second_other: '{{count}}秒',
     nSeconds: '{{count}}秒',
     increaseForWeakWifi: 'Wi-Fiが弱いプリンター用に増やしてください',
+    // Printer Rediscovery
+    printerRediscovery: 'プリンターの自動再検出',
+    printerRediscoveryDescription: 'オフラインのプリンターに新しいIPアドレスが割り当てられた際に自動検出し、シリアル番号とアクセスコードを確認してから再接続します。',
+    enablePrinterRediscovery: '自動再検出を有効にする',
+    printerRediscoverySsdpDescription: '有効なプリンターが見つからないときにBambu SSDP通知を待機します',
+    printerRediscoverySubnetScan: 'フォールバック・サブネットスキャン',
+    printerRediscoverySubnetScanDescription: 'SSDPマルチキャストがルーターで遮断されている場合、ローカルサブネットのポート8883を低負荷で探索します',
+    printerRediscoveryScanInterval: '最小スキャン間隔（分）',
+    printerRediscoveryScanIntervalHint: 'ネットワーク機器に不審な通信と判定されないようサブネットスキャンの頻度を制限します（5〜60分）',
     // Home Assistant
     homeAssistant: 'Home Assistant',
     homeAssistantFullDescription: 'Home Assistantに接続してHA REST API経由でスマートプラグを制御。switch、light、input_boolean、scriptエンティティをサポート。',

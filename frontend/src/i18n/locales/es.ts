@@ -9545,4 +9545,26 @@ export default {
     scanHint: 'Escanee para abrir este archivo',
     download: 'Descargar código QR',
   },
+  // "To do" list of what the queue waits on (#3615)
+  queueTodo: {
+    title: "Pendiente",
+    badgeLabel: "Pendiente: {{count}}",
+    anyModel: "Cualquier {{model}}",
+    jobCount_one: "{{count}} trabajo",
+    jobCount_other: "{{count}} trabajos",
+    kind: {
+      plateClear: "Confirmar que la cama está libre",
+      loadFilament: "Cargar filamento",
+      startStaged: "Iniciar el trabajo en espera",
+      sensorInterlock: "Bloqueado por un sensor",
+      powerOnFailed: "La impresora no se encendió",
+      loadFilamentOn: "Cargar filamento en",
+    },
+    plateIsClear: "Cama despejada",
+    or: "o",
+    noStock: "no queda en el inventario",
+    openPrinter: "Abrir impresora",
+    openQueue: "Abrir cola",
+    actionFailed: "La acción falló",
+  },
 };

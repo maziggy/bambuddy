@@ -344,6 +344,40 @@ describe('useWebSocket hook', () => {
       vi.unstubAllGlobals();
     });
 
+    it('invalidates the queue to-do list on queue and print events (#3615)', async () => {
+      vi.useFakeTimers();
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+      renderHook(() => useWebSocket(), { wrapper: createWrapper(queryClient) });
+      const ws = await waitForWs();
+      act(() => {
+        ws.open();
+      });
+
+      act(() => {
+        ws.simulateMessage({ type: 'queue_item_failed', printer_id: 1 });
+      });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['queue-todo'] });
+
+      invalidateSpy.mockClear();
+      act(() => {
+        ws.simulateMessage({ type: 'queue_item_upload_progress', printer_id: 1, item_id: 5, progress: 40 });
+      });
+      expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['queue-todo'] });
+
+      invalidateSpy.mockClear();
+      act(() => {
+        ws.simulateMessage({ type: 'print_complete', printer_id: 1, data: { status: 'completed' } });
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(4000);
+      });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['queue-todo'] });
+
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    });
+
     it('invalidates archives on archive_created message', async () => {
       vi.useFakeTimers();
       const { useWebSocket } = await import('../../hooks/useWebSocket');

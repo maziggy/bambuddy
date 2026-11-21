@@ -259,6 +259,11 @@ export function useWebSocket() {
     pendingPrinterStatus.current.clear();
 
     updates.forEach((statusData, id) => {
+      // A changed plate-clear gate changes the queue's "to do" list (#3615).
+      const before = queryClient.getQueryData<{ awaiting_plate_clear?: boolean }>(['printerStatus', id]);
+      if ('awaiting_plate_clear' in statusData && before?.awaiting_plate_clear !== statusData.awaiting_plate_clear) {
+        queryClient.invalidateQueries({ queryKey: ['queue-todo'] });
+      }
       queryClient.setQueryData(['printerStatus', id], (old: Record<string, unknown> | undefined) => {
         const merged = { ...old, ...statusData };
         if (merged.wifi_signal == null && old?.wifi_signal != null) {
@@ -350,6 +355,8 @@ export function useWebSocket() {
     queryClient.invalidateQueries({ queryKey: ['slotPresets'] });
     // Both modes' bindings, which the print dialog prices and weighs slots from.
     queryClient.invalidateQueries({ queryKey: ['printer-inventory-remain'] });
+    // Loaded filament can release a job's filament hold (#3615).
+    queryClient.invalidateQueries({ queryKey: ['queue-todo'] });
   }, [queryClient]);
 
   const handleMessage = useCallback((message: WebSocketMessage) => {
@@ -365,6 +372,7 @@ export function useWebSocket() {
         if (message.printer_id !== undefined) {
           queryClient.invalidateQueries({ queryKey: ['printerStatus', message.printer_id] });
         }
+        queryClient.invalidateQueries({ queryKey: ['queue-todo'] });
         break;
 
       case 'missing_spool_assignment': {
@@ -399,6 +407,7 @@ export function useWebSocket() {
       case 'print_complete':
         // Don't invalidate printerStatus here - it causes re-render cascade and browser freeze
         // The printer_status websocket messages will naturally update the status
+        debouncedInvalidate('queue-todo');
         debouncedInvalidate('archives');
         debouncedInvalidate('archiveStats');
         // A print ended: the archive page's prints and the calendar's.
@@ -667,6 +676,11 @@ export function useWebSocket() {
       case 'queue_item_upload_progress':
       case 'queue_item_acked':
       case 'queue_item_failed':
+        // Progress ticks many times a second and change nothing the to-do
+        // list shows (#3615); only the transitions do.
+        if (message.type !== 'queue_item_upload_progress') {
+          queryClient.invalidateQueries({ queryKey: ['queue-todo'] });
+        }
         window.dispatchEvent(new CustomEvent('bambuddy:dispatch-toast', { detail: message }));
         break;
       // Slicer Pipeline runs (#1425 PR C). State transitions on the run

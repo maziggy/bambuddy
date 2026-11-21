@@ -9520,4 +9520,26 @@ export default {
     scanHint: '掃描以開啟此歸檔',
     download: '下載 QR 碼',
   },
+  // "To do" list of what the queue waits on (#3615)
+  queueTodo: {
+    title: "待辦",
+    badgeLabel: "待辦：{{count}}",
+    anyModel: "任意 {{model}}",
+    jobCount_one: "{{count}} 個工作",
+    jobCount_other: "{{count}} 個工作",
+    kind: {
+      plateClear: "確認列印板已清空",
+      loadFilament: "裝入耗材",
+      startStaged: "啟動待命的工作",
+      sensorInterlock: "被感測器阻擋",
+      powerOnFailed: "印表機未能開機",
+      loadFilamentOn: "裝入耗材到",
+    },
+    plateIsClear: "列印板已清空",
+    or: "或",
+    noStock: "庫存已用完",
+    openPrinter: "開啟印表機",
+    openQueue: "開啟佇列",
+    actionFailed: "操作失敗",
+  },
 };

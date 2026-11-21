@@ -9536,4 +9536,26 @@ export default {
     scanHint: 'スキャンしてこのアーカイブを開く',
     download: 'QRコードをダウンロード',
   },
+  // "To do" list of what the queue waits on (#3615)
+  queueTodo: {
+    title: "やること",
+    badgeLabel: "やること: {{count}}",
+    anyModel: "任意の{{model}}",
+    jobCount_one: "{{count}} 件のジョブ",
+    jobCount_other: "{{count}} 件のジョブ",
+    kind: {
+      plateClear: "プレートが空であることを確認",
+      loadFilament: "フィラメントをセット",
+      startStaged: "待機中のジョブを開始",
+      sensorInterlock: "センサーによりブロック中",
+      powerOnFailed: "プリンターの電源が入りませんでした",
+      loadFilamentOn: "フィラメントをセット:",
+    },
+    plateIsClear: "プレートは空です",
+    or: "または",
+    noStock: "在庫なし",
+    openPrinter: "プリンターを開く",
+    openQueue: "キューを開く",
+    actionFailed: "操作に失敗しました",
+  },
 };

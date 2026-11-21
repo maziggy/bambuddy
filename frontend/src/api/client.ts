@@ -2899,6 +2899,32 @@ export interface DiscoveredTasmotaDevice {
 }
 
 // Print Queue types
+// "To do" list of everything the queue waits on (#3615).
+export type QueueTodoKind = 'plate_clear' | 'load_filament' | 'start_staged' | 'sensor_interlock' | 'power_on_failed';
+export interface QueueTodoFilament {
+  type: string;
+  color: string;
+  color_name: string;
+  no_stock: boolean;
+  // The nozzle a dual-nozzle file wants it on: 0 right, 1 left; null when it names none.
+  nozzle?: number | null;
+}
+export interface QueueTodoEntry {
+  kind: QueueTodoKind;
+  jobs: { id: number; name: string; can_start: boolean }[];
+  filaments: QueueTodoFilament[];
+  // Model-group load_filament: printers where loading lets the job start.
+  printers: { id: number; name: string }[];
+  detail: string | null;
+}
+export interface QueueTodoGroup {
+  printer_id: number | null;
+  printer_name: string;
+  target_model: string | null;
+  entries: QueueTodoEntry[];
+}
+export interface QueueTodo { count: number; groups: QueueTodoGroup[] }
+
 export interface PrintQueueItem {
   id: number;
   printer_id: number | null;  // null = unassigned
@@ -6993,6 +7019,7 @@ export const api = {
     if (targetModel) params.set('target_model', targetModel);
     return request<PrintQueueItem[]>(`/queue/?${params}`);
   },
+  getQueueTodo: () => request<QueueTodo>('/queue/todo'),
   // History (completed / failed / skipped / cancelled), one page at a time.
   getQueueHistory: (params: QueueHistoryParams) =>
     request<QueueHistoryPage>(`/queue/history?${queueHistorySearch(params)}`),

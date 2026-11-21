@@ -62,10 +62,11 @@ from backend.app.schemas.print_queue import (
     PrintQueueItemResponse,
     PrintQueueItemUpdate,
     PrintQueueReorder,
+    QueueTodoResponse,
     QueueVariantCreate,
     QueueVariantSummary,
 )
-from backend.app.services import slicer_ams_pick
+from backend.app.services import plate_clear, slicer_ams_pick
 from backend.app.services.archive_cost_estimate import SpoolmanOnce
 from backend.app.services.filament_deficit import compute_deficit_for_queue_item
 from backend.app.services.filament_requirements import overrides_for_plate
@@ -74,6 +75,7 @@ from backend.app.services.finance_budget import (
     release_budget_reservation,
     validate_print_budget,
 )
+from backend.app.services.ha_sensor_manager import ha_sensor_manager
 from backend.app.services.print_batch import (
     BatchDispatchError,
     dispatch_remaining,
@@ -83,11 +85,14 @@ from backend.app.services.print_batch import (
     refresh_batches_after,
 )
 from backend.app.services.print_cost_estimate import estimate_queue_source_cost
+from backend.app.services.printer_manager import printer_manager
 from backend.app.services.queue_announcements import announce_queue_jobs_added
 from backend.app.services.queue_item_printer import PRINTER_RESOLVED_DEFAULTS, drop_printer_resolved
 from backend.app.services.queue_position import lock_queue_positions, max_queue_position
+from backend.app.services.queue_todo import TodoJob, build_todo
 from backend.app.utils.printer_models import (
     is_gcode_compatible,
+    normalize_printer_model,
 )
 from backend.app.utils.threemf_tools import (
     extract_plate_metadata_from_3mf,
@@ -458,6 +463,38 @@ async def _trusted_item_estimated_cost(
     return max(cost for cost in estimates if cost is not None)
 
 
+def _archive_display_name(archive: PrintArchive) -> str:
+    """What the queue row calls an archive's job: its print name, else its file."""
+    return archive.print_name or archive.filename
+
+
+def _library_display_name(library_file: LibraryFile) -> str:
+    """What the queue row calls a library file's job: its print name, else its file."""
+    metadata = library_file.file_metadata
+    return (metadata.get("print_name") if metadata else None) or library_file.filename
+
+
+def _queue_item_display_name(item: PrintQueueItem) -> str:
+    """The job's name as the queue row shows it, for the "To do" list (#3615).
+
+    The row is named in the frontend (``queueItemDisplayName``) from the fields
+    ``_enrich_response`` fills; this reads the same values in the same order:
+    the archive's name unless it is deleted, the library file's, the first
+    cross-model candidate's filename with "+N more" (#671), then "File #<id>"
+    of the archive or library file. A job with nothing left to point at, which
+    the row calls "File #null", is "#<item id>" here.
+    """
+    if item.archive is not None and item.archive.deleted_at is None and (name := _archive_display_name(item.archive)):
+        return name
+    if item.library_file is not None and (name := _library_display_name(item.library_file)):
+        return name
+    if variants := _variant_summaries(item):
+        others = len(variants) - 1
+        return f"{variants[0].filename} +{others} more" if others > 0 else variants[0].filename
+    file_id = item.archive_id if item.archive_id is not None else item.library_file_id
+    return f"File #{file_id}" if file_id is not None else f"#{item.id}"
+
+
 def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
     """Add nested archive/printer/library_file info to response."""
     # Parse ams_mapping from JSON string BEFORE model_validate
@@ -594,7 +631,7 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         if item.archive.deleted_at is not None:
             response.archive_deleted = True
         else:
-            response.archive_name = item.archive.print_name or item.archive.filename
+            response.archive_name = _archive_display_name(item.archive)
             response.archive_thumbnail = item.archive.thumbnail_path
             response.print_time_seconds = item.archive.print_time_seconds
             response.filament_used_grams = item.archive.filament_used_grams
@@ -641,11 +678,7 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         response.slicer_ams_mapping = pick[0]
         response.archive_has_slicer_ams_mapping = True
     if item.library_file:
-        response.library_file_name = (
-            item.library_file.file_metadata.get("print_name") if item.library_file.file_metadata else None
-        )
-        if not response.library_file_name:
-            response.library_file_name = item.library_file.filename
+        response.library_file_name = _library_display_name(item.library_file)
         response.library_file_thumbnail = item.library_file.thumbnail_path
         # Get metadata from library file if no archive
         if not item.archive and item.library_file.file_metadata:
@@ -840,6 +873,141 @@ async def list_queue(
     result = await db.execute(query)
     items = result.scalars().all()
     return [_enrich_response(item) for item in items]
+
+
+def _may_start_item(
+    actor: User | ApiKeyActor | None, item: PrintQueueItem, can_update_all: bool, printer_scope: PrinterScope
+) -> bool:
+    """Whether the start endpoint would let ``actor`` start ``item`` (#3615).
+
+    The same rules as ``start_queue_item``: ownership for those without
+    queue:update_all, the awaiting-review rule, and the model-target limit.
+    """
+    if actor is not None and not can_update_all:
+        # A key without an owner owns nothing, so it needs update_all.
+        if getattr(actor, "id", None) is None or not actor.has_permission(Permission.QUEUE_UPDATE_OWN.value):
+            return False
+    if not can_update_all and actor is not None:
+        if item.created_by_id is not None and item.created_by_id != actor.id:
+            return False
+    if not may_start_queue_item(actor, can_update_all, item.created_by_id):
+        return False
+    if item.printer_id is None and item.target_model:
+        try:
+            ensure_model_target_allowed(actor, printer_scope)
+        except HTTPException:
+            return False
+    return True
+
+
+@router.get("/todo", response_model=QueueTodoResponse)
+async def queue_todo(
+    db: AsyncSession = Depends(get_db, scope="function"),
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.QUEUE_READ_ALL,
+            Permission.QUEUE_READ_OWN,
+        )
+    ),
+    printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
+):
+    """What the waiting queue needs a person for, grouped by printer (#3615)."""
+    from backend.app.api.routes.settings import get_setting, setting_is_true
+    from backend.app.services.print_scheduler import _could_take_printer, scheduler as _scheduler
+
+    user, can_read_all = auth_result
+    query = (
+        select(PrintQueueItem)
+        .options(
+            selectinload(PrintQueueItem.archive).load_only(
+                PrintArchive.id, PrintArchive.deleted_at, PrintArchive.print_name, PrintArchive.filename
+            ),
+            selectinload(PrintQueueItem.library_file).load_only(
+                LibraryFile.id, LibraryFile.filename, LibraryFile.file_metadata
+            ),
+            selectinload(PrintQueueItem.variants).selectinload(PrintQueueVariant.library_file),
+        )
+        .where(PrintQueueItem.status == "pending")
+        .order_by(PrintQueueItem.position, PrintQueueItem.id)
+    )
+    if user is not None and not can_read_all:
+        query = query.where(PrintQueueItem.created_by_id == user.id)
+    if (clause := printer_scope.where(PrintQueueItem.printer_id)) is not None:
+        query = query.where(clause)
+    items = list((await db.execute(query)).scalars().all())
+
+    # Printers the caller may see, read once.
+    printer_query = select(Printer.id, Printer.name, Printer.model, Printer.location, Printer.is_active)
+    if (clause := printer_scope.where_strict(Printer.id)) is not None:
+        printer_query = printer_query.where(clause)
+    printer_rows = (await db.execute(printer_query)).all()
+    printer_names = {row.id: row.name or "" for row in printer_rows}
+
+    # Whether the caller may start staged jobs at all, as the start endpoint reads it.
+    can_update_all = actor is None or actor.has_permission(Permission.QUEUE_UPDATE_ALL.value)
+
+    def model_key(model: str | None) -> str | None:
+        return (normalize_printer_model(model) or model or "").lower() or None
+
+    # The scheduler sends a model job only to the printers its creator may use
+    # (#1727), so its printer entries are limited to those; read once per creator.
+    creator_scopes: dict[int | None, PrinterScope] = {}
+
+    jobs: list[TodoJob] = []
+    for item in items:
+        if item.printer_id is not None:
+            if item.printer_id not in printer_names:
+                continue
+            ids = frozenset({item.printer_id})
+            key = label = None
+        else:
+            if item.created_by_id not in creator_scopes:
+                creator_scopes[item.created_by_id] = await _scheduler._creator_printer_scope(db, item.created_by_id)
+            creator_scope = creator_scopes[item.created_by_id]
+            ids = frozenset(
+                row.id
+                for row in printer_rows
+                if row.is_active
+                and creator_scope.allows(row.id)
+                and _could_take_printer(item, row.id, row.model)
+                and (not item.target_location or row.location == item.target_location)
+            )
+            key = model_key(item.target_model)
+            label = item.target_model
+        can_start = bool(item.manual_start) and _may_start_item(actor, item, can_update_all, printer_scope)
+        jobs.append(
+            TodoJob(
+                item.id,
+                _queue_item_display_name(item),
+                ids,
+                item.printer_id,
+                key,
+                label,
+                bool(item.manual_start),
+                can_start,
+            )
+        )
+
+    require_plate_clear = setting_is_true(await get_setting(db, "require_plate_clear"))
+    # A switched-off printer keeps the flag, so it is read for those too.
+    plate_ids = [
+        pid
+        for pid in printer_names
+        if plate_clear.applies(pid, require_plate_clear) and printer_manager.is_awaiting_plate_clear(pid)
+    ]
+    try:
+        interlock = {
+            pid: reason
+            for pid, reason in (await ha_sensor_manager.blocked_printers(db)).items()
+            if pid in printer_names
+        }
+    except Exception:
+        # An interlock lookup that fails shows no interlock, as for the scheduler.
+        interlock = {}
+    power_failed = [pid for pid in _scheduler.power_on_failed_printers() if pid in printer_names]
+
+    return build_todo(jobs, printer_names, _scheduler.filament_holds_snapshot(), plate_ids, interlock, power_failed)
 
 
 HISTORY_STATUSES = ("completed", "failed", "skipped", "cancelled")

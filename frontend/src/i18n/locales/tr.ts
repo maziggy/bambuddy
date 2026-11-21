@@ -9464,4 +9464,26 @@ export default {
     scanHint: 'Bu arşivi açmak için tarayın',
     download: 'QR Kodunu İndir',
   },
+  // "To do" list of what the queue waits on (#3615)
+  queueTodo: {
+    title: "Yapılacaklar",
+    badgeLabel: "Yapılacaklar: {{count}}",
+    anyModel: "Herhangi bir {{model}}",
+    jobCount_one: "{{count}} iş",
+    jobCount_other: "{{count}} iş",
+    kind: {
+      plateClear: "Plakanın boş olduğunu onaylayın",
+      loadFilament: "Filament yükleyin",
+      startStaged: "Bekleyen işi başlat",
+      sensorInterlock: "Bir sensör tarafından engellendi",
+      powerOnFailed: "Yazıcı açılmadı",
+      loadFilamentOn: "Filament yükleyin:",
+    },
+    plateIsClear: "Plaka boş",
+    or: "veya",
+    noStock: "envanterde kalmadı",
+    openPrinter: "Yazıcıyı aç",
+    openQueue: "Kuyruğu aç",
+    actionFailed: "İşlem başarısız oldu",
+  },
 };

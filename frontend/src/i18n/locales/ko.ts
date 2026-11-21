@@ -9160,4 +9160,26 @@ export default {
     scanHint: '스캔하여 이 아카이브 열기',
     download: 'QR 코드 다운로드',
   },
+  // "To do" list of what the queue waits on (#3615)
+  queueTodo: {
+    title: "할 일",
+    badgeLabel: "할 일: {{count}}",
+    anyModel: "임의의 {{model}}",
+    jobCount_one: "작업 {{count}}개",
+    jobCount_other: "작업 {{count}}개",
+    kind: {
+      plateClear: "플레이트가 비었는지 확인",
+      loadFilament: "필라멘트 넣기",
+      startStaged: "대기 중인 작업 시작",
+      sensorInterlock: "센서에 의해 차단됨",
+      powerOnFailed: "프린터 전원이 켜지지 않았습니다",
+      loadFilamentOn: "필라멘트 넣기:",
+    },
+    plateIsClear: "플레이트 비움 확인",
+    or: "또는",
+    noStock: "재고 없음",
+    openPrinter: "프린터 열기",
+    openQueue: "대기열 열기",
+    actionFailed: "작업에 실패했습니다",
+  },
 };

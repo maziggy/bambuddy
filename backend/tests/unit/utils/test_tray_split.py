@@ -177,3 +177,109 @@ class TestComputeTraySplitGrams:
         )
         # Seg 0 gcode delta on filament_id=1 is non-zero → not 0g.
         assert segments[0][2] > 0
+
+
+class TestSlotTrayChanges3650:
+    """Per-slot tray changes for a multi-filament print with an AMS backup switch (#3650).
+
+    Slot 1 (black) is mapped to tray 3, slot 2 (yellow) to tray 0. Tray 2 holds
+    the same black filament and is the AMS backup for tray 3; it is in no slot
+    of the mapping. A colour change loads a mapped tray, a backup switch loads
+    tray 2.
+    """
+
+    MAPPING = [3, 0]
+    SLOTS = [1, 2]
+    FIL = {3: ("PLA", "000000"), 2: ("PLA", "000000"), 0: ("PLA", "FFFF00")}
+
+    def _run(self, log, mapping=None, slots=None, fil=None):
+        from backend.app.utils.tray_split import slot_tray_changes
+
+        return slot_tray_changes(
+            log,
+            self.MAPPING if mapping is None else mapping,
+            self.SLOTS if slots is None else slots,
+            self.FIL if fil is None else fil,
+        )
+
+    def test_runout_moves_slot_to_backup(self):
+        # Colour changes back to slot 1 after the runout load tray 2 directly,
+        # so tray 2 stays with slot 1 even though tray 0 came right before it.
+        log = [(3, 0), (0, 10), (3, 11), (2, 40), (0, 41), (2, 42)]
+        assert self._run(log) == ({1: [(3, 0), (2, 40)]}, None)
+
+    def test_colour_changes_only_no_split(self):
+        assert self._run([(3, 0), (0, 10), (3, 11), (0, 20)]) == ({}, None)
+
+    def test_second_runout_chains(self):
+        fil = {**self.FIL, 1: ("PLA", "000000")}
+        log = [(3, 0), (2, 40), (0, 41), (2, 42), (1, 70)]
+        assert self._run(log, fil=fil) == ({1: [(3, 0), (2, 40), (1, 70)]}, None)
+
+    def test_log_entries_as_lists_are_accepted(self):
+        # Restored from the database the log comes back as lists, not tuples.
+        assert self._run([[3, 0], [0, 10], [3, 11], [2, 40]]) == ({1: [(3, 0), (2, 40)]}, None)
+
+    def test_leftover_tray_at_layer_zero_ignored(self):
+        # Tray 9 was still loaded from the previous print when this one started.
+        log = [(9, 0), (3, 0), (0, 5), (3, 6), (2, 40)]
+        assert self._run(log) == ({1: [(3, 0), (2, 40)]}, None)
+
+    def test_leftover_tray_past_layer_zero_falls_back(self):
+        per_slot, reason = self._run([(9, 0), (3, 4), (2, 40)])
+        assert per_slot == {}
+        assert reason
+
+    def test_shared_tray_ambiguous_falls_back(self):
+        per_slot, reason = self._run([(3, 0), (2, 40)], mapping=[3, 3])
+        assert per_slot == {}
+        assert reason
+
+    def test_material_mismatch_falls_back(self):
+        per_slot, reason = self._run([(3, 0), (0, 10), (3, 11), (2, 40)], fil={**self.FIL, 2: ("PETG", "000000")})
+        assert per_slot == {}
+        assert reason
+
+    def test_colour_mismatch_falls_back(self):
+        per_slot, reason = self._run([(3, 0), (0, 10), (3, 11), (2, 40)], fil={**self.FIL, 2: ("PLA", "FF0000")})
+        assert per_slot == {}
+        assert reason
+
+    def test_unknown_filament_does_not_block(self):
+        log = [(3, 0), (0, 10), (3, 11), (2, 40), (0, 41), (2, 42)]
+        assert self._run(log, fil={**self.FIL, 2: ("", "")}) == ({1: [(3, 0), (2, 40)]}, None)
+        assert self._run(log, fil={}) == ({1: [(3, 0), (2, 40)]}, None)
+
+    def test_unmapped_slot_minus_one_ignored(self):
+        log = [(3, 0), (2, 40)]
+        assert self._run(log, mapping=[3, -1]) == ({1: [(3, 0), (2, 40)]}, None)
+
+    def test_no_mapping_or_single_slot_does_nothing(self):
+        assert self._run([(3, 0), (2, 40)], mapping=[]) == ({}, None)
+        assert self._run([(3, 0), (2, 40)], slots=[1]) == ({}, None)
+
+    def test_tray_filaments_from_raw_normalises(self):
+        from backend.app.utils.tray_ids import TrayLayout
+        from backend.app.utils.tray_split import tray_filaments_from_raw
+
+        raw = {
+            "ams": [
+                {
+                    "id": "0",
+                    "tray": [
+                        {"id": "0", "tray_type": "pla", "tray_color": "1A1A1AFF"},
+                        {"id": "1", "tray_type": "", "tray_color": ""},
+                        "garbage",
+                        {"id": "x", "tray_type": "PLA"},
+                    ],
+                },
+                "garbage",
+            ],
+            "vt_tray": [{"id": "254", "tray_type": "PETG", "tray_color": "#00ff00"}],
+        }
+        layout = TrayLayout.from_state(type("S", (), {"raw_data": raw})())
+        fil = tray_filaments_from_raw(raw, layout)
+        assert fil[0] == ("PLA", "1A1A1A")
+        assert fil[1] == ("", "")
+        assert fil[254] == ("PETG", "00FF00")
+        assert tray_filaments_from_raw(None, layout) == {}

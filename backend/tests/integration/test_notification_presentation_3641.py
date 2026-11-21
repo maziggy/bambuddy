@@ -226,7 +226,13 @@ class TestTemplateDetection:
     def test_either_part_edited_is_modified(self):
         default = _default(EVENT)
         assert not is_unmodified_template(EVENT, default["title_template"] + "!", default["body_template"])
-        assert not is_unmodified_template(EVENT, default["title_template"], default["body_template"] + " ")
+        assert not is_unmodified_template(EVENT, default["title_template"], default["body_template"] + " more")
+        assert not is_unmodified_template(EVENT, default["title_template"], default["body_template"].replace("\n", " "))
+
+    def test_line_endings_and_trailing_space_are_not_an_edit(self):
+        default = _default(EVENT)
+        body = default["body_template"].replace("\n", "\r\n") + " "
+        assert is_unmodified_template(EVENT, default["title_template"] + "  ", body)
 
     def test_unknown_event_is_modified(self):
         assert not is_unmodified_template("no_such_event", "a", "b")

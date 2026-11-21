@@ -156,6 +156,34 @@
   {
    "hex": null,
    "family": null
+  },
+  {
+   "hex": "0x1234",
+   "family": null
+  },
+  {
+   "hex": "0x12345678",
+   "family": null
+  },
+  {
+   "hex": "##AABBCC",
+   "family": "Blue"
+  },
+  {
+   "hex": " FAABB",
+   "family": "Cyan"
+  },
+  {
+   "hex": "+F0000",
+   "family": "Black"
+  },
+  {
+   "hex": "-F0000",
+   "family": "Black"
+  },
+  {
+   "hex": "  FF000",
+   "family": null
   }
  ]
 }

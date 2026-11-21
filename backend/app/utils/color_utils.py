@@ -226,11 +226,23 @@ def perceptual_color_distance(color1: str | None, color2: str | None) -> float |
 # colorFamilyVectors.json`` holds hex -> family pairs that both sides test against;
 # change a rule in one place and the other test fails until it is changed too.
 
-_HEX_PREFIX = re.compile(r"[0-9a-fA-F]+")
+_HEX_PREFIX = re.compile(r"[+-]?[0-9a-fA-F]+")
 
 
 def _parse_int16(chunk: str) -> int | None:
-    """``parseInt(chunk, 16)``: the leading hex digits, or None (NaN) when there are none."""
+    """``parseInt(chunk, 16)``: leading whitespace skipped, then an optional sign and the leading hex digits.
+
+    None (NaN) when there are none, which includes a bare "0x" prefix: JS drops
+    the prefix and finds nothing after it, where "0" alone would read as 0.
+    """
+    chunk = chunk.lstrip()
+    unsigned = chunk.lstrip("+-") if chunk[:1] in ("+", "-") else chunk
+    if unsigned[:2] in ("0x", "0X"):
+        match = _HEX_PREFIX.match(unsigned[2:])
+        if not match:
+            return None
+        value = int(match.group(), 16)
+        return -value if chunk[0] == "-" else value
     match = _HEX_PREFIX.match(chunk)
     return int(match.group(), 16) if match else None
 
@@ -280,7 +292,8 @@ def color_family(hex_value: str | None) -> str | None:
     # Alpha 00 is fully transparent: Bambu's clear code 00000000 must not come out as black (#1545).
     if _alpha_byte(hex_value) == "00":
         return "Clear"
-    hsl = _hex_to_hsl(hex_value)
+    # JS strips "#" here and again inside hexToHsl, so "##AABBCC" still reads as AABBCC.
+    hsl = _hex_to_hsl(hex_value.replace("#", "", 1))
     if hsl is None:
         return None
     h, s, lightness = hsl

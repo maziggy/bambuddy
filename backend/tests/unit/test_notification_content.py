@@ -46,13 +46,13 @@ class TestVariables:
         }
 
     def test_one_filament(self):
-        v = filament_variables([NotificationFilament("PLA", "#B39DDB", "Lavender Purple", "AMS A1")])
+        v = filament_variables([NotificationFilament("PLA", "#B39DDB", "Lavender Purple", "A1")])
         assert v == {
             "filament_type": "PLA",
             "color_name": "Lavender Purple",
             "color_hex": "#B39DDB",
             "color_emoji": PURPLE,
-            "slot": "AMS A1",
+            "slot": "A1",
             "filament": f"{PURPLE} PLA Lavender Purple (#B39DDB)",
         }
 
@@ -73,6 +73,9 @@ class TestEmbedColor:
     @pytest.mark.parametrize("hex_value", [None, "", "Earth Brown", "00000000", "#FFFFFF", "#F5F5F5"])
     def test_unreadable_clear_or_near_white_keeps_the_green(self, hex_value):
         assert embed_color([NotificationFilament("PLA", hex_value)]) is None
+
+    def test_one_multicolour_spool_keeps_the_green(self):
+        assert embed_color([NotificationFilament("PLA", "#FF0000", extra_colors="00FF00,0000FF")]) is None
 
     def test_none_or_several_keep_the_green(self):
         assert embed_color([]) is None

@@ -12,8 +12,8 @@ from backend.app.models.notification_template import DEFAULT_TEMPLATES, Notifica
 from backend.app.services.notification_content import NotificationFilament
 from backend.app.services.notification_service import NotificationService, telegram_markdown_escape
 
-LAVENDER = NotificationFilament(type="PLA", color_hex="#B39DDB", color_name="Lavender Purple", slot="AMS A1")
-REASON = "No matching material/color. Waiting on PLA (Lavender Purple)"
+LAVENDER = NotificationFilament(type="PLA", color_hex="#B39DDB", color_name="Lavender Purple", slot="A1")
+REASON = "Waiting for filament: Sol P1s links (needs PLA)"
 DEFAULT = next(t for t in DEFAULT_TEMPLATES if t["event_type"] == "queue_job_waiting")
 
 
@@ -152,7 +152,7 @@ class TestVariables:
 
         assert send.await_args.args[2] == (
             "Sol P1s links: Coaster_4x\n"
-            "needs \U0001f7e3 PLA Lavender Purple (#B39DDB) [PLA|Lavender Purple|#B39DDB|\U0001f7e3|AMS A1]"
+            "needs \U0001f7e3 PLA Lavender Purple (#B39DDB) [PLA|Lavender Purple|#B39DDB|\U0001f7e3|A1]"
         )
 
     @pytest.mark.asyncio

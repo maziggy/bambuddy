@@ -10,7 +10,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 from backend.app.models.notification_template import DEFAULT_TEMPLATES
-from backend.app.utils.color_utils import color_emoji, color_family, color_note
+from backend.app.utils.color_utils import _MULTICOLOR_EMOJI, color_emoji, color_family, color_note
 
 # Discord's embed limits (https://discord.com/developers/docs/resources/message#embed-object-embed-limits)
 DISCORD_MAX_FIELDS = 25
@@ -40,7 +40,15 @@ def is_unmodified_template(event_type: str, title_template: str, body_template: 
     its fields repeat what that wording says; an edited template has chosen its
     own and is sent exactly as written.
     """
-    return _DEFAULTS_BY_EVENT.get(event_type) == (title_template, body_template)
+    default = _DEFAULTS_BY_EVENT.get(event_type)
+    if default is None:
+        return False
+    # An editor or an import can turn "\n" into "\r\n" or add a trailing space without meaning an edit.
+    return tuple(map(_normalise, default)) == (_normalise(title_template), _normalise(body_template))
+
+
+def _normalise(text: str) -> str:
+    return text.replace("\r\n", "\n").strip()
 
 
 def _cut(text: str, limit: int) -> str:
@@ -145,10 +153,10 @@ def filament_variables(filaments: Iterable[NotificationFilament]) -> dict[str, s
 def embed_color(filaments: Sequence[NotificationFilament]) -> int | None:
     """The embed's side colour: that of the one filament the event is about.
 
-    None (the green) for several filaments, or one whose colour is unreadable,
+    None (the green) for several filaments, a multi-colour spool, or one whose colour is unreadable,
     clear, or so light that a bar of it would vanish on Discord's light theme.
     """
-    if len(filaments) != 1:
+    if len(filaments) != 1 or filaments[0].emoji == _MULTICOLOR_EMOJI:
         return None
     rgb = filaments[0].hex
     if not rgb or color_family(rgb) == "White":

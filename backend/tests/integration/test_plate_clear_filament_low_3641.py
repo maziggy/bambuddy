@@ -141,7 +141,7 @@ class TestFinishedJobName:
 
 
 class TestFilamentLow:
-    FILAMENT = NotificationFilament(type="PLA", color_hex="B39DDBFF", color_name="Lavender Purple", slot="AMS A1")
+    FILAMENT = NotificationFilament(type="PLA", color_hex="B39DDBFF", color_name="Lavender Purple", slot="A1")
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -152,14 +152,14 @@ class TestFilamentLow:
         embed = await _embed(
             service,
             service.on_filament_low(
-                1, "Sol P1s links", "AMS A1", 12, db_session, color="Lavender Purple", filament=self.FILAMENT
+                1, "Sol P1s links", "A1", 12, db_session, color="Lavender Purple", filament=self.FILAMENT
             ),
         )
 
-        assert embed["description"] == "Sol P1s links: Slot AMS A1 at 12%"
+        assert embed["description"] == "Sol P1s links: Slot A1 at 12%"
         assert embed["fields"] == [
             {"name": "Printer", "value": "Sol P1s links", "inline": False},
-            {"name": "Slot", "value": "AMS A1", "inline": False},
+            {"name": "Slot", "value": "A1", "inline": False},
             {"name": "Filament", "value": "\U0001f7e3 PLA Lavender Purple (#B39DDB)", "inline": False},
             {"name": "Remaining", "value": "12%", "inline": False},
         ]
@@ -173,7 +173,7 @@ class TestFilamentLow:
         await seed_template("filament_low")
         await discord(on_filament_low=True)
 
-        embed = await _embed(service, service.on_filament_low(1, "Sol", "AMS A1", 12, db_session))
+        embed = await _embed(service, service.on_filament_low(1, "Sol", "A1", 12, db_session))
 
         assert [f["name"] for f in embed["fields"]] == ["Printer", "Slot", "Remaining"]
         assert embed["color"] == 0x00AE42
@@ -193,13 +193,10 @@ class TestFilamentLow:
 
         with patch.object(service, "_send_ntfy", send):
             await service.on_filament_low(
-                1, "Sol", "AMS A1", 12, db_session, color="Lavender Purple", filament=self.FILAMENT
+                1, "Sol", "A1", 12, db_session, color="Lavender Purple", filament=self.FILAMENT
             )
 
-        assert (
-            send.await_args.args[2]
-            == "Sol AMS A1 12% Lavender Purple: \U0001f7e3 PLA Lavender Purple (#B39DDB) #B39DDB"
-        )
+        assert send.await_args.args[2] == "Sol A1 12% Lavender Purple: \U0001f7e3 PLA Lavender Purple (#B39DDB) #B39DDB"
 
 
 class TestEmitPassesTheJob:

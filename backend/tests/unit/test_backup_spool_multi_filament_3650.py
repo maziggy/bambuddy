@@ -154,13 +154,12 @@ class TestBackupSwitchMultiFilament3650:
 
     @pytest.mark.asyncio
     async def test_failed_print_splits_partial_grams(self):
-        # Stopped at layer 60 of 100: the slicer totals scale to 60 %, and slot 1's
-        # share is split at the switch the same way as a finished print.
-        results = await _run(status="failed", layer_num=60, progress=60)
-        charged = _by_tray(results)
-        assert charged[3] == pytest.approx(113.2 * 0.6 * 40 / 100, abs=0.1)
-        assert charged[2] == pytest.approx(113.2 * 0.6 - charged[3], abs=0.1)
-        assert charged[0] == pytest.approx(1.2, abs=0.1)
+        # Stopped at layer 60 of 100, the G-code feeding both slots evenly per layer:
+        # slot 1 used 113.2 g x 60 % = 67.9 g, 40 layers of it on tray 3 and 20 on
+        # tray 2 after the switch; slot 2 used 1.2 g.
+        layer_usage = {layer: {0: 100.0 * layer, 1: 2.0 * layer} for layer in range(1, 101)}
+        results = await _run(status="failed", layer_num=60, progress=60, layer_usage=layer_usage)
+        assert _by_tray(results) == {3: 45.3, 2: 22.6, 0: 1.2}
 
     @pytest.mark.asyncio
     async def test_colour_mismatch_keeps_mapping(self):

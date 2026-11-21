@@ -172,3 +172,72 @@ async def test_the_waiting_notification_names_the_printer(scheduler, db_session,
         await scheduler._block_on_filament_deficit(db_session, item)
 
     assert waiting.await_args.kwargs["printer_id"] == item.printer_id
+
+
+def _deficit(ams_id, tray_id, remaining, required=40.0, material="PLA"):
+    return FilamentDeficit(
+        slot_id=1,
+        ams_id=ams_id,
+        tray_id=tray_id,
+        filament_type=material,
+        required_grams=required,
+        remaining_grams=remaining,
+    )
+
+
+async def _waiting_reason_sent(scheduler, db_session, item, deficits):
+    """The waiting_reason the notification gets for ``deficits`` (#3642)."""
+    notify = AsyncMock()
+    with (
+        patch("backend.app.services.print_scheduler.compute_deficit_for_queue_item", AsyncMock(return_value=deficits)),
+        patch("backend.app.services.print_scheduler.notification_service.on_queue_job_waiting", notify),
+    ):
+        assert await scheduler._block_on_filament_deficit(db_session, item) is True
+    return notify.await_args.kwargs["waiting_reason"]
+
+
+@pytest.mark.asyncio
+async def test_notification_reason_is_a_sentence_not_the_code(scheduler, db_session, queue_item):
+    item = await queue_item()
+    reason = await _waiting_reason_sent(scheduler, db_session, item, [_deficit(0, 1, 12.0)])
+
+    assert reason == "Not enough filament on Test Printer: PLA in A2 (12 g left, needs 40 g)"
+    assert "filament_short" not in reason
+
+
+@pytest.mark.asyncio
+async def test_notification_reason_with_unknown_grams(scheduler, db_session, queue_item):
+    item = await queue_item()
+    reason = await _waiting_reason_sent(scheduler, db_session, item, [_deficit(0, 0, None)])
+
+    assert reason == "Not enough filament on Test Printer: PLA in A1 (needs 40 g)"
+
+
+@pytest.mark.asyncio
+async def test_notification_reason_joins_several_deficits(scheduler, db_session, queue_item):
+    item = await queue_item()
+    reason = await _waiting_reason_sent(
+        scheduler, db_session, item, [_deficit(0, 1, 12.0), _deficit(1, 3, None, 90.0, "PETG")]
+    )
+
+    assert reason == ("Not enough filament on Test Printer: PLA in A2 (12 g left, needs 40 g), PETG in B4 (needs 90 g)")
+
+
+@pytest.mark.asyncio
+async def test_notification_reason_names_ht_and_external_slots(scheduler, db_session, queue_item):
+    item = await queue_item()
+    reason = await _waiting_reason_sent(
+        scheduler, db_session, item, [_deficit(128, 0, 5.0), _deficit(255, 1, 8.0, material="PETG")]
+    )
+
+    assert "PLA in HT-A (5 g left, needs 40 g)" in reason
+    assert "PETG in Ext-R (8 g left, needs 40 g)" in reason
+
+
+def test_describe_deficit_for_notification_without_slot_or_printer():
+    from backend.app.services.print_scheduler import _describe_deficit_for_notification
+
+    assert (
+        _describe_deficit_for_notification([_deficit(None, None, 12.0)])
+        == "Not enough filament: PLA (12 g left, needs 40 g)"
+    )

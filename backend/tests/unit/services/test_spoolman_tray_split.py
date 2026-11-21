@@ -348,3 +348,144 @@ class TestReportUsageTraySplit:
 
         # Single-tray path: exactly one use_spool call, all 50g to spool 8.
         client.use_spool.assert_awaited_once_with(8, 50.0)
+
+
+class TestMultiFilamentBackupSplit3650:
+    """AMS backup switch on a two-filament print (#3650).
+
+    Slot 1 black (113.2 g) mapped to tray 3, slot 2 yellow (2.0 g) to tray 0.
+    Tray 3 runs out at layer 40 of 100 and the AMS switches black to tray 2,
+    which is in no slot of the mapping. Colour changes before and after it
+    move ``tray_now`` between the slots' trays as usual.
+    """
+
+    LOG = [(3, 0), (0, 10), (3, 11), (2, 40), (0, 41), (2, 42)]
+    TAGS = {"T3": 30, "T2": 20, "T0": 10}
+
+    @staticmethod
+    def _raw(remain_tray2=60):
+        def tray(tid, colour, uuid, remain):
+            return {"id": tid, "tray_type": "PLA", "tray_color": colour, "tray_uuid": uuid, "remain": remain}
+
+        return {
+            "ams": [
+                {
+                    "id": 0,
+                    "tray": [
+                        tray(0, "FFFF00FF", "T0", 90),
+                        tray(2, "000000FF", "T2", remain_tray2),
+                        tray(3, "000000FF", "T3", 0),
+                    ],
+                }
+            ]
+        }
+
+    def _tracking(self, **extra):
+        return SimpleNamespace(
+            archive_id=143,
+            filament_usage=[{"slot_id": 1, "used_g": 113.2}, {"slot_id": 2, "used_g": 2.0}],
+            ams_trays={
+                0: {"tray_uuid": "T0", "tray_type": "PLA"},
+                2: {"tray_uuid": "T2", "tray_type": "PLA"},
+                3: {"tray_uuid": "T3", "tray_type": "PLA"},
+            },
+            slot_to_tray=[3, 0],
+            tray_remain_start=extra.pop("tray_remain_start", {}),
+            layer_usage=None,
+            filament_properties={},
+            **extra,
+        )
+
+    def _client(self):
+        client = AsyncMock()
+        client.find_spool_by_tag = AsyncMock(
+            side_effect=lambda tag, *a, **k: {"id": self.TAGS[tag], "filament": {}} if tag in self.TAGS else None
+        )
+        client.use_spool = AsyncMock()
+        return client
+
+    def _patches(self, client, printer_manager, db=None):
+        patches = [
+            patch("backend.app.api.routes.settings.get_setting", AsyncMock(return_value="true")),
+            patch(
+                "backend.app.services.spoolman_tracking._get_spoolman_client_with_fallback",
+                AsyncMock(return_value=client),
+            ),
+            patch("backend.app.services.spoolman_tracking._get_printer_serial", AsyncMock(return_value="SERIAL")),
+            patch("backend.app.services.spoolman_tracking._apply_spool_colors_to_archive", AsyncMock()),
+            patch("backend.app.services.printer_manager.printer_manager", printer_manager),
+        ]
+        if db is not None:
+            patches.append(patch("backend.app.services.spoolman_tracking.async_session", lambda: _AsyncCtx(db)))
+        return patches
+
+    @staticmethod
+    def _charged(client):
+        charged: dict[int, float] = {}
+        for call in client.use_spool.await_args_list:
+            charged[call.args[0]] = round(charged.get(call.args[0], 0.0) + call.args[1], 2)
+        return charged
+
+    async def _report(self, tracking, state):
+        from contextlib import ExitStack
+
+        from backend.app.services.spoolman_tracking import report_usage
+
+        client = self._client()
+        printer_manager = MagicMock()
+        printer_manager.get_status.return_value = state
+        with ExitStack() as stack:
+            for p in self._patches(client, printer_manager, _make_db(tracking)):
+                stack.enter_context(p)
+            await report_usage(printer_id=1, archive_id=143)
+        return self._charged(client)
+
+    def _state(self, **kw):
+        values = {"tray_change_log": list(self.LOG), "total_layers": 100, "layer_num": 100, "raw_data": self._raw()}
+        values.update(kw)
+        return SimpleNamespace(**values)
+
+    @pytest.mark.asyncio
+    async def test_runout_on_multi_filament_splits_in_spoolman(self):
+        charged = await self._report(self._tracking(), self._state())
+        assert charged == {30: pytest.approx(45.28, abs=0.01), 20: pytest.approx(67.92, abs=0.01), 10: 2.0}
+
+    @pytest.mark.asyncio
+    async def test_remain_delta_skips_backup_tray(self):
+        # Tray 2's remain% dropped during the print; the split already charged
+        # it, so the remain-delta fallback must not charge it again.
+        tracking = self._tracking(
+            tray_remain_start={
+                "0-0": {"remain": 90, "tray_uuid": "T0"},
+                "0-2": {"remain": 100, "tray_uuid": "T2"},
+                "0-3": {"remain": 12, "tray_uuid": "T3"},
+            }
+        )
+        charged = await self._report(tracking, self._state(raw_data=self._raw(remain_tray2=90)))
+        assert charged == {30: pytest.approx(45.28, abs=0.01), 20: pytest.approx(67.92, abs=0.01), 10: 2.0}
+
+    @pytest.mark.asyncio
+    async def test_colour_changes_only_keep_the_mapping(self):
+        state = self._state(tray_change_log=[(3, 0), (0, 10), (3, 11), (0, 20)])
+        assert await self._report(self._tracking(), state) == {30: 113.2, 10: 2.0}
+
+    @pytest.mark.asyncio
+    async def test_partial_usage_splits_per_slot(self):
+        # Stopped at layer 60 of 100: 67.92 g of slot 1, split at the switch
+        # by layer up to where the print stopped (40 of 60 on tray 3).
+        from contextlib import ExitStack
+
+        from backend.app.services.spoolman_tracking import _report_partial_usage
+
+        client = self._client()
+        printer_manager = MagicMock()
+        printer_manager.get_status.return_value = self._state(layer_num=60)
+        with ExitStack() as stack:
+            for p in self._patches(client, printer_manager):
+                stack.enter_context(p)
+            await _report_partial_usage(printer_id=1, tracking=self._tracking())
+        assert self._charged(client) == {
+            30: pytest.approx(45.28, abs=0.01),
+            20: pytest.approx(22.64, abs=0.01),
+            10: pytest.approx(1.2, abs=0.01),
+        }

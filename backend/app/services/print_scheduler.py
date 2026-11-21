@@ -1,6 +1,7 @@
 """Print scheduler service - processes the print queue."""
 
 import asyncio
+import dataclasses
 import json
 import logging
 import math
@@ -162,6 +163,9 @@ def _ams_slot_label(ams_id: int, tray_id: int, layout: TrayLayout | None = None)
     """
     return _slot_label_from_global_tray(_global_tray_from_assignment(ams_id, tray_id, layout), layout)
 
+
+# (printer_id, ams_id, tray_id, spool_id) -> (remaining %, threshold %, colour name, the spool as a filament)
+_FilamentLowSlots = dict[tuple[int, int, int, int], tuple[float, float, str | None, NotificationFilament | None]]
 
 # Minimum seconds between low-filament checks. Matches the scheduler's idle
 # interval: the fast path runs every 3 s while an upload is in flight, and a
@@ -6704,8 +6708,8 @@ class PrintScheduler:
             global_threshold = await self._get_low_stock_threshold(db)
             spoolman_on = await self._get_bool_setting(db, "spoolman_enabled")
 
-            # (printer_id, ams_id, tray_id, spool_id) -> (remaining_pct, threshold, colour name)
-            slots: dict[tuple[int, int, int, int], tuple[float, float, str | None]] = {}
+            # (printer_id, ams_id, tray_id, spool_id) -> (remaining_pct, threshold, colour name, the spool)
+            slots: _FilamentLowSlots = {}
 
             if spoolman_on:
                 slots = await self._filament_low_slots_spoolman(db, global_threshold)
@@ -6731,6 +6735,12 @@ class PrintScheduler:
                         pct,
                         threshold,
                         spool.color_name,
+                        NotificationFilament(
+                            type=spool.material or None,
+                            color_hex=spool.rgba,
+                            color_name=spool.color_name,
+                            extra_colors=spool.extra_colors,
+                        ),
                     )
 
             if not slots:
@@ -6754,9 +6764,7 @@ class PrintScheduler:
             return 20.0
         return value if 0 < value <= 100 else 20.0
 
-    async def _filament_low_slots_spoolman(
-        self, db: AsyncSession, global_threshold: float
-    ) -> dict[tuple[int, int, int, int], tuple[float, float, str | None]]:
+    async def _filament_low_slots_spoolman(self, db: AsyncSession, global_threshold: float) -> _FilamentLowSlots:
         """Resolve Spoolman-mode slots to (remaining %, threshold, colour name).
 
         Spoolman spools carry no per-spool override -- ``low_stock_threshold_pct``
@@ -6798,7 +6806,7 @@ class PrintScheduler:
             if isinstance(raw_id, int):
                 by_id[raw_id] = raw
 
-        slots: dict[tuple[int, int, int, int], tuple[float, float, str | None]] = {}
+        slots: _FilamentLowSlots = {}
         for assignment in assignments:
             raw = by_id.get(assignment.spoolman_spool_id)
             if raw is None:
@@ -6811,20 +6819,30 @@ class PrintScheduler:
             if pct is None:
                 continue
             key = (assignment.printer_id, assignment.ams_id, assignment.tray_id, assignment.spoolman_spool_id)
-            slots[key] = (pct, global_threshold, mapped.get("color_name"))
+            slots[key] = (
+                pct,
+                global_threshold,
+                mapped.get("color_name"),
+                NotificationFilament(
+                    type=mapped.get("material") or None,
+                    color_hex=mapped.get("rgba"),
+                    color_name=mapped.get("color_name"),
+                    extra_colors=mapped.get("extra_colors"),
+                ),
+            )
         return slots
 
     async def _emit_filament_low(
         self,
         db: AsyncSession,
-        slots: dict[tuple[int, int, int, int], tuple[float, float, str | None]],
+        slots: _FilamentLowSlots,
         *,
         notify: bool = True,
         relay: bool = False,
     ) -> None:
         """Send one notification and/or MQTT relay event per slot that has newly crossed its threshold."""
         printers: dict[int, Printer] = {}
-        for key, (pct, threshold, color) in slots.items():
+        for key, (pct, threshold, color, spool_filament) in slots.items():
             printer_id, ams_id, tray_id, spool_id = key
             if pct >= threshold:
                 # Back above the line: re-arm rather than expire on a timer, so a
@@ -6870,6 +6888,7 @@ class PrintScheduler:
                         int(pct),
                         db,
                         color=color,
+                        filament=dataclasses.replace(spool_filament, slot=slot) if spool_filament else None,
                     )
                 except Exception as e:
                     logger.warning("Low-filament notification failed for slot %s: %s", key, e)

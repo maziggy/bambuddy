@@ -25,6 +25,7 @@ from backend.app.models.settings import Settings
 from backend.app.models.spool import Spool
 from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+from backend.app.services.notification_content import NotificationFilament
 from backend.app.services.print_scheduler import PrintScheduler, _ams_slot_label, _remaining_percent
 from backend.app.services.spoolman import SpoolmanUnavailableError
 from backend.app.utils.tray_ids import TrayLayout
@@ -38,11 +39,22 @@ async def _printer(db, name: str = "X2D") -> Printer:
 
 
 async def _assigned_spool(
-    db, printer, *, weight_used: float, threshold_pct: int | None = None, ams=0, tray=0, color_name=None
+    db,
+    printer,
+    *,
+    weight_used: float,
+    threshold_pct: int | None = None,
+    ams=0,
+    tray=0,
+    color_name=None,
+    rgba=None,
+    extra_colors=None,
 ):
     spool = Spool(
         material="PLA",
         color_name=color_name,
+        rgba=rgba,
+        extra_colors=extra_colors,
         label_weight=1000,
         core_weight=250,
         weight_used=weight_used,
@@ -190,6 +202,31 @@ async def test_the_spool_colour_is_passed_for_the_template(db_session, scheduler
     await _pass(scheduler, db_session)
 
     assert notify.on_filament_low.await_args.kwargs["color"] == "Jade White"
+
+
+@pytest.mark.asyncio
+async def test_the_spool_is_passed_as_a_filament_for_its_dot_and_hex(db_session, scheduler, notify):
+    """The notification gets the spool's colour as data (#3641), in the slot the alert names."""
+    printer = await _printer(db_session)
+    await _assigned_spool(db_session, printer, weight_used=850.0, color_name="Lavender Purple", rgba="B39DDBFF")
+    await db_session.commit()
+
+    await _pass(scheduler, db_session)
+
+    assert notify.on_filament_low.await_args.kwargs["filament"] == NotificationFilament(
+        type="PLA", color_hex="B39DDBFF", color_name="Lavender Purple", slot="A1"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_multicolour_spool_passes_its_other_stops(db_session, scheduler, notify):
+    printer = await _printer(db_session)
+    await _assigned_spool(db_session, printer, weight_used=850.0, rgba="FF0000FF", extra_colors="00ff00,0000ff")
+    await db_session.commit()
+
+    await _pass(scheduler, db_session)
+
+    assert notify.on_filament_low.await_args.kwargs["filament"].extra_colors == "00ff00,0000ff"
 
 
 @pytest.mark.asyncio
@@ -404,6 +441,8 @@ async def test_spoolman_mode_alerts_from_the_collection_read(db_session, schedul
     assert args[2] == "A2"
     assert args[3] == 15
     assert notify.on_filament_low.await_args.kwargs["color"] == "Jade White"
+    assert notify.on_filament_low.await_args.kwargs["filament"].type == "PLA"
+    assert notify.on_filament_low.await_args.kwargs["filament"].slot == "A2"
     # One request for the whole collection, not one per assigned slot.
     client.get_all_spools.assert_awaited_once()
 

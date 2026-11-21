@@ -2356,6 +2356,7 @@ class NotificationService:
         printer_id: int,
         printer_name: str,
         db: AsyncSession,
+        job_name: str | None = None,
     ):
         """Handle plate-clear-required event — a print ended and the queue is gated (#2525).
 
@@ -2365,12 +2366,20 @@ class NotificationService:
         and the next queued job can't dispatch until someone confirms the bed is
         free. Off by default on every provider: it lands at the same moment as the
         print-complete notification, so opting in is a deliberate choice.
+
+        ``job_name`` is the print that ended, as the printer or the archive names it;
+        shown without extension or folder, otherwise as it is (#3641).
         """
         providers = await self._get_providers_for_event(db, "on_plate_clear_required", printer_id)
         if not providers:
             return
 
-        variables = {"printer": printer_name}
+        job = self._clean_filename(job_name) if job_name else ""
+        variables = {"printer": printer_name, "job_name": job}
+
+        fields = [("Printer", printer_name)]
+        if job:
+            fields.append(("Finished", job))
 
         title, message = await self._build_message_from_template(db, "plate_clear_required", variables)
         await self._send_to_providers(
@@ -2382,6 +2391,7 @@ class NotificationService:
             printer_id,
             printer_name,
             variables=variables,
+            presentation=NotificationPresentation(fields=tuple(fields)),
         )
 
     async def on_filament_low(
@@ -2392,22 +2402,43 @@ class NotificationService:
         remaining_percent: int,
         db: AsyncSession,
         color: str | None = None,
+        filament: NotificationFilament | None = None,
     ):
-        """Handle low filament event."""
+        """Handle low filament event.
+
+        ``filament`` is the spool in the slot, for its colour dot and hex (#3641);
+        ``color`` stays its colour name as before.
+        """
         providers = await self._get_providers_for_event(db, "on_filament_low", printer_id)
         if not providers:
             return
 
+        filaments = [filament] if filament is not None else []
         variables = {
+            **filament_variables(filaments),
             "printer": printer_name,
             "slot": slot,
             "remaining_percent": str(remaining_percent),
             "color": color or "",
         }
 
+        fields = [("Printer", printer_name), ("Slot", slot)]
+        if filaments and filaments[0].line:
+            fields.append(("Filament", filaments[0].line))
+        fields.append(("Remaining", f"{remaining_percent}%"))
+        presentation = NotificationPresentation(fields=tuple(fields), color=embed_color(filaments))
+
         title, message = await self._build_message_from_template(db, "filament_low", variables)
         await self._send_to_providers(
-            providers, title, message, db, "filament_low", printer_id, printer_name, variables=variables
+            providers,
+            title,
+            message,
+            db,
+            "filament_low",
+            printer_id,
+            printer_name,
+            variables=variables,
+            presentation=presentation,
         )
 
     async def on_maintenance_due(

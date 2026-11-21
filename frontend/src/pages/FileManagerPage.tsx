@@ -96,7 +96,7 @@ import { useUiSettings } from '../hooks/useUiSettings';
 import { FOLDER_DRAG_TYPE, FILES_DRAG_TYPE, isValidFilesMove, isValidFolderMove, isWritableFolder, moveDisallowedFolderIds } from '../utils/libraryFolders';
 import { PendingUploadsPanel } from '../components/PendingUploadsPanel';
 import type { SortField, SortDirection } from './fileManager/filterSort';
-import { groupLibraryRows, rowFiles, rowLeadFile, type GroupRow, type LibraryRow } from './fileManager/variantGroups';
+import { groupLibraryRows, groupRowLedBy, rowFiles, rowLeadFile, type GroupRow, type LibraryRow } from './fileManager/variantGroups';
 import { filterFiles } from './fileManager/filterSort';
 import { VariantGroupCard } from '../components/fileManager/VariantGroupCard';
 import { VariantGroupListRow } from '../components/fileManager/VariantGroupListRow';
@@ -2820,14 +2820,12 @@ export function FileManagerPage() {
     return byId;
   }, [files, columnFileQueries.files]);
 
-  // The version groups on screen, by each version's id: a key on a focused
-  // group row acts on the whole group (#3628).
-  const groupRowByFileId = new Map<number, GroupRow>();
+  // The version groups on screen (#3628). A group can be on screen in several
+  // columns, each with its own row: what a row's tick selects is the versions
+  // in its own folder.
   const visibleGroupRows: GroupRow[] = [];
   for (const row of [...libraryRows, ...[...columnFiles.values()].flatMap((l) => l.rows)]) {
-    if (row.kind !== 'group') continue;
-    visibleGroupRows.push(row);
-    for (const m of row.members) groupRowByFileId.set(m.id, row);
+    if (row.kind === 'group') visibleGroupRows.push(row);
   }
 
   // The toolbar's Preview button acts on one file, so it is offered only for
@@ -2957,6 +2955,21 @@ export function FileManagerPage() {
               .map((level) => columnFiles.get(level.key)?.files)
               .find((list) => list?.some((f) => f.id === columnsFocusedFileId));
   const focusedFileList = focusedFileColumnList ?? paneNavFiles;
+  // The version group under the keyboard focus, taken from the rows of the
+  // list that holds the focus and never from the page: a group with a version
+  // in a parent folder and one in the selected folder has a row in both
+  // columns, and a key must act on the versions of the focused one (#3628).
+  const focusedRows =
+    columnsFocusedFileId === null
+      ? undefined
+      : columnsFocusedKey !== COLUMNS_PANE
+        ? columnFiles.get(columnsFocusedKey)?.rows
+        : paneNavFiles.some((f) => f.id === columnsFocusedFileId)
+          ? libraryRows
+          : columnFileLevels
+              .map((level) => columnFiles.get(level.key)?.rows)
+              .find((rows) => rows?.some((row) => rowLeadFile(row).id === columnsFocusedFileId));
+  const focusedGroupRow = groupRowLedBy(focusedRows, columnsFocusedFileId);
 
   // Focus the columns pane when the view opens so arrow keys work right away,
   // and drop the file focus whenever the folder (and with it the file list)
@@ -3028,7 +3041,7 @@ export function FileManagerPage() {
   // Opens or closes the versions of the focused group row through its chevron,
   // which owns the state. True when the row changed.
   const setFocusedGroupOpen = (open: boolean): boolean => {
-    if (columnsFocusedFileId === null || !groupRowByFileId.has(columnsFocusedFileId)) return false;
+    if (columnsFocusedFileId === null || !focusedGroupRow) return false;
     const chevron = focusedPaneElement()?.querySelector<HTMLButtonElement>(
       `[data-testid="variant-group-column-row"][data-file-id="${columnsFocusedFileId}"] button[aria-expanded]`,
     );
@@ -3171,8 +3184,7 @@ export function FileManagerPage() {
           break;
         }
         // On a version group Enter opens or closes its versions.
-        const focusedGroup = groupRowByFileId.get(columnsFocusedFileId!);
-        if (focusedGroup) {
+        if (focusedGroupRow) {
           if (!setFocusedGroupOpen(true)) setFocusedGroupOpen(false);
           break;
         }
@@ -3184,8 +3196,7 @@ export function FileManagerPage() {
         e.preventDefault();
         if (!inFiles) break;
         if (columnsFocusedFileId !== null) {
-          const group = groupRowByFileId.get(columnsFocusedFileId);
-          if (group) handleGroupSelect(group);
+          if (focusedGroupRow) handleGroupSelect(focusedGroupRow);
           else handleFileSelect(columnsFocusedFileId);
         }
         break;

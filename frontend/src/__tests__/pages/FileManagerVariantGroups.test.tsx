@@ -663,6 +663,33 @@ describe('version groups in the File Manager', () => {
         await waitFor(() => expect(pane.queryByTestId('variant-detail-pane')).not.toBeInTheDocument());
       });
 
+      it('Space ticks the version in the focused pane, and Delete sends that one, not the one in the parent folder', async () => {
+        // One file ticked is deleted through the single-file route.
+        let deleted: string | null = null;
+        server.use(
+          http.delete('/api/v1/library/files/:id', ({ params }) => {
+            deleted = String(params.id);
+            return HttpResponse.json({ status: 'ok', message: '', trashed: true });
+          }),
+        );
+        const { user, level, pane } = await openBeta();
+        // Both columns list the group with version 21 as its lead; the focus is
+        // on the pane's row, whose own version is 22.
+        await user.keyboard('{ArrowRight}');
+        await user.keyboard(' ');
+        expect(await screen.findByText('1 selected')).toBeInTheDocument();
+        expect(pane.getByRole('checkbox')).toHaveAttribute('aria-checked', 'true');
+        expect(level.getByRole('checkbox')).toHaveAttribute('aria-checked', 'false');
+
+        const toolbar = screen.getByText(/ selected$/).closest('div')!.parentElement as HTMLElement;
+        await user.click(within(toolbar).getByRole('button', { name: /^Delete$/ }));
+        // The confirm dialog is the nearest box around its title that holds a Delete button.
+        let dialog = (await screen.findByText('Delete File')).parentElement!;
+        while (!within(dialog).queryByRole('button', { name: 'Delete' })) dialog = dialog.parentElement!;
+        await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+        await waitFor(() => expect(deleted).toBe('22'));
+      });
+
       it('prints a group ticked in full as one job, never asking about a partial tick', async () => {
         const { user, pane } = await openBeta();
         // The pane's tick selects Beta's version only; that is the whole group

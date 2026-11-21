@@ -113,3 +113,11 @@ export function rowFiles(rows: LibraryRow[]): LibraryFileListItem[] {
 export function rowLeadFile(row: LibraryRow): LibraryFileListItem {
   return row.kind === 'file' ? row.file : row.thumbnailFile;
 }
+
+// The group row among `rows` that `fileId` leads, if any. A group listed in
+// several columns has one row per column, so the caller passes the rows of the
+// column it means.
+export function groupRowLedBy(rows: readonly LibraryRow[] | undefined, fileId: number | null): GroupRow | undefined {
+  if (!rows || fileId === null) return undefined;
+  return rows.find((row): row is GroupRow => row.kind === 'group' && row.thumbnailFile.id === fileId);
+}

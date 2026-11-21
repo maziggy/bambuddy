@@ -595,6 +595,7 @@ export default {
       loadInitiated: 'Chargement du filament…',
       unloadInitiated: 'Déchargement du filament…',
       unloadAms3h: 'Déchargement de l\'emplacement {{n}}. Quand l\'imprimante le demande, retirez le filament de l\'AMS 3H à la main.',
+      unloadAllAms3h: "Déchargement de tous les emplacements chargés. Quand l'imprimante le demande, retirez le filament de l'AMS 3H à la main.",
       failedToLoad: 'Échec du chargement du filament',
       failedToUnload: 'Échec du déchargement du filament',
       chamberLightOn: 'Lumière de la chambre allumée',
@@ -627,6 +628,9 @@ export default {
     ams: {
       load: 'Charger',
       unload: 'Décharger',
+      unloadAll: "Tout décharger",
+      unloadAllTitle: "Décharger tous les emplacements ?",
+      unloadAllMessage: "L'imprimante décharge l'un après l'autre tous les emplacements chargés de l'AMS 3H. Quand elle le demande, retirez le filament de l'AMS 3H à la main : restez donc près de l'imprimante.",
       feedTitle: 'Charger {{slot}} vers quelle buse ?',
       feedPrompt: 'Le Filament Track Switch peut diriger cet emplacement vers les deux buses. Choisissez celle à alimenter.',
       feedLeft: 'Buse gauche',

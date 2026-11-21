@@ -827,6 +827,64 @@ describe('version groups in the File Manager', () => {
       expect(within(row).getByRole('button', { name: 'Ungroup' })).toBeDisabled();
     });
 
+    it('disables Ungroup and Remove from group when the listing says the group is not the user’s to change', async () => {
+      // Both versions are the user's own and may be edited, but the server would
+      // refuse: the group holds a version of someone else that this user cannot see.
+      mockAuthUser(['library:read_own', 'library:update_own', 'library:delete_own', 'queue:create']);
+      serve([
+        vase(21, 'X1C', 0, { variant_group_editable: false }),
+        vase(22, 'P1S', 1, { variant_group_editable: false }),
+      ]);
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+      await screen.findByTestId('variant-group-card');
+      await user.click(screen.getByTitle('List view'));
+      const row = await screen.findByTestId('variant-group-list-row');
+
+      const reason = 'You do not have permission to change this group';
+      const ungroup = within(row).getByRole('button', { name: 'Ungroup' });
+      expect(ungroup).toBeDisabled();
+      expect(ungroup).toHaveAttribute('title', reason);
+      // Deleting their own files is still theirs to do.
+      expect(within(row).getByRole('button', { name: 'Delete all versions' })).toBeEnabled();
+
+      await user.click(within(row).getByRole('button', { name: /Show versions/ }));
+      const line = screen.getAllByTestId('variant-member-line')[0];
+      await user.click(within(line).getByRole('button', { name: /Actions for/ }));
+      const remove = await screen.findByRole('button', { name: 'Remove from group' });
+      expect(remove).toBeDisabled();
+      expect(remove).toHaveAttribute('title', reason);
+      expect(screen.getByRole('button', { name: 'Rename' })).toBeEnabled();
+    });
+
+    it('keeps Ungroup and Remove from group enabled when the listing says the group may be changed', async () => {
+      mockAuthUser(['library:read_own', 'library:update_own', 'queue:create']);
+      serve([
+        vase(21, 'X1C', 0, { variant_group_editable: true }),
+        vase(22, 'P1S', 1, { variant_group_editable: true }),
+      ]);
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+      await screen.findByTestId('variant-group-card');
+      await user.click(screen.getByTitle('List view'));
+      const row = await screen.findByTestId('variant-group-list-row');
+      expect(within(row).getByRole('button', { name: 'Ungroup' })).toBeEnabled();
+    });
+
+    it('disables Delete all versions unless every version may be deleted, not just some', async () => {
+      // May edit everything but delete only their own: version 22 is someone else's.
+      mockAuthUser(['library:read_all', 'library:update_all', 'library:delete_own', 'queue:create']);
+      serve([vase(21, 'X1C', 0), vase(22, 'P1S', 1, { created_by_id: 99 })]);
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+      await screen.findByTestId('variant-group-card');
+      await user.click(screen.getByTitle('List view'));
+      const row = await screen.findByTestId('variant-group-list-row');
+      const del = within(row).getByRole('button', { name: 'Delete all versions' });
+      expect(del).toBeDisabled();
+      expect(within(row).getByRole('button', { name: 'Ungroup' })).toBeEnabled();
+    });
+
     it('disables Print without queue:create', async () => {
       mockAuthUser(['library:read_own']);
       serve([vase(21, 'X1C', 0), vase(22, 'P1S', 1)]);

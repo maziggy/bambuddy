@@ -4622,6 +4622,7 @@ export default {
       ungroupTitle: '取消版本分组',
       ungroupConfirm: '“{{name}}”的 {{count}} 个版本将重新变为独立文件，不会删除任何文件。',
       noPermissionUngroup: '取消分组需要有编辑每个版本的权限',
+      noPermissionChangeGroup: '您没有更改此组的权限',
       ungrouped: '已取消版本分组',
       removeFromGroup: '从组中移除',
       removed: '已从组中移除',

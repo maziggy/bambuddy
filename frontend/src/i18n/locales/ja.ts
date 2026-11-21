@@ -4635,6 +4635,7 @@ export default {
       ungroupTitle: 'バージョンのグループ解除',
       ungroupConfirm: '「{{name}}」の{{count}}個のバージョンは、再び個別のファイルになります。ファイルは削除されません。',
       noPermissionUngroup: 'グループを解除するには、すべてのバージョンを編集する権限が必要です',
+      noPermissionChangeGroup: 'このグループを変更する権限がありません',
       ungrouped: 'バージョンのグループを解除しました',
       removeFromGroup: 'グループから外す',
       removed: 'グループから外しました',

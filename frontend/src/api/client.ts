@@ -9173,10 +9173,13 @@ export interface LibraryFileListItem {
   variant_group_id?: number | null;
   variant_count?: number;
   // Only with `with_variant_members=true` (#3628): the group's name and this
-  // file's place in it, whether it was appended from outside the listing's
-  // folder or filter, and the folder it sits in then.
+  // file's place in it, whether the caller may change the group (ungroup it,
+  // take a version out; false when the server would refuse), whether the file
+  // was appended from outside the listing's folder or filter, and the folder
+  // it sits in then.
   variant_group_name?: string | null;
   variant_position?: number | null;
+  variant_group_editable?: boolean | null;
   variant_elsewhere?: boolean;
   folder_name?: string | null;
   // Metadata indicators (#3077). Optional for the same reason as `tags`: older

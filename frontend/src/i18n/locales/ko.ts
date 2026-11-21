@@ -4446,6 +4446,7 @@ export default {
       ungroupTitle: '버전 그룹 해제',
       ungroupConfirm: '\'{{name}}\'의 버전 {{count}}개가 다시 개별 파일이 됩니다. 삭제되는 파일은 없습니다.',
       noPermissionUngroup: '그룹을 해제하려면 모든 버전을 편집할 권한이 필요합니다',
+      noPermissionChangeGroup: '이 그룹을 변경할 권한이 없습니다',
       ungrouped: '버전 그룹을 해제했습니다',
       removeFromGroup: '그룹에서 제거',
       removed: '그룹에서 제거했습니다',

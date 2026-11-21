@@ -4438,6 +4438,7 @@ export default {
       ungroupTitle: 'Разгруппировать версии',
       ungroupConfirm: 'Версии ({{count}}) «{{name}}» снова станут отдельными файлами. Ни один файл не удаляется.',
       noPermissionUngroup: 'Чтобы разгруппировать, нужно право изменять каждую версию',
+      noPermissionChangeGroup: 'У вас нет прав на изменение этой группы',
       ungrouped: 'Версии разгруппированы',
       removeFromGroup: 'Убрать из группы',
       removed: 'Убрано из группы',

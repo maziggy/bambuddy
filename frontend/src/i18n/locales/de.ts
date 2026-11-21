@@ -4635,6 +4635,7 @@ export default {
       ungroupTitle: 'Gruppierung aufheben',
       ungroupConfirm: 'Die {{count}} Versionen von „{{name}}“ werden wieder zu einzelnen Dateien. Es wird keine Datei gelöscht.',
       noPermissionUngroup: 'Sie benötigen die Berechtigung, jede Version zu bearbeiten, um die Gruppierung aufzuheben',
+      noPermissionChangeGroup: 'Sie haben keine Berechtigung, diese Gruppe zu ändern',
       ungrouped: 'Gruppierung aufgehoben',
       removeFromGroup: 'Aus Gruppe entfernen',
       removed: 'Aus der Gruppe entfernt',

@@ -4697,6 +4697,7 @@ errors: {
       ungroupTitle: 'Dela upp versioner',
       ungroupConfirm: 'De {{count}} versionerna av ”{{name}}” blir separata filer igen. Ingen fil raderas.',
       noPermissionUngroup: 'Du behöver behörighet att redigera varje version för att dela upp gruppen',
+      noPermissionChangeGroup: 'Du har inte behörighet att ändra den här gruppen',
       ungrouped: 'Gruppen delades upp',
       removeFromGroup: 'Ta bort från gruppen',
       removed: 'Borttagen från gruppen',

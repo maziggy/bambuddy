@@ -4622,6 +4622,7 @@ export default {
       ungroupTitle: 'Separa le versioni',
       ungroupConfirm: 'Le {{count}} versioni di «{{name}}» tornano a essere file separati. Nessun file viene eliminato.',
       noPermissionUngroup: 'Serve il permesso di modificare ogni versione per separarle',
+      noPermissionChangeGroup: 'Non hai il permesso di modificare questo gruppo',
       ungrouped: 'Versioni separate',
       removeFromGroup: 'Rimuovi dal gruppo',
       removed: 'Rimosso dal gruppo',

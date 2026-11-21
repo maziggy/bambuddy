@@ -94,7 +94,7 @@ export function VariantGroupCard({
       icon: <Unlink className="w-4 h-4" />,
       onClick: () => groupActions.ungroup(row),
       disabled: !groupActions.canUngroup(row),
-      title: !groupActions.canUngroup(row) ? t('fileManager.variants.noPermissionUngroup') : undefined,
+      title: !groupActions.canUngroup(row) ? groupActions.ungroupBlockedReason(row) : undefined,
     },
     {
       label: t('fileManager.variants.deleteGroup'),

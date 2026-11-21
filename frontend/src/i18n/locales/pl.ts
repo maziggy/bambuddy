@@ -4667,6 +4667,7 @@ export default {
       ungroupTitle: 'Rozgrupuj wersje',
       ungroupConfirm: 'Wersje ({{count}}) „{{name}}” znów będą osobnymi plikami. Żaden plik nie zostanie usunięty.',
       noPermissionUngroup: 'Aby rozgrupować, potrzebujesz uprawnienia do edycji każdej wersji',
+      noPermissionChangeGroup: 'Nie masz uprawnień do zmiany tej grupy',
       ungrouped: 'Rozgrupowano wersje',
       removeFromGroup: 'Usuń z grupy',
       removed: 'Usunięto z grupy',

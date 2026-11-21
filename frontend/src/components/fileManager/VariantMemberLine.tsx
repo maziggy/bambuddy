@@ -85,7 +85,7 @@ export function VariantMemberLine({
       icon: <Unlink className="w-4 h-4" />,
       onClick: () => groupActions.removeFromGroup(file, groupId),
       disabled: !groupActions.canRemove(file),
-      title: !groupActions.canRemove(file) ? t('fileManager.variants.noPermissionRemove') : undefined,
+      title: !groupActions.canRemove(file) ? groupActions.removeBlockedReason(file) : undefined,
     },
     {
       label: t('common.delete'),

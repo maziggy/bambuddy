@@ -4665,6 +4665,7 @@ export default {
       ungroupTitle: 'Versies uit groep halen',
       ungroupConfirm: 'De {{count}} versies van "{{name}}" worden weer losse bestanden. Er wordt geen bestand verwijderd.',
       noPermissionUngroup: 'Je hebt toestemming nodig om elke versie te bewerken om de groep op te heffen',
+      noPermissionChangeGroup: 'Je hebt geen toestemming om deze groep te wijzigen',
       ungrouped: 'Groep opgeheven',
       removeFromGroup: 'Uit groep verwijderen',
       removed: 'Uit de groep verwijderd',

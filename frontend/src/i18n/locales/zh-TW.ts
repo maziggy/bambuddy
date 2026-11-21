@@ -4622,6 +4622,7 @@ export default {
       ungroupTitle: '取消版本群組',
       ungroupConfirm: '「{{name}}」的 {{count}} 個版本將重新變為獨立檔案，不會刪除任何檔案。',
       noPermissionUngroup: '取消群組需要具備編輯每個版本的權限',
+      noPermissionChangeGroup: '您沒有變更此群組的權限',
       ungrouped: '已取消版本群組',
       removeFromGroup: '從群組中移除',
       removed: '已從群組中移除',

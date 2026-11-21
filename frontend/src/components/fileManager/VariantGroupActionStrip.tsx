@@ -46,7 +46,7 @@ export function VariantGroupActionStrip({
         onClick={() => actions.ungroup(row)}
         disabled={!canUngroup}
         className={`${base} ${canUngroup ? 'hover:bg-bambu-dark text-bambu-gray hover:text-white' : off}`}
-        title={canUngroup ? t('fileManager.variants.ungroup') : t('fileManager.variants.noPermissionUngroup')}
+        title={canUngroup ? t('fileManager.variants.ungroup') : actions.ungroupBlockedReason(row)}
         aria-label={t('fileManager.variants.ungroup')}
       >
         <Unlink className="w-4 h-4" />

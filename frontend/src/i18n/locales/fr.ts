@@ -4623,6 +4623,7 @@ export default {
       ungroupTitle: 'Dissocier les versions',
       ungroupConfirm: 'Les {{count}} versions de « {{name}} » redeviennent des fichiers indépendants. Aucun fichier n\'est supprimé.',
       noPermissionUngroup: 'Vous devez pouvoir modifier chaque version pour les dissocier',
+      noPermissionChangeGroup: 'Vous n’avez pas la permission de modifier ce groupe',
       ungrouped: 'Versions dissociées',
       removeFromGroup: 'Retirer du groupe',
       removed: 'Retiré du groupe',

@@ -4630,6 +4630,7 @@ export default {
       ungroupTitle: 'Sürümleri gruptan çıkar',
       ungroupConfirm: '"{{name}}" öğesinin {{count}} sürümü yeniden ayrı dosyalar olur. Hiçbir dosya silinmez.',
       noPermissionUngroup: 'Grubu çözmek için her sürümü düzenleme iznine ihtiyacınız var',
+      noPermissionChangeGroup: 'Bu grubu değiştirme izniniz yok',
       ungrouped: 'Sürümler gruptan çıkarıldı',
       removeFromGroup: 'Gruptan kaldır',
       removed: 'Gruptan kaldırıldı',

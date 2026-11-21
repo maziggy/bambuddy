@@ -4637,6 +4637,7 @@ export default {
       ungroupTitle: 'Desagrupar versiones',
       ungroupConfirm: 'Las {{count}} versiones de «{{name}}» vuelven a ser archivos independientes. No se elimina ningún archivo.',
       noPermissionUngroup: 'Necesita permiso para editar todas las versiones para desagruparlas',
+      noPermissionChangeGroup: 'No tienes permiso para cambiar este grupo',
       ungrouped: 'Versiones desagrupadas',
       removeFromGroup: 'Quitar del grupo',
       removed: 'Quitado del grupo',

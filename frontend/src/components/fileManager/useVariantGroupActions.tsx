@@ -17,11 +17,20 @@ export interface VariantGroupActions {
   hasPrintable: (row: GroupRow) => boolean;
   ungroup: (row: GroupRow) => void;
   canUngroup: (row: GroupRow) => boolean;
+  /** Why Ungroup is disabled, for its tooltip. */
+  ungroupBlockedReason: (row: GroupRow) => string;
   deleteFiles: (row: GroupRow) => void;
   canDeleteFiles: (row: GroupRow) => boolean;
   removeFromGroup: (file: LibraryFileListItem, groupId: number) => void;
   canRemove: (file: LibraryFileListItem) => boolean;
+  /** Why Remove from group is disabled, for its tooltip. */
+  removeBlockedReason: (file: LibraryFileListItem) => string;
 }
+
+// The server refuses a change to this file's group: the listing said so
+// (`variant_group_editable`), so the entries are disabled instead of failing.
+// Only an explicit false counts; a listing without the field decides nothing.
+const groupLocked = (file: LibraryFileListItem) => file.variant_group_editable === false;
 
 type Confirm = { kind: 'ungroup' | 'delete'; row: GroupRow };
 
@@ -91,9 +100,10 @@ export function useVariantGroupActions({
     [hasPrintable, hasPermission],
   );
   // Ungroup and delete act on every version, so they are offered only to
-  // someone who may change every one of them.
+  // someone who may change every one of them. For Ungroup the server also
+  // counts versions this user cannot see, which the listing reports.
   const canUngroup = useCallback(
-    (row: GroupRow) => row.members.every((m) => canModify('library', 'update', m.created_by_id)),
+    (row: GroupRow) => row.members.every((m) => !groupLocked(m) && canModify('library', 'update', m.created_by_id)),
     [canModify],
   );
   const canDeleteFiles = useCallback(
@@ -101,8 +111,24 @@ export function useVariantGroupActions({
     [canModify],
   );
   const canRemove = useCallback(
-    (file: LibraryFileListItem) => canModify('library', 'update', file.created_by_id),
+    (file: LibraryFileListItem) => !groupLocked(file) && canModify('library', 'update', file.created_by_id),
     [canModify],
+  );
+  // A locked group gets a reason that names no cause: what else is in the
+  // group is not this user's to learn.
+  const ungroupBlockedReason = useCallback(
+    (row: GroupRow) =>
+      row.members.some(groupLocked)
+        ? t('fileManager.variants.noPermissionChangeGroup')
+        : t('fileManager.variants.noPermissionUngroup'),
+    [t],
+  );
+  const removeBlockedReason = useCallback(
+    (file: LibraryFileListItem) =>
+      groupLocked(file)
+        ? t('fileManager.variants.noPermissionChangeGroup')
+        : t('fileManager.variants.noPermissionRemove'),
+    [t],
   );
 
   const actions: VariantGroupActions = {
@@ -115,6 +141,7 @@ export function useVariantGroupActions({
       if (canUngroup(row)) setConfirm({ kind: 'ungroup', row });
     },
     canUngroup,
+    ungroupBlockedReason,
     deleteFiles: (row) => {
       if (canDeleteFiles(row)) setConfirm({ kind: 'delete', row });
     },
@@ -123,6 +150,7 @@ export function useVariantGroupActions({
       if (canRemove(file)) removeMutation.mutate({ groupId, fileId: file.id });
     },
     canRemove,
+    removeBlockedReason,
   };
 
   // The confirm says how many of the versions sit in other folders: deleting

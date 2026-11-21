@@ -4667,6 +4667,7 @@ export default {
       ungroupTitle: 'Ungroup versions',
       ungroupConfirm: 'The {{count}} versions of "{{name}}" become separate files again. No file is deleted.',
       noPermissionUngroup: 'You need permission to edit every version to ungroup them',
+      noPermissionChangeGroup: 'You do not have permission to change this group',
       ungrouped: 'Versions ungrouped',
       removeFromGroup: 'Remove from group',
       removed: 'Removed from the group',

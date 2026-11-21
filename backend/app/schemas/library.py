@@ -133,6 +133,8 @@ class FileUpdate(IgnoresNullForRequiredColumns):
     notes: str | None = None
     # Empty string clears the link, like ``notes`` (#3077).
     external_url: str | None = Field(None, max_length=500)
+    # The file clears its own plate (#3576)
+    clears_plate: bool | None = None
 
     @field_validator("external_url")
     @classmethod
@@ -183,6 +185,8 @@ class FileResponse(BaseModel):
     # User link + photos of the printed result (#3077); ``source_url`` is the
     # read-only import provenance (MakerWorld) shown next to it.
     external_url: str | None = None
+    # The file clears its own plate (#3576)
+    clears_plate: bool = False
     photos: list[str] = []
     source_url: str | None = None
 
@@ -258,6 +262,7 @@ class FileListResponse(BaseModel):
     # Metadata indicators (#3077). The list never ships the notes text itself —
     # ``has_notes`` is enough for the card badge; the details modal loads the rest.
     external_url: str | None = None
+    clears_plate: bool = False
     has_notes: bool = False
     photo_count: int = 0
 
@@ -526,6 +531,7 @@ class VariantGroupMemberResponse(BaseModel):
     filename: str
     target_model: str
     position: int
+    clears_plate: bool = False  # the file's own flag (#3576)
 
 
 class VariantGroupResponse(BaseModel):

@@ -940,6 +940,8 @@ export type VerdictSource = 'dialog' | 'link' | 'plate_clear' | 'printer_card' |
 
 export interface Archive {
   id: number;
+  // The file clears its own plate; reprints start with this setting (#3576)
+  clears_plate: boolean;
   printer_id: number | null;
   project_id: number | null;
   project_name: string | null;
@@ -2914,6 +2916,8 @@ export interface PrintQueueItem {
     filename: string;
     target_model: string;
     position: number;
+    // This alternative's slice clears its own plate (#3576)
+    clears_plate: boolean;
   }>;
   // Either archive_id OR library_file_id must be set (archive created at print start)
   archive_id: number | null;
@@ -2954,6 +2958,8 @@ export interface PrintQueueItem {
   nozzle_offset_cali: CalibrationMode;
   // Ask for a post-print outcome verdict when this job completes (#1898)
   confirm_outcome: boolean;
+  // The file clears its own plate: no plate confirmation after a successful print (#3576)
+  clears_plate: boolean;
   preheat_override: 'inherit' | 'on' | 'off';
   preheat_chamber_target_override: number | null;
   status: 'pending' | 'printing' | 'completed' | 'failed' | 'skipped' | 'cancelled';
@@ -3101,6 +3107,8 @@ export interface PrintQueueItemCreate {
   nozzle_offset_cali?: CalibrationMode;
   // Ask for a post-print outcome verdict when this job completes (#1898)
   confirm_outcome?: boolean;
+  // Omitted on create: taken from the library file, else the archive (#3576)
+  clears_plate?: boolean;
   preheat_override?: 'inherit' | 'on' | 'off';
   preheat_chamber_target_override?: number | null;
   // Auto-print G-code injection
@@ -3135,6 +3143,8 @@ export interface QueueVariantCreate {
   ams_mapping?: number[] | null;
   nozzle_mapping?: number[] | null;
   filament_overrides?: Array<{ slot_id: number; type: string; color: string; color_name?: string; tray_info_idx?: string; force_color_match?: boolean }> | null;
+  /** This alternative's slice clears its own plate (#3576); omit to take the file's flag. */
+  clears_plate?: boolean;
 }
 
 export interface PrintBatchCreate {
@@ -3193,6 +3203,8 @@ export interface PrintQueueItemUpdate {
   nozzle_offset_cali?: CalibrationMode;
   // Ask for a post-print outcome verdict when this job completes (#1898)
   confirm_outcome?: boolean;
+  // Omitted = unchanged (#3576)
+  clears_plate?: boolean;
   preheat_override?: 'inherit' | 'on' | 'off';
   preheat_chamber_target_override?: number | null;
   // Auto-print G-code injection
@@ -3222,6 +3234,8 @@ export interface PrintQueueBulkUpdate {
   nozzle_offset_cali?: CalibrationMode;
   // Ask for a post-print outcome verdict when this job completes (#1898)
   confirm_outcome?: boolean;
+  // Omitted = unchanged (#3576)
+  clears_plate?: boolean;
   preheat_override?: 'inherit' | 'on' | 'off';
   preheat_chamber_target_override?: number | null;
   // Auto-print G-code injection
@@ -8366,13 +8380,15 @@ export const api = {
   uploadLibraryFile: async (
     file: File,
     folderId?: number | null,
-    generateStlThumbnails: boolean = true
+    generateStlThumbnails: boolean = true,
+    clearsPlate: boolean = false
   ): Promise<LibraryFileUploadResponse> => {
     const formData = new FormData();
     formData.append('file', file);
     const params = new URLSearchParams();
     if (folderId) params.set('folder_id', String(folderId));
     params.set('generate_stl_thumbnails', String(generateStlThumbnails));
+    if (clearsPlate) params.set('clears_plate', 'true');
     const headers: Record<string, string> = {};
     if (authToken) {
       headers['Authorization'] = `Bearer ${authToken}`;
@@ -8393,7 +8409,8 @@ export const api = {
     folderId?: number | null,
     preserveStructure: boolean = true,
     createFolderFromZip: boolean = false,
-    generateStlThumbnails: boolean = true
+    generateStlThumbnails: boolean = true,
+    clearsPlate: boolean = false
   ): Promise<ZipExtractResponse> => {
     const formData = new FormData();
     formData.append('file', file);
@@ -8402,6 +8419,7 @@ export const api = {
     params.set('preserve_structure', String(preserveStructure));
     params.set('create_folder_from_zip', String(createFolderFromZip));
     params.set('generate_stl_thumbnails', String(generateStlThumbnails));
+    if (clearsPlate) params.set('clears_plate', 'true');
     const headers: Record<string, string> = {};
     if (authToken) {
       headers['Authorization'] = `Bearer ${authToken}`;
@@ -9087,6 +9105,8 @@ export interface LibraryFileDuplicate {
 
 export interface LibraryFile {
   id: number;
+  // The file ends with a plate change or push-off (#3576)
+  clears_plate: boolean;
   folder_id: number | null;
   folder_name: string | null;
   project_id: number | null;
@@ -9128,6 +9148,7 @@ export interface LibraryTagSummary {
 
 export interface LibraryFileListItem {
   id: number;
+  clears_plate: boolean;
   folder_id: number | null;
   is_external: boolean;
   filename: string;
@@ -9170,6 +9191,8 @@ export interface VariantGroupMember {
   filename: string;
   target_model: string;
   position: number;
+  // The member file clears its own plate (#3576)
+  clears_plate: boolean;
 }
 
 export interface VariantGroup {
@@ -9200,6 +9223,7 @@ export interface LibraryFileUpdate {
   project_id?: number | null;
   notes?: string | null;
   external_url?: string | null;
+  clears_plate?: boolean;
 }
 
 // Library trash (#1008)

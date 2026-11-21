@@ -275,6 +275,7 @@ async def _add_variant_item(ctx, specs):
                     nozzle_mapping=spec.get("nozzle_mapping"),
                     print_time_seconds=spec.get("print_time_seconds"),
                     attempt_count=spec.get("attempts", 0),
+                    clears_plate=spec.get("clears_plate", False),
                 )
             )
         await db.commit()
@@ -537,3 +538,37 @@ async def test_printer_checks_read_the_candidates_own_file(queue_db):
         ]
     assert seen["unmatched"] == files[:1]
     assert seen["short"] == files[1:]
+
+
+@pytest.mark.asyncio
+async def test_tried_flagged_candidate_does_not_leak_clears_plate_to_the_winner(queue_db):
+    """A flagged A1-style candidate is only tried (its checks resolve it onto the row)
+    and the unflagged alternative wins: the dispatched item must read clears_plate False (#3576)."""
+    item_id = await _add_variant_item(
+        queue_db,
+        [
+            {"model": "H2S", "clears_plate": True},
+            {"model": "H2C", "clears_plate": False},
+        ],
+    )
+    scheduler = PrintScheduler()
+    seen_during_try: list[bool] = []
+
+    async def unmatched(db, item, pid):
+        seen_during_try.append(item.clears_plate)
+        return []
+
+    async def finder(db, model, exclude_ids, *args, unmatched_on=None, **kwargs):
+        if model == "H2S":
+            await unmatched_on(1)  # resolves the flagged candidate onto the row, then it is passed over
+            return None, "busy"
+        return 2, None
+
+    with patch.object(scheduler, "_unmatched_on", AsyncMock(side_effect=unmatched)):
+        await _run_check_queue(queue_db, scheduler, AsyncMock(side_effect=finder))
+
+    assert seen_during_try == [True], "the flagged candidate really was folded onto the row while tried"
+    item = await _get_item(queue_db, item_id)
+    assert item.printer_id == 2
+    assert item.target_model == "H2C"
+    assert item.clears_plate is False

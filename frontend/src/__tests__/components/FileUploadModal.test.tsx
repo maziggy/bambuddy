@@ -652,3 +652,62 @@ describe('FileUploadModal', () => {
     });
   });
 });
+
+describe('FileUploadModal clears-plate option (#3576)', () => {
+  let uploadUrls: URL[];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    uploadUrls = [];
+    server.use(
+      http.post('/api/v1/library/files', ({ request }) => {
+        uploadUrls.push(new URL(request.url));
+        return HttpResponse.json({
+          id: 1, filename: 'test.gcode.3mf', file_type: '3mf', file_size: 1, thumbnail_path: null,
+          duplicate_of: null, metadata: null,
+        });
+      }),
+      http.post('/api/v1/library/files/extract-zip', ({ request }) => {
+        uploadUrls.push(new URL(request.url));
+        return HttpResponse.json({ extracted: 3, errors: [] });
+      }),
+    );
+  });
+
+  const addAndUpload = async (file: File, tick: boolean) => {
+    const user = userEvent.setup();
+    render(<FileUploadModal folderId={null} onClose={vi.fn()} onUploadComplete={vi.fn()} />);
+    const checkbox = screen.getByRole('checkbox', { name: /Files clear the plate automatically/i });
+    expect(checkbox).not.toBeChecked();
+    if (tick) {
+      await user.click(checkbox);
+      expect(checkbox).toBeChecked();
+    }
+    await user.upload(document.querySelector('input[type="file"]') as HTMLInputElement, file);
+    await user.click(screen.getByRole('button', { name: /Upload \(1\)/i }));
+    await waitFor(() => expect(uploadUrls).toHaveLength(1));
+    return uploadUrls[0];
+  };
+
+  it('sends clears_plate=true with a file upload when ticked', async () => {
+    const url = await addAndUpload(new File(['x'], 'plate.gcode.3mf'), true);
+    expect(url.searchParams.get('clears_plate')).toBe('true');
+  });
+
+  it('sends clears_plate=true with a ZIP extract when ticked', async () => {
+    const url = await addAndUpload(new File(['x'], 'bundle.zip', { type: 'application/zip' }), true);
+    expect(url.pathname).toBe('/api/v1/library/files/extract-zip');
+    expect(url.searchParams.get('clears_plate')).toBe('true');
+  });
+
+  it('does not send clears_plate=true by default', async () => {
+    const url = await addAndUpload(new File(['x'], 'plate.gcode.3mf'), false);
+    expect(url.searchParams.get('clears_plate')).not.toBe('true');
+  });
+
+  it('does not send clears_plate=true for a ZIP by default', async () => {
+    const url = await addAndUpload(new File(['x'], 'bundle.zip', { type: 'application/zip' }), false);
+    expect(url.pathname).toBe('/api/v1/library/files/extract-zip');
+    expect(url.searchParams.get('clears_plate')).not.toBe('true');
+  });
+});

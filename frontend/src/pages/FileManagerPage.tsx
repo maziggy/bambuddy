@@ -2843,6 +2843,7 @@ export function FileManagerPage() {
         id: f.id,
         filename: f.filename,
         sliced_for_model: f.sliced_for_model,
+        clears_plate: f.clears_plate,
       }));
     }
     if (printFileGroup && printFileGroup.members.length > 1) {
@@ -2850,6 +2851,7 @@ export function FileManagerPage() {
         id: m.library_file_id,
         filename: m.filename,
         sliced_for_model: m.target_model,
+        clears_plate: m.clears_plate,
       }));
     }
     return undefined;

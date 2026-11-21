@@ -1475,8 +1475,8 @@ describe('FileManagerPage', () => {
             id: 7,
             name: 'Benchy',
             members: [
-              { library_file_id: 1, filename: 'benchy.gcode.3mf', target_model: 'X1C', position: 0 },
-              { library_file_id: 3, filename: 'cube.gcode.3mf', target_model: 'P1S', position: 1 },
+              { library_file_id: 1, filename: 'benchy.gcode.3mf', target_model: 'X1C', position: 0, clears_plate: false },
+              { library_file_id: 3, filename: 'cube.gcode.3mf', target_model: 'P1S', position: 1, clears_plate: false },
             ],
           })
         )
@@ -1491,6 +1491,39 @@ describe('FileManagerPage', () => {
       expect(await screen.findByText(/benchy\.gcode\.3mf \+1 more/)).toBeInTheDocument();
       // ... but a group has no "separate jobs" choice.
       expect(screen.queryByRole('radiogroup', { name: 'What the selected files become' })).not.toBeInTheDocument();
+    });
+
+    it('prefills the alternatives toggle from the group member, even for a file outside the loaded list (#3576)', async () => {
+      const user = userEvent.setup();
+      server.use(
+        http.get('/api/v1/library/files', ({ request }) =>
+          HttpResponse.json(
+            filesForRequest(request).map((f: { id: number }) =>
+              f.id === 1 ? { ...f, variant_group_id: 7 } : f
+            )
+          )
+        ),
+        http.get('/api/v1/library/variant-groups/7', () =>
+          HttpResponse.json({
+            id: 7,
+            name: 'Benchy',
+            members: [
+              { library_file_id: 1, filename: 'benchy.gcode.3mf', target_model: 'X1C', position: 0, clears_plate: false },
+              { library_file_id: 999, filename: 'elsewhere.gcode.3mf', target_model: 'P1S', position: 1, clears_plate: true },
+            ],
+          })
+        )
+      );
+      render(<FileManagerPage />);
+      await waitFor(() => expect(screen.getByText('Benchy')).toBeInTheDocument());
+      await user.click(screen.getByText('Benchy').closest('div[class*="cursor-pointer"]') as HTMLElement);
+      await user.click(await screen.findByRole('button', { name: /^Print$/ }));
+
+      await screen.findByText('Printer alternatives');
+      const boxes = screen.getAllByRole('checkbox', { name: /Clears plate/ });
+      expect(boxes).toHaveLength(2);
+      expect(boxes[0]).not.toBeChecked();
+      expect(boxes[1]).toBeChecked();
     });
   });
 

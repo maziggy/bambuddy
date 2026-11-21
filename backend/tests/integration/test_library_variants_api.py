@@ -45,6 +45,19 @@ async def _create_group(client: AsyncClient, *file_ids: int, name: str | None = 
 class TestCreateVariantGroup:
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_members_carry_the_files_clears_plate_flag(self, async_client, sliced_file_factory):
+        """#3576: the print dialog prefills each alternative's toggle from it."""
+        a1 = await sliced_file_factory("A1", clears_plate=True)
+        p1s = await sliced_file_factory("P1S")
+
+        body = (await _create_group(async_client, a1.id, p1s.id)).json()
+        assert [m["clears_plate"] for m in body["members"]] == [True, False]
+
+        looked_up = (await async_client.get(f"/api/v1/library/variant-groups/by-file/{p1s.id}")).json()
+        assert [m["clears_plate"] for m in looked_up["members"]] == [True, False]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_groups_two_slices_in_priority_order(self, async_client, sliced_file_factory):
         h2s = await sliced_file_factory("H2S")
         h2c = await sliced_file_factory("H2C")

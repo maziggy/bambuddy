@@ -142,3 +142,45 @@ async def test_send_queue_item_failed_carries_reason_key():
         "printer_id": 2,
         "reason": "upload_failed",
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("user_ids", [None, {7}])
+async def test_run_completed_reaches_only_the_runs_readers(user_ids):
+    """#3578: the frame names an archive, so with readers given it goes to them only."""
+    mgr = ConnectionManager()
+    reader, bystander = _mock_conn(7), _mock_conn(8)
+    mgr.active_connections = [reader, bystander]
+
+    await mgr.send_run_completed(3, 11, 42, user_ids)
+
+    sent = json.loads(reader.send_text.await_args.args[0])
+    assert sent == {"type": "run_completed", "printer_id": 3, "data": {"archive_id": 11, "run_id": 42}}
+    assert bystander.send_text.await_count == (1 if user_ids is None else 0)
+
+
+@pytest.mark.asyncio
+async def test_run_completed_reaches_the_runs_reader_keys():
+    """#3578: an API-key socket carries no user id, so it is addressed by its key."""
+    mgr = ConnectionManager()
+    reader_key, other_key = _mock_conn(None), _mock_conn(None)
+    reader_key.state.bambuddy_scope_principal = ("", 5)
+    other_key.state.bambuddy_scope_principal = ("", 6)
+    mgr.active_connections = [reader_key, other_key]
+
+    await mgr.send_run_completed(3, 11, 42, {7}, {5})
+
+    assert reader_key.send_text.await_count == 1
+    assert other_key.send_text.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_other_targeted_frames_still_skip_key_sockets():
+    mgr = ConnectionManager()
+    key_conn = _mock_conn(None)
+    key_conn.state.bambuddy_scope_principal = ("", 5)
+    mgr.active_connections = [key_conn]
+
+    await mgr.send_print_confirm_request(3, {"archive_id": 11}, {7})
+
+    assert key_conn.send_text.await_count == 0

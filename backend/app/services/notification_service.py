@@ -28,6 +28,13 @@ from backend.app.models.notification import (
 )
 from backend.app.models.notification_template import NotificationTemplate
 from backend.app.services.email_service import add_required_headers
+from backend.app.services.notification_content import (
+    DEFAULT_EMBED_COLOR,
+    DISCORD_MAX_EMBED_TOTAL,
+    NotificationPresentation,
+    discord_fields,
+    is_unmodified_template,
+)
 from backend.app.services.notify_client import NotifyClient, NotifyError, notify_credentials, notify_supports_photos
 from backend.app.services.print_confirmation import one_tap_url
 from backend.app.utils.notification_photos import save_notification_photo
@@ -289,6 +296,13 @@ class NotificationService:
             self._template_cache[event_type] = template
 
         return template
+
+    async def _template_is_unmodified(self, db: AsyncSession, event_type: str) -> bool:
+        """Whether the event's template still has the shipped title and body."""
+        template = await self._get_template(db, event_type)
+        return template is not None and is_unmodified_template(
+            event_type, template.title_template, template.body_template
+        )
 
     def _render_template(self, template_str: str, variables: dict[str, Any]) -> str:
         """Render a template string with variables. Missing variables become empty."""
@@ -1125,9 +1139,19 @@ class NotificationService:
             return False, f"Email error: {str(e)}"
 
     async def _send_discord(
-        self, config: dict, title: str, message: str, image_data: bytes | None = None
+        self,
+        config: dict,
+        title: str,
+        message: str,
+        image_data: bytes | None = None,
+        fields: tuple[tuple[str, str], ...] | None = None,
+        color: int | None = None,
     ) -> tuple[bool, str]:
-        """Send notification via Discord webhook."""
+        """Send notification via Discord webhook.
+
+        *fields* and *color* come from a :class:`NotificationPresentation`; without
+        them the embed is the plain title and description in Bambu green.
+        """
         webhook_url = config.get("webhook_url", "").strip()
 
         if not webhook_url:
@@ -1143,8 +1167,12 @@ class NotificationService:
         embed = {
             "title": title,
             "description": message,
-            "color": 0x00AE42,  # Bambu green
+            "color": DEFAULT_EMBED_COLOR if color is None else color,
         }
+        if fields:
+            embed_fields = discord_fields(fields, DISCORD_MAX_EMBED_TOTAL - len(title) - len(message))
+            if embed_fields:
+                embed["fields"] = embed_fields
 
         client = await self._get_client()
 
@@ -1439,6 +1467,7 @@ class NotificationService:
         photo_cache: dict | None = None,
         printer_id: int | None = None,
         bypass_quiet_hours: bool = False,
+        presentation: NotificationPresentation | None = None,
     ) -> tuple[bool, str]:
         """Send notification to a specific provider.
 
@@ -1555,7 +1584,14 @@ class NotificationService:
                     config, title, message, image_data=image_data, finish_photo_url=finish_photo_url
                 )
             elif provider.provider_type == "discord":
-                return await self._send_discord(config, title, message, image_data=image_data)
+                return await self._send_discord(
+                    config,
+                    title,
+                    message,
+                    image_data=image_data,
+                    fields=presentation.fields if presentation else None,
+                    color=presentation.color if presentation else None,
+                )
             elif provider.provider_type == "webhook":
                 # Only Slack format needs a URL — generic format gets the
                 # base64 image field instead.
@@ -1721,12 +1757,18 @@ class NotificationService:
         printer_name: str | None = None,
         image_data: bytes | None = None,
         variables: dict | None = None,
+        presentation: NotificationPresentation | None = None,
     ):
         """Send notification to multiple providers and log the results.
 
         All notifications are always sent immediately. If digest mode is enabled,
         the notification is ALSO queued for the daily digest summary.
+
+        *presentation* is used only while the event's template is the shipped one
+        (see ``is_unmodified_template``).
         """
+        if presentation is not None and not await self._template_is_unmodified(db, event_type):
+            presentation = None
         photo_cache: dict = {}
         for provider in providers:
             try:
@@ -1741,6 +1783,7 @@ class NotificationService:
                     variables=variables,
                     photo_cache=photo_cache,
                     printer_id=printer_id,
+                    presentation=presentation,
                 )
 
                 # Also queue for digest if enabled (digest is a summary, not a queue)

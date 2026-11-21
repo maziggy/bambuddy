@@ -578,6 +578,8 @@ export default {
     connection: {
       connected: '연결됨',
       offline: '오프라인',
+      pending: "확인 중…",
+      unavailable: "상태를 확인할 수 없음",
       ethernet: '이더넷',
     },
     plateStatus: {

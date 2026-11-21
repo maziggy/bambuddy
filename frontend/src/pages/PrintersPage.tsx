@@ -2461,7 +2461,7 @@ function PrinterCard({
   const [isSavingRoi, setIsSavingRoi] = useState(false);
   const [plateCheckLightWasOff, setPlateCheckLightWasOff] = useState(false);
 
-  const { data: status } = useQuery({
+  const { data: status, isError: statusFailed } = useQuery({
     queryKey: ['printerStatus', printer.id],
     queryFn: () => api.getPrinterStatus(printer.id),
     refetchInterval: 30000, // Fallback polling, WebSocket handles real-time
@@ -2620,6 +2620,10 @@ function PrinterCard({
     }
   }, [status?.connected]);
   const isConnected = status?.connected ?? cachedConnected.current;
+  // Before the first status arrives the printer is neither connected nor
+  // offline: showing Offline and Run diagnostic then was wrong (#3570).
+  const connectionState: 'connected' | 'offline' | 'pending' | 'unavailable' =
+    isConnected === true ? 'connected' : isConnected === false ? 'offline' : statusFailed ? 'unavailable' : 'pending';
 
   // Cache ams_extruder_map to prevent L/R indicators bouncing on updates
   const cachedAmsExtruderMap = useRef<Record<string, number>>({});
@@ -4136,14 +4140,20 @@ function PrinterCard({
                       const hmsErrors = status?.connected && status.hms_errors ? filterKnownHMSErrors(status.hms_errors) : [];
                       const hasSevere = hmsErrors.some(isSevereHMSError);
                       const hasWarning = hmsErrors.length > 0;
-                      const pipColor = !status?.connected
+                      const pipColor = connectionState === 'pending' || connectionState === 'unavailable'
+                        ? 'bg-bambu-gray'
+                        : !status?.connected
                         ? 'bg-status-error'
                         : hasSevere
                           ? 'bg-status-error'
                           : hasWarning
                             ? 'bg-status-warning'
                             : 'bg-status-ok';
-                      const pipTitle = !status?.connected
+                      const pipTitle = connectionState === 'pending'
+                        ? t('printers.connection.pending')
+                        : connectionState === 'unavailable'
+                        ? t('printers.connection.unavailable')
+                        : !status?.connected
                         ? t('printers.connection.offline')
                         : hasWarning
                           ? `${hmsErrors.length} HMS ${hmsErrors.length === 1 ? 'error' : 'errors'}`
@@ -4217,22 +4227,34 @@ function PrinterCard({
                 </span>
               ) : (
                 <span
+                  data-testid="printer-connection-badge"
+                  data-connection={connectionState}
                   className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs ${
-                    status?.connected
+                    connectionState === 'connected'
                       ? 'bg-status-ok/20 text-status-ok'
-                      : 'bg-status-error/20 text-status-error'
+                      : connectionState === 'offline'
+                        ? 'bg-status-error/20 text-status-error'
+                        : 'bg-bambu-dark-tertiary text-bambu-gray'
                   }`}
                 >
-                  {status?.connected ? (
+                  {connectionState === 'connected' ? (
                     <Link className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)]" />
+                  ) : connectionState === 'pending' ? (
+                    <Loader2 className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)] animate-spin" />
                   ) : (
                     <Unlink className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)]" />
                   )}
-                  {status?.connected ? t('printers.connection.connected') : t('printers.connection.offline')}
+                  {connectionState === 'connected'
+                    ? t('printers.connection.connected')
+                    : connectionState === 'offline'
+                      ? t('printers.connection.offline')
+                      : connectionState === 'pending'
+                        ? t('printers.connection.pending')
+                        : t('printers.connection.unavailable')}
                 </span>
               )}
-              {/* Run connection diagnostic — offered when the printer is offline, NOT in maintenance */}
-              {printer.is_active !== false && !status?.connected && (
+              {/* Run connection diagnostic — offered once the printer is known to be offline, NOT in maintenance */}
+              {printer.is_active !== false && connectionState === 'offline' && (
                 <button
                   onClick={() => setShowDiagnostic(true)}
                   className="flex items-center gap-1 px-2 py-1 rounded-full text-xs cursor-pointer bg-bambu-dark-tertiary text-bambu-gray hover:text-white transition-colors"

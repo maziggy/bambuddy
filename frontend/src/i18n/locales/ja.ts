@@ -604,6 +604,8 @@ export default {
     connection: {
       connected: '接続中',
       offline: 'オフライン',
+      pending: "確認中…",
+      unavailable: "ステータスを取得できません",
       ethernet: '有線LAN',
     },
     plateStatus: {

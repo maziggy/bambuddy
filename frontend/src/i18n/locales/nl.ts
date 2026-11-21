@@ -608,6 +608,8 @@ export default {
     connection: {
       connected: 'Verbonden',
       offline: 'Offline',
+      pending: "Controleren…",
+      unavailable: "Status niet beschikbaar",
       ethernet: 'Ethernet',
     },
     plateStatus: {

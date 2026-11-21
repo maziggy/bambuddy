@@ -610,6 +610,8 @@ export default {
     connection: {
       connected: 'Connected',
       offline: 'Offline',
+      pending: "Checking…",
+      unavailable: "Status unavailable",
       ethernet: 'Ethernet',
     },
     plateStatus: {

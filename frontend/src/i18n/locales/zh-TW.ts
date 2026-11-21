@@ -605,6 +605,8 @@ export default {
     connection: {
       connected: '已連線',
       offline: '離線',
+      pending: "檢查中…",
+      unavailable: "狀態無法取得",
       ethernet: '乙太網路',
     },
     plateStatus: {

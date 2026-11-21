@@ -605,6 +605,8 @@ export default {
     connection: {
       connected: 'Bağlı',
       offline: 'Çevrimdışı',
+      pending: "Kontrol ediliyor…",
+      unavailable: "Durum alınamadı",
       ethernet: 'Ethernet',
     },
     plateStatus: {

@@ -608,6 +608,8 @@ export default {
     connection: {
       connected: "Підключено",
       offline: "Не в мережі",
+      pending: "Перевірка…",
+      unavailable: "Статус недоступний",
       ethernet: 'Ethernet',
     },
     plateStatus: {

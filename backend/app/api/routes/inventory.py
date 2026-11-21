@@ -96,6 +96,7 @@ from backend.app.services.spool_csv import (
     serialize,
 )
 from backend.app.services.spool_filament_preset import resolve_spool_preset
+from backend.app.services.spool_identity import spool_tray_type
 from backend.app.services.spoolman import SpoolmanClient, get_spoolman_client, init_spoolman_client
 from backend.app.services.supplier_links import apply_supplier_inheritance, apply_supplier_inheritance_to_batch
 from backend.app.services.tag_conflict import tag_already_linked
@@ -105,7 +106,7 @@ from backend.app.utils.filament_ids import (
     filament_id_to_setting_id,
     normalize_slicer_filament,
 )
-from backend.app.utils.filament_types import nozzle_temp_range, printer_filament_type, support_filament_type
+from backend.app.utils.filament_types import nozzle_temp_range
 from backend.app.utils.local_time import day_zone, local_date_end, local_date_start
 from backend.app.utils.natural_sort import natural_sort_key
 from backend.app.utils.tag_normalization import normalize_tag_uid, normalize_tray_uuid
@@ -187,10 +188,10 @@ async def apply_spool_to_slot_via_mqtt(
 
     state = printer_manager.get_status(printer_id)
 
-    # The slot carries the material type; the product line the material column
-    # may actually hold ("PLA+", "HTPLA") stays in tray_sub_brands below, which
-    # is where Bambu puts it too (issue #2902).
-    tray_type = printer_filament_type(spool.material)
+    # The slot's type (material reduced to the printer's name) comes from
+    # spool_tray_type below; the product line the material column may hold
+    # ("PLA+", "HTPLA") stays in tray_sub_brands, which is where Bambu puts it
+    # too (issue #2902).
     # Join only the parts that exist. The previous shape interpolated
     # `spool.subtype` into the branded string without checking it, so a spool
     # with a brand and no subtype went to the printer as
@@ -235,14 +236,15 @@ async def apply_spool_to_slot_via_mqtt(
     )
     if sub_brand_override:
         tray_sub_brands = sub_brand_override
-    # A preset says what its material is; the reduction above only infers it
-    # from whatever wording the spool's material column happens to carry. When
-    # the spool has a preset, its answer wins (issue #2902, @doncaruana).
-    if type_override:
-        tray_type = printer_filament_type(type_override)
-    # A support material keeps the slicer's suffix ("PLA-S"), which neither the
-    # material column nor most presets' type carries (#3559).
-    tray_type = support_filament_type(tray_type, tray_info_idx, f"{slot_slicer_filament_name or ''} {tray_sub_brands}")
+    # Shared with the filament override identity (#3590): the material column
+    # reduced to the printer's name, a preset's own type winning (#2902), and
+    # the support suffix (#3559).
+    tray_type = spool_tray_type(
+        spool.material,
+        type_override=type_override,
+        tray_info_idx=tray_info_idx,
+        name_hint=f"{slot_slicer_filament_name or ''} {tray_sub_brands}",
+    )
 
     if not tray_info_idx:
         reused = reusable_slot_filament_id(

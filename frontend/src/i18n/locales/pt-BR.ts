@@ -595,6 +595,7 @@ export default {
       loadInitiated: 'Carregando filamento…',
       unloadInitiated: 'Descarregando filamento…',
       unloadAms3h: 'Descarregando o slot {{n}}. Quando a impressora pedir, puxe o filamento de volta do AMS 3H com a mão.',
+      unloadAllAms3h: "Descarregando todos os slots carregados. Quando a impressora pedir, puxe o filamento de volta do AMS 3H com a mão.",
       failedToLoad: 'Falha ao carregar filamento',
       failedToUnload: 'Falha ao descarregar filamento',
       chamberLightOn: 'Luz da câmara ligada',
@@ -604,6 +605,8 @@ export default {
     connection: {
       connected: 'Conectado',
       offline: 'Offline',
+      pending: "Verificando…",
+      unavailable: "Status indisponível",
       ethernet: 'Ethernet',
     },
     plateStatus: {
@@ -638,6 +641,9 @@ export default {
     ams: {
       load: 'Carregar',
       unload: 'Descarregar',
+      unloadAll: "Descarregar tudo",
+      unloadAllTitle: "Descarregar todos os slots?",
+      unloadAllMessage: "A impressora descarrega um após o outro todos os slots carregados do AMS 3H. Quando ela pedir, puxe o filamento de volta do AMS 3H com a mão, então fique perto da impressora.",
       feedTitle: 'Carregar {{slot}} em qual bico?',
       feedPrompt: 'O Filament Track Switch pode direcionar este slot para qualquer um dos hotends. Escolha qual alimentar.',
       feedLeft: 'Bico esquerdo',

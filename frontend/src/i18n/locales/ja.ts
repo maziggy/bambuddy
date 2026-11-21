@@ -594,6 +594,7 @@ export default {
       loadInitiated: 'フィラメントをロード中…',
       unloadInitiated: 'フィラメントをアンロード中…',
       unloadAms3h: 'スロット {{n}} をアンロード中です。プリンターに指示されたら、AMS 3H からフィラメントを手で引き戻してください。',
+      unloadAllAms3h: "ロード済みのすべてのスロットをアンロード中です。プリンターに指示されたら、AMS 3H からフィラメントを手で引き戻してください。",
       failedToLoad: 'フィラメントのロードに失敗',
       failedToUnload: 'フィラメントのアンロードに失敗',
       chamberLightOn: 'チャンバーライトをオンにしました',
@@ -603,6 +604,8 @@ export default {
     connection: {
       connected: '接続中',
       offline: 'オフライン',
+      pending: "確認中…",
+      unavailable: "ステータスを取得できません",
       ethernet: '有線LAN',
     },
     plateStatus: {
@@ -637,6 +640,9 @@ export default {
     ams: {
       load: 'ロード',
       unload: 'アンロード',
+      unloadAll: "すべてアンロード",
+      unloadAllTitle: "すべてのスロットをアンロードしますか？",
+      unloadAllMessage: "プリンターが AMS 3H のロード済みスロットを順番にすべてアンロードします。指示されたら AMS 3H からフィラメントを手で引き戻す必要があるため、プリンターのそばにいてください。",
       feedTitle: '{{slot}} をどちらのノズルにロードしますか？',
       feedPrompt: 'Filament Track Switch はこのスロットをどちらのホットエンドにも送れます。送り先を選択してください。',
       feedLeft: '左ノズル',

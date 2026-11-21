@@ -574,6 +574,7 @@ export default {
       loadInitiated: "Загрузка филамента…",
       unloadInitiated: "Выгрузка филамента…",
       unloadAms3h: 'Выгрузка слота {{n}}. Когда принтер попросит, вытяните филамент из AMS 3H вручную.',
+      unloadAllAms3h: "Выгрузка всех загруженных слотов. Когда принтер попросит, вытяните филамент из AMS 3H вручную.",
       failedToLoad: "Не удалось загрузить филамент",
       failedToUnload: "Не удалось выгрузить филамент",
       chamberLightOn: 'Подсветка камеры включена',
@@ -582,6 +583,8 @@ export default {
     connection: {
       connected: "Подключён",
       offline: "Не в сети",
+      pending: "Проверка…",
+      unavailable: "Статус недоступен",
       ethernet: 'Ethernet',
     },
     plateStatus: {
@@ -612,6 +615,9 @@ export default {
     ams: {
       load: "Загрузить",
       unload: "Выгрузить",
+      unloadAll: "Выгрузить все",
+      unloadAllTitle: "Выгрузить все слоты?",
+      unloadAllMessage: "Принтер по очереди выгрузит все загруженные слоты AMS 3H. Когда он попросит, вытяните филамент из AMS 3H вручную, поэтому оставайтесь у принтера.",
       feedTitle: "В какое сопло загрузить {{slot}}?",
       feedPrompt: "Filament Track Switch может направить этот слот в любой из хотэндов. Выберите, в какой подавать.",
       feedLeft: "Левое сопло",

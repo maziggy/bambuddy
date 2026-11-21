@@ -260,6 +260,8 @@ def change_filament_wire_ids(tray_id: int, layout: TrayLayout | None = None) -> 
 # print.mapping and the snow fields encode a slot as (32 << 8) | k. Commands
 # address it as {ams_id: 32, slot_id: k}.
 AMS3H_MODULE_NAME = "n10a"  # its get_version module (no "/<unit>" suffix)
+# Tray state of an AMS 3H slot whose filament is in its hotend (26: held at the inlet).
+_RACK_TRAY_IN_HOTEND = 27
 
 
 def _mqtt_int(value: object) -> int | None:
@@ -8584,6 +8586,59 @@ class BambuMQTTClient:
         logger.info("[%s] Cleared pending_tray_target (unload)", self.serial_number)
 
         return True
+
+    def rack_loaded_slots(self) -> list[tuple[int, int]]:
+        """``(ams_id, slot)`` of every rack AMS slot whose hotend holds its filament.
+
+        The AMS 3H reports such a slot as tray state 27; a spool that is only
+        held at the inlet reports 26 (#3531).
+        """
+        loaded: list[tuple[int, int]] = []
+        for ams_id, _kind in self.tray_layout.rack_units:
+            unit = self._ams_unit(ams_id) or {}
+            for tray in unit.get("tray") or []:
+                if not isinstance(tray, dict) or _mqtt_int(tray.get("state")) != _RACK_TRAY_IN_HOTEND:
+                    continue
+                slot = _mqtt_int(tray.get("id"))
+                if slot is not None:
+                    loaded.append((ams_id, slot))
+        return sorted(loaded)
+
+    def ams_unload_all(self) -> int:
+        """Unload every loaded hotend of a rack printer (H3C) in one command.
+
+        As the H3C's own Unload All sends it (#3531): one
+        ``multi_slot_ams_change_filament`` listing each loaded AMS 3H slot as
+        ``255 - k``, the same feeder id a single unload names. The printer then
+        unloads them one after another and asks for the hand pull at the end.
+
+        Returns:
+            The number of slots in the command, 0 if nothing was sent.
+        """
+        client = self._client
+        if client is None or not self.state.connected:
+            return 0
+        slots = self.rack_loaded_slots()
+        if not slots:
+            logger.info("[%s] Unload all: no AMS 3H slot is loaded", self.serial_number)
+            return 0
+        self._sequence_id += 1
+        command = {
+            "print": {
+                "command": "multi_slot_ams_change_filament",
+                "sequence_id": str(self._sequence_id),
+                "is_load": False,
+                "request_array": [{"ams_id": ams_id, "slot_id": 255 - slot, "soft_temp": 0} for ams_id, slot in slots],
+                "soft_temp": 0,
+                "temper_check": True,
+            }
+        }
+        command_json = json.dumps(command)
+        logger.info("[%s] Publishing multi_slot_ams_change_filament (unload all): %s", self.serial_number, command_json)
+        client.publish(self.topic_publish, command_json, qos=1)
+        self.state.pending_tray_target = None
+        self.state.pending_tray_target_at = None
+        return len(slots)
 
     def ams_control(self, action: str) -> bool:
         """Control AMS operations.

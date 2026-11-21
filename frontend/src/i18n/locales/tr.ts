@@ -595,6 +595,7 @@ export default {
       loadInitiated: 'Filament yükleniyor…',
       unloadInitiated: 'Filament çıkarılıyor…',
       unloadAms3h: '{{n}} numaralı yuva boşaltılıyor. Yazıcı istediğinde filamenti AMS 3H\'ten elle geri çekin.',
+      unloadAllAms3h: "Yüklü tüm yuvalar boşaltılıyor. Yazıcı istediğinde filamenti AMS 3H'ten elle geri çekin.",
       failedToLoad: 'Filament yüklenemedi',
       failedToUnload: 'Filament çıkarılamadı',
       chamberLightOn: 'Hazne ışığı açık',
@@ -604,6 +605,8 @@ export default {
     connection: {
       connected: 'Bağlı',
       offline: 'Çevrimdışı',
+      pending: "Kontrol ediliyor…",
+      unavailable: "Durum alınamadı",
       ethernet: 'Ethernet',
     },
     plateStatus: {
@@ -627,6 +630,9 @@ export default {
     ams: {
       load: 'Yükle',
       unload: 'Çıkar',
+      unloadAll: "Tümünü çıkar",
+      unloadAllTitle: "Tüm yuvalar boşaltılsın mı?",
+      unloadAllMessage: "Yazıcı, AMS 3H'in yüklü tüm yuvalarını sırayla boşaltır. İstediğinde filamenti AMS 3H'ten elle geri çekmeniz gerektiği için yazıcının yanında kalın.",
       feedTitle: '{{slot}} hangi nozüle yüklensin?',
       feedPrompt: 'Filament Track Switch bu yuvayı her iki hotend\'e de yönlendirebilir. Hangisinin besleneceğini seçin.',
       feedLeft: 'Sol nozül',

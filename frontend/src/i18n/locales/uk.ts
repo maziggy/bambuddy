@@ -598,6 +598,7 @@ export default {
       loadInitiated: "Завантаження філаменту...",
       unloadInitiated: "Вивантаження філаменту...",
       unloadAms3h: 'Вивантаження слота {{n}}. Коли принтер попросить, витягніть філамент з AMS 3H вручну.',
+      unloadAllAms3h: "Вивантаження всіх завантажених слотів. Коли принтер попросить, витягніть філамент з AMS 3H вручну.",
       failedToLoad: "Не вдалося завантажити філамент",
       failedToUnload: "Не вдалося вивантажити філамент",
       chamberLightOn: 'Світло в камері увімкнено',
@@ -607,6 +608,8 @@ export default {
     connection: {
       connected: "Підключено",
       offline: "Не в мережі",
+      pending: "Перевірка…",
+      unavailable: "Статус недоступний",
       ethernet: 'Ethernet',
     },
     plateStatus: {
@@ -630,6 +633,9 @@ export default {
     ams: {
       load: "Завантажити",
       unload: "Вивантажити",
+      unloadAll: "Вивантажити все",
+      unloadAllTitle: "Вивантажити всі слоти?",
+      unloadAllMessage: "Принтер по черзі вивантажить усі завантажені слоти AMS 3H. Коли він попросить, витягніть філамент з AMS 3H вручну, тому залишайтеся біля принтера.",
       feedTitle: "У яке сопло завантажити {{slot}}?",
       feedPrompt: "Filament Track Switch може спрямувати цей слот до будь-якого з хотендів. Виберіть, у який подавати.",
       feedLeft: "Ліве сопло",

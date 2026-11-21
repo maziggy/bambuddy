@@ -192,6 +192,34 @@ async def test_wear_is_charged_at_the_prints_end(test_engine, db_session, farm):
     assert await _hold_status(db_session, hold) == "consumed"
 
 
+async def test_wear_is_charged_to_the_runs_own_end_not_the_archives(test_engine, db_session, farm):
+    """Another plate of the archive starting just before the charge is written
+    clears the archive's end time: the wear is still the run's two hours."""
+    await _switch_on(db_session, "billing_completed_wear")
+    (await db_session.get(Printer, farm.printer)).wear_cost_per_hour = 0.25
+    await _start(test_engine, db_session, farm, start_kwh=10.0, hours=2)
+
+    async def another_plate_starts(*_args, **_kwargs):
+        factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+        async with factory() as other:
+            (await other.get(PrintArchive, farm.archive)).completed_at = None
+            await other.commit()
+
+    plug = _plug()
+    with (
+        plug[0],
+        plug[1],
+        plug[2],
+        plug[3],
+        patch(WRITES_A_WAITING_CHARGE, new=AsyncMock()),
+        patch("backend.app.main._price_unpriced_run", new=another_plate_starts),
+    ):
+        await _complete(test_engine, farm.printer, "completed", name=SUBTASK)
+
+    [charge] = await _charges(db_session)
+    assert (charge.amount, charge.description) == (-5.5, f"Print charge: {SUBTASK} (filament 5.00 + wear 0.50)")
+
+
 async def test_wear_of_a_printer_without_a_rate_is_nothing(test_engine, db_session, farm):
     await _switch_on(db_session, "billing_completed_wear")
     await _start(test_engine, db_session, farm, hours=2)

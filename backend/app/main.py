@@ -1651,17 +1651,17 @@ async def _report_recovered_charge_failed(run, error: Exception) -> None:
         )
 
 
-async def _run_wear_cost(db, printer_id: int, run, archive, data: dict) -> float | None:
-    """The printer wear of the run that just ended, for its charge (#3581):
-    the figure its print log entry gets, from the same duration and rate.
-    The charge is written before the entry is."""
+async def _run_wear_cost(db, printer_id: int, run, archive, completed_at, data: dict) -> float | None:
+    """The printer wear of the run that just ended at ``completed_at``, for
+    its charge (#3581): from the same duration and rate as its print log
+    entry. The charge is written before the entry is."""
     from backend.app.models.printer import Printer
     from backend.app.services.print_log import run_duration_seconds, wear_cost_for_run
 
     started_at = run.started_at if run is not None and run.started_at is not None else archive.started_at
     duration = run_duration_seconds(
         started_at,
-        archive.completed_at,
+        completed_at,
         reconciled=bool(data.get("_reconciled")) and not data.get("_reconciled_completed_at"),
     )
     rate = await db.scalar(select(Printer.wear_cost_per_hour).where(Printer.id == printer_id))
@@ -10190,6 +10190,11 @@ async def _close_out_print(printer_id: int, data: dict):
 
     log_timing("Archive lookup")
 
+    # This run's end: written to the archive below, and the end its wear is
+    # charged to (#3581). Not read back from the archive, which another
+    # plate of it starting or ending meanwhile rewrites. A reconciled
+    # completed print ended at an estimated time, not at the reconnect (#3310).
+    run_completed_at = data.get("_reconciled_completed_at") or datetime.now(timezone.utc)
     # Update archive status
     logger.info("[ARCHIVE] Updating archive %s status...", archive_id)
     try:
@@ -10221,13 +10226,7 @@ async def _close_out_print(printer_id: int, data: dict):
             await service.update_archive_status(
                 archive_id,
                 status=status,
-                completed_at=(
-                    # A reconciled completed print ended at an estimated time,
-                    # not at the reconnect (#3310).
-                    data.get("_reconciled_completed_at") or datetime.now(timezone.utc)
-                    if status in ("completed", "failed", "aborted", "cancelled")
-                    else None
-                ),
+                completed_at=(run_completed_at if status in ("completed", "failed", "aborted", "cancelled") else None),
                 failure_reason=failure_reason,
             )
             logger.info(
@@ -10388,7 +10387,9 @@ async def _close_out_print(printer_id: int, data: dict):
                 if policy.partial_filament != "proportional":
                     charge["partial_filament"] = policy.partial_filament
                 if policy.wear and archive is not None:
-                    charge["wear_cost"] = await _run_wear_cost(db, printer_id, charged_run, archive, data)
+                    charge["wear_cost"] = await _run_wear_cost(
+                        db, printer_id, charged_run, archive, run_completed_at, data
+                    )
                 # A print that ended while the printer was offline: the plug
                 # is read now, at the reconnect, so its energy would include
                 # everything since the real end (idle draw, other prints).

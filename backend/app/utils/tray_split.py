@@ -179,9 +179,10 @@ def slot_tray_changes(
     Returns ``(per_slot, reason)``. ``per_slot`` holds only the slots that
     changed trays, each list starting with ``(mapped_tray, 0)`` and shaped
     like ``tray_change_log`` so :func:`compute_tray_split_grams` takes it
-    as is. ``reason`` is set when the log does not fit this pattern (an
-    unmapped tray with no slot before it, a tray shared by two slots, a
-    filament mismatch, a leftover tray that ran past layer 0); the caller then
+    as is. ``reason`` is set when the log does not fit this pattern (a used
+    slot the mapping names no tray for, an unmapped tray with no slot before
+    it, a tray shared by two slots, a filament mismatch, a leftover tray that
+    ran past layer 0, a slot alternating between two trays); the caller then
     attributes by mapping alone, as before #3650, and ``per_slot`` is empty.
 
     Rejected: matching the backup to a slot by material and colour alone. Two
@@ -196,14 +197,19 @@ def slot_tray_changes(
     for slot_id in used_slot_ids:
         tray = slot_to_tray[slot_id - 1] if 0 < slot_id <= len(slot_to_tray) else None
         if not isinstance(tray, int) or isinstance(tray, bool) or tray < 0:
-            continue
+            # The slot fed from somewhere the mapping does not name (an
+            # external spool as -1, #3166): that tray would read as a backup.
+            return {}, f"slot {slot_id} has no tray in the mapping {slot_to_tray}"
         mapped[slot_id] = tray
         owner[tray] = _SHARED if tray in owner else slot_id
-    if not mapped:
-        return {}, None
 
     current = dict(mapped)
     per_slot: dict[int, list[tuple[int, int]]] = {slot_id: [(tray, 0)] for slot_id, tray in mapped.items()}
+    # Times a slot went back to a tray it had left. Once is a refilled tray
+    # loaded again; a slot alternating between two trays is a misread colour
+    # change (a runout caught while loading, the backup credited to the slot
+    # printing before it), not a backup chain.
+    returns: dict[int, int] = {}
     prev_slot: int | None = None
     leading_layer: int | None = None
     started = False
@@ -238,6 +244,10 @@ def slot_tray_changes(
             prev_slot = _SHARED
             continue
         if tray != current[slot]:
+            if any(earlier == tray for earlier, _ in per_slot[slot]):
+                returns[slot] = returns.get(slot, 0) + 1
+                if returns[slot] > 1:
+                    return {}, f"slot {slot} keeps alternating between trays {sorted({t for t, _ in per_slot[slot]})}"
             per_slot[slot].append((tray, layer))
             current[slot] = tray
         prev_slot = slot

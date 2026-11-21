@@ -250,10 +250,6 @@ class TestSlotTrayChanges3650:
         assert self._run(log, fil={**self.FIL, 2: ("", "")}) == ({1: [(3, 0), (2, 40)]}, None)
         assert self._run(log, fil={}) == ({1: [(3, 0), (2, 40)]}, None)
 
-    def test_unmapped_slot_minus_one_ignored(self):
-        log = [(3, 0), (2, 40)]
-        assert self._run(log, mapping=[3, -1]) == ({1: [(3, 0), (2, 40)]}, None)
-
     def test_no_mapping_or_single_slot_does_nothing(self):
         assert self._run([(3, 0), (2, 40)], mapping=[]) == ({}, None)
         assert self._run([(3, 0), (2, 40)], slots=[1]) == ({}, None)
@@ -283,3 +279,30 @@ class TestSlotTrayChanges3650:
         assert fil[1] == ("", "")
         assert fil[254] == ("PETG", "00FF00")
         assert tray_filaments_from_raw(None, layout) == {}
+
+    def test_used_slot_without_a_tray_falls_back(self):
+        # Review: slot 2 fed from the external spool, flat mapping -1 (#3166). Its
+        # tray is then outside the mapping without being a backup; reading it as
+        # one spread slot 1's grams over the external spool.
+        fil = {0: ("PLA", "000000"), 254: ("", "")}
+        log = [(0, 0), (254, 5), (0, 6), (254, 7)]
+        per_slot, reason = self._run(log, mapping=[0, -1], fil=fil)
+        assert per_slot == {}
+        assert reason
+        per_slot, reason = self._run(log, mapping=[0], fil=fil)
+        assert per_slot == {}
+        assert reason
+
+    def test_alternating_between_mapped_and_backup_falls_back(self):
+        # Review: slot 1's tray 0 ran out while loading, so the printer went from
+        # slot 2's tray 1 straight to backup tray 2. Read as slot 2's backup, slot 2
+        # then alternates 1, 2, 1, 2: a backup chain never does that.
+        fil = {0: ("PLA", "000000"), 1: ("PLA", "000000"), 2: ("PLA", "000000")}
+        per_slot, reason = self._run([(0, 0), (1, 5), (2, 6), (1, 7), (2, 8)], mapping=[0, 1], fil=fil)
+        assert per_slot == {}
+        assert reason
+
+    def test_mapped_tray_coming_back_once_still_splits(self):
+        # The emptied tray refilled and loaded again: one return is a real change.
+        log = [(3, 0), (0, 10), (3, 11), (2, 40), (0, 41), (2, 42), (3, 80)]
+        assert self._run(log) == ({1: [(3, 0), (2, 40), (3, 80)]}, None)

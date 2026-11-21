@@ -6218,6 +6218,16 @@ async def _run_migrations(conn):
     await _safe_execute(conn, f"ALTER TABLE print_log_entries ADD COLUMN planned_cost {float_type}")
     await _safe_execute(conn, f"ALTER TABLE print_log_entries ADD COLUMN planned_grams {float_type}")
 
+    # Migration: per-printer plate changer capacity (#3575). NULL capacity keeps
+    # counting off, so existing printers behave as before.
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN plate_capacity INTEGER")
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN plates_remaining INTEGER")
+    # Show the count on the printer card (#3575); on by default, so nothing changes on upgrade.
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN plate_changer_show_count BOOLEAN DEFAULT TRUE NOT NULL")
+    await _safe_execute(
+        conn, "ALTER TABLE notification_providers ADD COLUMN on_plate_changer_empty BOOLEAN DEFAULT TRUE"
+    )
+
     await _backfill_archive_run_photos(conn)
     await _migrate_h3c_queue_tray_ids(conn)
 
@@ -6439,6 +6449,7 @@ _PG_COLUMNS_SET_FROM_MODEL = (
     ("notification_providers", "on_billing_charge_failed"),
     ("notification_providers", "on_ha_sensor_alert"),
     ("notification_providers", "on_location_ha_sensor_alert"),
+    ("notification_providers", "on_plate_changer_empty"),
     ("notification_providers", "on_plate_clear_required"),
     ("notification_providers", "on_print_confirm_request"),
     ("notification_providers", "on_print_pause_upcoming"),

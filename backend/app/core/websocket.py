@@ -293,6 +293,18 @@ class ConnectionManager:
             }
         )
 
+    async def send_printer_plates_changed(
+        self, printer_id: int, plates_remaining: int | None, plate_capacity: int | None
+    ):
+        """Tell clients a printer's plate changer count changed (#3575)."""
+        await self.broadcast(
+            {
+                "type": "printer_plates_changed",
+                "printer_id": printer_id,
+                "data": {"plates_remaining": plates_remaining, "plate_capacity": plate_capacity},
+            }
+        )
+
     async def send_print_start(self, printer_id: int, data: dict):
         """Notify clients that a print has started."""
         await self.broadcast(

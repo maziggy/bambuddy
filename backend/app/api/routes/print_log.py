@@ -18,7 +18,7 @@ from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.core.printer_scope import PrinterScope
-from backend.app.models.print_log import PrintLogEntry
+from backend.app.models.print_log import RUN_OPEN, PrintLogEntry
 from backend.app.models.user import User
 from backend.app.schemas.print_log import PrintLogEntrySchema, PrintLogEntryUpdate, PrintLogResponse
 from backend.app.services.finance_billing import settle_pending_print_charges
@@ -218,7 +218,10 @@ async def clear_print_log(
     if clause is not None:
         statement = statement.where(clause)
     # A charge waiting on one of them for its energy is written first (#3581).
-    await settle_pending_print_charges(db, *([clause] if clause is not None else []))
+    # Only on the runs the delete removes: it leaves open runs out (the
+    # open-run filter), and the charge of a run still being closed waits
+    # for its energy.
+    await settle_pending_print_charges(db, PrintLogEntry.status != RUN_OPEN, *([clause] if clause is not None else []))
     result = await db.execute(statement)
     deleted = result.rowcount
     await db.commit()

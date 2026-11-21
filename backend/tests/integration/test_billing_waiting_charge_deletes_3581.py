@@ -16,7 +16,7 @@ from sqlalchemy import func, select
 
 from backend.app.models.archive import PrintArchive
 from backend.app.models.finance import WalletTransaction
-from backend.app.models.print_log import PrintLogEntry
+from backend.app.models.print_log import INCLUDE_OPEN_RUNS, RUN_OPEN, PrintLogEntry
 from backend.app.services.finance_billing import defer_print_charge
 from backend.tests.unit.services.test_billing_energy_wear_3581 import shop  # noqa: F401
 
@@ -45,6 +45,25 @@ CHARGED_AND_GONE = ([(-1.45, "run-1")], 0)
 async def test_clearing_the_print_log(async_client: AsyncClient, db_session, waiting):
     assert (await async_client.delete("/api/v1/print-log/")).status_code == 200
     assert await _state(db_session) == CHARGED_AND_GONE
+
+
+async def test_clearing_the_print_log_leaves_a_run_still_being_closed(async_client: AsyncClient, db_session, shop):  # noqa: F811
+    """A run whose charge waits is still open until its log entry is written.
+    The clear does not delete open runs, so it does not write that charge
+    either: it stays for the energy that is on its way."""
+    run = await db_session.get(PrintLogEntry, shop["run"])
+    run.status = RUN_OPEN
+    defer_print_charge(run, shop["archive"], {"run_entry_id": run.id, "run_status": "completed", "wear_cost": 0.25})
+    await db_session.commit()
+
+    assert (await async_client.delete("/api/v1/print-log/")).status_code == 200
+
+    db_session.expire_all()
+    assert (await db_session.scalars(select(WalletTransaction))).all() == []
+    kept = await db_session.scalar(
+        select(PrintLogEntry).where(PrintLogEntry.id == shop["run"]).execution_options(**{INCLUDE_OPEN_RUNS: True})
+    )
+    assert kept is not None and kept.pending_charge is not None
 
 
 async def test_deleting_its_print_log_entry(async_client: AsyncClient, db_session, waiting):

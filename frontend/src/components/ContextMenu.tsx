@@ -235,6 +235,7 @@ export function ContextMenu({ x, y, items, onClose, anchorRef }: ContextMenuProp
   return (
     <div
       ref={menuRef}
+      data-context-menu
       className="fixed z-50 min-w-[180px] max-w-[280px] bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl py-1"
       style={{
         left: position.x,

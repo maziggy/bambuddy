@@ -1876,6 +1876,57 @@ class TestAMSLoadUnloadAPI:
             assert response.status_code == 500
             assert "failed" in response.json()["detail"].lower()
 
+    @staticmethod
+    def _h3c_client(loaded: list[tuple[int, int]]) -> MagicMock:
+        from backend.app.utils.tray_ids import TrayLayout
+
+        client = MagicMock()
+        client.tray_layout = TrayLayout.from_units([{"id": 32, "ams_type": 6}])
+        client.rack_loaded_slots.return_value = loaded
+        client.ams_unload_all.return_value = len(loaded)
+        return client
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unload_all_unloads_the_loaded_ams3h_slots(self, async_client: AsyncClient, printer_factory):
+        """H3C Unload All (#3531): one command for every loaded AMS 3H slot."""
+        printer = await printer_factory(name="H3C")
+        client = self._h3c_client([(32, 0), (32, 4)])
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/unload-all")
+
+        assert response.status_code == 200, response.text
+        client.ams_unload_all.assert_called_once_with()
+        assert response.json()["count"] == 2
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unload_all_with_nothing_loaded_is_409(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="H3C")
+        client = self._h3c_client([])
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/unload-all")
+
+        assert response.status_code == 409
+        client.ams_unload_all.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unload_all_needs_an_ams3h(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="X1C")
+        client = MagicMock()
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/unload-all")
+
+        assert response.status_code == 400
+        client.ams_unload_all.assert_not_called()
+
 
 class TestConfigureAMSSlotAPI:
     """Integration tests for AMS slot configure endpoint — tray_info_idx resolution."""

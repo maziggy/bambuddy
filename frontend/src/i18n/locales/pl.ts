@@ -600,6 +600,7 @@ export default {
       loadInitiated: 'Ładowanie filamentu…',
       unloadInitiated: 'Wyładowywanie filamentu…',
       unloadAms3h: 'Wyładowywanie gniazda {{n}}. Gdy drukarka o to poprosi, wyciągnij filament z AMS 3H ręcznie.',
+      unloadAllAms3h: "Wyładowywanie wszystkich załadowanych gniazd. Gdy drukarka o to poprosi, wyciągnij filament z AMS 3H ręcznie.",
       failedToLoad: 'Nie udało się załadować filamentu',
       failedToUnload: 'Nie udało się wyładować filamentu',
       chamberLightOn: 'Oświetlenie komory włączone',
@@ -609,6 +610,8 @@ export default {
     connection: {
       connected: 'Połączono',
       offline: 'Offline',
+      pending: "Sprawdzanie…",
+      unavailable: "Stan niedostępny",
       ethernet: 'Ethernet',
     },
     plateStatus: {
@@ -632,6 +635,9 @@ export default {
     ams: {
       load: 'Załaduj',
       unload: 'Wyładuj',
+      unloadAll: "Wyładuj wszystko",
+      unloadAllTitle: "Wyładować wszystkie gniazda?",
+      unloadAllMessage: "Drukarka wyładuje po kolei wszystkie załadowane gniazda AMS 3H. Gdy o to poprosi, wyciągnij filament z AMS 3H ręcznie, więc zostań przy drukarce.",
       feedTitle: 'Do której dyszy załadować {{slot}}?',
       feedPrompt: 'Filament Track Switch może skierować ten slot do dowolnego hotendu. Wybierz, który zasilić.',
       feedLeft: 'Lewa dysza',

@@ -568,6 +568,7 @@ export default {
       loadInitiated: '필라멘트 로딩 중…',
       unloadInitiated: '필라멘트 언로딩 중…',
       unloadAms3h: '슬롯 {{n}} 언로드 중입니다. 프린터가 요청하면 AMS 3H에서 필라멘트를 손으로 빼내세요.',
+      unloadAllAms3h: "로드된 모든 슬롯을 언로드 중입니다. 프린터가 요청하면 AMS 3H에서 필라멘트를 손으로 빼내세요.",
       failedToLoad: '필라멘트 로드 실패',
       failedToUnload: '필라멘트 언로드 실패',
       connectionFailedNotAdded: '프린터에 연결할 수 없습니다. IP, 시리얼 번호, 액세스 코드를 확인하고 LAN 전용 모드가 켜져 있는지 확인하세요. 프린터가 추가되지 않았습니다.',
@@ -577,6 +578,8 @@ export default {
     connection: {
       connected: '연결됨',
       offline: '오프라인',
+      pending: "확인 중…",
+      unavailable: "상태를 확인할 수 없음",
       ethernet: '이더넷',
     },
     plateStatus: {
@@ -596,6 +599,9 @@ export default {
     ams: {
       load: '로드',
       unload: '언로드',
+      unloadAll: "모두 언로드",
+      unloadAllTitle: "모든 슬롯을 언로드할까요?",
+      unloadAllMessage: "프린터가 AMS 3H의 로드된 슬롯을 차례로 모두 언로드합니다. 프린터가 요청하면 AMS 3H에서 필라멘트를 손으로 빼내야 하므로 프린터 옆에 있어 주세요.",
       feedTitle: '{{slot}}을(를) 어느 노즐로 로드할까요?',
       feedPrompt: 'Filament Track Switch는 이 슬롯을 양쪽 핫엔드로 보낼 수 있습니다. 공급할 쪽을 선택하세요.',
       feedLeft: '왼쪽 노즐',

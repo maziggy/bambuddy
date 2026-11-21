@@ -33,12 +33,15 @@ from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.services import plate_clear
 from backend.app.services.filament_deficit import FilamentDeficit
+from backend.app.services.notification_content import NotificationFilament
 from backend.app.services.print_scheduler import (
     FilamentScopeHold,
     PrintScheduler,
+    _ams_slot_label,
     _describe_deficit,
     _filament_wait_suffix,
     _is_filament_wait,
+    _override_filaments,
 )
 
 _DEFICIT = [
@@ -1632,3 +1635,150 @@ class TestReservationAndPlateClear:
     async def test_a_printer_turned_on_is_passed_over_with_the_setting_off(self, overrides):
         overrides.set_override(1, True)
         assert await self._reserved(False) == 2
+
+
+# ---------------------------------------------------------------------------
+# The filaments a waiting notification names, as data (#3641)
+# ---------------------------------------------------------------------------
+
+_LAVENDER = {"slot_id": 1, "type": "PLA", "color": "#B39DDB", "color_name": "Lavender Purple"}
+
+
+class TestWaitingNotificationFilaments:
+    """Every waiting notification carries what it waits for as structure; the reason text is unchanged."""
+
+    @pytest.mark.asyncio
+    async def test_a_model_job_names_the_forced_colour_it_lacks(self, ctx):
+        await _mode(ctx, on=False)
+        await _add_item(ctx, filament_overrides=json.dumps([{**_LAVENDER, "force_color_match": True}]))
+
+        result = await _run(ctx, PrintScheduler())
+
+        result.waiting.assert_awaited_once()
+        kwargs = result.waiting.await_args.kwargs
+        assert kwargs["waiting_reason"] == "No matching material/color. Waiting on PLA (Lavender Purple)"
+        assert kwargs["filaments"] == [
+            NotificationFilament(type="PLA", color_hex="#B39DDB", color_name="Lavender Purple")
+        ]
+        assert kwargs.get("printer_id") is None
+
+    @pytest.mark.asyncio
+    async def test_a_waiting_model_job_names_each_colour_once(self, ctx):
+        await _mode(ctx, on=False)
+        overrides = [
+            {**_LAVENDER, "force_color_match": True},
+            {"slot_id": 2, "type": "PETG", "color": "#FFFFFF", "color_name": "White", "force_color_match": True},
+        ]
+        await _add_item(ctx, filament_overrides=json.dumps(overrides))
+
+        result = await _run(ctx, PrintScheduler())
+
+        # Three printers lack the same two filaments: two entries, not six.
+        filaments = result.waiting.await_args.kwargs["filaments"]
+        assert [(f.type, f.color_name) for f in filaments] == [("PLA", "Lavender Purple"), ("PETG", "White")]
+
+    @pytest.mark.asyncio
+    async def test_the_loaded_filament_first_wait_carries_them_too(self, ctx):
+        await _mode(ctx, hours="None")
+        await _add_item(ctx, filament_overrides=json.dumps([{**_LAVENDER, "force_color_match": True}]))
+
+        result = await _run(ctx, PrintScheduler())
+
+        result.waiting.assert_awaited_once()
+        assert result.waiting.await_args.kwargs["filaments"] == [
+            NotificationFilament(type="PLA", color_hex="#B39DDB", color_name="Lavender Purple")
+        ]
+
+    def test_requirements_are_named_once_each_in_slot_order(self):
+        second = {"slot_id": 2, "type": "PETG", "color": "#FFFFFF"}
+        first = {"slot_id": 1, "type": "PLA", "color": "#B39DDB", "color_name": "Lavender Purple"}
+
+        assert _override_filaments([second, first, dict(first), dict(second)]) == [
+            NotificationFilament(type="PLA", color_hex="#B39DDB", color_name="Lavender Purple"),
+            NotificationFilament(type="PETG", color_hex="#FFFFFF"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_a_pinned_wait_for_short_spools_names_the_slot(self, ctx):
+        await _mode(ctx, hours="None")
+        item_id = await _add_item(ctx, printer_id=1)
+
+        result = await _run(ctx, PrintScheduler(), deficit_items={item_id})
+
+        kwargs = result.waiting.await_args.kwargs
+        assert kwargs["waiting_reason"] == f"Waiting for filament: {_DEFICIT_TEXT}"
+        assert kwargs["printer_id"] == 1
+        assert kwargs["filaments"] == [NotificationFilament(type="PLA", slot=_ams_slot_label(0, 0))]
+
+    @pytest.mark.asyncio
+    async def test_the_filament_short_gate_keeps_its_reason_and_adds_the_filament(self, ctx):
+        # The wording of this reason is #3642's; only the structured data is new here.
+        await _mode(ctx, on=False)
+        item_id = await _add_item(ctx, printer_id=1)
+
+        result = await _run(ctx, PrintScheduler(), deficit_items={item_id})
+
+        kwargs = result.waiting.await_args.kwargs
+        assert kwargs["waiting_reason"] == "filament_short"
+        assert kwargs["filaments"] == [NotificationFilament(type="PLA", slot=_ams_slot_label(0, 0))]
+
+    @pytest.mark.asyncio
+    async def test_an_unmatched_requirement_is_named(self, ctx):
+        await _mode(ctx, on=False)
+        item_id = await _add_item(ctx, printer_id=1)
+
+        result = await _run(ctx, PrintScheduler(), unmatched_items={item_id})
+
+        kwargs = result.waiting.await_args.kwargs
+        assert kwargs["waiting_reason"] == f"needs {_BROWN_TEXT}"
+        assert kwargs["filaments"] == [NotificationFilament(type="PLA", color_hex="Earth Brown")]
+
+
+class TestMissingForceColours:
+    """The data behind "PLA (Red)": the same slots, as the override dicts."""
+
+    RED = {"slot_id": 1, "type": "PLA", "color": "#FF0000", "color_name": "Red", "force_color_match": True}
+    BLUE = {"slot_id": 2, "type": "PLA", "color": "#0000FF", "color_name": "Blue", "force_color_match": True}
+
+    @staticmethod
+    def _raw(*trays):
+        return {
+            "ams": [{"id": 0, "tray": [{"id": i, "tray_type": t, "tray_color": c} for i, (t, c) in enumerate(trays)]}]
+        }
+
+    def test_the_words_and_the_data_agree(self):
+        scheduler = PrintScheduler()
+        raw = self._raw(("PLA", "FF0000FF"))
+
+        assert scheduler._get_missing_force_color_slots(1, [self.RED, self.BLUE], raw) == ["PLA (Blue)"]
+        assert scheduler._missing_force_color_overrides(1, [self.RED, self.BLUE], raw) == [self.BLUE]
+
+    def test_nothing_missing_is_empty(self):
+        scheduler = PrintScheduler()
+        raw = self._raw(("PLA", "FF0000FF"), ("PLA", "0000FFFF"))
+
+        assert scheduler._get_missing_force_color_slots(1, [self.RED, self.BLUE], raw) == []
+        assert scheduler._missing_force_color_overrides(1, [self.RED, self.BLUE], raw) == []
+
+    @pytest.mark.asyncio
+    async def test_the_matcher_collects_what_it_names(self, ctx):
+        collected: list[dict] = []
+        scheduler = PrintScheduler()
+
+        def missing_slots(pid, overrides, raw=None):
+            return ["PLA (Red)"]
+
+        with (
+            patch("backend.app.services.print_scheduler.printer_manager.is_connected", MagicMock(return_value=True)),
+            patch.object(scheduler, "_is_printer_idle", MagicMock(return_value=True)),
+            patch.object(scheduler, "_get_missing_force_color_slots", MagicMock(side_effect=missing_slots)),
+            patch.object(scheduler, "_missing_force_color_overrides", MagicMock(return_value=[self.RED])),
+        ):
+            async with ctx.session_maker() as db:
+                printer_id, reason = await scheduler._find_idle_printer_for_model(
+                    db, "X1C", set(), filament_overrides=[self.RED], missing_overrides=collected
+                )
+
+        assert printer_id is None
+        assert reason == "No matching material/color. Waiting on PLA (Red)"
+        assert collected == [self.RED, self.RED, self.RED]  # one per printer; the caller names each once

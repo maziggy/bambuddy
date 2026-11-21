@@ -6,7 +6,7 @@ import json
 import logging
 import re
 import smtplib
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta, timezone
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
@@ -27,12 +27,16 @@ from backend.app.models.notification import (
     TelegramPendingVerdict,
 )
 from backend.app.models.notification_template import NotificationTemplate
+from backend.app.models.printer import Printer
 from backend.app.services.email_service import add_required_headers
 from backend.app.services.notification_content import (
     DEFAULT_EMBED_COLOR,
     DISCORD_MAX_EMBED_TOTAL,
+    NotificationFilament,
     NotificationPresentation,
     discord_fields,
+    embed_color,
+    filament_variables,
     is_unmodified_template,
 )
 from backend.app.services.notify_client import NotifyClient, NotifyError, notify_credentials, notify_supports_photos
@@ -3004,24 +3008,51 @@ class NotificationService:
         waiting_reason: str,
         db: AsyncSession,
         printer_id: int | None = None,
+        filaments: Sequence[NotificationFilament] = (),
     ):
         """Handle job waiting for filament event.
 
         ``printer_id`` is the printer a pinned job waits on; None for a job for
-        "Any <model>" that no printer holds.
+        "Any <model>" that no printer holds. ``filaments`` are the filaments the
+        job waits for, as data; ``waiting_reason`` stays the sentence it always was.
         """
         providers = await self._get_providers_for_event(db, "on_queue_job_waiting", printer_id)
         if not providers:
             return
 
+        printer_label = await self._queue_printer_label(db, printer_id, target_model)
         variables = {
             "job_name": job_name,
             "target_model": target_model,
             "waiting_reason": waiting_reason,
+            "printer": printer_label,
+            **filament_variables(filaments),
         }
 
+        fields = [("Printer", printer_label), ("Job", job_name)]
+        if filaments:
+            fields.append(("Waiting for", "\n".join(f.line for f in filaments if f.line)))
+        presentation = NotificationPresentation(fields=tuple(fields), color=embed_color(filaments))
+
         title, message = await self._build_message_from_template(db, "queue_job_waiting", variables)
-        await self._send_to_providers(providers, title, message, db, "queue_job_waiting", variables=variables)
+        await self._send_to_providers(
+            providers, title, message, db, "queue_job_waiting", variables=variables, presentation=presentation
+        )
+
+    @staticmethod
+    async def _queue_printer_label(db: AsyncSession, printer_id: int | None, target_model: str) -> str:
+        """The printer's name for a pinned job, "Any <model>" for one no printer holds yet."""
+        if printer_id is not None:
+            try:
+                name = await db.scalar(select(Printer.name).where(Printer.id == printer_id))
+            except Exception as e:
+                logger.debug("Could not look up printer %s for a notification: %s", printer_id, e)
+                name = None
+            if name:
+                return name
+        if printer_id is not None:
+            return ""
+        return f"Any {target_model}" if target_model else ""
 
     async def on_queue_job_skipped(
         self,

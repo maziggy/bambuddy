@@ -5862,6 +5862,11 @@ export default {
     allMaterials: 'All Materials',
     filterByBrand: 'Filter by brand...',
     showArchived: 'Show archived',
+    lastUsed: {
+      hint: 'Started with your last spool ({{name}})',
+      hintPlain: 'Started with your last spool',
+      clear: 'Clear',
+    },
     quickAdd: 'Quick Add (Stock)',
     quantity: 'Quantity',
     stock: 'Stock',
@@ -5938,6 +5943,11 @@ export default {
     showLess: 'Show less',
     showAll: 'Show all',
     noColorsFound: 'No colors match your search',
+    catalogColors: {
+      showAll: 'Show all colors',
+      showMatching: 'Show matching only',
+      allBrand: 'All {{brand}} colors',
+    },
     noResults: 'No matches found',
     // Multi-color gradient + visual effect (#1154)
     extraColorsLabel: 'Extra colors',

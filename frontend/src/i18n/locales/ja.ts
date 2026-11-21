@@ -5818,6 +5818,11 @@ export default {
     allMaterials: 'すべての素材',
     filterByBrand: 'ブランドで絞り込み...',
     showArchived: 'アーカイブ済みを表示',
+    lastUsed: {
+      hint: '前回のスプールの値で開始しました（{{name}}）',
+      hintPlain: '前回のスプールの値で開始しました',
+      clear: 'クリア',
+    },
     quickAdd: 'クイック追加（在庫）',
     quantity: '数量',
     stock: '在庫',
@@ -5894,6 +5899,11 @@ export default {
     showLess: '少なく表示',
     showAll: 'すべて表示',
     noColorsFound: '一致する色がありません',
+    catalogColors: {
+      showAll: 'すべての色を表示',
+      showMatching: '一致するものだけ表示',
+      allBrand: '{{brand}}のすべての色',
+    },
     noResults: '結果なし',
     // Multi-color gradient + visual effect (#1154) — English fallback.
     extraColorsLabel: '追加の色',

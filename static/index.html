@@ -1,11 +1,14 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" translate="no">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <!-- L-4: Restrict Referer header to origin-only on cross-origin navigation so
          sensitive tokens in query parameters are not leaked to third-party servers. -->
     <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <!-- #3647: browser page translation rewrites text nodes React still owns, and
+         the next update crashes the UI. Bambuddy has its own language picker. -->
+    <meta name="google" content="notranslate" />
     <title>Bambuddy</title>
 
     <!-- PWA Meta Tags -->
@@ -26,7 +29,7 @@
 
     <!-- Splash screens for iOS -->
     <link rel="apple-touch-startup-image" href="/img/android-chrome-512x512.png" />
-    <script type="module" crossorigin src="/assets/index-BHKVZeLb.js"></script>
+    <script type="module" crossorigin src="/assets/index-Ct_ej96a.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-aKtaBQYM.js">
     <link rel="modulepreload" crossorigin href="/assets/client-8qmGOsVl.js">
     <link rel="modulepreload" crossorigin href="/assets/react-dom-BW0Q19Nn.js">

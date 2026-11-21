@@ -595,6 +595,7 @@ export default {
       loadInitiated: '載入耗材中…',
       unloadInitiated: '卸載耗材中…',
       unloadAms3h: '正在退出槽位 {{n}} 的線材。印表機提示時，請手動將線材從 AMS 3H 拉出。',
+      unloadAllAms3h: "正在退出所有已裝載槽位的線材。印表機提示時，請手動將線材從 AMS 3H 拉出。",
       failedToLoad: '載入耗材失敗',
       failedToUnload: '卸載耗材失敗',
       chamberLightOn: '腔室燈已開啟',
@@ -604,6 +605,8 @@ export default {
     connection: {
       connected: '已連線',
       offline: '離線',
+      pending: "檢查中…",
+      unavailable: "狀態無法取得",
       ethernet: '乙太網路',
     },
     plateStatus: {
@@ -627,6 +630,9 @@ export default {
     ams: {
       load: '載入',
       unload: '卸載',
+      unloadAll: "全部退料",
+      unloadAllTitle: "退出所有槽位的線材？",
+      unloadAllMessage: "印表機將依序退出 AMS 3H 所有已裝載槽位的線材。印表機提示時需要手動將線材從 AMS 3H 拉出，請留在印表機旁。",
       feedTitle: '要將 {{slot}} 載入哪個噴嘴？',
       feedPrompt: 'Filament Track Switch 可以將此槽位送往任一熱端。請選擇要送入的一側。',
       feedLeft: '左噴嘴',

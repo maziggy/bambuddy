@@ -4973,6 +4973,32 @@ async def ams_unload(
     return {"success": True, "message": "Unloading filament"}
 
 
+@router.post("/{printer_id}/ams/unload-all")
+async def ams_unload_all(
+    printer_id: int,
+    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db, scope="function"),
+):
+    """Unload every loaded AMS 3H slot of an H3C in one go, as its touchscreen's Unload All (#3531)."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+    if not _client_tray_layout(client).rack_units:
+        raise HTTPException(400, "Unload all needs an AMS 3H")
+    if not client.rack_loaded_slots():
+        raise HTTPException(409, "No AMS 3H slot is loaded")
+
+    count = client.ams_unload_all()
+    if not count:
+        raise HTTPException(500, "Failed to send unload command")
+    return {"success": True, "message": f"Unloading {count} AMS 3H slots", "count": count}
+
+
 @router.post("/{printer_id}/hms/execute-action")
 async def execute_hms_action(
     printer_id: int,

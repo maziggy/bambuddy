@@ -5816,6 +5816,12 @@ export const api = {
       { method: 'POST' }
     ),
 
+  // H3C: unload every loaded AMS 3H slot in one command, as the touchscreen's Unload All (#3531).
+  unloadAllAms: (printerId: number) =>
+    request<{ success: boolean; message: string; count: number }>(`/printers/${printerId}/ams/unload-all`, {
+      method: 'POST',
+    }),
+
   // MQTT Debug Logging
   enableMQTTLogging: (printerId: number) =>
     request<{ logging_enabled: boolean }>(`/printers/${printerId}/logging/enable`, {

@@ -320,7 +320,8 @@ class TestAmsSyncUsesTheSpoolsWeight:
         await db_session.commit()
 
         state = MagicMock()
-        state.raw_data = {"ams": [{"id": 0, "tray": [{"id": 0, "remain": 80}]}]}
+        # 60 %: Spoolman's 200 g already reads as 80 %, and is kept for that.
+        state.raw_data = {"ams": [{"id": 0, "tray": [{"id": 0, "remain": 60}]}]}
         with (
             patch("backend.app.api.routes.spoolman_inventory._get_client", AsyncMock(return_value=client)),
             patch("backend.app.api.routes.spoolman_inventory.printer_manager") as pm,
@@ -330,5 +331,5 @@ class TestAmsSyncUsesTheSpoolsWeight:
 
         assert response.status_code == 200
         assert response.json()["synced"] == 1
-        # 80 % of 250 g, not of the filament's 1000 g
-        client.update_spool_full.assert_called_once_with(42, remaining_weight=200.0)
+        # 60 % of 250 g, not of the filament's 1000 g
+        client.update_spool_full.assert_called_once_with(42, remaining_weight=150.0)

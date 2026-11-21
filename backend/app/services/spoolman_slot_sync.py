@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.websocket import ws_manager
 from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
-from backend.app.services import slot_unlink_grace, spool_swaps
+from backend.app.services import slot_filament_weight, slot_unlink_grace, spool_swaps
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +160,8 @@ async def _release_elsewhere(synced: Iterable[tuple[int, int, int, int]], assign
 async def _announce(assigned: list[Slot], changed: list[Slot]) -> None:
     for printer_id, ams_id, tray_id in assigned:
         slot_unlink_grace.forget_slot(printer_id, ams_id, tray_id)
+        # A spool just linked to its slot gets its Spoolman weight on the printer.
+        slot_filament_weight.mark_pending((printer_id, ams_id, tray_id))
     for printer_id, ams_id, tray_id in changed:
         await ws_manager.broadcast(
             {"type": "spool_assignment_changed", "printer_id": printer_id, "ams_id": ams_id, "tray_id": tray_id}

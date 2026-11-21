@@ -23,6 +23,7 @@ import paho.mqtt.client as mqtt
 
 from backend.app.services.hms_actions import HMSAction, get_actions_for_error_code
 from backend.app.services.hms_errors import alert_level_from_print_error, describe_fault
+from backend.app.services.slot_filament_weight import FilamentWeight
 from backend.app.utils.ams_drying import ACTIVE_DRY_STATUSES, DRY_COUNTDOWN_STALL_SECONDS
 from backend.app.utils.ams_humidity import ams_humidity_percent
 from backend.app.utils.paho_teardown import discard_queued_publishes, retire_paho_client
@@ -1807,6 +1808,11 @@ class BambuMQTTClient:
         # Acks for RFID re-reads (ams_get_rfid, and the M620 R gcode_line
         # fallback), keyed the same way. Drained by ams_refresh_tray (#3206).
         self._pending_rfid_acks: dict[str, dict | None] = {}
+        # Slot weights waiting for the printer to accept the ams_filament_setting
+        # sent before them, keyed by that command's sequence_id: (ams_id,
+        # tray_id, weight, deadline). Filled by ams_set_filament_setting, drained
+        # by the MQTT thread when the answer comes.
+        self._weights_after_setting: dict[str, tuple[int, int, FilamentWeight, float]] = {}
 
         # Identifies the one project_file *we* dispatched, so its echo on the
         # topic can be told apart from a slicer's. One-shot: consumed by the
@@ -2923,7 +2929,8 @@ class BambuMQTTClient:
                     # than a fault. Its response is still matched below (this
                     # runs before _handle_dev_mode_probe_response clears the
                     # seq), and user-initiated commands can't be mistaken for
-                    # it — they publish a hardcoded sequence_id of "0".
+                    # it — they publish sequence_id "0", or one of their own
+                    # when a slot weight waits for the answer.
                     result = print_data.get("result")
                     is_dev_mode_probe = (
                         self._dev_mode_probe_seq is not None
@@ -2944,6 +2951,18 @@ class BambuMQTTClient:
                             print_data.get("ams_id"),
                             print_data.get("tray_id"),
                         )
+                    if cmd == "ams_filament_setting":
+                        self._send_weight_after_setting(print_data)
+                # One per spool assignment at most, and the printer's verdict
+                # on the slot weight it was sent.
+                elif cmd == "set_filament_weight":
+                    logger.info(
+                        "[%s] set_filament_weight response: result=%s reason=%s seq=%s",
+                        self.serial_number,
+                        print_data.get("result"),
+                        print_data.get("reason", ""),
+                        print_data.get("sequence_id"),
+                    )
                 # AMS drying responses are rare (user-initiated only) and the
                 # full payload — including `result` and any `reason` code —
                 # is the only way to diagnose silent rejections like #1447.
@@ -8775,6 +8794,38 @@ class BambuMQTTClient:
         )
         return None
 
+    def _filament_setting_wire_ids(self, ams_id: int, tray_id: int) -> tuple[int, int, int]:
+        """The ``(ams_id, tray_id, slot_id)`` an ams_filament_setting names a slot by."""
+        # External-spool convention verified against a BambuStudio→X1C packet capture
+        # (issue #1279, May 2026): for `ams_filament_setting` Studio sends the
+        # *global* tray index in `tray_id`, not a local position within the virtual
+        # unit. The printer's response echoes `tray_id: 0` (slot position), which
+        # is what the original code was matching — but the request and response
+        # use different semantics for that field. Sending `tray_id: 0` is what
+        # the P1S in #1279 rejected with `result: "fail"`.
+        if ams_id == 255:
+            vt_tray = self.state.raw_data.get("vt_tray", []) if self.state.raw_data else []
+            if len(vt_tray) > 1:
+                # Dual external slots (H2D): each ext slot is its own virtual AMS unit
+                # (254=ext-L / slot 0, 255=ext-R / slot 1). The dual case is NOT
+                # covered by the X1C capture — left at `mqtt_tray_id = 0` until a
+                # captured Studio→H2D exchange confirms the correct value.
+                return external_tray_id(tray_id), 0, 0
+            # Single external slot (X1C, P1S, A1): global tray_id=254.
+            return 255, 254, 0
+        if (_a2l := a2l_lite_wire_ids(ams_id, tray_id)) is not None:
+            # A2L AMS-Lite: physical unit 16, local 0-3 slot (matches the
+            # firmware's own ams_mapping2 {ams_id:16, slot_id:0-3}).
+            mqtt_ams_id, slot_id, _ = _a2l
+            return mqtt_ams_id, slot_id, slot_id
+        if self._rack_ams_type(ams_id) is not None:
+            # AMS 3H: unit 32 with its slot 0-8 in tray_id and slot_id (verified).
+            return ams_id, tray_id, tray_id
+        if ams_id <= 3:
+            return ams_id, tray_id, tray_id
+        # AMS-HT: single tray per unit
+        return ams_id, tray_id, 0
+
     def ams_set_filament_setting(
         self,
         ams_id: int,
@@ -8786,6 +8837,7 @@ class BambuMQTTClient:
         nozzle_temp_min: int,
         nozzle_temp_max: int,
         setting_id: str = "",
+        then_weight: FilamentWeight | None = None,
     ) -> bool:
         """Set AMS tray filament settings (type, color, temperature).
 
@@ -8801,6 +8853,9 @@ class BambuMQTTClient:
             nozzle_temp_min: Minimum nozzle temperature
             nozzle_temp_max: Maximum nozzle temperature
             setting_id: Full setting ID with version (e.g., "GFSL05_07") - optional
+            then_weight: The spool's weight, sent with ams_set_filament_weight once
+                the printer accepts this setting - optional, and dropped where the
+                printer doesn't take it
 
         Returns:
             True if command was sent, False otherwise
@@ -8809,46 +8864,25 @@ class BambuMQTTClient:
             logger.warning("[%s] Cannot set AMS filament setting: not connected", self.serial_number)
             return False
 
-        # Calculate mqtt IDs based on AMS type.
-        # External-spool convention verified against a BambuStudio→X1C packet capture
-        # (issue #1279, May 2026): for `ams_filament_setting` Studio sends the
-        # *global* tray index in `tray_id`, not a local position within the virtual
-        # unit. The printer's response echoes `tray_id: 0` (slot position), which
-        # is what the original code was matching — but the request and response
-        # use different semantics for that field. Sending `tray_id: 0` is what
-        # the P1S in #1279 rejected with `result: "fail"`.
-        if ams_id == 255:
-            vt_tray = self.state.raw_data.get("vt_tray", []) if self.state.raw_data else []
-            if len(vt_tray) > 1:
-                # Dual external slots (H2D): each ext slot is its own virtual AMS unit
-                # (254=ext-L / slot 0, 255=ext-R / slot 1). The dual case is NOT
-                # covered by the X1C capture — left at `mqtt_tray_id = 0` until a
-                # captured Studio→H2D exchange confirms the correct value.
-                mqtt_ams_id = external_tray_id(tray_id)
-                mqtt_tray_id = 0
-            else:
-                # Single external slot (X1C, P1S, A1): global tray_id=254.
-                mqtt_ams_id = 255
-                mqtt_tray_id = 254
-            slot_id = 0
-        elif (_a2l := a2l_lite_wire_ids(ams_id, tray_id)) is not None:
-            # A2L AMS-Lite: physical unit 16, local 0-3 slot (matches the
-            # firmware's own ams_mapping2 {ams_id:16, slot_id:0-3}).
-            mqtt_ams_id, slot_id, _ = _a2l
-            mqtt_tray_id = slot_id
-        elif self._rack_ams_type(ams_id) is not None:
-            # AMS 3H: unit 32 with its slot 0-8 in tray_id and slot_id (verified).
-            mqtt_ams_id = ams_id
-            mqtt_tray_id = slot_id = tray_id
-        elif ams_id <= 3:
-            mqtt_ams_id = ams_id
-            mqtt_tray_id = tray_id
-            slot_id = tray_id
-        else:
-            # AMS-HT: single tray per unit
-            mqtt_ams_id = ams_id
-            mqtt_tray_id = tray_id
-            slot_id = 0
+        mqtt_ams_id, mqtt_tray_id, slot_id = self._filament_setting_wire_ids(ams_id, tray_id)
+
+        sequence_id = "0"
+        if then_weight is not None and self._takes_filament_weight(ams_id, then_weight):
+            # Bambu Studio sends the weight only once the printer has accepted
+            # the setting (CtrlSetFilamentWeightAfter): it takes no weight for a
+            # slot with no filament set. The answer is matched by its
+            # sequence_id, so this command gets one of its own.
+            self._sequence_id += 1
+            sequence_id = str(self._sequence_id)
+            now = time.monotonic()
+            for seq in [s for s, pending in list(self._weights_after_setting.items()) if pending[3] <= now]:
+                self._weights_after_setting.pop(seq, None)
+            self._weights_after_setting[sequence_id] = (
+                ams_id,
+                tray_id,
+                then_weight,
+                now + self._weight_after_setting_timeout,
+            )
 
         command = {
             "print": {
@@ -8864,7 +8898,7 @@ class BambuMQTTClient:
                 "tray_color": wire_tray_color(tray_color),
                 "nozzle_temp_min": nozzle_temp_min,
                 "nozzle_temp_max": nozzle_temp_max,
-                "sequence_id": "0",
+                "sequence_id": sequence_id,
             }
         }
 
@@ -8881,6 +8915,104 @@ class BambuMQTTClient:
         self._last_ams_cmd_time = time.monotonic()
         return True
 
+    # How long a slot weight waits for the printer to accept the setting before
+    # it. The same 10 s after which an unanswered setting counts against the
+    # session (#887).
+    _weight_after_setting_timeout: float = 10.0
+
+    def _takes_filament_weight(self, ams_id: int, weight: FilamentWeight) -> bool:
+        """Whether this printer takes ``weight`` for a slot of unit ``ams_id``.
+
+        Only on the models whose Bambu Studio profile declares
+        ``support_filament_remain_edit``, and ``..._rfid`` as well for a Bambu
+        Lab spool. Not for the external spool, whose addressing for this
+        command has not been captured.
+        """
+        from backend.app.utils.printer_models import (
+            supports_filament_remain_edit,
+            supports_filament_remain_edit_rfid,
+        )
+
+        if ams_id == 255 or not weight.is_valid():
+            return False
+        if weight.rfid:
+            return supports_filament_remain_edit_rfid(self.model)
+        return supports_filament_remain_edit(self.model)
+
+    def ams_set_filament_weight(self, ams_id: int, tray_id: int, weight: FilamentWeight) -> bool:
+        """Set an AMS slot's total and remaining filament weight, in grams.
+
+        Bambu Studio's ``set_filament_weight`` (DevFilaSystem::CtrlSetFilamentWeight).
+        The printer reports it back as the tray's ``remain`` percentage. The
+        slot needs its filament set first; ``then_weight`` on
+        ams_set_filament_setting sends it once the printer has accepted that.
+
+        Returns:
+            True if the command was sent, False when not connected or the
+            printer doesn't take this weight for this slot
+        """
+        if not self._client or not self.state.connected:
+            logger.warning("[%s] Cannot set filament weight: not connected", self.serial_number)
+            return False
+        if not self._takes_filament_weight(ams_id, weight):
+            logger.debug(
+                "[%s] Not setting filament weight %s on AMS %s tray %s: not taken here (model %s)",
+                self.serial_number,
+                weight,
+                ams_id,
+                tray_id,
+                self.model,
+            )
+            return False
+
+        mqtt_ams_id, _, slot_id = self._filament_setting_wire_ids(ams_id, tray_id)
+        self._sequence_id += 1
+        command = {
+            "print": {
+                "command": "set_filament_weight",
+                "sequence_id": str(self._sequence_id),
+                "ams_id": mqtt_ams_id,
+                "slot_id": slot_id,
+                "total": weight.total,
+                "remain": weight.remain,
+                "src_id": 1,
+            }
+        }
+        logger.info(
+            "[%s] Publishing set_filament_weight: AMS %s, tray %s, %d of %d g",
+            self.serial_number,
+            ams_id,
+            tray_id,
+            weight.remain,
+            weight.total,
+        )
+        self._client.publish(self.topic_publish, json.dumps(command), qos=1)
+        return True
+
+    def _send_weight_after_setting(self, answer: dict) -> None:
+        """Send the slot weight that waited for this ams_filament_setting answer.
+
+        Only after an explicit ``success`` in time, as Bambu Studio: a refusal,
+        an answer without a result or a late one drops it.
+        """
+        pending = self._weights_after_setting.pop(str(answer.get("sequence_id", "")), None)
+        if pending is None:
+            return
+        ams_id, tray_id, weight, deadline = pending
+        result = answer.get("result")
+        late = time.monotonic() > deadline
+        if late or not isinstance(result, str) or result.lower() != "success":
+            logger.info(
+                "[%s] Dropping the filament weight for AMS %s tray %s: ams_filament_setting answered result=%s%s",
+                self.serial_number,
+                ams_id,
+                tray_id,
+                result,
+                " (late)" if late else "",
+            )
+            return
+        self.ams_set_filament_weight(ams_id, tray_id, weight)
+
     def reset_ams_slot(self, ams_id: int, tray_id: int) -> bool:
         """Reset an AMS slot to empty/unconfigured state.
 
@@ -8895,36 +9027,8 @@ class BambuMQTTClient:
             logger.warning("[%s] Cannot reset AMS slot: not connected", self.serial_number)
             return False
 
-        # Calculate mqtt IDs based on AMS type — same convention as
-        # ams_set_filament_setting above. See its comment for the #1279 capture rationale.
-        if ams_id == 255:
-            vt_tray = self.state.raw_data.get("vt_tray", []) if self.state.raw_data else []
-            if len(vt_tray) > 1:
-                # Dual external slots (H2D): each ext slot is its own virtual AMS unit
-                mqtt_ams_id = external_tray_id(tray_id)
-                mqtt_tray_id = 0
-            else:
-                # Single external slot (X1C, P1S, A1): global tray_id=254.
-                mqtt_ams_id = 255
-                mqtt_tray_id = 254
-            slot_id = 0
-        elif (_a2l := a2l_lite_wire_ids(ams_id, tray_id)) is not None:
-            # A2L AMS-Lite: physical unit 16, local 0-3 slot (matches ams_mapping2).
-            mqtt_ams_id, slot_id, _ = _a2l
-            mqtt_tray_id = slot_id
-        elif self._rack_ams_type(ams_id) is not None:
-            # AMS 3H: unit 32 with its slot 0-8 (see ams_set_filament_setting).
-            mqtt_ams_id = ams_id
-            mqtt_tray_id = slot_id = tray_id
-        elif ams_id <= 3:
-            mqtt_ams_id = ams_id
-            mqtt_tray_id = tray_id
-            slot_id = tray_id
-        else:
-            # AMS-HT: single tray per unit
-            mqtt_ams_id = ams_id
-            mqtt_tray_id = tray_id
-            slot_id = 0
+        # Same convention as ams_set_filament_setting (#1279).
+        mqtt_ams_id, mqtt_tray_id, slot_id = self._filament_setting_wire_ids(ams_id, tray_id)
 
         command = {
             "print": {

@@ -415,6 +415,13 @@ PROGRESS_INCLUDES_START_SEQUENCE_MODELS = frozenset(["H3C", "N10"])
 
 AMS3H_MODELS = frozenset(["H3C", "N10"])
 
+# Models that take a slot's remaining weight in grams (set_filament_weight):
+# those whose Bambu Studio printer profile declares support_filament_remain_edit
+# (N10.json, the H3C).
+FILAMENT_REMAIN_EDIT_MODELS = frozenset(["H3C", "N10"])
+# ...and also for a Bambu Lab RFID spool (support_filament_remain_edit_rfid).
+FILAMENT_REMAIN_EDIT_RFID_MODELS = frozenset(["H3C", "N10"])
+
 
 def progress_includes_start_sequence(model: str | None) -> bool:
     """True when the printer's progress percent counts its start sequence (H3C)."""
@@ -424,6 +431,16 @@ def progress_includes_start_sequence(model: str | None) -> bool:
 def has_ams3h(model: str | None) -> bool:
     """True for a model that comes with an AMS 3H (H3C)."""
     return _model_key(model) in AMS3H_MODELS
+
+
+def supports_filament_remain_edit(model: str | None) -> bool:
+    """True for a model that takes a slot's remaining weight via set_filament_weight (H3C)."""
+    return _model_key(model) in FILAMENT_REMAIN_EDIT_MODELS
+
+
+def supports_filament_remain_edit_rfid(model: str | None) -> bool:
+    """True for a model that also takes a Bambu Lab RFID spool's remaining weight (H3C)."""
+    return _model_key(model) in FILAMENT_REMAIN_EDIT_RFID_MODELS
 
 
 def usage_progress(

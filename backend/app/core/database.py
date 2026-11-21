@@ -6218,6 +6218,11 @@ async def _run_migrations(conn):
     await _safe_execute(conn, f"ALTER TABLE print_log_entries ADD COLUMN planned_cost {float_type}")
     await _safe_execute(conn, f"ALTER TABLE print_log_entries ADD COLUMN planned_grams {float_type}")
 
+    # Migration: a run's wallet charge while it waits for the run's energy
+    # (#3581), so a restart in between does not lose it. Nullable TEXT (JSON),
+    # no default -- identical DDL on SQLite and Postgres.
+    await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN pending_charge TEXT")
+
     await _backfill_archive_run_photos(conn)
     await _migrate_h3c_queue_tray_ids(conn)
 

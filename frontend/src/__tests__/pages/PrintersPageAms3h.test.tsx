@@ -137,6 +137,42 @@ describe('PrintersPage - H3C AMS 3H', () => {
     });
   });
 
+  it('unloads every loaded slot in one go after a confirm (#3531)', async () => {
+    const user = userEvent.setup();
+    let calls = 0;
+    server.use(
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json(h3cStatus)),
+      http.post('/api/v1/printers/:id/ams/unload-all', () => {
+        calls += 1;
+        return HttpResponse.json({ success: true, message: 'Unloading 8 AMS 3H slots', count: 8 });
+      }),
+    );
+
+    render(<PrintersPage />);
+
+    const button = await screen.findByRole('button', { name: 'Unload all' });
+    await user.click(button);
+    expect(screen.getByText('Unload all slots?')).toBeInTheDocument();
+    expect(calls).toBe(0);
+    await user.click(screen.getAllByRole('button', { name: 'Unload all' }).at(-1)!);
+
+    await waitFor(() => {
+      expect(calls).toBe(1);
+    });
+  });
+
+  it('offers no Unload all while no slot has its filament in its hotend', async () => {
+    const atInlet = { ...ams3h, tray: ams3h.tray.map((slot) => ({ ...slot, state: 26 })) };
+    server.use(http.get('/api/v1/printers/:id/status', () => HttpResponse.json({ ...h3cStatus, ams: [atInlet] })));
+
+    render(<PrintersPage />);
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('filament-slot')).toHaveLength(8);
+    });
+    expect(screen.queryByRole('button', { name: 'Unload all' })).not.toBeInTheDocument();
+  });
+
   it('shows a loaded external input as Ext-n without load or unload', async () => {
     const inputs = emptyInputs.map((vt) => (vt.id === 250 ? { ...tray(250, 'FF0000FF'), tray_type: 'PETG' } : vt));
     server.use(http.get('/api/v1/printers/:id/status', () => HttpResponse.json({ ...h3cStatus, vt_tray: inputs })));

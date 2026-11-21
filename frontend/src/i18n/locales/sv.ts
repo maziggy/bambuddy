@@ -598,6 +598,7 @@ export default {
       loadInitiated: 'Laddar filament…',
       unloadInitiated: 'Laddar ur filament…',
       unloadAms3h: 'Matar ut fack {{n}}. När skrivaren ber om det drar du ut filamentet ur AMS 3H för hand.',
+      unloadAllAms3h: "Matar ut alla laddade fack. När skrivaren ber om det drar du ut filamentet ur AMS 3H för hand.",
       failedToLoad: 'Kunde inte ladda filament',
       failedToUnload: 'Kunde inte ladda ur filament',
       chamberLightOn: 'Kammarljus på',
@@ -607,6 +608,8 @@ export default {
     connection: {
       connected: 'Ansluten',
       offline: 'Offline',
+      pending: "Kontrollerar…",
+      unavailable: "Status inte tillgänglig",
       ethernet: 'Ethernet',
     },
     plateStatus: {
@@ -630,6 +633,9 @@ export default {
     ams: {
       load: 'Ladda',
       unload: 'Ladda ur',
+      unloadAll: "Mata ut alla",
+      unloadAllTitle: "Mata ut alla fack?",
+      unloadAllMessage: "Skrivaren matar ut alla laddade fack i AMS 3H ett efter ett. När den ber om det drar du ut filamentet ur AMS 3H för hand, så stanna vid skrivaren.",
       feedTitle: 'Ladda {{slot}} till vilket munstycke?',
       feedPrompt: 'Filamentspårväxlaren kan dirigera detta fack till endera värmeblock. Välj vilken du vill mata.',
       feedLeft: 'Vänster munstycke',

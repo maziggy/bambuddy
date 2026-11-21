@@ -495,6 +495,49 @@ class TestWire:
         assert client.ams_unload_filament()
         assert _last_payload(client)["slot_id"] == 255 - 6
 
+    # Unload All as the H3C's touchscreen sends it, captured on the printer (#3531):
+    # slots 1, 2, 3, 5, 7 loaded (state 27), slot 4 held at the inlet (state 26).
+    CAPTURED_UNLOAD_ALL = {
+        "command": "multi_slot_ams_change_filament",
+        "is_load": False,
+        "request_array": [
+            {"ams_id": 32, "slot_id": 255, "soft_temp": 0},
+            {"ams_id": 32, "slot_id": 254, "soft_temp": 0},
+            {"ams_id": 32, "slot_id": 253, "soft_temp": 0},
+            {"ams_id": 32, "slot_id": 251, "soft_temp": 0},
+            {"ams_id": 32, "slot_id": 249, "soft_temp": 0},
+        ],
+        "soft_temp": 0,
+        "temper_check": True,
+    }
+
+    @staticmethod
+    def _states(**states: int) -> dict:
+        frame = _frame()
+        trays = frame["ams"]["ams"][0]["tray"]
+        for tray in trays:
+            tray["state"] = states.get(f"s{tray['id']}", 9)
+        return frame
+
+    def test_unload_all_sends_what_the_touchscreen_sends(self):
+        frame = self._states(s0=27, s1=27, s2=27, s3=26, s4=27, s6=27)
+        client = _wired(_ingested(frame=frame))
+        assert client.ams_unload_all() == 5
+        sent = _last_payload(client)
+        assert sent.pop("sequence_id")
+        assert sent == self.CAPTURED_UNLOAD_ALL
+
+    def test_unload_all_with_nothing_loaded_sends_nothing(self):
+        client = _wired(_ingested(frame=self._states(s3=26)))
+        assert client.rack_loaded_slots() == []
+        assert client.ams_unload_all() == 0
+        client._client.publish.assert_not_called()
+
+    def test_unload_all_needs_an_ams3h(self):
+        client = _wired(_client(model="X1C"))
+        assert client.ams_unload_all() == 0
+        client._client.publish.assert_not_called()
+
     def test_temps_are_the_slot_filament_midpoints(self):
         frame = _frame()
         trays = {t["id"]: t for t in frame["ams"]["ams"][0]["tray"]}

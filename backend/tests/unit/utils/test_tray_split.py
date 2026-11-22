@@ -293,6 +293,15 @@ class TestSlotTrayChanges3650:
         assert per_slot == {}
         assert reason
 
+    def test_used_slot_without_a_tray_single_switch_falls_back(self):
+        # Slot 2 fed from the external spool (-1) and the log shows one load of
+        # it: no alternation to catch, so only the slot's missing tray keeps
+        # 254 from reading as slot 1's backup.
+        fil = {0: ("PLA", "000000"), 254: ("", "")}
+        per_slot, reason = self._run([(0, 0), (254, 5)], mapping=[0, -1], fil=fil)
+        assert per_slot == {}
+        assert reason
+
     def test_alternating_between_mapped_and_backup_falls_back(self):
         # Review: slot 1's tray 0 ran out while loading, so the printer went from
         # slot 2's tray 1 straight to backup tray 2. Read as slot 2's backup, slot 2

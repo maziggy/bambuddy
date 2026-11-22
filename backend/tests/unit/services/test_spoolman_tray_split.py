@@ -389,7 +389,7 @@ class TestMultiFilamentBackupSplit3650:
                 2: {"tray_uuid": "T2", "tray_type": "PLA"},
                 3: {"tray_uuid": "T3", "tray_type": "PLA"},
             },
-            slot_to_tray=[3, 0],
+            slot_to_tray=extra.pop("slot_to_tray", [3, 0]),
             tray_remain_start=extra.pop("tray_remain_start", {}),
             layer_usage=extra.pop("layer_usage", None),
             filament_properties={},
@@ -542,3 +542,47 @@ class TestMultiFilamentBackupSplit3650:
             20: pytest.approx(4.92, abs=0.01),
             10: pytest.approx(1.2, abs=0.01),
         }
+
+    @pytest.mark.asyncio
+    async def test_completion_split_follows_gcode(self):
+        # Slot 1 feeds 200 mm a layer up to the switch at layer 40 (80 g at
+        # 0.01 g/mm) and the other 33.2 g after it: the G-code split gives tray 3
+        # 80 g, not the 45.28 g of a linear split by layer.
+        layer_usage = {
+            str(layer): {"0": 200.0 * min(layer, 40) + 3320.0 / 60 * max(layer - 40, 0), "1": 2.0 * layer}
+            for layer in range(1, 101)
+        }
+        with patch("backend.app.utils.threemf_tools.mm_to_grams", side_effect=lambda mm, d, dens: mm * 0.01):
+            charged = await self._report(self._tracking(layer_usage=layer_usage), self._state())
+        assert charged == {
+            30: pytest.approx(80.0, abs=0.01),
+            20: pytest.approx(33.2, abs=0.01),
+            10: pytest.approx(2.0, abs=0.01),
+        }
+
+    @pytest.mark.asyncio
+    async def test_recovered_mapping_keeps_it_on_completion(self):
+        # No mapping stored at print start; the one read from the printer at
+        # completion may already name the backup tray, so it is no evidence of
+        # the tray slot 1 started on, and no slot is split.
+        raw = self._raw()
+        raw["mapping"] = [3, 0]
+        charged = await self._report(self._tracking(slot_to_tray=None), self._state(raw_data=raw))
+        assert charged == {30: 113.2, 10: 2.0}
+
+    @pytest.mark.asyncio
+    async def test_recovered_mapping_keeps_it_on_partial_usage(self):
+        from contextlib import ExitStack
+
+        from backend.app.services.spoolman_tracking import _report_partial_usage
+
+        raw = self._raw()
+        raw["mapping"] = [3, 0]
+        client = self._client()
+        printer_manager = MagicMock()
+        printer_manager.get_status.return_value = self._state(layer_num=60, raw_data=raw)
+        with ExitStack() as stack:
+            for p in self._patches(client, printer_manager):
+                stack.enter_context(p)
+            await _report_partial_usage(printer_id=1, tracking=self._tracking(slot_to_tray=None))
+        assert self._charged(client) == {30: pytest.approx(67.92, abs=0.01), 10: pytest.approx(1.2, abs=0.01)}

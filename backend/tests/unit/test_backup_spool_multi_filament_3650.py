@@ -162,6 +162,15 @@ class TestBackupSwitchMultiFilament3650:
         assert _by_tray(results) == {3: 45.3, 2: 22.6, 0: 1.2}
 
     @pytest.mark.asyncio
+    async def test_failed_print_without_gcode_splits_up_to_stop_layer(self):
+        # Stopped at layer 60 of 100 with no per-layer G-code: slot 1 used
+        # 113.2 g x 60 % = 67.92 g, split by layer up to the stop layer (#3652),
+        # 40 of 60 layers on tray 3. Over the whole print's 100 layers tray 3
+        # would get only 27.2 g.
+        results = await _run(status="failed", layer_num=60, progress=60)
+        assert _by_tray(results) == {3: 45.3, 2: 22.6, 0: 1.2}
+
+    @pytest.mark.asyncio
     async def test_colour_mismatch_keeps_mapping(self):
         raw = _raw()
         raw["ams"][0]["tray"][2]["tray_color"] = "FF0000FF"

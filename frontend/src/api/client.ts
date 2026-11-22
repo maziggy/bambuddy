@@ -3083,7 +3083,6 @@ export interface PrintQueueItemCreate {
   printer_id?: number | null;  // null = unassigned
   target_model?: string | null;  // Target printer model (mutually exclusive with printer_id)
   target_location?: string | null;  // Target location filter (only used with target_model)
-  required_filament_types?: string[] | null;  // Required filament types for model-based assignment
   filament_overrides?: Array<{ slot_id: number; type: string; color: string; color_name?: string; tray_info_idx?: string; force_color_match?: boolean }> | null;
   archive_id?: number | null;
   library_file_id?: number | null;
@@ -3241,6 +3240,11 @@ export interface PrintQueueBulkUpdateResponse {
   updated_count: number;
   skipped_count: number;
   message: string;
+}
+
+export interface PrintQueueDuplicateResponse {
+  created_ids: number[];  // The copies, in the order asked for
+  skipped_count: number;  // Jobs that got no copy
 }
 
 // MQTT Logging types
@@ -7081,6 +7085,11 @@ export const api = {
       `/queue/printer/${printerId}/resume`,
       { method: 'POST' },
     ),
+  duplicateQueueItems: (itemIds: number[]) =>
+    request<PrintQueueDuplicateResponse>('/queue/duplicate', {
+      method: 'POST',
+      body: JSON.stringify({ item_ids: itemIds }),
+    }),
   bulkUpdateQueue: (data: PrintQueueBulkUpdate) =>
     request<PrintQueueBulkUpdateResponse>('/queue/bulk', {
       method: 'PATCH',

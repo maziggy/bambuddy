@@ -764,6 +764,19 @@ def _is_tray_id(value: object) -> bool:
 # a staged item (#3074); this one is the reason it was staged, so it stays.
 _UNMATCHED_HOLD_PREFIX = "Needs "
 
+
+def held_by_scheduler(item: PrintQueueItem) -> bool:
+    """Whether the scheduler, not the user, staged *item* for a manual start.
+
+    Two gates do: the filament deficit (#1496, ``filament_short``) and the
+    unmatched-filament hold (#2799, its waiting_reason). A copy of such a job
+    is a new job that the same gates check on its own; carrying the
+    ``manual_start`` over without the hold's marker would stage it as though
+    the user had, for good (#3137).
+    """
+    return bool(item.filament_short) or _is_unmatched_hold_reason(item.waiting_reason)
+
+
 # "Loaded filament first" (#3587): the reason a job skipped for filament shows,
 # and the suffix that says when it gets priority. Wire format, parsed by the
 # queue page (frontend/src/utils/waitingReason.ts) - change both together.

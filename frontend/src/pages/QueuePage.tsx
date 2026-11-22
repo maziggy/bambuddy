@@ -73,7 +73,7 @@ import { type TimeFormat, formatETA, formatDuration, formatRelativeTime, parseUT
 import { getBedTypeInfo } from '../utils/bedType';
 import { getColorName } from '../utils/colors';
 import { productLineOf, useFilamentNameByIdx } from '../components/PrintModal/useFilamentLabels';
-import type { PrintQueueItem, PrintQueueItemCreate, PrintQueueBulkUpdate, Permission, CalibrationMode, PrinterStatus, SlotSpoolIdentity } from '../api/client';
+import type { PrintQueueItem, PrintQueueBulkUpdate, Permission, CalibrationMode, PrinterStatus, SlotSpoolIdentity } from '../api/client';
 import { formatSlotLabel, getEmptySlotKind, isAmsHtUnit } from '../utils/amsHelpers';
 import { locateTray, trayLayoutOf } from '../utils/trayIds';
 import type { PlateMetadata } from '../types/plates';
@@ -561,59 +561,18 @@ function CalibrationModeToggle({
 }
 
 // Sortable queue item for drag and drop
-// Duplicate: copy queued or printing jobs back onto the end of the queue. The page provides the
-// handler through context so every row can offer it without threading another prop through the
-// pending/batch/printing lists.
+// Duplicate: queue another copy of queued or printing jobs, at the end of the queue (#3441). The
+// backend clones each job, so the copy keeps what the queue response cannot carry (its project, an
+// H2C rack pick, a virtual printer job's slicer mapping). The page provides the handler through
+// context so every row can offer it without threading another prop through the pending/batch/printing
+// lists. A row's copy leaves the current selection alone; only the bulk action clears it.
 const QueueDuplicateContext = createContext<{ run: (items: PrintQueueItem[]) => void; busy: boolean } | null>(null);
 
-/** Jobs a copy can be made of: queued or printing, a single file, and a file that outlives dispatch. */
+/** Jobs a copy can be made of: queued or printing, with a file that outlives dispatch. */
 function canDuplicate(item: PrintQueueItem): boolean {
   if (item.status !== 'pending' && item.status !== 'printing') return false;
-  if (item.variants && item.variants.length) return false;
   // A printer-card upload's temporary library file is deleted when the original dispatches (#2819).
   return !(item.cleanup_library_after_dispatch && !item.archive_id);
-}
-
-/**
- * A new queue entry with the same file, plate, target and print options as `item`. The scheduled
- * time and batch are not copied: the copy goes to the end of the queue on its own.
- */
-function queueItemCopyPayload(item: PrintQueueItem): PrintQueueItemCreate {
-  const copy: PrintQueueItemCreate = {
-    archive_id: item.archive_id,
-    library_file_id: item.library_file_id,
-    plate_id: item.plate_id,
-    filament_overrides: item.filament_overrides ?? undefined,
-    require_previous_success: item.require_previous_success,
-    auto_off_after: item.auto_off_after,
-    manual_start: item.manual_start,
-    skip_filament_check: item.skip_filament_check,
-    bed_levelling: item.bed_levelling,
-    flow_cali: item.flow_cali,
-    vibration_cali: item.vibration_cali,
-    layer_inspect: item.layer_inspect,
-    timelapse: item.timelapse,
-    use_ams: item.use_ams,
-    nozzle_offset_cali: item.nozzle_offset_cali,
-    confirm_outcome: item.confirm_outcome,
-    preheat_override: item.preheat_override,
-    preheat_chamber_target_override: item.preheat_chamber_target_override,
-    gcode_injection: item.gcode_injection ?? false,
-    cost_center_id: item.cost_center_id,
-    estimated_cost: item.estimated_cost,
-  };
-  if (item.target_model) {
-    // "Any printer of a model": the scheduler picks the printer and slots again for the copy.
-    copy.target_model = item.target_model;
-    copy.target_location = item.target_location;
-    copy.required_filament_types = item.required_filament_types;
-  } else {
-    // A specific printer: keep the slot pick from the print dialog; the scheduler re-checks a
-    // stored mapping against the printer at dispatch (#2799).
-    copy.printer_id = item.printer_id;
-    copy.ams_mapping = item.ams_mapping;
-  }
-  return copy;
 }
 
 function SortableQueueItem({
@@ -1182,7 +1141,7 @@ function SortableQueueItem({
                 size="sm"
                 onClick={() => duplicate.run([item])}
                 disabled={duplicate.busy || !hasPermission('queue:create')}
-                title={!hasPermission('queue:create') ? t('queue.permissions.noRequeue') : t('queue.actions.duplicate')}
+                title={!hasPermission('queue:create') ? t('queue.permissions.noDuplicate') : t('queue.actions.duplicate')}
                 aria-label={t('queue.actions.duplicate')}
                 className="p-1.5 sm:p-2"
               >
@@ -2144,25 +2103,16 @@ export function QueuePage() {
     onError: () => showToast(t('queue.toast.bulkCancelFailed'), 'error'),
   });
 
-  // One POST per copy. A failure part-way still leaves the earlier copies in the queue, so the
-  // result counts what was added and the queue is refreshed either way.
+  // One request for every copy; the backend skips the jobs it may not copy and says how many.
   const duplicateMutation = useMutation({
-    mutationFn: async ({ items }: { items: PrintQueueItem[]; skipped: number }) => {
-      let added = 0;
-      for (const item of items) {
-        try {
-          await api.addToQueue(queueItemCopyPayload(item));
-        } catch {
-          return { added, total: items.length, failed: true };
-        }
-        added += 1;
-      }
-      return { added, total: items.length, failed: false };
-    },
-    onSuccess: ({ added, total, failed }, { skipped }) => {
-      setSelectedItems([]);
-      if (failed) showToast(added ? t('queue.toast.duplicatePartial', { added, total }) : t('queue.toast.duplicateFailed'), 'error');
-      else if (skipped) showToast(t('queue.toast.duplicateSkipped', { count: added, skipped }));
+    mutationFn: ({ items }: { items: PrintQueueItem[]; skipped: number; clearSelection: boolean }) =>
+      api.duplicateQueueItems(items.map((item) => item.id)),
+    onSuccess: ({ created_ids, skipped_count }, { skipped, clearSelection }) => {
+      if (clearSelection) setSelectedItems([]);
+      const added = created_ids.length;
+      const notCopied = skipped + skipped_count;
+      if (!added) showToast(t('queue.toast.duplicateFailed'), 'error');
+      else if (notCopied) showToast(t('queue.toast.duplicateSkipped', { count: added, skipped: notCopied }), 'warning');
       else showToast(t('queue.toast.duplicated', { count: added }));
     },
     onError: () => showToast(t('queue.toast.duplicateFailed'), 'error'),
@@ -2170,7 +2120,10 @@ export function QueuePage() {
   });
   const runDuplicate = duplicateMutation.mutate;
   const duplicateContext = useMemo(
-    () => ({ run: (items: PrintQueueItem[]) => runDuplicate({ items, skipped: 0 }), busy: duplicateMutation.isPending }),
+    () => ({
+      run: (items: PrintQueueItem[]) => runDuplicate({ items, skipped: 0, clearSelection: false }),
+      busy: duplicateMutation.isPending,
+    }),
     [runDuplicate, duplicateMutation.isPending],
   );
   const selectedQueueItems = (queue || []).filter((q) => selectedItems.includes(q.id));
@@ -3206,10 +3159,22 @@ export function QueuePage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => duplicateMutation.mutate({ items: duplicableSelected, skipped: selectedQueueItems.length - duplicableSelected.length })}
+                      onClick={() =>
+                        duplicateMutation.mutate({
+                          items: duplicableSelected,
+                          skipped: selectedQueueItems.length - duplicableSelected.length,
+                          clearSelection: true,
+                        })
+                      }
                       className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm"
                       disabled={duplicateMutation.isPending || !hasPermission('queue:create') || duplicableSelected.length === 0}
-                      title={duplicableSelected.length === 0 ? t('queue.bulkEdit.duplicateNone') : t('queue.bulkEdit.duplicateSelected')}
+                      title={
+                        !hasPermission('queue:create')
+                          ? t('queue.permissions.noDuplicate')
+                          : duplicableSelected.length === 0
+                            ? t('queue.bulkEdit.duplicateNone')
+                            : t('queue.bulkEdit.duplicateSelected')
+                      }
                     >
                       <Copy className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                       <span className="hidden sm:inline">{t('queue.bulkEdit.duplicateSelected')}</span>

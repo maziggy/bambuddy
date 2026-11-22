@@ -1900,6 +1900,20 @@ async def _track_from_3mf(
             # slicer's after (#3317); a slicer total would leave the backup
             # spool short, or with nothing.
             split_total = layer_gcode_grams.get(slot_id) or total_weight
+            # Without per-layer G-code the split is linear over ``total_layers``.
+            # A print that didn't finish has grams for the layers printed only,
+            # so it is split up to the layer it stopped at -- the same layer
+            # the swap split above uses -- or the tray spent too long on the
+            # first spool comes out short and the last one gets the rest (#3652).
+            # Spoolman's partial path passes the same. Not in
+            # ``compute_tray_split_grams``: it cannot tell a finished print from
+            # an aborted one. With no stop layer known, the whole print's count
+            # stays, as before.
+            # ``state`` is only read for a single-filament print; a multi-filament
+            # split (#3650) takes the layer count from the live state.
+            split_layers = getattr(state or _swap_state, "total_layers", 0) or 0
+            if status != "completed" and _swap_end > 0:
+                split_layers = max([_swap_end] + [layer for _, layer in split_changes])
             segments = compute_tray_split_grams(
                 tray_changes=split_changes,
                 total_weight=split_total,
@@ -1907,9 +1921,7 @@ async def _track_from_3mf(
                 layer_usage=split_layer_usage,
                 density=split_props.get("density", 1.24),
                 diameter=split_props.get("diameter", 1.75),
-                # ``state`` is only read for a single-filament print; a multi-filament
-                # split (#3650) takes the layer count from the live state.
-                total_layers=getattr(state or _swap_state, "total_layers", 0) or 0,
+                total_layers=split_layers,
                 last_layer_num=last_layer_num,
             )
             segments = [(i, tray, grams * total_weight / split_total) for i, tray, grams in segments]

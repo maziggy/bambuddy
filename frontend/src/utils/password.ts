@@ -3,11 +3,7 @@
  * `backend/app/schemas/auth.py:_validate_password_complexity` plus the
  * implicit `min_length=8` that most server-side schemas enforce.
  *
- * Returning the FIRST unmet requirement as a translation-key suffix keeps the
- * UI message order identical to what the backend would have returned — the
- * user sees the same rule fail whether the check happens client- or server-
- * side, which avoids the confusion of fixing one issue only to immediately
- * trip another after the round-trip.
+ * List unmet requirements in the same order as the backend validator.
  */
 export type PasswordRequirementKey =
   | 'tooShort'
@@ -16,11 +12,12 @@ export type PasswordRequirementKey =
   | 'needsDigit'
   | 'needsSpecial';
 
-export function checkPasswordComplexity(password: string): PasswordRequirementKey | null {
-  if (password.length < 8) return 'tooShort';
-  if (!/[A-Z]/.test(password)) return 'needsUppercase';
-  if (!/[a-z]/.test(password)) return 'needsLowercase';
-  if (!/\d/.test(password)) return 'needsDigit';
-  if (!/[^A-Za-z0-9]/.test(password)) return 'needsSpecial';
-  return null;
+export function getUnmetPasswordRequirements(password: string): PasswordRequirementKey[] {
+  const requirements: PasswordRequirementKey[] = [];
+  if (password.length < 8) requirements.push('tooShort');
+  if (!/[A-Z]/.test(password)) requirements.push('needsUppercase');
+  if (!/[a-z]/.test(password)) requirements.push('needsLowercase');
+  if (!/\d/.test(password)) requirements.push('needsDigit');
+  if (!/[^A-Za-z0-9]/.test(password)) requirements.push('needsSpecial');
+  return requirements;
 }

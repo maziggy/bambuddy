@@ -6,7 +6,7 @@ import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { formatDateOnly } from '../utils/date';
 import { getCurrencySymbol, SUPPORTED_CURRENCIES } from '../utils/currency';
-import { checkPasswordComplexity } from '../utils/password';
+import { getUnmetPasswordRequirements, type PasswordRequirementKey } from '../utils/password';
 import { fleetAudience, sponsorHref } from '../utils/fleetAudience';
 import { PRESET_CATEGORIES, parsePresetTriple } from '../utils/temperatureFanPresets';
 import { CALIBRATION_MODES, CALIBRATION_MODE_ACTIVE, CALIBRATION_MODE_INACTIVE } from '../utils/calibrationMode';
@@ -259,6 +259,36 @@ function SecretHint({ name, value, reenter }: { name: string; value: unknown; re
  */
 function clampPauseWarningMinutes(minutes: number | undefined): number {
   return Math.min(120, Math.max(1, Math.round(minutes || 5)));
+}
+
+const passwordRequirementMessages = {
+  tooShort: 'settings.toast.passwordTooShort',
+  needsUppercase: 'settings.toast.passwordNeedsUppercase',
+  needsLowercase: 'settings.toast.passwordNeedsLowercase',
+  needsDigit: 'settings.toast.passwordNeedsDigit',
+  needsSpecial: 'settings.toast.passwordNeedsSpecial',
+} as const satisfies Record<PasswordRequirementKey, string>;
+
+function PasswordRequirementFeedback({ id, requirements, showHint }: {
+  id: string;
+  requirements: PasswordRequirementKey[];
+  showHint: boolean;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <div id={id} aria-live="polite" aria-atomic="true" className="text-xs">
+      {showHint ? (
+        <p className="mt-1 text-bambu-gray">{t('settings.passwordRequirements')}</p>
+      ) : requirements.length > 0 ? (
+        <ul className="mt-1 list-disc pl-4 text-red-700 dark:text-red-400">
+          {requirements.map((requirement) => (
+            <li key={requirement}>{t(passwordRequirementMessages[requirement])}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
 }
 
 export function SettingsPage() {
@@ -972,6 +1002,8 @@ export function SettingsPage() {
   });
 
   // User management handlers
+  const unmetPasswordRequirements = getUnmetPasswordRequirements(userFormData.password);
+
   const handleCreateUser = () => {
     // Use the status from the query hook
     const advancedAuthEnabled = advancedAuthStatus?.advanced_auth_enabled || false;
@@ -997,16 +1029,9 @@ export function SettingsPage() {
         showToast(t('settings.toast.passwordsDoNotMatch'), 'error');
         return;
       }
-      const complexityIssue = checkPasswordComplexity(userFormData.password);
-      if (complexityIssue) {
-        const issueToKey = {
-          tooShort: 'settings.toast.passwordTooShort',
-          needsUppercase: 'settings.toast.passwordNeedsUppercase',
-          needsLowercase: 'settings.toast.passwordNeedsLowercase',
-          needsDigit: 'settings.toast.passwordNeedsDigit',
-          needsSpecial: 'settings.toast.passwordNeedsSpecial',
-        } as const;
-        showToast(t(issueToKey[complexityIssue]), 'error');
+      const firstUnmetRequirement = unmetPasswordRequirements[0];
+      if (firstUnmetRequirement) {
+        showToast(t(passwordRequirementMessages[firstUnmetRequirement]), 'error');
         return;
       }
     }
@@ -1026,16 +1051,9 @@ export function SettingsPage() {
         showToast(t('settings.toast.passwordsDoNotMatch'), 'error');
         return;
       }
-      const complexityIssue = checkPasswordComplexity(userFormData.password);
-      if (complexityIssue) {
-        const issueToKey = {
-          tooShort: 'settings.toast.passwordTooShort',
-          needsUppercase: 'settings.toast.passwordNeedsUppercase',
-          needsLowercase: 'settings.toast.passwordNeedsLowercase',
-          needsDigit: 'settings.toast.passwordNeedsDigit',
-          needsSpecial: 'settings.toast.passwordNeedsSpecial',
-        } as const;
-        showToast(t(issueToKey[complexityIssue]), 'error');
+      const firstUnmetRequirement = unmetPasswordRequirements[0];
+      if (firstUnmetRequirement) {
+        showToast(t(passwordRequirementMessages[firstUnmetRequirement]), 'error');
         return;
       }
     }
@@ -7794,13 +7812,19 @@ export function SettingsPage() {
                   <input
                     type="password"
                     value={userFormData.password}
+                    aria-describedby="create-user-password-requirements"
+                    aria-invalid={Boolean(userFormData.password && unmetPasswordRequirements.length)}
                     onChange={(e) => setUserFormData({ ...userFormData, password: e.target.value })}
                     className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
                     placeholder={t('settings.enterPassword')}
                     autoComplete="new-password"
                     minLength={8}
                   />
-                  <p className="text-bambu-gray text-xs mt-1">{t('settings.passwordRequirements')}</p>
+                  <PasswordRequirementFeedback
+                    id="create-user-password-requirements"
+                    requirements={unmetPasswordRequirements}
+                    showHint={!userFormData.password}
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">{t('settings.confirmPassword')}</label>
@@ -7859,7 +7883,7 @@ export function SettingsPage() {
                 </Button>
                 <Button
                   onClick={handleCreateUser}
-                  disabled={createUserMutation.isPending || !userFormData.username || !userFormData.password || userFormData.password !== userFormData.confirmPassword || checkPasswordComplexity(userFormData.password) !== null}
+                  disabled={createUserMutation.isPending || !userFormData.username || !userFormData.password || userFormData.password !== userFormData.confirmPassword || unmetPasswordRequirements.length > 0}
                 >
                   {createUserMutation.isPending ? (
                     <>
@@ -7978,13 +8002,19 @@ export function SettingsPage() {
                       <input
                         type="password"
                         value={userFormData.password}
+                        aria-describedby="edit-user-password-requirements"
+                        aria-invalid={Boolean(userFormData.password && unmetPasswordRequirements.length)}
                         onChange={(e) => setUserFormData({ ...userFormData, password: e.target.value, confirmPassword: '' })}
                         className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
                         placeholder={t('settings.enterNewPassword')}
                         autoComplete="new-password"
                         minLength={8}
                       />
-                      <p className="text-bambu-gray text-xs mt-1">{t('settings.passwordRequirements')}</p>
+                      <PasswordRequirementFeedback
+                        id="edit-user-password-requirements"
+                        requirements={unmetPasswordRequirements}
+                        showHint={!userFormData.password}
+                      />
                     </div>
                     {userFormData.password && (
                       <div>
@@ -8085,7 +8115,7 @@ export function SettingsPage() {
                     updateUserMutation.isPending ||
                     !userFormData.username ||
                     (advancedAuthStatus?.advanced_auth_enabled && !userFormData.email) ||
-                    Boolean(!advancedAuthStatus?.advanced_auth_enabled && userFormData.password && (userFormData.password !== userFormData.confirmPassword || checkPasswordComplexity(userFormData.password) !== null))
+                    Boolean(!advancedAuthStatus?.advanced_auth_enabled && userFormData.password && (userFormData.password !== userFormData.confirmPassword || unmetPasswordRequirements.length > 0))
                   }
                 >
                   {updateUserMutation.isPending ? (

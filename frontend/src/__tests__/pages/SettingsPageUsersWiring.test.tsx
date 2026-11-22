@@ -140,6 +140,41 @@ describe('SettingsPage users & groups wiring', () => {
     expect(writes()).toHaveLength(0);
   });
 
+  it('edit user explains every unmet requirement even when the passwords match', async () => {
+    const user = userEvent.setup();
+    await openUsersTab();
+
+    const [editBtn] = within(userRow('alice')).getAllByRole('button');
+    await user.click(editBtn);
+    const password = screen.getByPlaceholderText('Enter new password');
+    const confirmation = () => screen.getByPlaceholderText('Confirm new password');
+    const save = screen.getByRole('button', { name: /save changes/i });
+
+    await user.type(password, 'abcdefgh');
+    await user.type(confirmation(), 'abcdefgh');
+    expect(save).toBeDisabled();
+    expect(password).toHaveAccessibleDescription(
+      'Password must contain at least one uppercase letter Password must contain at least one digit Password must contain at least one special character',
+    );
+
+    await user.clear(password);
+    await user.type(password, 'Abcdefg1');
+    expect(password).toHaveAccessibleDescription('Password must contain at least one special character');
+    expect(confirmation()).toHaveValue('');
+
+    await user.type(password, '!');
+    expect(password).not.toHaveAccessibleDescription();
+    await user.type(confirmation(), 'Abcdefg1!');
+    expect(save).toBeEnabled();
+    await user.click(save);
+    await waitFor(() => expect(writes()).toHaveLength(1));
+    expect(writes()[0]).toMatchObject({
+      method: 'PATCH',
+      path: '/api/v1/users/2',
+      body: { password: 'Abcdefg1!' },
+    });
+  });
+
   it('edit user PATCHes that user without a password when it is left blank', async () => {
     const user = userEvent.setup();
     await openUsersTab();

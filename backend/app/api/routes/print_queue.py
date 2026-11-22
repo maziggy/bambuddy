@@ -3318,13 +3318,24 @@ async def start_queue_item(
     # spool swap between scheduler flagging and the user clicking ▶ clears
     # the block automatically.
     if not skip_filament_check:
-        deficit = await compute_deficit_for_queue_item(db, item)
-        if deficit:
+        from backend.app.services.print_scheduler import scheduler as _scheduler
+
+        deficit_rows = [d.to_dict() for d in await compute_deficit_for_queue_item(db, item)]
+        if not deficit_rows and item.printer_id is None:
+            # An "any model" job that waits because the spools on its printers
+            # are short (Loaded filament first, #3587) has no printer for the
+            # check above; its printers are named one by one (#3659). As with
+            # the check below, a failure must not break Start.
+            try:
+                deficit_rows = await _scheduler.model_job_filament_deficit(db, item)
+            except Exception:
+                logger.exception("Queue item %s: filament check before start failed", item_id)
+        if deficit_rows:
             raise HTTPException(
                 status_code=409,
                 detail={
                     "code": "insufficient_filament",
-                    "deficit": [d.to_dict() for d in deficit],
+                    "deficit": deficit_rows,
                 },
             )
 
@@ -3332,8 +3343,6 @@ async def start_queue_item(
         # Start on an item the scheduler held for exactly that would release it
         # only for the next pass to hold it again, and nothing would ever offer
         # "Print Anyway".
-        from backend.app.services.print_scheduler import scheduler as _scheduler
-
         # A convenience, not a gate: the scheduler holds the item again if the
         # filament is still missing, so a failure here must not break Start.
         try:

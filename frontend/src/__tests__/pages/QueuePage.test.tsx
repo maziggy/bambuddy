@@ -2025,6 +2025,72 @@ describe('QueuePage', () => {
     });
   });
 
+  describe('Print Anyway on a job waiting for a short spool (#3659)', () => {
+    // Loaded filament first (#3587): the job waits instead of being staged.
+    const waitingItem = {
+      ...mockQueueItems[0],
+      printer_id: null,
+      target_model: 'P1S',
+      manual_start: false,
+      waiting_reason: 'Waiting for filament: P1S right (needs more filament) · priority in 60 h',
+    };
+
+    it('asks per printer and retries with skip_filament_check', async () => {
+      const calls: boolean[] = [];
+      server.use(
+        http.get('/api/v1/queue/', () => HttpResponse.json([waitingItem])),
+        http.post('/api/v1/queue/:id/start', ({ request }) => {
+          const skip = new URL(request.url).searchParams.get('skip_filament_check') === 'true';
+          calls.push(skip);
+          if (!skip) {
+            return HttpResponse.json(
+              {
+                detail: {
+                  code: 'insufficient_filament',
+                  deficit: [
+                    {
+                      slot_id: 1,
+                      ams_id: 0,
+                      tray_id: 2,
+                      filament_type: 'PLA',
+                      required_grams: 505,
+                      remaining_grams: 196,
+                      printer_name: 'P1S right',
+                    },
+                  ],
+                },
+              },
+              { status: 409 },
+            );
+          }
+          return HttpResponse.json({ ...waitingItem, skip_filament_check: true });
+        }),
+      );
+
+      render(<QueuePage />);
+
+      await userEvent.click(await screen.findByTitle('Print Anyway'));
+      await screen.findByText(/P1S right: Slot 1: needs 505 g, 196 g remaining/i);
+      // The modal's button; the row's own is an icon with the same label.
+      await userEvent.click(screen.getByText('Print Anyway'));
+
+      await waitFor(() => expect(calls).toEqual([false, true]));
+    });
+
+    it('is not offered when the filament is not loaded at all', async () => {
+      server.use(
+        http.get('/api/v1/queue/', () =>
+          HttpResponse.json([{ ...waitingItem, waiting_reason: 'Waiting for filament: P1S right (needs PLA (Red))' }]),
+        ),
+      );
+
+      render(<QueuePage />);
+
+      await screen.findByText(/needs PLA \(Red\)/);
+      expect(screen.queryByTitle('Print Anyway')).not.toBeInTheDocument();
+    });
+  });
+
   describe('filament-not-loaded ▶ flow (#2799)', () => {
     /**
      * The scheduler held the item because a filament it prints has no tray on

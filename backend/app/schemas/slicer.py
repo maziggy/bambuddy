@@ -144,12 +144,15 @@ class SliceRequest(BaseModel):
         ),
     )
 
-    filament_map: list[Annotated[int, Field(ge=1)]] | None = Field(
+    # Every Bambu dual-nozzle printer has two slicer extruders; a nozzle rack
+    # (H2C) switches hotends on those two. The sidecar takes any positive id
+    # and hands it to the CLI, so one past 2 is refused here.
+    filament_map: list[Annotated[int, Field(ge=1, le=2)]] | None = Field(
         default=None,
         description=(
             "Dual-nozzle printers only. The 1-based slicer extruder each filament "
             "prints from, in the same plate-slot order as ``filament_presets`` "
-            "(for example ``[1, 2]``). Sent to the slicer as ``--filament-map`` "
+            "(for example ``[1, 2]``), 1 or 2. Sent to the slicer as ``--filament-map`` "
             "in Manual mode, which is the only place the CLI reads it from. "
             "``None`` lets Bambuddy work one out from the spools loaded on the "
             "target printer, and leaves the slicer's default grouping when it "

@@ -275,6 +275,12 @@ class TestSliceRequestFilamentMap:
         with pytest.raises(ValidationError):
             self._request(filament_map=[0, 1])
 
+    def test_rejects_an_extruder_the_printer_does_not_have(self):
+        # Dual-nozzle printers have two extruders; the sidecar would pass a 3
+        # straight to the slicer.
+        with pytest.raises(ValidationError):
+            self._request(filament_map=[1, 3])
+
 
 class TestSidecarPayload:
     async def _body(self, **kwargs) -> bytes:

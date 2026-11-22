@@ -1,3 +1,4 @@
+import { ScrollableModalOverlay } from './ScrollableModalOverlay';
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -64,7 +65,7 @@ export function PurgeArchivesModal({ onClose, initialDays }: PurgeArchivesModalP
   const canConfirm = count > 0 && days === debouncedDays && !previewQuery.isFetching && !purgeMutation.isPending;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <ScrollableModalOverlay className="bg-black/50">
       <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl max-w-lg w-full">
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
@@ -186,6 +187,6 @@ export function PurgeArchivesModal({ onClose, initialDays }: PurgeArchivesModalP
           </Button>
         </div>
       </div>
-    </div>
+    </ScrollableModalOverlay>
   );
 }

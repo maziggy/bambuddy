@@ -56,6 +56,7 @@ import { LDAPSettings } from '../components/LDAPSettings';
 import { PrinterAccessSettings } from '../components/PrinterAccessSettings';
 import { TwoFactorSettings } from '../components/TwoFactorSettings';
 import { AdminDisableTwoFactor } from '../components/AdminDisableTwoFactor';
+import { ScrollableModalOverlay } from '../components/ScrollableModalOverlay';
 import { cameraTestSuccessMessage } from '../utils/cameraTestMessage';
 import { OIDCProviderSettings } from '../components/OIDCProviderSettings';
 import { SecurityStatusCard } from '../components/SecurityStatusCard';
@@ -7687,8 +7688,8 @@ export function SettingsPage() {
 
       {/* Create User Modal */}
       {showCreateUserModal && !advancedAuthStatus?.advanced_auth_enabled && (
-        <div
-          className="fixed inset-0 bg-black flex items-center justify-center z-50 p-4"
+        <ScrollableModalOverlay
+          className="bg-black"
           onClick={() => {
             setShowCreateUserModal(false);
             setUserFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
@@ -7878,7 +7879,7 @@ export function SettingsPage() {
               )}
             </CardContent>
           </Card>
-        </div>
+        </ScrollableModalOverlay>
       )}
 
       {/* Create User Modal - Advanced Authentication */}
@@ -7905,8 +7906,8 @@ export function SettingsPage() {
 
       {/* Edit User Modal */}
       {showEditUserModal && editingUserId !== null && (
-        <div
-          className="fixed inset-0 bg-black flex items-center justify-center z-50 p-4"
+        <ScrollableModalOverlay
+          className="bg-black"
           onClick={() => {
             setShowEditUserModal(false);
             setEditingUserId(null);
@@ -8103,13 +8104,13 @@ export function SettingsPage() {
               </div>
             </CardContent>
           </Card>
-        </div>
+        </ScrollableModalOverlay>
       )}
 
       {/* Delete User Confirmation Modal */}
       {deleteUserId !== null && (
-        <div
-          className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"
+        <ScrollableModalOverlay
+          className="bg-black/80"
           onClick={() => {
             setDeleteUserId(null);
             setDeleteUserItemCounts(null);
@@ -8202,7 +8203,7 @@ export function SettingsPage() {
               )}
             </CardContent>
           </Card>
-        </div>
+        </ScrollableModalOverlay>
       )}
 
       {/* Delete Group Confirmation Modal */}
@@ -8263,8 +8264,8 @@ export function SettingsPage() {
 
       {/* Change Password Modal */}
       {showChangePasswordModal && (
-        <div
-          className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+        <ScrollableModalOverlay
+          className="bg-black/70"
           onClick={() => {
             setShowChangePasswordModal(false);
             setChangePasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
@@ -8393,7 +8394,7 @@ export function SettingsPage() {
               </div>
             </CardContent>
           </Card>
-        </div>
+        </ScrollableModalOverlay>
       )}
       </div>
       </div>

@@ -1,3 +1,4 @@
+import { ScrollableModalOverlay } from './ScrollableModalOverlay';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Plus, Loader2, Users as UsersIcon } from 'lucide-react';
@@ -64,8 +65,8 @@ export function CreateUserAdvancedAuthModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+    <ScrollableModalOverlay
+      className="bg-black/70"
       onClick={onClose}
     >
       <Card
@@ -233,6 +234,6 @@ export function CreateUserAdvancedAuthModal({
           </div>
         </CardContent>
       </Card>
-    </div>
+    </ScrollableModalOverlay>
   );
 }

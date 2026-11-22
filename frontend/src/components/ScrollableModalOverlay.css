@@ -1,0 +1,25 @@
+.scrollable-modal-overlay {
+  position: fixed;
+  inset: var(--modal-top, 0px) 0 auto;
+  z-index: 50;
+  height: var(--modal-height, 100vh);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding: 1rem;
+}
+
+.scrollable-modal-overlay > * {
+  flex-shrink: 0;
+  /* Auto margins center a short panel and resolve to zero for a tall panel. */
+  margin-block: auto;
+}
+
+@media (pointer: coarse), (max-width: 640px) {
+  .scrollable-modal-overlay {
+    /* Keep actions clear of touch navigation even if no inset is reported. */
+    padding-bottom: max(2rem, calc(1rem + env(safe-area-inset-bottom, 0px)));
+  }
+}

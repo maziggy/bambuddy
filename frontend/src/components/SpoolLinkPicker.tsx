@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { InventorySpool } from '../api/client';
 import { getSwatchStyle, resolveSpoolColorName } from '../utils/colors';
@@ -9,6 +10,7 @@ interface SpoolLinkPickerProps {
   onSelect: (spoolId: number) => void;
   material?: string | null;
   isLoading?: boolean;
+  onRetry?: () => void;
   disabled?: boolean;
 }
 
@@ -23,9 +25,15 @@ function spoolName(spool: InventorySpool): string {
  * id, name, used weight and note, which is what tells an opened spool from a
  * sealed one of the same colour.
  */
-export function SpoolLinkPicker({ choices, selectedId, onSelect, material, isLoading, disabled }: SpoolLinkPickerProps) {
+export function SpoolLinkPicker({ choices, selectedId, onSelect, material, isLoading, disabled, onRetry }: SpoolLinkPickerProps) {
   const { t } = useTranslation();
 
+  const name = useId();
+  if (onRetry) {
+    return <div role="alert" className="text-sm text-bambu-gray">
+      {t('inventory.rfidLink.loadFailed')} <button type="button" className="text-bambu-green" onClick={onRetry}>{t('common.retry')}</button>
+    </div>;
+  }
   if (isLoading) {
     return <p className="text-sm text-bambu-gray">{t('common.loading')}</p>;
   }
@@ -43,7 +51,7 @@ export function SpoolLinkPicker({ choices, selectedId, onSelect, material, isLoa
     { key: 'matching', label: t('inventory.rfidLink.matchingSpools'), items: matching },
     {
       key: 'others',
-      label: material ? t('inventory.rfidLink.otherSpoolsOf', { material }) : t('inventory.rfidLink.otherSpools'),
+      label: matching.length ? (material ? t('inventory.rfidLink.otherSpoolsOf', { material }) : t('inventory.rfidLink.otherSpools')) : material,
       items: others,
     },
   ].filter((g) => g.items.length > 0);
@@ -52,7 +60,7 @@ export function SpoolLinkPicker({ choices, selectedId, onSelect, material, isLoa
     <div role="radiogroup" aria-label={t('inventory.rfidLink.pickSpool')} className="space-y-3 max-h-72 overflow-y-auto pr-1">
       {groups.map((group) => (
         <div key={group.key} className="space-y-1">
-          <p className="text-[10px] uppercase tracking-wider text-bambu-gray font-medium">{group.label}</p>
+          {group.label && <p className="text-[10px] uppercase tracking-wider text-bambu-gray font-medium">{group.label}</p>}
           {group.items.map(({ spool }) => {
             const selected = spool.id === selectedId;
             return (
@@ -66,7 +74,7 @@ export function SpoolLinkPicker({ choices, selectedId, onSelect, material, isLoa
               >
                 <input
                   type="radio"
-                  name="rfid-link-spool"
+                  name={name}
                   value={spool.id}
                   checked={selected}
                   disabled={disabled}

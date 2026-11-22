@@ -7493,7 +7493,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  createSpoolFromSlot: (data: { printer_id: number; ams_id: number; tray_id: number }) =>
+  createSpoolFromSlot: (data: { printer_id: number; ams_id: number; tray_id: number; tag_uid?: string; tray_uuid?: string }) =>
     request<InventorySpool>(`/inventory/spools/from-slot`, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -7762,6 +7762,7 @@ export const api = {
     tag_type?: string;
     data_origin?: string;
     move?: boolean;
+    source_spool_id?: number;
     printer_id?: number;
     ams_id?: number;
     tray_id?: number;

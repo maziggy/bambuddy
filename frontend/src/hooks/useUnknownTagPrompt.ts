@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Printer } from '../api/client';
-import { api } from '../api/client';
+import { api, ApiError } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useTranslation } from 'react-i18next';
 import { getAmsLabel } from '../utils/amsHelpers';
-import { rfidLinkBody } from '../utils/rfidTagLink';
+import { hasRfidTag, rfidLinkBody, tagLinkError } from '../utils/rfidTagLink';
 import { useUiSettings } from './useUiSettings';
 
 export interface UnknownTagDetail {
@@ -15,6 +15,7 @@ export interface UnknownTagDetail {
   tray_id: number;
   tag_uid?: string;
   tray_uuid?: string;
+  tray_info_idx?: string | null;
   // Backend-provided so the modal doesn't need to look up stale cached
   // `printerStatus` data — the React Query cache often lags the WS event by
   // several seconds while the new MQTT push is being applied.
@@ -39,6 +40,7 @@ export interface UnknownSpoolPrompt {
   brand: string | null;
   tag_uid: string | null;
   tray_uuid: string | null;
+  tray_info_idx?: string | null;
   candidate_spool_ids: number[];
 }
 
@@ -50,7 +52,7 @@ export function useUnknownTagPrompt() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
-  const { user, authEnabled } = useAuth();
+  const { user, authEnabled, hasPermission } = useAuth();
   const [queue, setQueue] = useState<UnknownSpoolPrompt[]>([]);
 
   const isAuthed = !authEnabled || !!user;
@@ -76,6 +78,7 @@ export function useUnknownTagPrompt() {
         brand: detail.tray_sub_brands ?? null,
         tag_uid: detail.tag_uid ?? null,
         tray_uuid: detail.tray_uuid ?? null,
+        tray_info_idx: detail.tray_info_idx,
         candidate_spool_ids: detail.candidate_spool_ids ?? [],
       };
     },
@@ -91,21 +94,32 @@ export function useUnknownTagPrompt() {
       const prompt = buildPrompt(detail);
       if (!prompt) return;
       setQueue(prev => {
-        // Don't double-queue the same slot — the backend dedupes per
-        // (slot, tag) so repeat events here mean the user is still
-        // looking at the same modal.
         const key = slotKey(prompt.printer_id, prompt.ams_id, prompt.tray_id);
-        if (prev.some(p => slotKey(p.printer_id, p.ams_id, p.tray_id) === key)) {
-          return prev;
+        const index = prev.findIndex(p => slotKey(p.printer_id, p.ams_id, p.tray_id) === key);
+        if (index >= 0) {
+          if (uiSettings?.spoolman_enabled) return prev;
+          const old = prev[index];
+          if (old.tag_uid === prompt.tag_uid && old.tray_uuid === prompt.tray_uuid &&
+              old.candidate_spool_ids.join() === prompt.candidate_spool_ids.join()) return prev;
+          return prev.map((item, i) => i === index ? prompt : item);
         }
         return [...prev, prompt];
       });
     };
     window.addEventListener('unknown-tag', handler);
     return () => window.removeEventListener('unknown-tag', handler);
-  }, [isAuthed, buildPrompt]);
+  }, [isAuthed, buildPrompt, uiSettings?.spoolman_enabled]);
 
   const current = queue[0] ?? null;
+
+  const dismiss = useCallback((prompt: UnknownSpoolPrompt) => {
+    setQueue(prev => prev.filter(item => item !== prompt));
+  }, []);
+
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['inventory-spools'] });
+    queryClient.invalidateQueries({ queryKey: ['spool-assignments'] });
+  };
 
   const addMutation = useMutation({
     mutationFn: async (prompt: UnknownSpoolPrompt) => {
@@ -120,20 +134,29 @@ export function useUnknownTagPrompt() {
           printer_id: prompt.printer_id,
           ams_id: prompt.ams_id,
           tray_id: prompt.tray_id,
+          tag_uid: prompt.tag_uid ?? undefined,
+          tray_uuid: prompt.tray_uuid ?? undefined,
         });
       }
     },
-    onSuccess: () => {
+    onSuccess: (_, prompt) => {
       showToast(t('inventory.addToInventorySuccess'), 'success');
-      queryClient.invalidateQueries({ queryKey: ['inventory-spools'] });
-      queryClient.invalidateQueries({ queryKey: ['spool-assignments'] });
+      refresh();
       queryClient.invalidateQueries({ queryKey: ['spoolman-inventory-spools'] });
       queryClient.invalidateQueries({ queryKey: ['spoolman-slot-assignments'] });
       queryClient.invalidateQueries({ queryKey: ['linked-spools'] });
-      setQueue(prev => prev.slice(1));
+      dismiss(prompt);
     },
-    onError: (error: Error) => {
-      showToast(error.message || t('inventory.addToInventoryFailed'), 'error');
+    onError: (error: Error, prompt) => {
+      if (uiSettings?.spoolman_enabled) {
+        showToast(error.message || t('inventory.addToInventoryFailed'), 'error');
+        return;
+      }
+      showToast(tagLinkError(error, t, error.message || t('inventory.addToInventoryFailed')), 'error');
+      if (error instanceof ApiError && error.status === 409) {
+        refresh();
+        dismiss(prompt);
+      }
     },
   });
 
@@ -148,47 +171,54 @@ export function useUnknownTagPrompt() {
         ams_id: prompt.ams_id,
         tray_id: prompt.tray_id,
       }),
-    onSuccess: (_spool, { spoolId }) => {
+    onSuccess: (_spool, { spoolId, prompt }) => {
       showToast(t('inventory.rfidLink.linked', { id: spoolId }), 'success');
-      queryClient.invalidateQueries({ queryKey: ['inventory-spools'] });
-      queryClient.invalidateQueries({ queryKey: ['spool-assignments'] });
-      setQueue(prev => prev.slice(1));
+      refresh();
+      dismiss(prompt);
     },
-    onError: () => {
-      showToast(t('inventory.rfidLink.linkFailed'), 'error');
+    onError: (error: Error, { prompt }) => {
+      showToast(tagLinkError(error, t, t('inventory.rfidLink.linkFailed')), 'error');
+      if (error instanceof ApiError && error.status === 409) {
+        refresh();
+        dismiss(prompt);
+      }
     },
   });
 
   const isPending = addMutation.isPending || linkMutation.isPending;
-  const canLink = uiSettings !== undefined && !uiSettings.spoolman_enabled;
+  const canAdd = typeof uiSettings?.spoolman_enabled === 'boolean' &&
+    (uiSettings.spoolman_enabled || (hasPermission('inventory:update') && hasRfidTag(current)));
+  const canLink = uiSettings?.spoolman_enabled === false && canAdd && hasPermission('inventory:read');
 
   const confirm = useCallback(() => {
-    if (!current || isPending) return;
+    if (!current || isPending || !canAdd) return;
     addMutation.mutate(current);
-  }, [current, isPending, addMutation]);
+  }, [current, isPending, canAdd, addMutation]);
 
   const link = useCallback(
     (spoolId: number) => {
-      if (!current || isPending) return;
+      if (!current || isPending || !canLink) return;
       linkMutation.mutate({ prompt: current, spoolId });
     },
-    [current, isPending, linkMutation],
+    [current, isPending, canLink, linkMutation],
   );
 
   const cancel = useCallback(() => {
     if (!current) return;
-    setQueue(prev => prev.slice(1));
-  }, [current]);
+    dismiss(current);
+  }, [current, dismiss]);
 
   return useMemo(
     () => ({
       prompt: current,
       isPending,
       canLink,
+      canAdd,
+      adding: addMutation.isPending,
       confirm,
       link,
       cancel,
     }),
-    [current, isPending, canLink, confirm, link, cancel],
+    [current, isPending, canLink, canAdd, addMutation.isPending, confirm, link, cancel],
   );
 }

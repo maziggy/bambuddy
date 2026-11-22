@@ -5514,6 +5514,9 @@ export default {
     unknownSpoolSlot: 'スロット',
     // Linking an AMS RFID tag to a spool, or moving it to another (#3658)
     rfidLink: {
+      permission: '在庫を更新する権限が必要です。',
+      changed: 'タグまたはスロットが変更されました。スロットを確認して選び直してください。',
+      loadFailed: 'スプールを読み込めませんでした。',
       linkTitle: 'タグをスプールに紐付け',
       moveTitle: 'タグを別のスプールに移動',
       linkMessage: 'このRFIDタグが付いている在庫のスプールを選んでください。',

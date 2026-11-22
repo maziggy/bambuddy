@@ -6,8 +6,6 @@ spools (#918), and a guess when one of them is open: the tag of the opened
 spool in the AMS went to a sealed one, and the slot's usage with it.
 """
 
-import asyncio
-
 import pytest
 
 from backend.app.models.spool import Spool
@@ -18,21 +16,21 @@ from backend.app.services.spool_tag_matcher import (
 )
 
 TRAY = {
-    "tray_type": "PLA",
-    "tray_sub_brands": "PLA Matte",
-    "tray_color": "333333FF",
+    "tray_type": "PETG",
+    "tray_sub_brands": "PETG HF",
+    "tray_color": "179CB0FF",
     "tray_id_name": "",
     "tag_uid": "AABBCCDD11223344",
     "tray_uuid": "AABBCCDD11223344AABBCCDD11223344",
-    "tray_info_idx": "GFA01",
+    "tray_info_idx": "GFG00",
 }
 
 
-async def _spool(db_session, *, subtype: str | None = "Matte", weight_used: float = 0, **kwargs) -> Spool:
+async def _spool(db_session, *, subtype: str | None = "HF", weight_used: float = 0, **kwargs) -> Spool:
     spool = Spool(
-        material="PLA",
+        material="PETG",
         subtype=subtype,
-        rgba="333333FF",
+        rgba="179CB0FF",
         brand="Bambu Lab",
         label_weight=1000,
         core_weight=250,
@@ -41,8 +39,6 @@ async def _spool(db_session, *, subtype: str | None = "Matte", weight_used: floa
     )
     db_session.add(spool)
     await db_session.commit()
-    # Distinct created_at, which orders the candidates.
-    await asyncio.sleep(0.02)
     return spool
 
 
@@ -63,7 +59,7 @@ async def test_an_opened_spool_among_the_candidates_links_none(db_session):
     """The issue's case: two sealed spools logged first, then the opened one."""
     sealed_a = await _spool(db_session)
     sealed_b = await _spool(db_session)
-    opened = await _spool(db_session, weight_used=664)
+    opened = await _spool(db_session, weight_used=175)
 
     candidates = await find_untagged_candidates(db_session, TRAY)
 
@@ -118,7 +114,7 @@ async def test_tagged_archived_and_other_colours_are_no_candidates(db_session):
     await _spool(db_session, weight_used=50, tag_uid="0102030405060708")
     await _spool(db_session, weight_used=50, archived_at=datetime.now(timezone.utc))
     other_colour = Spool(
-        material="PLA", subtype="Matte", rgba="FFFFFFFF", brand="Bambu Lab", label_weight=1000, weight_used=50
+        material="PETG", subtype="HF", rgba="FFFFFFFF", brand="Bambu Lab", label_weight=1000, weight_used=50
     )
     db_session.add(other_colour)
     await db_session.commit()
@@ -130,11 +126,23 @@ async def test_tagged_archived_and_other_colours_are_no_candidates(db_session):
 
 
 def test_ambiguity_rule():
-    sealed = Spool(material="PLA", label_weight=1000, weight_used=0)
-    also_sealed = Spool(material="PLA", label_weight=1000, weight_used=None)
-    opened = Spool(material="PLA", label_weight=1000, weight_used=1.5)
+    sealed = Spool(material="PETG", label_weight=1000, weight_used=0)
+    also_sealed = Spool(material="PETG", label_weight=1000, weight_used=None)
+    opened = Spool(material="PETG", label_weight=1000, weight_used=1.5)
 
     assert not untagged_match_is_ambiguous([])
     assert not untagged_match_is_ambiguous([opened])
     assert not untagged_match_is_ambiguous([sealed, also_sealed])
     assert untagged_match_is_ambiguous([sealed, opened])
+
+
+@pytest.mark.asyncio
+async def test_usage_past_the_first_fifty_candidates_requires_a_choice(db_session):
+    rows = [
+        Spool(material="PETG", subtype="HF", rgba="179CB0FF", label_weight=750, weight_used=0 if index < 50 else 175)
+        for index in range(51)
+    ]
+    db_session.add_all(rows)
+    await db_session.commit()
+    assert len(await find_untagged_candidates(db_session, TRAY)) == 51
+    assert await find_matching_untagged_spool(db_session, TRAY) is None

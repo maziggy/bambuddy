@@ -746,6 +746,7 @@ async def _broadcast_unknown_tag(
     tray_sub_brands: str | None = None,
     tray_count: int | None = None,
     candidate_spool_ids: list[int] | None = None,
+    tray_info_idx: str | None = None,
 ) -> None:
     """Broadcast unknown_tag, deduped so repeated MQTT pushes for the same slot+tag don't spam the UI.
 
@@ -791,6 +792,7 @@ async def _broadcast_unknown_tag(
             "tray_sub_brands": tray_sub_brands,
             "tray_count": tray_count,
             "candidate_spool_ids": candidate_spool_ids or [],
+            "tray_info_idx": tray_info_idx,
         }
     )
     per_printer[slot_key] = tag_key
@@ -3621,13 +3623,6 @@ async def on_ams_change(printer_id: int, ams_data: list):
                                     # user knows which one is in the slot. Ask, whatever
                                     # the auto-add setting says, and leave the slot
                                     # unassigned until they answer (#3658).
-                                    logger.info(
-                                        "RFID tag on printer %d AMS%d-T%d matches spools %s; asking which one it is",
-                                        printer_id,
-                                        ams_id,
-                                        tray_id,
-                                        [s.id for s in candidates],
-                                    )
                                     await _broadcast_unknown_tag(
                                         printer_id=printer_id,
                                         ams_id=ams_id,
@@ -3637,6 +3632,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
                                         tray_type=tray.get("tray_type"),
                                         tray_color=tray.get("tray_color"),
                                         tray_sub_brands=tray.get("tray_sub_brands"),
+                                        tray_info_idx=tray_info_idx,
                                         tray_count=len(ams_unit.get("tray", [])),
                                         candidate_spool_ids=[s.id for s in candidates],
                                     )
@@ -3658,6 +3654,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
                                         tray_type=tray.get("tray_type"),
                                         tray_color=tray.get("tray_color"),
                                         tray_sub_brands=tray.get("tray_sub_brands"),
+                                        tray_info_idx=tray_info_idx,
                                         tray_count=len(ams_unit.get("tray", [])),
                                     )
                                     continue
@@ -3707,6 +3704,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
                                 tray_type=tray.get("tray_type"),
                                 tray_color=tray.get("tray_color"),
                                 tray_sub_brands=tray.get("tray_sub_brands"),
+                                tray_info_idx=tray_info_idx,
                                 tray_count=len(ams_unit.get("tray", [])),
                             )
                         # No-tag slots (generic non-RFID filament) are left alone:

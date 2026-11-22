@@ -189,6 +189,7 @@ import { HeaterHistoryModal } from '../components/HeaterHistoryModal';
 import type { HeaterSensorKind } from '../api/client';
 import { FilamentHoverCard, EmptySlotHoverCard } from '../components/FilamentHoverCard';
 import { AssignSpoolModal } from '../components/AssignSpoolModal';
+import { hasRfidTag, type RfidTag } from '../utils/rfidTagLink';
 import { LinkTagModal, type LinkTagTarget } from '../components/LinkTagModal';
 import { ConfigureAmsSlotModal } from '../components/ConfigureAmsSlotModal';
 import { useToast } from '../contexts/ToastContext';
@@ -2222,6 +2223,7 @@ function PrinterCard({
   amsThresholds,
   spoolmanEnabled = false,
   spoolmanModeOn = false,
+  rfidActionsReady = false,
   linkedSpools,
   spoolmanUrl,
   onGetAssignment,
@@ -2264,6 +2266,7 @@ function PrinterCard({
   spoolmanEnabled?: boolean;
   /** Spoolman mode is on, connected or not: the built-in slot rows don't apply (#3430). */
   spoolmanModeOn?: boolean;
+  rfidActionsReady?: boolean;
   linkedSpools?: Record<string, LinkedSpoolInfo>;
   spoolmanUrl?: string | null;
   onGetAssignment?: (printerId: number, amsId: number, trayId: number) => SpoolAssignment | undefined;
@@ -2438,16 +2441,14 @@ function PrinterCard({
   // spool got it from an automatic match.
   const rfidTagActions = (
     assignment: SpoolAssignment | undefined,
-    tray: { tag_uid?: string | null; tray_uuid?: string | null; tray_type?: string | null; tray_color?: string | null } | null | undefined,
+    tray: (RfidTag & { tray_type?: string | null; tray_color?: string | null }) | null | undefined,
     amsId: number,
     trayId: number,
     slotLabel: string,
   ): { onLinkExistingSpool?: () => void; onMoveTag?: () => void } => {
-    if (!tray || !isBambuLabSpool(tray) || !hasPermission('inventory:update')) return {};
-    // Until the slot assignments have loaded, "no assignment" means "not known yet".
-    if (queryClient.getQueryData(['spool-assignments']) === undefined) return {};
+    if (!rfidActionsReady || !tray || !hasRfidTag(tray)) return {};
     const target: LinkTagTarget = {
-      tag: { tag_uid: tray.tag_uid, tray_uuid: tray.tray_uuid },
+      tag: tray,
       slot: { printerId: printer.id, amsId, trayId },
       location: `${printer.name} • ${slotLabel}`,
       material: tray.tray_type ?? null,
@@ -6887,6 +6888,7 @@ function PrinterCard({
                                             },
                                           }),
                                           onUnassignSpool: (assignment && !isBambuLabSpool(extTray)) ? () => onUnassignSpool?.(printer.id, 255, slotTrayId) : undefined,
+                                          ...rfidTagActions(assignment, extTray, 255, slotTrayId, extLabel || t('printers.external')),
                                           isAssigned: !!assignment || isBambuLabSpool(extTray),
                                         };
                                       })()}
@@ -7758,7 +7760,7 @@ function PrinterCard({
         />
       )}
 
-      <LinkTagModal target={linkTagTarget} onClose={() => setLinkTagTarget(null)} />
+      {linkTagTarget && <LinkTagModal target={linkTagTarget} onClose={() => setLinkTagTarget(null)} />}
 
       {/* Configure AMS Slot Modal */}
       {configureSlotModal && (
@@ -9635,12 +9637,17 @@ export function PrintersPage() {
   const linkedSpools = linkedSpoolsData?.linked;
 
   // Fetch spool assignments for inventory feature
-  const { data: spoolAssignments } = useQuery({
+  const { data: inventorySettings } = useUiSettings();
+  const { data: spoolAssignments, isSuccess: assignmentsReady } = useQuery({
     queryKey: ['spool-assignments'],
     queryFn: () => api.getAssignments(),
     enabled: hasPermission('inventory:view_assignments'),
     staleTime: 30 * 1000,
   });
+
+  const rfidActionsReady = inventorySettings?.spoolman_enabled === false && !spoolmanStatus?.enabled &&
+    assignmentsReady && hasPermission('inventory:view_assignments') && hasPermission('inventory:read') &&
+    hasPermission('inventory:update');
 
   const unassignMutation = useMutation({
     mutationFn: ({ printerId, amsId, trayId }: { printerId: number; amsId: number; trayId: number }) =>
@@ -10591,6 +10598,7 @@ export function PrintersPage() {
                       } : undefined}
                       spoolmanEnabled={spoolmanEnabled}
                       spoolmanModeOn={!!spoolmanStatus?.enabled}
+                      rfidActionsReady={rfidActionsReady}
                       linkedSpools={linkedSpools}
                       spoolmanUrl={spoolmanStatus?.url}
                       onGetAssignment={getAssignment}
@@ -10638,6 +10646,7 @@ export function PrintersPage() {
               cardSize={cardSize}
               spoolmanEnabled={spoolmanEnabled}
               spoolmanModeOn={!!spoolmanStatus?.enabled}
+              rfidActionsReady={rfidActionsReady}
               linkedSpools={linkedSpools}
               spoolmanUrl={spoolmanStatus?.url}
               onGetAssignment={getAssignment}

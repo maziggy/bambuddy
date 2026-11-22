@@ -3,7 +3,9 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import { api } from '../api/client';
-import { Card, CardContent } from './Card';
+import { ConfirmModal } from './ConfirmModal';
+import { useRfidDialog } from '../hooks/useRfidDialog';
+import { Card } from './Card';
 import { Button } from './Button';
 import { SpoolLinkPicker } from './SpoolLinkPicker';
 import { getSwatchStyle } from '../utils/colors';
@@ -15,12 +17,14 @@ interface UnknownSpoolModalProps {
   isPending: boolean;
   /** Built-in inventory: the tag can be linked to a spool already in it (#3658). */
   canLink?: boolean;
+  canAdd?: boolean;
+  adding?: boolean;
   onConfirm: () => void;
   onLink?: (spoolId: number) => void;
   onCancel: () => void;
 }
 
-export function UnknownSpoolModal({ prompt, isPending, canLink = false, onConfirm, onLink, onCancel }: UnknownSpoolModalProps) {
+export function UnknownSpoolModal({ prompt, isPending, canLink = false, canAdd = true, adding = isPending && !canLink, onConfirm, onLink, onCancel }: UnknownSpoolModalProps) {
   const { t } = useTranslation();
   const linkable = canLink && !!onLink;
   const severalMatch = (prompt?.candidate_spool_ids.length ?? 0) > 0;
@@ -35,7 +39,7 @@ export function UnknownSpoolModal({ prompt, isPending, canLink = false, onConfir
   }, [prompt]);
 
   const pickerOpen = linkable && (showPicker || severalMatch);
-  const { data: spools, isLoading } = useQuery({
+  const { data: spools, isLoading, isError, refetch } = useQuery({
     queryKey: ['inventory-spools'],
     queryFn: () => api.getSpools(true),
     enabled: pickerOpen,
@@ -50,15 +54,8 @@ export function UnknownSpoolModal({ prompt, isPending, canLink = false, onConfir
     [spools, prompt],
   );
 
-  useEffect(() => {
-    if (!prompt) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isPending) onCancel();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [prompt, isPending, onCancel]);
-
+  const dialog = useRfidDialog(!!prompt && linkable, isPending, onCancel);
+  const chosen = !isError && choices.some(({ spool }) => spool.id === selectedId) ? selectedId : null;
   if (!prompt) return null;
 
   const location = `${prompt.printer_name} • ${prompt.ams_label} • ${prompt.slot_label}`;
@@ -67,19 +64,45 @@ export function UnknownSpoolModal({ prompt, isPending, canLink = false, onConfir
     ? t('inventory.rfidLink.severalMatch', { location })
     : t('inventory.unknownSpoolMessage', { location });
 
+  const details = (
+    <div className="flex items-center gap-3 p-3 rounded-lg bg-bambu-dark-secondary border border-bambu-dark-tertiary">
+      {swatchStyle && (
+        <div
+          className="w-8 h-8 rounded-full border border-black/20 flex-shrink-0"
+          style={swatchStyle}
+          aria-label={prompt.color_hex ?? undefined}
+        />
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="text-white text-sm font-medium truncate">
+          {prompt.brand ? `${prompt.brand} ${prompt.material ?? ''}`.trim() : prompt.material ?? '—'}
+        </p>
+        {prompt.color_hex && (
+          <p className="text-xs text-bambu-gray font-mono uppercase">#{prompt.color_hex.replace(/^#/, '').slice(0, 6)}</p>
+        )}
+      </div>
+    </div>
+  );
+  if (!linkable) {
+    return (
+      <ConfirmModal title={t('inventory.unknownSpoolTitle')} message={message}
+        confirmText={t('inventory.addToInventory')} loadingText={t('inventory.addToInventoryPending')}
+        isLoading={isPending} confirmDisabled={!canAdd} onConfirm={onConfirm} onCancel={onCancel}>
+        {details}
+      </ConfirmModal>
+    );
+  }
+
   let linkLabel = t('inventory.rfidLink.linkExisting');
-  if (pickerOpen) linkLabel = selectedId ? t('inventory.rfidLink.linkTo', { id: selectedId }) : t('inventory.rfidLink.link');
+  if (pickerOpen) linkLabel = chosen ? t('inventory.rfidLink.linkTo', { id: chosen }) : t('inventory.rfidLink.link');
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={isPending ? undefined : onCancel}>
+    <div className="fixed inset-0 bg-black/50 flex items-start justify-center overflow-y-auto p-4 z-[110]" onClick={isPending ? undefined : onCancel}>
       <Card
-        className={`w-full ${pickerOpen ? 'max-w-lg' : 'max-w-md'}`}
+        className={`my-auto w-full ${pickerOpen ? 'max-w-lg' : 'max-w-md'}`}
         onClick={(e: React.MouseEvent) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label={t('inventory.unknownSpoolTitle')}
       >
-        <CardContent className="p-6">
+        <div ref={dialog} className="p-6" tabIndex={-1} role="dialog" aria-modal="true" aria-label={t('inventory.unknownSpoolTitle')}>
           <div className="flex items-start gap-4">
             <div className="p-2 rounded-full bg-bambu-dark text-bambu-green">
               <AlertTriangle className="w-6 h-6" />
@@ -88,23 +111,7 @@ export function UnknownSpoolModal({ prompt, isPending, canLink = false, onConfir
               <h3 className="text-lg font-semibold text-white mb-2">{t('inventory.unknownSpoolTitle')}</h3>
               <p className="text-bambu-gray text-sm whitespace-pre-line">{message}</p>
               <div className="mt-4 space-y-4">
-                <div className="flex items-center gap-3 p-3 rounded-lg bg-bambu-dark-secondary border border-bambu-dark-tertiary">
-                  {swatchStyle && (
-                    <div
-                      className="w-8 h-8 rounded-full border border-black/20 flex-shrink-0"
-                      style={swatchStyle}
-                      aria-label={prompt.color_hex ?? undefined}
-                    />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <p className="text-white text-sm font-medium truncate">
-                      {prompt.brand ? `${prompt.brand} ${prompt.material ?? ''}`.trim() : prompt.material ?? '—'}
-                    </p>
-                    {prompt.color_hex && (
-                      <p className="text-xs text-bambu-gray font-mono uppercase">#{prompt.color_hex.replace(/^#/, '').slice(0, 6)}</p>
-                    )}
-                  </div>
-                </div>
+                {details}
                 {pickerOpen && (
                   <SpoolLinkPicker
                     choices={choices}
@@ -112,6 +119,7 @@ export function UnknownSpoolModal({ prompt, isPending, canLink = false, onConfir
                     onSelect={setSelectedId}
                     material={prompt.material}
                     isLoading={isLoading}
+                    onRetry={isError ? () => { void refetch(); } : undefined}
                     disabled={isPending}
                   />
                 )}
@@ -126,9 +134,9 @@ export function UnknownSpoolModal({ prompt, isPending, canLink = false, onConfir
               variant={pickerOpen ? 'secondary' : 'primary'}
               onClick={onConfirm}
               className="flex-1 whitespace-nowrap"
-              disabled={isPending}
+              disabled={isPending || !canAdd}
             >
-              {isPending && !linkable ? (
+              {adding ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
                   {t('inventory.addToInventoryPending')}
@@ -143,17 +151,17 @@ export function UnknownSpoolModal({ prompt, isPending, canLink = false, onConfir
               <Button
                 onClick={() => {
                   if (!pickerOpen) setShowPicker(true);
-                  else if (selectedId) onLink?.(selectedId);
+                  else if (chosen) onLink?.(chosen);
                 }}
                 className="flex-1 whitespace-nowrap"
-                disabled={isPending || (pickerOpen && !selectedId)}
+                disabled={isPending || (pickerOpen && !chosen)}
               >
-                {isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                {isPending && !adding && <Loader2 className="w-4 h-4 animate-spin" />}
                 {linkLabel}
               </Button>
             )}
           </div>
-        </CardContent>
+        </div>
       </Card>
     </div>
   );

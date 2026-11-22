@@ -13,11 +13,11 @@ import { LinkTagModal } from '../../components/LinkTagModal';
 const TAG_UID = 'AABBCCDD11223344';
 const TRAY_UUID = 'AABBCCDDEEFF0011AABBCCDDEEFF0011';
 const base = {
-  material: 'PLA',
-  subtype: 'Matte',
+  material: 'PETG',
+  subtype: 'HF',
   brand: 'Bambu Lab',
-  color_name: 'Charcoal',
-  rgba: '333333FF',
+  color_name: 'Teal',
+  rgba: '179CB0FF',
   label_weight: 1000,
   weight_used: 0,
   note: null,
@@ -27,8 +27,8 @@ const base = {
   data_origin: null,
   archived_at: null,
 };
-const WRONG = { ...base, id: 12, tag_uid: TAG_UID, tray_uuid: TRAY_UUID, tag_type: 'bambulab', data_origin: 'rfid_linked', weight_used: 12 };
-const SPOOLS = [WRONG, { ...base, id: 13 }, { ...base, id: 30, weight_used: 664 }];
+const WRONG = { ...base, id: 61, tag_uid: TAG_UID, tray_uuid: TRAY_UUID, tag_type: 'bambulab', data_origin: 'rfid_linked', weight_used: 61 };
+const SPOOLS = [WRONG, { ...base, id: 64 }, { ...base, id: 73, weight_used: 175 }];
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -48,29 +48,30 @@ describe('LinkTagModal', () => {
           holder: WRONG as unknown as InventorySpool,
           slot: { printerId: 1, amsId: 0, trayId: 2 },
           location: 'X1C • AMS A Slot 3',
-          material: 'PLA',
-          colorHex: '333333FF',
+          material: 'PETG',
+          colorHex: '179CB0FF',
         }}
         onClose={onClose}
       />,
     );
 
     expect(screen.getByText('Move tag to another spool')).toBeInTheDocument();
-    expect(screen.getByText(/already booked to #12 stays with #12/)).toBeInTheDocument();
+    expect(screen.getByText(/already booked to #61 stays with #61/)).toBeInTheDocument();
     await waitFor(() => expect(screen.getAllByRole('radio')).toHaveLength(2));
     // The spool that has the tag is no choice.
-    expect(screen.getAllByRole('radio').map((r) => (r as HTMLInputElement).value)).toEqual(['13', '30']);
+    expect(screen.getAllByRole('radio').map((r) => (r as HTMLInputElement).value)).toEqual(['64', '73']);
 
     fireEvent.click(screen.getAllByRole('radio')[1]);
-    fireEvent.click(screen.getByRole('button', { name: 'Move to #30' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Move to #73' }));
 
     await waitFor(() =>
-      expect(link).toHaveBeenCalledWith(30, {
+      expect(link).toHaveBeenCalledWith(73, {
         tag_uid: TAG_UID,
         tray_uuid: TRAY_UUID,
         tag_type: 'bambulab',
         data_origin: 'rfid_linked',
         move: true,
+        source_spool_id: 61,
         printer_id: 1,
         ams_id: 0,
         tray_id: 2,
@@ -79,12 +80,26 @@ describe('LinkTagModal', () => {
     await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
+  it('requires a slot choice when the source holds more than one slot', async () => {
+    const link = serve();
+    const assignments = [1, 2].map(id => ({
+      id, printer_id: id, printer_name: 'Printer ' + id, ams_id: 0, tray_id: 0,
+    })) as import('../../api/client').SpoolAssignment[];
+    render(<LinkTagModal target={{ holder: WRONG as unknown as InventorySpool, assignments }} onClose={vi.fn()} />);
+    fireEvent.click((await screen.findAllByRole('radio'))[0]);
+    const confirm = screen.getByRole('button', { name: /Move to #/ });
+    expect(confirm).toBeDisabled();
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: '2' } });
+    fireEvent.click(confirm);
+    await waitFor(() => expect(link).toHaveBeenCalledWith(64, expect.objectContaining({ source_spool_id: 61, printer_id: 2 })));
+  });
+
   it("moves a spool's own tag from the spool dialog, without a slot", async () => {
     const link = serve();
     const onLinked = vi.fn();
     render(
       <LinkTagModal
-        target={{ holder: WRONG as unknown as InventorySpool, material: 'PLA', colorHex: '333333FF' }}
+        target={{ holder: WRONG as unknown as InventorySpool, material: 'PETG', colorHex: '179CB0FF' }}
         onClose={vi.fn()}
         onLinked={onLinked}
       />,
@@ -92,15 +107,16 @@ describe('LinkTagModal', () => {
 
     await waitFor(() => expect(screen.getAllByRole('radio')).toHaveLength(2));
     fireEvent.click(screen.getAllByRole('radio')[0]);
-    fireEvent.click(screen.getByRole('button', { name: 'Move to #13' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Move to #64' }));
 
     await waitFor(() =>
-      expect(link).toHaveBeenCalledWith(13, {
+      expect(link).toHaveBeenCalledWith(64, {
         tag_uid: TAG_UID,
         tray_uuid: TRAY_UUID,
         tag_type: 'bambulab',
         data_origin: 'rfid_linked',
         move: true,
+        source_spool_id: 61,
       }),
     );
     await waitFor(() => expect(onLinked).toHaveBeenCalled());
@@ -114,8 +130,8 @@ describe('LinkTagModal', () => {
           tag: { tag_uid: TAG_UID, tray_uuid: '0'.repeat(32) },
           slot: { printerId: 1, amsId: 0, trayId: 0 },
           location: 'X1C • AMS A Slot 1',
-          material: 'PLA',
-          colorHex: '333333FF',
+          material: 'PETG',
+          colorHex: '179CB0FF',
         }}
         onClose={vi.fn()}
       />,
@@ -125,15 +141,16 @@ describe('LinkTagModal', () => {
     expect(screen.queryByText(/stays with/)).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getAllByRole('radio')).toHaveLength(2));
     fireEvent.click(screen.getAllByRole('radio')[0]);
-    fireEvent.click(screen.getByRole('button', { name: 'Link to #13' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Link to #64' }));
 
     await waitFor(() =>
-      expect(link).toHaveBeenCalledWith(13, {
+      expect(link).toHaveBeenCalledWith(64, {
         tag_uid: TAG_UID,
         tray_uuid: undefined,
-        tag_type: undefined,
-        data_origin: 'rfid_linked',
+        tag_type: 'generic',
+        data_origin: 'nfc_link',
         move: undefined,
+        source_spool_id: undefined,
         printer_id: 1,
         ams_id: 0,
         tray_id: 0,

@@ -5516,6 +5516,9 @@ export default {
     unknownSpoolSlot: 'Ranura',
     // Linking an AMS RFID tag to a spool, or moving it to another (#3658)
     rfidLink: {
+      permission: 'Necesita permiso para actualizar el inventario.',
+      changed: 'La etiqueta o la ranura ha cambiado. Revise la ranura y vuelva a elegir.',
+      loadFailed: 'No se pudieron cargar las bobinas.',
       linkTitle: 'Vincular la etiqueta a una bobina',
       moveTitle: 'Mover la etiqueta a otra bobina',
       linkMessage: 'Elija la bobina de su inventario que lleva esta etiqueta RFID.',

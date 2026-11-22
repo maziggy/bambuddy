@@ -5501,13 +5501,16 @@ export default {
     unknownSpoolSlot: 'Slot',
     // Linking an AMS RFID tag to a spool, or moving it to another (#3658)
     rfidLink: {
+      permission: 'Ti serve il permesso di modificare l’inventario.',
+      changed: 'Il tag o lo slot è cambiato. Controlla lo slot e scegli di nuovo.',
+      loadFailed: 'Impossibile caricare le bobine.',
       linkTitle: 'Collega il tag a una bobina',
       moveTitle: 'Sposta il tag su un\'altra bobina',
       linkMessage: 'Scegli la bobina del tuo inventario che porta questo tag RFID.',
       linkMessageAt: 'Scegli la bobina che si trova in {{location}}. Il suo tag RFID viene collegato a quella bobina e lo slot le viene assegnato.',
       moveMessage: 'Scegli la bobina a cui appartiene davvero questo tag RFID. Il tag passa da #{{id}} a quella bobina. Se #{{id}} è assegnata a uno slot AMS, la nuova bobina prende quello slot.',
       usageStays: 'Il consumo già registrato su #{{id}} resta su #{{id}}. Se serve, correggi il suo peso nella scheda della bobina.',
-      severalMatch: 'In {{location}} è stata caricata una bobina Bambu Lab e più bobine del tuo inventario corrispondono. Quale è?',
+      severalMatch: 'In {{location}} è stata caricata una bobina Bambu Lab e più bobine del tuo inventario corrispondono. Qual è?',
       linkExisting: 'Collega a una bobina esistente…',
       link: 'Collega',
       linkTo: 'Collega a #{{id}}',

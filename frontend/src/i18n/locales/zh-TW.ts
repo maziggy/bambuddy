@@ -5501,6 +5501,9 @@ export default {
     unknownSpoolSlot: '插槽',
     // Linking an AMS RFID tag to a spool, or moving it to another (#3658)
     rfidLink: {
+      permission: '你需要更新庫存的權限。',
+      changed: '標籤或槽位已變更。請檢查槽位並重新選擇。',
+      loadFailed: '無法載入料盤。',
       linkTitle: '將標籤連結到料盤',
       moveTitle: '將標籤移到另一個料盤',
       linkMessage: '請選擇庫存中帶有此 RFID 標籤的料盤。',

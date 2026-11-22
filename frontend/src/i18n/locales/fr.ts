@@ -5502,6 +5502,9 @@ export default {
     unknownSpoolSlot: 'Emplacement',
     // Linking an AMS RFID tag to a spool, or moving it to another (#3658)
     rfidLink: {
+      permission: 'Vous devez avoir la permission de modifier le stock.',
+      changed: 'Le tag ou l’emplacement a changé. Vérifiez l’emplacement et choisissez à nouveau.',
+      loadFailed: 'Impossible de charger les bobines.',
       linkTitle: 'Lier le tag à une bobine',
       moveTitle: 'Déplacer le tag vers une autre bobine',
       linkMessage: 'Choisissez la bobine de votre inventaire qui porte ce tag RFID.',

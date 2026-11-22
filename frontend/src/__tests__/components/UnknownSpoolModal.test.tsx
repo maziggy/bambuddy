@@ -10,21 +10,21 @@ import { UnknownSpoolModal } from '../../components/UnknownSpoolModal';
 import type { UnknownSpoolPrompt } from '../../hooks/useUnknownTagPrompt';
 
 const base = {
-  material: 'PLA',
-  subtype: 'Matte',
+  material: 'PETG',
+  subtype: 'HF',
   brand: 'Bambu Lab',
-  color_name: 'Charcoal',
-  rgba: '333333FF',
+  color_name: 'Teal',
+  rgba: '179CB0FF',
   label_weight: 1000,
   tag_uid: null,
   tray_uuid: null,
   archived_at: null,
 };
 const SPOOLS = [
-  { ...base, id: 12, weight_used: 0, note: 'Sealed box' },
-  { ...base, id: 13, weight_used: 0, note: 'Sealed box' },
-  { ...base, id: 30, weight_used: 664, note: null },
-  { ...base, id: 31, rgba: 'FFFFFFFF', color_name: 'Ivory White', weight_used: 0, note: null },
+  { ...base, id: 61, weight_used: 0, note: 'Sealed box' },
+  { ...base, id: 64, weight_used: 0, note: 'Sealed box' },
+  { ...base, id: 73, weight_used: 175, note: null },
+  { ...base, id: 88, rgba: 'FFFFFFFF', color_name: 'Ivory White', weight_used: 0, note: null },
 ];
 
 const prompt = (candidate_spool_ids: number[] = []): UnknownSpoolPrompt => ({
@@ -34,9 +34,9 @@ const prompt = (candidate_spool_ids: number[] = []): UnknownSpoolPrompt => ({
   printer_name: 'X1C',
   ams_label: 'AMS A',
   slot_label: 'Slot 1',
-  material: 'PLA',
-  color_hex: '333333FF',
-  brand: 'PLA Matte',
+  material: 'PETG',
+  color_hex: '179CB0FF',
+  brand: 'PETG HF',
   tag_uid: 'AABBCCDD11223344',
   tray_uuid: 'AABBCCDDEEFF0011AABBCCDDEEFF0011',
   candidate_spool_ids,
@@ -53,22 +53,22 @@ function setup(p: UnknownSpoolPrompt, canLink = true) {
 
 describe('UnknownSpoolModal', () => {
   it('asks which spool it is when several match, matching ones first', async () => {
-    const { onLink, onConfirm } = setup(prompt([12, 13, 30]));
+    const { onLink, onConfirm } = setup(prompt([61, 64, 73]));
 
     expect(screen.getByText(/several spools in your inventory match it/i)).toBeInTheDocument();
     await waitFor(() => expect(screen.getAllByRole('radio')).toHaveLength(4));
     const rows = screen.getAllByRole('radio').map((r) => (r as HTMLInputElement).value);
-    expect(rows).toEqual(['12', '13', '30', '31']);
+    expect(rows).toEqual(['61', '64', '73', '88']);
     expect(screen.getByText('Matching spools')).toBeInTheDocument();
-    expect(screen.getByText('664 g used')).toBeInTheDocument();
+    expect(screen.getByText('175 g used')).toBeInTheDocument();
     expect(screen.getAllByText('“Sealed box”')).toHaveLength(2);
 
     const link = screen.getByRole('button', { name: 'Link' });
     expect(link).toBeDisabled();
     fireEvent.click(screen.getAllByRole('radio')[2]);
-    fireEvent.click(screen.getByRole('button', { name: 'Link to #30' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Link to #73' }));
 
-    expect(onLink).toHaveBeenCalledWith(30);
+    expect(onLink).toHaveBeenCalledWith(73);
     expect(onConfirm).not.toHaveBeenCalled();
     // Adding a new spool stays possible.
     expect(screen.getByRole('button', { name: 'Add as new spool' })).toBeInTheDocument();
@@ -83,12 +83,12 @@ describe('UnknownSpoolModal', () => {
 
     await waitFor(() => expect(screen.getAllByRole('radio')).toHaveLength(4));
     fireEvent.click(screen.getAllByRole('radio')[0]);
-    fireEvent.click(screen.getByRole('button', { name: 'Link to #12' }));
-    expect(onLink).toHaveBeenCalledWith(12);
+    fireEvent.click(screen.getByRole('button', { name: 'Link to #61' }));
+    expect(onLink).toHaveBeenCalledWith(61);
   });
 
   it('keeps the plain add prompt in Spoolman mode', () => {
-    const { onConfirm } = setup(prompt([12, 30]), false);
+    const { onConfirm } = setup(prompt([61, 73]), false);
 
     expect(screen.queryByRole('button', { name: /link/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('radio')).not.toBeInTheDocument();

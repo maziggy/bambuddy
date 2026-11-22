@@ -578,6 +578,7 @@ export function useWebSocket() {
           tray_sub_brands?: string | null;
           tray_count?: number | null;
           candidate_spool_ids?: number[];
+          tray_info_idx?: string | null;
         };
         window.dispatchEvent(new CustomEvent('unknown-tag', {
           detail: {
@@ -590,6 +591,7 @@ export function useWebSocket() {
             tray_color: m.tray_color,
             tray_sub_brands: m.tray_sub_brands,
             tray_count: m.tray_count,
+            tray_info_idx: m.tray_info_idx,
             candidate_spool_ids: m.candidate_spool_ids ?? [],
           }
         }));

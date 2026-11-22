@@ -1155,6 +1155,8 @@ export function Layout() {
         prompt={unknownSpool.prompt}
         isPending={unknownSpool.isPending}
         canLink={unknownSpool.canLink}
+        canAdd={unknownSpool.canAdd}
+        adding={unknownSpool.adding}
         onConfirm={unknownSpool.confirm}
         onLink={unknownSpool.link}
         onCancel={unknownSpool.cancel}

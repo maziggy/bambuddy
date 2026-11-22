@@ -5,11 +5,11 @@ import { linkChoices, movedTagBody, rfidLinkBody } from '../../utils/rfidTagLink
 const spool = (over: Partial<InventorySpool>): InventorySpool =>
   ({
     id: 1,
-    material: 'PLA',
-    subtype: 'Matte',
+    material: 'PETG',
+    subtype: 'HF',
     brand: 'Bambu Lab',
-    color_name: 'Charcoal',
-    rgba: '333333FF',
+    color_name: 'Teal',
+    rgba: '179CB0FF',
     label_weight: 1000,
     weight_used: 0,
     note: null,
@@ -23,41 +23,43 @@ const spool = (over: Partial<InventorySpool>): InventorySpool =>
 
 describe('linkChoices (#3658)', () => {
   const spools = [
-    spool({ id: 12 }),
-    spool({ id: 13 }),
-    spool({ id: 30, weight_used: 664 }),
-    spool({ id: 40, rgba: 'FFFFFFFF', color_name: 'White' }),
-    spool({ id: 41, material: 'PETG' }),
+    spool({ id: 61 }),
+    spool({ id: 64 }),
+    spool({ id: 73, weight_used: 175 }),
+    spool({ id: 94, rgba: 'FFFFFFFF', color_name: 'White' }),
+    spool({ id: 41, material: 'ABS' }),
+    spool({ id: 87, material: 'PETG-CF' }),
+    spool({ id: 89, material: 'PETG+' }),
     spool({ id: 42, tray_uuid: 'A'.repeat(32) }),
     spool({ id: 43, archived_at: '2026-01-01T00:00:00Z' }),
   ];
 
   it('puts the matcher candidates first, in its order, then the rest of the material', () => {
-    const choices = linkChoices(spools, { material: 'PLA', colorHex: '333333FF', candidateIds: [30, 12] });
+    const choices = linkChoices(spools, { material: 'PETG', colorHex: '179CB0FF', candidateIds: [73, 61] });
 
     expect(choices.map((c) => [c.spool.id, c.matches])).toEqual([
-      [30, true],
-      [12, true],
-      [13, false],
-      [40, false],
+      [73, true],
+      [61, true],
+      [64, false],
+      [94, false],
     ]);
   });
 
-  it('without candidates, ranks spools of the slot colour first and marks them', () => {
-    const choices = linkChoices(spools, { material: 'pla', colorHex: '#333333' });
+  it('ranks similar colours without calling them matcher candidates', () => {
+    const choices = linkChoices(spools, { material: 'petg', colorHex: '#179CB0' });
 
     expect(choices.map((c) => [c.spool.id, c.matches])).toEqual([
-      [12, true],
-      [13, true],
-      [30, true],
-      [40, false],
+      [61, false],
+      [64, false],
+      [73, false],
+      [94, false],
     ]);
   });
 
   it('leaves out tagged, archived and excluded spools', () => {
-    const ids = linkChoices(spools, { material: 'PLA', excludeId: 12 }).map((c) => c.spool.id);
+    const ids = linkChoices(spools, { material: 'PETG', excludeId: 61 }).map((c) => c.spool.id);
 
-    expect(ids).toEqual([13, 30, 40]);
+    expect(ids).toEqual([64, 73, 94]);
   });
 });
 
@@ -73,7 +75,7 @@ describe('link-tag bodies', () => {
       tag_uid: undefined,
       tray_uuid: undefined,
       tag_type: undefined,
-      data_origin: 'rfid_linked',
+      data_origin: 'nfc_link',
     });
   });
 
@@ -85,7 +87,8 @@ describe('link-tag bodies', () => {
       tag_type: 'bambulab',
       data_origin: 'rfid_linked',
     });
-    const nfc = spool({ tag_uid: '04ECE673D32A81', tag_type: 'ntag', data_origin: 'nfc_link' });
+    expect(rfidLinkBody({ tag_uid: 'AABB', tray_info_idx: 'GFG00' }).tag_type).toBe('bambulab');
+    const nfc = spool({ tray_uuid: '0'.repeat(32), tag_uid: '04ECE673D32A81', tag_type: 'ntag', data_origin: 'nfc_link' });
     expect(movedTagBody(nfc)).toEqual({
       tag_uid: '04ECE673D32A81',
       tray_uuid: undefined,

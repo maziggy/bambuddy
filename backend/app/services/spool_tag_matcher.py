@@ -356,20 +356,16 @@ async def find_untagged_candidates(db: AsyncSession, tray_data: dict) -> list[Sp
             subtype = "Tri Color"
 
     # Active, untagged spools matching material + color + Bambu-or-unset brand.
-    query = (
-        select(Spool)
-        .options(selectinload(Spool.k_profiles), selectinload(Spool.assignments))
-        .where(
-            Spool.archived_at.is_(None),
-            Spool.tag_uid.is_(None),
-            Spool.tray_uuid.is_(None),
-            func.upper(Spool.material) == material.upper(),
-            func.upper(Spool.rgba) == tray_color.upper(),
-            or_(
-                Spool.brand.is_(None),
-                func.lower(Spool.brand).like("%bambu%"),
-            ),
-        )
+    query = select(Spool).where(
+        Spool.archived_at.is_(None),
+        Spool.tag_uid.is_(None),
+        Spool.tray_uuid.is_(None),
+        func.upper(Spool.material) == material.upper(),
+        func.upper(Spool.rgba) == tray_color.upper(),
+        or_(
+            Spool.brand.is_(None),
+            func.lower(Spool.brand).like("%bambu%"),
+        ),
     )
 
     if subtype:
@@ -389,11 +385,14 @@ async def find_untagged_candidates(db: AsyncSession, tray_data: dict) -> list[Sp
     else:
         query = query.where(Spool.subtype.is_(None)).order_by(Spool.created_at.asc(), Spool.id.asc())
 
-    # Enough to list in the prompt; nobody keeps more than that of one colour.
-    result = await db.execute(query.limit(50))
+    result = await db.execute(query)
     spools = list(result.scalars().all())
     if subtype and spools and spools[0].subtype is not None:
         spools = [s for s in spools if s.subtype is not None]
+    # A prompt only needs the candidate IDs. Load assignment data once there
+    # is a winner, instead of fetching profiles for every spool on every push.
+    if spools and not untagged_match_is_ambiguous(spools):
+        await db.refresh(spools[0], attribute_names=["k_profiles", "assignments"])
     return spools
 
 
@@ -690,6 +689,7 @@ async def auto_assign_spool(
     printer_manager,
     db: AsyncSession,
     tray_info_idx: str = "",
+    live_tray: dict | None = None,
 ) -> SpoolAssignment:
     """Create a SpoolAssignment and auto-configure the AMS slot via MQTT.
 
@@ -697,13 +697,20 @@ async def auto_assign_spool(
     ams_set_filament_setting is NOT sent because the firmware already has
     filament configuration from the RFID tag, and sending it would destroy
     the RFID-detected state (eye → pen icon in BambuStudio).
+
+    ``live_tray`` is the tray a caller already read and checked for this slot
+    (the link-tag and from-slot routes, which also cover the external slot);
+    without it the tray is looked up in the AMS units as before.
     """
     # Get current tray state for fingerprint
     fingerprint_color = None
     fingerprint_type = None
-    tray = None
+    tray = live_tray
     state = printer_manager.get_status(printer_id)
-    if state and state.raw_data:
+    if tray:
+        fingerprint_color = tray.get("tray_color", "")
+        fingerprint_type = tray.get("tray_type", "")
+    elif state and state.raw_data:
         from backend.app.api.routes.inventory import _find_tray_in_ams_data
 
         ams = state.raw_data.get("ams", [])

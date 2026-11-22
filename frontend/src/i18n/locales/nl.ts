@@ -5550,6 +5550,9 @@ export default {
     unknownSpoolSlot: 'Sleuf',
     // Linking an AMS RFID tag to a spool, or moving it to another (#3658)
     rfidLink: {
+      permission: 'Je hebt toestemming nodig om de voorraad te wijzigen.',
+      changed: 'De tag of het slot is gewijzigd. Controleer het slot en kies opnieuw.',
+      loadFailed: 'De spoelen konden niet worden geladen.',
       linkTitle: 'Tag aan een spoel koppelen',
       moveTitle: 'Tag naar een andere spoel verplaatsen',
       linkMessage: 'Kies de spoel in je voorraad die deze RFID-tag draagt.',

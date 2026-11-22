@@ -5582,6 +5582,9 @@ errors: {
     unknownSpoolSlot: 'Fack',
     // Linking an AMS RFID tag to a spool, or moving it to another (#3658)
     rfidLink: {
+      permission: 'Du behöver behörighet att ändra lagret.',
+      changed: 'Taggen eller facket har ändrats. Kontrollera facket och välj igen.',
+      loadFailed: 'Det gick inte att läsa in spolarna.',
       linkTitle: 'Koppla taggen till en rulle',
       moveTitle: 'Flytta taggen till en annan rulle',
       linkMessage: 'Välj rullen i ditt inventarium som har den här RFID-taggen.',

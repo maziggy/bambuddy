@@ -34,10 +34,10 @@ def _ams_data(tray_uuid: str = TRAY_UUID, tag_uid: str = TAG_UID) -> list[dict]:
             "tray": [
                 {
                     "id": 0,
-                    "tray_type": "PLA",
-                    "tray_sub_brands": "PLA Matte",
-                    "tray_color": "333333FF",
-                    "tray_info_idx": "GFA01",
+                    "tray_type": "PETG",
+                    "tray_sub_brands": "PETG HF",
+                    "tray_color": "179CB0FF",
+                    "tray_info_idx": "GFG00",
                     "tray_uuid": tray_uuid,
                     "tag_uid": tag_uid,
                     "remain": 40,
@@ -57,9 +57,9 @@ def _printer_manager(pm: MagicMock) -> MagicMock:
 
 async def _spool(db_session, **kwargs) -> Spool:
     defaults = {
-        "material": "PLA",
-        "subtype": "Matte",
-        "rgba": "333333FF",
+        "material": "PETG",
+        "subtype": "HF",
+        "rgba": "179CB0FF",
         "brand": "Bambu Lab",
         "label_weight": 1000,
         "core_weight": 250,
@@ -123,7 +123,7 @@ class TestAmsHandlerAsks:
     async def test_spools_that_differ_are_offered_not_guessed(self, test_engine, db_session, printer_factory, auto_add):
         printer_id = (await printer_factory()).id
         sealed_id = (await _spool(db_session)).id
-        opened_id = (await _spool(db_session, weight_used=664, note="On the shelf")).id
+        opened_id = (await _spool(db_session, weight_used=175, note="On the shelf")).id
 
         prompt = await self._run(test_engine, printer_id, auto_add)
 
@@ -160,7 +160,7 @@ class TestLinkTagWithSlot:
         self, async_client: AsyncClient, db_session, printer_factory
     ):
         printer = await printer_factory()
-        opened = await _spool(db_session, weight_used=664)
+        opened = await _spool(db_session, weight_used=175)
 
         with (
             patch("backend.app.services.printer_manager.printer_manager") as pm,
@@ -215,7 +215,7 @@ class TestMoveTag:
     @pytest.mark.integration
     async def test_without_move_a_held_tag_is_still_refused(self, async_client: AsyncClient, db_session):
         holder = await _spool(db_session, tray_uuid=TRAY_UUID, tag_uid=TAG_UID, data_origin="rfid_linked")
-        target = await _spool(db_session, weight_used=664)
+        target = await _spool(db_session, weight_used=175)
 
         resp = await async_client.patch(
             f"/api/v1/inventory/spools/{target.id}/link-tag", json={"tag_uid": TAG_UID, "tray_uuid": TRAY_UUID}
@@ -239,7 +239,7 @@ class TestMoveTag:
             data_origin="rfid_linked",
             weight_used=12,
         )
-        right = await _spool(db_session, weight_used=664)
+        right = await _spool(db_session, weight_used=175)
         db_session.add(SpoolAssignment(spool_id=wrong.id, printer_id=printer.id, ams_id=0, tray_id=0))
         await db_session.commit()
 
@@ -261,6 +261,7 @@ class TestMoveTag:
                     "tag_type": "bambulab",
                     "data_origin": "rfid_linked",
                     "move": True,
+                    "source_spool_id": wrong.id,
                     "printer_id": printer.id,
                     "ams_id": 0,
                     "tray_id": 0,
@@ -278,7 +279,7 @@ class TestMoveTag:
             "bambulab",
             "rfid_linked",
         )
-        assert new.weight_used == 664
+        assert new.weight_used == 175
         assert await _slot_rows(db_session) == [(right.id, printer.id, 0, 0)]
         assert record.await_args.args[1:5] == (printer.id, 0, 0, right.id)
 
@@ -291,9 +292,177 @@ class TestMoveTag:
 
         resp = await async_client.patch(
             f"/api/v1/inventory/spools/{target.id}/link-tag",
-            json={"tag_uid": TAG_UID, "tray_uuid": TRAY_UUID, "move": True},
+            json={"tag_uid": TAG_UID, "tray_uuid": TRAY_UUID, "move": True, "source_spool_id": holder.id},
         )
 
         assert resp.status_code == 200, resp.text
         old = await _reload(db_session, holder.id)
         assert (old.tag_uid, old.tray_uuid) == (None, None)
+
+
+@pytest.mark.asyncio
+async def test_swap_log(async_client, db_session, printer_factory):
+    from datetime import datetime
+
+    from backend.app.models.active_print_session import ActivePrintSession
+    from backend.app.services import spool_swaps
+
+    printer = await printer_factory()
+    old = await _spool(db_session, tag_uid=TAG_UID, tray_uuid=TRAY_UUID)
+    target = await _spool(db_session)
+    start = [spool_swaps.entry(spool_swaps.INVENTORY, 0, 0, old.id, 0, start=True)]
+    db_session.add(ActivePrintSession(printer_id=printer.id, started_at=datetime.now(), spool_change_log=start))
+    db_session.add(SpoolAssignment(printer_id=printer.id, ams_id=0, tray_id=0, spool_id=old.id))
+    await db_session.commit()
+    with patch("backend.app.services.printer_manager.printer_manager") as pm:
+        _printer_manager(pm)
+        live = pm.get_status.return_value
+        live.state = "RUNNING"
+        live.layer_num = 57
+        live.spool_change_log = list(start)
+        resp = await async_client.patch(
+            f"/api/v1/inventory/spools/{target.id}/link-tag",
+            json={
+                "tag_uid": TAG_UID,
+                "tray_uuid": TRAY_UUID,
+                "move": True,
+                "source_spool_id": old.id,
+                "printer_id": printer.id,
+                "ams_id": 0,
+                "tray_id": 0,
+            },
+        )
+    assert resp.status_code == 200, resp.text
+    row = await db_session.get(ActivePrintSession, printer.id)
+    await db_session.refresh(row)
+    assert row.spool_change_log == live.spool_change_log
+    assert spool_swaps.segments(row.spool_change_log, spool_swaps.INVENTORY, 0, 0) == [(old.id, 0), (target.id, 57)]
+
+
+@pytest.mark.asyncio
+async def test_stale_choice_cannot_replace_a_tag_or_duplicate_a_spool(async_client, db_session, printer_factory):
+    printer = await printer_factory()
+    target = await _spool(db_session)
+    slot = {"printer_id": printer.id, "ams_id": 0, "tray_id": 0}
+    route = f"/api/v1/inventory/spools/{target.id}/link-tag"
+    with patch("backend.app.services.printer_manager.printer_manager") as pm:
+        _printer_manager(pm)
+        for action, url in [(async_client.patch, route), (async_client.post, "/api/v1/inventory/spools/from-slot")]:
+            response = await action(url, json={**slot, "tray_uuid": "E1" * 16})
+            assert response.status_code == 409
+        linked = await async_client.patch(route, json={**slot, "tray_uuid": TRAY_UUID})
+        assert linked.status_code == 200
+        added = await async_client.post("/api/v1/inventory/spools/from-slot", json={**slot, "tray_uuid": TRAY_UUID})
+        assert added.status_code == 409
+    assert len(await _all_spools(db_session)) == 1
+
+
+@pytest.mark.asyncio
+async def test_shelf_move_requires_current_owner_and_preserves_entire_tag(async_client, db_session):
+    uid = "04112233445566778899"
+    source = await _spool(db_session, tag_uid=uid, tray_uuid=TRAY_UUID)
+    target = await _spool(db_session)
+    other = await _spool(db_session, tray_uuid="E1" * 16)
+    payload = {"source_spool_id": source.id, "move": True, "tag_uid": uid}
+
+    async def move(spool):
+        return await async_client.patch(f"/api/v1/inventory/spools/{spool.id}/link-tag", json=payload)
+
+    assert (await move(other)).status_code == 409
+    moved = await move(target)
+    assert moved.status_code == 200
+    assert (moved.json()["tag_uid"], moved.json()["tray_uuid"]) == (uid, TRAY_UUID)
+    assert (await move(other)).status_code == 409
+    assert (await _reload(db_session, other.id)).tray_uuid == "E1" * 16
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("ams_id", "tray_id", "raw"), [(128, 0, "ams"), (255, 0, "vt_tray")])
+async def test_slot_link_uses_live_preset_and_fingerprint(
+    async_client, db_session, printer_factory, ams_id, tray_id, raw
+):
+    printer = await printer_factory()
+    target = await _spool(db_session)
+    tray = {
+        "id": 254 if raw == "vt_tray" else 0,
+        "tray_type": "PETG",
+        "tray_color": "17A0BBFF",
+        "tag_uid": TAG_UID,
+        "tray_info_idx": "GFG00",
+    }
+    with patch("backend.app.services.printer_manager.printer_manager") as pm:
+        _printer_manager(pm)
+        pm.get_status.return_value.raw_data = {raw: tray if raw == "vt_tray" else [{"id": ams_id, "tray": [tray]}]}
+        result = await async_client.patch(
+            f"/api/v1/inventory/spools/{target.id}/link-tag",
+            json={"tag_uid": TAG_UID, "printer_id": printer.id, "ams_id": ams_id, "tray_id": tray_id},
+        )
+    assert result.status_code == 200
+    assert result.json()["tag_type"] == "bambulab"
+    assignment = (await db_session.execute(select(SpoolAssignment))).scalar_one()
+    assert (assignment.fingerprint_type, assignment.fingerprint_color) == ("PETG", "17A0BBFF")
+
+
+@pytest.mark.asyncio
+async def test_concurrent_moves_have_one_winner(test_engine, db_session):
+    import asyncio
+
+    from fastapi import HTTPException
+
+    from backend.app.api.routes.inventory import LinkTagRequest, link_tag_to_spool
+    from backend.app.core.printer_scope import PrinterScope
+
+    source = await _spool(db_session, tag_uid=TAG_UID)
+    targets = [await _spool(db_session), await _spool(db_session)]
+    request = LinkTagRequest(tag_uid=TAG_UID, move=True, source_spool_id=source.id)
+    gate = asyncio.Event()
+
+    async def move(target):
+        async with AsyncSession(test_engine, expire_on_commit=False) as db:
+            await gate.wait()
+            try:
+                await link_tag_to_spool(target.id, request, db, None, PrinterScope())
+            except HTTPException as exc:
+                return exc.status_code
+            return 200
+
+    tasks = [asyncio.create_task(move(target)) for target in targets]
+    gate.set()
+    assert sorted(await asyncio.gather(*tasks)) == [200, 409]
+    holders = (await db_session.scalars(select(Spool.id).where(Spool.tag_uid == TAG_UID))).all()
+    assert len(holders) == 1 and holders[0] in {target.id for target in targets}
+
+
+@pytest.mark.asyncio
+async def test_validation_checks_spool_before_partial_slot(async_client, db_session):
+    from datetime import datetime, timezone
+
+    archived = await _spool(db_session, archived_at=datetime.now(timezone.utc))
+    for spool_id, expected_status in [(archived.id, 400), (archived.id + 100, 404)]:
+        result = await async_client.patch(f"/api/v1/inventory/spools/{spool_id}/link-tag", json={"ams_id": 0})
+        assert result.status_code == expected_status
+
+
+@pytest.mark.asyncio
+async def test_moving_a_uid_with_a_zero_uuid_preserves_other_spools(async_client, db_session):
+    source = await _spool(
+        db_session, tag_uid="AA:BB:CC:DD:11:22:33:44", tray_uuid="0" * 32, tag_type="ntag", data_origin="nfc_link"
+    )
+    duplicate = await _spool(db_session, tag_uid="aa-bb-cc-dd-11-22-33-44")
+    unrelated = await _spool(db_session, tag_uid=OTHER_SIDE_UID, tray_uuid="0" * 32)
+    target = await _spool(db_session)
+    response = await async_client.patch(
+        f"/api/v1/inventory/spools/{target.id}/link-tag",
+        json={"source_spool_id": source.id, "move": True, "tag_uid": TAG_UID, "tray_uuid": "0" * 32},
+    )
+    assert response.status_code == 200
+    moved = response.json()
+    assert (moved["tag_uid"], moved["tray_uuid"], moved["tag_type"], moved["data_origin"]) == (
+        TAG_UID,
+        None,
+        "ntag",
+        "nfc_link",
+    )
+    assert (await _reload(db_session, source.id)).tag_uid is None
+    assert (await _reload(db_session, duplicate.id)).tag_uid is None
+    assert (await _reload(db_session, unrelated.id)).tag_uid == OTHER_SIDE_UID

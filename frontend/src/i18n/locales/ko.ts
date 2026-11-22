@@ -5302,6 +5302,9 @@ export default {
     unknownSpoolSlot: '슬롯',
     // Linking an AMS RFID tag to a spool, or moving it to another (#3658)
     rfidLink: {
+      permission: '재고를 수정할 권한이 필요합니다.',
+      changed: '태그 또는 슬롯이 변경되었습니다. 슬롯을 확인하고 다시 선택하세요.',
+      loadFailed: '스풀을 불러올 수 없습니다.',
       linkTitle: '태그를 스풀에 연결',
       moveTitle: '태그를 다른 스풀로 이동',
       linkMessage: '이 RFID 태그가 붙은 인벤토리의 스풀을 선택하세요.',

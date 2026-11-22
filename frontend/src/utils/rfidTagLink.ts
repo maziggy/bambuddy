@@ -1,4 +1,5 @@
-import type { InventorySpool } from '../api/client';
+import type { TFunction } from 'i18next';
+import { ApiError, type InventorySpool } from '../api/client';
 
 /**
  * Linking an AMS RFID tag to a spool the user picks, in built-in inventory
@@ -7,6 +8,7 @@ import type { InventorySpool } from '../api/client';
  */
 
 export interface RfidTag {
+  tray_info_idx?: string | null;
   tag_uid?: string | null;
   tray_uuid?: string | null;
 }
@@ -18,8 +20,25 @@ export interface TagLinkBody {
   data_origin?: string;
 }
 
-const realId = (value?: string | null): string | undefined =>
-  value && !/^0+$/.test(value) ? value : undefined;
+function realId(value?: string | null) {
+  const hex = value?.replace(/[^0-9a-f]/gi, '').toUpperCase();
+  return hex && !/^0+$/.test(hex) ? hex : undefined;
+}
+
+export function hasRfidTag(tag?: RfidTag | null) {
+  return !!(realId(tag?.tag_uid) || realId(tag?.tray_uuid));
+}
+
+export function tagLinkError(error: Error, t: TFunction, fallback: string) {
+  if (error instanceof ApiError) {
+    if (error.code === 'tag_already_linked' && typeof error.detail?.spool_id === 'number') {
+      return t('inventory.tagAlreadyLinked', { id: error.detail.spool_id });
+    }
+    if (error.status === 403) return t('inventory.rfidLink.permission');
+    if (error.status === 409) return t('inventory.rfidLink.changed');
+  }
+  return fallback;
+}
 
 /**
  * The link-tag body for a tag the AMS read. Recorded the way an automatic
@@ -28,28 +47,31 @@ const realId = (value?: string | null): string | undefined =>
  */
 export function rfidLinkBody(tag: RfidTag): TagLinkBody {
   const tray_uuid = realId(tag.tray_uuid);
+  const tag_uid = realId(tag.tag_uid);
+  const bambu = !!(tray_uuid || (tag_uid && tag.tray_info_idx));
   return {
-    tag_uid: realId(tag.tag_uid),
+    tag_uid,
     tray_uuid,
-    tag_type: tray_uuid ? 'bambulab' : undefined,
-    data_origin: 'rfid_linked',
+    tag_type: bambu ? 'bambulab' : tag_uid ? 'generic' : undefined,
+    data_origin: bambu ? 'rfid_linked' : 'nfc_link',
   };
 }
 
 /** The link-tag body that gives a spool's tag to another spool, as it is recorded on the first. */
 export function movedTagBody(holder: InventorySpool): TagLinkBody {
+  const tray_uuid = realId(holder.tray_uuid);
   const fromRfid = holder.data_origin === 'rfid_auto' || holder.data_origin === 'rfid_linked';
   return {
-    tag_uid: holder.tag_uid ?? undefined,
-    tray_uuid: holder.tray_uuid ?? undefined,
-    tag_type: holder.tag_type ?? (holder.tray_uuid ? 'bambulab' : undefined),
-    data_origin: fromRfid || holder.tray_uuid ? 'rfid_linked' : (holder.data_origin ?? 'nfc_link'),
+    tag_uid: realId(holder.tag_uid),
+    tray_uuid,
+    tag_type: holder.tag_type ?? (tray_uuid ? 'bambulab' : undefined),
+    data_origin: fromRfid ? 'rfid_linked' : (holder.data_origin ?? 'nfc_link'),
   };
 }
 
 export interface LinkChoice {
   spool: InventorySpool;
-  /** A spool the tag matches: one the matcher found, or one of the slot's colour. */
+  /** The backend matcher named this spool in the prompt. */
   matches: boolean;
 }
 
@@ -69,9 +91,9 @@ export function linkChoices(
   const material = norm(options.material);
   const colour = hex6(options.colorHex);
   const choices = (spools ?? []).filter((spool) => {
-    if (spool.id === options.excludeId || spool.archived_at || spool.tag_uid || spool.tray_uuid) return false;
+    if (spool.id === options.excludeId || spool.archived_at || hasRfidTag(spool)) return false;
     if (candidateIds.includes(spool.id) || !material) return true;
-    return norm(spool.material).startsWith(material);
+    return norm(spool.material) === material;
   });
   const rank = (spool: InventorySpool) => {
     const candidate = candidateIds.indexOf(spool.id);
@@ -82,6 +104,6 @@ export function linkChoices(
     .sort((a, b) => rank(a) - rank(b) || a.id - b.id)
     .map((spool) => ({
       spool,
-      matches: candidateIds.length > 0 ? candidateIds.includes(spool.id) : !!colour && hex6(spool.rgba) === colour,
+      matches: candidateIds.includes(spool.id),
     }));
 }

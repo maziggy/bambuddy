@@ -1069,7 +1069,7 @@ describe('FilamentHoverCard RFID tag actions (#3658)', () => {
       <FilamentHoverCard
         data={baseFilamentData}
         inventory={{
-          assignedSpool: { id: 12, material: 'PLA', subtype: 'Matte', brand: 'Bambu Lab', color_name: 'Charcoal' },
+          assignedSpool: { id: 61, material: 'PETG', subtype: 'HF', brand: 'Bambu Lab', color_name: 'Teal' },
           onMoveTag: onMove,
         }}
       >
@@ -1086,14 +1086,14 @@ describe('FilamentHoverCard RFID tag actions (#3658)', () => {
     renderWithHover(
       <FilamentHoverCard
         data={baseFilamentData}
-        inventory={{ assignedSpool: { id: 12, material: 'PLA', subtype: null, brand: null, color_name: null } }}
+        inventory={{ assignedSpool: { id: 61, material: 'PETG', subtype: null, brand: null, color_name: null } }}
       >
         <div>trigger</div>
       </FilamentHoverCard>
     );
     vi.advanceTimersByTime(100);
 
-    await screen.findByText('#12');
+    await screen.findByText('#61');
     expect(screen.queryByText(/move tag/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/link to existing/i)).not.toBeInTheDocument();
   });

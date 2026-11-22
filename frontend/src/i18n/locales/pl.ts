@@ -5552,6 +5552,9 @@ export default {
     unknownSpoolSlot: 'Slot',
     // Linking an AMS RFID tag to a spool, or moving it to another (#3658)
     rfidLink: {
+      permission: 'Potrzebujesz uprawnień do edycji magazynu.',
+      changed: 'Tag lub gniazdo uległo zmianie. Sprawdź gniazdo i wybierz ponownie.',
+      loadFailed: 'Nie udało się wczytać szpul.',
       linkTitle: 'Połącz tag ze szpulą',
       moveTitle: 'Przenieś tag na inną szpulę',
       linkMessage: 'Wybierz szpulę z magazynu, która ma ten tag RFID.',

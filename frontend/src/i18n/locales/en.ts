@@ -5552,6 +5552,9 @@ export default {
     unknownSpoolSlot: 'Slot',
     // Linking an AMS RFID tag to a spool, or moving it to another (#3658)
     rfidLink: {
+      permission: 'You need permission to update inventory.',
+      changed: 'The tag or slot has changed. Check the slot and choose again.',
+      loadFailed: 'Could not load spools.',
       linkTitle: 'Link tag to a spool',
       moveTitle: 'Move tag to another spool',
       linkMessage: 'Pick the spool in your inventory that carries this RFID tag.',

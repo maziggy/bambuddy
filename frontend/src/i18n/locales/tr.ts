@@ -5503,6 +5503,9 @@ export default {
     unknownSpoolSlot: 'Yuva',
     // Linking an AMS RFID tag to a spool, or moving it to another (#3658)
     rfidLink: {
+      permission: 'Envanteri güncellemek için izniniz olmalı.',
+      changed: 'Etiket veya yuva değişti. Yuvayı kontrol edip yeniden seçin.',
+      loadFailed: 'Makaralar yüklenemedi.',
       linkTitle: 'Etiketi bir makaraya bağla',
       moveTitle: 'Etiketi başka bir makaraya taşı',
       linkMessage: 'Envanterinizde bu RFID etiketini taşıyan makarayı seçin.',

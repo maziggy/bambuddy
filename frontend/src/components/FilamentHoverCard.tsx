@@ -599,6 +599,7 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
+                            triggerRef.current?.focus();
                             dismiss();
                             inventory.onMoveTag?.();
                           }}
@@ -629,6 +630,7 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
+                        triggerRef.current?.focus();
                         dismiss();
                         inventory.onLinkExistingSpool?.();
                       }}

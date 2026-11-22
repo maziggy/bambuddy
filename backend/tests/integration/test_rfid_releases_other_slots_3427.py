@@ -168,6 +168,24 @@ class TestReleaseOtherSlots:
         assert sorted(vacated) == [(a, 0, 1), (a, 1, 2)]
         assert await _rows(db_session) == {(b, 0, 0)}
 
+    async def test_manual_link_releases_only_in_scope(self, test_engine, db_session, printer_factory):
+        from backend.app.core.printer_scope import PrinterScope
+
+        (a, b), spool_id = await self._setup(db_session, printer_factory, [(0, 0, 1), (1, 0, 0), (1, 1, 0)])
+        real_db = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+        with (
+            patch("backend.app.core.database.async_session", real_db),
+            patch(
+                "backend.app.services.printer_manager.printer_manager.get_status",
+                _status({b: [{"id": 0, "tray": [_tray(0)]}]}),
+            ),
+        ):
+            vacated = await spool_relocation.release_other_slots(
+                spool_relocation.INTERNAL, spool_id, (b, 0, 0), printer_scope=PrinterScope(frozenset({b}))
+            )
+        assert vacated == [(b, 1, 0)]
+        assert await _rows(db_session) == {(a, 0, 1), (b, 0, 0)}
+
     async def test_a_slot_reporting_the_same_tag_keeps_its_assignment(self, test_engine, db_session, printer_factory):
         """One tag in two slots is a misread: neither takes the other's row."""
         (a, b), spool_id = await self._setup(db_session, printer_factory, [(0, 0, 1), (1, 0, 0)])

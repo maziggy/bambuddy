@@ -5546,6 +5546,9 @@ export default {
     unknownSpoolSlot: "Слот",
     // Linking an AMS RFID tag to a spool, or moving it to another (#3658)
     rfidLink: {
+      permission: "Для зміни запасів потрібен дозвіл.",
+      changed: "Мітка або слот змінилися. Перевірте слот і виберіть ще раз.",
+      loadFailed: "Не вдалося завантажити котушки.",
       linkTitle: "Прив'язати мітку до котушки",
       moveTitle: "Перенести мітку на іншу котушку",
       linkMessage: "Виберіть котушку з обліку, на якій ця RFID-мітка.",

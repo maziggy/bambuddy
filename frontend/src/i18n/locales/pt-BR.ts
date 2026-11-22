@@ -5501,6 +5501,9 @@ export default {
     unknownSpoolSlot: 'Slot',
     // Linking an AMS RFID tag to a spool, or moving it to another (#3658)
     rfidLink: {
+      permission: 'Você precisa de permissão para atualizar o estoque.',
+      changed: 'A etiqueta ou o slot mudou. Confira o slot e escolha novamente.',
+      loadFailed: 'Não foi possível carregar os carretéis.',
       linkTitle: 'Vincular tag a um carretel',
       moveTitle: 'Mover tag para outro carretel',
       linkMessage: 'Escolha o carretel do seu inventário que tem esta tag RFID.',

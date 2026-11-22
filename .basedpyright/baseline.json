@@ -4096,14 +4096,6 @@
                     "endColumn": 75,
                     "lineCount": 1
                 }
-            },
-            {
-                "code": "reportArgumentType",
-                "range": {
-                    "startColumn": 69,
-                    "endColumn": 84,
-                    "lineCount": 1
-                }
             }
         ],
         "./backend/app/services/spoolman.py": [

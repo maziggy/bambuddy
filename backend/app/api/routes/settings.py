@@ -1881,7 +1881,6 @@ async def restore_backup(
 
 async def _restore_backup_zip(file: UploadFile, db: AsyncSession):
     """The work of restore_backup, which holds the backup lock around it."""
-    import shutil
     import tempfile
 
     from fastapi import HTTPException

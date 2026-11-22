@@ -452,8 +452,11 @@ class TestMultiFilamentBackupSplit3650:
 
     @pytest.mark.asyncio
     async def test_remain_delta_skips_backup_tray(self):
-        # Tray 2's remain% dropped during the print; the split already charged
-        # it, so the remain-delta fallback must not charge it again.
+        # Tray 3 ran from 12 % to empty and tray 2 dropped by 10 % during the
+        # print; the split already charged both, so the remain-delta fallback
+        # must not charge them again. The spools have a net weight and a slot
+        # assignment, so without the split claiming its trays the fallback
+        # charges tray 3's spool another 120 g.
         tracking = self._tracking(
             tray_remain_start={
                 "0-0": {"remain": 90, "tray_uuid": "T0"},
@@ -461,8 +464,30 @@ class TestMultiFilamentBackupSplit3650:
                 "0-3": {"remain": 12, "tray_uuid": "T3"},
             }
         )
-        charged = await self._report(tracking, self._state(raw_data=self._raw(remain_tray2=90)))
-        assert charged == {30: pytest.approx(45.28, abs=0.01), 20: pytest.approx(67.92, abs=0.01), 10: 2.0}
+        spool_by_tray = {0: 10, 2: 20, 3: 30}
+        client = self._client()
+        client.get_spool = AsyncMock(side_effect=lambda spool_id: {"id": spool_id, "initial_weight": 1000.0})
+        printer_manager = MagicMock()
+        printer_manager.get_status.return_value = self._state(raw_data=self._raw(remain_tray2=90))
+        from contextlib import ExitStack
+
+        from backend.app.services.spoolman_tracking import report_usage
+
+        with ExitStack() as stack:
+            for p in self._patches(client, printer_manager, _make_db(tracking)):
+                stack.enter_context(p)
+            stack.enter_context(
+                patch(
+                    "backend.app.services.spoolman_tracking._resolve_spool_id_via_slot_assignment",
+                    AsyncMock(side_effect=lambda printer_id, ams_id, tray_id: spool_by_tray.get(tray_id)),
+                )
+            )
+            await report_usage(printer_id=1, archive_id=143)
+        assert self._charged(client) == {
+            30: pytest.approx(45.28, abs=0.01),
+            20: pytest.approx(67.92, abs=0.01),
+            10: 2.0,
+        }
 
     @pytest.mark.asyncio
     async def test_colour_changes_only_keep_the_mapping(self):

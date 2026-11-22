@@ -11,6 +11,7 @@ interface SwitchbarPopoverProps {
 }
 
 function SwitchItem({ plug }: { plug: SmartPlug }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [confirmAction, setConfirmAction] = useState<'on' | 'off' | null>(null);
 
@@ -71,18 +72,18 @@ function SwitchItem({ plug }: { plug: SmartPlug }) {
                     <span className="text-teal-700 dark:text-teal-400">{Math.round(status?.energy?.power ?? 0)}W</span>
                     <span className="text-bambu-gray mx-1">|</span>
                     <Eye className="w-3 h-3 text-bambu-gray" />
-                    <span className="text-bambu-gray">Monitor</span>
+                    <span className="text-bambu-gray">{t('switchbarPopover.monitor')}</span>
                   </>
                 ) : (
                   <>
                     <WifiOff className="w-3 h-3 text-status-error" />
-                    <span className="text-status-error">Waiting</span>
+                    <span className="text-status-error">{t('switchbarPopover.waiting')}</span>
                   </>
                 )
               ) : isReachable ? (
                 <>
                   <Wifi className="w-3 h-3 text-status-ok" />
-                  <span className={isOn ? 'text-status-ok' : 'text-bambu-gray'}>{status?.state || 'Unknown'}</span>
+                  <span className={isOn ? 'text-status-ok' : 'text-bambu-gray'}>{status?.state || t('smartPlugs.unknown')}</span>
                   {status?.energy?.power !== null && status?.energy?.power !== undefined && (
                     <>
                       <span className="text-bambu-gray mx-1">|</span>
@@ -94,7 +95,7 @@ function SwitchItem({ plug }: { plug: SmartPlug }) {
               ) : (
                 <>
                   <WifiOff className="w-3 h-3 text-status-error" />
-                  <span className="text-status-error">Offline</span>
+                  <span className="text-status-error">{t('smartPlugs.offline')}</span>
                 </>
               )}
             </div>
@@ -112,7 +113,7 @@ function SwitchItem({ plug }: { plug: SmartPlug }) {
                   ? 'bg-bambu-green text-white'
                   : 'bg-bambu-dark text-bambu-gray hover:text-white'
               } disabled:opacity-50 disabled:cursor-not-allowed`}
-              title="Turn On"
+              title={t('smartPlugs.turnOn')}
             >
               {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Power className="w-4 h-4" />}
             </button>
@@ -124,7 +125,7 @@ function SwitchItem({ plug }: { plug: SmartPlug }) {
                   ? 'bg-bambu-dark-tertiary text-white'
                   : 'bg-bambu-dark text-bambu-gray hover:text-white'
               } disabled:opacity-50 disabled:cursor-not-allowed`}
-              title="Turn Off"
+              title={t('smartPlugs.turnOff')}
             >
               {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <PowerOff className="w-4 h-4" />}
             </button>
@@ -134,9 +135,13 @@ function SwitchItem({ plug }: { plug: SmartPlug }) {
 
       {confirmAction && (
         <ConfirmModal
-          title={`Turn ${confirmAction === 'on' ? 'On' : 'Off'} Smart Plug`}
-          message={`Are you sure you want to turn ${confirmAction === 'on' ? 'on' : 'off'} "${plug.name}"?`}
-          confirmText={confirmAction === 'on' ? 'Turn On' : 'Turn Off'}
+          title={confirmAction === 'on' ? t('smartPlugs.turnOnSmartPlug') : t('smartPlugs.turnOffSmartPlug')}
+          message={
+            confirmAction === 'on'
+              ? t('smartPlugs.turnOnConfirm', { name: plug.name })
+              : t('switchbarPopover.turnOffConfirm', { name: plug.name })
+          }
+          confirmText={confirmAction === 'on' ? t('smartPlugs.turnOn') : t('smartPlugs.turnOff')}
           variant={confirmAction === 'off' ? 'warning' : 'default'}
           onConfirm={handleConfirm}
           onCancel={() => setConfirmAction(null)}
@@ -166,7 +171,7 @@ export function SwitchbarPopover({ onClose }: SwitchbarPopoverProps) {
       <div className="px-4 py-3 border-b border-bambu-dark-tertiary">
         <h3 className="text-sm font-semibold text-white flex items-center gap-2">
           <Plug className="w-4 h-4 text-bambu-green" />
-          Smart Switches
+          {t('nav.smartSwitches')}
         </h3>
       </div>
 

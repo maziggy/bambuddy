@@ -26,8 +26,9 @@ function formatDateTime(iso: string | null): string {
     d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
 
-const BLANK_OPTIONS = [
-  { label: 'Off', value: 0 },
+// label null = Off, translated at render (t isn't available at module load)
+const BLANK_OPTIONS: { label: string | null; value: number }[] = [
+  { label: null, value: 0 },
   { label: '1m', value: 60 },
   { label: '2m', value: 120 },
   { label: '5m', value: 300 },
@@ -363,7 +364,7 @@ function DisplayTab({ device, onBrightnessChange }: {
                   : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
               }`}
             >
-              {opt.label}
+              {opt.label ?? t('common.off')}
             </button>
           ))}
         </div>
@@ -757,7 +758,7 @@ function UpdatesTab({ device }: { device: SpoolBuddyDevice }) {
       await spoolbuddyApi.triggerUpdate(device.device_id);
       // Don't clear busy — keep showing spinner until isUpdating takes over or timeout
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to trigger update');
+      setError(e instanceof Error ? e.message : t('spoolbuddy.settings.triggerUpdateFailed', 'Failed to trigger update'));
       setBusy(null);
     }
   };

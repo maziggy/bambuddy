@@ -42,6 +42,8 @@ from backend.app.schemas.printer import (
     NextPause,
     NozzleInfoResponse,
     NozzleRackSlot,
+    PandaBreathCommand,
+    PandaBreathState,
     PrinterCreate,
     PrinterDiagnosticResult,
     PrinterFilesDownloadRequest,
@@ -57,7 +59,7 @@ from backend.app.schemas.printer import (
     WLEDPresetTestRequest,
     hms_error_responses,
 )
-from backend.app.services import camera_light as camera_light_service, drying_preflight, kprofile_drift
+from backend.app.services import camera_light as camera_light_service, drying_preflight, kprofile_drift, plate_clear
 from backend.app.services.bambu_ftp import (
     DownloadDeadlineExceeded,
     FileNotOnPrinterError,
@@ -71,6 +73,7 @@ from backend.app.services.bambu_ftp import (
     list_files_result_async,
 )
 from backend.app.services.hms_actions import HMSAction
+from backend.app.services.panda_breath import panda_breath_service
 from backend.app.services.pause_eta import next_pause
 from backend.app.services.print_storage import ftp_probe_paths, print_file_reachable_over_ftp
 from backend.app.services.printer_diagnostic import run_connection_diagnostic
@@ -106,7 +109,7 @@ from backend.app.services.printer_media import (
     start_printer_files_job,
 )
 from backend.app.services.slicer_filament_resolver import _ORCA_PROFILE_ID, lookup_orca_filament_id
-from backend.app.services.slot_nozzle import reports_two_nozzles, resolve_slot_nozzle
+from backend.app.services.slot_nozzle import resolve_slot_nozzle
 from backend.app.services.wled import WLEDResponseError, wled_manager
 from backend.app.utils.filament_finish import different_finish, finish_generic_id
 from backend.app.utils.filament_ids import (
@@ -115,7 +118,7 @@ from backend.app.utils.filament_ids import (
     filament_id_to_setting_id,
     setting_id_to_filament_id,
 )
-from backend.app.utils.filament_types import is_material_name, printer_filament_type
+from backend.app.utils.filament_types import is_material_name, printer_filament_type, support_filament_type
 from backend.app.utils.fts_routing import slot_extruder
 from backend.app.utils.http import build_content_disposition, download_error_response, safe_download_filename
 from backend.app.utils.kprofile_lookup import build_slot_k_resolver
@@ -333,101 +336,9 @@ async def get_available_filaments(
 
     Used by the frontend to offer filament override options for model-based queue assignment.
     """
-    from backend.app.utils.printer_models import normalize_printer_model, normalize_printer_model_id
+    from backend.app.services.loaded_filaments import loaded_filaments
 
-    # Normalize model name
-    normalized_model = normalize_printer_model(model) or normalize_printer_model_id(model) or model
-
-    query = (
-        select(Printer).where(func.lower(Printer.model) == normalized_model.lower()).where(Printer.is_active == True)  # noqa: E712
-    )
-    if location:
-        query = query.where(Printer.location == location)
-
-    result = await db.execute(query)
-    printers_list = [p for p in result.scalars().all() if printer_scope.allows(p.id)]
-
-    if not printers_list:
-        return []
-
-    # Collect filaments from all matching printers
-    # Dedup key includes extruder_id and tray_sub_brands so "PLA Basic" and "PLA Matte" appear separately
-    seen: set[tuple[str, str, str, int | None]] = set()  # (type_upper, color_normalized, sub_brands_upper, extruder_id)
-    filaments = []
-
-    for printer in printers_list:
-        status = printer_manager.get_status(printer.id)
-        if not status:
-            continue
-
-        # Get ams_extruder_map for dual-nozzle printers
-        ams_extruder_map = status.raw_data.get("ams_extruder_map", {})
-        # Same signal the scheduler matches with (#2771): without an AMS the map
-        # is empty on a dual-nozzle printer too.
-        is_dual_nozzle = reports_two_nozzles(status)
-
-        # AMS trays
-        for ams_unit in status.raw_data.get("ams", []):
-            ams_id = str(ams_unit.get("id", 0))
-            extruder_id = ams_extruder_map.get(ams_id)
-            for tray in ams_unit.get("tray", []):
-                tray_type = tray.get("tray_type")
-                if not tray_type:
-                    continue
-                tray_color = tray.get("tray_color", "") or "808080"
-                # Preserve the full RRGGBBAA so transparent filament (alpha=00)
-                # reaches the frontend instead of collapsing to #000000 → black
-                # (#1545). Opaque colours still round-trip as #RRGGBB. The
-                # dedup key uses the 6-char RGB so two slots that share an RGB
-                # but differ only in alpha still merge.
-                stripped = tray_color.replace("#", "")
-                rgb = stripped[:6].lower() or "808080"
-                color = f"#{stripped}"
-                tray_info_idx = tray.get("tray_info_idx", "")
-                tray_sub_brands = tray.get("tray_sub_brands", "") or ""
-
-                key = (tray_type.upper(), rgb, tray_sub_brands.upper(), extruder_id)
-                if key not in seen:
-                    seen.add(key)
-                    filaments.append(
-                        {
-                            "type": tray_type,
-                            "color": color,
-                            "tray_info_idx": tray_info_idx,
-                            "tray_sub_brands": tray_sub_brands,
-                            "extruder_id": extruder_id,
-                        }
-                    )
-
-        # External spools (vt_tray)
-        for vt in status.raw_data.get("vt_tray") or []:
-            vt_type = vt.get("tray_type")
-            if not vt_type:
-                continue
-            vt_color = vt.get("tray_color", "") or "808080"
-            # Same alpha-preserving handling as the AMS branch — see #1545.
-            stripped = vt_color.replace("#", "")
-            rgb = stripped[:6].lower() or "808080"
-            color = f"#{stripped}"
-            tray_info_idx = vt.get("tray_info_idx", "")
-            tray_sub_brands = vt.get("tray_sub_brands", "") or ""
-            vt_id = int(vt.get("id", 254))
-            extruder_id = (255 - vt_id) if is_dual_nozzle else None
-
-            key = (vt_type.upper(), rgb, tray_sub_brands.upper(), extruder_id)
-            if key not in seen:
-                seen.add(key)
-                filaments.append(
-                    {
-                        "type": vt_type,
-                        "color": color,
-                        "tray_info_idx": tray_info_idx,
-                        "tray_sub_brands": tray_sub_brands,
-                        "extruder_id": extruder_id,
-                    }
-                )
-
-    return filaments
+    return await loaded_filaments(db, model, location=location, allows=printer_scope.allows)
 
 
 @router.get("/developer-mode-warnings")
@@ -537,8 +448,12 @@ async def update_printer(
         except Exception as e:
             logger.error("Failed to sync virtual printers after printer IP change: %s", e)
 
-    if "wled_config" in update_data:
-        wled_manager.configure_printer(printer_id, printer.wled_config)
+    if "require_plate_clear" in update_data:
+        plate_clear.set_override(printer_id, printer.require_plate_clear)
+
+    if "wled_config" in update_data or "require_plate_clear" in update_data:
+        if "wled_config" in update_data:
+            wled_manager.configure_printer(printer_id, printer.wled_config)
         state = printer_manager.get_status(printer_id)
         if state and printer.is_active:
             wled_manager.handle_status(
@@ -632,6 +547,14 @@ async def delete_printer(
     await db.execute(select(Printer.id).where(Printer.id == printer_id).with_for_update())
 
     if delete_archives:
+        # A charge waiting on one of their runs for its energy is written
+        # first (#3581): without its archive it has nothing to charge.
+        from backend.app.models.print_log import PrintLogEntry
+        from backend.app.services.finance_billing import settle_pending_print_charges
+
+        await settle_pending_print_charges(
+            db, PrintLogEntry.archive_id.in_(select(PrintArchive.id).where(PrintArchive.printer_id == printer_id))
+        )
         # Delete all archives for this printer
         await db.execute(sql_delete(PrintArchive).where(PrintArchive.printer_id == printer_id))
     else:
@@ -722,6 +645,18 @@ async def get_printer_status(
     return await _printer_status(db, printer)
 
 
+def _panda_breath_state(printer: Printer) -> PandaBreathState | None:
+    """The Panda Breath bound to this printer, for the status response (#1466).
+
+    By the stored serial number, so a printer that is off or not connected
+    still shows the heater, which keeps running without it.
+    """
+    if not panda_breath_service.enabled:
+        return None
+    state = panda_breath_service.state_for_serial(printer.serial_number)
+    return PandaBreathState(**state) if state else None
+
+
 async def _printer_status(db: AsyncSession, printer: Printer) -> PrinterStatus:
     """The live status of *printer*, as the status endpoints report it."""
     printer_id = printer.id
@@ -737,6 +672,7 @@ async def _printer_status(db: AsyncSession, printer: Printer) -> PrinterStatus:
             name=printer.name,
             connected=False,
             awaiting_plate_clear=printer_manager.is_awaiting_plate_clear(printer_id),
+            panda_breath=_panda_breath_state(printer),
         )
 
     # Determine cover URL if there's an active print (including paused)
@@ -794,6 +730,7 @@ async def _printer_status(db: AsyncSession, printer: Printer) -> PrinterStatus:
             nozzle_type=n.get("type", ""),
             nozzle_diameter=n.get("diameter", ""),
             wear=n.get("wear"),
+            print_time_s=n.get("print_time_s"),
             stat=n.get("stat"),
             max_temp=n.get("max_temp", 0),
             serial_number=n.get("serial_number", ""),
@@ -962,6 +899,7 @@ async def _printer_status(db: AsyncSession, printer: Printer) -> PrinterStatus:
         supports_chamber_heater=supports_chamber_heater(printer.model),
         current_archive_id=current_archive_id,
         current_plate_id=current_plate_id,
+        panda_breath=_panda_breath_state(printer),
         fila_switch=(
             FilaSwitchResponse(
                 installed=state.fila_switch.installed,
@@ -3064,6 +3002,12 @@ async def configure_ams_slot(
         logger.info("[configure_ams_slot] tray_info_idx %r is a setting id → %r", tray_info_idx, converted)
         setting_id = setting_id or tray_info_idx
         tray_info_idx = converted
+    # A support preset arrives as plain "PLA" -- the dialog reads the type off
+    # the preset name -- where the slicer writes "PLA-S" (#3559).
+    support_type = support_filament_type(tray_type, tray_info_idx, tray_sub_brands)
+    if support_type != tray_type:
+        logger.info("[configure_ams_slot] support filament: tray_type %r → %r", tray_type, support_type)
+        tray_type = support_type
     # The K profile's filament id: it becomes the slot's when they differ
     # (the realignment below), and the printer's calibration table is keyed
     # by filament ids as well.
@@ -3897,6 +3841,40 @@ async def set_chamber_temperature(
         raise HTTPException(500, "Failed to set chamber temperature")
 
     return {"success": True, "message": f"Chamber temperature set to {target}°C"}
+
+
+@router.post("/{printer_id}/panda-breath")
+async def send_panda_breath_command(
+    printer_id: int,
+    body: PandaBreathCommand,
+    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db, scope="function"),
+):
+    """Change one setting of the Panda Breath bound to this printer (#1466).
+
+    The device is found by the printer's serial number, never by an id the
+    caller sends, so a user can only reach the heater of a printer they may
+    control.
+    """
+    changes = body.model_dump(exclude_none=True)
+    if len(changes) != 1:
+        raise HTTPException(400, "Send exactly one of work_on, mode, target_temp")
+
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    device = panda_breath_service.device_for_serial(printer.serial_number)
+    if not device:
+        raise HTTPException(404, "No Panda Breath is bound to this printer")
+
+    key, value = next(iter(changes.items()))
+    if key == "work_on":
+        value = "ON" if value else "OFF"
+    if not panda_breath_service.send_command(device.device_id, key, value):
+        raise HTTPException(503, "The MQTT broker is not connected")
+    return {"success": True}
 
 
 @router.post("/{printer_id}/fan-speed")
@@ -4872,6 +4850,32 @@ async def ams_unload(
         raise HTTPException(500, "Failed to send unload command")
 
     return {"success": True, "message": "Unloading filament"}
+
+
+@router.post("/{printer_id}/ams/unload-all")
+async def ams_unload_all(
+    printer_id: int,
+    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db, scope="function"),
+):
+    """Unload every loaded AMS 3H slot of an H3C in one go, as its touchscreen's Unload All (#3531)."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+    if not _client_tray_layout(client).rack_units:
+        raise HTTPException(400, "Unload all needs an AMS 3H")
+    if not client.rack_loaded_slots():
+        raise HTTPException(409, "No AMS 3H slot is loaded")
+
+    count = client.ams_unload_all()
+    if not count:
+        raise HTTPException(500, "Failed to send unload command")
+    return {"success": True, "message": f"Unloading {count} AMS 3H slots", "count": count}
 
 
 @router.post("/{printer_id}/hms/execute-action")

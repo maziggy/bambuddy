@@ -901,6 +901,7 @@ class GitHubBackupService:
                 "filename": a.filename,
                 "file_size": a.file_size,
                 "content_hash": a.content_hash,
+                "gcode_hash": a.gcode_hash,
                 "print_name": a.print_name,
                 "print_time_seconds": a.print_time_seconds,
                 "filament_used_grams": a.filament_used_grams,

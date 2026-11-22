@@ -3,10 +3,11 @@ import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, Save, Loader2, Send, CheckCircle, XCircle } from 'lucide-react';
 import { api } from '../api/client';
-import type { NotificationProvider, NotificationProviderCreate, NotificationProviderUpdate, ProviderType, TelegramVerdictMode } from '../api/client';
+import type { NotificationPhotoEvent, NotificationProvider, NotificationProviderCreate, NotificationProviderUpdate, ProviderType, TelegramVerdictMode } from '../api/client';
 import { Button } from './Button';
 import { Toggle } from './Toggle';
 import { isNotifyPushOnlyTarget, isNotifyPhotoUnsupported } from '../utils/notify';
+import { enabledPhotoEvents } from '../utils/notificationPhotoEvents';
 import { SECRET_PLACEHOLDER, selectPlaceholderOnFocus } from '../utils/secrets';
 
 interface ConfigField {
@@ -45,6 +46,8 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
       ? false
       : provider?.attach_photo ?? true
   );
+  // Events sent without the snapshot although Attach Photo is on (#2877).
+  const [photoSkipEvents, setPhotoSkipEvents] = useState<NotificationPhotoEvent[]>(provider?.photo_skip_events ?? []);
   const [quietHoursEnabled, setQuietHoursEnabled] = useState(provider?.quiet_hours_enabled || false);
   const [quietHoursStart, setQuietHoursStart] = useState(provider?.quiet_hours_start || '22:00');
   const [quietHoursEnd, setQuietHoursEnd] = useState(provider?.quiet_hours_end || '07:00');
@@ -83,6 +86,21 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
   const [onFirstLayerComplete, setOnFirstLayerComplete] = useState(provider?.on_first_layer_complete ?? false);
   const [onPrintPauseUpcoming, setOnPrintPauseUpcoming] = useState(provider?.on_print_pause_upcoming ?? false);
   const [onAppMessage, setOnAppMessage] = useState(provider?.on_app_message ?? false);
+  // Only the photo events this provider sends; skipped ones that are hidden
+  // keep their choice for when the event is switched back on.
+  const photoEvents = enabledPhotoEvents({
+    on_print_start: onPrintStart,
+    on_print_complete: onPrintComplete,
+    on_print_failed: onPrintFailed,
+    on_print_stopped: onPrintStopped,
+    on_print_progress: onPrintProgress,
+    on_first_layer_complete: onFirstLayerComplete,
+    on_printer_error: onPrinterError,
+    on_ai_failure_detection: onAiFailureDetection,
+    // No toggle in this dialog; it is set on the card.
+    on_plate_not_empty: provider?.on_plate_not_empty ?? true,
+    on_print_confirm_request: onPrintConfirmRequest,
+  });
 
   const [notifyLiveActivities, setNotifyLiveActivities] = useState(
     provider?.config?.live_activities === true && !isNotifyPushOnlyTarget(String(provider?.config?.device_id || ''))
@@ -244,6 +262,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
       config: finalConfig,
       printer_id: printerId,
       attach_photo: attachPhoto && !notifyPhotosUnsupported,
+      photo_skip_events: photoSkipEvents,
       quiet_hours_enabled: quietHoursEnabled,
       quiet_hours_start: quietHoursEnabled ? quietHoursStart : null,
       quiet_hours_end: quietHoursEnabled ? quietHoursEnd : null,
@@ -755,6 +774,28 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
               onChange={setAttachPhoto}
             />
           </div>
+          {attachPhoto && !notifyPhotosUnsupported && photoEvents.length > 0 && (
+            <fieldset className="pl-4 border-l-2 border-bambu-dark-tertiary">
+              <legend className="text-xs text-bambu-gray mb-2">{t('notifications.attachPhotoEvents')}</legend>
+              <div className="flex flex-wrap gap-x-4 gap-y-2">
+                {photoEvents.map(({ event, labelKey }) => (
+                  <label key={event} className="flex items-center gap-1 text-sm text-white">
+                    <input
+                      type="checkbox"
+                      checked={!photoSkipEvents.includes(event)}
+                      onChange={(e) =>
+                        setPhotoSkipEvents(e.target.checked
+                          ? photoSkipEvents.filter((skipped) => skipped !== event)
+                          : [...photoSkipEvents, event])
+                      }
+                      className="accent-bambu-green"
+                    />
+                    {t(labelKey)}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          )}
 
           {/* Quiet Hours */}
           <div className="space-y-2">

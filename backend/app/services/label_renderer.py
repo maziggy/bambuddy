@@ -44,15 +44,103 @@ for label-printer software that takes images.
 from __future__ import annotations
 
 import io
+import unicodedata
 from dataclasses import dataclass
 from datetime import date
+from pathlib import Path
 from typing import Literal
 
 import qrcode
 from reportlab.lib.colors import Color, HexColor, black, white
 from reportlab.lib.pagesizes import A4, letter
 from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas as rl_canvas
+
+# Label text is printed in Liberation Sans, embedded in the PDF (#3553). The
+# PDF base fonts (Helvetica) only cover Western European characters, so names
+# in Polish, Czech, Cyrillic or Greek lost letters. Liberation Sans has the
+# same letter widths as Helvetica, so the layout and truncation are unchanged.
+#
+# Liberation Sans has no Chinese, Japanese or Korean, so a name written in one
+# printed as empty boxes, in the PDF and in the preview rasterised from it
+# (#3560). A character the label font lacks is drawn in a fallback font
+# instead: Droid Sans Fallback for Chinese and Japanese, and Noto Sans KR --
+# cut down to Hangul, which Droid lacks -- for Korean. Only the characters a
+# label uses are embedded. Neither has a bold or italic face, so CJK text in a
+# bold or italic line prints regular.
+_FONT_DIR = Path(__file__).resolve().parent.parent / "data" / "fonts"
+FONT_REGULAR = "LabelSans"
+FONT_BOLD = "LabelSans-Bold"
+FONT_ITALIC = "LabelSans-Italic"
+FONT_CJK = "LabelCJK"
+FONT_HANGUL = "LabelHangul"
+# Tried in this order for a character the label font cannot draw.
+_FALLBACK_FONTS = (FONT_CJK, FONT_HANGUL)
+
+
+def _register_fonts() -> None:
+    registered = set(pdfmetrics.getRegisteredFontNames())
+    for name, filename in (
+        (FONT_REGULAR, "LiberationSans-Regular.ttf"),
+        (FONT_BOLD, "LiberationSans-Bold.ttf"),
+        (FONT_ITALIC, "LiberationSans-Italic.ttf"),
+        (FONT_CJK, "DroidSansFallbackFull.ttf"),
+        (FONT_HANGUL, "NotoSansKR-Hangul.ttf"),
+    ):
+        if name not in registered:
+            pdfmetrics.registerFont(TTFont(name, str(_FONT_DIR / filename)))
+
+
+_register_fonts()
+
+
+def _has_glyph(font: str, ch: str) -> bool:
+    # A TrueType font's character map, as reportlab parsed it on registration.
+    return ord(ch) in pdfmetrics.getFont(font).face.charToGlyph  # pyright: ignore[reportAttributeAccessIssue]
+
+
+def _font_runs(text: str, font: str) -> list[tuple[str, str]]:
+    """Split ``text`` into (font, piece) runs: ``font`` wherever it has the
+    character, else the first fallback that does (#3560). A character no font
+    has stays with ``font``, which draws its missing-glyph box as before."""
+    runs: list[tuple[str, str]] = []
+    for ch in text:
+        use = font
+        if not _has_glyph(font, ch):
+            use = next((f for f in _FALLBACK_FONTS if _has_glyph(f, ch)), font)
+        if runs and runs[-1][0] == use:
+            runs[-1] = (use, runs[-1][1] + ch)
+        else:
+            runs.append((use, ch))
+    return runs
+
+
+def _text_width(text: str, font: str, size: float) -> float:
+    return sum(pdfmetrics.stringWidth(piece, f, size) for f, piece in _font_runs(text, font))
+
+
+def _draw_text(c: rl_canvas.Canvas, x: float, y: float, text: str, font: str, size: float) -> None:
+    """``drawString`` that switches to a fallback font for the characters
+    ``font`` cannot draw, and leaves ``font`` set afterwards."""
+    for f, piece in _font_runs(text, font):
+        c.setFont(f, size)
+        c.drawString(x, y, piece)
+        x += pdfmetrics.stringWidth(piece, f, size)
+    c.setFont(font, size)
+
+
+def _new_canvas(buf: io.BytesIO, pagesize: tuple[float, float]) -> rl_canvas.Canvas:
+    """A canvas whose default font is the label font, so the PDF does not
+    carry an unused Helvetica resource."""
+    # types-reportlab declares initialFontName as a float; reportlab takes a font name.
+    return rl_canvas.Canvas(
+        buf,
+        pagesize=pagesize,
+        initialFontName=FONT_REGULAR,  # pyright: ignore[reportArgumentType]
+    )
+
 
 TemplateName = Literal[
     "ams_holder_74x33",
@@ -269,13 +357,56 @@ def _draw_qr(c: rl_canvas.Canvas, x: float, y: float, size: float, payload: str)
 
 
 def _truncate_to_width(c: rl_canvas.Canvas, text: str, font: str, size: float, max_w: float) -> str:
-    """Truncate ``text`` with an ellipsis so it fits within ``max_w`` points."""
-    if c.stringWidth(text, font, size) <= max_w:
+    """Truncate ``text`` with an ellipsis so it fits within ``max_w`` points,
+    measured in the fonts it will be drawn in."""
+    if _text_width(text, font, size) <= max_w:
         return text
     ell = "…"
-    while text and c.stringWidth(text + ell, font, size) > max_w:
+    while text and _text_width(text + ell, font, size) > max_w:
         text = text[:-1]
     return text + ell if text else ell
+
+
+def _is_wide(ch: str) -> bool:
+    return unicodedata.east_asian_width(ch) in ("W", "F")
+
+
+# Punctuation that never starts a line, nor ends one, in Chinese and Japanese.
+_NO_LINE_START = frozenset("、。，．,.：；！？）】」』〉》〕｝ー々")
+_NO_LINE_END = frozenset("（【「『〈《〔｛")
+
+
+def _breaks_before(text: str, p: int) -> bool:
+    """Whether a line may break before ``text[p]``."""
+    if text[p] == " ":
+        return True
+    if text[p] in _NO_LINE_START or text[p - 1] in _NO_LINE_END:
+        return False
+    return _is_wide(text[p - 1]) or _is_wide(text[p])
+
+
+def _wrap_to_width(c: rl_canvas.Canvas, text: str, font: str, size: float, max_w: float, max_lines: int) -> list[str]:
+    """Break ``text`` into at most ``max_lines`` lines of ``max_w`` points
+    (#3621). A line breaks at its last space, or next to a Chinese, Japanese
+    or Korean character, which run on without spaces; a word too long for a
+    line breaks inside it. What is left after the last line is cut with an
+    ellipsis."""
+    lines: list[str] = []
+    rest = text
+    while len(lines) < max_lines - 1 and _text_width(rest, font, size) > max_w:
+        cut = 1  # at least one character a line, however narrow the column
+        while cut < len(rest) and _text_width(rest[: cut + 1], font, size) <= max_w:
+            cut += 1
+        at = next((p for p in range(cut, 0, -1) if _breaks_before(rest, p)), cut)
+        lines.append(rest[:at].rstrip())
+        rest = rest[at:].lstrip()
+    if rest:
+        lines.append(_truncate_to_width(c, rest, font, size, max_w))
+    return lines
+
+
+# The most lines one row of the roomy layout may take.
+_ROW_MAX_LINES = 3
 
 
 def _draw_label(
@@ -361,18 +492,18 @@ def _draw_label_tight(
     # easiest thing to read on a small AMS holder at arm's length.
     brand_size = 6.5
     if data.brand and "brand" in fields:
-        c.setFont("Helvetica-Bold", brand_size)
-        brand = _truncate_to_width(c, data.brand, "Helvetica-Bold", brand_size, text_w)
-        c.drawString(text_x, y + h - pad - brand_size, brand)
+        c.setFont(FONT_BOLD, brand_size)
+        brand = _truncate_to_width(c, data.brand, FONT_BOLD, brand_size, text_w)
+        _draw_text(c, text_x, y + h - pad - brand_size, brand, FONT_BOLD, brand_size)
 
     # Second line: material + subtype, small
     sub_size = 5
     sub_line = " ".join(filter(None, [data.material, data.subtype])) if "material" in fields else ""
     sub_y_baseline = y + h - pad - brand_size - 0.6 - sub_size
     if sub_line:
-        c.setFont("Helvetica", sub_size)
-        sub_line = _truncate_to_width(c, sub_line, "Helvetica", sub_size, text_w)
-        c.drawString(text_x, sub_y_baseline, sub_line)
+        c.setFont(FONT_REGULAR, sub_size)
+        sub_line = _truncate_to_width(c, sub_line, FONT_REGULAR, sub_size, text_w)
+        _draw_text(c, text_x, sub_y_baseline, sub_line, FONT_REGULAR, sub_size)
 
     # Third line (when there's room): hex code, tiny — useful when the user
     # has multiple near-identical colours in the same material family.
@@ -382,15 +513,15 @@ def _draw_label_tight(
         hex_y = sub_y_baseline - 0.4 - hex_size
         # Don't render if it'd collide with the spool ID at the bottom.
         if hex_y > inner_y + 13:
-            c.setFont("Helvetica", hex_size)
+            c.setFont(FONT_REGULAR, hex_size)
             c.drawString(text_x, hex_y, hex_code)
 
     # Bottom: BIG spool ID — the killer field at-a-glance.
     if "spool_id" not in fields:
         return
     id_size = 13
-    c.setFont("Helvetica-Bold", id_size)
-    id_text = _truncate_to_width(c, f"#{data.spool_id}", "Helvetica-Bold", id_size, text_w)
+    c.setFont(FONT_BOLD, id_size)
+    id_text = _truncate_to_width(c, f"#{data.spool_id}", FONT_BOLD, id_size, text_w)
     c.drawString(text_x, inner_y + 0.5, id_text)
 
 
@@ -456,34 +587,40 @@ def _draw_label_roomy(
     # are what the label has always used; the rest share the location's.
     rows: list[tuple[LabelField, str, str, float, float]] = [
         # Brand — bumped to bold + larger per the #809 follow-up.
-        ("brand", data.brand or "", "Helvetica-Bold", 8, 1.2),
-        ("material", " · ".join(filter(None, [data.material, data.subtype])), "Helvetica", 7, 1.5),
+        ("brand", data.brand or "", FONT_BOLD, 8, 1.2),
+        ("material", " · ".join(filter(None, [data.material, data.subtype])), FONT_REGULAR, 7, 1.5),
         # Hex colour code — useful for telling near-identical material+colour
         # spools apart when the swatch is small or the user is colour-blind.
-        ("hex", _hex_code_label(data.rgba), "Helvetica", 6.5, 1.2),
-        ("name", name if name not in repeats else "", "Helvetica-Bold", 9, 1.2),
-        ("location", data.storage_location or "", "Helvetica-Oblique", 6.5, 1.2),
-        ("material_number", data.material_number or "", "Helvetica", 6.5, 1.2),
-        ("temps", _temps_text(data), "Helvetica", 6.5, 1.2),
-        ("weight", _weight_text(data), "Helvetica", 6.5, 1.2),
-        ("note", data.note or "", "Helvetica-Oblique", 6.5, 1.2),
-        ("added", data.added.isoformat() if data.added else "", "Helvetica", 6.5, 1.2),
+        ("hex", _hex_code_label(data.rgba), FONT_REGULAR, 6.5, 1.2),
+        ("name", name if name not in repeats else "", FONT_BOLD, 9, 1.2),
+        ("location", data.storage_location or "", FONT_ITALIC, 6.5, 1.2),
+        ("material_number", data.material_number or "", FONT_REGULAR, 6.5, 1.2),
+        ("temps", _temps_text(data), FONT_REGULAR, 6.5, 1.2),
+        ("weight", _weight_text(data), FONT_REGULAR, 6.5, 1.2),
+        ("note", data.note or "", FONT_ITALIC, 6.5, 1.2),
+        ("added", data.added.isoformat() if data.added else "", FONT_REGULAR, 6.5, 1.2),
     ]
 
+    active = [row for row in rows if row[0] in fields and row[1]]
     cursor_y = y + h - pad
-    for field, text, font, size, gap in rows:
-        if field not in fields or not text:
-            continue
+    for i, (_field, text, font, size, gap) in enumerate(active):
         if cursor_y - size < floor_y:
             break
-        c.setFont(font, size)
-        cursor_y -= size
-        c.drawString(text_x, cursor_y, _truncate_to_width(c, text, font, size, text_w))
-        cursor_y -= gap
+        # A row too wide for the column continues on further lines, as long
+        # as every row below it still gets a line of its own (#3621).
+        below = sum(s + g for _f, _t, _fo, s, g in active[i + 1 :])
+        room = 1
+        while room < _ROW_MAX_LINES and cursor_y - (room + 1) * (size + gap) - below >= floor_y:
+            room += 1
+        for line in _wrap_to_width(c, text, font, size, text_w, room):
+            c.setFont(font, size)
+            cursor_y -= size
+            _draw_text(c, text_x, cursor_y, line, font, size)
+            cursor_y -= gap
 
     if show_id:
-        c.setFont("Helvetica-Bold", id_size)
-        id_text = _truncate_to_width(c, f"#{data.spool_id}", "Helvetica-Bold", id_size, text_w)
+        c.setFont(FONT_BOLD, id_size)
+        id_text = _truncate_to_width(c, f"#{data.spool_id}", FONT_BOLD, id_size, text_w)
         c.drawString(text_x, inner_y + 0.5, id_text)
 
 
@@ -599,7 +736,7 @@ def _render_single_label_pdf(
     page_w, page_h = w_mm * mm, h_mm * mm
 
     buf = io.BytesIO()
-    c = rl_canvas.Canvas(buf, pagesize=(page_w, page_h))
+    c = _new_canvas(buf, (page_w, page_h))
     c.setTitle(f"Bambuddy spool labels ({template})")
 
     for data in data_list:
@@ -660,7 +797,7 @@ def _render_sheet_pdf(
     row_gap = layout.row_gap_mm * mm
 
     buf = io.BytesIO()
-    c = rl_canvas.Canvas(buf, pagesize=page_size)
+    c = _new_canvas(buf, page_size)
     c.setTitle(f"Bambuddy spool labels ({title})")
 
     per_page = layout.capacity
@@ -737,7 +874,7 @@ def render_label_preview_pdf(
     w_mm, h_mm = label_size_mm(template)
     page_w, page_h = w_mm * mm, h_mm * mm
     buf = io.BytesIO()
-    c = rl_canvas.Canvas(buf, pagesize=(page_w, page_h))
+    c = _new_canvas(buf, (page_w, page_h))
     _draw_label(c, 0, 0, page_w, page_h, data, monochrome, fields)
     c.showPage()
     c.save()

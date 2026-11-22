@@ -4373,8 +4373,10 @@ async def _run_slicer_with_fallback(
     model_bytes: bytes,
     model_filename: str,
     request: SliceRequest,
+    printer_scope: PrinterScope,
     current_user_id: int | None = None,
     job_id: int | None = None,
+    target_printer_id: int | None = None,
 ):
     """Validate presets, dispatch to the right sidecar, run the slicer with
     the auto-fallback for 3MF inputs whose `--load-settings` path crashes the
@@ -4391,6 +4393,16 @@ async def _run_slicer_with_fallback(
     toast can show "Generating G-code (75%)" instead of just elapsed
     time. Pass None for synchronous routes that aren't tracked by the
     dispatcher.
+
+    `printer_scope`: the printers the caller may use, as the request's
+    auth resolved them (an API key's own printer list included). The
+    dual-nozzle filament map reads spools only from these. Required, so no
+    caller plans from every printer by leaving it out (#1727).
+
+    `target_printer_id`: the printer the result is for, when the caller
+    knows it (an archive re-slice, a pipeline aimed at one printer). The
+    dual-nozzle filament map is then planned from that printer's spools
+    alone; otherwise from every printer of the model in `printer_scope`.
     """
     from backend.app.api.routes.settings import get_setting
     from backend.app.services.preset_resolver import resolve_preset_ref
@@ -4582,6 +4594,9 @@ async def _run_slicer_with_fallback(
     # orthogonal so this decision doesn't interact with the #1337 build-
     # plate override.
     cross_class_arrange = False
+    # Also read by the embedded-settings fallback below (#3535).
+    source_model: str | None = None
+    target_model: str | None = None
     if is_3mf:
         from backend.app.services.slicer_3mf_convert import (
             extract_source_printer_model,
@@ -4649,10 +4664,84 @@ async def _run_slicer_with_fallback(
     # read from the project config and are not plate-scoped — they would
     # survive the (empty) geometry lookup for plate 0 and become the anchor,
     # collapsing every colour of a slice-all onto the support filament.
+    used_slots: set[int] | None = None
     if is_3mf and request.plate != 0:
-        from backend.app.services.slicer_3mf_convert import substitute_unused_plate_filaments
+        from backend.app.services.slicer_3mf_convert import plate_used_slots, substitute_unused_plate_filaments
 
         filament_jsons = substitute_unused_plate_filaments(primary_bytes, request.plate or 1, filament_jsons)
+        used_slots = plate_used_slots(primary_bytes, request.plate or 1)
+
+    # Dual-nozzle printers: which extruder each filament prints from. Without
+    # a map the CLI puts every filament on one extruder, so the printer swaps
+    # filament at each colour change while the other nozzle stays cold. An
+    # explicit map from the caller is used as given; otherwise one is worked
+    # out from the spools loaded on the target printer, and anything that
+    # stops that from working leaves the slice exactly as it was. Planned after
+    # the unused-slot substitution above, so it sees the list the CLI gets,
+    # and only from the plate's used slots, never a stand-in. The spools are
+    # read only from printers the caller may use (#1727), and only from the
+    # target printer when the caller names one.
+    # The embedded-settings path loads no filament profiles to map.
+    # A Bambu Studio project whose plate the user already mapped by hand
+    # keeps that map: a planned one would overwrite it in the plate settings.
+    filament_map = request.filament_map
+    manual_plate_map = False
+    if filament_map is None and not embedded_mode and is_3mf:
+        from backend.app.services.slicer_3mf_convert import has_manual_plate_filament_map
+
+        manual_plate_map = has_manual_plate_filament_map(primary_bytes)
+    if filament_map is None and not embedded_mode and not manual_plate_map:
+        from backend.app.services.filament_map import auto_filament_map
+
+        def _allows(printer_id: int) -> bool:
+            if target_printer_id is not None and printer_id != target_printer_id:
+                return False
+            return printer_scope.allows(printer_id)
+
+        filament_map = await auto_filament_map(
+            db,
+            target_model=_printer_model_from_profile(presets["printer"]),
+            printer_json=presets["printer"],
+            filament_jsons=filament_jsons,
+            allows=_allows,
+            used_slots=used_slots,
+        )
+    map_was_planned = filament_map is not None and request.filament_map is None
+
+    async def _slice_with_profiles(**kwargs):
+        """``service.slice_with_profiles`` plus the filament map, if there is one.
+
+        A map Bambuddy planned itself is withdrawn if the slicer fails the
+        job with it, and the slice is retried exactly as it would have run
+        without one: the second extruder cannot reach every part of the bed
+        (on the X2D it stops 20.5 mm short of the left edge), so a map that
+        matches the spools can still describe a job the slicer will not cut.
+        Only a slicer failure is retried. A ``SlicerInputError`` also covers
+        an oversized upload, which must not be sent again.
+        A map the caller asked for is theirs, so its failure is reported.
+
+        A 3MF also gets the map in its plates' own settings, which Bambu
+        Studio reads before the flags (see ``with_plate_filament_map``). The
+        retry sends the 3MF exactly as it came.
+        """
+        if not filament_map:
+            return await service.slice_with_profiles(**kwargs)
+        mapped = dict(kwargs)
+        if is_3mf:
+            from backend.app.services.slicer_3mf_convert import with_plate_filament_map
+
+            mapped["model_bytes"] = with_plate_filament_map(kwargs["model_bytes"], filament_map)
+        try:
+            return await service.slice_with_profiles(**mapped, filament_map=filament_map)
+        except SlicerApiServerError as exc:
+            if not map_was_planned:
+                raise
+            logger.warning(
+                "Slice with filament_map=%s was refused (%s); retrying with the default grouping",
+                filament_map,
+                exc,
+            )
+            return await service.slice_with_profiles(**kwargs)
 
     # Arrange slice-all loop (#1493): when the user asks for ``plate=0``
     # (all plates) AND arrange is on, ``--slice 0 --arrange 1``
@@ -4739,7 +4828,7 @@ async def _run_slicer_with_fallback(
                             on_progress=plate_cb,
                         )
                     else:
-                        per_plate = await service.slice_with_profiles(
+                        per_plate = await _slice_with_profiles(
                             model_bytes=primary_bytes,
                             model_filename=model_filename,
                             printer_profile_json=presets["printer"],
@@ -4795,7 +4884,7 @@ async def _run_slicer_with_fallback(
                 )
                 used_embedded_settings = True
             else:
-                result = await service.slice_with_profiles(
+                result = await _slice_with_profiles(
                     model_bytes=primary_bytes,
                     model_filename=model_filename,
                     printer_profile_json=presets["printer"],
@@ -4831,6 +4920,20 @@ async def _run_slicer_with_fallback(
                 # Retrying would hand back a one-plate result for a job the
                 # user asked to slice as N, which reads as a Bambuddy bug
                 # rather than a slicer failure. Surface the error instead.
+                raise
+            if not source_model or source_model != target_model:
+                # The embedded settings are for the printer the file was
+                # sliced for. On any other target -- or when either side is
+                # unknown -- the fallback hands back G-code for the wrong
+                # printer as a completed slice (#3535). Surface the error.
+                logger.warning(
+                    "Slicer CLI failed on the --load-settings path for %s (%s); no fallback to embedded "
+                    "settings, which are for %s, not %s",
+                    model_filename,
+                    exc,
+                    source_model or "an unknown printer",
+                    target_model or "an unknown printer",
+                )
                 raise
             logger.warning(
                 "Slicer CLI failed on the --load-settings path for %s (%s); retrying with embedded settings",
@@ -4935,6 +5038,27 @@ def _canonical_printer_model(raw: str | None) -> str | None:
     return normalize_printer_model(cleaned) if cleaned else None
 
 
+def _printer_model_from_profile(printer_json: str) -> str | None:
+    """Canonical model code of an already-resolved printer profile, or None."""
+    try:
+        data = json.loads(printer_json)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    from backend.app.utils.printer_models import PRINTER_MODEL_MAP
+
+    # The first field that names a known model: a user preset's own name
+    # ("My H2D") names none, the stock preset it inherits from does.
+    known = set(PRINTER_MODEL_MAP.values())
+    for key in ("printer_model", "printer_settings_id", "name", "inherits"):
+        value = data.get(key)
+        model = _canonical_printer_model(value) if isinstance(value, str) else None
+        if model in known:
+            return model
+    return None
+
+
 async def _resolve_target_printer_model(db: AsyncSession, user: User | None, request: SliceRequest) -> str | None:
     """Best-effort: the printer model a slice request targets.
 
@@ -4993,14 +5117,18 @@ async def slice_and_persist(
     extra_metadata: dict | None,
     request: SliceRequest,
     current_user_id: int | None,
+    printer_scope: PrinterScope,
     job_id: int | None = None,
     owner_id: int | None | object = _CALLER,
+    target_printer_id: int | None = None,
 ) -> SliceResponse:
     """Slice a model and save the result as a new ``LibraryFile`` in
     ``folder_id`` (same folder as the source by convention).
 
     ``current_user_id`` resolves cloud presets; the new file is ``owner_id``'s,
-    by default the same user.
+    by default the same user. ``printer_scope`` and ``target_printer_id``
+    limit the printers the filament map reads (see
+    ``_run_slicer_with_fallback``).
 
     Always exports as ``.gcode.3mf`` so the existing library thumbnail
     pipeline works on the new file. Plain ``.gcode`` would have no
@@ -5016,7 +5144,9 @@ async def slice_and_persist(
         model_filename=model_filename,
         request=library_request,
         current_user_id=current_user_id,
+        printer_scope=printer_scope,
         job_id=job_id,
+        target_printer_id=target_printer_id,
     )
 
     # Same reduction as the archive sink: ``model_filename`` may be built from
@@ -5148,6 +5278,7 @@ async def slice_and_persist_as_archive(
     request: SliceRequest,
     source_archive,  # PrintArchive — hint kept loose to avoid cyclic import
     current_user_id: int | None,
+    printer_scope: PrinterScope,
     job_id: int | None = None,
     owner_id: int | None | object = _CALLER,
 ):
@@ -5172,6 +5303,9 @@ async def slice_and_persist_as_archive(
         request=archive_request,
         job_id=job_id,
         current_user_id=current_user_id,
+        printer_scope=printer_scope,
+        # The new archive belongs to the source archive's printer.
+        target_printer_id=source_archive.printer_id,
     )
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -5340,6 +5474,10 @@ async def slice_and_persist_as_archive(
     from backend.app.services.print_cost_estimate import refresh_plate_estimates
 
     refresh_plate_estimates(new_archive)
+    # Its G-code, so a print of this slice sent from the slicer joins it (#1634)
+    from backend.app.services.archive_gcode_hash import refresh_gcode_hash_async
+
+    await refresh_gcode_hash_async(new_archive)
     db.add(new_archive)
     await db.commit()
     await db.refresh(new_archive)
@@ -5362,6 +5500,7 @@ async def slice_library_file(
     current_user: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD)),
     api_key_cloud_owner: User | None = Depends(resolve_api_key_cloud_owner),
     actor: User | ApiKeyActor | None = RequestActor,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Enqueue a slice job for a library file. Returns 202 + job_id; the
     slice runs in the background, the caller polls `GET /slice-jobs/{id}`.
@@ -5456,6 +5595,7 @@ async def slice_library_file(
                     extra_metadata={"sliced_from_library_file_id": source_lib_file_id},
                     request=request,
                     current_user_id=user_id,
+                    printer_scope=printer_scope,
                     job_id=job_id,
                     owner_id=owner_id,
                 )

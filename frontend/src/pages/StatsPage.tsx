@@ -64,7 +64,15 @@ const TIMEFRAME_PRESETS: TimeframePreset[] = [
 ];
 
 // Constants
-const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const DAY_LABEL_KEYS = [
+  'stats.weekdays.mon',
+  'stats.weekdays.tue',
+  'stats.weekdays.wed',
+  'stats.weekdays.thu',
+  'stats.weekdays.fri',
+  'stats.weekdays.sat',
+  'stats.weekdays.sun',
+];
 
 const HOUR_LABELS = [
   '12am', '1am', '2am', '3am', '4am', '5am',
@@ -371,6 +379,7 @@ function TimeAccuracyWidget({
 }
 
 function HourlyHeatmap({ printDates, dateFrom, dateTo }: { printDates: string[]; dateFrom: string; dateTo: string }) {
+  const { t } = useTranslation();
   const { days, hourlyCounts, maxCount } = useMemo(() => {
     const start = new Date(dateFrom + 'T00:00:00');
     const end = new Date(dateTo + 'T00:00:00');
@@ -447,7 +456,7 @@ function HourlyHeatmap({ printDates, dateFrom, dateTo }: { printDates: string[];
                   key={hour}
                   className={`rounded-sm ${getColor(count)}`}
                   style={{ width: cellSize, height: cellSize }}
-                  title={`${day.label} ${HOUR_LABELS[hour]}: ${count} print${count !== 1 ? 's' : ''}`}
+                  title={t('stats.heatmapCellTitle', { day: day.label, hour: HOUR_LABELS[hour], count })}
                 />
               );
             })}
@@ -457,7 +466,7 @@ function HourlyHeatmap({ printDates, dateFrom, dateTo }: { printDates: string[];
 
       {/* Legend */}
       <div className="flex items-center gap-2 mt-3 text-bambu-gray text-xs">
-        <span>Less</span>
+        <span>{t('stats.heatmapLess')}</span>
         <div className="flex" style={{ gap }}>
           <div className="rounded-sm bg-bambu-dark" style={{ width: cellSize, height: cellSize }} />
           <div className="rounded-sm bg-bambu-green/30" style={{ width: cellSize, height: cellSize }} />
@@ -465,7 +474,7 @@ function HourlyHeatmap({ printDates, dateFrom, dateTo }: { printDates: string[];
           <div className="rounded-sm bg-bambu-green/75" style={{ width: cellSize, height: cellSize }} />
           <div className="rounded-sm bg-bambu-green" style={{ width: cellSize, height: cellSize }} />
         </div>
-        <span>More</span>
+        <span>{t('stats.heatmapMore')}</span>
       </div>
     </div>
   );
@@ -601,11 +610,11 @@ function PrinterStatsWidget({
       weeksSet.add(`${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`);
     });
     const numWeeks = Math.max(weeksSet.size, 1);
-    return DAY_LABELS.map((name, i) => ({
-      name,
+    return DAY_LABEL_KEYS.map((nameKey, i) => ({
+      name: t(nameKey),
       avg: Math.round((dayValues[i] / numWeeks) * 10) / 10,
     }));
-  }, [archives, habitsMetric]);
+  }, [archives, habitsMetric, t]);
 
   const metricStyle = (m: Metric) => ({
     unit: m === 'weight' ? 'g' : m === 'time' ? 'h' : '',

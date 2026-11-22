@@ -56,6 +56,25 @@
   [role="button"]:not([aria-disabled="true"]) {
     cursor: pointer;
   }
+
+  /* A control's label is not text to copy (#3577). On a phone or tablet a
+     tap that lasted a little long or moved a little selected the label, with
+     handles and the copy menu, instead of pressing the control; iOS also
+     offered its long-press menu on it. Most buttons are plain <button>s, so
+     the rule lives here rather than at each one. */
+  button,
+  [role="button"] {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  /* A field inside a button-like row (a Collapsible header) stays a field:
+     iOS Safari won't let a field under user-select: none be typed in. */
+  [role="button"] :is(input, textarea, [contenteditable="true"]) {
+    -webkit-user-select: text;
+    user-select: text;
+  }
 }
 
 @theme {

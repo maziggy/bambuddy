@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from backend.app.services.smart_plug_manager import SmartPlugManager
+from backend.app.services.smart_plug_manager import SmartPlugManager, _cooled_down
 
 
 class TestSmartPlugManager:
@@ -1223,3 +1223,131 @@ class TestAccessoryPlugDoesNotMarkPrinterOffline:
             await manager._check_schedules()
 
             mock_pm.mark_printer_offline.assert_called_once_with(1)
+
+
+class TestTemperatureSource:
+    """#3464 — temperature mode can wait for the bed, not only the nozzle.
+
+    The nozzle cools in minutes while the bed stays hot, so a plug that only
+    watched the nozzle cut power before the bed was cool enough to take the
+    print off (and before the bed-cooled notification could fire).
+    """
+
+    @pytest.fixture
+    def manager(self):
+        return SmartPlugManager()
+
+    # ---- _cooled_down ------------------------------------------------------
+
+    @pytest.mark.parametrize(
+        ("source", "temps", "expected"),
+        [
+            # nozzle: the bed is ignored, as before #3464
+            ("nozzle", {"nozzle": 40, "bed": 90}, True),
+            ("nozzle", {"nozzle": 80, "bed": 20}, False),
+            # bed: the nozzle is ignored
+            ("bed", {"nozzle": 40, "bed": 50}, False),
+            ("bed", {"nozzle": 200, "bed": 30}, True),
+        ],
+    )
+    def test_each_source_waits_for_its_own_readings(self, source, temps, expected):
+        cooled, _ = _cooled_down(temps, source, nozzle_threshold=70, bed_threshold=35)
+        assert cooled is expected
+
+    def test_dual_nozzle_waits_for_the_hotter_one(self):
+        cooled, reading = _cooled_down({"nozzle": 40, "nozzle_2": 90, "bed": 20}, "nozzle", 70, 35)
+        assert cooled is False
+        assert "nozzle2=90" in reading
+
+    def test_missing_bed_reading_counts_as_hot(self):
+        """No reading yet must keep the power on, never switch it off."""
+        cooled, _ = _cooled_down({"nozzle": 30}, "bed", 70, 35)
+        assert cooled is False
+
+    def test_unknown_source_waits_for_the_nozzle(self):
+        assert _cooled_down({"nozzle": 40, "bed": 90}, "chamber", 70, 35)[0] is True
+        assert _cooled_down({"nozzle": 80, "bed": 20}, "chamber", 70, 35)[0] is False
+
+    def test_reading_names_what_is_watched(self):
+        assert "bed" not in _cooled_down({"nozzle": 40, "bed": 90}, "nozzle", 70, 35)[1]
+        assert "nozzle" not in _cooled_down({"nozzle": 40, "bed": 90}, "bed", 70, 35)[1]
+
+    # ---- _temp_based_off ---------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_bed_source_keeps_power_on_while_bed_is_hot(self, manager):
+        """The issue's case: the nozzle is cold, the bed still above its threshold."""
+        with (
+            patch("backend.app.services.smart_plug_manager.printer_manager") as mock_pm,
+            patch("backend.app.services.smart_plug_manager.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            patch.object(manager, "get_service_for_plug", new_callable=AsyncMock) as mock_get_svc,
+        ):
+            mock_pm.get_status.return_value = MagicMock(state="FINISH", temperatures={"nozzle": 35, "bed": 55})
+            mock_pm.is_print_active.return_value = False
+            # Stop after the first poll so the test terminates.
+            mock_sleep.side_effect = asyncio.CancelledError()
+
+            await manager._temp_based_off(
+                1, "tasmota", "1.2.3.4", None, None, None, 1, 70, temp_source="bed", bed_temp_threshold=35
+            )
+
+            mock_get_svc.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_bed_source_powers_off_once_bed_is_cool(self, manager):
+        mock_service = AsyncMock()
+        mock_service.turn_off = AsyncMock(return_value=True)
+        with (
+            patch("backend.app.services.smart_plug_manager.printer_manager") as mock_pm,
+            patch("backend.app.services.smart_plug_manager.asyncio.sleep", new_callable=AsyncMock),
+            patch.object(manager, "get_service_for_plug", new_callable=AsyncMock, return_value=mock_service),
+            patch.object(manager, "_mark_auto_off_executed", new_callable=AsyncMock),
+        ):
+            mock_pm.get_status.return_value = MagicMock(state="FINISH", temperatures={"nozzle": 35, "bed": 34})
+            mock_pm.is_print_active.return_value = False
+
+            await manager._temp_based_off(
+                1, "tasmota", "1.2.3.4", None, None, None, 1, 70, temp_source="bed", bed_temp_threshold=35
+            )
+
+            mock_service.turn_off.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_default_source_still_ignores_the_bed(self, manager):
+        """Callers that don't pass a source keep the pre-#3464 nozzle-only behaviour."""
+        mock_service = AsyncMock()
+        mock_service.turn_off = AsyncMock(return_value=True)
+        with (
+            patch("backend.app.services.smart_plug_manager.printer_manager") as mock_pm,
+            patch("backend.app.services.smart_plug_manager.asyncio.sleep", new_callable=AsyncMock),
+            patch.object(manager, "get_service_for_plug", new_callable=AsyncMock, return_value=mock_service),
+            patch.object(manager, "_mark_auto_off_executed", new_callable=AsyncMock),
+        ):
+            mock_pm.get_status.return_value = MagicMock(state="FINISH", temperatures={"nozzle": 40, "bed": 90})
+            mock_pm.is_print_active.return_value = False
+
+            await manager._temp_based_off(1, "tasmota", "1.2.3.4", None, None, None, printer_id=1, temp_threshold=55)
+
+            mock_service.turn_off.assert_awaited_once()
+
+    # ---- _schedule_temp_based_off -----------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_scheduler_forwards_source_and_bed_threshold(self, manager):
+        """The detached task only receives primitives, so the plug's choice must be passed in."""
+        plug = MagicMock()
+        plug.id = 1
+        plug.name = "Printer"
+        plug.plug_type = "tasmota"
+        plug.off_temp_source = "bed"
+        plug.off_bed_temp_threshold = 32
+        with (
+            patch.object(manager, "_mark_auto_off_pending", new_callable=AsyncMock),
+            patch.object(manager, "_temp_based_off", new_callable=AsyncMock) as mock_temp,
+        ):
+            manager._schedule_temp_based_off(plug, 1, 70)
+            await manager._pending_off[plug.id]
+
+            assert mock_temp.call_args.kwargs["temp_source"] == "bed"
+            assert mock_temp.call_args.kwargs["bed_temp_threshold"] == 32
+            assert mock_temp.call_args.args[7] == 70  # nozzle threshold unchanged

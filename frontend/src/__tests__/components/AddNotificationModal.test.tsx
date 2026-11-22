@@ -181,11 +181,12 @@ describe('AddNotificationModal — ntfy Priority (#990)', () => {
     // Find the Stopped toggle in the events grid (a separate area). Its label
     // appears in the priority section AND the toggle grid; we need the toggle
     // one. The toggle is a sibling of the label inside an event-row div.
-    const allStoppedNodes = screen.getAllByText('Stopped');
-    // The first occurrence is in the Print Events grid; the second is in the
-    // Priority section. Click the toggle next to the first one.
-    const togglesGridStopped = allStoppedNodes[0];
-    const toggleRow = togglesGridStopped.closest('div')!;
+    // It also appears in the Attach Photo event list (#2877); the grid one is
+    // the only one with a switch beside it.
+    const toggleRow = screen
+      .getAllByText('Stopped')
+      .map((node) => node.closest('div')!)
+      .find((row) => within(row).queryByRole('switch'))!;
     const toggle = within(toggleRow).getByRole('switch');
     await user.click(toggle);
 
@@ -1017,7 +1018,8 @@ describe('AddNotificationModal — Notify!', () => {
     render(<AddNotificationModal provider={notifyProvider({ live_activities: true })} onClose={() => undefined} />);
     await user.click(screen.getByText('Live Activity appearance'));
     expect(screen.getByText(/The timer is shown by default/)).toBeInTheDocument();
-    for (const checkbox of screen.getAllByRole('checkbox')) expect(checkbox).not.toBeChecked();
+    const metrics = screen.getByRole('group', { name: 'Metrics' });
+    for (const checkbox of within(metrics).getAllByRole('checkbox')) expect(checkbox).not.toBeChecked();
   });
 
   it('enables Lock Screen widgets independently of Live Activities and push events', async () => {
@@ -1086,5 +1088,106 @@ describe('AddNotificationModal — Notify!', () => {
   it('does not show the Live Activities badge for push-only providers', () => {
     render(<NotificationProviderCard provider={notifyProvider({ live_activities: false })} onEdit={() => undefined} />);
     expect(screen.queryByText('Live Activities (iOS)')).not.toBeInTheDocument();
+  });
+});
+
+describe('AddNotificationModal — photo per event (#2877)', () => {
+  function photoEventsGroup() {
+    return screen.getByRole('group', { name: 'Attach the photo to' });
+  }
+
+  it('lists only the photo events the provider sends, ticked by default', async () => {
+    render(
+      <AddNotificationModal
+        provider={buildProvider({ attach_photo: true, on_print_progress: true, photo_skip_events: [] })}
+        onClose={() => undefined}
+      />,
+    );
+
+    const group = await screen.findByRole('group', { name: 'Attach the photo to' });
+    const boxes = within(group).getAllByRole('checkbox');
+    // complete, failed, stopped, progress, confirm request, plate not empty
+    expect(within(group).getByLabelText('Progress')).toBeChecked();
+    expect(within(group).queryByLabelText('Start')).not.toBeInTheDocument();
+    expect(boxes.every((box) => (box as HTMLInputElement).checked)).toBe(true);
+  });
+
+  it('saves the unticked events as photo_skip_events', async () => {
+    let captured: Record<string, unknown> | null = null;
+    server.use(
+      http.patch('*/api/v1/notifications/1', async ({ request }) => {
+        captured = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ id: 1 });
+      }),
+    );
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <AddNotificationModal
+        provider={buildProvider({ attach_photo: true, on_print_progress: true, photo_skip_events: ['print_start'] })}
+        onClose={onClose}
+      />,
+    );
+
+    await screen.findByRole('group', { name: 'Attach the photo to' });
+    await user.click(within(photoEventsGroup()).getByLabelText('Progress'));
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+
+    // print_start is hidden (event off) but keeps its choice.
+    expect(captured!.photo_skip_events).toEqual(['print_start', 'print_progress']);
+  });
+
+  it('re-ticking an event takes it off the skip list', async () => {
+    let captured: Record<string, unknown> | null = null;
+    server.use(
+      http.patch('*/api/v1/notifications/1', async ({ request }) => {
+        captured = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ id: 1 });
+      }),
+    );
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <AddNotificationModal
+        provider={buildProvider({ attach_photo: true, photo_skip_events: ['print_complete'] })}
+        onClose={onClose}
+      />,
+    );
+
+    const box = within(await screen.findByRole('group', { name: 'Attach the photo to' })).getByLabelText('Complete');
+    expect(box).not.toBeChecked();
+    await user.click(box);
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+
+    expect(captured!.photo_skip_events).toEqual([]);
+  });
+
+  it('hides the list while Attach Photo is off', async () => {
+    render(
+      <AddNotificationModal provider={buildProvider({ attach_photo: false })} onClose={() => undefined} />,
+    );
+
+    await screen.findAllByText('Attach Photo');
+    expect(screen.queryByRole('group', { name: 'Attach the photo to' })).not.toBeInTheDocument();
+  });
+
+  it('the card names the events sent without a photo', async () => {
+    const user = userEvent.setup();
+    render(
+      <NotificationProviderCard
+        provider={buildProvider({
+          attach_photo: true,
+          on_print_progress: true,
+          // print_start is off on this provider, so it is not named.
+          photo_skip_events: ['print_progress', 'print_start'],
+        })}
+        onEdit={() => undefined}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /event settings/i }));
+    expect(screen.getByText('No photo for: Progress')).toBeInTheDocument();
   });
 });

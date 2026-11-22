@@ -3,7 +3,8 @@ import logging
 import math
 import re
 import traceback
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +18,7 @@ from backend.app.services.bambu_mqtt import (
     PrinterState,
     get_stage_name,
 )
+from backend.app.services.panda_breath import panda_breath_service
 from backend.app.services.pause_eta import next_pause
 from backend.app.utils.ams_humidity import ams_humidity_percent
 from backend.app.utils.kprofile_lookup import build_slot_k_resolver
@@ -447,6 +449,21 @@ class PrinterManager:
         """Get printer info by ID."""
         return self._printer_info.get(printer_id)
 
+    def printer_id_for_serial(self, serial: str) -> int | None:
+        """The printer with this serial number, ignoring case and blanks."""
+        wanted = (serial or "").strip().upper()
+        if not wanted:
+            return None
+        for printer_id, info in list(self._printer_info.items()):
+            if (info.serial_number or "").strip().upper() == wanted:
+                return printer_id
+        return None
+
+    def schedule_status_broadcast(self, printer_id: int) -> None:
+        """Push this printer's status from any thread, e.g. a Panda Breath update (#1466)."""
+        if self._loop and self._loop.is_running():
+            self._schedule_async(self._broadcast_status_change(printer_id))
+
     def set_current_print_user(self, printer_id: int, user_id: int, username: str, queue_item_id: int | None = None):
         """Track who started the current print (Issue #206), and for which queue item."""
         self._current_print_user[printer_id] = {
@@ -571,10 +588,18 @@ class PrinterManager:
             return
 
         try:
+            from backend.app.api.routes.settings import get_setting, setting_is_true
             from backend.app.core.database import async_session
+            from backend.app.services import plate_clear
             from backend.app.services.notification_service import notification_service
 
             async with async_session() as db:
+                # The flag goes up after every print, but it only holds the
+                # queue where the gate applies: the app setting, or the
+                # printer's own (#2860). Elsewhere nobody has to clear anything.
+                setting = setting_is_true(await get_setting(db, "require_plate_clear"))
+                if not plate_clear.applies(printer_id, setting):
+                    return
                 await notification_service.on_plate_clear_required(printer_id, printer.name, db)
         except Exception as e:
             logger.warning("Failed to send plate-clear notification for printer %d: %s", printer_id, e)
@@ -649,14 +674,23 @@ class PrinterManager:
             logger.warning("Failed to persist awaiting_plate_clear for printer %d: %s", printer_id, e)
 
     async def load_awaiting_plate_clear_from_db(self):
-        """Rehydrate the awaiting-plate-clear set from the printers table on startup."""
+        """Rehydrate the awaiting-plate-clear set from the printers table on startup.
+
+        Also loads each printer's own "Require plate-clear confirmation" (#2860),
+        which decides whether that flag holds its queue.
+        """
         from backend.app.core.database import async_session
+        from backend.app.services import plate_clear
 
         try:
             async with async_session() as db:
                 result = await db.execute(select(Printer.id).where(Printer.awaiting_plate_clear.is_(True)))
                 ids = {row[0] for row in result.all()}
                 self._awaiting_plate_clear = ids
+                result = await db.execute(
+                    select(Printer.id, Printer.require_plate_clear).where(Printer.require_plate_clear.is_not(None))
+                )
+                plate_clear.load_overrides(dict(result.tuples().all()))
                 if ids:
                     logger.info("Loaded %d printer(s) awaiting plate-clear acknowledgment: %s", len(ids), sorted(ids))
         except Exception as e:
@@ -981,6 +1015,22 @@ class PrinterManager:
     def get_client(self, printer_id: int) -> BambuMQTTClient | None:
         """Get the MQTT client for a printer."""
         return self._clients.get(printer_id)
+
+    @contextmanager
+    def uploading(self, printer_id: int | None) -> Iterator[None]:
+        """Bambuddy is uploading to this printer: its MQTT silence is expected (#3538).
+
+        Ends on the client it began on, so a client replaced meanwhile is
+        neither left counting nor decremented.
+        """
+        client = self._clients.get(printer_id) if printer_id is not None else None
+        if client is not None:
+            client.begin_upload()
+        try:
+            yield
+        finally:
+            if client is not None:
+                client.end_upload()
 
     def mark_printer_offline(self, printer_id: int):
         """Mark a printer as offline and trigger status callback.
@@ -1843,6 +1893,7 @@ def printer_state_to_dict(
                 "nozzle_type": n.get("type", ""),
                 "nozzle_diameter": n.get("diameter", ""),
                 "wear": n.get("wear"),
+                "print_time_s": n.get("print_time_s"),
                 "stat": n.get("stat"),
                 "max_temp": n.get("max_temp", 0),
                 "serial_number": n.get("serial_number", ""),
@@ -1869,6 +1920,9 @@ def printer_state_to_dict(
         # so surface it here — without this, WebSocket merges drop the flag and the
         # "Clear Plate" button only appears when the 30 s REST fallback poll runs.
         "awaiting_plate_clear": printer_manager.is_awaiting_plate_clear(printer_id) if printer_id else False,
+        # Panda Breath bound to this printer (#1466). Always present, None when
+        # there is none, so a WebSocket merge drops a device that went away.
+        "panda_breath": panda_breath_service.state_for_printer(printer_id),
     }
     # Add cover URL if there's an active print and printer_id is provided
     # Include PAUSE state so skip objects modal can show cover

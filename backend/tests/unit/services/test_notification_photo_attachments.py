@@ -12,7 +12,9 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
+from backend.app.schemas.notification import NotificationProviderCreate, PhotoEvent
 from backend.app.schemas.notification_template import EVENT_VARIABLES, PHOTO_CAPABLE_EVENTS
 from backend.app.services.email_service import send_email
 from backend.app.services.notification_service import NotificationService
@@ -29,12 +31,13 @@ def _client_returning(status_code=200, json_body=None):
     return mock_client
 
 
-def _provider(provider_type: str, config: dict, attach_photo: bool = True):
+def _provider(provider_type: str, config: dict, attach_photo: bool = True, photo_skip_events=None):
     provider = MagicMock()
     provider.provider_type = provider_type
     provider.config = json.dumps(config)
     provider.quiet_hours_enabled = False
     provider.attach_photo = attach_photo
+    provider.photo_skip_events = photo_skip_events
     return provider
 
 
@@ -136,6 +139,118 @@ class TestPhotoCapableEvents:
         """supports_photo is looked up per EVENT_VARIABLES key, so a typo here
         would silently never show the preview."""
         assert set(EVENT_VARIABLES) >= PHOTO_CAPABLE_EVENTS
+
+
+class TestPhotoSkipEvents:
+    """photo_skip_events turns the snapshot off for single events (#2877)."""
+
+    def test_skippable_events_are_the_provider_photo_events(self):
+        """The skippable events are exactly the photo events a provider sends:
+        the template editor's set minus the per-user emails, which go to users
+        rather than through a provider, and the test send."""
+        provider_events = {e for e in PHOTO_CAPABLE_EVENTS if not e.startswith("user_")} - {"test"}
+        assert set(PhotoEvent.__args__) == provider_events
+
+    def test_unknown_event_is_rejected(self):
+        with pytest.raises(ValidationError):
+            NotificationProviderCreate(
+                name="n", provider_type="ntfy", config={"topic": "t"}, photo_skip_events=["print_progres"]
+            )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("skip", [None, []])
+    async def test_nothing_skipped_keeps_the_photo(self, service, skip):
+        provider = _provider("ntfy", {"topic": "t"}, photo_skip_events=skip)
+
+        with patch.object(service, "_send_ntfy", new_callable=AsyncMock, return_value=(True, "OK")) as mock_send:
+            await service._send_to_provider(
+                provider, "T", "B", db=AsyncMock(), image_data=b"jpeg", event_type="print_progress"
+            )
+
+        assert mock_send.call_args.kwargs.get("image_data") == b"jpeg"
+
+    @pytest.mark.asyncio
+    async def test_skipped_event_goes_out_without_image(self, service):
+        provider = _provider("ntfy", {"topic": "t"}, photo_skip_events=["print_progress", "print_start"])
+
+        with patch.object(service, "_send_ntfy", new_callable=AsyncMock, return_value=(True, "OK")) as mock_send:
+            await service._send_to_provider(
+                provider, "T", "B", db=AsyncMock(), image_data=b"jpeg", event_type="print_progress"
+            )
+
+        mock_send.assert_awaited_once()
+        assert mock_send.call_args.kwargs.get("image_data") is None
+
+    @pytest.mark.asyncio
+    async def test_event_not_skipped_keeps_its_photo(self, service):
+        provider = _provider("ntfy", {"topic": "t"}, photo_skip_events=["print_progress"])
+
+        with patch.object(service, "_send_ntfy", new_callable=AsyncMock, return_value=(True, "OK")) as mock_send:
+            await service._send_to_provider(
+                provider, "T", "B", db=AsyncMock(), image_data=b"jpeg", event_type="print_complete"
+            )
+
+        assert mock_send.call_args.kwargs.get("image_data") == b"jpeg"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("provider_type", "config", "sender"),
+        [
+            ("bark", {"device_key": "abc"}, "_send_bark"),
+            ("gotify", {"server": "https://g.example", "app_token": "t"}, "_send_gotify"),
+            ("homeassistant", {"service": "notify.mobile_app_x"}, "_send_homeassistant"),
+            ("webhook", {"webhook_url": "http://hook.local", "payload_format": "slack"}, "_send_webhook"),
+            ("notify", {"device_id": "IOS-1", "token": "t"}, "_send_notify"),
+        ],
+    )
+    async def test_fetched_url_providers_skip_the_cached_url(self, service, provider_type, config, sender):
+        """An earlier provider in the same send may have left a photo URL in
+        the shared cache; a provider skipping this event must not pick it up."""
+        provider = _provider(provider_type, config, photo_skip_events=["print_progress"])
+        photo_cache = {"url": "https://bambuddy.example/api/v1/notifications/photos/a.jpg"}
+
+        with patch.object(service, sender, new_callable=AsyncMock, return_value=(True, "OK")) as mock_send:
+            await service._send_to_provider(
+                provider,
+                "T",
+                "B",
+                db=AsyncMock(),
+                image_data=b"jpeg",
+                event_type="print_progress",
+                photo_cache=photo_cache,
+            )
+
+        assert mock_send.call_args.kwargs.get("image_url") is None
+
+    @pytest.mark.asyncio
+    async def test_one_send_photo_only_where_not_skipped(self, service):
+        """Two providers in one send: the one that skips the event gets no
+        photo, the other still gets the URL the send persisted."""
+        keeps = _provider("bark", {"device_key": "abc"})
+        skips = _provider("homeassistant", {"service": "notify.mobile_app_x"}, photo_skip_events=["print_progress"])
+        for i, provider in enumerate((keeps, skips)):
+            provider.id = i
+            provider.name = f"p{i}"
+            provider.daily_digest_enabled = False
+
+        with (
+            patch.object(service, "_send_bark", new_callable=AsyncMock, return_value=(True, "OK")) as bark,
+            patch.object(service, "_send_homeassistant", new_callable=AsyncMock, return_value=(True, "OK")) as ha,
+            patch.object(service, "_update_provider_status", new_callable=AsyncMock),
+            patch.object(service, "_log_notification", new_callable=AsyncMock),
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value="https://bambuddy.example",
+            ),
+            patch("backend.app.services.notification_service.save_notification_photo", return_value="p.jpg"),
+        ):
+            await service._send_to_providers(
+                [keeps, skips], "T", "B", AsyncMock(), event_type="print_progress", image_data=b"jpeg"
+            )
+
+        assert bark.call_args.kwargs["image_url"] == "https://bambuddy.example/api/v1/notifications/photos/p.jpg"
+        assert ha.call_args.kwargs["image_url"] is None
 
 
 class TestAttachPhotoOptOut:

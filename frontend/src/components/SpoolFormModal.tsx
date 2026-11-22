@@ -1120,8 +1120,10 @@ export function SpoolFormModal({
       return;
     }
 
-    // Find preset name from selected option
-    const presetName = selectedPresetOption?.displayName || presetInputValue || null;
+    // The chosen preset's name; none without a preset (#3596).
+    const presetName = formData.slicer_filament
+      ? selectedPresetOption?.displayName || presetInputValue || null
+      : null;
 
     const data: Record<string, unknown> = {
       material: formData.material || null,

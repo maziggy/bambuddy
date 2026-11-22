@@ -39,6 +39,10 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
   const [mqttEnergyMultiplier, setMqttEnergyMultiplier] = useState<string>(
     (plug?.mqtt_energy_multiplier ?? 1).toString()
   );
+  const [mqttEnergyTotalPath, setMqttEnergyTotalPath] = useState(plug?.mqtt_energy_total_path || '');
+  const [mqttEnergyTotalMultiplier, setMqttEnergyTotalMultiplier] = useState<string>(
+    (plug?.mqtt_energy_total_multiplier ?? 1).toString()
+  );
   // MQTT fields - State
   const [mqttStateTopic, setMqttStateTopic] = useState(plug?.mqtt_state_topic || '');
   const [mqttStatePath, setMqttStatePath] = useState(plug?.mqtt_state_path || '');
@@ -331,7 +335,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
     }
 
     if (plugType === 'tasmota' && !ipAddress.trim()) {
-      setError('IP address is required for Tasmota plugs');
+      setError(t('smartPlugs.tasmotaIpRequired'));
       return;
     }
 
@@ -376,6 +380,8 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
       mqtt_energy_topic: plugType === 'mqtt' ? (mqttEnergyTopic.trim() || null) : null,
       mqtt_energy_path: plugType === 'mqtt' ? (mqttEnergyPath.trim() || null) : null,
       mqtt_energy_multiplier: plugType === 'mqtt' ? (parseFloat(mqttEnergyMultiplier) || 1) : 1,
+      mqtt_energy_total_path: plugType === 'mqtt' ? (mqttEnergyTotalPath.trim() || null) : null,
+      mqtt_energy_total_multiplier: plugType === 'mqtt' ? (parseFloat(mqttEnergyTotalMultiplier) || 1) : 1,
       // MQTT state fields
       mqtt_state_topic: plugType === 'mqtt' ? (mqttStateTopic.trim() || null) : null,
       mqtt_state_path: plugType === 'mqtt' ? (mqttStatePath.trim() || null) : null,
@@ -1072,7 +1078,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                         type="text"
                         value={mqttEnergyTopic}
                         onChange={(e) => setMqttEnergyTopic(e.target.value)}
-                        placeholder="Same as power topic, or different"
+                        placeholder={t('smartPlugs.sameAsPowerTopic')}
                         className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
                       />
                     </div>
@@ -1101,6 +1107,34 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                     <p className="text-xs text-bambu-gray" style={{ whiteSpace: 'pre-line' }}>
                       {t('smartPlugs.mqttEnergyHint')}
                     </p>
+                    {/* Lifetime counter on the same topic (#3582) — per-print energy reads it. */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label htmlFor="mqtt-energy-total-path" className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.restEnergyTotalPath')}</label>
+                        <input
+                          id="mqtt-energy-total-path"
+                          type="text"
+                          value={mqttEnergyTotalPath}
+                          onChange={(e) => setMqttEnergyTotalPath(e.target.value)}
+                          placeholder={t('smartPlugs.mqttEnergyTotalPathHint')}
+                          className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="mqtt-energy-total-multiplier" className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.restEnergyTotalMultiplier')}</label>
+                        <input
+                          id="mqtt-energy-total-multiplier"
+                          type="text"
+                          value={mqttEnergyTotalMultiplier}
+                          onChange={(e) => setMqttEnergyTotalMultiplier(e.target.value)}
+                          placeholder="1"
+                          className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs text-bambu-gray">
+                      {t('smartPlugs.mqttEnergyTotalHint')}
+                    </p>
                   </div>
 
                   {/* State Section */}
@@ -1112,7 +1146,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                         type="text"
                         value={mqttStateTopic}
                         onChange={(e) => setMqttStateTopic(e.target.value)}
-                        placeholder="Same as power topic, or different"
+                        placeholder={t('smartPlugs.sameAsPowerTopic')}
                         className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
                       />
                     </div>
@@ -1580,7 +1614,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                       type="number"
                       value={powerAlertHigh}
                       onChange={(e) => setPowerAlertHigh(e.target.value)}
-                      placeholder="e.g. 200"
+                      placeholder={t('smartPlugs.examplePlaceholder', { value: 200 })}
                       min="0"
                       max="5000"
                       className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
@@ -1592,7 +1626,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                       type="number"
                       value={powerAlertLow}
                       onChange={(e) => setPowerAlertLow(e.target.value)}
-                      placeholder="e.g. 10"
+                      placeholder={t('smartPlugs.examplePlaceholder', { value: 10 })}
                       min="0"
                       max="5000"
                       className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"

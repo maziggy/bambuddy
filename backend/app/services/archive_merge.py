@@ -42,6 +42,7 @@ from backend.app.models.archive_alias import ArchiveAlias
 from backend.app.models.print_log import INCLUDE_OPEN_RUNS, RUN_OPEN, PrintLogEntry
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.services import archive_work
+from backend.app.services.archive_gcode_hash import refresh_gcode_hash_async
 from backend.app.services.print_cost_estimate import refresh_plate_estimates
 from backend.app.utils.archive_paths import archive_dir, archive_photos_dir, find_archive_photo
 from backend.app.utils.local_time import utcnow_naive
@@ -457,6 +458,21 @@ async def _merge(
     if _videos_conflict(list(rows.values()), runs):
         return SKIPPED_CONFLICTING_FILES, []
 
+    # A charge waiting on one of their runs for its energy is written first
+    # (#3581), for the archive it was printed from: the runs move below.
+    from backend.app.services.finance_billing import settle_pending_print_charges
+
+    if await settle_pending_print_charges(db, PrintLogEntry.archive_id.in_(ids)):
+        # One that failed was taken back to its savepoint, which leaves the
+        # run it had written to unread: read again, into the runs held above.
+        (
+            await db.scalars(
+                select(PrintLogEntry)
+                .where(PrintLogEntry.archive_id.in_(ids))
+                .execution_options(populate_existing=True, **{INCLUDE_OPEN_RUNS: True})
+            )
+        ).all()
+
     # Plan, reading only: the files to place in the survivor's folder. The
     # survivor's own files where it lost them, from the first archive that
     # still has them.
@@ -542,6 +558,8 @@ async def _merge(
             # The same file (one hash), but the survivor's was missing: its
             # plates are read from the one it takes over (#3375).
             refresh_plate_estimates(survivor)
+            # And its G-code, which the missing file could not give (#1634).
+            await refresh_gcode_hash_async(survivor)
         for run in runs[archive.id]:
             if run.photos:
                 run.photos = [photos[p] for p in run.photos if p in photos]

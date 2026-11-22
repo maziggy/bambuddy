@@ -28,6 +28,10 @@ interface ConfirmModalProps {
   // used for opt-in checkboxes (e.g. the "Also remove from statistics"
   // toggle in the archive delete confirmation, #1343).
   children?: ReactNode;
+  // When false, a click on the backdrop and Escape do nothing; only the
+  // buttons close it. For a dialog holding typed input (the maintenance
+  // reset comment) that a stray click would otherwise throw away.
+  dismissible?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -45,6 +49,7 @@ export function ConfirmModal({
   loadingText,
   confirmDisabled = false,
   children,
+  dismissible = true,
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
@@ -52,14 +57,14 @@ export function ConfirmModal({
   const resolvedConfirmText = confirmText ?? t('common.confirm');
   const resolvedCancelText = cancelText ?? t('common.cancel');
   const resolvedLoadingText = loadingText ?? t('common.loading');
-  // Close on Escape key (but not while loading)
+  // Close on Escape key (but not while loading, nor when not dismissible)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isLoading) onCancel();
+      if (e.key === 'Escape' && !isLoading && dismissible) onCancel();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onCancel, isLoading]);
+  }, [onCancel, isLoading, dismissible]);
 
   const variantStyles = {
     danger: {
@@ -81,7 +86,7 @@ export function ConfirmModal({
   return (
     <div
       className={`fixed inset-0 bg-black/50 flex items-center justify-center p-4 ${overlayZIndex ?? 'z-50'}`}
-      onClick={isLoading ? undefined : onCancel}
+      onClick={isLoading || !dismissible ? undefined : onCancel}
     >
       <Card
         className={`w-full max-w-md ${cardClassName ?? ''}`}

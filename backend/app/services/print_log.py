@@ -32,6 +32,19 @@ def wear_cost_for_run(duration_seconds: int | None, wear_cost_per_hour: float | 
     return round(duration_seconds / 3600 * wear_cost_per_hour, 3)
 
 
+def run_duration_seconds(
+    started_at: datetime | None, completed_at: datetime | None, *, reconciled: bool = False
+) -> int | None:
+    """How long a run took, as its log entry stores it: 0 for a reconciled
+    run (its real end is unknown, see ``write_log_entry``), None without both
+    times."""
+    if reconciled:
+        return 0
+    if started_at and completed_at:
+        return int((_utc(completed_at) - _utc(started_at)).total_seconds())
+    return None
+
+
 async def write_log_entry(
     db: AsyncSession,
     *,
@@ -91,12 +104,7 @@ async def write_log_entry(
         # plate of it may have started on another printer since.
         started_at = entry.started_at
 
-    if reconciled:
-        duration: int | None = 0
-    elif started_at and completed_at:
-        duration = int((_utc(completed_at) - _utc(started_at)).total_seconds())
-    else:
-        duration = None
+    duration = run_duration_seconds(started_at, completed_at, reconciled=reconciled)
 
     fields = {
         "archive_id": archive_id,
@@ -382,7 +390,11 @@ async def discard_open_runs(db: AsyncSession, printer_id: int) -> list[SimpleNam
     their end reaching a run: cancelled at the next start as stale, or whose
     archive was deleted. As before runs were opened at the start, such a
     print leaves no run. Returns what they were, for announcing them gone.
-    Does not commit."""
+    A print charge waiting on one of them for its energy is written first
+    (#3581). Does not commit."""
+    from backend.app.services.finance_billing import settle_pending_print_charges
+
+    await settle_pending_print_charges(db, PrintLogEntry.printer_id == printer_id, PrintLogEntry.status == RUN_OPEN)
     discarded = [
         run_snapshot(run)
         for run in await db.scalars(

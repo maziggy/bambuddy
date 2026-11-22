@@ -490,6 +490,8 @@ export interface Printer {
   plate_detection_enabled: boolean;  // Check plate before print
   plate_detection_roi?: PlateDetectionROI;  // ROI for plate detection
   wear_cost_per_hour: number | null;  // Wear cost per printing hour (#694)
+  dispatch_priority: number | null;  // Place in the pick order of any-model jobs, lowest first (#2915)
+  require_plate_clear: boolean | null;  // Own "Require plate-clear confirmation", null follows the app setting (#2860)
   wled_config: WLEDConfig | null;
   created_at: string;
   updated_at: string;
@@ -601,6 +603,7 @@ export interface NozzleRackSlot {
   nozzle_type: string;
   nozzle_diameter: string;
   wear: number | null;
+  print_time_s?: number | null;  // H2C: seconds this nozzle has printed (#1908); null when not reported
   stat: number | null;  // Nozzle status (e.g. mounted/docked)
   max_temp: number;
   serial_number: string;
@@ -799,6 +802,34 @@ export interface PrinterStatus {
   drying_screen_only?: boolean;
   // Active chamber heater (responds to M141). True only for H2C/H2D/H2DPro/H2S/X2D.
   supports_chamber_heater?: boolean;
+  // BIQU Panda Breath bound to this printer (#1466), null without one.
+  panda_breath?: PandaBreathState | null;
+}
+
+export type PandaBreathMode = 'auto mode' | 'power on' | 'filament drying';
+
+export interface PandaBreathState {
+  device_id: string;
+  online: boolean | null;
+  chamber_temp: number | null;
+  target_temp: number | null;
+  work_on: boolean | null;
+  mode: string | null;
+  filament_drying_mode: string | null;
+  drying_running: boolean | null;
+  drying_remaining_min: number | null;
+}
+
+export interface PandaBreathCommand {
+  work_on?: boolean;
+  mode?: PandaBreathMode;
+  target_temp?: number;
+}
+
+export interface PandaBreathStatus {
+  enabled: boolean;
+  connected: boolean;
+  devices: (PandaBreathState & { bound: boolean; printer_id: number | null; printer_name: string | null })[];
 }
 
 export interface PrinterCreate {
@@ -822,6 +853,8 @@ export interface PrinterCreate {
   plate_detection_enabled?: boolean;
   plate_detection_roi?: PlateDetectionROI;
   wear_cost_per_hour?: number | null;
+  dispatch_priority?: number | null;
+  require_plate_clear?: boolean | null;
   wled_config?: WLEDConfig | null;
 }
 
@@ -981,6 +1014,13 @@ export interface Archive {
   total_filament_actual_grams: number | null;
   successful_run_count: number;
   failed_run_count: number;
+  // What all its runs cost, summed as Statistics does (#3609); null where no
+  // run has the figure. The archive's own cost and energy stay the file's and
+  // the first run's.
+  total_cost?: number | null;
+  total_energy_kwh?: number | null;
+  total_energy_cost?: number | null;
+  total_wear_cost?: number | null;
 }
 
 export interface ArchiveSlim {
@@ -1476,6 +1516,8 @@ export interface APIKeyCreateResponse extends APIKey {
 export type CalibrationMode = 'off' | 'on' | 'auto';
 
 // Settings types
+export type ModelDispatchOrder = 'fewest_hours' | 'most_hours' | 'least_recently_used' | 'priority';
+
 export interface AppSettings {
   auto_archive: boolean;
   save_thumbnails: boolean;
@@ -1561,6 +1603,8 @@ export interface AppSettings {
   mqtt_password: string;
   mqtt_topic_prefix: string;
   mqtt_use_tls: boolean;
+  // BIQU Panda Breath heaters on the same broker (#1466)
+  panda_breath_enabled: boolean;
   // External URL for notifications
   external_url: string;
   // Directory holding docker-compose.yml, shown in the update instructions (#2664)
@@ -1609,6 +1653,8 @@ export interface AppSettings {
   session_max_hours: number;
   // User email notifications toggle
   user_notifications_enabled: boolean;
+  // Admin-only: fill {submitted_by_email} in print notifications
+  notification_submitter_email_enabled: boolean;
   // Default print options
   default_bed_levelling: CalibrationMode;
   default_flow_cali: CalibrationMode;
@@ -1628,16 +1674,28 @@ export interface AppSettings {
   // Finance budget reset window
   billing_enabled: boolean;
   printer_kill_switch_enabled: boolean;
+  // Charging policy (#3581): what a print's wallet charge is made of
+  billing_completed_energy: boolean;
+  billing_completed_wear: boolean;
+  billing_failed_filament: 'proportional' | 'full' | 'none';
+  billing_failed_energy: boolean;
+  billing_failed_wear: boolean;
   finance_budget_reset_day: number;
   finance_budget_reset_timezone: string;
   // Plate-clear confirmation
   require_plate_clear: boolean;
   // Shortest job first scheduling
   queue_shortest_first: boolean;
+  // Which printer an any-model job takes when several can run it (#2915).
+  model_dispatch_order: ModelDispatchOrder;
   // How many printers the queue may upload to at once (#2555). 1 restores the
   // old strictly-serial behaviour, where every printer waited out every other
   // printer's transfer.
   queue_max_concurrent_uploads: number;
+  // Skip jobs whose filament is not loaded instead of holding them (#3587);
+  // after queue_max_wait_hours (null = no limit) a skipped job gets priority.
+  queue_loaded_filament_first: boolean;
+  queue_max_wait_hours: number | null;
   // Preheat / heat-soak before queued prints (#1468). Master toggle is the
   // default for new queue items; per-item PrintQueueItem.preheat_override can
   // flip the decision per print. Chamber target derives from the loaded AMS
@@ -1692,6 +1750,8 @@ export interface AppSettings {
   // Server-backed so two admins seed the same alert rules and a restore
   // brings them back; see utils/locationSensorDefaults.ts.
   location_sensor_alert_defaults: string;
+  // Markdown on the Connect slicer page, above the user's virtual printers (#3602).
+  virtual_printer_connect_instructions: string;
 }
 
 export type AppSettingsUpdate = Partial<Omit<AppSettings, 'octoeverywhere_api_key_configured'>>;
@@ -2417,6 +2477,8 @@ export interface CloudDevice {
 }
 
 // Smart Plug types
+export type SmartPlugTempSource = 'nozzle' | 'bed';
+
 export interface SmartPlug {
   id: number;
   name: string;
@@ -2439,6 +2501,8 @@ export interface SmartPlug {
   mqtt_energy_topic: string | null;  // Topic for energy data
   mqtt_energy_path: string | null;  // e.g., "energy_l1"
   mqtt_energy_multiplier: number;  // Unit conversion for energy
+  mqtt_energy_total_path: string | null;  // Lifetime counter on the energy topic (#3582)
+  mqtt_energy_total_multiplier: number;
   // State monitoring
   mqtt_state_topic: string | null;  // Topic for state data
   mqtt_state_path: string | null;  // e.g., "state_l1" for ON/OFF
@@ -2474,6 +2538,9 @@ export interface SmartPlug {
   off_delay_mode: 'time' | 'temperature';
   off_delay_minutes: number;
   off_temp_threshold: number;
+  // #3464: what temperature mode waits for, and the bed's own threshold.
+  off_temp_source: SmartPlugTempSource;
+  off_bed_temp_threshold: number;
   // #1349: auto-off after AMS drying completes.
   auto_off_after_drying: boolean;
   off_delay_after_drying_minutes: number;
@@ -2520,6 +2587,8 @@ export interface SmartPlugCreate {
   mqtt_energy_topic?: string | null;
   mqtt_energy_path?: string | null;
   mqtt_energy_multiplier?: number;
+  mqtt_energy_total_path?: string | null;
+  mqtt_energy_total_multiplier?: number;
   // State monitoring
   mqtt_state_topic?: string | null;
   mqtt_state_path?: string | null;
@@ -2552,6 +2621,9 @@ export interface SmartPlugCreate {
   off_delay_mode?: 'time' | 'temperature';
   off_delay_minutes?: number;
   off_temp_threshold?: number;
+  // #3464
+  off_temp_source?: SmartPlugTempSource;
+  off_bed_temp_threshold?: number;
   // #1349
   auto_off_after_drying?: boolean;
   off_delay_after_drying_minutes?: number;
@@ -2590,6 +2662,8 @@ export interface SmartPlugUpdate {
   mqtt_energy_topic?: string | null;
   mqtt_energy_path?: string | null;
   mqtt_energy_multiplier?: number;
+  mqtt_energy_total_path?: string | null;
+  mqtt_energy_total_multiplier?: number;
   // MQTT state fields
   mqtt_state_topic?: string | null;
   mqtt_state_path?: string | null;
@@ -2622,6 +2696,9 @@ export interface SmartPlugUpdate {
   off_delay_mode?: 'time' | 'temperature';
   off_delay_minutes?: number;
   off_temp_threshold?: number;
+  // #3464
+  off_temp_source?: SmartPlugTempSource;
+  off_bed_temp_threshold?: number;
   // #1349
   auto_off_after_drying?: boolean;
   off_delay_after_drying_minutes?: number;
@@ -3267,6 +3344,19 @@ export type ProviderType = 'callmebot' | 'ntfy' | 'pushover' | 'telegram' | 'ema
 // How a Telegram provider collects the outcome verdict (#3046)
 export type TelegramVerdictMode = 'buttons' | 'reactions' | 'both';
 
+// Events that can carry a camera snapshot; a provider can skip it per event (#2877).
+export type NotificationPhotoEvent =
+  | 'print_start'
+  | 'print_complete'
+  | 'print_failed'
+  | 'print_stopped'
+  | 'print_progress'
+  | 'first_layer_complete'
+  | 'printer_error'
+  | 'ai_failure_detection'
+  | 'plate_not_empty'
+  | 'print_confirm_request';
+
 export interface NotificationProvider {
   id: number;
   name: string;
@@ -3274,6 +3364,7 @@ export interface NotificationProvider {
   enabled: boolean;
   config: Record<string, unknown>;
   attach_photo: boolean;
+  photo_skip_events: NotificationPhotoEvent[];
   // Print lifecycle events
   on_print_start: boolean;
   on_print_complete: boolean;
@@ -3344,6 +3435,7 @@ export interface NotificationProviderCreate {
   enabled?: boolean;
   config: Record<string, unknown>;
   attach_photo?: boolean;
+  photo_skip_events?: NotificationPhotoEvent[];
   // Print lifecycle events
   on_print_start?: boolean;
   on_print_complete?: boolean;
@@ -3407,6 +3499,7 @@ export interface NotificationProviderUpdate {
   enabled?: boolean;
   config?: Record<string, unknown>;
   attach_photo?: boolean;
+  photo_skip_events?: NotificationPhotoEvent[];
   // Print lifecycle events
   on_print_start?: boolean;
   on_print_complete?: boolean;
@@ -4181,6 +4274,8 @@ export interface SpoolmanBulkCreateResult {
 export interface CsvImportRow {
   row_number: number;
   status: 'valid' | 'error' | 'skipped';
+  /** The id the spool is created with (#3520); null gets the next free one. */
+  keeps_id?: number | null;
   reason: string | null;
   material: string | null;
   brand: string | null;
@@ -4507,6 +4602,29 @@ export interface PrinterMaintenanceOverview {
   warning_count: number;
 }
 
+// One reset in a printer's maintenance log. The names are as they were at the
+// reset; the ids are null once the printer or custom task is deleted.
+export interface MaintenanceLogEntry {
+  id: number;
+  printer_id: number | null;
+  printer_name: string;
+  maintenance_type_id: number | null;
+  maintenance_type_name: string;
+  hours_at_maintenance: number;
+  notes: string | null;
+  performed_by_id: number | null;
+  performed_by_username: string | null;  // null when authentication was off
+  performed_at: string;
+}
+
+export interface MaintenanceLogPage {
+  items: MaintenanceLogEntry[];
+  total: number;
+}
+
+// Must match MAINTENANCE_NOTES_MAX_LENGTH in backend/app/schemas/maintenance.py.
+export const MAINTENANCE_NOTES_MAX_LENGTH = 10000;
+
 // External Links (sidebar)
 export interface ExternalLink {
   id: number;
@@ -4690,6 +4808,21 @@ export interface GroupBrief {
   name: string;
 }
 
+/** One filament rule of a group (#3522): a material type or a slicer filament id */
+export interface FilamentRule {
+  match: 'material' | 'filament_id';
+  value: string;
+}
+
+export type FilamentRuleMode = 'allow' | 'block';
+
+/** One restricted group's filament rules, from /auth/me (#3522) */
+export interface FilamentPolicy {
+  group: string;
+  mode: FilamentRuleMode;
+  rules: FilamentRule[];
+}
+
 export interface Group {
   id: number;
   name: string;
@@ -4701,6 +4834,10 @@ export interface Group {
   printer_ids: number[];
   /** Matched against Printer.location, so printers added there later are included */
   locations: string[];
+  /** Members may only print with filaments these rules allow (#3522) */
+  restrict_filaments: boolean;
+  filament_rule_mode: FilamentRuleMode;
+  filament_rules: FilamentRule[];
   user_count: number;
   created_at: string;
   updated_at: string;
@@ -4717,6 +4854,9 @@ export interface GroupCreate {
   restrict_printers?: boolean;
   printer_ids?: number[];
   locations?: string[];
+  restrict_filaments?: boolean;
+  filament_rule_mode?: FilamentRuleMode;
+  filament_rules?: FilamentRule[];
 }
 
 export interface GroupUpdate {
@@ -4726,6 +4866,9 @@ export interface GroupUpdate {
   restrict_printers?: boolean;
   printer_ids?: number[];
   locations?: string[];
+  restrict_filaments?: boolean;
+  filament_rule_mode?: FilamentRuleMode;
+  filament_rules?: FilamentRule[];
 }
 
 export interface PermissionInfo {
@@ -4777,6 +4920,8 @@ export interface UserResponse {
   auth_source: string;  // "local" or "ldap"
   groups: GroupBrief[];
   permissions: Permission[];  // All permissions from groups
+  /** null: may print with every filament (#3522) */
+  filament_policies?: FilamentPolicy[] | null;
   created_at: string;
 }
 
@@ -5521,6 +5666,12 @@ export const api = {
       method: 'POST',
     }),
 
+  sendPandaBreathCommand: (printerId: number, command: PandaBreathCommand) =>
+    request<{ success: boolean }>(`/printers/${printerId}/panda-breath`, {
+      method: 'POST',
+      body: JSON.stringify(command),
+    }),
+
   setFanSpeed: (printerId: number, fan: 'part' | 'aux' | 'aux2' | 'chamber', speed: number) =>
     request<{ success: boolean; message: string }>(`/printers/${printerId}/fan-speed?fan=${fan}&speed=${speed}`, {
       method: 'POST',
@@ -5671,6 +5822,12 @@ export const api = {
       `/printers/${printerId}/ams/unload` + (trayId !== undefined ? `?tray_id=${trayId}` : ''),
       { method: 'POST' }
     ),
+
+  // H3C: unload every loaded AMS 3H slot in one command, as the touchscreen's Unload All (#3531).
+  unloadAllAms: (printerId: number) =>
+    request<{ success: boolean; message: string; count: number }>(`/printers/${printerId}/ams/unload-all`, {
+      method: 'POST',
+    }),
 
   // MQTT Debug Logging
   enableMQTTLogging: (printerId: number) =>
@@ -6419,6 +6576,8 @@ export const api = {
         used_grams: number;
         used_meters: number;
         used_in_plate?: boolean;
+        /** Slicer filament preset id, e.g. GFG03; '' when the 3MF names none. */
+        tray_info_idx?: string;
       }>;
     }>(`/archives/${archiveId}/filament-requirements${qs.toString() ? `?${qs}` : ''}`);
   },
@@ -6536,6 +6695,7 @@ export const api = {
       body: JSON.stringify(data),
     }),
   getMQTTStatus: () => request<MQTTStatus>('/settings/mqtt/status'),
+  getPandaBreathStatus: () => request<PandaBreathStatus>('/settings/panda-breath/status'),
   exportBackup: async (): Promise<{ blob: Blob; filename: string }> => {
     // New simplified backup - complete database + all files
     const url = `${API_BASE}/settings/backup`;
@@ -7707,6 +7867,45 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ notes }),
     }),
+  getMaintenanceLog: (printerId: number, options?: { limit?: number; offset?: number }) => {
+    const params = new URLSearchParams();
+    if (options?.limit !== undefined) params.set('limit', String(options.limit));
+    if (options?.offset !== undefined) params.set('offset', String(options.offset));
+    const query = params.toString();
+    return request<MaintenanceLogPage>(`/maintenance/printers/${printerId}/log${query ? `?${query}` : ''}`);
+  },
+  // One printer's log, or with no printer the whole fleet's (deleted printers included).
+  downloadMaintenanceLog: async (printerId?: number): Promise<void> => {
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+    const path = printerId === undefined ? '/maintenance/log/export' : `/maintenance/printers/${printerId}/log/export`;
+    const response = await fetch(`${API_BASE}${path}`, { headers });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    const disposition = response.headers.get('Content-Disposition');
+    const filename = parseContentDispositionFilename(disposition) || 'maintenance_log.csv';
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  },
+  // Deletes the entries older than the given days: one printer's, or with no
+  // printer the whole fleet's (deleted printers included for an unscoped caller).
+  cleanUpMaintenanceLog: (olderThanDays: number, printerId?: number) => {
+    const path = printerId === undefined ? '/maintenance/log' : `/maintenance/printers/${printerId}/log`;
+    return request<{ deleted: number }>(`${path}?older_than_days=${olderThanDays}`, { method: 'DELETE' });
+  },
+  deleteMaintenanceLogEntry: (entryId: number) =>
+    request<{ status: string; id: number }>(`/maintenance/log/${entryId}`, { method: 'DELETE' }),
   setPrinterHours: (printerId: number, totalHours: number) =>
     request<{ printer_id: number; total_hours: number; archive_hours: number; offset_hours: number }>(
       `/maintenance/printers/${printerId}/hours?total_hours=${totalHours}`,
@@ -8386,6 +8585,8 @@ export const api = {
         used_grams: number;
         used_meters: number;
         used_in_plate?: boolean;
+        /** Slicer filament preset id, e.g. GFG03; '' when the 3MF names none. */
+        tray_info_idx?: string;
       }>;
     }>(`/library/files/${fileId}/filament-requirements${qs.toString() ? `?${qs}` : ''}`);
   },
@@ -9363,18 +9564,40 @@ export const multiVirtualPrinterApi = {
   getCaCertificate: () =>
     request<VPCaCertificate>('/virtual-printers/ca-certificate'),
 
-  // A script that adds the CA to Bambu Studio and OrcaSlicer, with the CA
-  // written into it: 'windows' (.cmd) or 'unix' (.sh, Linux and macOS).
   // The signed-in user's personal access code (#1430); renewing replaces it.
   getMyAccessCode: () => request<{ code: string }>('/virtual-printers/my-access-code'),
   renewMyAccessCode: () => request<{ code: string }>('/virtual-printers/my-access-code', { method: 'POST' }),
 
+  // What the signed-in user enters in their slicer (#3602).
+  getConnectInfo: () => request<VPConnectInfo>('/virtual-printers/connect-info'),
+
+  // A script that adds the CA to Bambu Studio and OrcaSlicer, with the CA
+  // written into it: 'windows' (.cmd) or 'unix' (.sh, Linux and macOS).
   getCaCertificateInstaller: (platform: 'windows' | 'unix') =>
     request<{ filename: string; content: string }>(`/virtual-printers/ca-certificate/installer/${platform}`),
 
   diagnose: (id: number) =>
     request<VPDiagnosticResult>(`/virtual-printers/${id}/diagnostic`),
 };
+
+/** A virtual printer the signed-in user may send to with their personal code (#3602). */
+export interface VPConnectPrinter {
+  id: number;
+  name: string;
+  mode: 'library' | 'review' | 'queue';
+  model: string;
+  model_name: string;
+  serial: string;
+  address: string;
+  target_printer_name: string | null;
+  running: boolean;
+}
+
+export interface VPConnectInfo {
+  auth_enabled: boolean;
+  instructions: string;
+  printers: VPConnectPrinter[];
+}
 
 /** The shared CA certificate every virtual printer presents — imported once
  *  into the slicer's trust store. Only the public certificate is returned. */

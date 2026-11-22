@@ -169,7 +169,7 @@ async def test_completion_stops_the_start_estimate_before_writing_the_cost(test_
     with patch("backend.app.main._settle_archive_cost_estimate", new_callable=AsyncMock) as settle:
         await _complete(test_engine, queued_print["printer"], "completed")
 
-    settle.assert_awaited_once_with(queued_print["archive"])
+    settle.assert_awaited_once_with(queued_print["printer"], queued_print["archive"])
 
 
 async def test_a_failed_print(test_engine, db_session, queued_print):

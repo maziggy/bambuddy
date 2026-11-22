@@ -114,6 +114,14 @@ export function isAms3hUnit(unit: { id: number; ams_type?: number | null } | nul
   return !!unit && unitAmsType(unit.id, unit.ams_type) === AmsType.ZMULTI_A;
 }
 
+/** Tray state of an AMS 3H slot whose filament is in its hotend (26: held at the inlet, #3531). */
+export const AMS3H_TRAY_IN_HOTEND = 27;
+
+/** Whether any slot of an AMS 3H has its filament in its hotend, i.e. Unload all has work to do. */
+export function ams3hHasLoadedSlot(unit: { tray?: { state?: number | null }[] | null }): boolean {
+  return (unit.tray ?? []).some((tray) => tray.state === AMS3H_TRAY_IN_HOTEND);
+}
+
 /** How many slots a unit's card draws: nine for a rack AMS, one for an AMS-HT, else four. */
 export function amsUnitSlotCount(unit: { id: number; ams_type?: number | null }): number {
   if (isAmsHtUnit(unit.id)) return 1;
@@ -638,12 +646,13 @@ export function effectivePreferLowest(
  */
 export function autoMatchFilament(
   req: { type?: string; color?: string; nozzle_id?: number | null },
-  loadedFilaments: { globalTrayId: number; amsId?: number; trayId?: number; type?: string; color?: string; extruderId?: number; remain?: number }[],
+  loadedFilaments: { globalTrayId: number; amsId?: number; trayId?: number; type?: string; color?: string; extruderId?: number; remain?: number; blocked?: boolean }[],
   usedTrayIds: Set<number>,
   preferLowest?: boolean,
   inventoryByTrayId?: Map<number, number>,
 ): typeof loadedFilaments[number] | undefined {
-  let nozzleFilaments = filterFilamentsByNozzle(loadedFilaments, req.nozzle_id);
+  // A tray the user's groups block is never auto-picked (#3522).
+  let nozzleFilaments = filterFilamentsByNozzle(loadedFilaments.filter((f) => !f.blocked), req.nozzle_id);
 
   if (preferLowest) {
     nozzleFilaments = [...nozzleFilaments].sort((a, b) =>

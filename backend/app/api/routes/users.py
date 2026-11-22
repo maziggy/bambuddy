@@ -22,6 +22,7 @@ from backend.app.core.auth import (
     verify_password,
 )
 from backend.app.core.database import get_db
+from backend.app.core.filament_scope import filament_policies_for, resolve_user_filament_scope
 from backend.app.core.permissions import Permission
 from backend.app.core.websocket import ws_manager
 from backend.app.models.api_key import APIKey
@@ -36,7 +37,7 @@ from backend.app.models.print_batch import PrintBatch
 from backend.app.models.print_log import PrintLogEntry
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.settings import Settings
-from backend.app.models.user import User
+from backend.app.models.user import ADMIN_GROUP_NAME, User
 from backend.app.models.user_otp_code import UserOTPCode
 from backend.app.models.user_totp import UserTOTP
 from backend.app.schemas.auth import (
@@ -74,6 +75,7 @@ def _user_to_response(user: User) -> UserResponse:
         auth_source=getattr(user, "auth_source", "local"),
         groups=[GroupBrief(id=g.id, name=g.name) for g in user.groups],
         permissions=sorted(user.get_permissions()),
+        filament_policies=filament_policies_for(user),
         created_at=user.created_at.isoformat(),
     )
 
@@ -197,6 +199,13 @@ async def create_user(
                 detail="One or more group IDs are invalid",
             )
         new_user.groups = list(groups)
+    elif user_data.role == "admin":
+        admin_group = (await db.execute(select(Group).where(Group.name == ADMIN_GROUP_NAME))).scalar_one_or_none()
+        new_user.groups = [admin_group] if admin_group else []
+    else:
+        new_user.groups = []
+    # As in update_user: the groups decide, role follows (#3533).
+    new_user.sync_role_to_groups()
 
     db.add(new_user)
     await db.flush()
@@ -267,6 +276,19 @@ async def get_user(
     return _user_to_response(user)
 
 
+async def _other_active_admins(db: AsyncSession, user_id: int) -> bool:
+    """Is there an active admin other than this user, by role or by group?"""
+    role_admin = await db.scalar(
+        select(User.id).where(User.role == "admin", User.is_active.is_(True), User.id != user_id).limit(1)
+    )
+    if role_admin is not None:
+        return True
+    admin_group = (
+        await db.execute(select(Group).where(Group.name == ADMIN_GROUP_NAME).options(selectinload(Group.users)))
+    ).scalar_one_or_none()
+    return any(u.is_active and u.id != user_id for u in (admin_group.users if admin_group else []))
+
+
 @router.patch("/{user_id}", response_model=UserResponse)
 async def update_user(
     user_id: int,
@@ -286,35 +308,39 @@ async def update_user(
             detail="User not found",
         )
 
-    # Prevent deactivating the last admin
-    if user_data.is_active is False and user.is_admin:
-        # Count admins by role or Administrators group membership
-        admin_count_result = await db.execute(select(User).where(User.role == "admin", User.is_active.is_(True)))
-        role_admins = admin_count_result.scalars().all()
-
-        # Also check for users in Administrators group
-        admin_group_result = await db.execute(
-            select(Group).where(Group.name == "Administrators").options(selectinload(Group.users))
+    # The groups decide who is an admin, and role follows them (#3533). With
+    # both sent, the groups win; role alone moves the user in or out of
+    # Administrators.
+    if user_data.role is not None and user_data.role not in ["admin", "user"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Role must be 'admin' or 'user'",
         )
-        admin_group = admin_group_result.scalar_one_or_none()
-        group_admins = [u for u in (admin_group.users if admin_group else []) if u.is_active]
-
-        # Combine unique admins
-        all_admins = {u.id for u in role_admins} | {u.id for u in group_admins}
-        if len(all_admins) <= 1 and user.id in all_admins:
+    new_groups: list[Group] | None = None
+    if user_data.group_ids is not None:
+        groups_result = await db.execute(select(Group).where(Group.id.in_(user_data.group_ids)))
+        new_groups = list(groups_result.scalars().all())
+        if len(new_groups) != len(user_data.group_ids):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot deactivate the last admin user",
+                detail="One or more group IDs are invalid",
             )
+    elif user_data.role is not None:
+        admin_group = (await db.execute(select(Group).where(Group.name == ADMIN_GROUP_NAME))).scalar_one_or_none()
+        others = [g for g in user.groups if g.name != ADMIN_GROUP_NAME]
+        new_groups = others + [admin_group] if user_data.role == "admin" and admin_group else others
 
-    # Prevent changing role of last admin
-    if user_data.role and user_data.role != "admin" and user.role == "admin":
-        admin_count_result = await db.execute(select(User).where(User.role == "admin", User.is_active.is_(True)))
-        admin_count = len(admin_count_result.scalars().all())
-        if admin_count <= 1:
+    # Prevent leaving no active admin: by deactivation, or by taking the
+    # admin rights away.
+    stays_active = user.is_active if user_data.is_active is None else user_data.is_active
+    stays_admin = user.is_admin if new_groups is None else any(g.name == ADMIN_GROUP_NAME for g in new_groups)
+    if user.is_admin and user.is_active and not (stays_active and stays_admin):
+        if not await _other_active_admins(db, user.id):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot change role of the last admin user",
+                detail="Cannot deactivate the last admin user"
+                if not stays_active
+                else "Cannot remove admin rights from the last admin user",
             )
 
     if user_data.username is not None:
@@ -385,14 +411,6 @@ async def update_user(
         user.password_changed_at = utcnow_naive()
         close_sockets = True
 
-    if user_data.role is not None:
-        if user_data.role not in ["admin", "user"]:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Role must be 'admin' or 'user'",
-            )
-        user.role = user_data.role
-
     if user_data.is_active is not None:
         if user.is_active and not user_data.is_active:
             # Deactivated: their printers go at the scope refresh below, but
@@ -410,16 +428,9 @@ async def update_user(
             close_sockets = True
         user.is_active = user_data.is_active
 
-    # Handle group assignments
-    if user_data.group_ids is not None:
-        groups_result = await db.execute(select(Group).where(Group.id.in_(user_data.group_ids)))
-        groups = groups_result.scalars().all()
-        if len(groups) != len(user_data.group_ids):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="One or more group IDs are invalid",
-            )
-        user.groups = list(groups)
+    if new_groups is not None:
+        user.groups = new_groups
+        user.sync_role_to_groups()
 
     await ensure_user_finance_defaults(db, user)
 
@@ -605,6 +616,15 @@ async def delete_user(
                 .values(created_by_id=None)
             )
 
+        # A charge waiting on a run of one of the archives deleted here for
+        # its energy is written first (#3581), while it still has an archive
+        # to charge and its reservation to consume.
+        from backend.app.services.finance_billing import settle_pending_print_charges
+
+        await settle_pending_print_charges(
+            db, PrintLogEntry.archive_id.in_(select(PrintArchive.id).where(PrintArchive.created_by_id == user_id))
+        )
+
         # Budget held for the queue items and archives deleted here: no print
         # completion can settle it any more (it finds no archive), and an
         # active reservation held the cost centre's budget, and kept the cost
@@ -653,6 +673,19 @@ async def delete_user(
                     PrintQueueItem.printer_id.is_(None),
                     PrintQueueItem.status == "pending",
                 )
+                .values(manual_start=True)
+            )
+        # Likewise for filaments (#3522), and for every pending job, pinned
+        # ones too: an ownerless job may print with any filament, so one held
+        # by this user's rules, or due to be, would otherwise go out on the
+        # next pass with the filament it was held from. Read off the user's
+        # groups, as the printer check above: a deactivated user's jobs are
+        # held because they are deactivated, not by a filament rule, and
+        # that hold is not this one's to keep.
+        if not resolve_user_filament_scope(user).is_unrestricted:
+            await db.execute(
+                update(PrintQueueItem)
+                .where(PrintQueueItem.created_by_id == user_id, PrintQueueItem.status == "pending")
                 .values(manual_start=True)
             )
         await db.execute(update(PrintArchive).where(PrintArchive.created_by_id == user_id).values(created_by_id=None))

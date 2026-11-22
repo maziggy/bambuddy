@@ -158,6 +158,7 @@ class TestUnmappableWithoutAmsGuard:
         item = MagicMock()
         item.id = 22
         item.printer_id = 4
+        item.created_by_id = None  # no creator: unrestricted filament scope (#3522)
         item.ams_mapping = ams_mapping
         item.filament_overrides = None
         return item

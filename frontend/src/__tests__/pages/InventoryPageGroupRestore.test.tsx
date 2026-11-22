@@ -2,7 +2,7 @@
  * Restore on an archived spool inside an expanded group row of the table.
  * The group row passed a no-op to its members, so the button did nothing.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { screen, waitFor, fireEvent } from '@testing-library/react';
 import { render } from '../utils';
 import InventoryPageRouter from '../../pages/InventoryPage';
@@ -143,5 +143,48 @@ describe('InventoryPage — restore inside a group row', () => {
 
     await waitFor(() => expect(restored).toHaveLength(1));
     expect([2, 3]).toContain(restored[0]);
+  });
+});
+
+describe('InventoryPage — weight check on a group row', () => {
+  beforeEach(() => {
+    // Group on, and the (hidden by default) Weight Check column shown.
+    vi.mocked(localStorage.getItem).mockImplementation((key: string) => {
+      if (key === 'bambuddy-inventory-group') return 'true';
+      if (key === 'bambuddy-inventory-columns') {
+        return JSON.stringify([{ id: 'weight_check', label: 'Weight Check', visible: true }]);
+      }
+      return null;
+    });
+    // Two identical unopened spools, each weighed at exactly its own weight
+    // (1000 g filament + 250 g core).
+    const weighed = { ...archivedSpool, archived_at: null, weight_used: 0, last_scale_weight: 1250 };
+    server.use(
+      http.get('/api/v1/settings/', () => HttpResponse.json(baseSettings)),
+      http.get('/api/v1/inventory/spools', () =>
+        HttpResponse.json([
+          { ...weighed, id: 2 },
+          { ...weighed, id: 3 },
+        ]),
+      ),
+      http.get('/api/v1/inventory/assignments', () => HttpResponse.json([])),
+      http.get('/api/v1/spoolman/settings', () => HttpResponse.json({ spoolman_enabled: 'false' })),
+    );
+  });
+
+  afterEach(() => {
+    vi.mocked(localStorage.getItem).mockReset();
+  });
+
+  it('shows no mismatch or Sync on the group row; each spool keeps its own check', async () => {
+    render(<InventoryPageRouter />);
+
+    const header = await screen.findByText('#2, #3');
+    // The first spool's 1250 g against the group's 2500 g read as a mismatch.
+    expect(screen.queryByTitle(/mismatch!/)).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Sync: trust scale weight and reset tracking')).not.toBeInTheDocument();
+
+    fireEvent.click(header.closest('tr')!);
+    expect(await screen.findAllByTitle(/within tolerance/)).toHaveLength(2);
   });
 });

@@ -314,6 +314,45 @@ class NotificationService:
         # Default to 24h for "24h", "system", or unset
         return eta_time.strftime("%H:%M")
 
+    async def _add_submitter(self, db: AsyncSession, variables: dict, archive_data: dict | None) -> None:
+        """Set {submitted_by} / {submitted_by_email} from ``archive_data["created_by_id"]``.
+
+        The user who sent the job, from the web UI or from a slicer signed in to a
+        virtual printer with their own access code. Left unset, so empty in the
+        message, when nobody is known, the user is gone or has no email. The email
+        lets a webhook bridge turn the user into a chat mention.
+
+        The email is only filled while an admin has turned on
+        ``notification_submitter_email_enabled``: users who may edit templates and
+        providers can't read user emails, and could otherwise point a webhook at
+        their own server to collect them.
+        """
+        user_id = archive_data.get("created_by_id") if archive_data else None
+        if user_id is None:
+            return
+        from backend.app.models.user import User
+
+        try:
+            result = await db.execute(select(User.username, User.email).where(User.id == user_id))
+            row = result.one_or_none()
+        except Exception as e:
+            logger.warning("Could not look up submitter %s for notification: %s", user_id, e)
+            return
+        if row is None:
+            return
+        variables["submitted_by"] = row.username
+        if not row.email:
+            return
+        from backend.app.api.routes.settings import get_setting
+
+        try:
+            email_enabled = (await get_setting(db, "notification_submitter_email_enabled") or "").lower() == "true"
+        except Exception as e:
+            logger.warning("Could not read notification_submitter_email_enabled: %s", e)
+            return
+        if email_enabled:
+            variables["submitted_by_email"] = row.email
+
     def _format_duration(self, seconds: int | None) -> str:
         """Format duration in seconds to human-readable string."""
         if seconds is None:
@@ -1414,11 +1453,13 @@ class NotificationService:
 
         config = json.loads(provider.config) if isinstance(provider.config, str) else provider.config
 
-        # attach_photo is a per-provider opt-out. Clearing image_data covers
-        # the byte-upload providers below; HA/Bark/Slack get their own check
-        # further down too, since they could otherwise get the URL an earlier
-        # provider in the same send left in photo_cache.
-        if not provider.attach_photo:
+        # attach_photo is a per-provider opt-out, photo_skip_events narrows it
+        # to some events (#2877). Clearing image_data covers the byte-upload
+        # providers below; HA/Bark/Slack/Gotify/Notify! check attach_photo
+        # again further down, since they could otherwise get the URL an
+        # earlier provider in the same send left in photo_cache.
+        attach_photo = bool(provider.attach_photo) and event_type not in (provider.photo_skip_events or ())
+        if not attach_photo:
             image_data = None
 
         try:
@@ -1519,7 +1560,7 @@ class NotificationService:
                 # Only Slack format needs a URL — generic format gets the
                 # base64 image field instead.
                 photo_url = None
-                if provider.attach_photo and (config.get("payload_format") or "generic").strip() == "slack":
+                if attach_photo and (config.get("payload_format") or "generic").strip() == "slack":
                     photo_url = await self._get_or_build_photo_url(db, image_data, event_type, photo_cache)
                 return await self._send_webhook(
                     config,
@@ -1533,7 +1574,7 @@ class NotificationService:
             elif provider.provider_type == "homeassistant":
                 photo_url = (
                     await self._get_or_build_photo_url(db, image_data, event_type, photo_cache)
-                    if provider.attach_photo
+                    if attach_photo
                     else None
                 )
                 return await self._send_homeassistant(config, title, message, db=db, image_url=photo_url)
@@ -1546,14 +1587,14 @@ class NotificationService:
                     bark_url = _bark_confirm
                 photo_url = (
                     await self._get_or_build_photo_url(db, image_data, event_type, photo_cache)
-                    if provider.attach_photo
+                    if attach_photo
                     else None
                 )
                 return await self._send_bark(config, title, message, url=bark_url, image_url=photo_url)
             elif provider.provider_type == "notify":
                 photo_url = (
                     await self._get_or_build_photo_url(db, image_data, event_type, photo_cache)
-                    if provider.attach_photo and notify_supports_photos(config.get("device_id"))
+                    if attach_photo and notify_supports_photos(config.get("device_id"))
                     else None
                 )
                 return await self._send_notify(
@@ -1568,7 +1609,7 @@ class NotificationService:
                     gotify_url = _gotify_confirm
                 photo_url = (
                     await self._get_or_build_photo_url(db, image_data, event_type, photo_cache)
-                    if provider.attach_photo
+                    if attach_photo
                     else None
                 )
                 return await self._send_gotify(
@@ -1836,6 +1877,7 @@ class NotificationService:
             "estimated_time": time_str,
             "eta": eta_str,
         }
+        await self._add_submitter(db, variables, archive_data)
 
         # Extract image data for providers that support attachments (e.g. Pushover)
         image_data = None
@@ -1921,6 +1963,7 @@ class NotificationService:
             for key in ("archive_id", "run_id"):
                 if archive_data.get(key) is not None:
                     variables[key] = str(archive_data[key])
+            await self._add_submitter(db, variables, archive_data)
 
             # Build per-slot breakdown string with AMS info when available
             if archive_data.get("usage_results"):

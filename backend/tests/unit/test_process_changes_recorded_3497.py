@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from backend.app.api.routes.library import _run_slicer_with_fallback
+from backend.app.core.printer_scope import ALL_PRINTERS
 from backend.app.schemas.slicer import PresetRef, SliceRequest
 from backend.app.schemas.slicer_presets import UnifiedPreset
 from backend.app.services.design_settings import changed_process_keys, record_process_changes
@@ -192,6 +193,16 @@ async def _slice(request: SliceRequest, *, model: str = "stl", embedded_fallback
     with (
         patch("backend.app.api.routes.settings.get_setting", new=AsyncMock(side_effect=_setting)),
         patch("backend.app.services.preset_resolver.resolve_preset_ref", new=AsyncMock(side_effect=_resolve)),
+        # The fallback runs only for the file's own printer (#3535): the
+        # source and the target name the same one.
+        patch(
+            "backend.app.services.slicer_3mf_convert.extract_source_printer_model",
+            return_value="X2D" if embedded_fallback else None,
+        ),
+        patch(
+            "backend.app.api.routes.library._resolve_target_printer_model",
+            new=AsyncMock(return_value="X2D" if embedded_fallback else None),
+        ),
         patch.object(slicer_api_module, "SlicerApiService", return_value=service),
         patch.object(slicer_api_module, "get_stall_timeout_seconds", new=AsyncMock(return_value=60.0)),
         patch("backend.app.api.routes.slicer_presets._fetch_cloud_presets", new=cloud_listing),
@@ -202,6 +213,7 @@ async def _slice(request: SliceRequest, *, model: str = "stl", embedded_fallback
             model_filename=f"cube.{model}",
             request=request,
             current_user_id=None,
+            printer_scope=ALL_PRINTERS,
         )
     return _config(result.content)["different_settings_to_system"]
 

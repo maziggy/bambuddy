@@ -78,5 +78,41 @@ class MaintenanceHistory(Base):
     printer_maintenance: Mapped["PrinterMaintenance"] = relationship(back_populates="history")
 
 
+class MaintenanceLogEntry(Base):
+    """One maintenance reset, kept as the audit log of a printer.
+
+    Unlike ``maintenance_history`` (which goes with its printer task), an entry
+    outlives the printer, the task and the user: their names are stored as
+    they were at the reset, and the links to them are SET NULL on delete. An
+    entry whose printer is gone is still in the fleet-wide export.
+    """
+
+    __tablename__ = "maintenance_log_entries"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    printer_id: Mapped[int | None] = mapped_column(
+        ForeignKey("printers.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    printer_name: Mapped[str] = mapped_column(String(255))
+    maintenance_type_id: Mapped[int | None] = mapped_column(
+        ForeignKey("maintenance_types.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    maintenance_type_name: Mapped[str] = mapped_column(String(100))
+    hours_at_maintenance: Mapped[float] = mapped_column(Float, default=0.0)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    performed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # NULL when authentication is off.
+    performed_by_username: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    performed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+    # The maintenance_history row written with it. That row goes with its
+    # printer task, so the link is SET NULL: left dangling, SQLite would give
+    # its id to the next reset, possibly another printer's, and deleting this
+    # entry would delete that reset's history. The upgrade copies history rows
+    # not yet here.
+    history_id: Mapped[int | None] = mapped_column(
+        ForeignKey("maintenance_history.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+
 # Import at end to avoid circular imports
 from backend.app.models.printer import Printer  # noqa: E402

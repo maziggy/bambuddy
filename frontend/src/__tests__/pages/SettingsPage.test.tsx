@@ -188,10 +188,11 @@ describe('SettingsPage', () => {
 
       // The page auto-saves on a 500ms debounce, so the default 1s waitFor
       // window is only just wide enough — give the request room to land.
+      // Wait for the value, not just any save: on a loaded runner the page can
+      // save the external_url it detected before the click lands.
       await waitFor(() => {
-        expect(saved).not.toBeNull();
+        expect(saved?.finish_photo_restore_plate).toBe(false);
       }, { timeout: 3000 });
-      expect(saved!.finish_photo_restore_plate).toBe(false);
     });
   });
 
@@ -260,8 +261,9 @@ describe('SettingsPage', () => {
       await new Promise((resolve) => setTimeout(resolve, 200));
       await userEvent.click(within(label.closest('div')!.parentElement!).getByRole('checkbox'));
 
+      // The save the click made, not the external_url one that can come first.
       await waitFor(() => {
-        expect(saved).not.toBeNull();
+        expect(saved?.finish_photo_restore_plate).toBe(false);
       }, { timeout: 3000 });
       expect(saved!).not.toHaveProperty('energy_cost_per_kwh');
       expect(saved!.energy_price_source).toBe('homeassistant');
@@ -1119,10 +1121,11 @@ describe('SettingsPage', () => {
 
       expect(toggle).toBeChecked();
       expect(screen.getByDisplayValue('15')).toBeInTheDocument();
+      // Wait for the value, not just any save: on a loaded runner the page can
+      // save the external_url it detected before the click lands.
       await waitFor(() => {
-        expect(saved).not.toBeNull();
+        expect(saved?.ambient_drying_sustained_minutes).toBe(15);
       }, { timeout: 3000 });
-      expect(saved!.ambient_drying_sustained_minutes).toBe(15);
     });
 
     it('clearing the field does not snap it to a value mid-edit', async () => {
@@ -2289,10 +2292,11 @@ describe('SettingsPage', () => {
       const row = label.closest('div')!.parentElement!;
       await user.click(within(row).getByRole('checkbox'));
 
+      // Wait for the value, not just any save: on a loaded runner the page can
+      // save the external_url it detected before the click lands.
       await waitFor(() => {
-        expect(saved).not.toBeNull();
+        expect(saved?.confirm_outcome_external_prints).toBe(true);
       }, { timeout: 3000 });
-      expect(saved!.confirm_outcome_external_prints).toBe(true);
     });
 
     it('reflects a value the backend already has', async () => {

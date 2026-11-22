@@ -113,6 +113,7 @@ class TestEnsureAmsMapping:
         item = MagicMock()
         item.id = 92
         item.printer_id = 82
+        item.created_by_id = None  # no creator: unrestricted filament scope (#3522)
         item.ams_mapping = ams_mapping
         return item
 

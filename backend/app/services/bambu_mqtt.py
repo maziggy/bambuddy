@@ -40,6 +40,8 @@ from backend.app.utils.tray_ids import (
     is_rack_ams,
     legacy_tray_index,
     mapped_trays_with_slot,
+    reconcile_use_ams,
+    reports_no_ams,
     tray_flag_bit,
     unit_ams_type,
     unit_label,
@@ -258,6 +260,8 @@ def change_filament_wire_ids(tray_id: int, layout: TrayLayout | None = None) -> 
 # print.mapping and the snow fields encode a slot as (32 << 8) | k. Commands
 # address it as {ams_id: 32, slot_id: k}.
 AMS3H_MODULE_NAME = "n10a"  # its get_version module (no "/<unit>" suffix)
+# Tray state of an AMS 3H slot whose filament is in its hotend (26: held at the inlet).
+_RACK_TRAY_IN_HOTEND = 27
 
 
 def _mqtt_int(value: object) -> int | None:
@@ -1039,6 +1043,11 @@ _HMS_USER_ACTION_CODES: frozenset[str] = frozenset(
 # "0500_0007", which matches nothing in any catalog.
 HMS_MQTT_VERIFY_FAILED: str = "0500050000010007"
 
+# Command responses whose content the debug log leaves out (#3531). push_status
+# is the printer's status, arriving every second and logged field by field;
+# project_file carries the download URL of a print, which may be a signed one.
+_COMMANDS_LOGGED_BY_NAME_ONLY: frozenset[str] = frozenset({"push_status", "project_file"})
+
 
 @dataclass
 class KProfile:
@@ -1063,6 +1072,18 @@ class NozzleInfo:
 
     nozzle_type: str = ""  # "stainless_steel" or "hardened_steel"
     nozzle_diameter: str = ""  # e.g., "0.4"
+
+
+def nozzle_print_time_s(value: object) -> int | None:
+    """A nozzle's accumulated print time from its ``nozzle_info`` entry (#1908).
+
+    H2C firmware reports it per nozzle as ``p_t``, in seconds. Older firmware
+    and other models leave it out, which stays None so the UI hides the row
+    instead of showing "0h". A bool is an int to Python but never a duration.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+        return None
+    return int(value)
 
 
 # What await_cali_ack reports when the printer did not answer a K-profile write
@@ -1714,6 +1735,10 @@ class BambuMQTTClient:
         self._message_log: deque[MQTTLogEntry] = deque(maxlen=100)
         self._logging_enabled: bool = False
         self._last_message_time: float = 0.0  # Track when we last received a message
+        # Bambuddy's own FTP uploads to this printer (#3538): an A1 publishes
+        # nothing while it receives a large file, which is not a stale link.
+        self._uploads_in_flight: int = 0
+        self._last_upload_end: float = 0.0
         # Count of report-topic messages received since the last (re)connect.
         # Lets check_staleness() distinguish "printer never sent a status
         # report" (typically a wrong / mis-cased serial) from a normal quiet
@@ -1894,11 +1919,29 @@ class BambuMQTTClient:
     # Maximum time (seconds) without a message before considering connection stale
     STALE_TIMEOUT = 60.0
 
+    def begin_upload(self) -> None:
+        """Bambuddy starts an FTP upload to this printer (#3538)."""
+        self._uploads_in_flight += 1
+
+    def end_upload(self) -> None:
+        """The upload is over; the printer gets STALE_TIMEOUT from now to speak."""
+        self._uploads_in_flight = max(0, self._uploads_in_flight - 1)
+        self._last_upload_end = time.time()
+
     def is_stale(self) -> bool:
-        """Check if the connection is stale (no messages for too long)."""
+        """Check if the connection is stale (no messages for too long).
+
+        Not while Bambuddy is uploading to the printer, nor within
+        STALE_TIMEOUT after: an A1 says nothing over MQTT while it receives a
+        large file, and the forced reconnect that silence used to trigger
+        landed just before the print command, which then found the printer
+        disconnected and failed the job (#3538).
+        """
         if self._last_message_time == 0:
             return False  # Never received a message yet
-        time_since_last = time.time() - self._last_message_time
+        if self._uploads_in_flight > 0:
+            return False
+        time_since_last = time.time() - max(self._last_message_time, self._last_upload_end)
         return time_since_last > self.STALE_TIMEOUT
 
     def mark_power_off(self) -> bool:
@@ -2833,6 +2876,14 @@ class BambuMQTTClient:
             if "command" in print_data:
                 cmd = print_data.get("command")
                 logger.debug("[%s] Received command response: %s", self.serial_number, cmd)
+                if cmd not in _COMMANDS_LOGGED_BY_NAME_ONLY:
+                    # The printer reports back commands sent from its own
+                    # screen too, and this is the only place their content can
+                    # be seen: H3C Unload All is one command whose fields are
+                    # not documented anywhere (#3531).
+                    logger.debug(
+                        "[%s] %s content: %s", self.serial_number, cmd, json.dumps(print_data, default=str)[:4000]
+                    )
                 if cmd in ("extrusion_cali_set", "extrusion_cali_del"):
                     # INFO, not debug: this is the printer's verdict on a write
                     # the user just made, and it was invisible in support
@@ -5931,6 +5982,8 @@ class BambuMQTTClient:
                                 "type": str(n.get("type", "")),
                                 "diameter": str(n.get("diameter", "")),
                                 "wear": n.get("wear"),
+                                # H2C: seconds this nozzle has printed (#1908)
+                                "print_time_s": nozzle_print_time_s(n.get("p_t")),
                                 "stat": n.get("stat"),
                                 # H2C uses "tm", H2D uses "max_temp"
                                 "max_temp": n.get("max_temp") or n.get("tm", 0),
@@ -6672,6 +6725,10 @@ class BambuMQTTClient:
             from backend.app.utils.printer_models import is_dual_nozzle_model, is_nozzle_rack_model
 
             is_dual_nozzle = self._is_dual_nozzle or is_dual_nozzle_model(self.model)
+            # The scheduler's filament check (#3522) reads the feed with the
+            # same `reconcile_use_ams`, but its dual-nozzle test
+            # (`_might_be_dual_nozzle`) is more generous: it also counts a
+            # populated `ams_extruder_map` or more than one external feed.
 
             # Build ams_mapping2 from ams_mapping (detailed format with ams_id/slot_id)
             ams_mapping2 = []
@@ -6762,26 +6819,28 @@ class BambuMQTTClient:
             #     0-253. Keeping them distinct means an unresolved mapping fails loudly
             #     (or is recomputed upstream) instead of silently going external, and
             #     never gets force-enabled by (a) either.
+            #
+            # The rule lives in `reconcile_use_ams`, which the scheduler's
+            # filament-permission check (#3522) shares, so what it judges is
+            # what is sent here. (Not when the scheduler worked out from the
+            # plate's own filament list that it prints only from the spool
+            # holder: a real tray here is then one another plate of the file
+            # uses.)
             if ams_mapping and not is_dual_nozzle:
-                has_real_tray = any(
-                    t is not None and 0 <= int(t) <= 253 and not layout.is_external(int(t)) for t in ams_mapping
+                reconciled = reconcile_use_ams(
+                    ams_mapping, use_ams, layout, plate_uses_only_external=plate_uses_only_external
                 )
-                all_external = all(t is None or int(t) >= 254 or layout.is_external(int(t)) for t in ams_mapping)
-                # (Not when the scheduler worked out from the plate's own
-                # filament list that it prints only from the spool holder: a
-                # real tray here is then one another plate of the file uses.)
-                if has_real_tray and not use_ams and not plate_uses_only_external:
-                    use_ams = True
+                if reconciled and not use_ams:
                     logger.info(
                         "[%s] AMS mapping resolved a real slot — setting use_ams=True (#2595)",
                         self.serial_number,
                     )
-                elif use_ams and all_external:
-                    use_ams = False
+                elif use_ams and not reconciled:
                     logger.info(
                         "[%s] All filament slots use external spool — setting use_ams=False",
                         self.serial_number,
                     )
+                use_ams = reconciled
 
             # (c) A single-nozzle printer that reported no AMS at all can only
             #     print from the spool holder, whatever the mapping says. With
@@ -6791,7 +6850,7 @@ class BambuMQTTClient:
             #     mapping table" (#3356). An empty raw_data["ams"] is the
             #     printer's own report of no AMS; a missing key means no AMS
             #     push has been handled yet (a reconnect), which changes nothing.
-            if use_ams and not is_dual_nozzle and self.state.raw_data.get("ams") == []:
+            if use_ams and not is_dual_nozzle and reports_no_ams(self.state.raw_data):
                 use_ams = False
                 logger.info("[%s] Printer has no AMS — setting use_ams=False (#3356)", self.serial_number)
 
@@ -8527,6 +8586,59 @@ class BambuMQTTClient:
         logger.info("[%s] Cleared pending_tray_target (unload)", self.serial_number)
 
         return True
+
+    def rack_loaded_slots(self) -> list[tuple[int, int]]:
+        """``(ams_id, slot)`` of every rack AMS slot whose hotend holds its filament.
+
+        The AMS 3H reports such a slot as tray state 27; a spool that is only
+        held at the inlet reports 26 (#3531).
+        """
+        loaded: list[tuple[int, int]] = []
+        for ams_id, _kind in self.tray_layout.rack_units:
+            unit = self._ams_unit(ams_id) or {}
+            for tray in unit.get("tray") or []:
+                if not isinstance(tray, dict) or _mqtt_int(tray.get("state")) != _RACK_TRAY_IN_HOTEND:
+                    continue
+                slot = _mqtt_int(tray.get("id"))
+                if slot is not None:
+                    loaded.append((ams_id, slot))
+        return sorted(loaded)
+
+    def ams_unload_all(self) -> int:
+        """Unload every loaded hotend of a rack printer (H3C) in one command.
+
+        As the H3C's own Unload All sends it (#3531): one
+        ``multi_slot_ams_change_filament`` listing each loaded AMS 3H slot as
+        ``255 - k``, the same feeder id a single unload names. The printer then
+        unloads them one after another and asks for the hand pull at the end.
+
+        Returns:
+            The number of slots in the command, 0 if nothing was sent.
+        """
+        client = self._client
+        if client is None or not self.state.connected:
+            return 0
+        slots = self.rack_loaded_slots()
+        if not slots:
+            logger.info("[%s] Unload all: no AMS 3H slot is loaded", self.serial_number)
+            return 0
+        self._sequence_id += 1
+        command = {
+            "print": {
+                "command": "multi_slot_ams_change_filament",
+                "sequence_id": str(self._sequence_id),
+                "is_load": False,
+                "request_array": [{"ams_id": ams_id, "slot_id": 255 - slot, "soft_temp": 0} for ams_id, slot in slots],
+                "soft_temp": 0,
+                "temper_check": True,
+            }
+        }
+        command_json = json.dumps(command)
+        logger.info("[%s] Publishing multi_slot_ams_change_filament (unload all): %s", self.serial_number, command_json)
+        client.publish(self.topic_publish, command_json, qos=1)
+        self.state.pending_tray_target = None
+        self.state.pending_tray_target_at = None
+        return len(slots)
 
     def ams_control(self, action: str) -> bool:
         """Control AMS operations.

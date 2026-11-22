@@ -380,6 +380,20 @@ describe('PrintersPage', () => {
       expect(screen.queryByTitle('Exhaust')).not.toBeInTheDocument();
     });
 
+    // Built in on these, and "Exhaust" in Bambu Studio: no printer file renames
+    // part 3 for them (#3521). Shown without exhaust_fan_present.
+    it.each(['H2D', 'H2D Pro', 'H2C', 'H2S', 'H3C'])(
+      'labels the built-in fan "Exhaust" on the %s and always shows it',
+      async (model) => {
+        renderWithStatus({ ...mockPrinters[0], model }, { ...statusWithFans, exhaust_fan_present: false });
+
+        await waitFor(() => {
+          expect(screen.getByTitle('Exhaust')).toBeInTheDocument();
+        });
+        expect(screen.queryByTitle('Chamber Fan')).not.toBeInTheDocument();
+      },
+    );
+
     it('hides the left aux badge when the accessory is not reported', async () => {
       renderWithStatus({ ...mockPrinters[0], model: 'P2S' }, statusWithFans);
 
@@ -866,6 +880,64 @@ describe('PrintersPage', () => {
       // Rack shows diameters for occupied slots and dashes for empty ones
       const dashes = screen.getAllByText('—');
       expect(dashes.length).toBeGreaterThanOrEqual(3); // 3 empty rack positions (IDs 19,20,21)
+    });
+
+    const hoverRackDiameter = async (diameter: string) => {
+      await waitFor(() => {
+        expect(screen.getAllByText('Nozzle Rack').length).toBeGreaterThan(0);
+      });
+      const chip = Array.from(document.querySelectorAll('span[data-rack-diameter]')).find(
+        s => s.textContent === diameter,
+      )!;
+      await userEvent.setup().hover(chip);
+    };
+
+    it('shows the nozzle print time from H2C firmware on the rack hover card (#1908)', async () => {
+      const withPrintTime = {
+        ...h2cStatus,
+        nozzle_rack: h2cStatus.nozzle_rack.map(n => (n.id === 17 ? { ...n, print_time_s: 90061 } : n)),
+      };
+      server.use(http.get('/api/v1/printers/:id/status', () => HttpResponse.json(withPrintTime)));
+
+      render(<PrintersPage />);
+      await hoverRackDiameter('0.6');
+
+      expect(await screen.findByText('Print time')).toBeInTheDocument();
+      expect(screen.getByText('25h 1m')).toBeInTheDocument();
+    });
+
+    it('shows the print time of the left and right hotend on their hover card (#1908)', async () => {
+      localStorage.setItem('printerCardSize', '2');
+      const h2c = { ...mockPrinters[0], model: 'H2C', nozzle_count: 2 };
+      const dualWithPrintTime = {
+        ...h2cStatus,
+        temperatures: { ...mockPrinterStatus.temperatures, nozzle_2: 25 },
+        nozzle_rack: h2cStatus.nozzle_rack.map(n =>
+          n.id === 0 ? { ...n, print_time_s: 3660 } : n.id === 1 ? { ...n, print_time_s: 7320 } : n,
+        ),
+      };
+      server.use(
+        http.get('/api/v1/printers/', () => HttpResponse.json([h2c])),
+        http.get('/api/v1/printers/:id/status', () => HttpResponse.json(dualWithPrintTime)),
+      );
+
+      render(<PrintersPage />);
+      const left = await screen.findByText('L 0.4');
+      await userEvent.setup().hover(left);
+
+      expect(await screen.findByText('2h 2m')).toBeInTheDocument(); // left hotend (id 1)
+      expect(screen.getByText('1h 1m')).toBeInTheDocument(); // right hotend (id 0)
+      expect(screen.getAllByText('Print time')).toHaveLength(2);
+    });
+
+    it('leaves the print time row out when the firmware does not report it (#1908)', async () => {
+      server.use(http.get('/api/v1/printers/:id/status', () => HttpResponse.json(h2cStatus)));
+
+      render(<PrintersPage />);
+      await hoverRackDiameter('0.6');
+
+      expect(await screen.findByText('Wear')).toBeInTheDocument();
+      expect(screen.queryByText('Print time')).not.toBeInTheDocument();
     });
 
     it('keeps empty slot anchored to physical position when its nozzle is mounted (#943)', async () => {

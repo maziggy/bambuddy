@@ -11,6 +11,10 @@
 //      key-count parity gate" anti-pattern that accumulated 700+ shipped
 //      strings of debt before the gate was tightened. Add an explicit entry
 //      ONLY when the string is a real word/term in that target locale.
+//   5. Every literal dotted key passed to t() in frontend/src (tests
+//      excluded) exists in en.ts (#3631).
+//   6. No hardcoded English UI text in .tsx files: JSX text, shown props and
+//      showToast() messages go through t() (#3638).
 // Malformed input (missing `export default`, parse errors, non-string leaves,
 // unsupported property kinds) fails loudly instead of silently passing the gate.
 // Exits 1 with a diagnostic report on any failure, else exits 0.
@@ -125,7 +129,7 @@ function isAlwaysAllowedIdentical(value) {
   if (/^https?:\/\//.test(value)) return true;          // URL
   if (/^ON,\s+true,\s+1$/.test(value)) return true;     // literal example "ON, true, 1"
   // Brand / technical names that ship verbatim everywhere.
-  if (/^(Bambuddy|BamBuddy|Obico|OctoEverywhere|SpoolBuddy|Bambu Lab|Bambu Studio|Bambu Studio 2\.6\+|Bambu Studio sidecar URL|OrcaSlicer|OrcaSlicer sidecar URL|MakerWorld|Manyfold|Spoolman|\(Spoolman\)|Spoolman URL|Tailscale|GitHub|GitLab|Gitea|Forgejo|Discord|MQTT|FTP|HTTPS?|JSON|YAML|RTSP|TLS|SSL|CSRF|OIDC|SSO|SSO \/ OIDC|LDAP|TOTP|2FA|MFA|API|AMS|CRC|SHA256|SHA-256|kWh|MB|GB|KB|RGBA?|HSL|RGB|UTC|ISO|UI|HTTP|HTTP Method|H2D|H2D Pro|X1C|X1E|P1S|P1P|A1|A1 Mini|H2C|N3F|N3S|PETG|PLA|ABS|PA|TPU|PEI|PA-CF|PVA|HIPS|ASA|PC|PETG-HF|G\.code|G-code|gcode|cm³|°C|°F|GCODE|SOURCE|ntfy|Notify!|Pushover|Bark|Gotify|Telegram|Webhook|Webhook URL|Home Assistant|Home Assistant URL|CallMeBot\/WhatsApp|Bambuddy URL|Cool Plate|Cool Plate SuperTack|Engineering Plate|High Temp Plate|Smooth PEI Plate|Smooth PEI Plate \/ High Temp Plate|Textured PEI Plate|Ext-L|Ext-R|ISO \(YYYY-MM-DD\))$/.test(value)) return true;
+  if (/^(Bambuddy|BamBuddy|Obico|OctoEverywhere|SpoolBuddy|Bambu Lab|Bambu Studio|Bambu Studio 2\.6\+|Bambu Studio sidecar URL|OrcaSlicer|OrcaSlicer sidecar URL|MakerWorld|Manyfold|Spoolman|\(Spoolman\)|Spoolman URL|Tailscale|Python|Ethernet|GitHub|GitLab|Gitea|Forgejo|Discord|MQTT|FTP|HTTPS?|JSON|YAML|RTSP|TLS|SSL|CSRF|OIDC|SSO|SSO \/ OIDC|LDAP|TOTP|2FA|MFA|API|AMS|CRC|SHA256|SHA-256|kWh|MB|GB|KB|RGBA?|HSL|RGB|UTC|ISO|UI|HTTP|HTTP Method|H2D|H2D Pro|X1C|X1E|P1S|P1P|A1|A1 Mini|H2C|N3F|N3S|PETG|PLA|ABS|PA|TPU|PEI|PA-CF|PVA|HIPS|ASA|PC|PETG-HF|G\.code|G-code|gcode|cm³|°C|°F|GCODE|SOURCE|ntfy|Notify!|Pushover|Bark|Gotify|Telegram|Webhook|Webhook URL|Home Assistant|Home Assistant URL|CallMeBot\/WhatsApp|Bambuddy URL|Cool Plate|Cool Plate SuperTack|Engineering Plate|High Temp Plate|Smooth PEI Plate|Smooth PEI Plate \/ High Temp Plate|Textured PEI Plate|Ext-L|Ext-R|ISO \(YYYY-MM-DD\))$/.test(value)) return true;
   return false;
 }
 
@@ -141,6 +145,8 @@ function isAlwaysAllowedIdentical(value) {
 // German loanwords / cognates from English are extensive. Most short technical
 // UI labels are identical in DE. List below curates the legitimate ones.
 const DE_COGNATES = [
+  'Tag: {{tag}}', 'Original:', 'URL *', 'Name (A-Z)', 'Name (Z-A)',  // #3638: same in this language
+  'Hostname', 'Backend', 'K-Profile', 'Kernel',  // #3631: same word in this language
   'A4 (210 × 297 mm)',  // #3296 page size name in the custom label sheet form — ISO name and metric size, written the same
   'Apps',  // notifications badge for messages from connected apps — same word
   '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the DE term too
@@ -182,6 +188,8 @@ const DE_COGNATES = [
 
 // French cognates — many UI labels overlap with English exactly.
 const FR_COGNATES = [
+  '{{count}} archive', '{{count}} archives', '(inactive)', 'URL *', '{{count}} tag', '{{count}} tags', 'Photo {{number}}', 'Timelapse', 'Images ({{count}})',  // #3638: same in this language
+  'Application', 'Backend',  // #3631: same word in this language
   'A4 (210 × 297 mm)',  // #3296 page size name in the custom label sheet form — ISO name and metric size, written the same
   'Apps',  // notifications badge for messages from connected apps — same word
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
@@ -235,6 +243,9 @@ const FR_COGNATES = [
 
 // Italian cognates.
 const IT_COGNATES = [
+  'WiFi: {{signal}} dBm - {{strength}}', 'Tag: {{tag}}', '{{speed}}x (output: {{duration}})', 'Output:', 'URL *', '{{count}} tag',  // #3638: same in this language
+  'Database', 'Backend', 'Kernel',  // #3631: same word in this language
+  'Account',  // #3602 account menu — the Italian word for a user account
   'A4 (210 × 297 mm)',  // #3296 page size name in the custom label sheet form — ISO name and metric size, written the same
   '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the IT term too
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
@@ -272,6 +283,7 @@ const IT_COGNATES = [
 // Japanese: very few cognates because of script difference. Almost
 // everything needs translation. Only true loanwords / proper nouns stay.
 const JA_COGNATES = [
+  'WiFi: {{signal}} dBm - {{strength}}', 'URL *',  // #3638: same in this language
   'OK', 'Bambu', 'Code',
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   'EU (DD/MM/YYYY)', 'US (MM/DD/YYYY)', 'ON, true, 1',
@@ -285,6 +297,8 @@ const JA_COGNATES = [
 
 // Portuguese (BR) cognates.
 const PT_BR_COGNATES = [
+  'Original:', 'URL *', '{{count}} tag', '{{count}} tags',  // #3638: same in this language
+  'total: {{cost}}', 'Backend', 'Kernel',  // #3631: same word in this language
   'A4 (210 × 297 mm)',  // #3296 page size name in the custom label sheet form — ISO name and metric size, written the same
   'Apps',  // notifications badge for messages from connected apps — same word
   '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the PT-BR term too
@@ -319,6 +333,7 @@ const PT_BR_COGNATES = [
 
 // Chinese (Simplified): very few cognates beyond brand names.
 const ZH_CN_COGNATES = [
+  'URL *',  // #3638: same in this language
   'OK', 'Bambu',
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   '({{count}}/8)', 'Custom Headers (JSON)',
@@ -330,6 +345,7 @@ const ZH_CN_COGNATES = [
 ];
 
 const ZH_TW_COGNATES = [
+  'URL *',  // #3638: same in this language
   'OK', 'Bambu',
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   '({{count}}/8)', 'Custom Headers (JSON)',
@@ -343,6 +359,7 @@ const ZH_TW_COGNATES = [
 // Korean: script difference means almost nothing is identical.
 // Allow loanwords/acronyms, format strings, and proper nouns that stay verbatim.
 const KO_COGNATES = [
+  'WiFi: {{signal}} dBm - {{strength}}', 'URL *',  // #3638: same in this language
   'A4 (210 × 297 mm)',  // #3296 page size name in the custom label sheet form — ISO name and metric size, written the same
   'OK', 'Bambu', 'N/A',
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
@@ -363,6 +380,8 @@ const KO_COGNATES = [
 
 // Spanish cognates — words/phrases that are genuinely identical in Spanish.
 const ES_COGNATES = [
+  'WiFi: {{signal}} dBm - {{strength}}', '{{count}} error', 'Original:', 'URL *', 'ERROR: {{error}}',  // #3638: same in this language
+  'Personal', 'total: {{cost}}', 'Backend', 'Kernel',  // #3631: same word in this language
   'A4 (210 × 297 mm)',  // #3296 page size name in the custom label sheet form — ISO name and metric size, written the same
   'Apps',  // notifications badge for messages from connected apps — same word
   '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the ES term too
@@ -389,6 +408,8 @@ const ES_COGNATES = [
 // Swedish cognates — technical UI labels that Swedish speakers use verbatim
 // from English (loanwords + acronyms + format strings). Curated, not a shortcut.
 const SV_COGNATES = [
+  'Original:', 'URL *', 'Full', 'Cache',  // #3638: same in this language
+  'Max', 'Backend',  // #3631: same word in this language
   'A4 (210 × 297 mm)',  // #3296 page size name in the custom label sheet form — ISO name and metric size, written the same
   'MakerWorld: {{designer}}',
   'email',
@@ -410,6 +431,7 @@ const SV_COGNATES = [
 // Turkish cognates — technical UI labels that Turkish speakers use verbatim
 // from English (loanwords + acronyms + format strings). Curated, not a shortcut.
 const TR_COGNATES = [
+  'URL *', '~{{weight}}g filament',  // #3638: same in this language
   'A4 (210 × 297 mm)',  // #3296 page size name in the custom label sheet form — ISO name and metric size, written the same
   '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the TR term too
   'Filament', 'Firmware', 'Disk', 'Hex', 'Test', 'Port', 'Model', 'Metal',
@@ -427,6 +449,7 @@ const TR_COGNATES = [
 ];
 
 const RU_COGNATES = [
+  'URL *',  // #3638: same in this language
   'MakerWorld: {{designer}}',
   'email',
   '{{printer}}: {{error}}',
@@ -441,6 +464,7 @@ const RU_COGNATES = [
 // Ukrainian keeps only Latin brand names and placeholder/punctuation-only
 // formats verbatim; every prose string in uk.ts is translated.
 const UK_COGNATES = [
+  'URL *',  // #3638: same in this language
   'MakerWorld: {{designer}}',                         // brand + placeholder
   '{{printer}}: {{error}}',                           // pure placeholders
   'Bambu Cloud', 'Orca Cloud',                        // brand names — same in every locale
@@ -458,6 +482,9 @@ const UK_COGNATES = [
 // are used untranslated by Dutch slicer users. Each entry below was
 // checked individually against the Dutch translation in #2891.
 const NL_COGNATES = [
+  '{{day}} {{hour}}: {{count}} print', '{{day}} {{hour}}: {{count}} prints', 'AMS {{amsId}} T{{trayId}} · Printer #{{printerId}}', 'Tag: {{tag}}', 'Printer {{id}}', 'URL *', '{{count}} tag', '{{count}} tags', 'Cache', '~{{weight}}g filament', '{{date}}: {{count}} print', '{{date}}: {{count}} prints',  // #3638: same in this language
+  'Database', 'Backend', 'In AMS', 'Kernel',  // #3631: same word in this language
+  'Account',  // #3602 account menu — the Dutch word for a user account
   '{{page}} · {{width}} × {{height}} mm · {{capacity}} labels ({{cols}} × {{rows}})',  // #3296 custom sheet summary — "labels" is the Dutch word too
   'A4 (210 × 297 mm)',  // #3296 page size name in the custom label sheet form — ISO name and metric size, written the same
   'Project:',  // archive page label
@@ -499,6 +526,8 @@ const NL_COGNATES = [
 // Polish cognates — brand names, acronyms, format strings and the technical
 // words Polish UIs use verbatim. Checked against pl.ts entry by entry.
 const PL_COGNATES = [
+  '{{count}} tag',  // #3638: same in this language
+  'Backend',  // #3631: same word in this language
   'MakerWorld: {{designer}}',
   '{{printer}}: {{error}}',
   'Bambu Cloud', 'Orca Cloud',
@@ -628,6 +657,113 @@ export function compareLocales(locales) {
   return { failed: reports.length > 0, reports };
 }
 
+// Check 5 (#3631): every literal key the code passes to t() must exist in
+// en.ts. The checks above only compare the locale files with each other, so a
+// key that no locale has slipped through: with an inline fallback,
+// t('a.b', 'Text'), every language showed the English text; without one, the
+// UI showed the raw key. Only literal dotted keys are checked; keys built at
+// runtime (template literals, variables) cannot be resolved statically.
+const codeKeyRe = /\bt\(\s*(['"])([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+)\1/g;
+
+// Input:  sources = Array<{ file, text }>, enKeys = Set<leafKey>
+// Output: sorted "file: key" strings for keys en.ts does not have.
+export function findMissingCodeKeys(sources, enKeys) {
+  const prefixes = new Set();
+  for (const key of enKeys) {
+    const parts = key.split('.');
+    for (let i = 1; i < parts.length; i++) prefixes.add(parts.slice(0, i).join('.'));
+  }
+  const exists = (key) =>
+    enKeys.has(key) || // also the base of an old-style key / key_plural pair
+    enKeys.has(`${key}_other`) || // key_one / key_other always come as a pair
+    prefixes.has(key); // t(key, { returnObjects: true }) reads a subtree
+  const missing = new Set();
+  for (const { file, text } of sources) {
+    for (const m of text.matchAll(codeKeyRe)) {
+      if (!exists(m[2])) missing.add(`${file}: ${m[2]}`);
+    }
+  }
+  return [...missing].sort();
+}
+
+// Check 6 (#3638): no hardcoded English in the UI. Flags, in .tsx files, JSX
+// text and the literal value of props whose text is shown (title, placeholder,
+// aria-label, alt, label), plus literal messages passed to showToast(). Text
+// that is the same in every language is not flagged: brand and technical names
+// (isAlwaysAllowedIdentical), strings without a word in them, and values that
+// look technical (paths, URLs, hosts, identifiers, example values). Anything
+// else that must stay verbatim goes into HARDCODED_ALLOWED by exact value.
+const SHOWN_PROPS = new Set(['title', 'placeholder', 'aria-label', 'alt', 'label']);
+const HARDCODED_ALLOWED = new Set([
+  // product, brand and model names
+  'AMS 2 Pro', 'AMS-HT', 'BIQU Panda Breath', 'Google', 'Panda Breath', 'Polymaker', 'Swagger UI',
+  'Tasmota', 'X1 Carbon',
+  // units and formats
+  'dBm', 'dBm)', 'MP3, WAV, M4A, AAC, OGG', '3MF',
+  // example values in placeholders (a Bambu colour name, filament subtypes, a token, OIDC scopes)
+  'Jade White', 'Basic, Matte, Silk...', 'eyJ...', 'eyJ0eXAiOiJKV1QiLC...', 'openid email profile',
+  // ForecastPanel's lead-time formula
+  'max(g:', ', sku:',
+]);
+
+function isTechnicalText(value) {
+  // HTML entities and the punctuation around a unit ("GB)", "kWh ·") carry no words
+  const v = value.replace(/&[a-z]+;/g, ' ').replace(/^[\s\W]+|[\s\W]+$/g, '');
+  if (!/[A-Za-z]{2,}/.test(v)) return true; // numbers, symbols, single letters
+  if (isAlwaysAllowedIdentical(v)) return true;
+  if (/[/_@={}#\\]|https?:|\w\.\w|\d\.\d|^[a-z0-9.-]+$|^-{1,2}[a-z]/.test(v)) return true;
+  return false;
+}
+
+// Input:  sources = Array<{ file, text }> (.tsx files are scanned)
+// Output: sorted "file:line: kind "value"" strings
+export function findHardcodedStrings(sources, allowed = HARDCODED_ALLOWED) {
+  const found = [];
+  for (const { file, text } of sources) {
+    if (!file.endsWith('.tsx')) continue;
+    const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const report = (node, kind, raw) => {
+      const value = raw.replace(/\s+/g, ' ').trim();
+      if (!value || isTechnicalText(value) || allowed.has(value)) return;
+      const line = sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
+      found.push(`${file}:${line}: ${kind} "${value}"`);
+    };
+    const literal = (node) =>
+      node && (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) ? node.text : null;
+    const visit = (node) => {
+      if (ts.isJsxText(node)) {
+        report(node, 'text', node.text);
+      } else if (ts.isJsxAttribute(node) && SHOWN_PROPS.has(node.name.getText(sf)) && node.initializer) {
+        const init = node.initializer;
+        const value = literal(init) ?? (ts.isJsxExpression(init) ? literal(init.expression) : null);
+        if (value !== null) report(node, node.name.getText(sf), value);
+      } else if (ts.isCallExpression(node) && node.expression.getText(sf) === 'showToast') {
+        const arg = node.arguments[0];
+        if (arg && ts.isTemplateExpression(arg)) {
+          // `Failed: ${e}` -> "Failed: …" (the interpolations would read as technical)
+          report(node, 'showToast', arg.head.text + arg.templateSpans.map((s) => `…${s.literal.text}`).join(''));
+        }
+        else if (literal(arg) !== null) report(node, 'showToast', literal(arg));
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sf);
+  }
+  return found.sort();
+}
+
+function collectSources(dir, out = []) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name !== '__tests__' && entry.name !== 'i18n') collectSources(p, out);
+    } else if (/\.(ts|tsx)$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
+      out.push({ file: path.relative(frontendDir, p), text: fs.readFileSync(p, 'utf8') });
+    }
+  }
+  return out;
+}
+
 // en is the reference locale; every other locale discovered in the locales
 // directory is checked identically and a drift in any of them fails CI.
 // Skip file IO / process.exit when imported as a library (e.g. from tests).
@@ -649,6 +785,15 @@ if (isMainModule) {
 
   const MAX_REPORT = 20;
   const { reports } = compareLocales(locales);
+  const sources = collectSources(path.join(frontendDir, 'src'));
+  const missingCodeKeys = findMissingCodeKeys(sources, new Set(locales.en.keys()));
+  if (missingCodeKeys.length) {
+    reports.push({ label: 'keys used in code but missing from en.ts', items: missingCodeKeys });
+  }
+  const hardcoded = findHardcodedStrings(sources);
+  if (hardcoded.length) {
+    reports.push({ label: 'hardcoded UI text, use t() (or HARDCODED_ALLOWED if it is the same in every language)', items: hardcoded });
+  }
 
   if (reports.length) {
     console.error(`\n=== Locale parity failures (en is the reference) ===`);

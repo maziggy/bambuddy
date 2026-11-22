@@ -115,6 +115,27 @@ class TestPublishHandlerAdaptiveSerial:
         assert b'"command": "get_version"' in all_bytes
         assert b'"sn": "01P00AABCDEFGHI"' in all_bytes
 
+    def test_a_virtual_h3c_reports_itself_as_an_h3c(self):
+        """#3442: the version response names the model the slicer expects."""
+        server = SimpleMQTTServer(
+            serial="32X99B391800001",
+            access_code="deadbeef",
+            cert_path=Path("/tmp/unused.crt"),  # nosec B108
+            key_path=Path("/tmp/unused.key"),  # nosec B108
+            model="N10",
+        )
+        server._client_serials["c1"] = server.serial
+        writer = MagicMock()
+        writer.write = MagicMock()
+        writer.drain = AsyncMock()
+
+        topic = "device/32X99B391800001/request"
+        payload = _build_publish_payload(topic, {"info": {"command": "get_version", "sequence_id": "7"}})
+        asyncio.run(server._handle_publish(0x30, payload, writer, "c1"))
+
+        all_bytes = b"".join(call.args[0] for call in writer.write.call_args_list)
+        assert b'"product_name": "H3C"' in all_bytes
+
     def test_handle_publish_ignores_non_request_topics(self):
         server = _make_server()
         server._client_serials["c1"] = server.serial

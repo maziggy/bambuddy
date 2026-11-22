@@ -137,6 +137,42 @@ describe('PrintersPage - H3C AMS 3H', () => {
     });
   });
 
+  it('unloads every loaded slot in one go after a confirm (#3531)', async () => {
+    const user = userEvent.setup();
+    let calls = 0;
+    server.use(
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json(h3cStatus)),
+      http.post('/api/v1/printers/:id/ams/unload-all', () => {
+        calls += 1;
+        return HttpResponse.json({ success: true, message: 'Unloading 8 AMS 3H slots', count: 8 });
+      }),
+    );
+
+    render(<PrintersPage />);
+
+    const button = await screen.findByRole('button', { name: 'Unload all' });
+    await user.click(button);
+    expect(screen.getByText('Unload all slots?')).toBeInTheDocument();
+    expect(calls).toBe(0);
+    await user.click(screen.getAllByRole('button', { name: 'Unload all' }).at(-1)!);
+
+    await waitFor(() => {
+      expect(calls).toBe(1);
+    });
+  });
+
+  it('offers no Unload all while no slot has its filament in its hotend', async () => {
+    const atInlet = { ...ams3h, tray: ams3h.tray.map((slot) => ({ ...slot, state: 26 })) };
+    server.use(http.get('/api/v1/printers/:id/status', () => HttpResponse.json({ ...h3cStatus, ams: [atInlet] })));
+
+    render(<PrintersPage />);
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('filament-slot')).toHaveLength(8);
+    });
+    expect(screen.queryByRole('button', { name: 'Unload all' })).not.toBeInTheDocument();
+  });
+
   it('shows a loaded external input as Ext-n without load or unload', async () => {
     const inputs = emptyInputs.map((vt) => (vt.id === 250 ? { ...tray(250, 'FF0000FF'), tray_type: 'PETG' } : vt));
     server.use(http.get('/api/v1/printers/:id/status', () => HttpResponse.json({ ...h3cStatus, vt_tray: inputs })));
@@ -217,6 +253,41 @@ describe('PrintersPage - H3C mounted hotend temperature (#3442)', () => {
     await waitFor(() => {
       expect(screen.getByTestId('nozzle-temp-label')).toHaveTextContent('Nozzle 5');
     });
+  });
+
+  it('says Mounted for the hotend on the toolhead and Docked in the rack, whatever its stat', async () => {
+    // device.nozzle.info of a real H3C frame after a swap to PrintTool 2: the
+    // toolhead's hotend is id 0 at addr_id 1 with stat 176; the hotend without
+    // RFID in rack position 8 (id 23) reports stat 1.
+    const entry = (id: number, addr_id: number, stat: number, type = 'HS01', color = 'CA2525FF') => ({
+      id, addr_id, nozzle_type: type, nozzle_diameter: '0.4', wear: 0, stat, max_temp: 350,
+      serial_number: '', filament_color: color, filament_id: type === 'HS01' ? 'GFL99' : '', filament_type: '',
+    });
+    const realRack = [
+      entry(0, 1, 176, 'HS01', 'FFFFFFFF'), entry(16, 0, 160), entry(18, 2, 160), entry(19, 3, 160),
+      entry(20, 4, 160), entry(21, 5, 160), entry(22, 6, 160), entry(23, 7, 1, 'HT01', '00000000'), entry(24, 8, 160),
+    ];
+    server.use(
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json({ ...h3cStatus, nozzle_rack: realRack })),
+    );
+    const user = userEvent.setup();
+
+    const { container } = render(<PrintersPage />);
+
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-rack-diameter]')).toHaveLength(9);
+    });
+    const chips = container.querySelectorAll('[data-rack-diameter]');
+
+    await user.hover(chips[7]);
+    expect(await screen.findByText('Docked')).toBeInTheDocument();
+    expect(screen.queryByText('Mounted')).not.toBeInTheDocument();
+    await user.unhover(chips[7]);
+    await waitFor(() => expect(screen.queryByText('Docked')).not.toBeInTheDocument());
+
+    await user.hover(chips[1]);
+    expect(await screen.findByText('Mounted')).toBeInTheDocument();
+    expect(screen.queryByText('Docked')).not.toBeInTheDocument();
   });
 
   it('keeps Nozzle on a printer without a rack', async () => {

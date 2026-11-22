@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.tasks import spawn_background_task
 from backend.app.services.homeassistant import homeassistant_service
 from backend.app.services.mqtt_relay import mqtt_relay
-from backend.app.services.plug_energy import get_plug_energy
+from backend.app.services.plug_energy import get_plug_energy, mqtt_has_lifetime_counter
 from backend.app.services.printer_manager import printer_manager
 from backend.app.services.rest_smart_plug import rest_smart_plug_service
 from backend.app.services.tasmota import tasmota_service
@@ -61,6 +61,28 @@ async def publish_plug_state(
         logger.debug("MQTT relay: failed to publish the state of plug %s: %s", plug_id, e)
 
 
+def _cooled_down(temps: dict, temp_source: str, nozzle_threshold: int, bed_threshold: int) -> tuple[bool, str]:
+    """Whether a temperature-based auto-off may switch off, and what was read.
+
+    ``temp_source`` picks what must be below its threshold (#3464): the
+    hottest nozzle (the H2 series has two) or the bed. A reading the
+    printer hasn't reported counts as hot, so it keeps the plug on. Any other
+    value waits for the nozzle, as temperature mode did before #3464.
+    """
+    if temp_source == "bed":
+        bed_temp = temps.get("bed", 999)
+        return bed_temp < bed_threshold, f"bed={bed_temp}°C (threshold {bed_threshold}°C)"
+
+    nozzle_temp = temps.get("nozzle", 999)
+    nozzle_2_temp = temps.get("nozzle_2")
+    if nozzle_2_temp is not None:
+        reading = f"nozzle1={nozzle_temp}°C, nozzle2={nozzle_2_temp}°C"
+        nozzle_temp = max(nozzle_temp, nozzle_2_temp)
+    else:
+        reading = f"nozzle={nozzle_temp}°C"
+    return nozzle_temp < nozzle_threshold, f"{reading} (threshold {nozzle_threshold}°C)"
+
+
 def _is_script_plug(plug) -> bool:
     """A Home Assistant script entity: it can be run, not switched."""
     return (
@@ -68,6 +90,23 @@ def _is_script_plug(plug) -> bool:
         and bool(getattr(plug, "ha_entity_id", None))
         and plug.ha_entity_id.startswith("script.")
     )
+
+
+def is_monitor_only(plug) -> bool:
+    """An MQTT plug: Bambuddy subscribes to it and never publishes, so it can
+    be neither turned on nor off (#3583). Its auto on / auto off default to on
+    and the UI hides both, so every switching path must skip it itself."""
+    return getattr(plug, "plug_type", None) == "mqtt"
+
+
+def can_turn_off(plug) -> bool:
+    """Whether an automatic turn-off can switch this plug off (#3583).
+
+    Not a Home Assistant script, which can only be run, and not a monitor-only
+    MQTT plug. Turning on is narrower on purpose: a script linked to a printer
+    is run by the auto-on paths, so they skip only :func:`is_monitor_only`.
+    """
+    return not _is_script_plug(plug) and not is_monitor_only(plug)
 
 
 async def run_linked_scripts(printer_id: int, plug_state: str, db: AsyncSession) -> None:
@@ -329,14 +368,18 @@ class SmartPlugManager:
             price = await current_price(db, remember=True)
             captured = 0
             for plug in plugs:
-                # MQTT plugs only publish a "today" counter that resets at midnight —
-                # they can never feed cumulative snapshots, so skip them outright to
-                # avoid a noisy tasmota-service fallback attempt on an IP-less plug.
-                if plug.plug_type == "mqtt":
+                # An MQTT plug feeds the snapshots only with its lifetime counter
+                # (#3582); its one legacy energy value may be a daily counter that
+                # resets at midnight. Read through get_plug_energy, not the
+                # service lookup, which would fall back to Tasmota on an IP-less plug.
+                if plug.plug_type == "mqtt" and not mqtt_has_lifetime_counter(plug):
                     continue
                 try:
-                    service = await self.get_service_for_plug(plug, db)
-                    energy = await service.get_energy(plug)
+                    if plug.plug_type == "mqtt":
+                        energy = await get_plug_energy(plug, db)
+                    else:
+                        service = await self.get_service_for_plug(plug, db)
+                        energy = await service.get_energy(plug)
                 except Exception as e:
                     logger.debug("Snapshot: failed to read energy from plug %s: %s", plug.id, e)
                     continue
@@ -375,6 +418,9 @@ class SmartPlugManager:
             plugs = result.scalars().all()
 
             for plug in plugs:
+                # A schedule cannot switch a monitor-only MQTT plug (#3583).
+                if is_monitor_only(plug):
+                    continue
                 service = await self.get_service_for_plug(plug, db)
 
                 # Check if we should turn on
@@ -441,6 +487,10 @@ class SmartPlugManager:
                 logger.debug("Smart plug '%s' auto_on is disabled", plug.name)
                 continue
 
+            if is_monitor_only(plug):
+                logger.debug("Smart plug '%s' is monitor-only, skipping auto-on", plug.name)
+                continue
+
             # Turn on the plug
             logger.info("Print started on printer %s, turning on plug '%s'", printer_id, plug.name)
             try:
@@ -488,9 +538,10 @@ class SmartPlugManager:
                 logger.debug("Smart plug '%s' auto_off is disabled", plug.name)
                 continue
 
-            # Skip auto-off for HA script entities (scripts can only be triggered, not turned off)
-            if plug.plug_type == "homeassistant" and plug.ha_entity_id and plug.ha_entity_id.startswith("script."):
-                logger.debug("Smart plug '%s' is a HA script entity, skipping auto-off", plug.name)
+            # Skip auto-off for HA script entities (scripts can only be triggered,
+            # not turned off) and monitor-only MQTT plugs (#3583).
+            if not can_turn_off(plug):
+                logger.debug("Smart plug '%s' cannot be switched off, skipping auto-off", plug.name)
                 continue
 
             logger.info(
@@ -506,7 +557,8 @@ class SmartPlugManager:
 
         Honours the per-plug ``off_delay_mode`` — ``time`` waits
         ``off_delay_minutes``; ``temperature`` waits until the nozzle drops
-        below ``off_temp_threshold`` (#1890 — the queue/scheduler auto-off
+        below ``off_temp_threshold``, or the bed below ``off_bed_temp_threshold``
+        (``off_temp_source``, #3464) (#1890 — the queue/scheduler auto-off
         paths used to hardcode 50°C / 600s and ignore these settings). Both
         branches register a cancellable task in ``_pending_off``, so a re-print
         cancels the pending off via :meth:`on_print_start`.
@@ -535,8 +587,8 @@ class SmartPlugManager:
             if not plug.enabled:
                 logger.debug("Smart plug '%s' is disabled, skipping queue auto-off", plug.name)
                 continue
-            if plug.plug_type == "homeassistant" and plug.ha_entity_id and plug.ha_entity_id.startswith("script."):
-                logger.debug("Smart plug '%s' is a HA script entity, skipping queue auto-off", plug.name)
+            if not can_turn_off(plug):
+                logger.debug("Smart plug '%s' cannot be switched off, skipping queue auto-off", plug.name)
                 continue
             logger.info(
                 "Queue job finished on printer %s, scheduling turn-off for plug '%s'",
@@ -570,10 +622,10 @@ class SmartPlugManager:
                 logger.debug("Smart plug '%s' auto_off_after_drying is disabled, skipping", plug.name)
                 continue
 
-            # HA script entities can only be triggered, not turned off — same
-            # guard the print-finish path uses.
-            if plug.plug_type == "homeassistant" and plug.ha_entity_id and plug.ha_entity_id.startswith("script."):
-                logger.debug("Smart plug '%s' is a HA script entity, skipping drying auto-off", plug.name)
+            # HA script entities can only be triggered, not turned off, and MQTT
+            # plugs not switched at all — same guard the print-finish path uses.
+            if not can_turn_off(plug):
+                logger.debug("Smart plug '%s' cannot be switched off, skipping drying auto-off", plug.name)
                 continue
 
             logger.info(
@@ -694,7 +746,14 @@ class SmartPlugManager:
         # Cancel any existing task for this plug
         self._cancel_pending_off(plug.id)
 
-        logger.info("Scheduling temperature-based turn-off for plug '%s' (threshold: %s°C)", plug.name, temp_threshold)
+        logger.info(
+            "Scheduling temperature-based turn-off for plug '%s' (waits for: %s, nozzle threshold: %s°C, "
+            "bed threshold: %s°C)",
+            plug.name,
+            plug.off_temp_source,
+            temp_threshold,
+            plug.off_bed_temp_threshold,
+        )
 
         # Mark as pending in database (survives restarts)
         spawn_background_task(self._mark_auto_off_pending(plug.id, True), name=f"plug-auto-off-pending-{plug.id}")
@@ -709,6 +768,8 @@ class SmartPlugManager:
                 plug.password,
                 printer_id,
                 temp_threshold,
+                temp_source=plug.off_temp_source,
+                bed_temp_threshold=plug.off_bed_temp_threshold,
                 controls_printer_power=plug.controls_printer_power,
                 plug_name=plug.name,
                 rest_off_url=plug.rest_off_url if plug.plug_type == "rest" else None,
@@ -730,6 +791,8 @@ class SmartPlugManager:
         printer_id: int,
         temp_threshold: int,
         *,
+        temp_source: str = "nozzle",
+        bed_temp_threshold: int = 35,
         controls_printer_power: bool = True,
         plug_name: str = "",
         rest_off_url: str | None = None,
@@ -739,7 +802,9 @@ class SmartPlugManager:
     ):
         """Poll temperature until below threshold, then turn off.
 
-        For dual-extruder printers (H2 series), checks both nozzles.
+        ``temp_source`` is what has to cool (#3464): the nozzle (both nozzles
+        on dual-extruder H2 printers) below ``temp_threshold``, or the bed
+        below ``bed_temp_threshold``.
         """
         try:
             check_interval = 10  # seconds
@@ -750,26 +815,12 @@ class SmartPlugManager:
                 status = printer_manager.get_status(printer_id)
 
                 if status:
-                    temps = status.temperatures or {}
-                    nozzle_temp = temps.get("nozzle", 999)
-                    # Check second nozzle for dual-extruder printers (H2 series)
-                    nozzle_2_temp = temps.get("nozzle_2")
+                    cooled, reading = _cooled_down(
+                        status.temperatures or {}, temp_source, temp_threshold, bed_temp_threshold
+                    )
+                    logger.info("Temp check plug %s: %s", plug_id, reading)
 
-                    # Get the maximum temperature across all nozzles
-                    max_nozzle_temp = nozzle_temp
-                    if nozzle_2_temp is not None:
-                        max_nozzle_temp = max(nozzle_temp, nozzle_2_temp)
-                        logger.info(
-                            f"Temp check plug {plug_id}: nozzle1={nozzle_temp}°C, "
-                            f"nozzle2={nozzle_2_temp}°C, max={max_nozzle_temp}°C, "
-                            f"threshold={temp_threshold}°C"
-                        )
-                    else:
-                        logger.info(
-                            "Temp check plug %s: nozzle=%s°C, threshold=%s°C", plug_id, nozzle_temp, temp_threshold
-                        )
-
-                    if max_nozzle_temp < temp_threshold:
+                    if cooled:
                         # #1890: the nozzle can dip below the threshold between
                         # a finished print and a fresh one starting (e.g. a
                         # touchscreen reprint during the PREPARE/heating phase).
@@ -786,7 +837,7 @@ class SmartPlugManager:
                             elapsed += check_interval
                             continue
 
-                        # All nozzles are below threshold, turn off
+                        # Cool enough, turn off
                         class PlugInfo:
                             def __init__(self):
                                 self.plug_type = plug_type
@@ -805,10 +856,7 @@ class SmartPlugManager:
                         plug_info = PlugInfo()
                         service = await self.get_service_for_plug(plug_info)
                         success = await service.turn_off(plug_info)
-                        logger.info(
-                            f"Turned off plug {plug_id} after nozzle temp dropped to "
-                            f"{max_nozzle_temp}°C (threshold: {temp_threshold}°C)"
-                        )
+                        logger.info("Turned off plug %s after cooling down: %s", plug_id, reading)
 
                         # Mark auto_off_executed in database and update printer status
                         if success:
@@ -918,6 +966,14 @@ class SmartPlugManager:
                 pending_plugs = result.scalars().all()
 
                 for plug in pending_plugs:
+                    # A pending off left on an MQTT plug by an earlier version
+                    # can never run (#3583): clear it.
+                    if is_monitor_only(plug):
+                        plug.auto_off_pending = False
+                        plug.auto_off_pending_since = None
+                        await db.commit()
+                        continue
+
                     # Check how long it's been pending (timeout after 2 hours)
                     if plug.auto_off_pending_since:
                         pending_since = to_naive_utc(plug.auto_off_pending_since)

@@ -24,6 +24,8 @@ import { parseUTCDate } from '../utils/date';
 import { Button } from './Button';
 import { BugReportBubble } from './BugReportBubble';
 import { AnnouncementsPanel } from './AnnouncementsPanel';
+import { AccountMenu } from './AccountMenu';
+import { LanguageMenu } from './LanguageMenu';
 import { AnnouncementBanner } from './AnnouncementBanner';
 import { useAnnouncements } from '../hooks/useAnnouncements';
 import { plateCheckFailureText } from '../utils/plateCheck';
@@ -622,7 +624,7 @@ export function Layout() {
           <button
             onClick={() => setMobileDrawerOpen(true)}
             className="p-2 -ml-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors"
-            aria-label="Open menu"
+            aria-label={t('layout.openMenu')}
           >
             <Menu className="w-6 h-6 text-white" />
           </button>
@@ -833,7 +835,7 @@ export function Layout() {
             <div className="flex flex-col gap-2">
               {/* Top row: icons. 32px each with no gap so seven fit the 239px
                   of an expanded sidebar -- announcements, System, GitHub,
-                  shortcuts, theme, password, logout -- without wrapping. */}
+                  shortcuts, theme, account, logout -- without wrapping. */}
               <div className="flex items-center justify-center flex-wrap [&>a]:p-1.5 [&>button]:p-1.5 [&>span]:p-1.5 [&>div>button]:p-1.5">
                 {hasSwitchbarPlugs && (
                   <div className="relative">
@@ -885,7 +887,7 @@ export function Layout() {
                 ) : (
                   <span
                     className="p-2 rounded-lg text-bambu-gray/50 cursor-not-allowed"
-                    title="You do not have permission to view system information"
+                    title={t('layout.noPermissionSystemInfo')}
                   >
                     <Info className="w-5 h-5" />
                   </span>
@@ -914,15 +916,11 @@ export function Layout() {
                 >
                   <ThemeIcon className="w-5 h-5" />
                 </button>
+                {/* Auth off: no account menu, so the language gets its own button (#3623). */}
+                {!authEnabled && <LanguageMenu />}
                 {authEnabled && user && (
                   <>
-                    <button
-                      onClick={() => setShowChangePasswordModal(true)}
-                      className="p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"
-                      title={t('changePassword.title')}
-                    >
-                      <Key className="w-5 h-5" />
-                    </button>
+                    <AccountMenu username={user.username} onChangePassword={() => setShowChangePasswordModal(true)} />
                     <button
                       onClick={logout}
                       className="p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"
@@ -1007,7 +1005,7 @@ export function Layout() {
               ) : (
                 <span
                   className="p-2 rounded-lg text-bambu-gray/50 cursor-not-allowed"
-                  title="You do not have permission to view system information"
+                  title={t('layout.noPermissionSystemInfo')}
                 >
                   <Info className="w-5 h-5" />
                 </span>
@@ -1036,15 +1034,11 @@ export function Layout() {
               >
                 <ThemeIcon className="w-5 h-5" />
               </button>
+              {/* Auth off: no account menu, so the language gets its own button (#3623). */}
+              {!authEnabled && <LanguageMenu />}
               {authEnabled && user && (
                 <>
-                  <button
-                    onClick={() => setShowChangePasswordModal(true)}
-                    className="p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"
-                    title={t('changePassword.title')}
-                  >
-                    <Key className="w-5 h-5" />
-                  </button>
+                  <AccountMenu username={user.username} onChangePassword={() => setShowChangePasswordModal(true)} />
                   <button
                     onClick={logout}
                     className="p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"

@@ -272,7 +272,7 @@ export function UnknownTagCard({ tagUid, scaleWeight, coreWeight, tagData, onLin
         <div className="text-sm text-zinc-400">
           <span className="font-mono font-semibold">{grossWeight}g</span> {t('spoolbuddy.dashboard.onScale', 'on scale')}
           {estimatedRemaining !== null && estimatedRemaining > 0 && (
-            <span className="text-zinc-500"> &bull; ~{estimatedRemaining}g filament</span>
+            <span className="text-zinc-500"> &bull; {t('spoolbuddy.dashboard.estimatedFilament', { weight: estimatedRemaining })}</span>
           )}
         </div>
       )}

@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
@@ -181,6 +182,11 @@ class PrinterUpdate(IgnoresNullForRequiredColumns):
     print_hours_offset: float | None = None
     # Wear cost per printing hour (#694); null or 0 turns it off.
     wear_cost_per_hour: float | None = Field(default=None, ge=0, le=100000)
+    # Place in the pick order of "Any model" jobs when the order setting is "priority"
+    # (#2915); lowest first, null last.
+    dispatch_priority: int | None = Field(default=None, ge=0, le=100000)
+    # Overrides the app setting require_plate_clear (#2860); null follows it.
+    require_plate_clear: bool | None = None
     external_camera_url: str | None = None
     external_camera_type: str | None = None
     external_camera_enabled: bool | None = None
@@ -204,6 +210,8 @@ class PrinterResponse(PrinterBase):
     supports_nozzle_flow_type: bool = True
     print_hours_offset: float = 0.0
     wear_cost_per_hour: float | None = None  # #694
+    dispatch_priority: int | None = None  # #2915
+    require_plate_clear: bool | None = None  # #2860, null follows the app setting
     external_camera_url: str | None = None
     external_camera_type: str | None = None
     external_camera_enabled: bool = False
@@ -350,6 +358,7 @@ class NozzleRackSlot(BaseModel):
     nozzle_type: str = ""
     nozzle_diameter: str = ""
     wear: int | None = None
+    print_time_s: int | None = None  # H2C: seconds this nozzle has printed, from "p_t" (#1908)
     stat: int | None = None  # Nozzle status (e.g. mounted/docked)
     max_temp: int = 0  # Max temperature rating °C (0 = not set)
     serial_number: str = ""  # Nozzle serial number
@@ -443,6 +452,28 @@ class NextPause(BaseModel):
     layer: int
     # Minutes until the printer gets there; None while it reports no time left.
     minutes: int | None = None
+
+
+class PandaBreathState(BaseModel):
+    """What a Panda Breath reports, as the printer card shows it (#1466)."""
+
+    device_id: str
+    online: bool | None = None
+    chamber_temp: float | None = None
+    target_temp: float | None = None
+    work_on: bool | None = None
+    mode: str | None = None
+    filament_drying_mode: str | None = None
+    drying_running: bool | None = None
+    drying_remaining_min: float | None = None
+
+
+class PandaBreathCommand(BaseModel):
+    """One change for a printer's Panda Breath: exactly one field set."""
+
+    work_on: bool | None = None
+    mode: Literal["auto mode", "power on", "filament drying"] | None = None
+    target_temp: int | None = Field(default=None, ge=0, le=60)
 
 
 class PrinterStatus(BaseModel):
@@ -576,6 +607,8 @@ class PrinterStatus(BaseModel):
     # Set for every active print regardless of plate count; the frontend decides
     # whether to render it based on current_archive_id's is_multi_plate flag.
     current_plate_id: int | None = None
+    # BIQU Panda Breath bound to this printer (#1466), None without one.
+    panda_breath: PandaBreathState | None = None
 
 
 class DiagnosticCheck(BaseModel):

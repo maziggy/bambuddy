@@ -27,6 +27,8 @@ def _plug(**overrides):
         "mqtt_energy_topic": None,
         "mqtt_energy_path": None,
         "mqtt_energy_multiplier": None,
+        "mqtt_energy_total_path": None,
+        "mqtt_energy_total_multiplier": None,
         "mqtt_state_topic": None,
         "mqtt_state_path": None,
         "mqtt_state_on_value": None,

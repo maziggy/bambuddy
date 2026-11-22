@@ -24,11 +24,12 @@ Resolver outcomes:
 
 The resolver is async because the GFS / PFUS / PFCN branches need cloud
 authentication and the local-preset branch reads ``LocalPreset`` from the
-DB. Pass ``current_user=None`` to skip cloud auth (the on_ams_change
-replay path uses this); cloud-prefix presets then fall back to a static
-``normalize_slicer_filament`` parse, which is correct when the slot was
-already configured by an earlier authenticated assign and the printer's
-calibration table preserves the real filament_id.
+DB. ``current_user=None`` reads the shared cloud sign-in, the one used with
+login off. With login on that one is usually empty, so a caller without a
+user of its own (tag auto-assign, the Spoolman link) gets no cloud lookup, and
+cloud-prefix presets fall back to a static ``normalize_slicer_filament``
+parse. API-key assigns and the replay on insert pass the key's owner or the
+assigning user instead (#3519).
 """
 
 from __future__ import annotations
@@ -445,6 +446,15 @@ async def resolve_slicer_filament(
                     await cloud.close()
             elif cloud is not None:
                 await cloud.close()
+            elif not base_sf.startswith("GFS"):
+                # A custom preset has no static form; without a sign-in the slot
+                # falls back to a generic filament, which nothing else reports
+                # (#3519). An official GFS one parses fine without the cloud.
+                logger.warning(
+                    "Slicer-filament resolve: custom preset %r not looked up, no Bambu Cloud sign-in "
+                    "for this caller; the slot may get a generic filament",
+                    sf,
+                )
         except Exception as e:
             logger.warning("Slicer-filament resolve: cloud lookup failed for %r: %s", sf, e)
 
@@ -522,10 +532,9 @@ async def resolve_slicer_filament(
     #      by the slicer as tray_info_idx (the printer's calibration table
     #      indexes by filament_id, and a PFUS isn't one). This normally gets
     #      realigned to a P-prefix local id via the caller's printer_kp
-    #      lookup, but on the replay path in main.py.on_ams_change
-    #      current_user=None skips cloud auth and leaves the raw PFUS in
-    #      tray_info_idx — overwriting the correctly-configured slot from
-    #      the original assign.
+    #      lookup, but a caller with no cloud sign-in (see the module
+    #      docstring) gets no cloud lookup and would leave the raw PFUS in
+    #      tray_info_idx — overwriting a correctly-configured slot.
     #   3. PFCN-prefix cloud shared / partner presets (e.g. Polymaker's
     #      "(Custom)" H2D variants, #1648) — same shape problem as PFUS.
     #   4. Orca Cloud profile UUIDs, when the branch above could not reach the

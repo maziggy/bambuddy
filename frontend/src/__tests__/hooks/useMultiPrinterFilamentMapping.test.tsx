@@ -15,8 +15,8 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { renderHook } from '@testing-library/react';
-import type { PrinterStatus } from '../../api/client';
+import { act, renderHook } from '@testing-library/react';
+import type { FilamentPolicy, PrinterStatus } from '../../api/client';
 
 const statusByPrinter: Record<number, PrinterStatus> = {};
 
@@ -154,5 +154,58 @@ describe('useMultiPrinterFilamentMapping — per-printer mapping (#2799)', () =>
     expect(p2s5.matchStatus).toBe('missing');
     expect(result.current.allPrintersReady).toBe(false);
     expect(result.current.getFinalMapping(10)?.[2]).toBe(-1);
+  });
+});
+
+// #3522: every selected printer is mapped for the signed-in user, so none of
+// them may be handed a tray holding a filament the user's groups block.
+describe('useMultiPrinterFilamentMapping — filament rules (#3522)', () => {
+  const blockMatte: FilamentPolicy[] = [
+    { group: 'friends', mode: 'block', rules: [{ match: 'filament_id', value: 'GFG03' }] },
+  ];
+  // Light blue twice: the blocked spool first, where the match would land.
+  const withBlockedFirst = {
+    ams: [{
+      id: 0,
+      tray: [
+        { id: 0, tray_type: 'PETG', tray_color: '76D9F4FF', tray_info_idx: 'GFG03' },
+        { id: 1, tray_type: 'PETG', tray_color: '76D9F4FF', tray_info_idx: 'GFG99' },
+        { id: 2, tray_type: 'PETG', tray_color: '2850E0FF', tray_info_idx: 'GFG99' },
+      ],
+    }],
+  } as unknown as PrinterStatus;
+
+  const renderFor = (policies: FilamentPolicy[] | null, setConfigs = vi.fn()) => {
+    statusByPrinter[11] = withBlockedFirst;
+    return renderHook(() =>
+      useMultiPrinterFilamentMapping(
+        [11], [{ id: 11, name: 'P2S-6' }] as never, FILAMENT_REQS, {}, {}, setConfigs, false, undefined, null, policies,
+      ),
+    );
+  };
+
+  afterEach(() => {
+    delete statusByPrinter[11];
+  });
+
+  it('flags the blocked tray and maps around it', () => {
+    const p2s6 = renderFor(blockMatte).result.current.printerResults[0];
+    expect(p2s6.loadedFilaments.map((f) => !!f.blocked)).toEqual([true, false, false]);
+    expect(p2s6.autoMapping).toEqual([1, -1, 2]);
+    expect(p2s6.finalMapping).toEqual([1, -1, 2]);
+    expect(p2s6.matchStatus).toBe('full');
+  });
+
+  it('auto-configures around the blocked tray', () => {
+    const setConfigs = vi.fn();
+    const { result } = renderFor(blockMatte, setConfigs);
+
+    act(() => result.current.autoConfigurePrinter(11));
+    const update = setConfigs.mock.calls[0][0] as (prev: object) => Record<number, { manualMappings: object }>;
+    expect(update({})[11].manualMappings).toEqual({ 1: 1, 3: 2 });
+  });
+
+  it('maps onto the first spool when the user is unrestricted', () => {
+    expect(renderFor(null).result.current.printerResults[0].finalMapping).toEqual([0, -1, 2]);
   });
 });

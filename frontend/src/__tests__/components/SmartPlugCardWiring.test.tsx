@@ -30,6 +30,8 @@ function makePlug(overrides: Partial<SmartPlug> = {}): SmartPlug {
     off_delay_mode: 'time',
     off_delay_minutes: 5,
     off_temp_threshold: 70,
+    off_temp_source: 'nozzle',
+    off_bed_temp_threshold: 35,
     username: null,
     password: null,
     power_alert_enabled: false,
@@ -164,5 +166,54 @@ describe('SmartPlugCard wiring', () => {
     await waitFor(() => expect(writes()).toHaveLength(1));
     expect(writes()[0]).toMatchObject({ method: 'PATCH', path: '/api/v1/smart-plugs/42' });
     expect(writes()[0].body).toEqual(expected);
+  });
+});
+
+describe('SmartPlugCard temperature auto-off source (#3464)', () => {
+  async function renderTempMode(overrides: Partial<SmartPlug> = {}) {
+    const user = userEvent.setup();
+    render(
+      <SmartPlugCard
+        plug={makePlug({ auto_off: true, off_delay_mode: 'temperature', ...overrides })}
+        onEdit={() => undefined}
+      />,
+    );
+    await user.click(screen.getByText('Automation Settings'));
+    await screen.findByText('Wait for');
+    return user;
+  }
+
+  it.each([
+    ['nozzle', true, false],
+    ['bed', false, true],
+  ] as const)('"%s" shows the thresholds it waits for', async (source, nozzle, bed) => {
+    await renderTempMode({ off_temp_source: source });
+    expect(screen.queryByText('Nozzle threshold (°C)') !== null).toBe(nozzle);
+    expect(screen.queryByText('Bed threshold (°C)') !== null).toBe(bed);
+  });
+
+  it('an unknown source is shown as nozzle, as the backend treats it', async () => {
+    await renderTempMode({ off_temp_source: 'chamber' as SmartPlug['off_temp_source'] });
+    expect(screen.getByText('Turns off when the nozzle cools below its threshold')).toBeInTheDocument();
+    expect(screen.queryByText('Bed threshold (°C)')).not.toBeInTheDocument();
+  });
+
+  it('picking Bed PATCHes only off_temp_source', async () => {
+    const user = await renderTempMode();
+    await user.click(screen.getByRole('button', { name: 'Bed' }));
+
+    await waitFor(() => expect(writes()).toHaveLength(1));
+    expect(writes()[0]).toMatchObject({ method: 'PATCH', path: '/api/v1/smart-plugs/42' });
+    expect(writes()[0].body).toEqual({ off_temp_source: 'bed' });
+  });
+
+  it('the bed threshold PATCHes off_bed_temp_threshold', async () => {
+    const user = await renderTempMode({ off_temp_source: 'bed' });
+    const input = screen.getByText('Bed threshold (°C)').nextElementSibling as HTMLInputElement;
+    await user.clear(input);
+    await user.type(input, '40');
+
+    await waitFor(() => expect(writes()).toHaveLength(1));
+    expect(writes()[0].body).toEqual({ off_bed_temp_threshold: 40 });
   });
 });

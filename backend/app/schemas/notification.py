@@ -25,6 +25,22 @@ class ProviderType(StrEnum):
     NOTIFY = "notify"
 
 
+# The events that can carry a camera snapshot, i.e. those the sender passes
+# image_data for. A provider can skip the photo on any of them (#2877).
+PhotoEvent = Literal[
+    "print_start",
+    "print_complete",
+    "print_failed",
+    "print_stopped",
+    "print_progress",
+    "first_layer_complete",
+    "printer_error",
+    "ai_failure_detection",
+    "plate_not_empty",
+    "print_confirm_request",
+]
+
+
 class NotificationProviderBase(BaseModel):
     """Base schema for notification providers."""
 
@@ -34,6 +50,10 @@ class NotificationProviderBase(BaseModel):
     config: dict[str, Any] = Field(..., description="Provider-specific configuration")
     attach_photo: bool = Field(
         default=True, description="Attach a camera snapshot to this provider's notifications when one is available"
+    )
+    photo_skip_events: list[PhotoEvent] = Field(
+        default_factory=list,
+        description="Events sent without the camera snapshot although attach_photo is on",
     )
 
     # Event triggers - print lifecycle
@@ -178,6 +198,7 @@ class NotificationProviderUpdate(IgnoresNullForRequiredColumns):
     enabled: bool | None = None
     config: dict[str, Any] | None = None
     attach_photo: bool | None = None
+    photo_skip_events: list[PhotoEvent] | None = None
 
     # Event triggers - print lifecycle
     on_print_start: bool | None = None

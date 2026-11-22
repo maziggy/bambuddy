@@ -5992,6 +5992,21 @@ async def _run_migrations(conn):
             text("UPDATE groups SET restrict_printers = :off WHERE restrict_printers IS NULL"), {"off": False}
         )
 
+    # Migration: filament-scoped groups (#3522). Off by default, so no group
+    # narrows anyone's filaments on upgrade. The backfills cover a table
+    # create_all() already gave the columns, where the ALTER is swallowed.
+    await _safe_execute(conn, "ALTER TABLE groups ADD COLUMN restrict_filaments BOOLEAN DEFAULT FALSE")
+    async with conn.begin_nested():
+        await conn.execute(
+            text("UPDATE groups SET restrict_filaments = :off WHERE restrict_filaments IS NULL"), {"off": False}
+        )
+    await _safe_execute(conn, "ALTER TABLE groups ADD COLUMN filament_rule_mode VARCHAR(10) DEFAULT 'block'")
+    async with conn.begin_nested():
+        await conn.execute(
+            text("UPDATE groups SET filament_rule_mode = :mode WHERE filament_rule_mode IS NULL"), {"mode": "block"}
+        )
+    await _safe_execute(conn, "ALTER TABLE groups ADD COLUMN filament_rules JSON")
+
     # Migration: camera-stream and websocket tokens record who minted them, so
     # they carry that caller's printer scope (#1727). Camera tokens minted
     # before this have no principal at all (username NULL; every new one sets
@@ -6044,6 +6059,14 @@ async def _run_migrations(conn):
     await _safe_execute(conn, f"ALTER TABLE printers ADD COLUMN wear_cost_per_hour {float_type}")
     await _safe_execute(conn, f"ALTER TABLE print_log_entries ADD COLUMN wear_cost {float_type}")
     await _safe_execute(conn, f"ALTER TABLE print_archives ADD COLUMN wear_cost {float_type}")
+
+    # Migration: a printer's place in the pick order of "Any model" jobs (#2915).
+    # Nullable: no printer has one until the order setting is "priority" and one is set.
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN dispatch_priority INTEGER")
+
+    # Migration: a printer's own "Require plate-clear confirmation" (#2860).
+    # Nullable: null follows the app setting, which every printer did before.
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN require_plate_clear BOOLEAN")
 
     # Migration: when each spool was last dried, at what temperature and for
     # how long (#2863). Nullable: no spool has a drying record until one ends.
@@ -6146,6 +6169,60 @@ async def _run_migrations(conn):
     # (``print_cost_estimate.fill_plate_estimates``).
     await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN plate_estimates JSON")
 
+    # Migration: the G-code fingerprint of the archive's file (#1634), so a
+    # slice sent again from the slicer adds a run to its archive. Nullable, no
+    # default; filled from the archived file after startup
+    # (``archive_gcode_hash.fill_gcode_hashes``).
+    await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN gcode_hash VARCHAR(64)")
+    await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_print_archives_gcode_hash ON print_archives (gcode_hash)")
+
+    # Migration: who assigned a spool to a slot, whose cloud sign-in the replay
+    # on insert resolves a custom preset with (#3519). Nullable, no backfill:
+    # earlier assignments replay as before.
+    await _safe_execute(
+        conn,
+        "ALTER TABLE spool_assignment ADD COLUMN assigned_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL",
+    )
+
+    # Migration: what a smart plug's temperature-based auto-off waits for
+    # (#3464), and the bed's own threshold. NOT NULL with the model's server
+    # defaults, identical DDL on SQLite and Postgres; existing plugs keep
+    # waiting for the nozzle only, as they did.
+    await _safe_execute(
+        conn, "ALTER TABLE smart_plugs ADD COLUMN off_temp_source VARCHAR(20) NOT NULL DEFAULT 'nozzle'"
+    )
+    await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN off_bed_temp_threshold INTEGER NOT NULL DEFAULT 35")
+
+    # Migration: the events a provider sends without its camera snapshot
+    # (#2877). Nullable, no backfill: NULL means no event is skipped, so every
+    # provider keeps attaching photos exactly as before.
+    await _safe_execute(conn, "ALTER TABLE notification_providers ADD COLUMN photo_skip_events JSON")
+
+    # Migration: an MQTT plug's lifetime energy counter, separate from its daily
+    # one (#3582). A print's energy is the difference of two readings, so a
+    # daily counter that resets at midnight lost any print running across it.
+    # Nullable path, no backfill: existing plugs read their one energy value as
+    # before. The multiplier is NOT NULL with the model's server default, and
+    # gets the model's float type on Postgres from the start.
+    float_type = "REAL" if is_sqlite() else "DOUBLE PRECISION"
+    await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN mqtt_energy_total_path VARCHAR(100)")
+    await _safe_execute(
+        conn, f"ALTER TABLE smart_plugs ADD COLUMN mqtt_energy_total_multiplier {float_type} NOT NULL DEFAULT '1.0'"
+    )
+
+    # Migration: what a run was expected to cost at its start, priced at the
+    # spools mapped for it, and the grams that was priced for (#3580). Billing
+    # charges a reprint from them. Nullable, no backfill: a run without them is
+    # charged from the archive's cost as before. The model's float type on each
+    # dialect.
+    await _safe_execute(conn, f"ALTER TABLE print_log_entries ADD COLUMN planned_cost {float_type}")
+    await _safe_execute(conn, f"ALTER TABLE print_log_entries ADD COLUMN planned_grams {float_type}")
+
+    # Migration: a run's wallet charge while it waits for the run's energy
+    # (#3581), so a restart in between does not lose it. Nullable TEXT (JSON),
+    # no default -- identical DDL on SQLite and Postgres.
+    await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN pending_charge TEXT")
+
     await _backfill_archive_run_photos(conn)
     await _migrate_h3c_queue_tray_ids(conn)
 
@@ -6156,6 +6233,7 @@ async def _run_migrations(conn):
     await _migrate_spool_usage_outlives_its_archive(conn)
     await _migrate_spool_usage_outlives_its_spool(conn)
     await _backfill_pipeline_job_final_status(conn)
+    await _backfill_maintenance_log(conn)
     await _release_stuck_budget_reservations(conn)
     await _release_slots_of_archived_spools(conn)
     await _migrate_pg_column_types(conn)
@@ -6354,6 +6432,8 @@ _PG_COLUMNS_SET_FROM_MODEL = (
     ("api_keys", "can_update_energy_cost"),
     ("github_backup_config", "allow_insecure_http"),
     ("github_backup_config", "provider"),
+    ("groups", "filament_rule_mode"),
+    ("groups", "restrict_filaments"),
     ("groups", "restrict_printers"),
     ("library_files", "variant_position"),
     ("library_folders", "shared"),
@@ -6673,6 +6753,46 @@ async def _backfill_pipeline_job_final_status(conn) -> None:
         )
     if result.rowcount:
         logger.info("Stored the final status of %d pipeline job(s) from their queue entry", result.rowcount)
+
+
+async def _backfill_maintenance_log(conn) -> None:
+    """Copy maintenance history into the maintenance log.
+
+    The log (maintenance_log_entries) is written with each reset and outlives
+    the printer and its tasks; resets before it existed are only in
+    maintenance_history, which goes with them. Who reset them was never
+    recorded and stays unknown.
+
+    Once only, gated by a settings flag: entries deleted from the log later
+    (cleanup, a mistaken reset) still have their history row, and a second
+    pass would bring them back. Rows the log already has an entry for
+    (``history_id``) are skipped either way.
+    """
+    from sqlalchemy import text
+
+    flag = "_backfill_maintenance_log_done"
+    async with conn.begin_nested():
+        already = (
+            await conn.execute(text('SELECT value FROM settings WHERE "key" = :k'), {"k": flag})
+        ).scalar_one_or_none()
+        if already is not None:
+            return
+        result = await conn.execute(
+            text(
+                "INSERT INTO maintenance_log_entries (printer_id, printer_name, maintenance_type_id, "
+                "maintenance_type_name, hours_at_maintenance, notes, performed_at, history_id) "
+                "SELECT pm.printer_id, p.name, pm.maintenance_type_id, t.name, "
+                "COALESCE(h.hours_at_maintenance, 0), h.notes, h.performed_at, h.id "
+                "FROM maintenance_history h "
+                "JOIN printer_maintenance pm ON pm.id = h.printer_maintenance_id "
+                "JOIN printers p ON p.id = pm.printer_id "
+                "JOIN maintenance_types t ON t.id = pm.maintenance_type_id "
+                "WHERE NOT EXISTS (SELECT 1 FROM maintenance_log_entries l WHERE l.history_id = h.id)"
+            )
+        )
+        await conn.execute(text('INSERT INTO settings ("key", value) VALUES (:k, :v)'), {"k": flag, "v": "true"})
+    if result.rowcount:
+        logger.info("Copied %d maintenance history row(s) into the maintenance log", result.rowcount)
 
 
 async def _release_stuck_budget_reservations(conn) -> None:
@@ -7956,7 +8076,7 @@ async def seed_default_groups():
     from backend.app.core.permissions import ALL_PERMISSIONS, DEFAULT_GROUPS
     from backend.app.models.group import Group
     from backend.app.models.settings import Settings
-    from backend.app.models.user import User
+    from backend.app.models.user import ADMIN_GROUP_NAME, User
 
     logger = logging.getLogger(__name__)
 
@@ -8335,6 +8455,36 @@ async def seed_default_groups():
                     user.groups.append(operators_group)
                     logger.info("Migrated user '%s' to Operators group", user.username)
 
+            await session.commit()
+
+        # #3533: a user moved out of Administrators kept role "admin", and with
+        # it every admin right. The role follows the groups now; this lines up
+        # the users demoted before that. Should they be the only admins left,
+        # they stay admins and join Administrators instead. One-shot.
+        role_flag = "_backfill_3533_admin_role_follows_groups_done"
+        if (await session.execute(select(Settings).where(Settings.key == role_flag))).scalar_one_or_none() is None:
+            admin_group = (
+                await session.execute(select(Group).where(Group.name == ADMIN_GROUP_NAME))
+            ).scalar_one_or_none()
+            stray = [
+                u
+                for u in (await session.execute(select(User).where(User.role == "admin"))).scalars().all()
+                if all(g.name != ADMIN_GROUP_NAME for g in u.groups)
+            ]
+            if stray and admin_group:
+                group_admins = [
+                    u
+                    for u in (await session.execute(select(User))).scalars().all()
+                    if u.is_active and any(g.name == ADMIN_GROUP_NAME for g in u.groups)
+                ]
+                for user in stray:
+                    if group_admins:
+                        user.role = "user"
+                        logger.info("User '%s' is not in Administrators: admin role removed (#3533)", user.username)
+                    else:
+                        user.groups.append(admin_group)
+                        logger.info("User '%s' is the only admin: added to Administrators (#3533)", user.username)
+            session.add(Settings(key=role_flag, value="true"))
             await session.commit()
 
 

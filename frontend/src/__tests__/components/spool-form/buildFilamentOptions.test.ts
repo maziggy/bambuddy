@@ -160,3 +160,32 @@ describe('buildFilamentOptions', () => {
     expect(options.map(o => o.name)).toEqual(['Alpha PLA', 'Zebra PLA']);
   });
 });
+
+describe('the fallback list when every source is empty (#3559)', () => {
+  // Each entry must carry the filament id Bambu gives its name. A wrong id is
+  // what the slot gets configured with: "Bambu PLA-CF" used to be GFS00, which
+  // is Support W, and the backend now turns a GFS00 slot into PLA-S.
+  const BAMBU_IDS: Record<string, string> = {
+    'Bambu PLA Basic': 'GFA00',
+    'Bambu PLA Matte': 'GFA01',
+    'Generic PLA': 'GFL99',
+    'Bambu PETG Basic': 'GFG00',
+    'Generic PETG': 'GFG99',
+    'Bambu ABS': 'GFB00',
+    'Generic ABS': 'GFB99',
+    'Bambu ASA': 'GFB01',
+    'Bambu TPU 95A': 'GFU01',
+    'Generic TPU': 'GFU99',
+    'Bambu PC': 'GFC00',
+    'Generic PA': 'GFN99',
+    'Bambu PLA-CF': 'GFA50',
+    'Bambu PETG-CF': 'GFG50',
+    'Bambu PA-CF': 'GFN03',
+    'Bambu PVA': 'GFS04',
+  };
+
+  it('files every preset under its own Bambu filament id', () => {
+    const options = buildFilamentOptions([], new Set());
+    expect(Object.fromEntries(options.map((o) => [o.name, o.code]))).toEqual(BAMBU_IDS);
+  });
+});

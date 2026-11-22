@@ -1,0 +1,17 @@
+{
+  "_comment": "Shared by filamentScope.test.ts and backend/tests/unit/test_filament_scope.py, so the print dialog and the server judge a filament the same way (#3522). Material rules compare the matcher's canonical type: PA-CF, PA12-CF and PAHT-CF are one material.",
+  "cases": [
+    { "name": "block PAHT-CF blocks PA-CF", "mode": "block", "rules": [{ "match": "material", "value": "PAHT-CF" }], "type": "PA-CF", "filament_id": "", "allowed": false },
+    { "name": "block PAHT-CF blocks PA12-CF", "mode": "block", "rules": [{ "match": "material", "value": "PAHT-CF" }], "type": "PA12-CF", "filament_id": "", "allowed": false },
+    { "name": "block PAHT-CF blocks padded lower-case paht-cf", "mode": "block", "rules": [{ "match": "material", "value": "PAHT-CF" }], "type": " paht-cf ", "filament_id": "", "allowed": false },
+    { "name": "block PAHT-CF leaves PA6-CF alone", "mode": "block", "rules": [{ "match": "material", "value": "PAHT-CF" }], "type": "PA6-CF", "filament_id": "", "allowed": true },
+    { "name": "allow PA-CF allows PAHT-CF", "mode": "allow", "rules": [{ "match": "material", "value": "PA-CF" }], "type": "PAHT-CF", "filament_id": "", "allowed": true },
+    { "name": "allow PA-CF holds PLA", "mode": "allow", "rules": [{ "match": "material", "value": "PA-CF" }], "type": "PLA", "filament_id": "", "allowed": false },
+    { "name": "block PETG leaves PETG-HF alone", "mode": "block", "rules": [{ "match": "material", "value": "PETG" }], "type": "PETG-HF", "filament_id": "", "allowed": true },
+    { "name": "block PETG leaves PETG-CF alone", "mode": "block", "rules": [{ "match": "material", "value": "PETG" }], "type": "PETG-CF", "filament_id": "", "allowed": true },
+    { "name": "block PETG blocks petg", "mode": "block", "rules": [{ "match": "material", "value": "PETG" }], "type": "petg", "filament_id": "GFG99", "allowed": false },
+    { "name": "block GFG03 blocks gfg03 whatever the type", "mode": "block", "rules": [{ "match": "filament_id", "value": "GFG03" }], "type": "PLA", "filament_id": "gfg03", "allowed": false },
+    { "name": "a filament id rule is not a material rule", "mode": "block", "rules": [{ "match": "filament_id", "value": "PA-CF" }], "type": "PAHT-CF", "filament_id": "", "allowed": true },
+    { "name": "no type and no id can't be judged", "mode": "allow", "rules": [{ "match": "material", "value": "PLA" }], "type": "", "filament_id": "", "allowed": true }
+  ]
+}

@@ -54,6 +54,7 @@ async def _start_from_cache(test_engine, printer_id: int, cached) -> None:
         pm.get_status = MagicMock(return_value=state)
         pm.get_printer = MagicMock(return_value=MagicMock(serial_number="TESTAP2"))
         pm.get_client = MagicMock(return_value=None)
+        pm.get_current_print_user = MagicMock(return_value=None)  # a print nobody started in Bambuddy
 
         from backend.app.main import on_print_start
 

@@ -1221,8 +1221,17 @@ async def _report_spool_usage_split_by_tray_changes(
     slot_materials_out: dict[int, str] | None = None,
     cost_out: _PrintCost | None = None,
     swaps: spool_swaps.Splitter | None = None,
+    gcode_totals: dict[int, float] | None = None,
 ) -> tuple[int, set[int]]:
     """Split each slot's grams across ``tray_changes`` and charge per-segment.
+
+    ``gcode_totals`` (slot id -> the G-code's grams up to where a print
+    stopped) is for a partial print split on ``layer_usage``: the split prices
+    every segment but the last in the G-code's grams and gives the last the
+    rest, so it runs on the G-code's total and is scaled to the slot's grams
+    afterwards, as the built-in inventory does (#3317, #3652). Split on the
+    slicer's partial grams instead, an early segment can exceed them and the
+    spool loaded last is left short or with nothing.
 
     Mirrors ``usage_tracker`` Path 1's tray-switch branch so Spoolman and
     the internal Spool inventory attribute mid-print AMS-backup switches
@@ -1248,9 +1257,10 @@ async def _report_spool_usage_split_by_tray_changes(
             continue
 
         props = (filament_properties or {}).get(str(slot_id)) or (filament_properties or {}).get(slot_id) or {}
+        split_total = (gcode_totals or {}).get(slot_id) or float(total_weight)
         segments = compute_tray_split_grams(
             tray_changes=tray_changes,
-            total_weight=float(total_weight),
+            total_weight=split_total,
             slot_id=slot_id,
             layer_usage=layer_usage,
             density=float(props.get("density", 1.24)),
@@ -1258,6 +1268,7 @@ async def _report_spool_usage_split_by_tray_changes(
             total_layers=total_layers,
             last_layer_num=last_layer_num,
         )
+        segments = [(i, tray, grams * float(total_weight) / split_total) for i, tray, grams in segments]
 
         for seg_idx, tray_global, segment_grams in segments:
             if segment_grams <= 0:
@@ -1516,13 +1527,20 @@ async def _report_partial_usage(
     # A single-filament print that switched trays (AMS backup on a runout)
     # charges each tray its share of the partial grams, by layer up to where
     # the print stopped, as the built-in inventory and the completion path do
-    # (#1793). The G-code split is not used here: its last segment runs to the
-    # end of the whole print. A multi-material print keeps the mapping.
+    # (#1793). With per-layer G-code the segments follow it, as in the built-in
+    # inventory: every segment but the last ends at a logged switch, all before
+    # the stop layer, and the last gets the rest of the partial grams (#3652).
+    # A multi-material print keeps the mapping.
     tray_changes = list(getattr(state, "tray_change_log", None) or []) if state else []
     # Spools swapped by hand on a tray, shared out up to where the print stopped (#3325).
     swaps = _swap_splitter(printer_id, state, layer_usage, current_layer, completed=False)
 
-    async def _charge(usage_items: list[tuple[int, float]], method_label: str) -> int:
+    async def _charge(
+        usage_items: list[tuple[int, float]],
+        method_label: str,
+        split_layer_usage: dict[int, dict[int, float]] | None = None,
+        gcode_totals: dict[int, float] | None = None,
+    ) -> int:
         used = [(slot_id, grams) for slot_id, grams in usage_items if grams > 0]
         if len(used) == 1 and len(tray_changes) > 1:
             # Never short of a logged switch: a stop layer estimated from
@@ -1533,7 +1551,7 @@ async def _report_partial_usage(
                 [{"slot_id": used[0][0], "used_g": used[0][1]}],
                 tray_changes,
                 ams_trays,
-                None,
+                split_layer_usage,
                 filament_properties,
                 split_layers,
                 split_layers,
@@ -1542,6 +1560,7 @@ async def _report_partial_usage(
                 printer_id=printer_id,
                 cost_out=cost_out,
                 swaps=swaps,
+                gcode_totals=gcode_totals,
             )
             return updated
         return await _report_spool_usage_for_slots(
@@ -1606,7 +1625,15 @@ async def _report_partial_usage(
                 grams_used = round(mm_to_grams(mm_used, diameter, density), 2)
                 usage_items.append((slot_id, grams_used))
 
-            spools_updated = await _charge(usage_items, "Partial (G-code)")
+            # The G-code's own grams up to the stop layer, in the densities the
+            # split prices its segments in, for scaling it to the partial grams.
+            gcode_totals: dict[int, float] = {}
+            for filament_id, mm_used in usage_mm.items():
+                props = filament_properties.get(str(filament_id + 1)) or filament_properties.get(filament_id + 1) or {}
+                gcode_totals[filament_id + 1] = mm_to_grams(
+                    mm_used, float(props.get("diameter", 1.75)), float(props.get("density", 1.24))
+                )
+            spools_updated = await _charge(usage_items, "Partial (G-code)", layer_usage_int, gcode_totals)
             if spools_updated > 0:
                 logger.info("[SPOOLMAN] Reported partial usage to %s spool(s) using G-code data", spools_updated)
             return

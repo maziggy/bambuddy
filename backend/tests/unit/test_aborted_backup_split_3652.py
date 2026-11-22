@@ -62,7 +62,7 @@ def _db():
     return db
 
 
-async def _run(*, status, layer_num, last_layer_num, progress):
+async def _run(*, status, layer_num, last_layer_num, progress, layer_usage=None):
     printer_manager = MagicMock()
     printer_manager.get_status.return_value = SimpleNamespace(
         progress=progress,
@@ -78,7 +78,7 @@ async def _run(*, status, layer_num, last_layer_num, progress):
     with (
         patch("backend.app.core.config.settings") as mock_settings,
         patch("backend.app.utils.threemf_tools.extract_filament_usage_from_3mf", return_value=USAGE),
-        patch("backend.app.utils.threemf_tools.extract_layer_filament_usage_from_3mf", return_value=None),
+        patch("backend.app.utils.threemf_tools.extract_layer_filament_usage_from_3mf", return_value=layer_usage),
         patch(
             "backend.app.utils.threemf_tools.extract_filament_properties_from_3mf",
             return_value={1: {"density": 1.24, "diameter": 1.75}},
@@ -133,3 +133,78 @@ class TestAbortedBackupSplit3652:
     async def test_completed_print_unchanged(self):
         results = await _run(status="completed", layer_num=100, last_layer_num=100, progress=100)
         assert _by_tray(results) == {3: 39.0, 2: 61.0}
+
+
+# Front-loaded per-layer G-code: 37 mm a layer up to layer 39, then 3.7 mm a
+# layer, so a linear split by layer and one that follows the G-code differ.
+GCODE = {layer: {0: 37.0 * min(layer, 39) + 3.7 * max(layer - 39, 0)} for layer in range(1, 101)}
+SPOOLMAN_TAGS = {"T3": 30, "T2": 20}
+
+
+async def _spoolman_partial(*, layer_num, layer_usage):
+    """Spoolman's partial path on the same print: spool id -> grams charged."""
+    from backend.app.services import spoolman_tracking
+
+    session = MagicMock()
+    session.return_value.__aenter__ = AsyncMock(return_value=MagicMock())
+    session.return_value.__aexit__ = AsyncMock(return_value=False)
+    tracking = SimpleNamespace(
+        # Stored as JSON, so with string keys.
+        layer_usage=(
+            {str(layer): {str(fid): mm for fid, mm in used.items()} for layer, used in layer_usage.items()}
+            if layer_usage
+            else None
+        ),
+        filament_properties={"1": {"density": 1.24, "diameter": 1.75}},
+        filament_usage=[{"slot_id": 1, "used_g": 100.0}],
+        ams_trays={3: {"tray_uuid": "T3", "tray_type": "PLA"}, 2: {"tray_uuid": "T2", "tray_type": "PLA"}},
+        slot_to_tray=[3],
+        tray_remain_start={},
+        archive_id=100,
+        tray_now_at_start=3,
+    )
+    status = SimpleNamespace(
+        layer_num=layer_num, total_layers=100, raw_data={}, tray_change_log=list(LOG), spool_change_log=None
+    )
+    client = AsyncMock()
+    client.find_spool_by_tag = AsyncMock(
+        side_effect=lambda tag, *a, **k: {"id": SPOOLMAN_TAGS[tag], "filament": {}} if tag in SPOOLMAN_TAGS else None
+    )
+    client.use_spool = AsyncMock()
+    with (
+        patch.object(spoolman_tracking, "async_session", session),
+        patch("backend.app.api.routes.settings.get_setting", AsyncMock(return_value="true")),
+        patch("backend.app.services.printer_manager.printer_manager.get_status", MagicMock(return_value=status)),
+        patch.object(spoolman_tracking, "_get_printer_serial", AsyncMock(return_value="SERIAL")),
+        patch.object(spoolman_tracking, "_get_spoolman_client_with_fallback", AsyncMock(return_value=client)),
+    ):
+        await spoolman_tracking._report_partial_usage(1, tracking, last_layer_num=layer_num)
+    charged: dict[int, float] = {}
+    for call in client.use_spool.await_args_list:
+        charged[call.args[0]] = round(charged.get(call.args[0], 0.0) + call.args[1], 1)
+    return charged
+
+
+class TestAbortedBackupSplitParity3652:
+    """Both inventories split an aborted print alike, with and without G-code."""
+
+    @pytest.mark.asyncio
+    async def test_spoolman_follows_the_gcode(self):
+        # Stopped at layer 50: 1443 of 1483.7 mm before the switch, so tray 3
+        # took 97 % of the partial grams, not the 39/50 a linear split gives.
+        charged = await _spoolman_partial(layer_num=50, layer_usage=GCODE)
+        assert charged[30] / (charged[30] + charged[20]) == pytest.approx(1443.0 / 1483.7, abs=0.01)
+
+    @pytest.mark.asyncio
+    async def test_both_inventories_charge_the_same_with_gcode(self):
+        spoolman = await _spoolman_partial(layer_num=50, layer_usage=GCODE)
+        builtin = await _run(status="aborted", layer_num=50, last_layer_num=50, progress=50, layer_usage=GCODE)
+        by_spool = {SPOOL_BY_TRAY[tray]: grams for tray, grams in _by_tray(builtin).items()}
+        assert spoolman == pytest.approx(by_spool, abs=0.1)
+
+    @pytest.mark.asyncio
+    async def test_both_inventories_charge_the_same_without_gcode(self):
+        spoolman = await _spoolman_partial(layer_num=50, layer_usage=None)
+        builtin = await _run(status="aborted", layer_num=50, last_layer_num=50, progress=50)
+        by_spool = {SPOOL_BY_TRAY[tray]: grams for tray, grams in _by_tray(builtin).items()}
+        assert spoolman == pytest.approx(by_spool, abs=0.1)

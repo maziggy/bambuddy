@@ -1645,12 +1645,15 @@ async def _report_partial_usage(
             if not changes:
                 continue
             split_layers = max([current_layer] + [layer for _, layer in changes])
+            # On the slot's own G-code, as the single-filament split above and
+            # the built-in inventory: a slot that prints only in some layer
+            # bands is far off a linear split by layer (#3650).
             split_updated, _ = await _report_spool_usage_split_by_tray_changes(
                 client,
                 [{"slot_id": slot_id, "used_g": grams}],
                 changes,
                 ams_trays,
-                None,
+                split_layer_usage,
                 filament_properties,
                 split_layers,
                 split_layers,
@@ -1659,6 +1662,7 @@ async def _report_partial_usage(
                 printer_id=printer_id,
                 cost_out=cost_out,
                 swaps=swaps,
+                gcode_totals=gcode_totals,
             )
             updated += split_updated
         return updated + await _report_spool_usage_for_slots(

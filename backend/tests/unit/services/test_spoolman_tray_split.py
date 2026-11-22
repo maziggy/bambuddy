@@ -391,7 +391,7 @@ class TestMultiFilamentBackupSplit3650:
             },
             slot_to_tray=[3, 0],
             tray_remain_start=extra.pop("tray_remain_start", {}),
-            layer_usage=None,
+            layer_usage=extra.pop("layer_usage", None),
             filament_properties={},
             **extra,
         )
@@ -487,5 +487,33 @@ class TestMultiFilamentBackupSplit3650:
         assert self._charged(client) == {
             30: pytest.approx(45.28, abs=0.01),
             20: pytest.approx(22.64, abs=0.01),
+            10: pytest.approx(1.2, abs=0.01),
+        }
+
+    @pytest.mark.asyncio
+    async def test_partial_usage_split_follows_gcode(self):
+        # Slot 1 (filament 0) feeds 37 mm a layer up to the switch at layer 40
+        # and 3.7 mm a layer after it; stopped at layer 60. Slot 1's partial
+        # grams are 113.2 x 1554 / 1702 mm = 103.36 g, and the G-code puts
+        # 1480 of the 1554 mm on tray 3: 98.43 g, not the 68.9 g of a linear
+        # split by layer (40 of 60). Tray 2 gets the rest.
+        from contextlib import ExitStack
+
+        from backend.app.services.spoolman_tracking import _report_partial_usage
+
+        layer_usage = {
+            str(layer): {"0": 37.0 * min(layer, 40) + 3.7 * max(layer - 40, 0), "1": 1.0 * layer}
+            for layer in range(1, 101)
+        }
+        client = self._client()
+        printer_manager = MagicMock()
+        printer_manager.get_status.return_value = self._state(layer_num=60)
+        with ExitStack() as stack:
+            for p in self._patches(client, printer_manager):
+                stack.enter_context(p)
+            await _report_partial_usage(printer_id=1, tracking=self._tracking(layer_usage=layer_usage))
+        assert self._charged(client) == {
+            30: pytest.approx(98.43, abs=0.01),
+            20: pytest.approx(4.92, abs=0.01),
             10: pytest.approx(1.2, abs=0.01),
         }

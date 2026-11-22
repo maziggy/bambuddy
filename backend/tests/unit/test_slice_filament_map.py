@@ -77,6 +77,38 @@ class TestPlanFilamentMap:
         white_petg = _filament("Test PETG White", "#FFFFFF", "PETG")
         assert plan_filament_map(DUAL_PRINTER, [GREEN, white_petg], petg_white) == [1, 2]
 
+    def test_a_clear_spool_is_not_black(self):
+        # 00000000 is a clear spool; matching it on its first six digits made
+        # the black part print clear (#2912).
+        clear = [{"type": "PLA", "color": "#00000000", "extruder_id": 0}]
+        black = _filament("Test PLA Black", "#000000")
+        assert plan_filament_map(DUAL_PRINTER, [WHITE, black], clear) is None
+        clear_filament = _filament("Test PLA Clear", "#00000000")
+        assert plan_filament_map(DUAL_PRINTER, [WHITE, clear_filament], clear) == [1, 2]
+
+    def test_a_support_filament_needs_a_support_spool(self):
+        # Slots type support as PLA-S (#3559), so a plain PLA spool of the
+        # same colour does not take the support filament, nor the reverse.
+        support = json.dumps(
+            {
+                "name": "Bambu Support For PLA @BBL X2D",
+                "filament_type": ["PLA"],
+                "filament_id": "GFS02",
+                "filament_colour": ["#FFFFFF"],
+            }
+        )
+        plain_white = [{"type": "PLA", "color": "#FFFFFF", "extruder_id": 0}]
+        assert plan_filament_map(DUAL_PRINTER, [GREEN, support], plain_white) is None
+        support_white = [{"type": "PLA", "color": "#FFFFFF", "extruder_id": 0, "tray_info_idx": "GFS02"}]
+        assert plan_filament_map(DUAL_PRINTER, [GREEN, support], support_white) == [1, 2]
+        assert plan_filament_map(DUAL_PRINTER, [GREEN, WHITE], support_white) is None
+
+    def test_a_support_preset_known_only_by_name_is_never_moved(self):
+        # "Support For PLA/PETG" is a PLA preset that reads as PETG.
+        stub = json.dumps({"name": "Bambu Support For PLA/PETG @BBL X2D", "filament_colour": ["#FFFFFF"]})
+        spools = [{"type": "PETG", "color": "#FFFFFF", "extruder_id": 0}]
+        assert plan_filament_map(DUAL_PRINTER, [GREEN, stub], spools) is None
+
     def test_a_spool_without_a_type_is_never_used(self):
         spools = [{"color": "#00AE42", "extruder_id": 0}]
         assert plan_filament_map(DUAL_PRINTER, [WHITE, GREEN], spools) is None
@@ -335,10 +367,7 @@ class TestSliceRouteWiring:
 
         if lookup is None:
             lookup = AsyncMock(return_value=GREEN_ON_EXTERNAL)
-        scope_lookup = AsyncMock(return_value=scope if scope is not None else ALL_PRINTERS)
-
         with (
-            patch("backend.app.core.printer_scope.resolve_user_id_printer_scope", new=scope_lookup),
             patch("backend.app.api.routes.settings.get_setting", new=AsyncMock(side_effect=_setting)),
             patch("backend.app.services.preset_resolver.resolve_preset_ref", new=AsyncMock(side_effect=_resolve)),
             patch("backend.app.services.loaded_filaments.loaded_filaments", new=lookup),
@@ -354,9 +383,9 @@ class TestSliceRouteWiring:
                 model_filename=model_filename,
                 request=request,
                 current_user_id=current_user_id,
+                printer_scope=scope if scope is not None else ALL_PRINTERS,
                 target_printer_id=target_printer_id,
             )
-        self.scope_lookup = scope_lookup
         return service, lookup
 
     async def test_the_planned_map_is_sent(self):
@@ -377,6 +406,18 @@ class TestSliceRouteWiring:
         assert "filament_map" not in service.slice_with_profiles.await_args.kwargs
         lookup.assert_not_awaited()
 
+    async def test_a_renamed_user_preset_takes_its_model_from_what_it_inherits(self):
+        # A user's own printer preset: its name names no model, its parent does.
+        printer = json.dumps({"name": "My X2D", "inherits": "Bambu Lab X2D 0.4 nozzle", "from": "User"})
+        service, _ = await self._run(self._request(), printer_json=printer)
+        assert service.slice_with_profiles.await_args.kwargs["filament_map"] == [1, 2]
+
+    async def test_a_preset_naming_no_known_model_looks_nothing_up(self):
+        printer = json.dumps({"name": "My X2D", "from": "User"})
+        service, lookup = await self._run(self._request(), printer_json=printer)
+        assert "filament_map" not in service.slice_with_profiles.await_args.kwargs
+        lookup.assert_not_awaited()
+
     async def test_a_refused_planned_map_is_retried_without_it(self):
         from backend.app.services.slicer_api import SlicerApiServerError, SliceResult
 
@@ -388,6 +429,21 @@ class TestSliceRouteWiring:
         first, second = service.slice_with_profiles.await_args_list
         assert first.kwargs["filament_map"] == [1, 2]
         assert "filament_map" not in second.kwargs
+
+    async def test_a_refused_explicit_map_is_reported_not_retried(self):
+        from backend.app.services.slicer_api import SlicerApiServerError
+
+        with pytest.raises(HTTPException):
+            await self._run(self._request(filament_map=[2, 1]), slice_effect=SlicerApiServerError("unprintable area"))
+        calls = self.service.slice_with_profiles.await_args_list
+        assert [call.kwargs.get("filament_map") for call in calls] == [[2, 1]]
+
+    async def test_a_plate_the_user_mapped_by_hand_keeps_its_map(self):
+        source = _project_3mf(mode="Manual", maps="2 1")
+        service, lookup = await self._run(self._request(plate=1), model_bytes=source, model_filename="project.3mf")
+        lookup.assert_not_awaited()
+        assert "filament_map" not in service.slice_with_profiles.await_args.kwargs
+        assert service.slice_with_profiles.await_args.kwargs["model_bytes"] == source
 
     async def test_a_refused_explicit_map_is_not_retried(self):
         from backend.app.services.slicer_api import SlicerInputError
@@ -407,11 +463,9 @@ class TestSliceRouteWiring:
         assert exc.value.status_code == 400
         assert self.service.slice_with_profiles.await_count == 1
 
-    async def test_spools_are_read_only_from_the_users_printers(self):
-        # A user who sees printer 5 but not printer 6 plans from printer 5 only.
+    async def test_spools_are_read_only_from_the_callers_printers(self):
+        # A caller who sees printer 5 but not printer 6 plans from printer 5 only.
         _, lookup = await self._run(self._request(), current_user_id=42, scope=PrinterScope(frozenset({5})))
-        self.scope_lookup.assert_awaited_once()
-        assert self.scope_lookup.await_args.args[1] == 42
         allows = lookup.await_args.kwargs["allows"]
         assert (allows(5), allows(6)) == (True, False)
 

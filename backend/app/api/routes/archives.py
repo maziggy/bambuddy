@@ -5819,6 +5819,7 @@ async def slice_archive(
                     request=request,
                     source_archive=src_archive,
                     current_user_id=user_id,
+                    printer_scope=printer_scope,
                     job_id=job_id,
                     owner_id=owner_id,
                 )

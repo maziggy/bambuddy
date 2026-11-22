@@ -255,6 +255,7 @@ def _with_own_colour(anchor_json: str, own_json: str) -> str:
 
 
 _PLATE_MAP_KEYS = re.compile(r'(<metadata\s+key="(filament_map_mode|filament_maps)"\s+value=")[^"]*(")')
+_PLATE_MAP_MODE = re.compile(r'<metadata\s+key="filament_map_mode"\s+value="([^"]*)"')
 
 
 def with_plate_filament_map(source_3mf_bytes: bytes, filament_map: list[int]) -> bytes:
@@ -290,6 +291,25 @@ def with_plate_filament_map(source_3mf_bytes: bytes, filament_map: list[int]) ->
         logger.warning("Could not write the filament map into the plate settings (%s); sending the 3MF as is", exc)
         return source_3mf_bytes
     return out_buf.getvalue()
+
+
+def has_manual_plate_filament_map(source_3mf_bytes: bytes) -> bool:
+    """True when a plate of the 3MF already carries a map the user set by hand.
+
+    Bambu Studio 2.x stores ``filament_map_mode="Manual"`` with the user's
+    ``filament_maps`` per plate. A planned map moves at most one filament, so
+    writing it over such a plate (``with_plate_filament_map``) would undo the
+    user's choice; the slice keeps theirs instead. Anything unreadable is not
+    a manual map.
+    """
+    try:
+        with zipfile.ZipFile(BytesIO(source_3mf_bytes), "r") as zf:
+            if _MODEL_SETTINGS_PATH not in zf.namelist():
+                return False
+            settings = zf.read(_MODEL_SETTINGS_PATH).decode("utf-8")
+    except (zipfile.BadZipFile, OSError, UnicodeDecodeError):
+        return False
+    return any(mode.strip().lower() == "manual" for mode in _PLATE_MAP_MODE.findall(settings))
 
 
 def plate_used_slots(source_3mf_bytes: bytes, plate_id: int | None) -> set[int] | None:

@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from backend.app.api.routes.library import _run_slicer_with_fallback
+from backend.app.core.printer_scope import ALL_PRINTERS
 from backend.app.schemas.slicer import PresetRef, SliceRequest
 from backend.app.schemas.slicer_presets import UnifiedPreset
 from backend.app.services.design_settings import changed_process_keys, record_process_changes
@@ -212,6 +213,7 @@ async def _slice(request: SliceRequest, *, model: str = "stl", embedded_fallback
             model_filename=f"cube.{model}",
             request=request,
             current_user_id=None,
+            printer_scope=ALL_PRINTERS,
         )
     return _config(result.content)["different_settings_to_system"]
 

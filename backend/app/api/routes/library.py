@@ -4373,6 +4373,7 @@ async def _run_slicer_with_fallback(
     model_bytes: bytes,
     model_filename: str,
     request: SliceRequest,
+    printer_scope: PrinterScope,
     current_user_id: int | None = None,
     job_id: int | None = None,
     target_printer_id: int | None = None,
@@ -4393,10 +4394,15 @@ async def _run_slicer_with_fallback(
     time. Pass None for synchronous routes that aren't tracked by the
     dispatcher.
 
+    `printer_scope`: the printers the caller may use, as the request's
+    auth resolved them (an API key's own printer list included). The
+    dual-nozzle filament map reads spools only from these. Required, so no
+    caller plans from every printer by leaving it out (#1727).
+
     `target_printer_id`: the printer the result is for, when the caller
     knows it (an archive re-slice, a pipeline aimed at one printer). The
     dual-nozzle filament map is then planned from that printer's spools
-    alone; otherwise from every printer of the model in the user's scope.
+    alone; otherwise from every printer of the model in `printer_scope`.
     """
     from backend.app.api.routes.settings import get_setting
     from backend.app.services.preset_resolver import resolve_preset_ref
@@ -4673,20 +4679,24 @@ async def _run_slicer_with_fallback(
     # stops that from working leaves the slice exactly as it was. Planned after
     # the unused-slot substitution above, so it sees the list the CLI gets,
     # and only from the plate's used slots, never a stand-in. The spools are
-    # read only from printers the user may use (#1727), and only from the
+    # read only from printers the caller may use (#1727), and only from the
     # target printer when the caller names one.
     # The embedded-settings path loads no filament profiles to map.
+    # A Bambu Studio project whose plate the user already mapped by hand
+    # keeps that map: a planned one would overwrite it in the plate settings.
     filament_map = request.filament_map
-    if filament_map is None and not embedded_mode:
-        from backend.app.core.printer_scope import resolve_user_id_printer_scope
-        from backend.app.services.filament_map import auto_filament_map
+    manual_plate_map = False
+    if filament_map is None and not embedded_mode and is_3mf:
+        from backend.app.services.slicer_3mf_convert import has_manual_plate_filament_map
 
-        scope = await resolve_user_id_printer_scope(db, current_user_id)
+        manual_plate_map = has_manual_plate_filament_map(primary_bytes)
+    if filament_map is None and not embedded_mode and not manual_plate_map:
+        from backend.app.services.filament_map import auto_filament_map
 
         def _allows(printer_id: int) -> bool:
             if target_printer_id is not None and printer_id != target_printer_id:
                 return False
-            return scope.allows(printer_id)
+            return printer_scope.allows(printer_id)
 
         filament_map = await auto_filament_map(
             db,
@@ -5036,7 +5046,17 @@ def _printer_model_from_profile(printer_json: str) -> str | None:
         return None
     if not isinstance(data, dict):
         return None
-    return _canonical_printer_model(data.get("printer_model") or data.get("printer_settings_id") or data.get("name"))
+    from backend.app.utils.printer_models import PRINTER_MODEL_MAP
+
+    # The first field that names a known model: a user preset's own name
+    # ("My H2D") names none, the stock preset it inherits from does.
+    known = set(PRINTER_MODEL_MAP.values())
+    for key in ("printer_model", "printer_settings_id", "name", "inherits"):
+        value = data.get(key)
+        model = _canonical_printer_model(value) if isinstance(value, str) else None
+        if model in known:
+            return model
+    return None
 
 
 async def _resolve_target_printer_model(db: AsyncSession, user: User | None, request: SliceRequest) -> str | None:
@@ -5097,6 +5117,7 @@ async def slice_and_persist(
     extra_metadata: dict | None,
     request: SliceRequest,
     current_user_id: int | None,
+    printer_scope: PrinterScope,
     job_id: int | None = None,
     owner_id: int | None | object = _CALLER,
     target_printer_id: int | None = None,
@@ -5105,8 +5126,9 @@ async def slice_and_persist(
     ``folder_id`` (same folder as the source by convention).
 
     ``current_user_id`` resolves cloud presets; the new file is ``owner_id``'s,
-    by default the same user. ``target_printer_id`` is the printer the file
-    is for, when the caller knows it (see ``_run_slicer_with_fallback``).
+    by default the same user. ``printer_scope`` and ``target_printer_id``
+    limit the printers the filament map reads (see
+    ``_run_slicer_with_fallback``).
 
     Always exports as ``.gcode.3mf`` so the existing library thumbnail
     pipeline works on the new file. Plain ``.gcode`` would have no
@@ -5122,6 +5144,7 @@ async def slice_and_persist(
         model_filename=model_filename,
         request=library_request,
         current_user_id=current_user_id,
+        printer_scope=printer_scope,
         job_id=job_id,
         target_printer_id=target_printer_id,
     )
@@ -5255,6 +5278,7 @@ async def slice_and_persist_as_archive(
     request: SliceRequest,
     source_archive,  # PrintArchive — hint kept loose to avoid cyclic import
     current_user_id: int | None,
+    printer_scope: PrinterScope,
     job_id: int | None = None,
     owner_id: int | None | object = _CALLER,
 ):
@@ -5279,6 +5303,7 @@ async def slice_and_persist_as_archive(
         request=archive_request,
         job_id=job_id,
         current_user_id=current_user_id,
+        printer_scope=printer_scope,
         # The new archive belongs to the source archive's printer.
         target_printer_id=source_archive.printer_id,
     )
@@ -5475,6 +5500,7 @@ async def slice_library_file(
     current_user: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD)),
     api_key_cloud_owner: User | None = Depends(resolve_api_key_cloud_owner),
     actor: User | ApiKeyActor | None = RequestActor,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Enqueue a slice job for a library file. Returns 202 + job_id; the
     slice runs in the background, the caller polls `GET /slice-jobs/{id}`.
@@ -5569,6 +5595,7 @@ async def slice_library_file(
                     extra_metadata={"sliced_from_library_file_id": source_lib_file_id},
                     request=request,
                     current_user_id=user_id,
+                    printer_scope=printer_scope,
                     job_id=job_id,
                     owner_id=owner_id,
                 )

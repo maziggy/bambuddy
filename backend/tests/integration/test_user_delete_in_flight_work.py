@@ -124,6 +124,7 @@ async def test_a_slice_finishing_after_its_user_was_deleted_belongs_to_nobody(db
                 extra_metadata=None,
                 request=SliceRequest(printer_preset_id=1, process_preset_id=2, filament_preset_id=3),
                 current_user_id=alice,
+                printer_scope=ALL_PRINTERS,
                 job_id=job.id,
             )
     finally:
@@ -159,6 +160,7 @@ async def test_an_archive_slice_finishing_after_its_user_was_deleted_belongs_to_
                 request=SliceRequest(printer_preset_id=1, process_preset_id=2, filament_preset_id=3),
                 source_archive=source,
                 current_user_id=alice,
+                printer_scope=ALL_PRINTERS,
                 job_id=job.id,
             )
     finally:

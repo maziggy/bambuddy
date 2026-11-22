@@ -20,11 +20,19 @@ which leaves the slice exactly as it was before this module existed.
 
 import json
 import logging
+import re
 from collections.abc import Callable
 
-from backend.app.utils.filament_types import canonical_filament_type, known_printer_filament_type
+from backend.app.utils.color_utils import color_match_key
+from backend.app.utils.filament_types import (
+    canonical_filament_type,
+    known_printer_filament_type,
+    support_filament_type,
+)
 
 logger = logging.getLogger(__name__)
+
+_SUPPORT_WORD = re.compile(r"\bSUPPORT\b", re.IGNORECASE)
 
 # The slicer numbers extruders 1..N in ``filament_map``; the printer reports
 # MQTT extruder ids (0 = right/main, 1 = left/deputy). A machine profile states
@@ -41,21 +49,25 @@ HOME_EXTRUDER = 1
 AUX_EXTRUDER = 2
 
 
+def _first(value: object) -> object:
+    """A profile stores most values as one-element lists; the printer does not."""
+    if isinstance(value, (list, tuple)):
+        return value[0] if value else None
+    return value
+
+
 def _rgb(value: object) -> str | None:
-    """``#RRGGBB`` / ``#RRGGBBAA`` / ``RRGGBB`` as upper-case ``RRGGBB``.
+    """The colour key ``value`` is compared on, or ``None`` without a colour.
 
     A filament profile stores ``filament_colour`` as a one-element list while
-    the printer reports a bare string; both arrive here. The alpha byte is
-    dropped so an opaque AMS colour still matches the profile's 6-digit one.
+    the printer reports a bare string; both arrive here. ``color_match_key``
+    lets an opaque ``RRGGBBFF`` match a profile's ``RRGGBB`` but keeps a clear
+    ``00000000`` spool apart from black (#2912).
     """
-    if isinstance(value, (list, tuple)):
-        value = value[0] if value else None
-    if not isinstance(value, str):
+    value = _first(value)
+    if not isinstance(value, str) or len(value.strip().lstrip("#")) < 6:
         return None
-    hex_part = value.strip().lstrip("#").upper()
-    if len(hex_part) < 6:
-        return None
-    return hex_part[:6]
+    return color_match_key(value) or None
 
 
 def _material(profile: dict) -> str | None:
@@ -66,14 +78,20 @@ def _material(profile: dict) -> str | None:
     that the sidecar expands later, so only its name is here; Bambu's preset
     names carry the material ("Bambu PETG HF @BBL X2D"), and a name that does
     not reduce to a known type gives ``None`` rather than a guess.
+
+    A support filament is typed the way a slot is (#3559), "PLA-S" rather
+    than "PLA". Its name alone cannot say which: "Support For PLA/PETG" is a
+    PLA preset that reads as PETG, so a support preset known only by name
+    gives ``None``.
     """
-    declared = profile.get("filament_type")
-    if isinstance(declared, (list, tuple)):
-        declared = declared[0] if declared else None
-    if isinstance(declared, str) and declared.strip():
-        return canonical_filament_type(declared.strip())
     name = profile.get("name") or profile.get("inherits")
-    if isinstance(name, str):
+    name = name if isinstance(name, str) else None
+    declared = _first(profile.get("filament_type"))
+    if isinstance(declared, str) and declared.strip():
+        filament_id = _first(profile.get("filament_id"))
+        filament_id = filament_id if isinstance(filament_id, str) else None
+        return canonical_filament_type(support_filament_type(declared.strip(), filament_id, name))
+    if name is not None and not _SUPPORT_WORD.search(name):
         reduced = known_printer_filament_type(name)
         if reduced is not None:
             return canonical_filament_type(reduced)
@@ -81,10 +99,13 @@ def _material(profile: dict) -> str | None:
 
 
 def _spool_material(spool: dict) -> str | None:
+    """A loaded spool's material, typed like its slot (support as "PLA-S")."""
     value = spool.get("type")
     if not isinstance(value, str) or not value.strip():
         return None
-    return canonical_filament_type(value.strip())
+    return canonical_filament_type(
+        support_filament_type(value.strip(), spool.get("tray_info_idx"), spool.get("tray_sub_brands"))
+    )
 
 
 def _profile(raw: str) -> dict:

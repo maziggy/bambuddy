@@ -5113,6 +5113,35 @@ export default {
       projectExported: 'Projeto exportado',
       templateCreated: 'Modelo criado',
     },
+    // Bag labels for a project's finished parts (#3655)
+    labels: {
+      button: 'Etiqueta',
+      buttonTitle: 'Imprimir uma etiqueta para o saco ou a caixa de peças prontas',
+      title: 'Imprimir etiqueta do projeto',
+      intro: 'Uma etiqueta para o saco ou a caixa onde vão as peças prontas deste projeto. O código QR abre este projeto.',
+      quantity: 'Quantidade no saco',
+      quantityHint: 'Impressa em destaque na parte de baixo. Deixe vazio para nenhuma.',
+      quantityInvalid: 'Digite um número inteiro de 1 a {{max}}.',
+      note: 'Nota',
+      notePlaceholder: 'ex.: Pedido nº 1042 ou Saco 2 de 3',
+      copies: 'Número de etiquetas',
+      copiesInvalid: 'Digite um número inteiro de 1 a {{max}}.',
+      previewInvalid: 'Digite uma quantidade válida para ver a etiqueta.',
+      singleLabelPage: 'Uma etiqueta por página.',
+      pngTooLarge: 'São necessárias {{pages}} páginas. A {{dpi}} dpi, o limite para PNG é de {{maxPages}} páginas. Escolha PDF, reduza a resolução ou imprima menos etiquetas.',
+      fields: {
+        parent: 'Projeto pai',
+        name: 'Nome do projeto',
+        note: 'Nota',
+        parts: 'Peças impressas',
+        dueDate: 'Prazo',
+        printed: 'Última impressão',
+        color: 'Cor do projeto',
+        qr: 'Código QR',
+        quantity: 'Quantidade',
+        projectId: 'ID do projeto',
+      },
+    },
   },
 
   // System info
@@ -5575,6 +5604,7 @@ export default {
       pngTooLarge: 'A exportação PNG é limitada a {{maxPages}} páginas de folha a {{dpi}} dpi, e esta tem {{pages}}. Use PDF, uma resolução menor ou menos carretéis.',
       custom: {
         option: 'Folha personalizada…',
+        loadFailed: 'Não foi possível carregar o modelo salvo. Verifique o tamanho da etiqueta selecionado antes de imprimir.',
         savedGroup: 'Modelos salvos',
         hint: 'Descreva abaixo sua própria folha de etiquetas.',
         layoutTitle: 'Layout da folha',

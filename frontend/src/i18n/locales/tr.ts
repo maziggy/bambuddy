@@ -5115,6 +5115,35 @@ export default {
       projectExported: 'Proje dışa aktarıldı',
       templateCreated: 'Şablon oluşturuldu',
     },
+    // Bag labels for a project's finished parts (#3655)
+    labels: {
+      button: 'Etiket',
+      buttonTitle: 'Bitmiş parçaların poşeti veya kutusu için etiket yazdır',
+      title: 'Proje etiketi yazdır',
+      intro: 'Bu projenin bitmiş parçalarının konduğu poşet veya kutu için bir etiket. QR kodu bu projeyi açar.',
+      quantity: 'Poşetteki adet',
+      quantityHint: 'Altta büyük yazdırılır. Yoksa boş bırakın.',
+      quantityInvalid: '1 ile {{max}} arasında bir tam sayı girin.',
+      note: 'Not',
+      notePlaceholder: 'ör. Sipariş #1042 veya Poşet 2/3',
+      copies: 'Etiket sayısı',
+      copiesInvalid: '1 ile {{max}} arasında bir tam sayı girin.',
+      previewInvalid: 'Etiketi görmek için geçerli bir adet girin.',
+      singleLabelPage: 'Her sayfaya bir etiket basılır.',
+      pngTooLarge: '{{pages}} sayfa gerekiyor. {{dpi}} dpi çözünürlükte PNG için üst sınır {{maxPages}} sayfadır. PDF seçin, çözünürlüğü düşürün veya daha az etiket yazdırın.',
+      fields: {
+        parent: 'Üst proje',
+        name: 'Proje adı',
+        note: 'Not',
+        parts: 'Basılan parçalar',
+        dueDate: 'Son tarih',
+        printed: 'Son baskı',
+        color: 'Proje rengi',
+        qr: 'QR kodu',
+        quantity: 'Adet',
+        projectId: 'Proje kimliği',
+      },
+    },
   },
 
   // Sistem bilgisi
@@ -5577,6 +5606,7 @@ export default {
       pngTooLarge: 'PNG dışa aktarma {{dpi}} dpi\'de {{maxPages}} sayfa ile sınırlıdır, bu ise {{pages}} sayfa. PDF, daha düşük çözünürlük veya daha az makara kullanın.',
       custom: {
         option: 'Özel sayfa…',
+        loadFailed: 'Kayıtlı şablon yüklenemedi. Yazdırmadan önce seçili etiket boyutunu kontrol edin.',
         savedGroup: 'Kayıtlı şablonlar',
         hint: 'Kendi etiket sayfanızı aşağıda tanımlayın.',
         layoutTitle: 'Sayfa düzeni',

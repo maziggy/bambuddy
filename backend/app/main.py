@@ -76,6 +76,7 @@ from backend.app.api.routes import (
     printer_locations,
     printer_sensor_history,
     printers,
+    project_labels,
     projects,
     scheduled_dryings,
     settings as settings_routes,
@@ -13625,6 +13626,7 @@ app.include_router(filaments.router, prefix=app_settings.api_prefix)
 app.include_router(finance.router, prefix=app_settings.api_prefix)
 app.include_router(inventory.router, prefix=app_settings.api_prefix)
 app.include_router(labels.router, prefix=app_settings.api_prefix)
+app.include_router(project_labels.router, prefix=app_settings.api_prefix)
 app.include_router(label_templates.router, prefix=app_settings.api_prefix)
 app.include_router(settings_routes.router, prefix=app_settings.api_prefix)
 app.include_router(overlay_branding.router, prefix=app_settings.api_prefix)

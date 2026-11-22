@@ -5126,6 +5126,35 @@ export default {
       projectExported: 'プロジェクトがエクスポートされました',
       templateCreated: 'プロジェクトからテンプレートを作成しました',
     },
+    // Bag labels for a project's finished parts (#3655)
+    labels: {
+      button: 'ラベル',
+      buttonTitle: '完成した部品を入れる袋や箱のラベルを印刷',
+      title: 'プロジェクトラベルを印刷',
+      intro: 'このプロジェクトの完成した部品を入れる袋や箱に貼るラベルです。QRコードでこのプロジェクトが開きます。',
+      quantity: '袋の中の数量',
+      quantityHint: '下部に大きく印刷されます。不要なら空欄のままにします。',
+      quantityInvalid: '1〜{{max}}の整数を入力してください。',
+      note: 'メモ',
+      notePlaceholder: '例: 注文 #1042、袋 2/3',
+      copies: 'ラベルの枚数',
+      copiesInvalid: '1〜{{max}}の整数を入力してください。',
+      previewInvalid: 'ラベルを表示するには有効な数量を入力してください。',
+      singleLabelPage: '1ページにラベルを1枚印刷します。',
+      pngTooLarge: '印刷には{{pages}}ページ必要です。{{dpi}} dpiでPNGに書き出せるのは{{maxPages}}ページまでです。PDFを選ぶか、解像度を下げるか、ラベルの枚数を減らしてください。',
+      fields: {
+        parent: '親プロジェクト',
+        name: 'プロジェクト名',
+        note: 'メモ',
+        parts: '印刷済みの部品',
+        dueDate: '期限',
+        printed: '最終印刷日',
+        color: 'プロジェクトの色',
+        qr: 'QRコード',
+        quantity: '数量',
+        projectId: 'プロジェクトID',
+      },
+    },
   },
 
   // System info
@@ -5588,6 +5617,7 @@ export default {
       pngTooLarge: 'PNG出力は{{dpi}} dpiでシート{{maxPages}}ページまでですが、これは{{pages}}ページです。PDF、低い解像度、または少ないスプールを使ってください。',
       custom: {
         option: 'カスタムシート…',
+        loadFailed: '保存済みテンプレートを読み込めませんでした。印刷前に選択中のラベルサイズを確認してください。',
         savedGroup: '保存済みテンプレート',
         hint: '下で独自のラベルシートを設定します。',
         layoutTitle: 'シートのレイアウト',

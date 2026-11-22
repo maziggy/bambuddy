@@ -5113,6 +5113,35 @@ export default {
       projectExported: '项目已导出',
       templateCreated: '模板已创建',
     },
+    // Bag labels for a project's finished parts (#3655)
+    labels: {
+      button: '标签',
+      buttonTitle: '为装成品零件的袋子或盒子打印标签',
+      title: '打印项目标签',
+      intro: '贴在装有此项目成品零件的袋子或盒子上的标签。扫描二维码可打开此项目。',
+      quantity: '袋中数量',
+      quantityHint: '在底部以大字打印。留空则不打印。',
+      quantityInvalid: '请输入 1 到 {{max}} 之间的整数。',
+      note: '备注',
+      notePlaceholder: '例如：订单 #1042 或 第 2 袋/共 3 袋',
+      copies: '标签数量',
+      copiesInvalid: '请输入 1 到 {{max}} 之间的整数。',
+      previewInvalid: '请输入有效数量以查看标签。',
+      singleLabelPage: '每页打印一张标签。',
+      pngTooLarge: '需要 {{pages}} 页。在 {{dpi}} dpi 下，PNG 最多可导出 {{maxPages}} 页。请选择 PDF、降低分辨率或减少标签数量。',
+      fields: {
+        parent: '上级项目',
+        name: '项目名称',
+        note: '备注',
+        parts: '已打印零件',
+        dueDate: '截止日期',
+        printed: '最后打印',
+        color: '项目颜色',
+        qr: '二维码',
+        quantity: '数量',
+        projectId: '项目 ID',
+      },
+    },
   },
 
   // System info
@@ -5575,6 +5604,7 @@ export default {
       pngTooLarge: 'PNG 导出在 {{dpi}} dpi 下最多 {{maxPages}} 页标签纸，而这次是 {{pages}} 页。请改用 PDF、更低的分辨率或更少的耗材。',
       custom: {
         option: '自定义标签纸…',
+        loadFailed: '无法加载已保存的模板。请在打印前确认所选标签尺寸。',
         savedGroup: '已保存的模板',
         hint: '在下方描述你自己的标签纸。',
         layoutTitle: '标签纸布局',

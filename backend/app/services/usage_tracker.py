@@ -1676,25 +1676,49 @@ async def _track_from_3mf(
     nonzero_slots = [u for u in filament_usage if u.get("used_g", 0) > 0]
     tray_now_override: int | None = None
     tray_changes: list[tuple[int, int]] = []  # [(global_tray_id, layer_num), ...]
+    # Per-slot change lists of a multi-filament print with a backup switch (#3650).
+    slot_changes: dict[int, list[tuple[int, int]]] = {}
     state = printer_manager.get_status(printer_id) if len(nonzero_slots) == 1 else None
     if state is not None:
         tray_changes = getattr(state, "tray_change_log", []) or []
     elif len(nonzero_slots) > 1:
         # Multi-material print: every filament change moves tray_now, so the
-        # log can't be read as "this slot moved to that tray" and splitting
-        # would attribute worse than the mapping does. Say so rather than
-        # silently dropping the evidence — a runout mid-print on a
-        # multi-material job still lands entirely on the mapped tray.
+        # log can't be split per slot as a whole. An AMS backup switch is the
+        # one entry that loads a tray outside the mapping; slot_tray_changes
+        # turns it into the change list of the slot that ran out (#3650).
+        #
+        # Only on a mapping from print start (the print command or the queue
+        # item). The MQTT ``mapping`` read now may already name the backup
+        # tray (see step 2 above), and a colour match is a guess, so neither
+        # says which tray a slot started on: those keep attributing by
+        # mapping, as before.
         _multi_state = printer_manager.get_status(printer_id)
-        if len(getattr(_multi_state, "tray_change_log", []) or []) > 1:
-            logger.warning(
-                "[UsageTracker] 3MF: %d tray changes observed but %d filament slots used — "
-                "splitting needs a single slot, attributing by mapping alone (printer %d, archive %s)",
-                len(_multi_state.tray_change_log),
-                len(nonzero_slots),
-                printer_id,
-                archive_id,
-            )
+        _multi_log = list(getattr(_multi_state, "tray_change_log", None) or [])
+        if len(_multi_log) > 1:
+            reason = None
+            if mapping_source in ("print_cmd", "queue"):
+                from backend.app.utils.tray_split import slot_tray_changes, tray_filaments_from_raw
+
+                slot_changes, reason = slot_tray_changes(
+                    _multi_log,
+                    slot_to_tray,
+                    [u.get("slot_id", 0) for u in nonzero_slots],
+                    tray_filaments_from_raw(getattr(_multi_state, "raw_data", None), tray_layout),
+                )
+                if slot_changes:
+                    logger.info("[UsageTracker] 3MF: backup switch per slot: %s (will split weight)", slot_changes)
+            else:
+                reason = f"the mapping came from {mapping_source or 'nowhere'}, not from print start"
+            if reason:
+                logger.warning(
+                    "[UsageTracker] 3MF: %d tray changes observed but %d filament slots used — "
+                    "cannot tell a backup switch apart (%s), attributing by mapping alone (printer %d, archive %s)",
+                    len(_multi_log),
+                    len(nonzero_slots),
+                    reason,
+                    printer_id,
+                    archive_id,
+                )
 
     if len(tray_changes) > 1:
         # Multi-tray usage detected — splitting takes over regardless of slot_to_tray.
@@ -1841,7 +1865,10 @@ async def _track_from_3mf(
         # ``utils.tray_split.compute_tray_split_grams`` (#1793) — both
         # inventory backends must attribute segments identically or a
         # user running dual-mode sees divergent totals.
-        if len(tray_changes) > 1:
+        # A single-filament print splits on the whole log; a multi-filament one
+        # only the slots a backup switch moved, on their own lists (#3650).
+        split_changes = tray_changes if len(tray_changes) > 1 else slot_changes.get(slot_id, [])
+        if len(split_changes) > 1:
             # Compute total weight for this slot (same logic as normal path)
             if layer_grams and slot_id in layer_grams:
                 total_weight = layer_grams[slot_id]
@@ -1882,11 +1909,13 @@ async def _track_from_3mf(
             # ``compute_tray_split_grams``: it cannot tell a finished print from
             # an aborted one. With no stop layer known, the whole print's count
             # stays, as before.
-            split_layers = (state.total_layers if state else 0) or 0
+            # ``state`` is only read for a single-filament print; a multi-filament
+            # split (#3650) takes the layer count from the live state.
+            split_layers = getattr(state or _swap_state, "total_layers", 0) or 0
             if status != "completed" and _swap_end > 0:
-                split_layers = max([_swap_end] + [layer for _, layer in tray_changes])
+                split_layers = max([_swap_end] + [layer for _, layer in split_changes])
             segments = compute_tray_split_grams(
-                tray_changes=tray_changes,
+                tray_changes=split_changes,
                 total_weight=split_total,
                 slot_id=slot_id,
                 layer_usage=split_layer_usage,
@@ -1908,8 +1937,8 @@ async def _track_from_3mf(
                 if seg_key in covered_before:
                     continue
 
-                seg_start_layer = tray_changes[seg_idx][1]
-                is_last = seg_idx + 1 >= len(tray_changes)
+                seg_start_layer = split_changes[seg_idx][1]
+                is_last = seg_idx + 1 >= len(split_changes)
                 logger.info(
                     "[UsageTracker] 3MF split: segment %d tray=%d (AMS%d-T%d) layers %d-%s -> %.1fg",
                     seg_idx,
@@ -1917,7 +1946,7 @@ async def _track_from_3mf(
                     seg_ams_id,
                     seg_tray_id,
                     seg_start_layer,
-                    tray_changes[seg_idx + 1][1] if not is_last else "end",
+                    split_changes[seg_idx + 1][1] if not is_last else "end",
                     segment_grams,
                 )
 
@@ -1928,7 +1957,7 @@ async def _track_from_3mf(
                     slot_id,
                     segment_grams,
                     seg_start_layer,
-                    None if is_last else tray_changes[seg_idx + 1][1],
+                    None if is_last else split_changes[seg_idx + 1][1],
                 )
                 seg_spool_id = await _resolve_spool_id_for_tray(
                     printer_id=printer_id,

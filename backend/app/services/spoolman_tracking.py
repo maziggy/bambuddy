@@ -1046,6 +1046,78 @@ def _swap_splitter(printer_id: int, state, layer_usage_raw, end_layer: int, comp
     )
 
 
+def _layer_usage_from_json(layer_usage_raw) -> dict[int, dict[int, float]] | None:
+    """The tracking row's per-layer G-code usage with its int keys restored.
+
+    ``tracking.layer_usage`` was serialized to JSON, so the keys come back as
+    strings. A corrupt row (AttributeError: an inner value that is not a dict)
+    reads as no G-code: the split then falls back to its linear ratio, still a
+    correct split, just less precise.
+    """
+    if not layer_usage_raw:
+        return None
+    try:
+        return {
+            int(layer): {int(fid): mm for fid, mm in filaments.items()} for layer, filaments in layer_usage_raw.items()
+        }
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def _multi_slot_tray_changes(
+    printer_id: int,
+    filament_usage: list[dict],
+    slot_to_tray: list | None,
+    label: str,
+) -> dict[int, list[tuple[int, int]]]:
+    """Per-slot tray changes of a multi-filament print with an AMS backup switch (#3650).
+
+    Wraps ``tray_split.slot_tray_changes`` with the printer's live log and
+    tray filaments, the same evidence the built-in inventory reads. Empty for
+    a single-filament print (that one splits on the whole log), without a
+    mapping from print start, and when the log does not fit a backup switch;
+    the last is logged, since those prints keep charging the mapped tray.
+    """
+    used = [u.get("slot_id", 0) for u in filament_usage or [] if u.get("used_g", 0) > 0]
+    if len(used) < 2 or not slot_to_tray:
+        return {}
+    from backend.app.services.printer_manager import printer_manager
+    from backend.app.utils.tray_split import slot_tray_changes, tray_filaments_from_raw
+
+    state = printer_manager.get_status(printer_id)
+    log = list(getattr(state, "tray_change_log", None) or []) if state is not None else []
+    if len(log) < 2:
+        return {}
+    slot_changes, reason = slot_tray_changes(
+        log,
+        slot_to_tray,
+        used,
+        tray_filaments_from_raw(getattr(state, "raw_data", None), printer_tray_layout(printer_id)),
+    )
+    if reason:
+        logger.warning(
+            "[SPOOLMAN] %s: %d tray changes on a %d-filament print, no backup switch to split (%s); "
+            "charging by mapping alone",
+            label,
+            len(log),
+            len(used),
+            reason,
+        )
+    elif slot_changes:
+        logger.info("[SPOOLMAN] %s: backup switch per slot: %s (will split weight)", label, slot_changes)
+    return slot_changes
+
+
+def _print_layers(printer_id: int) -> tuple[int, int]:
+    """``(total_layers, current_layer)`` of the printer's live state, 0 when unknown."""
+    from backend.app.services.printer_manager import printer_manager
+
+    state = printer_manager.get_status(printer_id)
+    total = getattr(state, "total_layers", 0) if state is not None else 0
+    current = getattr(state, "layer_num", 0) if state is not None else 0
+    return (total if isinstance(total, int) else 0), (current if isinstance(current, int) else 0)
+
+
 async def _fetch_spool_for_price(client, spool_id: int) -> dict | None:
     """The spool row a swapped-in spool's share is priced from; None if it can't be read."""
     try:
@@ -1511,6 +1583,8 @@ async def _report_partial_usage(
     if unmapped:
         logger.info("[SPOOLMAN] Partial usage: mapping %s names no tray for the used slots, ignoring it", slot_to_tray)
         slot_to_tray = None
+    # Recovered below, a mapping is no evidence of the tray a slot started on (#3650).
+    start_mapping = slot_to_tray
     if not slot_to_tray:
         slot_to_tray, _partial_mapping_source = _resolve_slot_to_tray_fallback(
             printer_id,
@@ -1530,8 +1604,10 @@ async def _report_partial_usage(
     # (#1793). With per-layer G-code the segments follow it, as in the built-in
     # inventory: every segment but the last ends at a logged switch, all before
     # the stop layer, and the last gets the rest of the partial grams (#3652).
-    # A multi-material print keeps the mapping.
+    # A multi-material print splits only the slots an AMS backup switch moved,
+    # each on its own change list (#3650).
     tray_changes = list(getattr(state, "tray_change_log", None) or []) if state else []
+    slot_changes = _multi_slot_tray_changes(printer_id, filament_usage, start_mapping, "Partial usage")
     # Spools swapped by hand on a tray, shared out up to where the print stopped (#3325).
     swaps = _swap_splitter(printer_id, state, layer_usage, current_layer, completed=False)
 
@@ -1563,9 +1639,35 @@ async def _report_partial_usage(
                 gcode_totals=gcode_totals,
             )
             return updated
-        return await _report_spool_usage_for_slots(
+        updated = 0
+        for slot_id, grams in used:
+            changes = slot_changes.get(slot_id)
+            if not changes:
+                continue
+            split_layers = max([current_layer] + [layer for _, layer in changes])
+            # On the slot's own G-code, as the single-filament split above and
+            # the built-in inventory: a slot that prints only in some layer
+            # bands is far off a linear split by layer (#3650).
+            split_updated, _ = await _report_spool_usage_split_by_tray_changes(
+                client,
+                [{"slot_id": slot_id, "used_g": grams}],
+                changes,
+                ams_trays,
+                split_layer_usage,
+                filament_properties,
+                split_layers,
+                split_layers,
+                f"{method_label} split",
+                printer_serial,
+                printer_id=printer_id,
+                cost_out=cost_out,
+                swaps=swaps,
+                gcode_totals=gcode_totals,
+            )
+            updated += split_updated
+        return updated + await _report_spool_usage_for_slots(
             client,
-            usage_items,
+            [(slot_id, grams) for slot_id, grams in usage_items if slot_id not in slot_changes],
             ams_trays,
             slot_to_tray,
             method_label,
@@ -1749,7 +1851,9 @@ async def report_usage(printer_id: int, archive_id: int):
         # slot's grams across ALL tray_change_log entries would attribute
         # slot 1's grams to the segments where slot 2's tray was loaded and
         # vice versa. Multi-slot prints fall through to the existing
-        # single-tray path (which uses the stable ``slot_to_tray`` mapping).
+        # single-tray path (which uses the stable ``slot_to_tray`` mapping);
+        # only a slot an AMS backup switch moved is split there, on its own
+        # change list (``_multi_slot_tray_changes``, #3650).
         nonzero_slots = [u for u in filament_usage if u.get("used_g", 0) > 0]
         tray_changes: list[tuple[int, int]] = []
         _state = None
@@ -1794,6 +1898,17 @@ async def report_usage(printer_id: int, archive_id: int):
             slot_to_tray,
             mapping_source,
         )
+        # A multi-filament print whose slot AMS backup switched to another tray
+        # mid-print: that slot is split on its own change list, the others keep
+        # the mapping, as in the built-in inventory (#3650). Only on the mapping
+        # stored at print start; a recovered one is no evidence of the tray a
+        # slot started on.
+        slot_changes = _multi_slot_tray_changes(
+            printer_id,
+            filament_usage,
+            slot_to_tray if mapping_source == "stored" else None,
+            f"Archive {archive_id}",
+        )
         # Nothing named a tray for this print and no fallback could recover
         # one, so every slot is about to be resolved by position -- slicer slot
         # 1 to the first loaded tray, and so on. That guess is right for an AMS
@@ -1837,22 +1952,7 @@ async def report_usage(printer_id: int, archive_id: int):
                     tray_changes,
                     _layer_denom_hint,
                 )
-                # ``tracking.layer_usage`` was serialized to JSON so int keys
-                # come back as strings. Restore them for the split math.
-                layer_usage = None
-                if layer_usage_raw:
-                    try:
-                        layer_usage = {
-                            int(layer): {int(fid): mm for fid, mm in filaments.items()}
-                            for layer, filaments in layer_usage_raw.items()
-                        }
-                    except (TypeError, ValueError, AttributeError):
-                        # AttributeError catches ``inner.items()`` when the
-                        # inner value isn't dict-shaped (corrupt JSON row).
-                        # Missing gcode falls through to the linear-ratio
-                        # branch inside ``compute_tray_split_grams`` — still
-                        # gives a correct split, just less precise.
-                        layer_usage = None
+                layer_usage = _layer_usage_from_json(layer_usage_raw)
                 split_updated, split_handled = await _report_spool_usage_split_by_tray_changes(
                     client,
                     filament_usage,
@@ -1874,8 +1974,37 @@ async def report_usage(printer_id: int, archive_id: int):
                 handled_global_tray_ids |= split_handled
             else:
                 logger.info("[SPOOLMAN] Reporting per-filament usage for archive %s", archive_id)
-                usage_items = [(u.get("slot_id", 0), u.get("used_g", 0)) for u in filament_usage]
-                spools_updated = await _report_spool_usage_for_slots(
+                # ``_state`` and its layers are read for single-slot prints only.
+                _multi_total, _multi_current = _print_layers(printer_id) if slot_changes else (0, 0)
+                for u in filament_usage:
+                    changes = slot_changes.get(u.get("slot_id", 0))
+                    if not changes:
+                        continue
+                    split_updated, split_handled = await _report_spool_usage_split_by_tray_changes(
+                        client,
+                        [u],
+                        changes,
+                        ams_trays,
+                        _layer_usage_from_json(layer_usage_raw),
+                        filament_properties,
+                        _multi_total,
+                        _multi_total or _multi_current,
+                        f"Archive {archive_id}",
+                        printer_serial,
+                        printer_id=printer_id,
+                        slot_colors_out=slot_colors,
+                        slot_materials_out=slot_materials,
+                        cost_out=print_cost,
+                        swaps=swaps,
+                    )
+                    spools_updated += split_updated
+                    handled_global_tray_ids |= split_handled
+                usage_items = [
+                    (u.get("slot_id", 0), u.get("used_g", 0))
+                    for u in filament_usage
+                    if u.get("slot_id", 0) not in slot_changes
+                ]
+                spools_updated += await _report_spool_usage_for_slots(
                     client,
                     usage_items,
                     ams_trays,
@@ -1891,7 +2020,7 @@ async def report_usage(printer_id: int, archive_id: int):
                 # Track which physical slots the 3MF path already covered so
                 # Path 2 doesn't double-charge them.
                 for u in filament_usage:
-                    if u.get("used_g", 0) <= 0:
+                    if u.get("used_g", 0) <= 0 or u.get("slot_id", 0) in slot_changes:
                         # ``_report_spool_usage_for_slots`` skipped this slot
                         # before resolving a tray for it, so nothing was
                         # charged and Path 2 is free to cover the slot from

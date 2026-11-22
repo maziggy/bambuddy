@@ -6,6 +6,7 @@ import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useTranslation } from 'react-i18next';
 import { getAmsLabel } from '../utils/amsHelpers';
+import { rfidLinkBody } from '../utils/rfidTagLink';
 import { useUiSettings } from './useUiSettings';
 
 export interface UnknownTagDetail {
@@ -21,6 +22,9 @@ export interface UnknownTagDetail {
   tray_color?: string | null;
   tray_sub_brands?: string | null;
   tray_count?: number | null;
+  // Untagged spools that match the tag but differ, so the matcher left the
+  // choice to the user (#3658). Oldest first.
+  candidate_spool_ids?: number[];
 }
 
 export interface UnknownSpoolPrompt {
@@ -33,6 +37,9 @@ export interface UnknownSpoolPrompt {
   material: string | null;
   color_hex: string | null;
   brand: string | null;
+  tag_uid: string | null;
+  tray_uuid: string | null;
+  candidate_spool_ids: number[];
 }
 
 function slotKey(printer_id: number, ams_id: number, tray_id: number): string {
@@ -67,6 +74,9 @@ export function useUnknownTagPrompt() {
         material: detail.tray_type ?? null,
         color_hex: detail.tray_color ?? null,
         brand: detail.tray_sub_brands ?? null,
+        tag_uid: detail.tag_uid ?? null,
+        tray_uuid: detail.tray_uuid ?? null,
+        candidate_spool_ids: detail.candidate_spool_ids ?? [],
       };
     },
     [queryClient, t],
@@ -127,10 +137,43 @@ export function useUnknownTagPrompt() {
     },
   });
 
+  // Built-in inventory only: link the tag to a spool the user picked and
+  // assign the slot, in one call (#3658). Spoolman mode has its own link
+  // (#3632).
+  const linkMutation = useMutation({
+    mutationFn: async ({ prompt, spoolId }: { prompt: UnknownSpoolPrompt; spoolId: number }) =>
+      api.linkTagToSpool(spoolId, {
+        ...rfidLinkBody(prompt),
+        printer_id: prompt.printer_id,
+        ams_id: prompt.ams_id,
+        tray_id: prompt.tray_id,
+      }),
+    onSuccess: (_spool, { spoolId }) => {
+      showToast(t('inventory.rfidLink.linked', { id: spoolId }), 'success');
+      queryClient.invalidateQueries({ queryKey: ['inventory-spools'] });
+      queryClient.invalidateQueries({ queryKey: ['spool-assignments'] });
+      setQueue(prev => prev.slice(1));
+    },
+    onError: () => {
+      showToast(t('inventory.rfidLink.linkFailed'), 'error');
+    },
+  });
+
+  const isPending = addMutation.isPending || linkMutation.isPending;
+  const canLink = uiSettings !== undefined && !uiSettings.spoolman_enabled;
+
   const confirm = useCallback(() => {
-    if (!current || addMutation.isPending) return;
+    if (!current || isPending) return;
     addMutation.mutate(current);
-  }, [current, addMutation]);
+  }, [current, isPending, addMutation]);
+
+  const link = useCallback(
+    (spoolId: number) => {
+      if (!current || isPending) return;
+      linkMutation.mutate({ prompt: current, spoolId });
+    },
+    [current, isPending, linkMutation],
+  );
 
   const cancel = useCallback(() => {
     if (!current) return;
@@ -140,10 +183,12 @@ export function useUnknownTagPrompt() {
   return useMemo(
     () => ({
       prompt: current,
-      isPending: addMutation.isPending,
+      isPending,
+      canLink,
       confirm,
+      link,
       cancel,
     }),
-    [current, addMutation.isPending, confirm, cancel],
+    [current, isPending, canLink, confirm, link, cancel],
   );
 }

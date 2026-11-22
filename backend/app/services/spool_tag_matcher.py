@@ -303,12 +303,12 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
     return spool
 
 
-async def find_matching_untagged_spool(db: AsyncSession, tray_data: dict) -> Spool | None:
-    """Find an existing untagged Bambu inventory spool matching material/color.
+async def find_untagged_candidates(db: AsyncSession, tray_data: dict) -> list[Spool]:
+    """Untagged Bambu inventory spools a newly read tag could belong to, best first.
 
     When a Bambu Lab spool is detected in the AMS but no tag match exists,
     check if the user has a manually-added spool with the same properties
-    that hasn't been linked to a tag yet. Returns the best match (#918):
+    that hasn't been linked to a tag yet (#918):
 
     - **Brand**: only consider spools whose brand is unspecified or contains
       "bambu" (case-insensitive — covers both "Bambu" and "Bambu Lab" as
@@ -318,15 +318,17 @@ async def find_matching_untagged_spool(db: AsyncSession, tray_data: dict) -> Spo
       "Basic"), but fall back to a NULL-subtype spool — the form's Quick Add
       mode leaves subtype empty, so bulk-logged spools rely on this fallback
       to attract their RFID tag instead of duplicating on first AMS read.
-    - **FIFO** within each preference group (user likely logged in purchase
-      order).
+
+    Returns the best preference group only (the exact-subtype spools when
+    there are any, else the NULL-subtype ones), oldest first: the user likely
+    logged them in purchase order.
     """
     tray_type = tray_data.get("tray_type", "")
     tray_sub_brands = tray_data.get("tray_sub_brands", "")
     tray_color = tray_data.get("tray_color", "")  # RRGGBBAA
 
     if not tray_type or not tray_color:
-        return None
+        return []
 
     # Parse material the same way create_spool_from_tray does
     material = tray_type
@@ -371,9 +373,9 @@ async def find_matching_untagged_spool(db: AsyncSession, tray_data: dict) -> Spo
     )
 
     if subtype:
-        # Exact subtype OR NULL fallback. The CASE in ORDER BY ensures an
-        # exact-subtype row beats a NULL-subtype row when both exist; FIFO
-        # within each group.
+        # Exact subtype OR NULL fallback. The CASE in ORDER BY puts the
+        # exact-subtype rows ahead of the NULL-subtype rows; FIFO within each
+        # group.
         query = query.where(
             or_(
                 func.upper(Spool.subtype) == subtype.upper(),
@@ -382,25 +384,49 @@ async def find_matching_untagged_spool(db: AsyncSession, tray_data: dict) -> Spo
         ).order_by(
             case((func.upper(Spool.subtype) == subtype.upper(), 0), else_=1),
             Spool.created_at.asc(),
+            Spool.id.asc(),
         )
     else:
-        query = query.where(Spool.subtype.is_(None)).order_by(Spool.created_at.asc())
+        query = query.where(Spool.subtype.is_(None)).order_by(Spool.created_at.asc(), Spool.id.asc())
 
-    query = query.limit(1)
+    # Enough to list in the prompt; nobody keeps more than that of one colour.
+    result = await db.execute(query.limit(50))
+    spools = list(result.scalars().all())
+    if subtype and spools and spools[0].subtype is not None:
+        spools = [s for s in spools if s.subtype is not None]
+    return spools
 
-    result = await db.execute(query)
-    spool = result.scalar_one_or_none()
 
-    if spool:
-        logger.info(
-            "Found matching untagged spool %d: %s %s %s (rgba=%s)",
-            spool.id,
-            spool.brand or "",
-            spool.material,
-            spool.color_name or "",
-            spool.rgba or "",
-        )
+def untagged_match_is_ambiguous(candidates: list[Spool]) -> bool:
+    """True when the candidates differ in a way only the user can settle (#3658).
 
+    Identical unopened spools (the bulk-logged sealed boxes of #918) are
+    interchangeable, so the oldest takes the tag. Once one of them has been
+    used, picking by age can put the tag of an opened spool on a sealed one,
+    and every gram printed from the slot is then booked to the wrong spool.
+    """
+    return len(candidates) > 1 and any((s.weight_used or 0) > 0 for s in candidates)
+
+
+async def find_matching_untagged_spool(db: AsyncSession, tray_data: dict) -> Spool | None:
+    """The untagged inventory spool a newly read tag belongs to, if that is clear.
+
+    The oldest spool of the best candidate group (see ``find_untagged_candidates``),
+    or None when there is none, or when the candidates differ and the user has
+    to choose (``untagged_match_is_ambiguous``).
+    """
+    candidates = await find_untagged_candidates(db, tray_data)
+    if not candidates or untagged_match_is_ambiguous(candidates):
+        return None
+    spool = candidates[0]
+    logger.info(
+        "Found matching untagged spool %d: %s %s %s (rgba=%s)",
+        spool.id,
+        spool.brand or "",
+        spool.material,
+        spool.color_name or "",
+        spool.rgba or "",
+    )
     return spool
 
 

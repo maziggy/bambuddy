@@ -48,4 +48,42 @@ describe('useUnknownTagPrompt', () => {
     await waitFor(() => expect(toSpoolman).toHaveBeenCalledWith({ printer_id: 1, ams_id: 0, tray_id: 2 }));
     expect(toBuiltIn).not.toHaveBeenCalled();
   });
+
+  it('links the tag to a picked spool and assigns the slot in built-in mode (#3658)', async () => {
+    server.use(http.get('/api/v1/settings/ui-flags', () => HttpResponse.json({ spoolman_enabled: false })));
+    const link = vi.spyOn(api, 'linkTagToSpool').mockResolvedValue({} as never);
+    const { result } = renderHook(() => useUnknownTagPrompt(), { wrapper });
+
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent('unknown-tag', {
+          detail: {
+            printer_id: 1,
+            ams_id: 0,
+            tray_id: 2,
+            tray_type: 'PLA',
+            tag_uid: 'AABBCCDD11223344',
+            tray_uuid: 'AABBCCDDEEFF0011AABBCCDDEEFF0011',
+            candidate_spool_ids: [12, 30],
+          },
+        }),
+      );
+    });
+    await waitFor(() => expect(result.current.prompt?.candidate_spool_ids).toEqual([12, 30]));
+    await waitFor(() => expect(result.current.canLink).toBe(true));
+    await act(async () => result.current.link(30));
+
+    await waitFor(() =>
+      expect(link).toHaveBeenCalledWith(30, {
+        tag_uid: 'AABBCCDD11223344',
+        tray_uuid: 'AABBCCDDEEFF0011AABBCCDDEEFF0011',
+        tag_type: 'bambulab',
+        data_origin: 'rfid_linked',
+        printer_id: 1,
+        ams_id: 0,
+        tray_id: 2,
+      }),
+    );
+    await waitFor(() => expect(result.current.prompt).toBeNull());
+  });
 });

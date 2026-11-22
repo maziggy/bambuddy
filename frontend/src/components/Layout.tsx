@@ -1154,7 +1154,9 @@ export function Layout() {
       <UnknownSpoolModal
         prompt={unknownSpool.prompt}
         isPending={unknownSpool.isPending}
+        canLink={unknownSpool.canLink}
         onConfirm={unknownSpool.confirm}
+        onLink={unknownSpool.link}
         onCancel={unknownSpool.cancel}
       />
 

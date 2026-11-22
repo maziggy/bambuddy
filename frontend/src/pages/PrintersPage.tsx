@@ -189,6 +189,7 @@ import { HeaterHistoryModal } from '../components/HeaterHistoryModal';
 import type { HeaterSensorKind } from '../api/client';
 import { FilamentHoverCard, EmptySlotHoverCard } from '../components/FilamentHoverCard';
 import { AssignSpoolModal } from '../components/AssignSpoolModal';
+import { LinkTagModal, type LinkTagTarget } from '../components/LinkTagModal';
 import { ConfigureAmsSlotModal } from '../components/ConfigureAmsSlotModal';
 import { useToast } from '../contexts/ToastContext';
 import { ChamberLight } from '../components/icons/ChamberLight';
@@ -2429,6 +2430,35 @@ function PrinterCard({
     trayId: number;
     trayInfo: { type: string; color: string; location: string; material?: string; profile?: string; emptyKind?: 'physical' | 'reset' | null };
   } | null>(null);
+  // Linking an RFID slot's tag to a spool, or moving it to the right one (#3658).
+  const [linkTagTarget, setLinkTagTarget] = useState<LinkTagTarget | null>(null);
+  // The slot card's tag actions for a slot the AMS read an RFID tag in, in
+  // built-in inventory: link the tag when no spool is assigned (the
+  // unknown-tag prompt was missed or dismissed), or move it when the assigned
+  // spool got it from an automatic match.
+  const rfidTagActions = (
+    assignment: SpoolAssignment | undefined,
+    tray: { tag_uid?: string | null; tray_uuid?: string | null; tray_type?: string | null; tray_color?: string | null } | null | undefined,
+    amsId: number,
+    trayId: number,
+    slotLabel: string,
+  ): { onLinkExistingSpool?: () => void; onMoveTag?: () => void } => {
+    if (!tray || !isBambuLabSpool(tray) || !hasPermission('inventory:update')) return {};
+    // Until the slot assignments have loaded, "no assignment" means "not known yet".
+    if (queryClient.getQueryData(['spool-assignments']) === undefined) return {};
+    const target: LinkTagTarget = {
+      tag: { tag_uid: tray.tag_uid, tray_uuid: tray.tray_uuid },
+      slot: { printerId: printer.id, amsId, trayId },
+      location: `${printer.name} • ${slotLabel}`,
+      material: tray.tray_type ?? null,
+      colorHex: tray.tray_color ?? null,
+    };
+    if (!assignment) return { onLinkExistingSpool: () => setLinkTagTarget(target) };
+    if (assignment.spool?.data_origin === 'rfid_linked') {
+      return { onMoveTag: () => setLinkTagTarget({ ...target, holder: assignment.spool }) };
+    }
+    return {};
+  };
   const [configureSlotModal, setConfigureSlotModal] = useState<{
     amsId: number;
     trayId: number;
@@ -6122,6 +6152,7 @@ function PrinterCard({
                                               },
                                             }),
                                             onUnassignSpool: (assignment && !isBambuLabSpool(tray)) ? () => onUnassignSpool?.(printer.id, ams.id, slotIdx) : undefined,
+                                            ...rfidTagActions(assignment, tray, ams.id, slotIdx, t('configureAmsSlot.slotLabel', { ams: cardLabel, slot: slotIdx + 1 })),
                                             isAssigned: !!assignment || isBambuLabSpool(tray),
                                           };
                                         })()}
@@ -6539,6 +6570,7 @@ function PrinterCard({
                                           },
                                         }),
                                         onUnassignSpool: (assignment && !isBambuLabSpool(tray)) ? () => onUnassignSpool?.(printer.id, ams.id, htSlotId) : undefined,
+                                        ...rfidTagActions(assignment, tray, ams.id, htSlotId, getAmsLabel(ams.id)),
                                         isAssigned: !!assignment || isBambuLabSpool(tray),
                                       };
                                     })()}
@@ -7725,6 +7757,8 @@ function PrinterCard({
           spoolmanEnabled={!!spoolmanEnabled}
         />
       )}
+
+      <LinkTagModal target={linkTagTarget} onClose={() => setLinkTagTarget(null)} />
 
       {/* Configure AMS Slot Modal */}
       {configureSlotModal && (

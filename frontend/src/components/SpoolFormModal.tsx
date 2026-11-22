@@ -28,6 +28,7 @@ import { normaliseFlow } from '../utils/nozzleFlow';
 import { parseUTCDate, toDateTimeLocalValue } from '../utils/date';
 import { SpoolUsageHistory } from './SpoolUsageHistory';
 import { AssignToAmsModal } from './spoolbuddy/AssignToAmsModal';
+import { LinkTagModal } from './LinkTagModal';
 import {
   invalidateInventoryLocations,
   invalidateSpoolAndLocationQueries,
@@ -101,6 +102,8 @@ export function SpoolFormModal({
   const [quickAdd, setQuickAdd] = useState(false);
   const [quantity, setQuantity] = useState(1);
   const [showAssignModal, setShowAssignModal] = useState(false);
+  // Giving this spool's tag to the spool it belongs to (#3658).
+  const [showMoveTag, setShowMoveTag] = useState(false);
 
   useEffect(() => {
     setShowAssignModal(false);
@@ -878,6 +881,7 @@ export function SpoolFormModal({
     queryFn: () => api.getSpoolmanSlotAssignments(),
     enabled: isOpen && isEditing && spoolmanMode,
   });
+  const builtInAssignment = !spoolmanMode && spool ? assignments?.find(a => a.spool_id === spool.id) : undefined;
   const spoolAssignment = (() => {
     if (!spool) return undefined;
     if (spoolmanMode) {
@@ -1457,6 +1461,12 @@ export function SpoolFormModal({
                 <Tag className="w-4 h-4" />
                 {t('inventory.clearRfid', 'Clear RFID Tag')}
               </Button>
+              {!spoolmanMode && (spool?.tag_uid || spool?.tray_uuid) && (
+                <Button variant="secondary" onClick={() => setShowMoveTag(true)} disabled={isPending}>
+                  <Tag className="w-4 h-4" />
+                  {t('inventory.rfidLink.moveTagEllipsis')}
+                </Button>
+              )}
               {spoolAssignment ? (
                 <Button
                   variant="secondary"
@@ -1510,6 +1520,22 @@ export function SpoolFormModal({
         printerId={null}
         variant="dialog"
         spoolmanMode={spoolmanMode}
+      />
+    )}
+    {showMoveTag && spool && !spoolmanMode && (
+      <LinkTagModal
+        target={{
+          holder: spool,
+          // The tag moves with the slot this spool holds, so that slot is
+          // assigned to the spool that gets it.
+          slot: builtInAssignment
+            ? { printerId: builtInAssignment.printer_id, amsId: builtInAssignment.ams_id, trayId: builtInAssignment.tray_id }
+            : null,
+          material: spool.material,
+          colorHex: spool.rgba,
+        }}
+        onClose={() => setShowMoveTag(false)}
+        onLinked={onClose}
       />
     )}
     </>

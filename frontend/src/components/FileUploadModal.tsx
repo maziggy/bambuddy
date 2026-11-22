@@ -1,3 +1,4 @@
+import { ScrollableModalOverlay } from './ScrollableModalOverlay';
 import { useState, useRef, useEffect, type DragEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -174,7 +175,7 @@ export function FileUploadModal({ folderId, onClose, onUploadComplete, onFileUpl
   const allDone = files.length > 0 && pendingCount === 0 && !isUploading;
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+    <ScrollableModalOverlay className="bg-black/70">
       <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-lg border border-bambu-dark-tertiary">
         <div className="p-4 border-b border-bambu-dark-tertiary flex items-center justify-between">
           <h2 className="text-lg font-semibold text-white">{t('fileManager.uploadFiles')}</h2>
@@ -378,6 +379,6 @@ export function FileUploadModal({ folderId, onClose, onUploadComplete, onFileUpl
           )}
         </div>
       </div>
-    </div>
+    </ScrollableModalOverlay>
   );
 }

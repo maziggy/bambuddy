@@ -1,14 +1,12 @@
-import { useLayoutEffect, useRef, type ReactNode, type MouseEventHandler } from 'react';
+import { useLayoutEffect, useRef, type HTMLAttributes } from 'react';
 import './ScrollableModalOverlay.css';
 
-interface ScrollableModalOverlayProps {
-  children: ReactNode;
-  className: string;
-  onClick?: MouseEventHandler<HTMLDivElement>;
+interface ScrollableModalOverlayProps extends HTMLAttributes<HTMLDivElement> {
+  zIndexClassName?: string;
 }
 
 /** Fixed backdrop for a single panel that may exceed the visible viewport. */
-export function ScrollableModalOverlay({ children, className, onClick }: ScrollableModalOverlayProps) {
+export function ScrollableModalOverlay({ children, className = '', zIndexClassName = 'z-50', ...props }: ScrollableModalOverlayProps) {
   const overlay = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
@@ -33,7 +31,7 @@ export function ScrollableModalOverlay({ children, className, onClick }: Scrolla
   }, []);
 
   return (
-    <div ref={overlay} className={`scrollable-modal-overlay ${className}`} onClick={onClick}>
+    <div ref={overlay} className={`fixed scrollable-modal-overlay ${zIndexClassName} ${className}`} {...props}>
       {children}
     </div>
   );

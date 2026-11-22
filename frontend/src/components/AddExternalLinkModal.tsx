@@ -1,3 +1,4 @@
+import { ScrollableModalOverlay } from './ScrollableModalOverlay';
 import { useState, useEffect, useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, Save, Loader2, Upload, Trash2 } from 'lucide-react';
@@ -154,8 +155,8 @@ export function AddExternalLinkModal({ link, onClose }: AddExternalLinkModalProp
   const PresetIcon = getIconByName(icon);
 
   return (
-    <div
-      className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+    <ScrollableModalOverlay
+      className="bg-black/70"
       onClick={onClose}
     >
       <div
@@ -313,6 +314,6 @@ export function AddExternalLinkModal({ link, onClose }: AddExternalLinkModalProp
           </div>
         </form>
       </div>
-    </div>
+    </ScrollableModalOverlay>
   );
 }

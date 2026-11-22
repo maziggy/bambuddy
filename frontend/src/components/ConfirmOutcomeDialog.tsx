@@ -1,3 +1,4 @@
+import { ScrollableModalOverlay } from './ScrollableModalOverlay';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -109,7 +110,7 @@ export function ConfirmOutcomeDialog({ archiveId, runId, change = false, onClose
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" data-testid="confirm-outcome-dialog">
+    <ScrollableModalOverlay className="bg-black/60" data-testid="confirm-outcome-dialog">
       <div className="bg-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary w-full max-w-md overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-bambu-dark-tertiary">
@@ -223,6 +224,6 @@ export function ConfirmOutcomeDialog({ archiveId, runId, change = false, onClose
           )}
         </div>
       </div>
-    </div>
+    </ScrollableModalOverlay>
   );
 }

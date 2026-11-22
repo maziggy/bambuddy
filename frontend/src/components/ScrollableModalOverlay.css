@@ -1,7 +1,5 @@
 .scrollable-modal-overlay {
-  position: fixed;
   inset: var(--modal-top, 0px) 0 auto;
-  z-index: 50;
   height: var(--modal-height, 100vh);
   display: flex;
   flex-direction: column;

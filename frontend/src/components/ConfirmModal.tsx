@@ -1,3 +1,4 @@
+import { ScrollableModalOverlay } from './ScrollableModalOverlay';
 import { useEffect, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Loader2 } from 'lucide-react';
@@ -84,8 +85,9 @@ export function ConfirmModal({
   const styles = variantStyles[variant];
 
   return (
-    <div
-      className={`fixed inset-0 bg-black/50 flex items-center justify-center p-4 ${overlayZIndex ?? 'z-50'}`}
+    <ScrollableModalOverlay
+      className="bg-black/50"
+      zIndexClassName={overlayZIndex}
       onClick={isLoading || !dismissible ? undefined : onCancel}
     >
       <Card
@@ -129,6 +131,6 @@ export function ConfirmModal({
           </div>
         </CardContent>
       </Card>
-    </div>
+    </ScrollableModalOverlay>
   );
 }

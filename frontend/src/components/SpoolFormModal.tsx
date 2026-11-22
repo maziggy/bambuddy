@@ -1342,6 +1342,7 @@ export function SpoolFormModal({
                   availableMaterials={availableMaterials}
                   suggestedBrands={suggestedBrands}
                   suggestedMaterials={suggestedMaterials}
+                  splitPresetProductLine={isCreating}
                   quickAdd={quickAdd}
                   detailsRequired={!quickAdd && !spoolmanMode && mode === 'create'}
                   quantity={quantity}

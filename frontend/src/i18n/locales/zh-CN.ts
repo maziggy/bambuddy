@@ -1808,6 +1808,7 @@ export default {
       startPrint: '开始打印',
       stopPrint: '停止打印',
       requeue: '重新排队',
+      duplicate: '复制（再添加一份到队列）',
     },
     // Bulk edit
     bulkEdit: {
@@ -1836,6 +1837,8 @@ export default {
       selected: '已选择 {{count}} 个',
       editSelected: '编辑所选',
       cancelSelected: '取消所选',
+      duplicateSelected: '复制',
+      duplicateNone: '所选任务均无法复制',
     },
     // Confirmations
     confirm: {
@@ -1873,6 +1876,9 @@ export default {
       bulkUpdatedNone: '没有更新任何任务',
       bulkCancelled: '已取消 {{count}} 个项目',
       bulkCancelFailed: '批量取消项目失败',
+      duplicated: '已将 {{count}} 个任务添加到队列末尾',
+      duplicateFailed: '复制失败',
+      duplicateSkipped: '已添加 {{count}} 个任务；跳过了 {{skipped}} 个无法复制的任务',
       batchCreated: '已创建批次"{{name}}"',
       batchCreateFailed: '创建批次失败',
       batchUngrouped: '已取消分组 {{count}} 项',
@@ -1931,6 +1937,7 @@ export default {
       noEdit: '您没有编辑此队列项目的权限',
       noCancel: '您没有取消此队列项目的权限',
       noRequeue: '您没有重新排队的权限',
+      noDuplicate: '您没有向队列添加任务的权限',
       noRemove: '您没有移除此队列项目的权限',
       noClearHistory: '您没有清除所有历史的权限',
       noEditItems: '您没有编辑队列项目的权限',
@@ -6462,6 +6469,10 @@ export default {
     downloadingFile: '正在下载备份文件...',
     backupDownloaded: '备份下载成功',
     failedToCreateBackup: '创建备份失败：{{message}}',
+    backupAlreadyRunning: '已有备份正在运行，请稍后再试。',
+    restoreBlockedByBackup: '备份正在运行，请在完成后再恢复。',
+    restoreRunning: '恢复正在进行，请在完成后再试。',
+    backupMissingFiles: '备份已完成，但部分文件无法复制（未复制：{{count}}）。详情请查看日志。',
     restore: '恢复',
     restoreReplacesAll: '恢复将替换所有数据。',
     restoreReplacesAllDetail: '您当前的数据库和文件将被完全替换。恢复后需要重启。',

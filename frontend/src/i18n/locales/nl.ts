@@ -1824,6 +1824,7 @@ export default {
       startPrint: 'Afdruk starten',
       stopPrint: 'Afdruk stoppen',
       requeue: 'Opnieuw in wachtrij plaatsen',
+      duplicate: 'Dupliceren (nog een kopie aan de wachtrij toevoegen)',
     },
     // Bulk edit
     bulkEdit: {
@@ -1852,6 +1853,8 @@ export default {
       selected: '{{count}} geselecteerd',
       editSelected: 'Geselecteerde bewerken',
       cancelSelected: 'Geselecteerde annuleren',
+      duplicateSelected: 'Dupliceren',
+      duplicateNone: 'Geen van de geselecteerde taken kan worden gedupliceerd',
     },
     // Confirmations
     confirm: {
@@ -1889,6 +1892,9 @@ export default {
       bulkUpdatedNone: 'Geen taken bijgewerkt',
       bulkCancelled: '{{count}} item(s) geannuleerd',
       bulkCancelFailed: 'Items annuleren mislukt',
+      duplicated: '{{count}} taak/taken achteraan de wachtrij toegevoegd',
+      duplicateFailed: 'Dupliceren van items mislukt',
+      duplicateSkipped: '{{count}} taak/taken toegevoegd; {{skipped}} niet-dupliceerbare overgeslagen',
       batchCreated: 'Batch "{{name}}" gemaakt',
       batchCreateFailed: 'Batch maken mislukt',
       batchUngrouped: 'Groepering van {{count}} item(s) opgeheven',
@@ -1948,6 +1954,7 @@ export default {
       noEdit: 'Je hebt geen toestemming om dit wachtrij-item te bewerken',
       noCancel: 'Je hebt geen toestemming om dit wachtrij-item te annuleren',
       noRequeue: 'Je hebt geen toestemming om items opnieuw in de wachtrij te plaatsen',
+      noDuplicate: 'Je hebt geen toestemming om taken aan de wachtrij toe te voegen',
       noRemove: 'Je hebt geen toestemming om dit wachtrij-item te verwijderen',
       noClearHistory: 'Je hebt geen toestemming om de volledige geschiedenis te wissen',
       noEditItems: 'Je hebt geen toestemming om wachtrij-items te bewerken',
@@ -6526,6 +6533,10 @@ export default {
     downloadingFile: 'Back-upbestand downloaden...',
     backupDownloaded: 'Back-up succesvol gedownload',
     failedToCreateBackup: 'Back-up maken mislukt: {{message}}',
+    backupAlreadyRunning: 'Er wordt al een back-up gemaakt. Probeer het zo meteen opnieuw.',
+    restoreBlockedByBackup: 'Er wordt een back-up gemaakt. Herstel zodra die klaar is.',
+    restoreRunning: 'Er wordt hersteld. Probeer het opnieuw zodra dat klaar is.',
+    backupMissingFiles: 'Back-up voltooid, maar sommige bestanden konden niet worden gekopieerd (niet gekopieerd: {{count}}). Ze staan in het logboek.',
     restore: 'Herstellen',
     restoreReplacesAll: 'Herstellen vervangt alle gegevens.',
     restoreReplacesAllDetail: 'Je huidige database en bestanden worden volledig vervangen. Na herstel is een herstart vereist.',

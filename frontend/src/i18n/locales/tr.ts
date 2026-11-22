@@ -1808,6 +1808,7 @@ export default {
       startPrint: 'Baskıyı Başlat',
       stopPrint: 'Baskıyı Durdur',
       requeue: 'Yeniden Kuyrukla',
+      duplicate: 'Çoğalt (kuyruğa bir kopya daha ekle)',
     },
     // Toplu düzenleme
     bulkEdit: {
@@ -1836,6 +1837,8 @@ export default {
       selected: '{{count}} seçildi',
       editSelected: 'Seçilenleri Düzenle',
       cancelSelected: 'Seçilenleri İptal Et',
+      duplicateSelected: 'Çoğalt',
+      duplicateNone: 'Seçilen işlerin hiçbiri çoğaltılamaz',
     },
     // Onaylar
     confirm: {
@@ -1873,6 +1876,9 @@ export default {
       bulkUpdatedNone: 'Hiçbir iş güncellenmedi',
       bulkCancelled: '{{count}} öğe iptal edildi',
       bulkCancelFailed: 'Öğeler iptal edilemedi',
+      duplicated: 'Kuyruğun sonuna {{count}} iş eklendi',
+      duplicateFailed: 'Öğeler çoğaltılamadı',
+      duplicateSkipped: '{{count}} iş eklendi; çoğaltılamayan {{skipped}} iş atlandı',
       batchCreated: '"{{name}}" yığını oluşturuldu',
       batchCreateFailed: 'Yığın oluşturma başarısız',
       batchUngrouped: '{{count}} öğe gruptan çıkarıldı',
@@ -1931,6 +1937,7 @@ export default {
       noEdit: 'Bu kuyruk öğesini düzenleme izniniz yok',
       noCancel: 'Bu kuyruk öğesini iptal etme izniniz yok',
       noRequeue: 'Öğeleri yeniden kuyruklama izniniz yok',
+      noDuplicate: 'Kuyruğa iş ekleme izniniz yok',
       noRemove: 'Bu kuyruk öğesini kaldırma izniniz yok',
       noClearHistory: 'Tüm geçmişi temizleme izniniz yok',
       noEditItems: 'Kuyruk öğelerini düzenleme izniniz yok',
@@ -6451,6 +6458,10 @@ export default {
     downloadingFile: 'Yedek dosyası indiriliyor...',
     backupDownloaded: 'Yedek başarıyla indirildi',
     failedToCreateBackup: 'Yedek oluşturulamadı: {{message}}',
+    backupAlreadyRunning: 'Zaten bir yedekleme çalışıyor. Birazdan yeniden deneyin.',
+    restoreBlockedByBackup: 'Bir yedekleme çalışıyor. Bittikten sonra geri yükleyin.',
+    restoreRunning: 'Bir geri yükleme çalışıyor. Bittikten sonra yeniden deneyin.',
+    backupMissingFiles: 'Yedekleme tamamlandı ancak bazı dosyalar kopyalanamadı (kopyalanmayan: {{count}}). Günlükte listelenirler.',
     restore: 'Geri Yükle',
     restoreReplacesAll: 'Geri yükleme tüm verilerin yerine geçer.',
     restoreReplacesAllDetail: 'Mevcut veritabanınız ve dosyalarınız tamamen değiştirilecek. Geri yüklemeden sonra yeniden başlatma gerekli.',

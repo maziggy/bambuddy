@@ -1826,6 +1826,7 @@ export default {
       startPrint: 'Rozpocznij druk',
       stopPrint: 'Zatrzymaj druk',
       requeue: 'Dodaj ponownie do kolejki',
+      duplicate: 'Duplikuj (dodaj kolejną kopię do kolejki)',
     },
     // Bulk edit
     bulkEdit: {
@@ -1854,6 +1855,8 @@ export default {
       selected: 'Zaznaczone: {{count}}',
       editSelected: 'Edytuj zaznaczone',
       cancelSelected: 'Anuluj zaznaczone',
+      duplicateSelected: 'Duplikuj',
+      duplicateNone: 'Żadnego z zaznaczonych zadań nie można zduplikować',
     },
     // Confirmations
     confirm: {
@@ -1891,6 +1894,9 @@ export default {
       bulkUpdatedNone: 'Nie zaktualizowano żadnych zadań',
       bulkCancelled: 'Anulowane elementy: {{count}}',
       bulkCancelFailed: 'Nie udało się anulować elementów',
+      duplicated: 'Dodano zadania na koniec kolejki: {{count}}',
+      duplicateFailed: 'Nie udało się zduplikować elementów',
+      duplicateSkipped: 'Dodano zadania: {{count}}; pominięto {{skipped}}, których nie można zduplikować',
       batchCreated: 'Utworzono serię "{{name}}"',
       batchCreateFailed: 'Nie udało się utworzyć serii',
       batchUngrouped: 'Rozgrupowane elementy: {{count}}',
@@ -1950,6 +1956,7 @@ export default {
       noEdit: 'Nie masz uprawnień do edycji tego elementu kolejki',
       noCancel: 'Nie masz uprawnień do anulowania tego elementu kolejki',
       noRequeue: 'Nie masz uprawnień do ponownego dodawania elementów do kolejki',
+      noDuplicate: 'Nie masz uprawnień do dodawania zadań do kolejki',
       noRemove: 'Nie masz uprawnień do usunięcia tego elementu kolejki',
       noClearHistory: 'Nie masz uprawnień do czyszczenia całej historii',
       noEditItems: 'Nie masz uprawnień do edycji elementów kolejki',
@@ -6528,6 +6535,10 @@ export default {
     downloadingFile: 'Pobieranie pliku kopii zapasowej...',
     backupDownloaded: 'Kopia zapasowa została pobrana',
     failedToCreateBackup: 'Nie udało się utworzyć kopii zapasowej: {{message}}',
+    backupAlreadyRunning: 'Kopia zapasowa jest już tworzona. Spróbuj ponownie za chwilę.',
+    restoreBlockedByBackup: 'Trwa tworzenie kopii zapasowej. Przywróć po jej zakończeniu.',
+    restoreRunning: 'Trwa przywracanie. Spróbuj ponownie po jego zakończeniu.',
+    backupMissingFiles: 'Kopia zapasowa gotowa, ale części plików nie udało się skopiować (nieskopiowane: {{count}}). Ich lista jest w dzienniku.',
     restore: 'Przywróć',
     restoreReplacesAll: 'Przywracanie zastępuje wszystkie dane.',
     restoreReplacesAllDetail: 'Bieżąca baza danych i pliki zostaną całkowicie zastąpione. Po przywróceniu wymagane jest ponowne uruchomienie.',

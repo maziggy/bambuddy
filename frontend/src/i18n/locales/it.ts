@@ -1808,6 +1808,7 @@ export default {
       startPrint: 'Avvia Stampa',
       stopPrint: 'Ferma Stampa',
       requeue: 'Rimetti in coda',
+      duplicate: 'Duplica (aggiungi un\'altra copia alla coda)',
     },
     // Bulk edit
     bulkEdit: {
@@ -1836,6 +1837,8 @@ export default {
       selected: '{{count}} selezionati',
       editSelected: 'Modifica selezionati',
       cancelSelected: 'Annulla selezionati',
+      duplicateSelected: 'Duplica',
+      duplicateNone: 'Nessuno dei lavori selezionati può essere duplicato',
     },
     // Confirmations
     confirm: {
@@ -1873,6 +1876,9 @@ export default {
       bulkUpdatedNone: 'Nessun lavoro aggiornato',
       bulkCancelled: 'Annullati {{count}} elementi',
       bulkCancelFailed: 'Annullamento elementi non riuscito',
+      duplicated: 'Aggiunti {{count}} lavori in fondo alla coda',
+      duplicateFailed: 'Impossibile duplicare gli elementi',
+      duplicateSkipped: 'Aggiunti {{count}} lavori; saltati {{skipped}} non duplicabili',
       batchCreated: 'Lotto «{{name}}» creato',
       batchCreateFailed: 'Creazione lotto non riuscita',
       batchUngrouped: '{{count}} elemento/i separato/i',
@@ -1931,6 +1937,7 @@ export default {
       noEdit: 'Non hai il permesso di modificare questo elemento coda',
       noCancel: 'Non hai il permesso di annullare questo elemento coda',
       noRequeue: 'Non hai il permesso di rimettere in coda elementi',
+      noDuplicate: 'Non hai il permesso di aggiungere lavori alla coda',
       noRemove: 'Non hai il permesso di rimuovere questo elemento coda',
       noClearHistory: 'Non hai il permesso di svuotare tutta la cronologia',
       noEditItems: 'Non hai il permesso di modificare elementi coda',
@@ -6462,6 +6469,10 @@ export default {
     downloadingFile: 'Download del file di backup...',
     backupDownloaded: 'Backup scaricato con successo',
     failedToCreateBackup: 'Creazione del backup fallita: {{message}}',
+    backupAlreadyRunning: 'Un backup è già in corso. Riprova tra un momento.',
+    restoreBlockedByBackup: 'È in corso un backup. Esegui il ripristino quando è terminato.',
+    restoreRunning: 'È in corso un ripristino. Riprova quando è terminato.',
+    backupMissingFiles: 'Backup completato, ma alcuni file non sono stati copiati (non copiati: {{count}}). Sono elencati nel log.',
     restore: 'Ripristina',
     restoreReplacesAll: 'Il ripristino sostituisce tutti i dati.',
     restoreReplacesAllDetail: 'Il database e i file attuali verranno completamente sostituiti. È necessario un riavvio dopo il ripristino.',

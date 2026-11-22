@@ -1808,6 +1808,7 @@ export default {
       startPrint: 'Iniciar Impressão',
       stopPrint: 'Parar Impressão',
       requeue: 'Reenfileirar',
+      duplicate: 'Duplicar (adicionar outra cópia à fila)',
     },
     // Bulk edit
     bulkEdit: {
@@ -1836,6 +1837,8 @@ export default {
       selected: '{{count}} selecionado(s)',
       editSelected: 'Editar Selecionados',
       cancelSelected: 'Cancelar Selecionados',
+      duplicateSelected: 'Duplicar',
+      duplicateNone: 'Nenhum dos trabalhos selecionados pode ser duplicado',
     },
     // Confirmations
     confirm: {
@@ -1873,6 +1876,9 @@ export default {
       bulkUpdatedNone: 'Nenhum trabalho atualizado',
       bulkCancelled: 'Cancelado {{count}} item(s)',
       bulkCancelFailed: 'Falha ao cancelar itens',
+      duplicated: '{{count}} trabalho(s) adicionado(s) ao fim da fila',
+      duplicateFailed: 'Falha ao duplicar os itens',
+      duplicateSkipped: '{{count}} trabalho(s) adicionado(s); {{skipped}} que não podem ser duplicados foram ignorados',
       batchCreated: 'Lote "{{name}}" criado',
       batchCreateFailed: 'Falha ao criar o lote',
       batchUngrouped: '{{count}} item(ns) desagrupado(s)',
@@ -1931,6 +1937,7 @@ export default {
       noEdit: 'Você não tem permissão para editar este item da fila',
       noCancel: 'Você não tem permissão para cancelar este item da fila',
       noRequeue: 'Você não tem permissão para reenfileirar itens',
+      noDuplicate: 'Você não tem permissão para adicionar trabalhos à fila',
       noRemove: 'Você não tem permissão para remover este item da fila',
       noClearHistory: 'Você não tem permissão para limpar todo o histórico',
       noEditItems: 'Você não tem permissão para editar itens da fila',
@@ -6462,6 +6469,10 @@ export default {
     downloadingFile: 'Baixando arquivo de backup...',
     backupDownloaded: 'Backup baixado com sucesso',
     failedToCreateBackup: 'Falha ao criar backup: {{message}}',
+    backupAlreadyRunning: 'Já há um backup em andamento. Tente novamente em instantes.',
+    restoreBlockedByBackup: 'Há um backup em andamento. Restaure quando ele terminar.',
+    restoreRunning: 'Há uma restauração em andamento. Tente novamente quando ela terminar.',
+    backupMissingFiles: 'Backup concluído, mas alguns arquivos não puderam ser copiados (não copiados: {{count}}). Eles estão listados no log.',
     restore: 'Restaurar',
     restoreReplacesAll: 'A restauração substitui todos os dados.',
     restoreReplacesAllDetail: 'Seu banco de dados e arquivos atuais serão completamente substituídos. É necessário reiniciar após a restauração.',

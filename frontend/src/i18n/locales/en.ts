@@ -1826,6 +1826,7 @@ export default {
       startPrint: 'Start Print',
       stopPrint: 'Stop Print',
       requeue: 'Re-queue',
+      duplicate: 'Duplicate (add another copy to the queue)',
     },
     // Bulk edit
     bulkEdit: {
@@ -1854,6 +1855,8 @@ export default {
       selected: '{{count}} selected',
       editSelected: 'Edit Selected',
       cancelSelected: 'Cancel Selected',
+      duplicateSelected: 'Duplicate',
+      duplicateNone: 'None of the selected jobs can be duplicated',
     },
     // Confirmations
     confirm: {
@@ -1891,6 +1894,9 @@ export default {
       bulkUpdatedNone: 'No jobs were updated',
       bulkCancelled: 'Cancelled {{count}} item(s)',
       bulkCancelFailed: 'Failed to cancel items',
+      duplicated: 'Added {{count}} job(s) to the end of the queue',
+      duplicateFailed: 'Failed to duplicate items',
+      duplicateSkipped: 'Added {{count}} job(s); skipped {{skipped}} that can\'t be duplicated',
       batchCreated: 'Batch "{{name}}" created',
       batchCreateFailed: 'Failed to create batch',
       batchUngrouped: 'Ungrouped {{count}} item(s)',
@@ -1950,6 +1956,7 @@ export default {
       noEdit: 'You do not have permission to edit this queue item',
       noCancel: 'You do not have permission to cancel this queue item',
       noRequeue: 'You do not have permission to re-queue items',
+      noDuplicate: 'You do not have permission to add jobs to the queue',
       noRemove: 'You do not have permission to remove this queue item',
       noClearHistory: 'You do not have permission to clear all history',
       noEditItems: 'You do not have permission to edit queue items',
@@ -6528,6 +6535,10 @@ export default {
     downloadingFile: 'Downloading backup file...',
     backupDownloaded: 'Backup downloaded successfully',
     failedToCreateBackup: 'Failed to create backup: {{message}}',
+    backupAlreadyRunning: 'A backup is already running. Try again in a moment.',
+    restoreBlockedByBackup: 'A backup is running. Restore once it has finished.',
+    restoreRunning: 'A restore is running. Try again once it has finished.',
+    backupMissingFiles: 'Backup finished, but some files could not be copied (not copied: {{count}}). The log lists them.',
     restore: 'Restore',
     restoreReplacesAll: 'Restore replaces all data.',
     restoreReplacesAllDetail: 'Your current database and files will be completely replaced. A restart is required after restore.',

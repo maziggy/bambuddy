@@ -1807,6 +1807,7 @@ export default {
       startPrint: '印刷を開始',
       stopPrint: '印刷を停止',
       requeue: '再キュー',
+      duplicate: '複製（キューにもう1件追加）',
     },
     // Bulk edit
     bulkEdit: {
@@ -1835,6 +1836,8 @@ export default {
       selected: '{{count}}件選択中',
       editSelected: '選択を編集',
       cancelSelected: '選択をキャンセル',
+      duplicateSelected: '複製',
+      duplicateNone: '選択したジョブはどれも複製できません',
     },
     // Confirmations
     confirm: {
@@ -1872,6 +1875,9 @@ export default {
       bulkUpdatedNone: '更新されたジョブはありません',
       bulkCancelled: '{{count}}件のアイテムをキャンセルしました',
       bulkCancelFailed: 'アイテムのキャンセルに失敗しました',
+      duplicated: 'キューの末尾に{{count}}件追加しました',
+      duplicateFailed: '複製に失敗しました',
+      duplicateSkipped: '{{count}}件を追加しました。複製できない{{skipped}}件はスキップしました',
       batchCreated: 'バッチ「{{name}}」を作成しました',
       batchCreateFailed: 'バッチの作成に失敗しました',
       batchUngrouped: '{{count}}件のグループを解除しました',
@@ -1930,6 +1936,7 @@ export default {
       noEdit: 'このキューアイテムを編集する権限がありません',
       noCancel: 'このキューアイテムをキャンセルする権限がありません',
       noRequeue: 'アイテムを再キューする権限がありません',
+      noDuplicate: 'キューにジョブを追加する権限がありません',
       noRemove: 'このキューアイテムを削除する権限がありません',
       noClearHistory: 'すべての履歴をクリアする権限がありません',
       noEditItems: 'キューアイテムを編集する権限がありません',
@@ -6476,6 +6483,10 @@ export default {
     downloadingFile: 'バックアップファイルをダウンロードしています...',
     backupDownloaded: 'バックアップのダウンロードが成功しました',
     failedToCreateBackup: 'バックアップの作成に失敗しました: {{message}}',
+    backupAlreadyRunning: 'バックアップはすでに実行中です。しばらくしてからもう一度お試しください。',
+    restoreBlockedByBackup: 'バックアップを実行中です。完了してから復元してください。',
+    restoreRunning: '復元を実行中です。完了してからもう一度お試しください。',
+    backupMissingFiles: 'バックアップは完了しましたが、一部のファイルをコピーできませんでした（未コピー: {{count}}）。詳細はログを確認してください。',
     restore: '復元',
     restoreReplacesAll: '復元はすべてのデータを置き換えます。',
     restoreReplacesAllDetail: '現在のデータベースとファイルは完全に置き換えられます。復元後に再起動が必要です。',

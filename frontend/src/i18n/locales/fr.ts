@@ -1808,6 +1808,7 @@ export default {
       startPrint: 'Démarrer',
       stopPrint: 'Arrêter',
       requeue: 'Remettre en file',
+      duplicate: 'Dupliquer (ajouter une autre copie à la file)',
     },
     // Bulk edit
     bulkEdit: {
@@ -1836,6 +1837,8 @@ export default {
       selected: '{{count}} sélectionnés',
       editSelected: 'Modifier la sélection',
       cancelSelected: 'Annuler la sélection',
+      duplicateSelected: 'Dupliquer',
+      duplicateNone: 'Aucune des tâches sélectionnées ne peut être dupliquée',
     },
     // Confirmations
     confirm: {
@@ -1873,6 +1876,9 @@ export default {
       bulkUpdatedNone: 'Aucune tâche mise à jour',
       bulkCancelled: '{{count}} éléments annulés',
       bulkCancelFailed: 'Échec annulation',
+      duplicated: '{{count}} tâche(s) ajoutée(s) à la fin de la file',
+      duplicateFailed: 'Échec de la duplication des éléments',
+      duplicateSkipped: '{{count}} tâche(s) ajoutée(s) ; {{skipped}} non duplicable(s) ignorée(s)',
       batchCreated: 'Lot « {{name}} » créé',
       batchCreateFailed: 'Échec de la création du lot',
       batchUngrouped: '{{count}} élément(s) dégroupé(s)',
@@ -1931,6 +1937,7 @@ export default {
       noEdit: 'Pas d\'autorisation de modification',
       noCancel: 'Pas d\'autorisation d\'annulation',
       noRequeue: 'Pas d\'autorisation de remise en file',
+      noDuplicate: "Pas d'autorisation d'ajouter des tâches à la file",
       noRemove: 'Pas d\'autorisation de retrait',
       noClearHistory: 'Pas d\'autorisation historique',
       noEditItems: 'Pas d\'autorisation modification groupée',
@@ -6463,6 +6470,10 @@ export default {
     downloadingFile: 'Téléchargement du fichier de sauvegarde...',
     backupDownloaded: 'Sauvegarde téléchargée avec succès',
     failedToCreateBackup: 'Échec de la création de la sauvegarde : {{message}}',
+    backupAlreadyRunning: "Une sauvegarde est déjà en cours. Réessayez dans un instant.",
+    restoreBlockedByBackup: "Une sauvegarde est en cours. Restaurez une fois qu'elle est terminée.",
+    restoreRunning: "Une restauration est en cours. Réessayez une fois qu'elle est terminée.",
+    backupMissingFiles: "Sauvegarde terminée, mais certains fichiers n'ont pas pu être copiés (non copiés : {{count}}). Ils figurent dans le journal.",
     restore: 'Restaurer',
     restoreReplacesAll: 'La restauration remplace toutes les données.',
     restoreReplacesAllDetail: 'Votre base de données et vos fichiers actuels seront complètement remplacés. Un redémarrage est nécessaire après la restauration.',

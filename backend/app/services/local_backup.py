@@ -44,6 +44,7 @@ class LocalBackupService:
         self._last_backup_at: str | None = None
         self._last_status: str | None = None
         self._last_message: str | None = None
+        self._last_missing_files: int = 0
         self._next_run: datetime | None = None
 
     async def start_scheduler(self):
@@ -196,7 +197,9 @@ class LocalBackupService:
 
                 from backend.app.api.routes.settings import create_backup_zip
 
-                zip_path, filename = await create_backup_zip(output_path=backup_dir)
+                # Waits for a backup download that is running, rather than
+                # staging a second copy of the archive next to it.
+                zip_path, filename, copy_warnings = await create_backup_zip(output_path=backup_dir, wait=True)
             except OSError as e:
                 # A raw "[Errno 30] Read-only file system" sends people off to check
                 # folder permissions, which is exactly where the answer is not (#2544).
@@ -204,6 +207,7 @@ class LocalBackupService:
                 self._last_backup_at = datetime.now(timezone.utc).isoformat()
                 self._last_status = "failed"
                 self._last_message = diagnosis["message"]
+                self._last_missing_files = 0
                 logger.error("Local backup failed: %s (%s)", diagnosis["message"], diagnosis["detail"])
                 return {"success": False, "message": diagnosis["message"], "diagnosis": diagnosis}
 
@@ -212,8 +216,28 @@ class LocalBackupService:
             self._prune_backups(backup_dir, retention)
 
             self._last_backup_at = datetime.now(timezone.utc).isoformat()
+            if copy_warnings:
+                # A usable ZIP, but not a clean success: files are missing from it.
+                message = (
+                    f"Backup created, but {len(copy_warnings)} file(s) could not be copied: "
+                    f"{', '.join(copy_warnings[:5])}"
+                )
+                self._last_status = "warning"
+                self._last_message = message
+                self._last_missing_files = len(copy_warnings)
+                logger.warning("Local backup %s: %s", zip_path, message)
+                return {
+                    "success": True,
+                    "message": message,
+                    "filename": filename,
+                    "missing_files": len(copy_warnings),
+                }
+
             self._last_status = "success"
             self._last_message = filename
+            # Set with the status, never on its own: reset at the start of a run,
+            # the last 'warning' read "(not copied: 0)" for as long as it ran.
+            self._last_missing_files = 0
             logger.info("Local backup created: %s", zip_path)
             return {"success": True, "message": "Backup created", "filename": filename}
 
@@ -221,19 +245,25 @@ class LocalBackupService:
             self._last_backup_at = datetime.now(timezone.utc).isoformat()
             self._last_status = "failed"
             self._last_message = str(e)
+            self._last_missing_files = 0
             logger.error("Local backup failed: %s", e, exc_info=True)
             return {"success": False, "message": f"Backup failed: {e}"}
         finally:
             self._running = False
 
     def _prune_backups(self, backup_dir: Path, retention: int):
-        """Delete oldest backups exceeding the retention count."""
+        """Delete oldest backups exceeding the retention count, and crash leftovers.
+
+        A .part a crash left behind matches nothing that would ever delete it.
+        This runs after a backup finished and only one runs at a time, so any
+        .part still here belongs to no running backup.
+        """
         backups = sorted(
             backup_dir.glob("bambuddy-backup-*.zip"),
             key=lambda p: p.stat().st_mtime,
             reverse=True,
         )
-        for old_backup in backups[retention:]:
+        for old_backup in [*backups[retention:], *backup_dir.glob(".bambuddy-backup-*.zip.part")]:
             try:
                 old_backup.unlink()
                 logger.info("Pruned old backup: %s", old_backup.name)
@@ -247,6 +277,7 @@ class LocalBackupService:
             "last_backup_at": self._last_backup_at,
             "last_status": self._last_status,
             "last_message": self._last_message,
+            "last_missing_files": self._last_missing_files,
             "next_run": self._next_run.isoformat() if self._next_run else None,
         }
 

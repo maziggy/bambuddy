@@ -1808,6 +1808,7 @@ export default {
       startPrint: 'Iniciar impresión',
       stopPrint: 'Detener impresión',
       requeue: 'Volver a encolar',
+      duplicate: 'Duplicar (añadir otra copia a la cola)',
     },
     // Bulk edit
     bulkEdit: {
@@ -1836,6 +1837,8 @@ export default {
       selected: '{{count}} seleccionados',
       editSelected: 'Editar seleccionados',
       cancelSelected: 'Cancelar seleccionados',
+      duplicateSelected: 'Duplicar',
+      duplicateNone: 'Ninguno de los trabajos seleccionados se puede duplicar',
     },
     // Confirmations
     confirm: {
@@ -1873,6 +1876,9 @@ export default {
       bulkUpdatedNone: 'No se actualizó ningún trabajo',
       bulkCancelled: 'Se cancelaron {{count}} elemento(s)',
       bulkCancelFailed: 'Error al cancelar los elementos',
+      duplicated: 'Se añadieron {{count}} trabajo(s) al final de la cola',
+      duplicateFailed: 'No se pudieron duplicar los elementos',
+      duplicateSkipped: 'Se añadieron {{count}} trabajo(s); se omitieron {{skipped}} que no se pueden duplicar',
       batchCreated: 'Lote "{{name}}" creado',
       batchCreateFailed: 'Error al crear el lote',
       batchUngrouped: '{{count}} elemento(s) desagrupado(s)',
@@ -1931,6 +1937,7 @@ export default {
       noEdit: 'No tiene permiso para editar este elemento de la cola',
       noCancel: 'No tiene permiso para cancelar este elemento de la cola',
       noRequeue: 'No tiene permiso para volver a encolar elementos',
+      noDuplicate: 'No tiene permiso para añadir trabajos a la cola',
       noRemove: 'No tiene permiso para eliminar este elemento de la cola',
       noClearHistory: 'No tiene permiso para borrar todo el historial',
       noEditItems: 'No tiene permiso para editar elementos de la cola',
@@ -6483,6 +6490,10 @@ export default {
     downloadingFile: 'Descargando el archivo de copia de seguridad...',
     backupDownloaded: 'Copia de seguridad descargada correctamente',
     failedToCreateBackup: 'Error al crear la copia de seguridad: {{message}}',
+    backupAlreadyRunning: 'Ya hay una copia de seguridad en curso. Inténtalo de nuevo en un momento.',
+    restoreBlockedByBackup: 'Hay una copia de seguridad en curso. Restaura cuando haya terminado.',
+    restoreRunning: 'Hay una restauración en curso. Inténtalo de nuevo cuando haya terminado.',
+    backupMissingFiles: 'Copia de seguridad terminada, pero algunos archivos no se pudieron copiar (sin copiar: {{count}}). Aparecen en el registro.',
     restore: 'Restaurar',
     restoreReplacesAll: 'La restauración reemplaza todos los datos.',
     restoreReplacesAllDetail: 'Su base de datos y archivos actuales se reemplazarán por completo. Se requiere un reinicio tras la restauración.',

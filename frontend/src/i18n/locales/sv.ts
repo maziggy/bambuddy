@@ -1824,6 +1824,7 @@ export default {
       startPrint: 'Starta utskrift',
       stopPrint: 'Stoppa utskrift',
       requeue: 'Lägg tillbaka i kö',
+      duplicate: 'Duplicera (lägg till en kopia till i kön)',
     },
     // Bulk edit
     bulkEdit: {
@@ -1852,6 +1853,8 @@ export default {
       selected: '{{count}} valda',
       editSelected: 'Redigera valda',
       cancelSelected: 'Avbryt valda',
+      duplicateSelected: 'Duplicera',
+      duplicateNone: 'Inget av de valda jobben kan dupliceras',
     },
     // Confirmations
     confirm: {
@@ -1889,6 +1892,9 @@ export default {
       bulkUpdatedNone: 'Inga jobb uppdaterades',
       bulkCancelled: 'Avbröt {{count}} post(er)',
       bulkCancelFailed: 'Kunde inte avbryta poster',
+      duplicated: 'Lade till {{count}} jobb sist i kön',
+      duplicateFailed: 'Det gick inte att duplicera objekten',
+      duplicateSkipped: 'Lade till {{count}} jobb; hoppade över {{skipped}} som inte kan dupliceras',
       batchCreated: 'Batch "{{name}}" skapad',
       batchCreateFailed: 'Kunde inte skapa batch',
       batchUngrouped: 'Avgrupperade {{count}} post(er)',
@@ -1948,6 +1954,7 @@ export default {
       noEdit: 'Du har inte behörighet att redigera denna köpost',
       noCancel: 'Du har inte behörighet att avbryta denna köpost',
       noRequeue: 'Du har inte behörighet att lägga tillbaka poster i kön',
+      noDuplicate: 'Du har inte behörighet att lägga till jobb i kön',
       noRemove: 'Du har inte behörighet att ta bort denna köpost',
       noClearHistory: 'Du har inte behörighet att rensa all historik',
       noEditItems: 'Du har inte behörighet att redigera köposter',
@@ -6557,6 +6564,10 @@ errors: {
     downloadingFile: 'Laddar ner säkerhetskopia...',
     backupDownloaded: 'Säkerhetskopia nedladdad',
     failedToCreateBackup: 'Kunde inte skapa säkerhetskopia: {{message}}',
+    backupAlreadyRunning: 'En säkerhetskopiering pågår redan. Försök igen om en liten stund.',
+    restoreBlockedByBackup: 'En säkerhetskopiering pågår. Återställ när den är klar.',
+    restoreRunning: 'En återställning pågår. Försök igen när den är klar.',
+    backupMissingFiles: 'Säkerhetskopian är klar, men vissa filer kunde inte kopieras (inte kopierade: {{count}}). De står i loggen.',
     restore: 'Återställ',
     restoreReplacesAll: 'Återställning ersätter all data.',
     restoreReplacesAllDetail: 'Din nuvarande databas och filer kommer att ersättas fullständigt. En omstart krävs efter återställning.',

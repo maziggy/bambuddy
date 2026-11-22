@@ -2419,3 +2419,122 @@ describe('QueuePage: jobs held by failed prints on every printer of their model'
     await waitFor(() => expect(resumed).toBe('X1C'));
   });
 });
+
+describe('QueuePage duplicate', () => {
+  let requests: number[][];
+  let skippedByServer: number;
+  let release: (() => void) | null;
+  let queueGets: number;
+  const DUP = 'Duplicate (add another copy to the queue)';
+  const printerJob = { ...mockQueueItems[0], id: 11, archive_id: 11, archive_name: 'Printer Job' };
+  const modelJob = { ...mockQueueItems[0], id: 12, archive_id: 12, archive_name: 'Model Job', printer_id: null, target_model: 'A1' };
+
+  const setup = (items: MockItem[], { hold = false } = {}) => {
+    server.use(
+      // Counts queue fetches, then falls through to the regular queue handler.
+      http.get('/api/v1/queue/', () => { queueGets += 1; }),
+      ...serveQueue(items),
+      http.get('/api/v1/printers/', () => HttpResponse.json(mockPrinters)),
+      http.post('/api/v1/queue/duplicate', async ({ request }) => {
+        const { item_ids } = (await request.json()) as { item_ids: number[] };
+        requests.push(item_ids);
+        if (hold) await new Promise<void>((resolve) => { release = resolve; });
+        const copied = item_ids.slice(0, item_ids.length - skippedByServer);
+        return HttpResponse.json({ created_ids: copied.map((id) => 100 + id), skipped_count: skippedByServer });
+      })
+    );
+  };
+
+  beforeEach(() => {
+    vi.mocked(localStorage.getItem).mockImplementation((key: string) => {
+      if (key === 'queue.historyCollapsed') return 'false';
+      if (key === 'queue.viewMode') return 'list';
+      return null;
+    });
+    requests = [];
+    skippedByServer = 0;
+    release = null;
+    queueGets = 0;
+  });
+
+  it('offers Duplicate on queued and printing jobs, not on history', async () => {
+    setup(mockQueueItems);
+    render(<QueuePage />);
+    await waitFor(() => expect(screen.getByText('Test Print 1')).toBeInTheDocument());
+    expect(screen.getAllByRole('button', { name: DUP })).toHaveLength(2);
+  });
+
+  it('does not offer Duplicate for a printer-card upload whose file is deleted on dispatch (#2819)', async () => {
+    setup([{ ...mockQueueItems[0], archive_id: null, library_file_id: 7, cleanup_library_after_dispatch: true }]);
+    render(<QueuePage />);
+    await waitFor(() => expect(screen.getByText('Test Print 1')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: DUP })).not.toBeInTheDocument();
+  });
+
+  it('offers Duplicate for a cross-model job, whose candidates the backend copies', async () => {
+    setup([
+      {
+        ...mockQueueItems[0],
+        archive_id: null,
+        printer_id: null,
+        target_model: 'X1C',
+        variants: [
+          { library_file_id: 1, filename: 'a.gcode.3mf', target_model: 'X1C', position: 0 },
+          { library_file_id: 2, filename: 'b.gcode.3mf', target_model: 'H2D', position: 1 },
+        ],
+      },
+    ]);
+    render(<QueuePage />);
+    expect(await screen.findByRole('button', { name: DUP })).toBeInTheDocument();
+  });
+
+  it('a row copy asks the backend for that job and leaves the selection alone', async () => {
+    const user = userEvent.setup();
+    setup([printerJob, modelJob]);
+    render(<QueuePage />);
+    await waitFor(() => expect(screen.getByText('Model Job')).toBeInTheDocument());
+    await user.click(screen.getByText('Select All'));
+    expect(await screen.findByText('2 selected')).toBeInTheDocument();
+    const [first] = screen.getAllByRole('button', { name: DUP });
+    await user.click(first);
+    expect(await screen.findByText('Added 1 job(s) to the end of the queue')).toBeInTheDocument();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toHaveLength(1);
+    expect(screen.getByText('2 selected')).toBeInTheDocument();
+  });
+
+  it('disables the row button while a copy is being made', async () => {
+    const user = userEvent.setup();
+    setup([printerJob], { hold: true });
+    render(<QueuePage />);
+    const button = await screen.findByRole('button', { name: DUP });
+    await user.click(button);
+    await waitFor(() => expect(button).toBeDisabled());
+    release?.();
+    await waitFor(() => expect(button).not.toBeDisabled());
+  });
+
+  it('bulk Duplicate copies the selection in one request, says what was skipped and refreshes the queue', async () => {
+    const user = userEvent.setup();
+    skippedByServer = 1;
+    setup([printerJob, modelJob]);
+    render(<QueuePage />);
+    await waitFor(() => expect(screen.getByText('Model Job')).toBeInTheDocument());
+    await user.click(screen.getByText('Select All'));
+    const gets = queueGets;
+    await user.click(await screen.findByTitle('Duplicate'));
+    expect(await screen.findByText("Added 1 job(s); skipped 1 that can't be duplicated")).toBeInTheDocument();
+    expect(requests).toEqual([expect.arrayContaining([11, 12])]);
+    await waitFor(() => expect(queueGets).toBeGreaterThan(gets));
+    expect(screen.queryByText('2 selected')).not.toBeInTheDocument();
+  });
+
+  it('disables bulk Duplicate when none of the selected jobs can be duplicated', async () => {
+    const user = userEvent.setup();
+    setup([{ ...mockQueueItems[0], archive_id: null, library_file_id: 7, cleanup_library_after_dispatch: true }]);
+    render(<QueuePage />);
+    await waitFor(() => expect(screen.getByText('Test Print 1')).toBeInTheDocument());
+    await user.click(screen.getByText('Select All'));
+    expect(await screen.findByTitle('None of the selected jobs can be duplicated')).toBeDisabled();
+  });
+});

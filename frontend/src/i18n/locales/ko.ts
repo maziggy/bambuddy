@@ -1721,7 +1721,8 @@ export default {
     actions: {
       startPrint: '인쇄 시작',
       stopPrint: '인쇄 정지',
-      requeue: '재대기'
+      requeue: '재대기',
+      duplicate: '복제 (대기열에 사본 하나 더 추가)',
     },
     bulkEdit: {
       title: '{{count}}개 항목 편집',
@@ -1748,7 +1749,9 @@ export default {
       deselectAll: '전체 해제',
       selected: '{{count}}개 선택됨',
       editSelected: '선택 항목 편집',
-      cancelSelected: '선택 항목 취소'
+      cancelSelected: '선택 항목 취소',
+      duplicateSelected: '복제',
+      duplicateNone: '선택한 작업 중 복제할 수 있는 작업이 없습니다',
     },
     confirm: {
       cancelTitle: '예약된 인쇄 취소',
@@ -1784,6 +1787,9 @@ export default {
       bulkUpdatedNone: '업데이트된 작업이 없습니다',
       bulkCancelled: '{{count}}개 항목이 취소되었습니다',
       bulkCancelFailed: '항목 취소 실패',
+      duplicated: '대기열 끝에 작업 {{count}}개를 추가했습니다',
+      duplicateFailed: '항목을 복제하지 못했습니다',
+      duplicateSkipped: '작업 {{count}}개를 추가했습니다. 복제할 수 없는 {{skipped}}개는 건너뛰었습니다',
       batchCreated: '"{{name}}" 배치를 만들었습니다',
       batchCreateFailed: '배치 만들기에 실패했습니다',
       batchUngrouped: '{{count}}개 항목의 그룹을 해제했습니다',
@@ -1840,6 +1846,7 @@ export default {
       noEdit: '이 대기열 항목을 편집할 권한이 없습니다',
       noCancel: '이 대기열 항목을 취소할 권한이 없습니다',
       noRequeue: '항목을 재대기할 권한이 없습니다',
+      noDuplicate: '대기열에 작업을 추가할 권한이 없습니다',
       noRemove: '이 대기열 항목을 제거할 권한이 없습니다',
       noClearHistory: '모든 기록을 지울 권한이 없습니다',
       noEditItems: '대기열 항목을 편집할 권한이 없습니다',
@@ -6235,6 +6242,10 @@ export default {
     downloadingFile: '백업 파일 다운로드 중...',
     backupDownloaded: '백업이 성공적으로 다운로드되었습니다',
     failedToCreateBackup: '백업 생성 실패: {{message}}',
+    backupAlreadyRunning: '백업이 이미 실행 중입니다. 잠시 후 다시 시도하세요.',
+    restoreBlockedByBackup: '백업이 실행 중입니다. 완료된 후 복원하세요.',
+    restoreRunning: '복원이 실행 중입니다. 완료된 후 다시 시도하세요.',
+    backupMissingFiles: '백업이 완료되었지만 일부 파일을 복사하지 못했습니다(복사되지 않음: {{count}}). 자세한 내용은 로그를 확인하세요.',
     restore: '복원',
     restoreReplacesAll: '복원은 모든 데이터를 교체합니다.',
     restoreReplacesAllDetail: '현재 데이터베이스와 파일이 완전히 교체됩니다. 복원 후 재시작이 필요합니다.',

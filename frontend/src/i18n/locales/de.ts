@@ -1808,6 +1808,7 @@ export default {
       startPrint: 'Druck starten',
       stopPrint: 'Druck stoppen',
       requeue: 'Erneut einreihen',
+      duplicate: 'Duplizieren (weitere Kopie zur Warteschlange hinzufügen)',
     },
     // Bulk edit
     bulkEdit: {
@@ -1836,6 +1837,8 @@ export default {
       selected: '{{count}} ausgewählt',
       editSelected: 'Ausgewählte bearbeiten',
       cancelSelected: 'Ausgewählte abbrechen',
+      duplicateSelected: 'Duplizieren',
+      duplicateNone: 'Keiner der ausgewählten Aufträge kann dupliziert werden',
     },
     // Confirmations
     confirm: {
@@ -1873,6 +1876,9 @@ export default {
       bulkUpdatedNone: 'Keine Aufträge aktualisiert',
       bulkCancelled: '{{count}} Element(e) abgebrochen',
       bulkCancelFailed: 'Elemente konnten nicht abgebrochen werden',
+      duplicated: '{{count}} Auftrag/Aufträge am Ende der Warteschlange hinzugefügt',
+      duplicateFailed: 'Duplizieren fehlgeschlagen',
+      duplicateSkipped: '{{count}} Auftrag/Aufträge hinzugefügt; {{skipped}} nicht duplizierbare übersprungen',
       batchCreated: 'Stapel „{{name}}“ erstellt',
       batchCreateFailed: 'Stapel konnte nicht erstellt werden',
       batchUngrouped: '{{count}} Eintrag/Einträge aus Stapel gelöst',
@@ -1931,6 +1937,7 @@ export default {
       noEdit: 'Sie haben keine Berechtigung, dieses Warteschlangenelement zu bearbeiten',
       noCancel: 'Sie haben keine Berechtigung, dieses Warteschlangenelement abzubrechen',
       noRequeue: 'Sie haben keine Berechtigung, Elemente erneut einzureihen',
+      noDuplicate: 'Sie haben keine Berechtigung, Aufträge zur Warteschlange hinzuzufügen',
       noRemove: 'Sie haben keine Berechtigung, dieses Warteschlangenelement zu entfernen',
       noClearHistory: 'Sie haben keine Berechtigung, den gesamten Verlauf zu löschen',
       noEditItems: 'Sie haben keine Berechtigung, Warteschlangenelemente zu bearbeiten',
@@ -6476,6 +6483,10 @@ export default {
     downloadingFile: 'Sicherungsdatei wird heruntergeladen...',
     backupDownloaded: 'Sicherung erfolgreich heruntergeladen',
     failedToCreateBackup: 'Sicherung erstellen fehlgeschlagen: {{message}}',
+    backupAlreadyRunning: 'Es läuft bereits eine Sicherung. Versuchen Sie es gleich noch einmal.',
+    restoreBlockedByBackup: 'Es läuft gerade eine Sicherung. Stellen Sie wieder her, sobald sie fertig ist.',
+    restoreRunning: 'Es läuft gerade eine Wiederherstellung. Versuchen Sie es, sobald sie fertig ist.',
+    backupMissingFiles: 'Sicherung abgeschlossen, aber einige Dateien konnten nicht kopiert werden (nicht kopiert: {{count}}). Sie stehen im Log.',
     restore: 'Wiederherstellen',
     restoreReplacesAll: 'Wiederherstellung ersetzt alle Daten.',
     restoreReplacesAllDetail: 'Ihre aktuelle Datenbank und Dateien werden vollständig ersetzt. Nach der Wiederherstellung ist ein Neustart erforderlich.',

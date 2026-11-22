@@ -1808,6 +1808,7 @@ export default {
       startPrint: '開始列印',
       stopPrint: '停止列印',
       requeue: '重新佇列',
+      duplicate: '複製（再加入一份到佇列）',
     },
     // Bulk edit
     bulkEdit: {
@@ -1836,6 +1837,8 @@ export default {
       selected: '已選擇 {{count}} 個',
       editSelected: '編輯所選',
       cancelSelected: '取消所選',
+      duplicateSelected: '複製',
+      duplicateNone: '所選工作皆無法複製',
     },
     // Confirmations
     confirm: {
@@ -1873,6 +1876,9 @@ export default {
       bulkUpdatedNone: '沒有更新任何工作',
       bulkCancelled: '已取消 {{count}} 個項目',
       bulkCancelFailed: '批次取消項目失敗',
+      duplicated: '已將 {{count}} 個工作加入佇列末尾',
+      duplicateFailed: '複製失敗',
+      duplicateSkipped: '已新增 {{count}} 個工作；略過 {{skipped}} 個無法複製的工作',
       batchCreated: '已建立批次「{{name}}」',
       batchCreateFailed: '建立批次失敗',
       batchUngrouped: '已取消分組 {{count}} 項',
@@ -1931,6 +1937,7 @@ export default {
       noEdit: '您沒有編輯此佇列項目的權限',
       noCancel: '您沒有取消此佇列項目的權限',
       noRequeue: '您沒有重新佇列的權限',
+      noDuplicate: '您沒有將工作加入佇列的權限',
       noRemove: '您沒有移除此佇列項目的權限',
       noClearHistory: '您沒有清除所有歷史的權限',
       noEditItems: '您沒有編輯佇列項目的權限',
@@ -6462,6 +6469,10 @@ export default {
     downloadingFile: '正在下載備份檔案...',
     backupDownloaded: '備份下載成功',
     failedToCreateBackup: '建立備份失敗：{{message}}',
+    backupAlreadyRunning: '已有備份正在執行，請稍後再試。',
+    restoreBlockedByBackup: '備份正在執行，請在完成後再還原。',
+    restoreRunning: '還原正在進行，請在完成後再試。',
+    backupMissingFiles: '備份已完成，但部分檔案無法複製（未複製：{{count}}）。詳情請查看記錄。',
     restore: '恢復',
     restoreReplacesAll: '恢復將替換所有資料。',
     restoreReplacesAllDetail: '您目前的資料庫和檔案將被完全替換。恢復後需要重新啟動。',

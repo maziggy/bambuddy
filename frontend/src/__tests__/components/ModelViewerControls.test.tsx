@@ -9,9 +9,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import * as THREE from 'three';
+import JSZip from 'jszip';
 
 const mocks = vi.hoisted(() => ({
   setSize: vi.fn(),
+  scene: null as THREE.Scene | null,
   wheelSeen: vi.fn(),
   controlsInstances: [] as Array<{ object: THREE.Camera; domElement: HTMLElement; target: THREE.Vector3; minDistance: number; maxDistance: number }>,
 }));
@@ -29,7 +31,7 @@ vi.mock('three', async (importOriginal) => {
       this.domElement.style.height = `${height}px`;
     }
     setPixelRatio() {}
-    render() {}
+    render(scene: THREE.Scene) { mocks.scene = scene; }
     dispose() {}
   }
   class FakePMREMGenerator {
@@ -89,6 +91,7 @@ function setClientSize(element: HTMLElement, width: number, height: number) {
 describe('ModelViewer controls', () => {
   beforeEach(() => {
     mocks.setSize.mockClear();
+    mocks.scene = null;
     mocks.wheelSeen.mockClear();
     mocks.controlsInstances.length = 0;
     // jsdom lays nothing out; give every element a panel-sized box so the
@@ -122,6 +125,72 @@ describe('ModelViewer controls', () => {
     await waitFor(() => expect(document.querySelector('.lucide-zoom-in')).not.toBeNull());
     return { ...utils, canvas, controls: mocks.controlsInstances[0] };
   }
+
+  function previewMesh() {
+    const group = mocks.scene!.children.find(child => child instanceof THREE.Group)!;
+    group.updateMatrixWorld(true);
+    return group.children[0] as THREE.Mesh<THREE.BufferGeometry>;
+  }
+
+  it.each([
+    { componentX: 1, buildY: 1 },
+    { componentX: -1, buildY: 1 },
+    { componentX: 1, buildY: -1 },
+    { componentX: -1, buildY: -1 },
+  ])('preserves 3MF placement and outward faces ($componentX, $buildY)', async ({ componentX, buildY }) => {
+    // A scalene, upward-facing facet. Rotate +90 degrees about printer Z,
+    // optionally reflecting its component and/or its placed instance.
+    const zip = new JSZip();
+    zip.file('3D/3dmodel.model', `<model xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06">
+      <resources><object id="1"><components><component p:path="/3D/part.model" objectid="2"
+        transform="${componentX} 0 0 0 1 0 0 0 1 0 0 0"/></components></object></resources>
+      <build><item objectid="1" transform="0 ${buildY} 0 -1 0 0 0 0 1 10 20 0"/></build></model>`);
+    zip.file('3D/part.model', `<model><resources><object id="2"><mesh><vertices>
+      <vertex x="0" y="0" z="0"/><vertex x="2" y="0" z="0"/><vertex x="0" y="3" z="0"/>
+      </vertices><triangles><triangle v1="0" v2="1" v3="2"/></triangles></mesh></object></resources></model>`);
+    const data = await zip.generateAsync({ type: 'arraybuffer' });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(data)));
+    render(<ModelViewer url="/model.3mf" fileType="3mf" />);
+    await waitFor(() => expect(document.querySelector('.lucide-zoom-in')).not.toBeNull());
+
+    const mesh = previewMesh();
+    const pos = mesh.geometry.getAttribute('position');
+    const point = (i: number) => mesh.localToWorld(new THREE.Vector3().fromBufferAttribute(pos, i)).toArray();
+    expect(point(0)).toEqual([10, 0, 236]);
+    expect(point(1)).toEqual([10, 0, 236 - 2 * componentX * buildY]);
+    expect(point(2)).toEqual([7, 0, 236]);
+    expect(mesh.geometry.getAttribute('normal').getY(0)).toBe(1);
+  });
+
+  it('places and frames each selected 3MF plate using its bounds or offset', async () => {
+    const zip = new JSZip();
+    zip.file('3D/3dmodel.model', `<model><resources><object id="1"><mesh><vertices>
+      <vertex x="0" y="0" z="0"/><vertex x="6" y="0" z="0"/><vertex x="0" y="8" z="2"/>
+      </vertices><triangles><triangle v1="0" v2="1" v3="2"/></triangles></mesh></object></resources>
+      <build><item objectid="1" plate_id="1" transform="1 0 0 0 1 0 0 0 1 30 50 0"/>
+      <item objectid="1" plate_id="2" transform="-2 0 0 0 1 0 0 0 1 445 -185 0"/></build></model>`);
+    zip.file('Metadata/plate_1.json', JSON.stringify({ bbox_all: [30, 50, 36, 58] }));
+    zip.file('Metadata/model_settings.config', `<config><plate><metadata key="plater_id" value="2"/>
+      <metadata key="pos_x" value="400"/><metadata key="pos_y" value="-160"/></plate></config>`);
+    const data = await zip.generateAsync({ type: 'arraybuffer' });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(data)));
+    const buildVolume = { x: 200, y: 160, z: 200 };
+    const props = { url: '/plates.3mf', fileType: '3mf', buildVolume };
+    const view = render(<ModelViewer {...props} selectedPlateId={1} />);
+    await waitFor(() => expect(document.querySelector('.lucide-zoom-in')).not.toBeNull());
+
+    function expectPlate(min: number[], max: number[]) {
+      const mesh = previewMesh();
+      expect(mesh.geometry.getAttribute('position').count).toBe(3);
+      const bounds = new THREE.Box3().setFromObject(mesh);
+      expect(bounds.min.toArray()).toEqual(min);
+      expect(bounds.max.toArray()).toEqual(max);
+      expect(mocks.controlsInstances[0].target).toEqual(bounds.getCenter(new THREE.Vector3()));
+    }
+    expectPlate([30, 0, 102], [36, 2, 110]);
+    view.rerender(<ModelViewer {...props} selectedPlateId={2} />);
+    expectPlate([133, 0, 97], [145, 2, 105]);
+  });
 
   it('hands the canvas that is in the DOM to OrbitControls, so wheel events reach it', async () => {
     const { canvas, controls } = await renderLoaded();

@@ -802,7 +802,8 @@ class TestBatchOrderHeader:
         order = await _create_order(async_client, archive.id, [{"plate_id": 1, "quantity_target": 1}])
         url = f"/api/v1/queue/batches/{order['id']}"
         if status == "active":
-            assert (await async_client.delete(url)).status_code == 200
+            cancel_response = await async_client.delete(url)
+            assert cancel_response.status_code == 200
 
         response = await async_client.patch(url, json={"name": "Renamed", "status": status})
         assert response.status_code == 400, response.text

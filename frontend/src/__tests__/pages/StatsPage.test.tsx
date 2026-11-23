@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { render } from '../utils';
 import { StatsPage } from '../../pages/StatsPage';
 import { http, HttpResponse } from 'msw';
@@ -286,6 +286,89 @@ describe('StatsPage', () => {
         expect(screen.getByText('Energy Cost')).toBeInTheDocument();
       });
       expect(screen.queryByText('Wear Cost')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('print activity date range (#3695)', () => {
+    const originalObserver = globalThis.ResizeObserver;
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date(2024, 2, 15, 12));
+      // jsdom does not lay out the calendar. Report a width so it renders its cells.
+      globalThis.ResizeObserver = class implements ResizeObserver {
+        private callback: ResizeObserverCallback;
+        constructor(callback: ResizeObserverCallback) { this.callback = callback; }
+        disconnect() {}
+        unobserve() {}
+        observe(target: Element) {
+          this.callback([{ target, contentRect: new DOMRect(0, 0, 800, 200) } as ResizeObserverEntry], this);
+        }
+      };
+    });
+
+    afterEach(() => {
+      vi.mocked(localStorage.getItem).mockReset();
+      globalThis.ResizeObserver = originalObserver;
+      vi.useRealTimers();
+    });
+
+    function selectSavedRange(dateFrom?: string, dateTo?: string) {
+      vi.mocked(localStorage.getItem).mockImplementation(key => key === 'bambusy-stats-timeframe'
+        ? JSON.stringify({ preset: 'custom', dateFrom, dateTo }) : null);
+    }
+
+    function expectDailyBounds(first: Date, last: Date) {
+      const cells = screen.getAllByTitle(/: \d+ prints?$/);
+      const days = [];
+      last.setHours(23, 59, 59);
+      for (const day = new Date(first); day <= last; day.setDate(day.getDate() + 1)) {
+        days.push(day.toLocaleDateString());
+      }
+      expect(cells.map(cell => cell.title.split(':')[0])).toEqual(days);
+    }
+
+    it('keeps the same print when the eighth day switches the calendar from hourly to daily', async () => {
+      selectSavedRange('2024-01-01', '2024-01-07');
+      const print = new Date(2024, 0, 1, 10);
+      server.use(http.get('/api/v1/archives/slim', () =>
+        HttpResponse.json([{ ...mockArchives[0], created_at: print.toISOString() }])
+      ));
+      const { container } = render(<StatsPage />);
+      const day = print.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+      expect(await screen.findByTitle(`${day} 10am: 1 print`)).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Custom Range' }));
+      fireEvent.change(container.querySelectorAll('input[type="date"]')[1], { target: { value: '2024-01-08' } });
+      expect(await screen.findByTitle(`${print.toLocaleDateString()}: 1 print`)).toBeInTheDocument();
+      expectDailyBounds(new Date(2023, 11, 31), new Date(2024, 0, 8));
+    });
+
+    it('shows the selected months through the last day, including leap day', async () => {
+      selectSavedRange('2023-08-30', '2024-02-29');
+      render(<StatsPage />);
+      await screen.findAllByTitle(/: \d+ prints?$/);
+      expectDailyBounds(new Date(2023, 7, 27), new Date(2024, 1, 29));
+    });
+
+    it('continues to today when only a start is selected', async () => {
+      selectSavedRange('2024-01-01');
+      render(<StatsPage />);
+      await screen.findAllByTitle(/: \d+ prints?$/);
+      expectDailyBounds(new Date(2023, 11, 31), new Date(2024, 2, 15));
+    });
+
+    it('ends the rolling window on the selected day when only an end is set', async () => {
+      selectSavedRange(undefined, '2024-01-08');
+      render(<StatsPage />);
+      await screen.findAllByTitle(/: \d+ prints?$/);
+      expectDailyBounds(new Date(2023, 6, 2), new Date(2024, 0, 8));
+    });
+
+    it('shows the rolling six months through today for the default All Time widget', async () => {
+      render(<StatsPage />);
+      await screen.findAllByTitle(/: \d+ prints?$/);
+      expectDailyBounds(new Date(2023, 8, 10), new Date(2024, 2, 15));
     });
   });
 

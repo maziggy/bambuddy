@@ -2030,7 +2030,6 @@ export default {
     noFilamentData: 'Brak danych o filamencie',
     noPrinterData: 'Brak danych o drukarkach',
     noPrintData: 'Brak danych o wydrukach',
-    noPrintDataLast30Days: 'Brak danych o wydrukach z ostatnich 30 dni',
     failureReasons: 'Przyczyny niepowodzeń',
     topFailureReasons: 'Najczęstsze przyczyny niepowodzeń',
     failedPrintsCount: 'Nieudane wydruki: {{failed}} / {{total}}',

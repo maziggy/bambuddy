@@ -2027,7 +2027,6 @@ export default {
     noFilamentData: 'Ingen filamentdata tillgänglig',
     noPrinterData: 'Ingen skrivardata tillgänglig',
     noPrintData: 'Ingen utskriftsdata tillgänglig',
-    noPrintDataLast30Days: 'Ingen utskriftsdata de senaste 30 dagarna',
     failureReasons: 'Orsaker till fel',
     topFailureReasons: 'Vanligaste orsaker till fel',
     failedPrintsCount: '{{failed}} / {{total}} utskrifter misslyckades',

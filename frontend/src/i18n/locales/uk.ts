@@ -2026,7 +2026,6 @@ export default {
     noFilamentData: "Немає даних про філамент",
     noPrinterData: "Дані принтера відсутні",
     noPrintData: "Немає даних про друк",
-    noPrintDataLast30Days: "Немає даних про друк за останні 30 днів",
     failureReasons: "Причини невдач",
     topFailureReasons: "Основні причини невдач",
     failedPrintsCount: "Невдалих друків: {{failed}} із {{total}}",

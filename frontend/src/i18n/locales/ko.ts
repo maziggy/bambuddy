@@ -1943,7 +1943,6 @@ export default {
     noFilamentData: '필라멘트 데이터 없음',
     noPrinterData: '프린터 데이터 없음',
     noPrintData: '인쇄 데이터 없음',
-    noPrintDataLast30Days: '최근 30일 인쇄 데이터 없음',
     failureReasons: '실패 원인',
     topFailureReasons: '주요 실패 원인',
     failedPrintsCount: '{{total}}개 인쇄 중 {{failed}}개 실패',

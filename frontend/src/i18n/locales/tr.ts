@@ -2011,7 +2011,6 @@ export default {
     noFilamentData: 'Filament verisi mevcut değil',
     noPrinterData: 'Yazıcı verisi mevcut değil',
     noPrintData: 'Baskı verisi mevcut değil',
-    noPrintDataLast30Days: 'Son 30 günde baskı verisi yok',
     failureReasons: 'Başarısızlık Nedenleri',
     topFailureReasons: 'En Sık Başarısızlık Nedenleri',
     failedPrintsCount: '{{total}} baskının {{failed}} tanesi başarısız',

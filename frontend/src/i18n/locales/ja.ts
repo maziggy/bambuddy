@@ -2010,7 +2010,6 @@ export default {
     noFilamentData: 'フィラメントデータがありません',
     noPrinterData: 'プリンターデータがありません',
     noPrintData: '印刷データがありません',
-    noPrintDataLast30Days: '過去30日間の印刷データがありません',
     failureReasons: '失敗理由',
     topFailureReasons: '主な失敗理由',
     failedPrintsCount: '{{failed}} / {{total}} 件の印刷が失敗',

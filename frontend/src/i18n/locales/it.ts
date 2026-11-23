@@ -2010,7 +2010,6 @@ export default {
     noFilamentData: 'Nessun dato filamento',
     noPrinterData: 'Nessun dato stampante',
     noPrintData: 'Nessun dato stampa',
-    noPrintDataLast30Days: 'Nessun dato stampa negli ultimi 30 giorni',
     failureReasons: 'Cause guasto',
     topFailureReasons: 'Cause principali',
     failedPrintsCount: '{{failed}} / {{total}} stampe fallite',

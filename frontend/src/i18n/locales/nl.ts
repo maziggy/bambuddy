@@ -2028,7 +2028,6 @@ export default {
     noFilamentData: 'Geen filamentgegevens beschikbaar',
     noPrinterData: 'Geen printergegevens beschikbaar',
     noPrintData: 'Geen afdrukgegevens beschikbaar',
-    noPrintDataLast30Days: 'Geen afdrukgegevens in de laatste 30 dagen',
     failureReasons: 'Oorzaken van fouten',
     topFailureReasons: 'Meest voorkomende foutoorzaken',
     failedPrintsCount: '{{failed}} / {{total}} afdrukken mislukt',

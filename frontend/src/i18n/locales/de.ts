@@ -2011,7 +2011,6 @@ export default {
     noFilamentData: 'Keine Filamentdaten verfügbar',
     noPrinterData: 'Keine Druckerdaten verfügbar',
     noPrintData: 'Keine Druckdaten verfügbar',
-    noPrintDataLast30Days: 'Keine Druckdaten in den letzten 30 Tagen',
     failureReasons: 'Fehlerursachen',
     topFailureReasons: 'Häufigste Fehlerursachen',
     failedPrintsCount: '{{failed}} / {{total}} Drucke fehlgeschlagen',

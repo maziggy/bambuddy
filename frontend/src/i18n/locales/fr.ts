@@ -2010,7 +2010,6 @@ export default {
     noFilamentData: 'Aucune donnée de filament',
     noPrinterData: 'Aucune donnée d\'imprimante',
     noPrintData: 'Aucune donnée d\'impression',
-    noPrintDataLast30Days: 'Aucune impression ces 30 derniers jours',
     failureReasons: 'Raisons des échecs',
     topFailureReasons: 'Top raisons d\'échec',
     failedPrintsCount: '{{failed}} / {{total}} impressions ont échoué',

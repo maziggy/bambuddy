@@ -2030,7 +2030,6 @@ export default {
     noFilamentData: 'No filament data available',
     noPrinterData: 'No printer data available',
     noPrintData: 'No print data available',
-    noPrintDataLast30Days: 'No print data in the last 30 days',
     failureReasons: 'Failure Reasons',
     topFailureReasons: 'Top Failure Reasons',
     failedPrintsCount: '{{failed}} / {{total}} prints failed',

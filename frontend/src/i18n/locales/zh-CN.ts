@@ -2010,7 +2010,6 @@ export default {
     noFilamentData: '暂无耗材数据',
     noPrinterData: '暂无打印机数据',
     noPrintData: '暂无打印数据',
-    noPrintDataLast30Days: '最近 30 天无打印数据',
     failureReasons: '失败原因',
     topFailureReasons: '主要失败原因',
     failedPrintsCount: '{{failed}} / {{total}} 次打印失败',

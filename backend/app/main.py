@@ -12996,6 +12996,10 @@ async def lifespan(app: FastAPI):
         logging.info("Virtual printer manager synced from database")
     except Exception as e:
         logging.warning("Failed to sync virtual printers: %s", e)
+    # Restarts a VP whose services end, e.g. one whose bind address was not
+    # assigned yet just now (#3687). Started after the first sync, and also
+    # when it failed: a later sync from the settings adds the VPs.
+    virtual_printer_manager.start_supervisor()
 
     yield
 

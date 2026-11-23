@@ -6253,6 +6253,7 @@ export default {
     schedule: 'Schedule',
     dateTime: 'Date & Time',
     invalidDateTime: 'Please enter a valid date and time',
+    scheduleInPast: 'Choose a date and time in the future',
     openCalendar: 'Open calendar',
     requireManualStart: 'Require manual start',
     awaitingReviewNote: 'Your print waits for review: it starts once someone who manages the queue starts it.',

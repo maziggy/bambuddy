@@ -6206,6 +6206,7 @@ export default {
     schedule: 'Planen',
     dateTime: 'Datum & Uhrzeit',
     invalidDateTime: 'Bitte ein gültiges Datum und eine gültige Uhrzeit eingeben',
+    scheduleInPast: 'Wähle ein Datum und eine Uhrzeit in der Zukunft',
     openCalendar: 'Kalender öffnen',
     requireManualStart: 'Manuellen Start erfordern',
     awaitingReviewNote: 'Dein Druck wartet auf Freigabe: Er beginnt, sobald jemand, der die Warteschlange verwaltet, ihn startet.',

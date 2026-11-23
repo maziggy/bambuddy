@@ -6253,6 +6253,7 @@ export default {
     schedule: 'Zaplanuj',
     dateTime: 'Data i godzina',
     invalidDateTime: 'Wprowadź prawidłową datę i godzinę',
+    scheduleInPast: 'Wybierz datę i godzinę w przyszłości',
     openCalendar: 'Otwórz kalendarz',
     requireManualStart: 'Wymagaj ręcznego uruchomienia',
     awaitingReviewNote: 'Twój wydruk czeka na zatwierdzenie: rozpocznie się, gdy uruchomi go osoba zarządzająca kolejką.',

@@ -8,7 +8,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type React from 'react';
-import { screen, waitFor, fireEvent, within, render as rtlRender } from '@testing-library/react';
+import { act, screen, waitFor, fireEvent, within, render as rtlRender } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
@@ -113,6 +113,114 @@ describe('PrintModal', () => {
         return HttpResponse.json({ id: 1, status: 'pending' });
       })
     );
+  });
+
+  describe('scheduled start', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date(2026, 10, 23, 12));
+      server.use(
+        http.get('/api/v1/settings/', () => HttpResponse.json({ date_format: 'iso', time_format: '24h' })),
+        http.get('/api/v1/library/files/:id/plates', () => HttpResponse.json({ is_multi_plate: false, plates: [] })),
+        http.get('/api/v1/library/files/:id/filament-requirements', () => HttpResponse.json({ filaments: [] })),
+      );
+    });
+    afterEach(() => { vi.useRealTimers(); });
+
+    it.each(['library print', 'archive reprint', 'pending queue edit'] as const)(
+      'validates the displayed schedule before submitting a %s',
+      async (path) => {
+        const editing = path === 'pending queue edit';
+        const requests: unknown[] = [];
+        const capture = async ({ request }: { request: Request }) => {
+          requests.push(await request.json());
+          return HttpResponse.json({ id: 1, status: 'pending' });
+        };
+        server.use(editing ? http.patch('/api/v1/queue/1', capture) : http.post('/api/v1/queue/', capture));
+        render(
+          <PrintModal
+            mode={editing ? 'edit-queue-item' : 'create'}
+            archiveId={path === 'library print' ? undefined : 1}
+            libraryFileId={path === 'library print' ? 2 : undefined}
+            queueItem={editing ? createMockQueueItem({ scheduled_time: new Date(2026, 11, 2, 15, 30).toISOString() }) : undefined}
+            archiveName="Scheduled print"
+            initialSelectedPrinterIds={[1]}
+            onClose={mockOnClose}
+          />,
+        );
+        if (!editing) fireEvent.click(screen.getByRole('button', { name: 'Schedule' }));
+        const date = await screen.findByPlaceholderText('YYYY-MM-DD');
+        const time = screen.getByPlaceholderText('HH:MM');
+        const submit = screen.getByRole('button', { name: editing ? 'Save' : 'Print' });
+        await waitFor(() => expect(submit).toBeEnabled());
+
+        const past = 'Choose a date and time in the future';
+        const invalid = 'Please enter a valid date and time';
+        for (const [day, clock, message] of [
+          ['2026-10-01', '15:30', past], ['2026-11-23', '11:59', past],
+          ['2026-13-01', '15:30', invalid], ['2027-02-30', '15:30', invalid],
+          ['2026-12-04x', '15:30', invalid], ['2026-12-04', '13:00 PM', invalid],
+          ['2026-12-04', '25:70', invalid], ['2026-12-04', '', invalid],
+        ]) {
+          fireEvent.change(date, { target: { value: day } });
+          fireEvent.change(time, { target: { value: clock } });
+          expect(screen.getByText(message)).toBeVisible();
+          expect(submit).toBeDisabled();
+          fireEvent.submit(submit.closest('form')!);
+        }
+
+        fireEvent.change(time, { target: { value: '15:45' } });
+        expect(date).toHaveValue('2026-12-04');
+        expect(time).toHaveValue('15:45');
+        expect(submit).toBeEnabled();
+        // The clock can pass the chosen minute between rendering and submission.
+        vi.setSystemTime(new Date(2026, 11, 4, 15, 45));
+        fireEvent.submit(submit.closest('form')!);
+        fireEvent.change(date, { target: { value: '2026-12-05' } });
+        fireEvent.click(submit);
+        await waitFor(() => expect(mockOnClose).toHaveBeenCalledOnce());
+        expect(requests).toEqual([expect.objectContaining({
+          scheduled_time: new Date(2026, 11, 5, 15, 45).toISOString(),
+          ...(editing ? {} : path === 'library print' ? { library_file_id: 2 } : { archive_id: 1 }),
+        })]);
+      },
+    );
+
+    it('revalidates a calendar selection when its start time arrives', async () => {
+      render(<PrintModal mode="create" archiveId={1} archiveName="Print" initialSelectedPrinterIds={[1]} onClose={mockOnClose} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Schedule' }));
+      const date = await screen.findByPlaceholderText('YYYY-MM-DD');
+      const submit = screen.getByRole('button', { name: 'Print' });
+      await waitFor(() => expect(submit).toBeEnabled());
+      const calendar = submit.closest('form')!.querySelector('input[type="datetime-local"]')!;
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 10, 23, 12, 0, 59));
+      fireEvent.change(calendar, { target: { value: '2026-11-23T12:01' } });
+      expect(date).toHaveValue('2026-11-23');
+      expect(screen.getByPlaceholderText('HH:MM')).toHaveValue('12:01');
+      expect(submit).toBeEnabled();
+      act(() => { vi.advanceTimersByTime(1000); });
+      expect(submit).toBeDisabled();
+      expect(screen.getByText('Choose a date and time in the future')).toBeVisible();
+    });
+
+    it.each(['ASAP', 'Queue'])('can leave an invalid schedule and submit with %s', async (choice) => {
+      let sent: Record<string, unknown> | undefined;
+      server.use(http.post('/api/v1/queue/', async ({ request }) => {
+        sent = await request.json() as Record<string, unknown>;
+        return HttpResponse.json({ id: 1, status: 'pending' });
+      }));
+      render(<PrintModal mode="create" archiveId={1} archiveName="Print" initialSelectedPrinterIds={[1]} onClose={mockOnClose} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Schedule' }));
+      fireEvent.change(await screen.findByPlaceholderText('YYYY-MM-DD'), { target: { value: 'invalid' } });
+      fireEvent.click(screen.getByRole('button', { name: choice }));
+      const submit = screen.getByRole('button', { name: 'Print' });
+      await waitFor(() => expect(submit).toBeEnabled());
+      fireEvent.click(submit);
+      await waitFor(() => expect(mockOnClose).toHaveBeenCalledOnce());
+      expect(sent).toBeDefined();
+      expect(sent).not.toHaveProperty('scheduled_time');
+    });
   });
 
   describe('create mode', () => {

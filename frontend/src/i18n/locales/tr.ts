@@ -6182,6 +6182,7 @@ export default {
     schedule: 'Zamanla',
     dateTime: 'Tarih ve saat',
     invalidDateTime: 'Lütfen geçerli bir tarih ve saat girin',
+    scheduleInPast: 'Gelecekte bir tarih ve saat seçin',
     openCalendar: 'Takvimi aç',
     requireManualStart: 'Manuel başlatma gerektir',
     awaitingReviewNote: 'Baskınız incelemeyi bekliyor: kuyruğu yöneten biri başlattığında başlar.',

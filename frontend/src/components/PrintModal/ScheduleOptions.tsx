@@ -1,17 +1,13 @@
-import { useState, useEffect, useRef } from 'react';
+import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Calendar, Clock, Hand, Power, Layers, Code, ListOrdered } from 'lucide-react';
 import type { ScheduleOptionsProps, ScheduleType } from './types';
 import {
   formatDateInput,
   formatTimeInput,
-  parseDateInput,
-  parseTimeInput,
   getDatePlaceholder,
   getTimePlaceholder,
   toDateTimeLocalValue,
-  type DateFormat,
-  type TimeFormat,
 } from '../../utils/date';
 import { NumberInput } from '../NumberInput';
 
@@ -23,8 +19,7 @@ import { NumberInput } from '../NumberInput';
 export function ScheduleOptionsPanel({
   options,
   onChange,
-  dateFormat = 'system',
-  timeFormat = 'system',
+  schedule,
   canControlPrinter = true,
   showStagger = false,
   printerCount = 0,
@@ -32,92 +27,35 @@ export function ScheduleOptionsPanel({
   needsReview = false,
 }: ScheduleOptionsProps) {
   const { t } = useTranslation();
-  const [dateValue, setDateValue] = useState('');
-  const [timeValue, setTimeValue] = useState('');
-  const [isDateValid, setIsDateValid] = useState(true);
-  const [isTimeValid, setIsTimeValid] = useState(true);
+  const { dateText, timeText, dateFormat, timeFormat, past, dateValid, timeValid, setFields } = schedule;
   const hiddenInputRef = useRef<HTMLInputElement>(null);
-  const isInitializedRef = useRef(false);
-
-  // Initialize or sync from options.scheduledTime
-  useEffect(() => {
-    if (options.scheduleType !== 'scheduled') {
-      isInitializedRef.current = false;
-      return;
-    }
-
-    // Initialize with default time (now + 1 hour) or from existing value
-    if (!isInitializedRef.current) {
-      isInitializedRef.current = true;
-      let date: Date;
-
-      if (options.scheduledTime) {
-        date = new Date(options.scheduledTime);
-        if (isNaN(date.getTime())) {
-          date = new Date();
-          date.setHours(date.getHours() + 1, 0, 0, 0);
-        }
-      } else {
-        date = new Date();
-        date.setHours(date.getHours() + 1, 0, 0, 0);
-        // Set initial value
-        onChange({ ...options, scheduledTime: toDateTimeLocalValue(date) });
-      }
-
-      setDateValue(formatDateInput(date, dateFormat as DateFormat));
-      setTimeValue(formatTimeInput(date, timeFormat as TimeFormat));
-      setIsDateValid(true);
-      setIsTimeValid(true);
-    }
-  }, [options.scheduleType, options.scheduledTime, dateFormat, timeFormat, onChange, options]);
 
   const handleScheduleTypeChange = (scheduleType: ScheduleType) => {
+    let scheduledTime = options.scheduledTime;
+    if (scheduleType === 'scheduled' && !scheduledTime) {
+      const nextHour = new Date();
+      nextHour.setHours(nextHour.getHours() + 1, 0, 0, 0);
+      scheduledTime = toDateTimeLocalValue(nextHour);
+    }
     onChange({
       ...options,
+      scheduledTime,
       scheduleType,
       requireManualStart: scheduleType === 'queue' ? options.requireManualStart : false,
     });
   };
 
-  const updateScheduledTime = (newDateValue: string, newTimeValue: string) => {
-    const parsedDate = parseDateInput(newDateValue, dateFormat as DateFormat);
-    const parsedTime = parseTimeInput(newTimeValue);
-
-    setIsDateValid(!!parsedDate);
-    setIsTimeValid(!!parsedTime);
-
-    if (parsedDate && parsedTime) {
-      parsedDate.setHours(parsedTime.hours, parsedTime.minutes, 0, 0);
-      const now = new Date();
-      if (parsedDate > now) {
-        onChange({ ...options, scheduledTime: toDateTimeLocalValue(parsedDate) });
-      }
-    }
-  };
-
-  const handleDateChange = (value: string) => {
-    setDateValue(value);
-    updateScheduledTime(value, timeValue);
-  };
-
-  const handleTimeChange = (value: string) => {
-    setTimeValue(value);
-    updateScheduledTime(dateValue, value);
-  };
-
-  // Handle calendar picker selection
   const handleCalendarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
-    if (value) {
-      const date = new Date(value);
-      if (!isNaN(date.getTime())) {
-        setDateValue(formatDateInput(date, dateFormat as DateFormat));
-        setTimeValue(formatTimeInput(date, timeFormat as TimeFormat));
-        setIsDateValid(true);
-        setIsTimeValid(true);
-        onChange({ ...options, scheduledTime: value });
-      }
+    if (!value) {
+      setFields('', '');
+      return;
     }
+    const [day, clock] = value.split('T');
+    const date = new Date(day + 'T12:00');
+    // Format the clock independently so even a nonexistent local hour reaches validation.
+    const time = new Date('2000-01-01T' + clock);
+    setFields(formatDateInput(date, dateFormat), formatTimeInput(time, timeFormat));
   };
 
   const openCalendar = () => {
@@ -179,13 +117,14 @@ export function ScheduleOptionsPanel({
               <input
                 type="text"
                 className={`w-full px-3 py-2 pr-10 bg-bambu-dark border rounded-lg text-white focus:outline-none ${
-                  isDateValid
+                  dateValid && !past
                     ? 'border-bambu-dark-tertiary focus:border-bambu-green'
                     : 'border-red-500'
                 }`}
-                value={dateValue}
-                onChange={(e) => handleDateChange(e.target.value)}
-                placeholder={getDatePlaceholder(dateFormat as DateFormat)}
+                aria-invalid={!dateValid || past}
+                value={dateText}
+                onChange={(e) => setFields(e.target.value, timeText)}
+                placeholder={getDatePlaceholder(dateFormat)}
               />
               <button
                 type="button"
@@ -200,7 +139,7 @@ export function ScheduleOptionsPanel({
                 ref={hiddenInputRef}
                 type="datetime-local"
                 className="absolute top-0 left-0 w-0 h-0 opacity-0 pointer-events-none"
-                value={options.scheduledTime}
+                value={Number.isFinite(schedule.start) ? toDateTimeLocalValue(new Date(schedule.start)) : ''}
                 onChange={handleCalendarChange}
                 tabIndex={-1}
               />
@@ -210,19 +149,20 @@ export function ScheduleOptionsPanel({
               <input
                 type="text"
                 className={`w-full px-3 py-2 bg-bambu-dark border rounded-lg text-white focus:outline-none ${
-                  isTimeValid
+                  timeValid && !past
                     ? 'border-bambu-dark-tertiary focus:border-bambu-green'
                     : 'border-red-500'
                 }`}
-                value={timeValue}
-                onChange={(e) => handleTimeChange(e.target.value)}
-                placeholder={getTimePlaceholder(timeFormat as TimeFormat)}
+                aria-invalid={!timeValid || past}
+                value={timeText}
+                onChange={(e) => setFields(dateText, e.target.value)}
+                placeholder={getTimePlaceholder(timeFormat)}
               />
             </div>
           </div>
-          {(!isDateValid || !isTimeValid) && (
-            <p className="mt-1 text-xs text-red-700 dark:text-red-400">
-              {t('printModal.invalidDateTime')}
+          {(!dateValid || !timeValid || past) && (
+            <p role="alert" className="mt-1 text-xs text-red-700 dark:text-red-400">
+              {t(past ? 'printModal.scheduleInPast' : 'printModal.invalidDateTime')}
             </p>
           )}
         </div>

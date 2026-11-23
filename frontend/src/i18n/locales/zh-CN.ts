@@ -6192,6 +6192,7 @@ export default {
     schedule: '计划',
     dateTime: '日期和时间',
     invalidDateTime: '请输入有效的日期和时间',
+    scheduleInPast: '请选择将来的日期和时间',
     openCalendar: '打开日历',
     requireManualStart: '要求手动开始',
     awaitingReviewNote: '你的打印正在等待审核：管理队列的人启动后才会开始。',

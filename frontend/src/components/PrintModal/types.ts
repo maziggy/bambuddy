@@ -1,3 +1,4 @@
+import type { useScheduledStart } from './useScheduledStart';
 import type { PrintQueueItem, Printer, CalibrationMode } from '../../api/client';
 import type { VariantCandidate } from './VariantCandidates';
 import type { SeparateJobsProgress, SeparateJobsResume } from './separateJobs';
@@ -352,10 +353,7 @@ export interface PrintOptionsProps {
 export interface ScheduleOptionsProps {
   options: ScheduleOptions;
   onChange: (options: ScheduleOptions) => void;
-  /** Date format setting from user preferences */
-  dateFormat?: 'system' | 'us' | 'eu' | 'iso';
-  /** Time format setting from user preferences */
-  timeFormat?: 'system' | '12h' | '24h';
+  schedule: ReturnType<typeof useScheduledStart>;
   /** Whether the user has permission to control printers (for auto power off) */
   canControlPrinter?: boolean;
   /** Show stagger options (only when multiple printers selected in queue mode) */

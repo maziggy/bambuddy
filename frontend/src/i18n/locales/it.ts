@@ -6192,6 +6192,7 @@ export default {
     schedule: 'Programma',
     dateTime: 'Data e ora',
     invalidDateTime: 'Inserisci data e ora valide',
+    scheduleInPast: 'Scegli una data e un’ora future',
     openCalendar: 'Apri calendario',
     requireManualStart: 'Richiedi avvio manuale',
     awaitingReviewNote: 'La tua stampa attende la revisione: parte quando qualcuno che gestisce la coda la avvia.',

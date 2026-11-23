@@ -31,6 +31,7 @@ import { FilamentOverride } from './FilamentOverride';
 import { PlateSelector } from './PlateSelector';
 import { PrinterSelector } from './PrinterSelector';
 import { PrintOptionsPanel } from './PrintOptions';
+import { useScheduledStart } from './useScheduledStart';
 import { ScheduleOptionsPanel } from './ScheduleOptions';
 import { VariantCandidates, type VariantCandidate } from './VariantCandidates';
 import { MultiFileModeToggle } from './MultiFileModeToggle';
@@ -391,6 +392,10 @@ export function PrintModal({
 
   // Queries
   const { data: settings } = useUiSettings();
+  const scheduled = scheduleOptions.scheduleType === 'scheduled';
+  const schedule = useScheduledStart(
+    scheduled, scheduleOptions.scheduledTime, settings?.date_format || 'system', settings?.time_format || 'system',
+  );
 
   // Sync print option defaults from settings once available
   const printDefaultsApplied = useRef(false);
@@ -1178,6 +1183,10 @@ export function PrintModal({
   ) => {
     e?.preventDefault();
 
+    // Check the clock again for a direct submit or a delayed filament confirmation.
+    if (scheduled && !(schedule.start > Date.now())) return;
+    const scheduledTime = scheduled ? new Date(schedule.start).toISOString() : undefined;
+
     if (billingEnabled && selectedCostCenter == null) {
       showToast(t('printModal.noPrintableCostCenters'), 'error');
       return;
@@ -1492,9 +1501,7 @@ export function PrintModal({
           auto_off_after: scheduleOptions.autoOffAfter,
           gcode_injection: scheduleOptions.gcodeInjection,
           manual_start: needsReview || (scheduleOptions.scheduleType === 'queue' && scheduleOptions.requireManualStart),
-          scheduled_time: scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
-            ? new Date(scheduleOptions.scheduledTime).toISOString()
-            : undefined,
+          scheduled_time: scheduledTime,
           quantity,
           ...printOptions,
           project_id: projectId ?? undefined,
@@ -1538,9 +1545,7 @@ export function PrintModal({
       // The stagger of the printer fan-out below, per file.
       const useStagger = assignmentMode === 'printer' && scheduleOptions.staggerEnabled && selectedPrinters.length > 1;
       const staggerBaseTime = useStagger
-        ? (scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
-          ? new Date(scheduleOptions.scheduledTime).getTime()
-          : Date.now())
+        ? (scheduled ? schedule.start : Date.now())
         : 0;
       const asap = scheduleOptions.scheduleType === 'asap';
       setSubmitProgress({ current: 0, total: candidates.length * printerIds.length });
@@ -1578,9 +1583,7 @@ export function PrintModal({
               auto_off_after: scheduleOptions.autoOffAfter,
               gcode_injection: scheduleOptions.gcodeInjection,
               manual_start: needsReview || (scheduleOptions.scheduleType === 'queue' && scheduleOptions.requireManualStart),
-              scheduled_time: scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
-                ? new Date(scheduleOptions.scheduledTime).toISOString()
-                : undefined,
+              scheduled_time: scheduledTime,
               ...printOptions,
               project_id: projectId ?? undefined,
               cost_center_id: billingEnabled ? selectedCostCenterId : undefined,
@@ -1648,7 +1651,10 @@ export function PrintModal({
                 targetLocation,
                 quantity,
                 printOptions,
-                scheduleOptions,
+                scheduleOptions: {
+                  ...scheduleOptions,
+                  scheduledTime: scheduled ? toDateTimeLocalValue(new Date(schedule.start)) : scheduleOptions.scheduledTime,
+                },
                 costCenterId: selectedCostCenterId,
               },
               queuedFileIds: (variantFiles ?? []).map((f) => f.id).filter((id) => !remainingIds.includes(id)),
@@ -1772,9 +1778,7 @@ export function PrintModal({
       // assigns them itself in that case.
       nozzle_rack_choice: printerId ? rackChoiceForPlate(plateId) : undefined,
       plate_id: plateId,
-      scheduled_time: scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
-        ? new Date(scheduleOptions.scheduledTime).toISOString()
-        : undefined,
+      scheduled_time: scheduledTime,
       ...printOptions,
       project_id: projectId ?? undefined,
       cost_center_id: billingEnabled ? selectedCostCenterId : undefined,
@@ -1806,9 +1810,7 @@ export function PrintModal({
               manual_start: editManualStart,
               ams_mapping: undefined,
               plate_id: plateId,
-              scheduled_time: scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
-                ? new Date(scheduleOptions.scheduledTime).toISOString()
-                : null,
+              scheduled_time: scheduledTime ?? null,
               ...printOptions,
               cost_center_id: billingEnabled ? selectedCostCenterId : undefined,
               estimated_cost: billingEnabled && selectedCostCenterId != null ? estimatedCost : undefined,
@@ -1836,9 +1838,7 @@ export function PrintModal({
         && !isEditing
         && selectedPrinters.length > 1;
       const staggerBaseTime = useStagger
-        ? (scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
-          ? new Date(scheduleOptions.scheduledTime).getTime()
-          : Date.now())
+        ? (scheduled ? schedule.start : Date.now())
         : 0;
 
       let progressCounter = 0;
@@ -1876,9 +1876,7 @@ export function PrintModal({
                 // stale ones on the row (#1784).
                 nozzle_rack_choice: rackChoiceForPlate(plateId) ?? null,
                 plate_id: plateId,
-                scheduled_time: scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
-                  ? new Date(scheduleOptions.scheduledTime).toISOString()
-                  : null,
+                scheduled_time: scheduledTime ?? null,
                 ...printOptions,
                 cost_center_id: billingEnabled ? selectedCostCenterId : undefined,
                 estimated_cost: billingEnabled && selectedCostCenterId != null
@@ -2608,8 +2606,7 @@ export function PrintModal({
             <ScheduleOptionsPanel
               options={scheduleOptions}
               onChange={setScheduleOptions}
-              dateFormat={settings?.date_format || 'system'}
-              timeFormat={settings?.time_format || 'system'}
+              schedule={schedule}
               canControlPrinter={hasPermission('printers:control')}
               showStagger={!isEditing && assignmentMode === 'printer' && selectedPrinters.length > 1}
               printerCount={selectedPrinters.length}
@@ -2681,7 +2678,7 @@ export function PrintModal({
               </Button>
               <Button
                 type="submit"
-                disabled={!canSubmit}
+                disabled={!canSubmit || (scheduled && !schedule.future)}
                 className="flex-1"
               >
                 {isPending ? (

@@ -6251,6 +6251,7 @@ export default {
     schedule: 'Plannen',
     dateTime: 'Datum en tijd',
     invalidDateTime: 'Voer een geldige datum en tijd in',
+    scheduleInPast: 'Kies een datum en tijd in de toekomst',
     openCalendar: 'Kalender openen',
     requireManualStart: 'Handmatige start vereisen',
     awaitingReviewNote: 'Je afdruk wacht op beoordeling: hij begint zodra iemand die de wachtrij beheert hem start.',

@@ -28,7 +28,10 @@ export function useScheduledStart(
   const timestamp = date && time ? date.setHours(time.hours, time.minutes, 0, 0) : NaN;
   // A local time skipped by a daylight-saving transition rolls forward in Date.
   const timeValid = !!time && (!date || (date.getHours() === time.hours && date.getMinutes() === time.minutes));
-  const start = timeValid ? timestamp : NaN;
+  // Keep the exact instant of an existing start until a field is edited.
+  // The displayed minute alone loses seconds and can be ambiguous when clocks go back.
+  let start = timeValid ? timestamp : NaN;
+  if (!draft && initial && Number.isFinite(start)) start = initial.getTime();
   const future = start > Date.now();
   const [clock, setClock] = useState(0);
   useEffect(() => {
@@ -40,7 +43,7 @@ export function useScheduledStart(
   }, [start, future, clock]);
 
   return {
-    dateText, timeText, dateFormat, timeFormat, start, future,
+    dateText, timeText, dateFormat, timeFormat, start, future, edited: draft !== null,
     setFields: (date: string, time: string) => setDraft({ date, time, format: dateFormat }),
     dateValid: !!date, timeValid,
     past: Number.isFinite(start) && !future,

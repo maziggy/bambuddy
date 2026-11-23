@@ -836,13 +836,13 @@ class VirtualPrinterFTPServer:
 
         except OSError as e:
             if e.errno == 98:  # Address already in use
-                logger.error("FTP port %s is already in use", self.port)
+                logger.error("[%s] FTP port %s is already in use", self.vp_name, self.port)
             else:
-                logger.error("FTP server error: %s", e)
+                logger.error("[%s] FTP server error: %s", self.vp_name, e)
         except asyncio.CancelledError:
             logger.debug("FTP server task cancelled")
         except Exception as e:
-            logger.error("FTP server error: %s", e)
+            logger.error("[%s] FTP server error: %s", self.vp_name, e)
         finally:
             await self.stop()
 

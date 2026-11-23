@@ -114,6 +114,7 @@ export function PurgeArchivesModal({ onClose, initialDays }: PurgeArchivesModalP
               <li>{t('archivePurge.effect2')}</li>
               <li>{t('archivePurge.effect3')}</li>
               <li>{t('archivePurge.effect4')}</li>
+              <li>{t('archivePurge.effect5')}</li>
             </ul>
           </div>
 
@@ -142,6 +143,11 @@ export function PurgeArchivesModal({ onClose, initialDays }: PurgeArchivesModalP
                       </li>
                     )}
                   </ul>
+                )}
+                {(preview?.favorites_kept ?? 0) > 0 && (
+                  <div className="mt-2 text-xs text-gray-600 dark:text-gray-400">
+                    {t('archivePurge.favoritesKept', { count: preview?.favorites_kept })}
+                  </div>
                 )}
               </div>
             )}

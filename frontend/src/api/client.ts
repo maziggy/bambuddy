@@ -9284,6 +9284,8 @@ export interface ArchivePurgePreview {
   total_bytes: number;
   sample_filenames: string[];
   older_than_days: number;
+  /** Favourites past the cutoff, which the purge keeps (#3700). */
+  favorites_kept: number;
 }
 
 export interface ArchiveMergeMember {

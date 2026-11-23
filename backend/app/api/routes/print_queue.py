@@ -2131,6 +2131,12 @@ async def update_batch(
     explicit action, because silently deleting queued work on a number change
     would be a nasty surprise.
     """
+    if "requested_status" in data.model_fields_set:
+        detail = "Batch status cannot be set with PATCH."
+        if data.requested_status == "cancelled":
+            detail += " Use DELETE /queue/batches/{id} to cancel the batch."
+        raise HTTPException(400, detail)
+
     await _ensure_batch_in_scope(db, batch_id, printer_scope)
     batch = await _load_batch_for_write(db, batch_id, actor, Permission.QUEUE_UPDATE_ALL)
 
@@ -2148,8 +2154,6 @@ async def update_batch(
         batch.due_date = data.due_date
     if data.notes is not None:
         batch.notes = data.notes
-    if data.status is not None:
-        batch.status = data.status
 
     if plate_targets is not None:
         existing = {row.plate_id: row for row in batch.plates}

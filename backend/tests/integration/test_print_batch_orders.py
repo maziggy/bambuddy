@@ -796,6 +796,23 @@ class TestBatchOrderDispatch:
 @pytest.mark.asyncio
 @pytest.mark.integration
 class TestBatchOrderHeader:
+    @pytest.mark.parametrize("status", ["cancelled", "active", None])
+    async def test_patch_rejects_status_and_leaves_order_intact(self, async_client, archive_factory, status):
+        archive = await archive_factory()
+        order = await _create_order(async_client, archive.id, [{"plate_id": 1, "quantity_target": 1}])
+        url = f"/api/v1/queue/batches/{order['id']}"
+        if status == "active":
+            assert (await async_client.delete(url)).status_code == 200
+
+        response = await async_client.patch(url, json={"name": "Renamed", "status": status})
+        assert response.status_code == 400, response.text
+        if status == "cancelled":
+            assert "DELETE /queue/batches/{id}" in response.json()["detail"]
+
+        stored = (await async_client.get(url)).json()
+        assert stored["name"] == order["name"]
+        assert stored["status"] == ("cancelled" if status == "active" else "active")
+
     async def test_header_fields_round_trip(self, async_client, archive_factory):
         archive = await archive_factory()
         order = await _create_order(

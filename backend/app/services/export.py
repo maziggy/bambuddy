@@ -2,7 +2,7 @@ import csv
 import io
 import re
 from collections.abc import Sequence
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone, tzinfo
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
@@ -286,6 +286,11 @@ class ExportService:
         project_id: int | None = None,
         created_by_id: int | None = None,
         printer_scope: PrinterScope | None = None,
+        *,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        day_zone: tzinfo | None = None,
+        all_time: bool = False,
     ) -> tuple[bytes, str, str]:
         """Export statistics summary to CSV or Excel format.
 
@@ -305,16 +310,31 @@ class ExportService:
         analysis_service = FailureAnalysisService(self.db)
         analysis = await analysis_service.analyze_failures(
             days=days,
+            date_from=date_from,
+            date_to=date_to,
+            day_zone=day_zone,
+            all_time=all_time,
             printer_id=printer_id,
             project_id=project_id,
             created_by_id=created_by_id,
             printer_scope=printer_scope,
         )
 
+        if date_from and date_to:
+            period = ["Period", str(date_from) if date_from == date_to else f"{date_from} to {date_to}"]
+        elif date_from:
+            period = ["Period", f"From {date_from}"]
+        elif date_to:
+            period = ["Period", f"Through {date_to}"]
+        elif all_time:
+            period = ["Period", "All time"]
+        else:
+            period = ["Period (days)", days]
+
         # Build stats rows
         rows = [
             ["Metric", "Value"],
-            ["Period (days)", analysis["period_days"]],
+            period,
             ["Total Prints", analysis["total_prints"]],
             ["Failed Prints", analysis["failed_prints"]],
             ["Failure Rate (%)", analysis["failure_rate"]],

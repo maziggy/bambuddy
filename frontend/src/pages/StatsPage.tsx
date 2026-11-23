@@ -735,18 +735,16 @@ function FilamentTrendsWidget({
   return <FilamentTrends archives={archives} currency={currency} dateFrom={dateFrom} dateTo={dateTo} />;
 }
 
-function FailureAnalysisWidget({ size = 1, dateFrom, dateTo, createdById }: {
+function FailureAnalysisWidget({ size = 1, period, createdById }: {
   size?: 1 | 2 | 4;
-  dateFrom?: string;
-  dateTo?: string;
+  period: { dateFrom?: string; dateTo?: string; allTime: boolean };
   createdById?: number;
 }) {
   const { t } = useTranslation();
-  const hasDateRange = !!(dateFrom || dateTo);
   const { data: analysis, isLoading } = useQuery({
-    queryKey: ['failureAnalysis', dateFrom, dateTo, createdById ?? 'all'],
+    queryKey: ['failureAnalysis', period, createdById ?? 'all'],
     queryFn: () => api.getFailureAnalysis({
-      ...(hasDateRange ? { dateFrom, dateTo } : { days: 30 }),
+      ...period,
       createdById,
     }),
   });
@@ -760,7 +758,7 @@ function FailureAnalysisWidget({ size = 1, dateFrom, dateTo, createdById }: {
   }
 
   if (!analysis || analysis.total_prints === 0) {
-    return <p className="text-bambu-gray text-center py-4">{hasDateRange ? t('stats.noPrintDataInRange') : t('stats.noPrintDataLast30Days')}</p>;
+    return <p className="text-bambu-gray text-center py-4">{period.allTime ? t('stats.noPrintData') : t('stats.noPrintDataInRange')}</p>;
   }
 
   // Show more reasons when expanded
@@ -1010,6 +1008,8 @@ export function StatsPage() {
     return computeDateRange(timeframe.preset);
   }, [timeframe]);
 
+  const analysisPeriod = { ...effectiveDateRange, allTime: !effectiveDateRange.dateFrom && !effectiveDateRange.dateTo };
+
   // Read hidden count from localStorage
   useEffect(() => {
     const updateHiddenCount = () => {
@@ -1096,7 +1096,7 @@ export function StatsPage() {
     setShowExportMenu(false);
     setIsExporting(true);
     try {
-      const { blob, filename } = await api.exportStats({ format, days: 90, createdById: createdByIdParam });
+      const { blob, filename } = await api.exportStats({ format, ...analysisPeriod, createdById: createdByIdParam });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -1177,7 +1177,7 @@ export function StatsPage() {
     {
       id: 'failure-analysis',
       title: t('stats.failureAnalysis'),
-      component: (size) => <FailureAnalysisWidget size={size} dateFrom={effectiveDateRange.dateFrom} dateTo={effectiveDateRange.dateTo} createdById={createdByIdParam} />,
+      component: (size) => <FailureAnalysisWidget size={size} period={analysisPeriod} createdById={createdByIdParam} />,
       defaultSize: 1,
     },
     {

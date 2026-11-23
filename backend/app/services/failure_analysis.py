@@ -1,13 +1,14 @@
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone, tzinfo
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from backend.app.core.printer_scope import PrinterScope
 from backend.app.models.print_log import PrintLogEntry
 from backend.app.models.printer import Printer
-from backend.app.utils.local_time import local_date_end, local_date_start
+from backend.app.utils.local_time import local_date_end, local_date_start, local_zone
 
 
 class FailureAnalysisService:
@@ -33,6 +34,7 @@ class FailureAnalysisService:
         created_by_id: int | None = None,
         printer_scope: PrinterScope | None = None,
         day_zone: tzinfo | None = None,
+        all_time: bool = False,
     ) -> dict:
         """Analyze failure patterns across logged print events.
 
@@ -42,19 +44,22 @@ class FailureAnalysisService:
         # Build base query — separate date vs non-date filters for trend reuse
         base_filter = []
         non_date_filter = []
+        now = datetime.now(timezone.utc)
         if date_from or date_to:
-            if date_from:
-                dt_from = local_date_start(date_from, day_zone)
+            dt_from = local_date_start(date_from, day_zone) if date_from else None
+            dt_to = local_date_end(date_to, day_zone) if date_to else None
+            if dt_from:
                 base_filter.append(PrintLogEntry.created_at >= dt_from)
-            if date_to:
-                dt_to = local_date_end(date_to, day_zone)
+            if dt_to:
                 base_filter.append(PrintLogEntry.created_at <= dt_to)
-            range_start = dt_from if date_from else datetime.now(timezone.utc) - timedelta(days=365)
-            range_end = dt_to if date_to else datetime.now(timezone.utc)
+            range_start = dt_from or now - timedelta(days=365)
+            range_end = dt_to or now
             effective_days = max((range_end - range_start).days, 1)
+        elif all_time:
+            effective_days = None
         else:
             effective_days = days if days is not None else 30
-            cutoff_date = datetime.now(timezone.utc) - timedelta(days=effective_days)
+            cutoff_date = now - timedelta(days=effective_days)
             base_filter.append(PrintLogEntry.created_at >= cutoff_date)
         if printer_id:
             non_date_filter.append(PrintLogEntry.printer_id == printer_id)
@@ -90,7 +95,7 @@ class FailureAnalysisService:
         base_filter.extend(non_date_filter)
 
         # Total counts
-        total_result = await self.db.execute(select(func.count(PrintLogEntry.id)).where(and_(*base_filter)))
+        total_result = await self.db.execute(select(func.count(PrintLogEntry.id)).where(*base_filter))
         total_prints = total_result.scalar() or 0
 
         successful_result = await self.db.execute(
@@ -246,9 +251,66 @@ class FailureAnalysisService:
             for e in recent_result.scalars().all()
         ]
 
-        # Failure rate trend (by week)
+        if date_from or date_to or effective_days is None:
+            zone = day_zone or local_zone()
+            today = now.astimezone(zone).date()
+            # A future upper bound should not generate empty weeks beyond today.
+            trend_end = min(date_to, today) if date_to else today
+            trend_data = await self._calendar_trend(base_filter, date_from, trend_end, zone)
+        else:
+            trend_data = await self._rolling_trend(effective_days, non_date_filter)
+
+        return {
+            "period_days": effective_days,
+            "total_prints": total_prints,
+            "failed_prints": failed_prints,
+            "failure_rate": round(failure_rate, 1),
+            "rejected_prints": rejected_prints,
+            "yield_rate": round(yield_rate, 1),
+            "rejects_by_reason": rejects_by_reason,
+            "failures_by_reason": failures_by_reason,
+            "failures_by_filament": failures_by_filament,
+            "failures_by_printer": failures_by_printer,
+            "failures_by_hour": failures_by_hour_complete,
+            "recent_failures": recent_failures,
+            "trend": trend_data,
+        }
+
+    async def _calendar_trend(
+        self, filters: list[ColumnElement[bool]], date_from: date | None, end: date, zone: tzinfo
+    ) -> list[dict]:
+        """Weekly totals for the same local dates and prints as the summary."""
+        # Count backwards in local calendar weeks of seven days ending on the
+        # selection's last day. An old print must not cost three queries per week.
+        weeks: dict[int, Counter[str]] = defaultdict(Counter)
+        runs = await self.db.stream(select(PrintLogEntry.created_at, PrintLogEntry.status).where(*filters))
+        async for created_at, status in runs:
+            day = created_at.replace(tzinfo=timezone.utc).astimezone(zone).date()
+            weeks[(end - day).days // 7][status] += 1
+
+        if not weeks:
+            return []
+        trend = []
+        newest_week = min(0, min(weeks))  # Imported runs can be dated in the future.
+        for index in range(max(weeks), newest_week - 1, -1):
+            counts = weeks.get(index, Counter())
+            failed = counts["failed"] + counts["aborted"]
+            outcomes = failed + counts["completed"]
+            start = max((date_from or date.min).toordinal(), end.toordinal() - 7 * index - 6)
+            trend.append(
+                {
+                    "week_start": date.fromordinal(start).isoformat(),
+                    "total_prints": counts.total(),
+                    "failed_prints": failed,
+                    "failure_rate": round(failed / outcomes * 100, 1) if outcomes else 0,
+                }
+            )
+        return trend
+
+    async def _rolling_trend(self, days: int, non_date_filter: list[ColumnElement[bool]]) -> list[dict]:
+        """The rolling days API reports whole seven-day windows ending now."""
         trend_data = []
-        num_weeks = max(effective_days // 7, 1)
+        num_weeks = max(days // 7, 1)
         for i in range(num_weeks):
             week_end = datetime.now(timezone.utc) - timedelta(weeks=i)
             week_start = week_end - timedelta(weeks=1)
@@ -285,19 +347,4 @@ class FailureAnalysisService:
             )
 
         trend_data.reverse()  # Oldest first
-
-        return {
-            "period_days": effective_days,
-            "total_prints": total_prints,
-            "failed_prints": failed_prints,
-            "failure_rate": round(failure_rate, 1),
-            "rejected_prints": rejected_prints,
-            "yield_rate": round(yield_rate, 1),
-            "rejects_by_reason": rejects_by_reason,
-            "failures_by_reason": failures_by_reason,
-            "failures_by_filament": failures_by_filament,
-            "failures_by_printer": failures_by_printer,
-            "failures_by_hour": failures_by_hour_complete,
-            "recent_failures": recent_failures,
-            "trend": trend_data,
-        }
+        return trend_data

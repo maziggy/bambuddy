@@ -1463,6 +1463,7 @@ async def analyze_failures(
     tz: str | None = Query(
         None, max_length=64, description="IANA zone the dates are calendar days in; the server's when omitted"
     ),
+    all_time: bool = Query(False, description="Include all history when no calendar dates are supplied"),
     printer_id: int | None = None,
     project_id: int | None = None,
     created_by_id: int | None = Query(None, description="Filter by user who created the print (-1 for no user)"),
@@ -1495,6 +1496,7 @@ async def analyze_failures(
     service = FailureAnalysisService(db)
     return await service.analyze_failures(
         days=days,
+        all_time=all_time,
         date_from=date_from,
         date_to=date_to,
         printer_id=printer_id,
@@ -1665,6 +1667,12 @@ async def export_archives(
 async def export_stats(
     format: str = Query("csv", description="Export format: csv or xlsx"),
     days: int = 30,
+    date_from: date | None = Query(None, description="Start date (inclusive), YYYY-MM-DD"),
+    date_to: date | None = Query(None, description="End date (inclusive), YYYY-MM-DD"),
+    tz: str | None = Query(
+        None, max_length=64, description="IANA zone the dates are calendar days in; the server's when omitted"
+    ),
+    all_time: bool = Query(False, description="Include all history when no calendar dates are supplied"),
     printer_id: int | None = None,
     project_id: int | None = None,
     created_by_id: int | None = Query(None, description="Filter by user who created the print (-1 for no user)"),
@@ -1688,6 +1696,10 @@ async def export_stats(
         file_bytes, filename, content_type = await service.export_stats(
             format=format,
             days=days,
+            date_from=date_from,
+            date_to=date_to,
+            day_zone=day_zone(tz),
+            all_time=all_time,
             printer_id=printer_id,
             project_id=project_id,
             created_by_id=created_by_id,

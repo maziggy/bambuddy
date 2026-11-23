@@ -1115,8 +1115,18 @@ export interface TagInfo {
   count: number;
 }
 
+interface StatsAnalysisOptions {
+  days?: number;
+  dateFrom?: string;
+  dateTo?: string;
+  allTime?: boolean;
+  printerId?: number;
+  projectId?: number;
+  createdById?: number;
+}
+
 export interface FailureAnalysis {
-  period_days: number;
+  period_days: number | null;
   total_prints: number;
   failed_prints: number;
   failure_rate: number;
@@ -1148,16 +1158,29 @@ export interface FailureAnalysis {
 /**
  * Send the browser's zone with calendar dates: the server reads a date as a
  * day in it, else in its own TZ, which shifted every day for a browser away
- * from the server (DB-C12). Only when a date is set.
+ * from the server (DB-C12). Weekly trends also use local days under All time.
  */
 function addDayZone(params: URLSearchParams): void {
-  if (!params.has('date_from') && !params.has('date_to')) return;
+  if (!params.has('date_from') && !params.has('date_to') && !params.has('all_time')) return;
   try {
     const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     if (zone) params.set('tz', zone);
   } catch {
     // No Intl zone: the server's TZ applies.
   }
+}
+
+function statsAnalysisParams(options?: StatsAnalysisOptions): URLSearchParams {
+  const params = new URLSearchParams();
+  if (options?.allTime) params.set('all_time', 'true');
+  if (options?.days) params.set('days', String(options.days));
+  if (options?.dateFrom) params.set('date_from', options.dateFrom);
+  if (options?.dateTo) params.set('date_to', options.dateTo);
+  addDayZone(params);
+  if (options?.printerId) params.set('printer_id', String(options.printerId));
+  if (options?.projectId) params.set('project_id', String(options.projectId));
+  if (options?.createdById !== undefined) params.set('created_by_id', String(options.createdById));
+  return params;
 }
 
 export interface BulkUploadResult {
@@ -6134,15 +6157,8 @@ export const api = {
       usage_repriced: number;
       spoolman_unreachable: number;
     }>('/archives/recalculate-costs', { method: 'POST' }),
-  getFailureAnalysis: (options?: { days?: number; dateFrom?: string; dateTo?: string; printerId?: number; projectId?: number; createdById?: number }) => {
-    const params = new URLSearchParams();
-    if (options?.days) params.set('days', String(options.days));
-    if (options?.dateFrom) params.set('date_from', options.dateFrom);
-    if (options?.dateTo) params.set('date_to', options.dateTo);
-    addDayZone(params);
-    if (options?.printerId) params.set('printer_id', String(options.printerId));
-    if (options?.projectId) params.set('project_id', String(options.projectId));
-    if (options?.createdById !== undefined) params.set('created_by_id', String(options.createdById));
+  getFailureAnalysis: (options?: StatsAnalysisOptions) => {
+    const params = statsAnalysisParams(options);
     const qs = params.toString();
     return request<FailureAnalysis>(`/archives/analysis/failures${qs ? `?${qs}` : ''}`);
   },
@@ -6189,19 +6205,11 @@ export const api = {
     const blob = await response.blob();
     return { blob, filename };
   },
-  exportStats: async (options?: {
+  exportStats: async (options?: StatsAnalysisOptions & {
     format?: 'csv' | 'xlsx';
-    days?: number;
-    printerId?: number;
-    projectId?: number;
-    createdById?: number;
   }): Promise<{ blob: Blob; filename: string }> => {
-    const params = new URLSearchParams();
+    const params = statsAnalysisParams(options);
     if (options?.format) params.set('format', options.format);
-    if (options?.days) params.set('days', String(options.days));
-    if (options?.printerId) params.set('printer_id', String(options.printerId));
-    if (options?.projectId) params.set('project_id', String(options.projectId));
-    if (options?.createdById !== undefined) params.set('created_by_id', String(options.createdById));
 
     const headers: Record<string, string> = {};
     if (authToken) {

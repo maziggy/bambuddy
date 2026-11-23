@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { render } from '../utils';
 import { StatsPage } from '../../pages/StatsPage';
 import { http, HttpResponse } from 'msw';
@@ -559,12 +559,53 @@ describe('StatsPage', () => {
   });
 
   describe('export', () => {
-    it('has export button', async () => {
-      render(<StatsPage />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Export Stats')).toBeInTheDocument();
-      });
+    it.each(['All time', 'Custom'])('uses the %s timeframe for failure analysis and both downloads', async (range) => {
+      const failures = vi.fn();
+      const downloads = vi.fn();
+      server.use(
+        http.get('/api/v1/archives/analysis/failures', ({ request }) => {
+          failures(Object.fromEntries(new URL(request.url).searchParams));
+          return HttpResponse.json(mockFailureAnalysis);
+        }),
+        http.get('/api/v1/archives/stats/export', ({ request }) => {
+          downloads(Object.fromEntries(new URL(request.url).searchParams));
+          return new HttpResponse('fixture');
+        }),
+      );
+      class DownloadURL extends URL {
+        static createObjectURL = () => 'blob:stats';
+        static revokeObjectURL = vi.fn();
+      }
+      const originalURL = globalThis.URL;
+      globalThis.URL = DownloadURL;
+      const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+      try {
+        const { container } = render(<StatsPage />);
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        let period: Record<string, string> = { all_time: 'true', tz };
+        if (range === 'Custom') {
+          fireEvent.click(await screen.findByRole('button', { name: /all time/i }));
+          fireEvent.click(screen.getByRole('button', { name: /custom/i }));
+          fireEvent.change(container.querySelectorAll('input[type="date"]')[0], { target: { value: '2020-04-04' } });
+          await screen.findByRole('button', { name: 'Apply' });
+          fireEvent.change(container.querySelectorAll('input[type="date"]')[1], { target: { value: '2020-04-05' } });
+          fireEvent.click(await screen.findByRole('button', { name: 'Apply' }));
+          period = { date_from: '2020-04-04', date_to: '2020-04-05', tz };
+        }
+        for (const [label, format] of [[/CSV/i, 'csv'], [/Excel/i, 'xlsx']] as const) {
+          fireEvent.click(await screen.findByRole('button', { name: 'Export Stats' }));
+          fireEvent.click(screen.getByRole('button', { name: label }));
+          await waitFor(() => expect(click).toHaveBeenCalledTimes(format === 'csv' ? 1 : 2));
+        }
+        expect(downloads.mock.calls.map(([query]) => query)).toEqual([
+          { format: 'csv', ...period }, { format: 'xlsx', ...period },
+        ]);
+        expect(failures).toHaveBeenLastCalledWith(period);
+        expect(await screen.findByText('5 / 100 prints failed')).toBeInTheDocument();
+      } finally {
+        click.mockRestore();
+        globalThis.URL = originalURL;
+      }
     });
   });
 

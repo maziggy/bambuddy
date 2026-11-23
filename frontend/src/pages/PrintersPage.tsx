@@ -1367,14 +1367,14 @@ function StatusSummaryBar({ printers }: { printers: Printer[] | undefined }) {
               <span className="text-white font-medium">{nextFinish.name}</span>
             </div>
             <div className="flex items-center gap-2 w-full sm:w-auto">
-              <div className="w-full sm:w-16 bg-bambu-dark-tertiary rounded-full h-1.5">
+              <div className="w-16 flex-1 min-w-0 sm:flex-none bg-bambu-dark-tertiary rounded-full h-1.5">
                 <div
                   className="bg-bambu-green h-1.5 rounded-full transition-all"
                   style={{ width: `${nextFinish.progress}%` }}
                 />
               </div>
-              <span className="text-white font-medium">{Math.round(nextFinish.progress)}%</span>
-              <span className="text-bambu-gray">({formatDuration(nextFinish.remainingMin * 60)})</span>
+              <span className="shrink-0 whitespace-nowrap text-white font-medium">{Math.round(nextFinish.progress)}%</span>
+              <span className="shrink-0 whitespace-nowrap text-bambu-gray">({formatDuration(nextFinish.remainingMin * 60)})</span>
             </div>
           </div>
         </>
@@ -5171,7 +5171,7 @@ function PrinterCard({
               const isControlBusy = stopPrintMutation.isPending || pausePrintMutation.isPending || resumePrintMutation.isPending;
               const unavailablePrintActionClass = 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed opacity-50';
               const iconControlClass = 'flex h-8 w-8 items-center justify-center rounded-lg text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
-              const printControlClass = 'flex h-8 w-20 items-center justify-center gap-1 px-2 rounded-lg text-xs font-medium transition-colors';
+              const printControlClass = 'flex h-8 items-center justify-center gap-1 px-2 whitespace-nowrap rounded-lg text-xs font-medium transition-colors';
 
               return (
                 <div className="mt-3">
@@ -5183,9 +5183,12 @@ function PrinterCard({
                     <div className="flex-1 h-[2px] bg-bambu-dark-tertiary" />
                   </div>
 
-                  <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-2">
+                  {/* Pause/Stop stay on the icons' row where it fits; wrapped, they line
+                      up on the left under the icons (justify-between puts a
+                      line's only item at its start) (#3663). */}
+                  <div className="flex flex-wrap items-center justify-between gap-1.5">
                     {/* Left: Secondary controls */}
-                    <div className="flex flex-wrap items-center gap-2 min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5 min-w-0">
                       <button
                         onClick={() => chamberLightMutation.mutate(!status.chamber_light)}
                         disabled={!status.connected || chamberLightMutation.isPending || !hasPermission('printers:control')}
@@ -5510,7 +5513,7 @@ function PrinterCard({
                     </div>
 
                     {/* Right: Print Control Buttons */}
-                    <div className="ml-auto flex items-center justify-end gap-2 flex-shrink-0">
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
                       {/* Pause/Resume button */}
                       {(() => {
                         const pauseUnavailable = !isPrinting || isControlBusy || !hasPermission('printers:control');

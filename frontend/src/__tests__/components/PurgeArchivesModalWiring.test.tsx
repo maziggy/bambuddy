@@ -21,11 +21,13 @@ interface PreviewCall {
 let previewCalls: PreviewCall[];
 let executeBodies: Array<Record<string, unknown>>;
 let previewCount: number;
+let favoritesKept: number;
 
 beforeEach(() => {
   previewCalls = [];
   executeBodies = [];
   previewCount = 4;
+  favoritesKept = 0;
   server.use(
     http.get('*/api/v1/archives/purge/preview', ({ request }) => {
       const url = new URL(request.url);
@@ -38,6 +40,7 @@ beforeEach(() => {
         total_bytes: 1024,
         sample_filenames: ['old-a.3mf'],
         older_than_days: Number(url.searchParams.get('older_than_days')),
+        favorites_kept: favoritesKept,
       });
     }),
     http.post('*/api/v1/archives/purge', async ({ request }) => {
@@ -48,6 +51,19 @@ beforeEach(() => {
 });
 
 describe('PurgeArchivesModal wiring', () => {
+  it('says how many favorites the purge keeps, and that it keeps them (#3700)', async () => {
+    favoritesKept = 2;
+    render(<PurgeArchivesModal onClose={vi.fn()} initialDays={90} />);
+    expect(await screen.findByText('2 favorites are kept')).toBeInTheDocument();
+    expect(screen.getByText('Favorite archives are never purged.')).toBeInTheDocument();
+  });
+
+  it('says nothing about favorites when none are kept', async () => {
+    render(<PurgeArchivesModal onClose={vi.fn()} initialDays={90} />);
+    await screen.findByRole('button', { name: 'Remove 4 archive(s)' });
+    expect(screen.queryByText(/favorites? (is|are) kept/)).not.toBeInTheDocument();
+  });
+
   it('previews with the initial days and executes with the same days value', async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();

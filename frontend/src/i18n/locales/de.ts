@@ -5323,6 +5323,16 @@ export default {
     allPresetsRequired: 'Alle Profile müssen ausgewählt sein',
     useEmbedded: 'Eingebettete Einstellungen der Datei verwenden',
     useEmbeddedHint: 'So slicen, wie der Ersteller es angelegt hat (Wände, Füllung, Filament), statt mit den obigen Profilen. Verfügbar, weil dein Drucker zur Datei passt.',
+    // Nozzle flow the slice is cut for (#3136).
+    nozzleFlow: {
+      label: "Düsendurchfluss",
+      standard: "Standard",
+      highFlow: "High Flow",
+      left: "Links",
+      right: "Rechts",
+      fromPrinter: "Wie in {{name}} eingebaut",
+      unknown: "Kein Drucker dieses Modells ist online und meldet den Durchfluss seiner Düse in dieser Größe. Wähle den Durchfluss der Düse, mit der du druckst.",
+    },
     autoOrient: 'Objekte automatisch ausrichten',
     autoOrientHint: 'Der Slicer dreht jedes Objekt zuerst auf die am besten druckbare Seite. Überschreibt die Ausrichtung aus der Datei.',
     autoArrange: 'Automatisch auf dem Druckbett anordnen',

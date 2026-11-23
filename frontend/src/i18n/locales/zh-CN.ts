@@ -5310,6 +5310,16 @@ export default {
     allPresetsRequired: '必须选择所有预设',
     useEmbedded: '使用文件的内置设置',
     useEmbeddedHint: '按设计者的设置（壁、填充、耗材）切片，而非上方的配置文件。因您的打印机与文件匹配而可用。',
+    // Nozzle flow the slice is cut for (#3136).
+    nozzleFlow: {
+      label: "喷嘴流量",
+      standard: "标准",
+      highFlow: "高流量",
+      left: "左",
+      right: "右",
+      fromPrinter: "与 {{name}} 上安装的一致",
+      unknown: "此型号没有在线打印机报告该尺寸喷嘴的流量。请选择您打印所用喷嘴的流量。",
+    },
     autoOrient: '自动摆正模型',
     autoOrientHint: '切片前由切片器把每个模型转到最适合打印的一面，会覆盖文件中保存的朝向。',
     autoArrange: '自动排布在热床上',

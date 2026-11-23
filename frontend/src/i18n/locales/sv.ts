@@ -5390,6 +5390,16 @@ errors: {
     allPresetsRequired: 'Alla förinställningar måste väljas',
     useEmbedded: 'Använd filens inbyggda inställningar',
     useEmbeddedHint: 'Slica den på det sätt designern ställt in den (väggar, fyllning, filament) istället för profilerna ovan. Erbjuds eftersom din skrivare matchar filens.',
+    // Nozzle flow the slice is cut for (#3136).
+    nozzleFlow: {
+      label: "Munstyckets flöde",
+      standard: "Standard",
+      highFlow: "Högflöde",
+      left: "Vänster",
+      right: "Höger",
+      fromPrinter: "Som monterat i {{name}}",
+      unknown: "Ingen skrivare av den här modellen som är online rapporterar munstyckets flöde i den här storleken. Välj flödet för munstycket du skriver ut med.",
+    },
     autoOrient: 'Auto-orientera objekt',
     autoOrientHint: 'Låt slicern vända varje objekt till dess bästa utskriftssida först. Åsidosätter det sätt modellen lades ner i filen.',
     autoArrange: 'Auto-placera på plattan',

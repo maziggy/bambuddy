@@ -160,6 +160,25 @@ class SliceRequest(BaseModel):
         ),
     )
 
+    # Sliced with profiles, the CLI cuts every extruder for a Standard nozzle
+    # unless told otherwise, and a printer with a High Flow nozzle then warns
+    # that the file does not match it (#3136).
+    nozzle_volume_type: list[Literal["Standard", "High Flow"]] | None = Field(
+        default=None,
+        min_length=1,
+        max_length=2,
+        description=(
+            "The nozzle flow to slice for, one per slicer extruder in extruder "
+            'order: ``Standard`` or ``High Flow`` (for example ``["High Flow"]``, '
+            'or ``["High Flow", "Standard"]`` on a dual-nozzle printer). '
+            "``None`` takes it from the first connected printer of the profile's "
+            "model, by name, that reports its nozzles' flow at the profile's "
+            "nozzle size (the target printer when the caller names one), and "
+            "slices for Standard when none does. Not used when slicing with the "
+            "file's own settings, which keep the file's flow."
+        ),
+    )
+
     plate: int | None = Field(
         default=None,
         ge=0,

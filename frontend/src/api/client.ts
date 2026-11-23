@@ -2122,6 +2122,9 @@ export interface SliceRequest {
   // values, so they apply on the embedded-settings path too.
   auto_orient?: boolean;
   auto_arrange?: boolean;
+  // One flow per slicer extruder (#3136); omitted, the backend reads it from
+  // the printers, and slices for Standard when none says.
+  nozzle_volume_type?: ('Standard' | 'High Flow')[];
 }
 
 // GET /api/v1/slicer/presets — unified listing across cloud / local / standard.
@@ -2185,6 +2188,10 @@ export interface LoadedSpoolPrinter {
   // on a dual-nozzle printer, labelled left and right).
   external: LoadedSpoolTray[];
   external_holders: number;
+  // Fitted nozzles by MQTT extruder id (0 = right/main, 1 = left), for the
+  // Slice dialog's nozzle flow default (#3136). flow is null when the printer
+  // reports a material (X1 / P1) or nothing. Absent from an older backend.
+  nozzles?: { extruder_id: number; diameter: string | null; flow: string | null }[];
 }
 export interface LoadedSpoolsResponse {
   printers: LoadedSpoolPrinter[];

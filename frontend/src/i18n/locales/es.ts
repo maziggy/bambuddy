@@ -5325,6 +5325,16 @@ export default {
     allPresetsRequired: 'Deben seleccionarse todos los preajustes',
     useEmbedded: 'Usar la configuración incorporada del archivo',
     useEmbeddedHint: 'Laminar tal como lo configuró el diseñador (perímetros, relleno, filamento) en lugar de los perfiles de arriba. Disponible porque tu impresora coincide con la del archivo.',
+    // Nozzle flow the slice is cut for (#3136).
+    nozzleFlow: {
+      label: "Flujo de la boquilla",
+      standard: "Estándar",
+      highFlow: "Alto flujo",
+      left: "Izquierda",
+      right: "Derecha",
+      fromPrinter: "Como la montada en {{name}}",
+      unknown: "Ninguna impresora de este modelo en línea indica el flujo de su boquilla en este tamaño. Elige el flujo de la boquilla con la que imprimes.",
+    },
     autoOrient: 'Orientar los objetos automáticamente',
     autoOrientHint: 'El laminador gira cada objeto hacia su mejor cara de impresión antes de laminar. Sustituye la orientación del archivo.',
     autoArrange: 'Organizar automáticamente en la base',

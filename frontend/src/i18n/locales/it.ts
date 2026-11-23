@@ -5310,6 +5310,16 @@ export default {
     allPresetsRequired: 'Tutti i preset devono essere selezionati',
     useEmbedded: 'Usa le impostazioni integrate del file',
     useEmbeddedHint: 'Slicia come impostato dal designer (pareti, riempimento, filamento) invece dei profili sopra. Disponibile perché la tua stampante corrisponde a quella del file.',
+    // Nozzle flow the slice is cut for (#3136).
+    nozzleFlow: {
+      label: "Flusso dell'ugello",
+      standard: "Standard",
+      highFlow: "Alto flusso",
+      left: "Sinistro",
+      right: "Destro",
+      fromPrinter: "Come montato su {{name}}",
+      unknown: "Nessuna stampante online di questo modello indica il flusso del suo ugello in questa misura. Scegli il flusso dell'ugello con cui stampi.",
+    },
     autoOrient: 'Orienta automaticamente gli oggetti',
     autoOrientHint: "Lo slicer ruota ogni oggetto sul lato che si stampa meglio prima di affettare. Sostituisce l'orientamento salvato nel file.",
     autoArrange: 'Disponi automaticamente sul piatto',

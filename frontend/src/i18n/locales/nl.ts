@@ -5358,6 +5358,16 @@ export default {
     allPresetsRequired: 'Alle presets moeten worden geselecteerd',
     useEmbedded: 'Ingebouwde instellingen van het bestand gebruiken',
     useEmbeddedHint: 'Slice zoals de ontwerper het heeft ingesteld (wanden, infill, filament) in plaats van met bovenstaande profielen. Beschikbaar omdat je printer overeenkomt met die van het bestand.',
+    // Nozzle flow the slice is cut for (#3136).
+    nozzleFlow: {
+      label: "Mondstukdoorstroming",
+      standard: "Standaard",
+      highFlow: "Hoge doorstroming",
+      left: "Links",
+      right: "Rechts",
+      fromPrinter: "Zoals gemonteerd in {{name}}",
+      unknown: "Geen online printer van dit model meldt de doorstroming van zijn mondstuk in deze maat. Kies de doorstroming van het mondstuk waarmee je print.",
+    },
     autoOrient: 'Objecten automatisch oriënteren',
     autoOrientHint: 'Laat de slicer elk object eerst naar de beste afdrukzijde draaien. Overschrijft de oriëntatie uit het bestand.',
     autoArrange: 'Automatisch op de plaat rangschikken',

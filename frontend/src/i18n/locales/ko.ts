@@ -5111,6 +5111,16 @@ export default {
     allPresetsRequired: '모든 프리셋을 선택해야 합니다',
     useEmbedded: '파일에 포함된 설정 사용',
     useEmbeddedHint: '위 프로필 대신 디자이너가 설정한 대로(벽, 내부 채움, 필라멘트) 슬라이싱합니다. 프린터가 파일과 일치하여 사용할 수 있습니다.',
+    // Nozzle flow the slice is cut for (#3136).
+    nozzleFlow: {
+      label: "노즐 유량",
+      standard: "표준",
+      highFlow: "고유량",
+      left: "왼쪽",
+      right: "오른쪽",
+      fromPrinter: "{{name}}에 장착된 노즐",
+      unknown: "이 크기의 노즐 유량을 알려 주는 이 모델의 온라인 프린터가 없습니다. 출력에 사용할 노즐의 유량을 선택하세요.",
+    },
     autoOrient: '개체 방향 자동 조정',
     autoOrientHint: '슬라이싱하기 전에 각 개체를 출력하기 좋은 면으로 회전시킵니다. 파일에 저장된 방향을 덮어씁니다.',
     autoArrange: '플레이트에 자동 배치',

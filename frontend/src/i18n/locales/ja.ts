@@ -5323,6 +5323,16 @@ export default {
     allPresetsRequired: 'すべてのプリセットを選択する必要があります',
     useEmbedded: 'ファイルに埋め込まれた設定を使用',
     useEmbeddedHint: '上のプロファイルではなく、設計者が設定したとおり（ウォール、インフィル、フィラメント）にスライスします。お使いのプリンターがファイルと一致するため利用できます。',
+    // Nozzle flow the slice is cut for (#3136).
+    nozzleFlow: {
+      label: "ノズルの流量",
+      standard: "標準",
+      highFlow: "高流量",
+      left: "左",
+      right: "右",
+      fromPrinter: "{{name}} に装着されたもの",
+      unknown: "この径のノズル流量を報告しているこのモデルのオンラインプリンターがありません。印刷に使うノズルの流量を選択してください。",
+    },
     autoOrient: 'オブジェクトの向きを自動で調整',
     autoOrientHint: 'スライスする前に、各オブジェクトを印刷に適した面へ自動で回転させます。ファイルに保存された向きは上書きされます。',
     autoArrange: 'プレート上に自動配置',

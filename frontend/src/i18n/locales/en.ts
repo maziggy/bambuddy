@@ -5360,6 +5360,16 @@ export default {
     allPresetsRequired: 'All presets must be selected',
     useEmbedded: "Use the file's built-in settings",
     useEmbeddedHint: "Slice it the way the designer set it up (walls, infill, filament) instead of the profiles above. Offered because your printer matches the file's.",
+    // Nozzle flow the slice is cut for (#3136).
+    nozzleFlow: {
+      label: "Nozzle flow",
+      standard: "Standard",
+      highFlow: "High Flow",
+      left: "Left",
+      right: "Right",
+      fromPrinter: "As fitted on {{name}}",
+      unknown: "No online printer of this model reports its nozzle flow at this size. Pick the flow of the nozzle you print with.",
+    },
     autoOrient: 'Auto-orient objects',
     autoOrientHint: 'Let the slicer turn each object onto its best printing side first. Overrides the way the model was laid down in the file.',
     autoArrange: 'Auto-arrange on the plate',

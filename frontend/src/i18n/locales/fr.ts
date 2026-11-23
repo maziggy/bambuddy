@@ -5311,6 +5311,16 @@ export default {
     allPresetsRequired: 'Tous les préréglages doivent être sélectionnés',
     useEmbedded: 'Utiliser les réglages intégrés du fichier',
     useEmbeddedHint: "Slicer tel que le concepteur l'a configuré (parois, remplissage, filament) au lieu des profils ci-dessus. Proposé car votre imprimante correspond à celle du fichier.",
+    // Nozzle flow the slice is cut for (#3136).
+    nozzleFlow: {
+      label: "Débit de la buse",
+      standard: "Standard",
+      highFlow: "Haut débit",
+      left: "Gauche",
+      right: "Droite",
+      fromPrinter: "Comme montée sur {{name}}",
+      unknown: "Aucune imprimante de ce modèle en ligne n'indique le débit de sa buse à cette taille. Choisissez le débit de la buse avec laquelle vous imprimez.",
+    },
     autoOrient: 'Orienter les objets automatiquement',
     autoOrientHint: "Le trancheur fait pivoter chaque objet sur sa meilleure face d'impression avant de trancher. Remplace l'orientation enregistrée dans le fichier.",
     autoArrange: 'Disposer automatiquement sur le plateau',

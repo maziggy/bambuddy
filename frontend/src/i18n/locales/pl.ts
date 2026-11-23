@@ -5360,6 +5360,16 @@ export default {
     allPresetsRequired: 'Należy wybrać wszystkie profile',
     useEmbedded: "Użyj wbudowanych ustawień pliku",
     useEmbeddedHint: "Pokrój tak, jak przygotował to projektant (ściany, wypełnienie, filament), zamiast używać powyższych profili. Dostępne, ponieważ Twoja drukarka pasuje do drukarki z pliku.",
+    // Nozzle flow the slice is cut for (#3136).
+    nozzleFlow: {
+      label: "Przepływ dyszy",
+      standard: "Standardowa",
+      highFlow: "Wysoki przepływ",
+      left: "Lewa",
+      right: "Prawa",
+      fromPrinter: "Jak zamontowana w {{name}}",
+      unknown: "Żadna drukarka tego modelu online nie podaje przepływu dyszy w tym rozmiarze. Wybierz przepływ dyszy, której używasz do druku.",
+    },
     autoOrient: 'Automatyczna orientacja obiektów',
     autoOrientHint: 'Pozwól slicerowi najpierw obrócić każdy obiekt na najlepszą do druku stronę. Zastępuje ułożenie modelu zapisane w pliku.',
     autoArrange: 'Automatyczne rozmieszczenie na płycie',

@@ -5312,6 +5312,16 @@ export default {
     allPresetsRequired: 'Tüm ön ayarlar seçilmelidir',
     useEmbedded: 'Dosyanın yerleşik ayarlarını kullan',
     useEmbeddedHint: 'Yukarıdaki profiller yerine tasarımcının ayarladığı gibi (duvarlar, dolgu, filament) dilimle. Yazıcınız dosyayla eşleştiği için sunuluyor.',
+    // Nozzle flow the slice is cut for (#3136).
+    nozzleFlow: {
+      label: "Nozul akışı",
+      standard: "Standart",
+      highFlow: "Yüksek akış",
+      left: "Sol",
+      right: "Sağ",
+      fromPrinter: "{{name}} üzerinde takılı olduğu gibi",
+      unknown: "Bu modelin çevrimiçi hiçbir yazıcısı bu boyutta nozul akışını bildirmiyor. Baskıda kullandığınız nozulun akışını seçin.",
+    },
     autoOrient: 'Nesneleri otomatik yönlendir',
     autoOrientHint: 'Dilimleyici, dilimlemeden önce her nesneyi en iyi basılan yüzüne çevirir. Dosyada kayıtlı yönlendirmenin yerini alır.',
     autoArrange: 'Tablaya otomatik yerleştir',

@@ -5310,6 +5310,16 @@ export default {
     allPresetsRequired: 'Todas as predefinições devem ser selecionadas',
     useEmbedded: 'Usar as configurações incorporadas do arquivo',
     useEmbeddedHint: 'Fatiar como o designer configurou (paredes, preenchimento, filamento) em vez dos perfis acima. Disponível porque sua impressora corresponde à do arquivo.',
+    // Nozzle flow the slice is cut for (#3136).
+    nozzleFlow: {
+      label: "Fluxo do bico",
+      standard: "Padrão",
+      highFlow: "Alto fluxo",
+      left: "Esquerdo",
+      right: "Direito",
+      fromPrinter: "Como instalado em {{name}}",
+      unknown: "Nenhuma impressora deste modelo online informa o fluxo do bico neste tamanho. Escolha o fluxo do bico com que você imprime.",
+    },
     autoOrient: 'Orientar os objetos automaticamente',
     autoOrientHint: 'O fatiador gira cada objeto para o lado que imprime melhor antes de fatiar. Substitui a orientação salva no arquivo.',
     autoArrange: 'Organizar automaticamente na mesa',

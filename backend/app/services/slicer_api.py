@@ -633,6 +633,7 @@ class SlicerApiService:
         request_id: str | None = None,
         on_progress: Callable[[dict], None] | None = None,
         filament_map: list[int] | None = None,
+        nozzle_volume_type: list[str] | None = None,
     ) -> SliceResult:
         """POST /slice with model + printer/process/filament profiles.
 
@@ -673,6 +674,13 @@ class SlicerApiService:
         byte-identical to one made before this parameter existed, and a
         sidecar too old to know the field slices exactly as before.
 
+        ``nozzle_volume_type``: the nozzle flow per slicer extruder,
+        ``Standard`` or ``High Flow`` (#3136). Sent as the sidecar's
+        ``nozzleVolumeType`` field, which it passes to the CLI as
+        ``--nozzle-volume-type``; without it the CLI slices every extruder for
+        a Standard nozzle. ``None`` or empty sends nothing, and a sidecar too
+        old to know the field slices for Standard as before.
+
         Raises:
             SlicerInputError: 4xx from sidecar (caller-supplied input is bad).
             SlicerApiUnavailableError: connection error or 5xx from sidecar.
@@ -703,6 +711,8 @@ class SlicerApiService:
             data["requestId"] = request_id
         if filament_map:
             data["filamentMap"] = ",".join(str(extruder) for extruder in filament_map)
+        if nozzle_volume_type:
+            data["nozzleVolumeType"] = ",".join(nozzle_volume_type)
 
         # When the caller supplied a request_id, kick off a parallel
         # poller that reads the sidecar's --pipe-fed progress endpoint

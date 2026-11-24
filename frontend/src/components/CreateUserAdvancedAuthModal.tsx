@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader } from './Card';
 import { Button } from './Button';
 import { LdapUserPicker } from './LdapUserPicker';
 import type { Group, UserCreate, UserResponse } from '../api/client';
+import { ScrollableModalOverlay } from './ScrollableModalOverlay';
 
 interface AdvancedAuthFormData extends UserCreate {
   group_ids: number[];
@@ -64,8 +65,8 @@ export function CreateUserAdvancedAuthModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+    <ScrollableModalOverlay
+      className="bg-black/70"
       onClick={onClose}
     >
       <Card
@@ -233,6 +234,6 @@ export function CreateUserAdvancedAuthModal({
           </div>
         </CardContent>
       </Card>
-    </div>
+    </ScrollableModalOverlay>
   );
 }

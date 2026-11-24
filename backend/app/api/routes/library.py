@@ -4708,8 +4708,44 @@ async def _run_slicer_with_fallback(
         )
     map_was_planned = filament_map is not None and request.filament_map is None
 
+    # The nozzle flow (#3136): without it the CLI slices every extruder for a
+    # Standard nozzle, and a printer with a High Flow nozzle warns that the
+    # file does not match it. One flow per extruder of the profile: the CLI
+    # indexes the list by extruder, so a short one is refused here rather than
+    # sent. Missing, it is read from the printers the caller may use, the
+    # target printer when there is one. The embedded-settings path keeps the
+    # file's own flow, which the CLI leaves alone there.
+    nozzle_volume_type: list[str] | None = None
+    if not embedded_mode:
+        from backend.app.services.nozzle_volume_type import auto_nozzle_volume_type
+
+        if request.nozzle_volume_type is not None:
+            extruders = _profile_extruder_count(presets["printer"])
+            if extruders is not None and len(request.nozzle_volume_type) != extruders:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"nozzle_volume_type has {len(request.nozzle_volume_type)} entries "
+                        f"but the printer profile has {extruders} extruder(s)"
+                    ),
+                )
+            nozzle_volume_type = list(request.nozzle_volume_type)
+        else:
+
+            def _flow_allows(printer_id: int) -> bool:
+                if target_printer_id is not None and printer_id != target_printer_id:
+                    return False
+                return printer_scope.allows(printer_id)
+
+            nozzle_volume_type = await auto_nozzle_volume_type(
+                db,
+                target_model=_printer_model_from_profile(presets["printer"]),
+                printer_json=presets["printer"],
+                allows=_flow_allows,
+            )
+
     async def _slice_with_profiles(**kwargs):
-        """``service.slice_with_profiles`` plus the filament map, if there is one.
+        """``service.slice_with_profiles`` plus the nozzle flow, and the filament map if there is one.
 
         A map Bambuddy planned itself is withdrawn if the slicer fails the
         job with it, and the slice is retried exactly as it would have run
@@ -4724,6 +4760,7 @@ async def _run_slicer_with_fallback(
         Studio reads before the flags (see ``with_plate_filament_map``). The
         retry sends the 3MF exactly as it came.
         """
+        kwargs = {**kwargs, "nozzle_volume_type": nozzle_volume_type}
         if not filament_map:
             return await service.slice_with_profiles(**kwargs)
         mapped = dict(kwargs)
@@ -5036,6 +5073,16 @@ def _canonical_printer_model(raw: str | None) -> str | None:
         cleaned = cleaned[2:].strip()
     cleaned = re.sub(r"\s+0\.\d+\s+nozzle$", "", cleaned, flags=re.IGNORECASE)
     return normalize_printer_model(cleaned) if cleaned else None
+
+
+def _profile_extruder_count(printer_json: str) -> int | None:
+    """How many extruders a resolved printer profile has, or None if unreadable."""
+    try:
+        data = json.loads(printer_json)
+    except (TypeError, ValueError):
+        return None
+    sizes = data.get("nozzle_diameter") if isinstance(data, dict) else None
+    return len(sizes) if isinstance(sizes, list) and sizes else None
 
 
 def _printer_model_from_profile(printer_json: str) -> str | None:

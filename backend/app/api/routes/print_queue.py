@@ -56,6 +56,8 @@ from backend.app.schemas.print_queue import (
     PrintBatchUpdate,
     PrintQueueBulkUpdate,
     PrintQueueBulkUpdateResponse,
+    PrintQueueDuplicateRequest,
+    PrintQueueDuplicateResponse,
     PrintQueueHistoryClearResponse,
     PrintQueueHistoryResponse,
     PrintQueueItemCreate,
@@ -76,6 +78,7 @@ from backend.app.services.finance_budget import (
 )
 from backend.app.services.print_batch import (
     BatchDispatchError,
+    add_queue_item_clone,
     dispatch_remaining,
     load_progress,
     refresh_batch_status,
@@ -85,7 +88,7 @@ from backend.app.services.print_batch import (
 from backend.app.services.print_cost_estimate import estimate_queue_source_cost
 from backend.app.services.queue_announcements import announce_queue_jobs_added
 from backend.app.services.queue_item_printer import PRINTER_RESOLVED_DEFAULTS, drop_printer_resolved
-from backend.app.services.queue_position import lock_queue_positions, max_queue_position
+from backend.app.services.queue_position import lock_queue_positions, max_queue_position, next_queue_position
 from backend.app.utils.printer_models import (
     is_gcode_compatible,
 )
@@ -1886,6 +1889,113 @@ async def _ensure_batch_in_scope(db: AsyncSession, batch_id: int, printer_scope:
         raise HTTPException(404, "Batch not found")
 
 
+# Jobs a copy can be made of: queued, or printing now. A copy of a finished job
+# is a re-queue from History, with the print dialog.
+_DUPLICABLE_STATUSES = ("pending", "printing")
+
+
+@router.post("/duplicate", response_model=PrintQueueDuplicateResponse)
+async def duplicate_queue_items(
+    data: PrintQueueDuplicateRequest,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
+    review_required: bool = QueueReviewRequired,
+    actor: User | ApiKeyActor | None = RequestActor,
+):
+    """Queue another copy of each job in ``item_ids``, at the end of the queue (#3441).
+
+    Each copy is cloned the way an order's remaining runs are
+    (``add_queue_item_clone``): same file, plate, target, cross-model
+    candidates, project, mappings and print options, but a new run. On an
+    "any printer of a model" job the printer the scheduler picked, and what
+    was worked out for it (tray mapping, "Print Anyway", nozzle choice), stay
+    with the original. Not copied either: the scheduled time, the batch (the
+    copy is an extra job, not one of the order's runs) and a ``manual_start``
+    the scheduler set (``held_by_scheduler``).
+
+    Gated like ``POST /queue/``: the caller must be able to see the job and to
+    queue its files, and the copy's target has to be in their printer scope.
+    A job that fails any of that, is not queued or printing, or is a
+    printer-card upload whose file goes when the original dispatches (#2819),
+    gets no copy and counts as skipped.
+    """
+    from backend.app.services.print_scheduler import held_by_scheduler
+
+    item_ids = list(dict.fromkeys(data.item_ids))
+    result = await db.execute(
+        select(PrintQueueItem).where(PrintQueueItem.id.in_(item_ids)).options(selectinload(PrintQueueItem.variants))
+    )
+    by_id = {item.id: item for item in result.scalars().all()}
+    can_read_all = actor is None or actor.has_permission(Permission.QUEUE_READ_ALL.value)
+    can_read_own = actor is None or actor.has_permission(Permission.QUEUE_READ_OWN.value)
+
+    async def _may_copy(item: PrintQueueItem) -> bool:
+        if not printer_scope.allows(item.printer_id):
+            return False
+        if not can_read_all and not (can_read_own and actor is not None and item.created_by_id == actor.id):
+            return False
+        if item.status not in _DUPLICABLE_STATUSES:
+            return False
+        if item.cleanup_library_after_dispatch and item.archive_id is None:
+            return False
+        try:
+            if item.archive_id is not None:
+                archive = await db.get(PrintArchive, item.archive_id)
+                if archive is None:
+                    return False
+                await _assert_can_queue_archive(archive, actor, printer_scope)
+            for library_file_id in [item.library_file_id, *(v.library_file_id for v in item.variants)]:
+                if library_file_id is None:
+                    continue
+                library_file = (
+                    await db.execute(LibraryFile.active().where(LibraryFile.id == library_file_id))
+                ).scalar_one_or_none()
+                if library_file is None:
+                    return False
+                _assert_can_queue_library_file(library_file, actor)
+            # The copy keeps a user-chosen printer, and waits for any printer
+            # of the model when the original's was the scheduler's pick.
+            if item.printer_id is not None and not (item.target_model or item.variants):
+                printer_scope.ensure(item.printer_id)
+            else:
+                ensure_model_target_allowed(current_user, printer_scope)
+        except HTTPException:
+            return False
+        return True
+
+    sources = [by_id[item_id] for item_id in item_ids if item_id in by_id]
+    sources = [item for item in sources if await _may_copy(item)]
+
+    created: list[PrintQueueItem] = []
+    if sources:
+        await lock_queue_positions(db)
+        position = await next_queue_position(db)
+        for source in sources:
+            clone = await add_queue_item_clone(db, source, position=position, created_by_id=actor.id if actor else None)
+            clone.batch_id = None
+            if held_by_scheduler(source):
+                clone.manual_start = False
+            # The dispatcher's own jobs wait for review (#1620), as an order's
+            # remaining runs do.
+            if review_required:
+                clone.manual_start = True
+            created.append(clone)
+            position += 1
+        try:
+            await _validate_copies_budget(db, created, actor)
+        except HTTPException:
+            await db.rollback()
+            raise
+        await db.commit()
+        await announce_queue_jobs_added(db, [item.id for item in created])
+
+    logger.info("Duplicated %d queue item(s), skipped %d", len(created), len(item_ids) - len(created))
+    return PrintQueueDuplicateResponse(
+        created_ids=[item.id for item in created], skipped_count=len(item_ids) - len(created)
+    )
+
+
 @router.post("/batches", response_model=PrintBatchResponse)
 async def create_batch(
     data: PrintBatchCreate,
@@ -2032,11 +2142,11 @@ async def update_batch(
         if not data.name.strip():
             raise HTTPException(400, "Batch name is required")
         batch.name = data.name.strip()[:255]
-    if data.project_id is not None:
+    if "project_id" in data.model_fields_set:
         batch.project_id = data.project_id
-    if data.due_date is not None:
+    if "due_date" in data.model_fields_set:
         batch.due_date = data.due_date
-    if data.notes is not None:
+    if "notes" in data.model_fields_set:
         batch.notes = data.notes
     if data.status is not None:
         batch.status = data.status
@@ -3208,13 +3318,24 @@ async def start_queue_item(
     # spool swap between scheduler flagging and the user clicking ▶ clears
     # the block automatically.
     if not skip_filament_check:
-        deficit = await compute_deficit_for_queue_item(db, item)
-        if deficit:
+        from backend.app.services.print_scheduler import scheduler as _scheduler
+
+        deficit_rows = [d.to_dict() for d in await compute_deficit_for_queue_item(db, item)]
+        if not deficit_rows and item.printer_id is None:
+            # An "any model" job that waits because the spools on its printers
+            # are short (Loaded filament first, #3587) has no printer for the
+            # check above; its printers are named one by one (#3659). As with
+            # the check below, a failure must not break Start.
+            try:
+                deficit_rows = await _scheduler.model_job_filament_deficit(db, item)
+            except Exception:
+                logger.exception("Queue item %s: filament check before start failed", item_id)
+        if deficit_rows:
             raise HTTPException(
                 status_code=409,
                 detail={
                     "code": "insufficient_filament",
-                    "deficit": [d.to_dict() for d in deficit],
+                    "deficit": deficit_rows,
                 },
             )
 
@@ -3222,8 +3343,6 @@ async def start_queue_item(
         # Start on an item the scheduler held for exactly that would release it
         # only for the next pass to hold it again, and nothing would ever offer
         # "Print Anyway".
-        from backend.app.services.print_scheduler import scheduler as _scheduler
-
         # A convenience, not a gate: the scheduler holds the item again if the
         # filament is still missing, so a failure here must not break Start.
         try:

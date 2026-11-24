@@ -76,20 +76,15 @@ def _data_dir(monkeypatch, tmp_path):
 @pytest.mark.asyncio
 @pytest.mark.integration
 @pytest.mark.sqlite_only  # copies the app's own SQLite database file
-@pytest.mark.parametrize("step", ["_copy_backup_dirs", "_write_backup_zip", "shutil.copy2"])
+@pytest.mark.parametrize("step", ["_copy_backup_dirs", "_write_backup_zip", "_copy_sqlite_database"])
 async def test_a_slow_backup_step_does_not_block_the_loop(async_client, monkeypatch, tmp_path, step):
-    import shutil
-
     _data_dir(monkeypatch, tmp_path)
     ticker = _Ticker()
-    if step == "shutil.copy2":
-        monkeypatch.setattr(shutil, "copy2", ticker.slow(shutil.copy2))
-    else:
-        monkeypatch.setattr(settings_routes, step, ticker.slow(getattr(settings_routes, step)))
+    monkeypatch.setattr(settings_routes, step, ticker.slow(getattr(settings_routes, step)))
 
     out = tmp_path / "out"
     out.mkdir()
-    zip_path, _ = await ticker.run_while(settings_routes.create_backup_zip(output_path=out))
+    zip_path, *_ = await ticker.run_while(settings_routes.create_backup_zip(output_path=out))
 
     with zipfile.ZipFile(zip_path) as zf:
         names = zf.namelist()
@@ -107,7 +102,7 @@ async def test_a_slow_restore_step_does_not_block_the_loop(async_client, monkeyp
     _data_dir(monkeypatch, tmp_path)
     out = tmp_path / "out"
     out.mkdir()
-    zip_path, _ = await settings_routes.create_backup_zip(output_path=out)
+    zip_path, *_ = await settings_routes.create_backup_zip(output_path=out)
     payload = zip_path.read_bytes()
     # The restore must put the archive back, so take it away first.
     (tmp_path / "archive" / "1" / "print.3mf").unlink()

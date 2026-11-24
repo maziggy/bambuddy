@@ -20,6 +20,7 @@ import {
   ChevronDown,
   ChevronRight,
   MoreVertical,
+  Tag,
   Download,
   Upload,
   ExternalLink,
@@ -28,6 +29,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import type { ProjectListItem, ProjectCreate, ProjectUpdate, ProjectImport, Permission } from '../api/client';
+import { LabelTemplatePickerModal, type ProjectForLabel } from '../components/LabelTemplatePickerModal';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { useToast } from '../contexts/ToastContext';
@@ -550,12 +552,13 @@ interface ProjectCardProps {
   parentName?: string;  // #1264 — resolved by the caller, which holds the whole list
   onClick: () => void;
   onEdit: () => void;
+  onLabel: () => void;
   onDelete: () => void;
   hasPermission: (permission: Permission) => boolean;
   t: TFunction;
 }
 
-function ProjectCard({ project, parentName, onClick, onEdit, onDelete, hasPermission, t }: ProjectCardProps) {
+function ProjectCard({ project, parentName, onClick, onEdit, onLabel, onDelete, hasPermission, t }: ProjectCardProps) {
   // Plates progress: archive_count / target_count
   const platesProgressPercent = project.target_count
     ? Math.round((project.archive_count / project.target_count) * 100)
@@ -733,6 +736,8 @@ function ProjectCard({ project, parentName, onClick, onEdit, onDelete, hasPermis
           <div className="relative" onClick={(e) => e.stopPropagation()}>
             <button
               className="p-1.5 rounded-lg hover:bg-bambu-dark text-bambu-gray hover:text-white transition-colors can-hover:opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+              aria-label={t('common.actions')}
+              aria-expanded={showActions}
               onClick={() => setShowActions(!showActions)}
             >
               <MoreVertical className="w-4 h-4" />
@@ -741,6 +746,15 @@ function ProjectCard({ project, parentName, onClick, onEdit, onDelete, hasPermis
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setShowActions(false)} />
                 <div className="absolute right-0 top-8 z-20 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl py-1 min-w-[120px]">
+                  {hasPermission('projects:read') && (
+                    <button
+                      className="w-full px-3 py-2 text-left text-sm flex items-center gap-2 text-white hover:bg-bambu-dark"
+                      onClick={() => { setShowActions(false); onLabel(); }}
+                    >
+                      <Tag className="w-4 h-4" />
+                      {t('projectDetail.labels.button')}
+                    </button>
+                  )}
                   <button
                     className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 ${
                       hasPermission('projects:update') ? 'text-white hover:bg-bambu-dark' : 'text-bambu-gray cursor-not-allowed'
@@ -929,6 +943,7 @@ export function ProjectsPage() {
   const { showToast } = useToast();
   const { hasPermission } = useAuth();
   const [showModal, setShowModal] = useState(false);
+  const [labelProject, setLabelProject] = useState<ProjectForLabel | null>(null);
   const [editingProject, setEditingProject] = useState<ProjectListItem | undefined>();
   const [statusFilter, setStatusFilter] = useState<string>('active');
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
@@ -1020,6 +1035,7 @@ export function ProjectsPage() {
         parentName={depth === 0 && project.parent_id !== null ? namesById.get(project.parent_id) : undefined}
         onClick={() => handleClick(project)}
         onEdit={() => handleEdit(project)}
+        onLabel={() => setLabelProject(project)}
         onDelete={() => handleDeleteClick(project.id)}
         hasPermission={hasPermission}
         t={t}
@@ -1376,6 +1392,10 @@ export function ProjectsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
           {topLevel.map((project) => renderProjectTree(project, 0, new Set()))}
         </div>
+      )}
+
+      {labelProject && (
+        <LabelTemplatePickerModal isOpen project={labelProject} onClose={() => setLabelProject(null)} />
       )}
 
       {/* Delete Confirmation Modal */}

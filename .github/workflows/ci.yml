@@ -48,10 +48,10 @@ jobs:
         run: pip install "$(grep -E '^ruff==' requirements-dev.txt)"
 
       - name: Run ruff check
-        run: ruff check backend/
+        run: ruff check backend/ spoolbuddy/
 
       - name: Run ruff format check
-        run: ruff format --check backend/
+        run: ruff format --check backend/ spoolbuddy/
 
   backend-typecheck:
     name: Backend Type Check
@@ -191,6 +191,42 @@ jobs:
             -n auto \
             --splits 4 --group ${{ matrix.shard }} \
             --durations-path tests/.test_durations
+
+  spoolbuddy-tests:
+    # The SpoolBuddy daemon (spoolbuddy/daemon) runs on the Raspberry Pi, not
+    # in the Bambuddy image; its tests stub the hardware libraries (gpiod,
+    # spidev, smbus2), so they need only the backend's pinned packages.
+    name: SpoolBuddy Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
+    needs: backend-lint
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.lock', 'requirements-dev.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.lock
+          pip install -r requirements-dev.txt
+
+      - name: Run tests
+        timeout-minutes: 5
+        run: |
+          cd spoolbuddy
+          python -m pytest tests/ --tb=short --timeout=60 --timeout-method=thread
 
   backend-postgres-upgrade:
     # The test suite runs on SQLite only. This builds PostgreSQL databases with

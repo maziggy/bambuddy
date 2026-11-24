@@ -1,7 +1,9 @@
+import asyncio
 import json
 import logging
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import date, datetime, timezone
+from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -98,7 +100,7 @@ from backend.app.services.spool_csv import (
 from backend.app.services.spool_filament_preset import resolve_spool_preset
 from backend.app.services.spoolman import SpoolmanClient, get_spoolman_client, init_spoolman_client
 from backend.app.services.supplier_links import apply_supplier_inheritance, apply_supplier_inheritance_to_batch
-from backend.app.services.tag_conflict import tag_already_linked
+from backend.app.services.tag_conflict import TagField, tag_already_linked
 from backend.app.utils.filament_finish import finish_generic_id
 from backend.app.utils.filament_ids import (
     GENERIC_FILAMENT_IDS,
@@ -108,7 +110,7 @@ from backend.app.utils.filament_ids import (
 from backend.app.utils.filament_types import nozzle_temp_range, printer_filament_type, support_filament_type
 from backend.app.utils.local_time import day_zone, local_date_end, local_date_start
 from backend.app.utils.natural_sort import natural_sort_key
-from backend.app.utils.tag_normalization import normalize_tag_uid, normalize_tray_uuid
+from backend.app.utils.tag_normalization import normalize_hex, normalize_tag_uid, normalize_tray_uuid
 from backend.app.utils.tray_ids import external_tray_id
 
 logger = logging.getLogger(__name__)
@@ -2806,6 +2808,16 @@ class LinkTagRequest(BaseModel):
     tray_uuid: str | None = None
     tag_type: str | None = None
     data_origin: str | None = "nfc_link"
+    # Take the tag from the active spool that carries it instead of refusing
+    # with 409 tag_already_linked (#3658). That spool keeps its usage; it only
+    # loses the tag.
+    move: bool = False
+    source_spool_id: int | None = None
+    # The AMS slot the tag was read in. When given, the spool is assigned
+    # there the way an RFID match is, in the same transaction (#3658).
+    printer_id: int | None = None
+    ams_id: int | None = None
+    tray_id: int | None = None
 
 
 def _validate_tag_input(
@@ -2824,101 +2836,263 @@ def _validate_tag_input(
         raise HTTPException(422, f"{field_name} must be exactly {exact_len} hex characters")
 
 
+def _clear_tag(spool: Spool) -> None:
+    """Take a spool's tag away, the way Clear RFID Tag does."""
+    spool.tag_uid = None
+    spool.tray_uuid = None
+    spool.tag_type = None
+    spool.data_origin = None
+
+
+# A shelf transfer has no printer lock. Serialize the short manual tag writes
+# from Add, Link and Move, including competing requests in PostgreSQL workers.
+_manual_tag_lock = asyncio.Lock()
+
+
+@asynccontextmanager
+async def _tag_write(db: AsyncSession, printer_id: int | None):
+    async with AsyncExitStack() as locks:
+        await locks.enter_async_context(_manual_tag_lock)
+        if printer_id is not None:
+            await locks.enter_async_context(get_ams_assignment_lock(printer_id))
+        if db.get_bind().dialect.name == "postgresql":
+            await db.execute(text("SELECT pg_advisory_xact_lock(3658, 1)"))
+        yield
+
+
+def _tag_pair(uid: str | None, uuid: str | None) -> tuple[str | None, str | None]:
+    def usable(value: str | None) -> str | None:
+        value = normalize_hex(value)
+        return value if value.strip("0") else None
+
+    return usable(uid), usable(uuid)
+
+
+def _stored_tag(column):
+    """Compare common UID/UUID spellings used by existing inventory imports."""
+    return func.upper(func.replace(func.replace(func.replace(func.trim(column), ":", ""), "-", ""), " ", ""))
+
+
+def _same_tag(first: tuple[str | None, str | None], second: tuple[str | None, str | None]) -> bool:
+    # Opposite sides of a Bambu spool have different UIDs but one tray UUID.
+    if first[1] and second[1]:
+        return first[1] == second[1]
+    return bool(first[0] and first[0] == second[0])
+
+
+async def _read_tag_slot(
+    db: AsyncSession,
+    slot: tuple[int, int, int],
+    expected: tuple[str | None, str | None] | None,
+    expected_spool_id: int | None,
+) -> dict:
+    from backend.app.services.printer_manager import printer_manager
+    from backend.app.services.spool_relocation import tray_from_state
+
+    state = printer_manager.get_status(slot[0])
+    if not state or not state.raw_data or getattr(state, "connected", True) is False:
+        raise HTTPException(409 if expected else 404, "Printer not connected or no state available")
+    tray = tray_from_state(state, slot[1], slot[2])
+    if not tray or not tray.get("tray_type"):
+        raise HTTPException(409 if expected else 400, "Slot is empty or unavailable")
+    live = _tag_pair(tray.get("tag_uid"), tray.get("tray_uuid"))
+    if expected and not _same_tag(expected, live):
+        raise HTTPException(409, "The tag in this slot has changed")
+    if not any(live):
+        raise HTTPException(400, "Slot has no RFID tag")
+    assigned = await db.scalar(
+        select(SpoolAssignment.spool_id).where(
+            SpoolAssignment.printer_id == slot[0], SpoolAssignment.ams_id == slot[1], SpoolAssignment.tray_id == slot[2]
+        )
+    )
+    if assigned != expected_spool_id:
+        raise HTTPException(409, "The spool assigned to this slot has changed")
+    return tray
+
+
 @router.patch("/spools/{spool_id}/link-tag", response_model=SpoolResponse)
 async def link_tag_to_spool(
     spool_id: int,
     data: LinkTagRequest,
     db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Link an RFID tag_uid/tray_uuid to an existing spool.
 
     A tag another active spool already carries is refused with the shared
     ``tag_already_linked`` 409, which names that spool so a caller can offer
-    to move the tag instead of only reporting that it is taken (#3110).
+    to move the tag instead of only reporting that it is taken (#3110). With
+    ``move`` the tag is taken from that spool instead (#3658).
+
+    With ``printer_id``, ``ams_id`` and ``tray_id`` the spool is also assigned
+    to that slot through ``auto_assign_spool``, as an RFID match is: the slot
+    keeps the printer's RFID filament settings and the assignment is recorded
+    in the swap history, which charges a print that is running to this spool
+    from now on (#3658).
     """
-    result = await db.execute(select(Spool).options(*spool_response_loads()).where(Spool.id == spool_id))
-    spool = result.scalar_one_or_none()
-    if not spool:
-        raise HTTPException(404, "Spool not found")
-    if spool.archived_at:
-        raise HTTPException(400, "Cannot link tag to archived spool")
+    slot: tuple[int, int, int] | None = None
+    if data.printer_id is not None and data.ams_id is not None and data.tray_id is not None:
+        slot = (data.printer_id, data.ams_id, data.tray_id)
+    has_slot = any(value is not None for value in (data.printer_id, data.ams_id, data.tray_id))
+    if slot is not None:
+        printer_scope.ensure(slot[0])
 
-    normalized_tag_uid = (normalize_tag_uid(data.tag_uid) or None) if data.tag_uid is not None else None
-    normalized_tray_uuid = (normalize_tray_uuid(data.tray_uuid) or None) if data.tray_uuid is not None else None
+    async with _tag_write(db, slot[0] if slot else None):
+        result = await db.execute(select(Spool).options(*spool_response_loads()).where(Spool.id == spool_id))
+        spool = result.scalar_one_or_none()
+        if not spool:
+            raise HTTPException(404, "Spool not found")
+        if spool.archived_at:
+            raise HTTPException(400, "Cannot link tag to archived spool")
 
-    _validate_tag_input(data.tag_uid, normalized_tag_uid, "tag_uid")
-    _validate_tag_input(data.tray_uuid, normalized_tray_uuid, "tray_uuid", exact_len=32)
+        if has_slot and slot is None:
+            raise HTTPException(422, "printer_id, ams_id and tray_id go together")
+        if data.move != (data.source_spool_id is not None) or data.source_spool_id == spool_id:
+            raise HTTPException(422, "A move requires a different source spool")
 
-    # Check for conflicts: tag already linked to another active spool.
-    #
-    # Ordered, and read with first() rather than scalar_one_or_none(), because
-    # two active spools really can carry one tag: neither column has a unique
-    # index, PATCH /spools/{id} writes them with no conflict check, and
-    # POST /spools/bulk copies a single payload -- tag included -- into every
-    # row it creates. scalar_one_or_none() answered that with MultipleResultsFound,
-    # which escapes into the auth middleware's fail-closed handler and reaches
-    # the caller as 503 "Authentication service temporarily unavailable" -- a
-    # wrong answer pointing at the wrong subsystem, where a 409 was owed
-    # (#3110). get_spool_by_tag above already resolves duplicates this way.
-    if normalized_tag_uid:
-        conflict = await db.execute(
-            select(Spool)
-            .where(
-                func.upper(Spool.tag_uid) == normalized_tag_uid,
-                Spool.id != spool_id,
-                Spool.archived_at.is_(None),
-            )
-            .order_by(Spool.id)
+        manual = bool(slot or data.move)
+        normalized_tag_uid = (normalize_hex if manual else normalize_tag_uid)(data.tag_uid) or None
+        normalized_tray_uuid = normalize_tray_uuid(data.tray_uuid) or None
+        _validate_tag_input(data.tag_uid, normalized_tag_uid, "tag_uid")
+        _validate_tag_input(data.tray_uuid, normalized_tray_uuid, "tray_uuid", exact_len=32)
+        requested = _tag_pair(normalized_tag_uid, normalized_tray_uuid)
+        uids: set[str] = set()
+        moved_from: list[int] = []
+        tray = None
+        if manual:
+            if not any(requested) or len(normalized_tag_uid or "") > 32:
+                raise HTTPException(422, "A usable RFID tag is required")
+            target_tag = _tag_pair(spool.tag_uid, spool.tray_uuid)
+            normalized_tag_uid, normalized_tray_uuid = requested
+            if data.source_spool_id is not None:
+                source = await db.get(Spool, data.source_spool_id)
+                if (
+                    not source
+                    or source.archived_at
+                    or not _same_tag(requested, _tag_pair(source.tag_uid, source.tray_uuid))
+                ):
+                    raise HTTPException(409, "The source spool no longer holds this tag")
+                if (
+                    slot is None
+                    and await db.scalar(
+                        select(SpoolAssignment.id).where(SpoolAssignment.spool_id == source.id).limit(1)
+                    )
+                    is not None
+                ):
+                    raise HTTPException(409, "The source spool is assigned to a printer slot")
+                source_uid, source_uuid = _tag_pair(source.tag_uid, source.tray_uuid)
+                if source_uid:
+                    uids.add(source_uid)
+                normalized_tag_uid = normalized_tag_uid or source_uid
+                normalized_tray_uuid = normalized_tray_uuid or source_uuid
+                spool.tag_type = source.tag_type
+                spool.data_origin = "rfid_linked" if source.data_origin == "rfid_auto" else source.data_origin
+                # Old inventory imports can store a UID with separators. The
+                # verified source must lose its tag even if the stored text
+                # differs from the canonical identifiers used to find duplicates.
+                _clear_tag(source)
+                moved_from.append(source.id)
+            if slot is not None:
+                tray = await _read_tag_slot(db, slot, (normalized_tag_uid, normalized_tray_uuid), data.source_spool_id)
+                live_uid, live_uuid = _tag_pair(tray.get("tag_uid"), tray.get("tray_uuid"))
+                if live_uid:
+                    uids.add(live_uid)
+                normalized_tag_uid = normalized_tag_uid or live_uid
+                normalized_tray_uuid = normalized_tray_uuid or live_uuid
+            if any(target_tag):
+                if not _same_tag((normalized_tag_uid, normalized_tray_uuid), target_tag):
+                    raise HTTPException(409, "The selected spool already has another tag")
+                normalized_tag_uid = normalized_tag_uid or target_tag[0]
+                normalized_tray_uuid = normalized_tray_uuid or target_tag[1]
+
+        tag_fields: tuple[tuple[TagField, Any, str | None], ...] = (
+            ("tag_uid", Spool.tag_uid, normalized_tag_uid),
+            ("tray_uuid", Spool.tray_uuid, normalized_tray_uuid),
         )
-        holder = conflict.scalars().first()
-        if holder:
-            raise tag_already_linked("tag_uid", holder.id)
-        # Auto-clear from archived spools (tag recycling)
-        archived_with_tag = await db.execute(
-            select(Spool).where(
-                func.upper(Spool.tag_uid) == normalized_tag_uid,
-                Spool.id != spool_id,
-                Spool.archived_at.is_not(None),
+        for field, column, value in tag_fields:
+            if not value:
+                continue
+            values = {value} | (uids if field == "tag_uid" else set())
+            stored = _stored_tag(column) if manual else func.upper(column)
+            conflict = await db.execute(
+                select(Spool)
+                .where(
+                    stored.in_(values),
+                    Spool.id != spool_id,
+                    Spool.archived_at.is_(None),
+                )
+                .order_by(Spool.id)
             )
-        )
-        for old_spool in archived_with_tag.scalars().all():
-            old_spool.tag_uid = None
-
-    if normalized_tray_uuid:
-        conflict = await db.execute(
-            select(Spool)
-            .where(
-                func.upper(Spool.tray_uuid) == normalized_tray_uuid,
-                Spool.id != spool_id,
-                Spool.archived_at.is_(None),
+            holders = list(conflict.scalars().all())
+            if holders and not data.move:
+                raise tag_already_linked(field, holders[0].id)
+            for holder in holders:
+                _clear_tag(holder)
+                moved_from.append(holder.id)
+            # Auto-clear from archived spools (tag recycling)
+            archived_with_tag = await db.execute(
+                select(Spool).where(
+                    stored.in_(values),
+                    Spool.id != spool_id,
+                    Spool.archived_at.is_not(None),
+                )
             )
-            .order_by(Spool.id)
-        )
-        holder = conflict.scalars().first()
-        if holder:
-            raise tag_already_linked("tray_uuid", holder.id)
-        archived_with_uuid = await db.execute(
-            select(Spool).where(
-                func.upper(Spool.tray_uuid) == normalized_tray_uuid,
-                Spool.id != spool_id,
-                Spool.archived_at.is_not(None),
-            )
-        )
-        for old_spool in archived_with_uuid.scalars().all():
-            old_spool.tray_uuid = None
+            for old_spool in archived_with_tag.scalars().all():
+                setattr(old_spool, field, None)
+        if moved_from:
+            await db.flush()
 
-    if data.tag_uid is not None:
-        spool.tag_uid = normalized_tag_uid
-    if data.tray_uuid is not None:
-        spool.tray_uuid = normalized_tray_uuid
-    if data.tag_type is not None:
-        spool.tag_type = data.tag_type
-    if data.data_origin is not None:
-        spool.data_origin = data.data_origin
+        if manual or data.tag_uid is not None:
+            spool.tag_uid = normalized_tag_uid
+        if manual or data.tray_uuid is not None:
+            spool.tray_uuid = normalized_tray_uuid
+        if data.tag_type is not None and not data.move:
+            spool.tag_type = data.tag_type
+        if data.data_origin is not None and not data.move:
+            spool.data_origin = data.data_origin
 
-    await db.commit()
-    result = await db.execute(select(Spool).options(*spool_response_loads()).where(Spool.id == spool_id))
+        if tray and not data.move:
+            from backend.app.services.spool_tag_matcher import is_bambu_tag
+
+            bambu = is_bambu_tag(tray.get("tag_uid", ""), tray.get("tray_uuid", ""), tray.get("tray_info_idx", ""))
+            spool.tag_type = "bambulab" if bambu else "generic"
+            spool.data_origin = "rfid_linked" if bambu else "nfc_link"
+
+        if slot is not None:
+            from backend.app.services.printer_manager import printer_manager
+            from backend.app.services.spool_tag_matcher import auto_assign_spool
+
+            await db.flush()
+            tray_info_idx = (tray or {}).get("tray_info_idx") or ""
+            await auto_assign_spool(*slot, spool, printer_manager, db, tray_info_idx=tray_info_idx, live_tray=tray)
+
+        await db.commit()
+
+    if moved_from:
+        logger.info("Moved RFID tag from spool(s) %s to spool %d", sorted(set(moved_from)), spool_id)
+    if slot is not None:
+        from backend.app.services.spool_relocation import INTERNAL, release_other_slots
+
+        # The tag read in this slot is the spool's now, so it is proven to be
+        # here and leaves any other slot, as on an RFID match (#3427).
+        try:
+            await release_other_slots(INTERNAL, spool_id, slot, printer_scope=printer_scope)
+        except Exception as e:
+            logger.warning("Releasing spool %s from its other slots failed: %s", spool_id, e, exc_info=True)
+        await ws_manager.broadcast(
+            {"type": "spool_assignment_changed", "printer_id": slot[0], "ams_id": slot[1], "tray_id": slot[2]}
+        )
+
+    if manual:
+        await ws_manager.broadcast({"type": "inventory_changed"})
+
+    result = await db.execute(
+        select(Spool)
+        .options(*spool_response_loads())
+        .where(Spool.id == spool_id)
+        .execution_options(populate_existing=True)
+    )
     return result.scalar_one()
 
 
@@ -3572,6 +3746,8 @@ class CreateSpoolFromSlotRequest(BaseModel):
     printer_id: int
     ams_id: int
     tray_id: int
+    tag_uid: str | None = None
+    tray_uuid: str | None = None
 
 
 @router.post("/spools/from-slot", response_model=SpoolResponse)
@@ -3591,47 +3767,25 @@ async def create_spool_from_slot(
     from backend.app.services.spool_tag_matcher import auto_assign_spool, create_spool_from_tray
 
     printer_scope.ensure(req.printer_id)
-    state = printer_manager.get_status(req.printer_id)
-    if not state or not state.raw_data:
-        raise HTTPException(status_code=404, detail="Printer not connected or no state available")
-
-    ams_data = state.raw_data.get("ams")
-    ams_units: list[dict] = []
-    if isinstance(ams_data, list):
-        ams_units = ams_data
-    elif isinstance(ams_data, dict):
-        if "ams" in ams_data and isinstance(ams_data["ams"], list):
-            ams_units = ams_data["ams"]
-        elif "tray" in ams_data:
-            ams_units = [{"id": 0, "tray": ams_data.get("tray", [])}]
-
-    tray: dict | None = None
-    for unit in ams_units:
-        if not isinstance(unit, dict):
-            continue
-        if int(unit.get("id", -1)) != req.ams_id:
-            continue
-        for t in unit.get("tray", []):
-            if isinstance(t, dict) and int(t.get("id", -1)) == req.tray_id:
-                tray = t
-                break
-        if tray:
-            break
-
-    if not tray or not tray.get("tray_type"):
-        raise HTTPException(status_code=400, detail="Slot is empty or has no readable tray data")
-
-    # Guard against ghost-spool creation: a slot without any RFID tag has no
-    # stable identity, so creating an inventory row would just duplicate on
-    # every confirm and never re-link to the physical spool.
-    from backend.app.services.spool_tag_matcher import is_valid_tag
-
-    if not is_valid_tag(tray.get("tag_uid", ""), tray.get("tray_uuid", "")):
-        raise HTTPException(status_code=400, detail="Slot has no RFID tag")
-
-    # Under the slot lock from the first write: on SQLite the spool insert takes
-    # the write lock, which an AMS update holding the slot lock would wait for.
-    async with get_ams_assignment_lock(req.printer_id):
+    slot = (req.printer_id, req.ams_id, req.tray_id)
+    expected = _tag_pair(req.tag_uid, req.tray_uuid) if req.tag_uid is not None or req.tray_uuid is not None else None
+    async with _tag_write(db, req.printer_id):
+        tray = await _read_tag_slot(db, slot, expected, None)
+        uid, uuid = _tag_pair(tray.get("tag_uid"), tray.get("tray_uuid"))
+        fields: tuple[tuple[TagField, Any, str | None], ...] = (
+            ("tag_uid", Spool.tag_uid, uid),
+            ("tray_uuid", Spool.tray_uuid, uuid),
+        )
+        for field, column, value in fields:
+            if value:
+                holder = await db.scalar(
+                    select(Spool.id)
+                    .where(_stored_tag(column) == value, Spool.archived_at.is_(None))
+                    .order_by(Spool.id)
+                    .limit(1)
+                )
+                if holder is not None:
+                    raise tag_already_linked(field, holder)
         spool = await create_spool_from_tray(db, tray)
         await auto_assign_spool(
             req.printer_id,
@@ -3641,6 +3795,7 @@ async def create_spool_from_slot(
             printer_manager,
             db,
             tray_info_idx=tray.get("tray_info_idx", ""),
+            live_tray=tray,
         )
         await db.commit()
     await ws_manager.broadcast({"type": "inventory_changed"})

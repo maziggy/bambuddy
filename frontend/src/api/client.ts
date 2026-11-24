@@ -1680,6 +1680,12 @@ export interface AppSettings {
   // Finance budget reset window
   billing_enabled: boolean;
   printer_kill_switch_enabled: boolean;
+  // Charging policy (#3581): what a print's wallet charge is made of
+  billing_completed_energy: boolean;
+  billing_completed_wear: boolean;
+  billing_failed_filament: 'proportional' | 'full' | 'none';
+  billing_failed_energy: boolean;
+  billing_failed_wear: boolean;
   finance_budget_reset_day: number;
   finance_budget_reset_timezone: string;
   // Plate-clear confirmation
@@ -1817,6 +1823,59 @@ export interface OrcaDevicePollResponse {
   email: string | null;
   user_id: string | null;
 }
+
+// 3D Filament Profiles (#2981): device-flow connection, filament lookup and
+// the 3DFP filament a spool is linked to.
+export interface ThreeDfpDeviceStartResponse {
+  user_code: string;
+  verification_uri: string;
+  verification_uri_complete: string;
+  interval: number;
+  expires_in: number;
+}
+
+export type ThreeDfpDevicePollStatus = OrcaDevicePollStatus;
+
+export interface ThreeDfpStatusResponse {
+  connected: boolean;
+  email: string | null;
+}
+
+export interface ThreeDfpAccount {
+  email: string | null;
+  plan: string | null;
+  active_scopes: string[];
+  quota: { limit: number | null; remaining: number | null; resets_at: string | null } | null;
+  upgrade_url: string | null;
+}
+
+export interface ThreeDfpStore {
+  region: string | null;
+  price: number | null;
+  currency: string | null;
+  availability: string | null;
+  updated_at: string | null;
+  url: string;
+}
+
+export interface ThreeDfpFilament {
+  id: number;
+  brand_name: string | null;
+  material: string | null;
+  material_type: string | null;
+  color: string | null;
+  rgb: string | null;
+  bambu_filament_id: string | null;
+  discontinued: boolean;
+  url: string | null;
+  nominal_weight: number | null;
+  spool_weight: number | null;
+  temp_min: number | null;
+  temp_max: number | null;
+  stores: ThreeDfpStore[];
+}
+
+export type ThreeDfpInventory = 'inventory' | 'spoolman';
 
 export interface OrcaAuthStatusResponse {
   connected: boolean;
@@ -2122,6 +2181,9 @@ export interface SliceRequest {
   // values, so they apply on the embedded-settings path too.
   auto_orient?: boolean;
   auto_arrange?: boolean;
+  // One flow per slicer extruder (#3136); omitted, the backend reads it from
+  // the printers, and slices for Standard when none says.
+  nozzle_volume_type?: ('Standard' | 'High Flow')[];
 }
 
 // GET /api/v1/slicer/presets — unified listing across cloud / local / standard.
@@ -2185,6 +2247,10 @@ export interface LoadedSpoolPrinter {
   // on a dual-nozzle printer, labelled left and right).
   external: LoadedSpoolTray[];
   external_holders: number;
+  // Fitted nozzles by MQTT extruder id (0 = right/main, 1 = left), for the
+  // Slice dialog's nozzle flow default (#3136). flow is null when the printer
+  // reports a material (X1 / P1) or nothing. Absent from an older backend.
+  nozzles?: { extruder_id: number; diameter: string | null; flow: string | null }[];
 }
 export interface LoadedSpoolsResponse {
   printers: LoadedSpoolPrinter[];
@@ -3242,6 +3308,11 @@ export interface PrintQueueBulkUpdateResponse {
   message: string;
 }
 
+export interface PrintQueueDuplicateResponse {
+  created_ids: number[];  // The copies, in the order asked for
+  skipped_count: number;  // Jobs that got no copy
+}
+
 // MQTT Logging types
 export interface MQTTLogEntry {
   timestamp: string;
@@ -3726,6 +3797,8 @@ export interface LocalBackupStatus {
   last_backup_at: string | null;
   last_status: string | null;
   last_message: string | null;
+  /** Files the last backup could not copy; last_status is 'warning' then. */
+  last_missing_files: number;
   next_run: string | null;
   timezone: string;
 }
@@ -4132,6 +4205,54 @@ export interface PreviewSpoolLabelRequest {
   monochrome: boolean;
   fields: SpoolLabelField[];
 }
+
+// Mirror of backend.app.services.project_label_renderer.ProjectLabelField, in
+// print order (#3655).
+export const PROJECT_LABEL_FIELDS = [
+  'parent',
+  'name',
+  'note',
+  'parts',
+  'due_date',
+  'printed',
+  'color',
+  'qr',
+  'quantity',
+  'project_id',
+] as const;
+export type ProjectLabelField = (typeof PROJECT_LABEL_FIELDS)[number];
+// Mirror of DEFAULT_PROJECT_LABEL_FIELDS: what a bag label needs.
+export const DEFAULT_PROJECT_LABEL_FIELDS: ProjectLabelField[] = [
+  'name',
+  'note',
+  'due_date',
+  'color',
+  'qr',
+  'quantity',
+];
+
+// One project label: the project, and what was typed for this bag.
+export interface ProjectLabelItem {
+  project_id: number;
+  quantity?: number | null;
+  note?: string | null;
+}
+
+interface ProjectLabelOptions {
+  template: SpoolLabelRequestTemplate;
+  layout?: LabelSheetLayout | null;
+  monochrome?: boolean;
+  fields?: ProjectLabelField[] | null;
+}
+
+export interface PrintProjectLabelsRequest extends ProjectLabelOptions {
+  items: ProjectLabelItem[];
+  starting_position?: number;
+  format?: 'pdf' | 'png';
+  dpi?: 203 | 300 | 600;
+}
+
+export type PreviewProjectLabelRequest = ProjectLabelItem & ProjectLabelOptions;
 
 export interface InventorySpool {
   id: number;
@@ -4795,7 +4916,7 @@ export type Permission =
   | 'system:read'
   | 'settings:read' | 'settings:update' | 'settings:backup' | 'settings:restore'
   | 'github:backup' | 'github:restore'
-  | 'cloud:auth' | 'orca_cloud:auth'
+  | 'cloud:auth' | 'orca_cloud:auth' | 'threedfp:auth'
   | 'makerworld:view' | 'makerworld:import'
   | 'manyfold:view' | 'manyfold:import'
   | 'api_keys:read' | 'api_keys:create' | 'api_keys:update' | 'api_keys:delete'
@@ -6702,7 +6823,7 @@ export const api = {
     }),
   getMQTTStatus: () => request<MQTTStatus>('/settings/mqtt/status'),
   getPandaBreathStatus: () => request<PandaBreathStatus>('/settings/panda-breath/status'),
-  exportBackup: async (): Promise<{ blob: Blob; filename: string }> => {
+  exportBackup: async (): Promise<{ blob: Blob; filename: string; missingFiles: number }> => {
     // New simplified backup - complete database + all files
     const url = `${API_BASE}/settings/backup`;
     const headers: Record<string, string> = {};
@@ -6713,8 +6834,16 @@ export const api = {
 
     // Check for errors
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(errorText || `Backup failed with status ${response.status}`);
+      // {detail} from an HTTPException, {message} from the route's own 500.
+      // A 409 carries {code, message}: whether a backup or a restore is running.
+      const error = await response.json().catch(() => null);
+      const detail = error?.detail;
+      const structured = detail && typeof detail === 'object' ? (detail as { code?: string; message?: string }) : null;
+      throw new ApiError(
+        structured?.message || (typeof detail === 'string' ? detail : '') || error?.message || `Backup failed with status ${response.status}`,
+        response.status,
+        structured?.code ?? null,
+      );
     }
 
     // Get filename from Content-Disposition header
@@ -6726,7 +6855,9 @@ export const api = {
     }
 
     const blob = await response.blob();
-    return { blob, filename };
+    // Files that could not be copied; the ZIP is good but they aren't in it.
+    const missingFiles = Number(response.headers.get('X-Backup-Missing-Files')) || 0;
+    return { blob, filename, missingFiles };
   },
   importBackup: async (file: File) => {
     // New simplified restore - replaces database + all directories
@@ -6745,7 +6876,7 @@ export const api = {
     const data = (await response.json().catch(() => null)) as {
       success?: boolean;
       message?: string;
-      detail?: string;
+      detail?: string | { code?: string; message?: string };
     } | null;
     // A refused restore is an HTTPException, so the body is {detail}, not
     // {success, message}. Returning it unmapped made `success` undefined and
@@ -6753,11 +6884,18 @@ export const api = {
     // which is the one case where the reason matters most (e.g. a backup this
     // version cannot import names the columns and both versions).
     if (!response.ok) {
-      return { success: false, message: data?.detail ?? data?.message ?? '' };
+      // A 409 while a backup or a restore runs is {code, message}; `code` lets
+      // the caller say it in the user's language.
+      const detail = data?.detail;
+      if (detail && typeof detail === 'object') {
+        return { success: false, message: detail.message ?? '', code: detail.code ?? null };
+      }
+      return { success: false, message: detail ?? data?.message ?? '', code: null };
     }
     return (data ?? { success: false, message: '' }) as {
       success: boolean;
       message: string;
+      code?: string | null;
     };
   },
   checkFfmpeg: () =>
@@ -6805,6 +6943,23 @@ export const api = {
     request<OrcaProfileListResponse>('/orca-cloud/profiles'),
   orcaCloudGetProfile: (id: string) =>
     request<OrcaProfileDetail>(`/orca-cloud/profiles/${id}`),
+  threedfpDeviceStart: () =>
+    request<ThreeDfpDeviceStartResponse>('/threedfp/device/start', { method: 'POST' }),
+  threedfpDevicePoll: () =>
+    request<{ status: ThreeDfpDevicePollStatus; connected: boolean }>('/threedfp/device/poll', { method: 'POST' }),
+  threedfpStatus: () => request<ThreeDfpStatusResponse>('/threedfp/status'),
+  threedfpAccount: () => request<ThreeDfpAccount>('/threedfp/account'),
+  threedfpDisconnect: () => request<{ success: boolean }>('/threedfp/disconnect', { method: 'POST' }),
+  threedfpLookup: (query: string) =>
+    request<{ results: ThreeDfpFilament[] }>(`/threedfp/lookup?q=${encodeURIComponent(query)}`),
+  threedfpGetFilament: (id: number) => request<ThreeDfpFilament>(`/threedfp/filaments/${id}`),
+  getThreedfpSpoolLink: (inventory: ThreeDfpInventory, spoolId: number) =>
+    request<{ filament_id: number | null }>(`/threedfp/spool-links/${inventory}/${spoolId}`),
+  setThreedfpSpoolLink: (inventory: ThreeDfpInventory, spoolId: number, filamentId: number | null) =>
+    request<{ filament_id: number | null }>(`/threedfp/spool-links/${inventory}/${spoolId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ filament_id: filamentId }),
+    }),
   getCloudSettings: (version = '02.04.00.70') =>
     request<SlicerSettingsResponse>(`/cloud/settings?version=${version}`),
   getBuiltinFilaments: () =>
@@ -7068,6 +7223,11 @@ export const api = {
       `/queue/printer/${printerId}/resume`,
       { method: 'POST' },
     ),
+  duplicateQueueItems: (itemIds: number[]) =>
+    request<PrintQueueDuplicateResponse>('/queue/duplicate', {
+      method: 'POST',
+      body: JSON.stringify({ item_ids: itemIds }),
+    }),
   bulkUpdateQueue: (data: PrintQueueBulkUpdate) =>
     request<PrintQueueBulkUpdateResponse>('/queue/bulk', {
       method: 'PATCH',
@@ -7416,7 +7576,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  createSpoolFromSlot: (data: { printer_id: number; ams_id: number; tray_id: number }) =>
+  createSpoolFromSlot: (data: { printer_id: number; ams_id: number; tray_id: number; tag_uid?: string; tray_uuid?: string }) =>
     request<InventorySpool>(`/inventory/spools/from-slot`, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -7574,6 +7734,11 @@ export const api = {
     postForBlob('/inventory/labels/preview', data, signal),
   previewSpoolmanSpoolLabel: (data: PreviewSpoolLabelRequest, signal?: AbortSignal): Promise<Blob> =>
     postForBlob('/spoolman/labels/preview', data, signal),
+  // Project labels for the bag or box of a project's parts (#3655).
+  printProjectLabels: (data: PrintProjectLabelsRequest): Promise<Blob> =>
+    postForBlob('/projects/labels', data),
+  previewProjectLabel: (data: PreviewProjectLabelRequest, signal?: AbortSignal): Promise<Blob> =>
+    postForBlob('/projects/labels/preview', data, signal),
   getLabelTemplates: () => request<SavedLabelTemplate[]>('/label-templates'),
   createLabelTemplate: (data: { name: string; layout: LabelSheetLayout }) =>
     request<SavedLabelTemplate>('/label-templates', { method: 'POST', body: JSON.stringify(data) }),
@@ -7672,7 +7837,19 @@ export const api = {
     request<{ status: string }>('/inventory/colors/reset', { method: 'POST' }),
   searchColors: (manufacturer?: string, material?: string) =>
     request<ColorCatalogEntry[]>(`/inventory/colors/search?${manufacturer ? `manufacturer=${encodeURIComponent(manufacturer)}` : ''}${manufacturer && material ? '&' : ''}${material ? `material=${encodeURIComponent(material)}` : ''}`),
-  linkTagToSpool: (spoolId: number, data: { tag_uid?: string; tray_uuid?: string; tag_type?: string; data_origin?: string }) =>
+  // move: take the tag from the spool that has it instead of a 409. A slot:
+  // also assign the spool there, as an RFID match does (#3658).
+  linkTagToSpool: (spoolId: number, data: {
+    tag_uid?: string;
+    tray_uuid?: string;
+    tag_type?: string;
+    data_origin?: string;
+    move?: boolean;
+    source_spool_id?: number;
+    printer_id?: number;
+    ams_id?: number;
+    tray_id?: number;
+  }) =>
     request<InventorySpool>(`/inventory/spools/${spoolId}/link-tag`, {
       method: 'PATCH',
       body: JSON.stringify(data),
@@ -8669,7 +8846,7 @@ export const api = {
     request<LocalBackupStatus>('/local-backup/status'),
 
   triggerLocalBackup: () =>
-    request<{ success: boolean; message: string; filename?: string }>('/local-backup/run', { method: 'POST' }),
+    request<{ success: boolean; message: string; filename?: string; missing_files?: number }>('/local-backup/run', { method: 'POST' }),
 
   checkLocalBackupPath: () =>
     request<LocalBackupPathCheck>('/local-backup/path-check'),
@@ -9255,6 +9432,8 @@ export interface ArchivePurgePreview {
   total_bytes: number;
   sample_filenames: string[];
   older_than_days: number;
+  /** Favourites past the cutoff, which the purge keeps (#3700). */
+  favorites_kept: number;
 }
 
 export interface ArchiveMergeMember {

@@ -144,6 +144,7 @@ type StepMeshData = StepWorkerMesh;
 interface MeshData {
   vertices: number[];
   triangles: number[];
+  componentTransform?: THREE.Matrix4;
   extruder: number; // Per-mesh extruder index for coloring
 }
 
@@ -191,26 +192,19 @@ function parseTransform3MF(transformStr: string | null): THREE.Matrix4 {
     return matrix; // Identity matrix
   }
 
-  // 3MF transform is a 3x4 affine matrix in row-major order:
-  // "m00 m01 m02 m10 m11 m12 m20 m21 m22 m30 m31 m32"
-  // Where (m30, m31, m32) is the translation vector
+  // 3MF stores an affine transform for row vectors. Transpose its linear
+  // part for Three.js column vectors and put the translation in column four.
   const values = transformStr.trim().split(/\s+/).map(parseFloat);
   if (values.length >= 12) {
-    // Three.js Matrix4.set takes row-major order arguments:
-    // set(n11, n12, n13, n14, n21, n22, n23, n24, n31, n32, n33, n34, n41, n42, n43, n44)
-    // 3MF row-major: m00, m01, m02, m10, m11, m12, m20, m21, m22, m30, m31, m32
     matrix.set(
-      values[0], values[1], values[2], values[9],   // m00, m01, m02, tx
-      values[3], values[4], values[5], values[10],  // m10, m11, m12, ty
-      values[6], values[7], values[8], values[11],  // m20, m21, m22, tz
+      values[0], values[3], values[6], values[9],
+      values[1], values[4], values[7], values[10],
+      values[2], values[5], values[8], values[11],
       0, 0, 0, 1
     );
   }
   return matrix;
 }
-
-// Alias for backwards compatibility
-const parseTransform = parseTransform3MF;
 
 async function parseMeshFromDoc(doc: Document, defaultExtruder: number = 0): Promise<MeshData[]> {
   const meshes: MeshData[] = [];
@@ -548,23 +542,9 @@ async function parse3MF(arrayBuffer: ArrayBuffer): Promise<Parsed3MFData> {
 
           const extMeshes = await parseMeshFromDoc(extDoc, compExtruder);
 
-          // Apply component transform if present
-          const compTransformStr = compEl.getAttribute('transform');
-          const compTransform = parseTransform(compTransformStr);
-
+          const componentTransform = parseTransform3MF(compEl.getAttribute('transform'));
           for (const mesh of extMeshes) {
-            if (compTransformStr) {
-              // Apply transform to vertices (in 3MF coordinate space, before Y/Z swap)
-              const transformedVertices: number[] = [];
-              for (let k = 0; k < mesh.vertices.length; k += 3) {
-                const v = new THREE.Vector3(mesh.vertices[k], mesh.vertices[k + 1], mesh.vertices[k + 2]);
-                v.applyMatrix4(compTransform);
-                transformedVertices.push(v.x, v.y, v.z);
-              }
-              meshes.push({ vertices: transformedVertices, triangles: mesh.triangles, extruder: mesh.extruder });
-            } else {
-              meshes.push(mesh);
-            }
+            meshes.push({ ...mesh, componentTransform });
           }
         }
       }
@@ -584,7 +564,7 @@ async function parse3MF(arrayBuffer: ArrayBuffer): Promise<Parsed3MFData> {
       const objectId = itemEl.getAttribute('objectid');
       if (!objectId) continue;
 
-      const transform = parseTransform(itemEl.getAttribute('transform'));
+      const transform = parseTransform3MF(itemEl.getAttribute('transform'));
       const itemPlateId = parsePlateIdFromAttributes(itemEl);
       const objectPlateId = objects.get(objectId)?.plateId ?? null;
       const objectName = objectNameById.get(objectId);
@@ -596,20 +576,34 @@ async function parse3MF(arrayBuffer: ArrayBuffer): Promise<Parsed3MFData> {
   return { objects, buildItems, plateBounds, plateOffsets };
 }
 
-function createGeometryFromMesh(mesh: MeshData): THREE.BufferGeometry {
+function createGeometryFromMesh(mesh: MeshData, buildTransform?: THREE.Matrix4): THREE.BufferGeometry {
   const geometry = new THREE.BufferGeometry();
+  const transform = new THREE.Matrix4();
+  if (buildTransform) transform.copy(buildTransform);
+  if (mesh.componentTransform) transform.multiply(mesh.componentTransform);
 
-  // Convert from 3MF Z-up to Three.js Y-up coordinate system
-  // 3MF: X right, Y back, Z up -> Three.js: X right, Y up, Z forward
   const positions = new Float32Array(mesh.vertices.length);
+  const vertex = new THREE.Vector3();
   for (let i = 0; i < mesh.vertices.length; i += 3) {
-    positions[i] = mesh.vertices[i];       // X stays X
-    positions[i + 1] = mesh.vertices[i + 2]; // Y becomes Z (up)
-    positions[i + 2] = mesh.vertices[i + 1]; // Z becomes Y
+    vertex.fromArray(mesh.vertices, i).applyMatrix4(transform);
+    // Rotate -90° about X: printer +Z is up and printer +Y points away.
+    positions[i] = vertex.x;
+    positions[i + 1] = vertex.z;
+    positions[i + 2] = -vertex.y;
   }
 
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geometry.setIndex(mesh.triangles);
+  // The instance transform is baked into the vertices, so Three.js cannot
+  // switch front-face winding itself for a mirrored build item or component.
+  if (transform.determinant() < 0) {
+    const index = geometry.getIndex()!;
+    for (let i = 0; i < index.count; i += 3) {
+      const second = index.getX(i + 1);
+      index.setX(i + 1, index.getX(i + 2));
+      index.setX(i + 2, second);
+    }
+  }
 
   // Compute normals
   geometry.computeVertexNormals();
@@ -679,23 +673,7 @@ function buildModelGroup(
         // Use mesh's extruder, or item override, or object default
         const extruder = item.extruder ?? meshData.extruder;
 
-        // Apply build transform to vertices in 3MF space BEFORE coordinate conversion
-        const transformedVertices: number[] = [];
-        for (let k = 0; k < meshData.vertices.length; k += 3) {
-          const v = new THREE.Vector3(
-            meshData.vertices[k],
-            meshData.vertices[k + 1],
-            meshData.vertices[k + 2]
-          );
-          v.applyMatrix4(item.transform);
-          transformedVertices.push(v.x, v.y, v.z);
-        }
-        // Now create geometry with coordinate conversion
-        const geometry = createGeometryFromMesh({
-          vertices: transformedVertices,
-          triangles: meshData.triangles,
-          extruder: extruder,
-        });
+        const geometry = createGeometryFromMesh(meshData, item.transform);
 
         if (!geometriesByExtruder.has(extruder)) {
           geometriesByExtruder.set(extruder, []);
@@ -1122,35 +1100,22 @@ export function ModelViewer({
     const selectedPlateOffset = (!isPlainModel && selectedPlateId != null)
       ? parsedData!.plateOffsets.get(selectedPlateId)
       : undefined;
-    const shouldCenterOnPlate = isPlainModel
-      || parsedData!.buildItems.length === 0
-      || (selectedPlateId != null && !selectedPlateBounds && !selectedPlateOffset);
-    const centerOffsetX = shouldCenterOnPlate ? -center.x : 0;
-    const centerOffsetZ = shouldCenterOnPlate ? -center.z : 0;
-
-    let plateOffsetX = 0;
-    let plateOffsetZ = 0;
-    if (!isPlainModel && selectedPlateId != null && parsedData!.buildItems.length > 0 && selectedPlateBounds) {
-      const plateBox = new THREE.Box3().setFromObject(group);
-      plateOffsetX = plateBox.min.x - selectedPlateBounds.minX;
-      plateOffsetZ = plateBox.min.z - selectedPlateBounds.minY;
-    }
-
     const plateCenterX = buildVolume.x / 2;
     const plateCenterZ = buildVolume.y / 2;
 
-    if (!isPlainModel && selectedPlateId != null && parsedData!.buildItems.length > 0 && selectedPlateBounds) {
-      group.position.x = centerOffsetX - plateOffsetX;
-      group.position.z = centerOffsetZ - plateOffsetZ;
-    } else if (!isPlainModel && selectedPlateId != null && selectedPlateOffset) {
-      group.position.x = centerOffsetX + (plateCenterX - selectedPlateOffset.offsetX);
-      group.position.z = centerOffsetZ + (plateCenterZ - selectedPlateOffset.offsetY);
-    } else if (shouldCenterOnPlate) {
-      group.position.x = centerOffsetX + plateCenterX;
-      group.position.z = centerOffsetZ + plateCenterZ;
+    if (selectedPlateBounds) {
+      // Printer minimum Y is the front edge: maximum Z in the viewer.
+      group.position.x = selectedPlateBounds.minX - box.min.x;
+      group.position.z = buildVolume.y - selectedPlateBounds.minY - box.max.z;
+    } else if (selectedPlateOffset && parsedData!.buildItems.length > 0) {
+      group.position.x = plateCenterX - selectedPlateOffset.offsetX;
+      group.position.z = plateCenterZ + selectedPlateOffset.offsetY;
+    } else if (isPlainModel || parsedData!.buildItems.length === 0 || selectedPlateId != null) {
+      group.position.x = plateCenterX - center.x;
+      group.position.z = plateCenterZ - center.z;
     } else {
-      group.position.x = centerOffsetX;
-      group.position.z = centerOffsetZ;
+      // The printer origin is the front-left corner of the displayed bed.
+      group.position.z = buildVolume.y;
     }
 
     if (plateRef.current) {

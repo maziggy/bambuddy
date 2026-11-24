@@ -21,8 +21,10 @@ from starlette.requests import Request
 from backend.app.api.routes import project_labels
 from backend.app.core.printer_scope import ALL_PRINTERS, PrinterScope
 from backend.app.models.archive import PrintArchive
+from backend.app.models.group import Group
 from backend.app.models.print_log import PrintLogEntry
 from backend.app.models.project import Project
+from backend.app.models.user import User
 from backend.app.services.label_renderer import render_labels
 from backend.app.services.project_label_renderer import ALL_PROJECT_LABEL_FIELDS
 
@@ -308,3 +310,40 @@ async def test_last_print_uses_the_visible_run_on_a_shared_archive(db_session, p
     )
     assert label.printed == date(2026, 11, 22)
     assert label.completed_parts == 12
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_last_print_is_only_from_archives_the_caller_may_read(db_session, project, monkeypatch):
+    """A user who may read only their own archives gets the date of their own
+    last run, not a colleague's later one; the parts count stays project-wide."""
+    monkeypatch.setenv("TZ", "UTC")
+    group = Group(name="Own archives", permissions=["projects:read", "archives:read_own"])
+    alice, bob = User(username="alice", groups=[group]), User(username="bob")
+    db_session.add_all([group, alice, bob])
+    await db_session.flush()
+    # The fixture's two completed runs: Nov 18 becomes Alice's, Nov 20 Bob's.
+    early, late = (
+        await db_session.scalars(
+            select(PrintArchive)
+            .where(
+                PrintArchive.project_id == project.id,
+                PrintArchive.filename == "slug.3mf",
+                PrintArchive.status == "completed",
+            )
+            .order_by(PrintArchive.id)
+        )
+    ).all()
+    early.created_by_id, late.created_by_id = alice.id, bob.id
+    await db_session.commit()
+
+    [label] = await project_labels._project_label_data(
+        [project_labels.ProjectLabelItem(project_id=project.id)],
+        frozenset({"printed", "parts"}),
+        Request({"type": "http"}),
+        db_session,
+        ALL_PRINTERS,
+        alice,
+    )
+    assert label.printed == date(2026, 11, 18)
+    assert label.completed_parts == 6

@@ -288,7 +288,7 @@ async def test_rtsp_stream_reconnects_past_unreaped_ffmpeg(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-async def test_cleanup_orphaned_streams_bounded_on_unreaped_process(monkeypatch):
+async def test_cleanup_orphaned_streams_bounded_on_unreaped_process(monkeypatch, caplog):
     monkeypatch.setattr(camera, "_FFMPEG_KILL_TIMEOUT", 0.05)
     monkeypatch.setattr(camera, "_scan_bambu_ffmpeg_pids", lambda: [])
 
@@ -307,9 +307,13 @@ async def test_cleanup_orphaned_streams_bounded_on_unreaped_process(monkeypatch)
 
     try:
         # Must complete despite proc.wait() never returning.
-        await asyncio.wait_for(camera.cleanup_orphaned_streams(), timeout=2.0)
+        with caplog.at_level(logging.ERROR, logger=camera.logger.name):
+            await asyncio.wait_for(camera.cleanup_orphaned_streams(), timeout=2.0)
 
         assert proc.killed is True
+        # The abandoned wait is logged. TimeoutError is a subclass of OSError,
+        # so a handler for OSError placed before it swallowed this silently.
+        assert any("did not exit within" in r.getMessage() for r in caplog.records)
         assert sid not in camera._active_streams
         assert proc.pid not in camera._spawned_ffmpeg_pids
     finally:

@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.auth import RequireAnyPermissionIfAuthEnabled, RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.label_template import LabelTemplate
@@ -71,7 +71,7 @@ async def _commit(db: AsyncSession, template: LabelTemplate) -> None:
 @router.get("", response_model=list[LabelTemplateResponse])
 async def list_label_templates(
     db: AsyncSession = Depends(get_db, scope="function"),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+    _: User | None = RequireAnyPermissionIfAuthEnabled(Permission.INVENTORY_READ, Permission.PROJECTS_READ),
 ):
     """All saved label templates, in natural name order."""
     result = await db.execute(select(LabelTemplate))

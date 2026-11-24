@@ -33,6 +33,13 @@ vi.mock('../../api/client', () => ({
     updateSpool: vi.fn().mockResolvedValue({ id: 1 }),
     saveSpoolKProfiles: vi.fn().mockResolvedValue([]),
     getSpoolFilamentPresets: vi.fn().mockResolvedValue([]),
+    // 3D Filament Profiles (#2981): the form loads the spool's link, and
+    // its lookup section asks whether the user is connected.
+    getThreedfpSpoolLink: vi.fn().mockResolvedValue({ filament_id: null }),
+    setThreedfpSpoolLink: vi.fn().mockResolvedValue({ filament_id: null }),
+    threedfpStatus: vi.fn().mockResolvedValue({ connected: false, email: null }),
+    threedfpLookup: vi.fn().mockResolvedValue({ results: [] }),
+    threedfpGetFilament: vi.fn(),
     saveSpoolFilamentPresets: vi.fn().mockResolvedValue([]),
     resolveProfileDefault: vi.fn(),
     saveProfileDefault: vi.fn().mockResolvedValue({ id: 1 }),

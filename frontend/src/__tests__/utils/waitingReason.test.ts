@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { formatWaitingReason, isBusyOnlyWaitingReason } from '../../utils/waitingReason';
+import { formatWaitingReason, isBusyOnlyWaitingReason, isShortFilamentWaitingReason } from '../../utils/waitingReason';
 
 describe('isBusyOnlyWaitingReason', () => {
   it('treats nothing as not-busy rather than busy', () => {
@@ -112,5 +112,30 @@ describe('formatWaitingReason (#3587)', () => {
   it('leaves busy-only and plain strings untouched', () => {
     expect(formatWaitingReason('Busy: P1 | Busy: P2', t)).toBe('Busy: P1 | Busy: P2');
     expect(formatWaitingReason('Waiting for matching printer', t)).toBe('Waiting for matching printer');
+  });
+});
+
+// The scheduler's short-spool wording (#3659): "Print anyway" is offered for these only.
+describe('isShortFilamentWaitingReason', () => {
+  it('reads a short spool on a printer of an any-model job', () => {
+    expect(
+      isShortFilamentWaitingReason('Waiting for filament: P1S right (needs more filament) | Busy: P1S left · priority in 60 h'),
+    ).toBe(true);
+  });
+
+  it("reads a short spool on the job's own printer", () => {
+    expect(isShortFilamentWaitingReason('Waiting for filament: PLA (196 g left, needs 505 g) · has priority')).toBe(true);
+    expect(isShortFilamentWaitingReason('Waiting for filament: PLA (needs 505 g)')).toBe(true);
+  });
+
+  it('does not read a filament that is not loaded at all', () => {
+    expect(isShortFilamentWaitingReason('Waiting for filament: PLA #FFFFFF')).toBe(false);
+    expect(isShortFilamentWaitingReason('Waiting for filament: P1S left (needs PLA (Red))')).toBe(false);
+    expect(isShortFilamentWaitingReason('No matching material/color. Waiting on PLA (Red)')).toBe(false);
+  });
+
+  it('does not read busy-only or empty reasons', () => {
+    expect(isShortFilamentWaitingReason('Busy: P1S left')).toBe(false);
+    expect(isShortFilamentWaitingReason(null)).toBe(false);
   });
 });

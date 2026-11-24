@@ -238,6 +238,9 @@ _APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str | tuple[str, ...]] = {
     # owner" doesn't need a second toggle for Orca. Splitting later requires
     # a new column + migration — easy to add if the trust dimensions diverge.
     Permission.ORCA_CLOUD_AUTH: "can_access_cloud",
+    # 3D Filament Profiles (#2981): the same trust dimension again, a
+    # third-party account the key may use on its owner's behalf.
+    Permission.THREEDFP_AUTH: "can_access_cloud",
 }
 
 # Retained for documentation, drift-detection, and the prior "administrative

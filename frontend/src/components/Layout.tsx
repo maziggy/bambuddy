@@ -37,6 +37,7 @@ import {
   saveSidebarOrder,
   SIDEBAR_LAYOUT_CHANGED_EVENT,
 } from '../utils/sidebarLayout';
+import { ScrollableModalOverlay } from './ScrollableModalOverlay';
 
 
 interface NavItem {
@@ -1153,7 +1154,11 @@ export function Layout() {
       <UnknownSpoolModal
         prompt={unknownSpool.prompt}
         isPending={unknownSpool.isPending}
+        canLink={unknownSpool.canLink}
+        canAdd={unknownSpool.canAdd}
+        adding={unknownSpool.adding}
         onConfirm={unknownSpool.confirm}
+        onLink={unknownSpool.link}
         onCancel={unknownSpool.cancel}
       />
 
@@ -1220,8 +1225,8 @@ export function Layout() {
 
       {/* Change Password Modal */}
       {showChangePasswordModal && (
-        <div
-          className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+        <ScrollableModalOverlay
+          className="bg-black/70"
           onClick={() => {
             setShowChangePasswordModal(false);
             setChangePasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
@@ -1360,7 +1365,7 @@ export function Layout() {
               </div>
             </CardContent>
           </Card>
-        </div>
+        </ScrollableModalOverlay>
       )}
       {/* The panel always mounts here, at the Layout root. It must not move
           into the header alongside its compact-layout trigger: the header is

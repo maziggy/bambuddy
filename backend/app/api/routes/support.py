@@ -727,7 +727,7 @@ async def _fetch_slicer_health(url: str, timeout: float = 2.0) -> dict | None:
     try:
         import httpx
 
-        async with httpx.AsyncClient(timeout=timeout, verify=False) as client:  # nosec B501 — local sidecars often use self-signed; this is a reachability/health probe only, no secrets are sent
+        async with httpx.AsyncClient(timeout=timeout, verify=False) as client:  # nosec B501  # local sidecars often use self-signed; this is a reachability/health probe only, no secrets are sent
             r = await client.get(health_url, follow_redirects=False)
             if r.status_code != 200:
                 return {"reachable": True, "version": None}
@@ -1415,7 +1415,7 @@ def _redact_raw_push_status(raw: dict) -> dict:
         info_list = net.get("info")
         if isinstance(info_list, list):
             net["info"] = [
-                ({**entry, "ip": "0.0.0.0"} if isinstance(entry, dict) and "ip" in entry else entry)  # nosec B104 - redaction sentinel, not a bind address
+                ({**entry, "ip": "0.0.0.0"} if isinstance(entry, dict) and "ip" in entry else entry)  # nosec B104  # redaction sentinel, not a bind address
                 for entry in info_list
             ]
 

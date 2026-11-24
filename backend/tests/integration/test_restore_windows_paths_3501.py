@@ -18,7 +18,7 @@ async def _restore(async_client, monkeypatch, tmp_path, convert):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setattr(app_settings, "base_dir", tmp_path)
     monkeypatch.setattr(app_settings, "database_url", f"sqlite+aiosqlite:///{db_path}")
-    zip_path, _ = await create_backup_zip(output_path=tmp_path)
+    zip_path, *_ = await create_backup_zip(output_path=tmp_path)
 
     with (
         patch("backend.app.core.database.close_all_connections", new_callable=AsyncMock),

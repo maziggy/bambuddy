@@ -114,13 +114,23 @@ class TestPlateClear:
 class TestFinishedJobName:
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_the_printers_own_subtask_name_comes_first(self, db_session):
-        state = SimpleNamespace(subtask_name=" Coaster_4x ")
-        assert await PrinterManager()._finished_job_name(db_session, 1, state) == "Coaster_4x"
+    async def test_the_archive_names_it_even_when_the_printer_reports_another_subtask(
+        self, db_session, printer_factory
+    ):
+        printer = await printer_factory()
+        name = "Blanket_Coaster_4x_p1s.gcode.3mf"
+        db_session.add(PrintArchive(printer_id=printer.id, filename=name, file_path=f"a/{name}", file_size=1))
+        await db_session.commit()
+        state = SimpleNamespace(subtask_name="Blanket_Coaster_4x.P1s_gcode")
+
+        found = await PrinterManager()._finished_job_name(db_session, printer.id, state)
+
+        assert found == name
+        assert NotificationService()._clean_filename(found) == "Blanket_Coaster_4x_p1s"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_without_one_the_newest_archive_of_the_printer(self, db_session, printer_factory):
+    async def test_the_newest_archive_of_the_printer(self, db_session, printer_factory):
         printer = await printer_factory()
         other = await printer_factory()
         for printer_id, name in ((printer.id, "old.gcode.3mf"), (printer.id, "newest.gcode.3mf"), (other.id, "x.3mf")):
@@ -132,6 +142,40 @@ class TestFinishedJobName:
         assert await manager._finished_job_name(db_session, printer.id, SimpleNamespace(subtask_name="")) == (
             "newest.gcode.3mf"
         )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_without_an_archive_the_queue_item_that_ran_there(self, db_session, printer_factory):
+        from datetime import datetime
+
+        from backend.app.models.library import LibraryFile
+        from backend.app.models.print_queue import PrintQueueItem
+
+        printer = await printer_factory()
+        lib = LibraryFile(filename="Lamp_5x.gcode.3mf", file_path="l/Lamp_5x.gcode.3mf", file_type="3mf", file_size=1)
+        db_session.add(lib)
+        await db_session.commit()
+        db_session.add(
+            PrintQueueItem(
+                printer_id=printer.id, library_file_id=lib.id, status="completed", completed_at=datetime.now()
+            )
+        )
+        await db_session.commit()
+
+        found = await PrinterManager()._finished_job_name(
+            db_session, printer.id, SimpleNamespace(subtask_name="Lamp_5x.P1s_gcode")
+        )
+
+        assert found == "Lamp_5x.gcode.3mf"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_without_archive_or_queue_item_the_printers_own_subtask_name(self, db_session, printer_factory):
+        printer = await printer_factory()
+        state = SimpleNamespace(subtask_name=" Coaster_4x.gcode ")
+        found = await PrinterManager()._finished_job_name(db_session, printer.id, state)
+        assert found == "Coaster_4x.gcode"
+        assert NotificationService()._clean_filename(found) == "Coaster_4x"
 
     @pytest.mark.asyncio
     @pytest.mark.integration

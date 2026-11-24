@@ -609,13 +609,12 @@ class PrinterManager:
     async def _finished_job_name(self, db: AsyncSession, printer_id: int, state: PrinterState | None) -> str | None:
         """The job that just ended on a printer, for the plate-clear notification (#3641).
 
-        What the printer reports as the print it is finishing; without one, the
-        printer's newest archive. Left for the notification to tidy (extension,
-        folder). None when neither is known.
+        Named as Bambuddy has it, the way the queue and the other notifications
+        do: the printer's newest archive, else the queue item that last ran
+        there. Only without either, the printer's own subtask name, which can
+        differ (a ``.P1s_gcode`` suffix, underscores). Left for the notification
+        to tidy (extension, folder). None when nothing is known.
         """
-        subtask = getattr(state, "subtask_name", None)
-        if isinstance(subtask, str) and subtask.strip():
-            return subtask.strip()
         try:
             filename = await db.scalar(
                 select(PrintArchive.filename)
@@ -623,10 +622,26 @@ class PrinterManager:
                 .order_by(PrintArchive.id.desc())
                 .limit(1)
             )
+            if isinstance(filename, str) and filename.strip():
+                return filename
+            from backend.app.models.library import LibraryFile
+            from backend.app.models.print_queue import PrintQueueItem
+
+            filename = await db.scalar(
+                select(LibraryFile.filename)
+                .join(PrintQueueItem, PrintQueueItem.library_file_id == LibraryFile.id)
+                .where(PrintQueueItem.printer_id == printer_id, PrintQueueItem.completed_at.isnot(None))
+                .order_by(PrintQueueItem.completed_at.desc(), PrintQueueItem.id.desc())
+                .limit(1)
+            )
+            if isinstance(filename, str) and filename.strip():
+                return filename
         except Exception as e:
-            logger.debug("Could not look up the last archive of printer %d: %s", printer_id, e)
-            return None
-        return filename if isinstance(filename, str) and filename.strip() else None
+            logger.debug("Could not look up the last job of printer %d: %s", printer_id, e)
+        subtask = getattr(state, "subtask_name", None)
+        if isinstance(subtask, str) and subtask.strip():
+            return subtask.strip()
+        return None
 
     async def _printer_info_from_db(self, printer_id: int) -> PrinterInfo | None:
         """Name and serial for a printer with no registered client."""

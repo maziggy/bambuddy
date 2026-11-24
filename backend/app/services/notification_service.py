@@ -2367,7 +2367,7 @@ class NotificationService:
         free. Off by default on every provider: it lands at the same moment as the
         print-complete notification, so opting in is a deliberate choice.
 
-        ``job_name`` is the print that ended, as the printer or the archive names it;
+        ``job_name`` is the print that ended, as its archive or queue item names it;
         shown without extension or folder, otherwise as it is (#3641).
         """
         providers = await self._get_providers_for_event(db, "on_plate_clear_required", printer_id)

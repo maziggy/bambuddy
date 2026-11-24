@@ -418,6 +418,19 @@ class PrintQueueBulkUpdateResponse(BaseModel):
     message: str
 
 
+class PrintQueueDuplicateRequest(BaseModel):
+    """Queue another copy of each of these jobs (#3441)."""
+
+    item_ids: list[int] = Field(min_length=1, max_length=500)
+
+
+class PrintQueueDuplicateResponse(BaseModel):
+    """The copies made, in the order of the request, and how many jobs got none."""
+
+    created_ids: list[int]
+    skipped_count: int
+
+
 class PrintBatchPlateTarget(BaseModel):
     """How many runs of one plate an order wants (#342).
 

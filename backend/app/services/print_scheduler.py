@@ -765,6 +765,19 @@ def _is_tray_id(value: object) -> bool:
 # a staged item (#3074); this one is the reason it was staged, so it stays.
 _UNMATCHED_HOLD_PREFIX = "Needs "
 
+
+def held_by_scheduler(item: PrintQueueItem) -> bool:
+    """Whether the scheduler, not the user, staged *item* for a manual start.
+
+    Two gates do: the filament deficit (#1496, ``filament_short``) and the
+    unmatched-filament hold (#2799, its waiting_reason). A copy of such a job
+    is a new job that the same gates check on its own; carrying the
+    ``manual_start`` over without the hold's marker would stage it as though
+    the user had, for good (#3137).
+    """
+    return bool(item.filament_short) or _is_unmatched_hold_reason(item.waiting_reason)
+
+
 # "Loaded filament first" (#3587): the reason a job skipped for filament shows,
 # and the suffix that says when it gets priority. Wire format, parsed by the
 # queue page (frontend/src/utils/waitingReason.ts) - change both together.
@@ -5456,6 +5469,60 @@ class PrintScheduler:
                 return None
         missing = _unresolved_required(required, mapping)
         return [_describe_filament(req, "nozzle_id") for req in missing] or None
+
+    async def model_job_filament_deficit(self, db: AsyncSession, item: PrintQueueItem) -> list[dict]:
+        """The short spools of an "any model" job waiting for filament, per printer (#3659).
+
+        With Loaded filament first on (#3587) such a job is not staged, so Start
+        never reached the deficit check, and the check itself needs a printer.
+        This asks it on every printer of the model the job's creator may use
+        and that has its filament types loaded, with the mapping the job would
+        get there, the way the matcher does (``_filament_short_on``). Each entry
+        is a ``FilamentDeficit`` dict plus ``printer_name``.
+
+        Empty unless the job's reason says a printer is short: a job that
+        lacks a filament altogether, or one waiting only for a busy printer,
+        is not something "Print Anyway" should release. Empty for a
+        cross-model job too: its candidates' files would have to be folded
+        onto the row to be checked (``_resolve_variant``), which a request
+        must not do. Changes nothing.
+        """
+        if (
+            item.skip_filament_check
+            or item.printer_id is not None
+            or not item.target_model
+            or item.variants
+            or f"(needs {_SHORT_FILAMENT_NEED})" not in (item.waiting_reason or "")
+        ):
+            return []
+        from backend.app.core.auth import is_auth_enabled
+
+        scope = (
+            await resolve_user_id_printer_scope(db, item.created_by_id)
+            if item.created_by_id is not None and await is_auth_enabled(db)
+            else ALL_PRINTERS
+        )
+        candidates = _candidates_for(item)
+        if not candidates:
+            return []
+        required_types, _overrides = _filament_constraints(candidates[0])
+        # Called from a request, as missing_filament_for_start.
+        self._filament_req_memo.clear()
+        self._filament_scope_memo.clear()
+        result: list[dict] = []
+        for printer in await self._printers_for_model(db, item.target_model, item.target_location, scope):
+            if required_types and self._get_missing_filament_types(printer.id, required_types):
+                continue
+            try:
+                mapping = await self._compute_ams_mapping_for_printer(db, printer.id, item)
+                if not mapping:
+                    continue
+                deficit = await compute_deficit_for_queue_item(db, item, printer_id=printer.id, ams_mapping=mapping)
+            except Exception as e:
+                logger.warning("Filament deficit check failed for item %s on printer %s: %s", item.id, printer.id, e)
+                continue
+            result.extend({**d.to_dict(), "printer_name": printer.name} for d in deficit)
+        return result
 
     async def _stored_mapping_conflict(
         self,

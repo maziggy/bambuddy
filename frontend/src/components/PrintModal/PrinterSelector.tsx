@@ -77,16 +77,19 @@ function InlineMappingEditor({
     if (slotId <= 0) return;
 
     const newMappings = { ...printerResult.config.manualMappings };
+    const picked = (printerResult.config.pickedSlots ?? []).filter((id) => id !== slotId);
     if (value === '') {
       delete newMappings[slotId];
     } else {
       newMappings[slotId] = parseInt(value, 10);
+      picked.push(slotId);
     }
 
     onUpdateConfig({
       useDefault: false,
       manualMappings: newMappings,
       autoConfigured: false,
+      pickedSlots: picked,
     });
   };
 
@@ -384,6 +387,7 @@ export function PrinterSelector({
         useDefault: true,
         manualMappings: {},
         autoConfigured: false,
+        pickedSlots: [],
       });
     }
   };

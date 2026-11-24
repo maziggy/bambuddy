@@ -3,7 +3,9 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 
 export default defineConfig({
-  plugins: [react()],
+  // Locale files are plain string tables (no JSX) and some exceed Babel's
+  // 500 KB pretty-print limit, which printed a "[BABEL] Note" per file.
+  plugins: [react({ exclude: [/\/node_modules\//, /\/i18n\/locales\//] })],
   test: {
     globals: true,
     environment: 'jsdom',

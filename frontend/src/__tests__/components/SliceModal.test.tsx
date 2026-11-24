@@ -98,8 +98,11 @@ function renderWithTracker(props: Parameters<typeof SliceModal>[0]) {
 // pipelines landed assume selects[0] = printer; this helper drops the
 // pipeline combobox so those indices stay stable.
 function presetSelects(): HTMLSelectElement[] {
+  // The pipeline picker and the nozzle flow (#3136) are not preset dropdowns.
   return (screen.getAllByRole('combobox') as HTMLSelectElement[]).filter(
-    (el) => el.getAttribute('aria-label') !== 'Apply pipeline',
+    (el) =>
+      el.getAttribute('aria-label') !== 'Apply pipeline' &&
+      !(el.getAttribute('aria-label') ?? '').startsWith('Nozzle flow'),
   );
 }
 

@@ -1104,4 +1104,42 @@ describe('Layout', () => {
       });
     });
   });
+
+  // #3664: on a short screen the dialog scrolls inside its backdrop, so its
+  // buttons stay reachable with the keyboard open.
+  describe('Change Password from the account menu', () => {
+    let priorToken: string | null = null;
+
+    afterEach(() => {
+      setAuthToken(priorToken, 'session');
+      priorToken = null;
+    });
+
+    it('scrolls inside its backdrop', async () => {
+      server.use(
+        http.get('/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({
+            id: 2,
+            username: 'operator',
+            role: 'user',
+            is_active: true,
+            is_admin: false,
+            groups: [],
+            permissions: [],
+            created_at: '2026-01-01T00:00:00Z',
+          }),
+        ),
+      );
+      priorToken = getAuthToken();
+      setAuthToken('test-token', 'session');
+
+      render(<Layout />);
+      fireEvent.click((await screen.findAllByRole('button', { name: 'Account' }))[0]);
+      fireEvent.click(await screen.findByRole('button', { name: 'Change Password' }));
+
+      const current = await screen.findByPlaceholderText('Enter current password');
+      expect(current.closest('.overflow-y-auto.overscroll-contain')).not.toBeNull();
+    });
+  });
 });

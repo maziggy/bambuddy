@@ -37,3 +37,20 @@ CVE-2026-6192
 # gzip and zlib modules, Pillow and ffmpeg all go through deflate/inflate.
 # Remove this line once Debian ships the fix.
 CVE-2026-76844
+
+# setuptools 70.3.0 (HIGH path traversal in PackageIndex; MEDIUM sdist
+# MANIFEST.in bypass). Not setuptools itself: the image has none. Trivy
+# reads pip/_vendor/vendor.txt, because pip bundles setuptools'
+# pkg_resources module; neither package_index nor the sdist command is
+# part of what pip bundles. Remove once pip bundles setuptools >= 83.
+CVE-2025-47273
+CVE-2026-59890
+
+# golang.org/x/net/html in the tailscale and tailscaled binaries (HIGH DoS
+# and MEDIUM XSS via crafted HTML). Tailscale 1.104.7, the newest release,
+# is still built with x/net 0.60.0 (fixed in 0.62.0). Not reachable:
+# Bambuddy only runs `tailscale status` / `tailscale cert` against the
+# host's socket, which parses no HTML. Remove once Tailscale ships
+# x/net >= 0.62.0.
+CVE-2026-78661
+CVE-2026-97045

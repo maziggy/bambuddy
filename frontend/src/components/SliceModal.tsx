@@ -47,6 +47,13 @@ import {
   printerProfileModel,
   printersOfModel,
 } from '../utils/sliceLoadedSpools';
+import {
+  defaultNozzleFlows,
+  extruderCount,
+  hasNozzleFlowChoice,
+  profileNozzleDiameter,
+  type NozzleFlowName,
+} from '../utils/sliceNozzleFlow';
 
 // The Slice dialog's two filters (#3172), remembered per browser. Off unless
 // the user turned them on.
@@ -581,6 +588,36 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
     () => printersOfModel(loadedPrinters, printerProfileModel(selectedPrinterName, printerModels, printerParents)),
     [loadedPrinters, selectedPrinterName, printerModels, printerParents],
   );
+  // Nozzle flow (#3136): sliced with profiles, the slicer cuts for a Standard
+  // nozzle unless told otherwise, and a High Flow printer then warns that the
+  // file does not match it. The default is read from the first online printer
+  // of the model, by name, that reports its nozzles' flow at the profile's
+  // nozzle size.
+  const profileModel = useMemo(
+    () => printerProfileModel(selectedPrinterName, printerModels, printerParents),
+    [selectedPrinterName, printerModels, printerParents],
+  );
+  const profileDiameter = useMemo(() => {
+    if (!selectedPrinterName) return null;
+    const parent = Object.hasOwn(printerParents, selectedPrinterName) ? printerParents[selectedPrinterName] : null;
+    return profileNozzleDiameter(selectedPrinterName) ?? profileNozzleDiameter(parent);
+  }, [selectedPrinterName, printerParents]);
+  const nozzleExtruders = extruderCount(profileModel);
+  const showNozzleFlow = hasNozzleFlowChoice(profileModel) && !useEmbedded;
+  const flowFromPrinter = useMemo(
+    () => defaultNozzleFlows(spoolPrinters, profileModel, profileDiameter),
+    [spoolPrinters, profileModel, profileDiameter],
+  );
+  // The user's own pick; kept while it fits the profile's extruder count.
+  const [chosenNozzleFlows, setChosenNozzleFlows] = useState<NozzleFlowName[] | null>(null);
+  const chosenFits = chosenNozzleFlows != null && chosenNozzleFlows.length === nozzleExtruders;
+  const nozzleFlows: NozzleFlowName[] = chosenFits
+    ? chosenNozzleFlows
+    : (flowFromPrinter?.flows ?? Array<NozzleFlowName>(nozzleExtruders).fill('Standard'));
+  // Sent when the user picked it or a printer said it. Otherwise the backend
+  // reads it from the printers the caller may use, which this dialog may not
+  // see without printers:read, and slices for Standard when none says.
+  const sendNozzleFlows = showNozzleFlow && (chosenFits || flowFromPrinter != null);
   const filamentNameIndex = useMemo(
     () => (presetsQuery.data ? buildFilamentNameIndex(presetsQuery.data) : new Map()),
     [presetsQuery.data],
@@ -905,6 +942,7 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
       // them keeps the request identical to what older clients send.
       ...(autoOrient ? { auto_orient: true } : {}),
       ...(autoArrange ? { auto_arrange: true } : {}),
+      ...(sendNozzleFlows ? { nozzle_volume_type: nozzleFlows } : {}),
     };
   }
 
@@ -1239,6 +1277,45 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
                     </span>
                   </span>
                 </label>
+              )}
+              {showNozzleFlow && (
+                <div className="block" data-testid="slice-nozzle-flow">
+                  <div className="text-xs text-bambu-gray mb-1">{t('slice.nozzleFlow.label')}</div>
+                  <div className="flex flex-wrap gap-2">
+                    {nozzleFlows.map((flow, i) => (
+                      <label key={i} className="flex flex-1 min-w-[10rem] items-center gap-2 text-sm text-bambu-gray">
+                        {nozzleExtruders === 2 && (
+                          <span className="shrink-0">{i === 0 ? t('slice.nozzleFlow.left') : t('slice.nozzleFlow.right')}</span>
+                        )}
+                        <select
+                          value={flow}
+                          aria-label={
+                            nozzleExtruders === 2
+                              ? `${t('slice.nozzleFlow.label')}: ${i === 0 ? t('slice.nozzleFlow.left') : t('slice.nozzleFlow.right')}`
+                              : t('slice.nozzleFlow.label')
+                          }
+                          onChange={(e) => {
+                            const next = [...nozzleFlows];
+                            next[i] = e.target.value as NozzleFlowName;
+                            setChosenNozzleFlows(next);
+                          }}
+                          disabled={isEnqueuing}
+                          className="w-full px-3 py-2 rounded-md bg-bambu-dark border border-bambu-dark-tertiary text-white text-sm focus:outline-none focus:border-bambu-gray disabled:opacity-50"
+                        >
+                          <option value="Standard">{t('slice.nozzleFlow.standard')}</option>
+                          <option value="High Flow">{t('slice.nozzleFlow.highFlow')}</option>
+                        </select>
+                      </label>
+                    ))}
+                  </div>
+                  {!chosenFits && (
+                    <p className="text-xs text-bambu-gray/70 mt-1">
+                      {flowFromPrinter
+                        ? t('slice.nozzleFlow.fromPrinter', { name: flowFromPrinter.printerName })
+                        : t('slice.nozzleFlow.unknown')}
+                    </p>
+                  )}
+                </div>
               )}
               <PresetDropdown
                 label={t('slice.process')}

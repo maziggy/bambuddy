@@ -11,6 +11,7 @@ type Deficit = {
   required_grams: number;
   remaining_grams: number | null;
   filament_type?: string | null;
+  printer_name?: string | null;
 };
 
 // Start a staged queue item with the "Print anyway" confirmations for a
@@ -62,16 +63,18 @@ export function useStartQueueItem(overlayZIndex?: string) {
           message={
             t('queue.filamentShort.confirmIntro') + '\n\n' +
             short.deficit
-              .map((d) =>
-                t('queue.filamentShort.lineItem', {
+              .map((d) => {
+                const line = t('queue.filamentShort.lineItem', {
                   slot: d.slot_id,
                   required: Math.round(d.required_grams),
                   remaining:
                     d.remaining_grams == null
                       ? t('queue.filamentShort.unknown')
                       : Math.round(d.remaining_grams),
-                }),
-              )
+                });
+                // An "any model" job lists each printer of the model (#3659).
+                return d.printer_name ? `${d.printer_name}: ${line}` : line;
+              })
               .join('\n')
           }
           confirmText={t('queue.filamentShort.printAnyway')}

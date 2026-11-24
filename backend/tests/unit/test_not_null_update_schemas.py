@@ -22,6 +22,7 @@ NOT_A_ROW_UPDATE = {
     "AmsLabelBody": "upserts a label, every field required",
     "LabelTemplateIn": "replaces a saved label template as a whole, every field required",
     "LinkTagRequest": "links a tag through its own rules",
+    "ThreeDfpSpoolLinkBody": "null deletes the 3DFP link row (#2981); no column is ever set to null",
     "ShoppingListItemStatusUpdate": "one required field",
     "ExternalLinkReorder": "a list of ids",
     "ExternalLinkBadgeSet": "an app's count for its links, every field required",

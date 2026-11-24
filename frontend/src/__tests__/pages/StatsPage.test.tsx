@@ -365,6 +365,28 @@ describe('StatsPage', () => {
       expectDailyBounds(new Date(2023, 6, 2), new Date(2024, 0, 8));
     });
 
+    function monthLabels() {
+      const calendar = screen.getAllByTitle(/: \d+ prints?$/)[0].closest('.overflow-x-auto') as HTMLElement;
+      const row = calendar.querySelector('.grid') as HTMLElement;
+      return Array.from(row.children).map(label => label.textContent);
+    }
+
+    it('labels only the months of the selected range, not the Sunday before it', async () => {
+      // The first column starts on Sunday 31 December.
+      selectSavedRange('2024-01-01', '2024-01-08');
+      render(<StatsPage />);
+      await screen.findAllByTitle(/: \d+ prints?$/);
+      expect(monthLabels()).toEqual(['Jan']);
+    });
+
+    it('drops the label of a partial first month that shares a column with the next', async () => {
+      // 30 January and 1 February fall in the same week.
+      selectSavedRange('2024-01-30', '2024-03-31');
+      render(<StatsPage />);
+      await screen.findAllByTitle(/: \d+ prints?$/);
+      expect(monthLabels()).toEqual(['Feb', 'Mar']);
+    });
+
     it('shows the rolling six months through today for the default All Time widget', async () => {
       render(<StatsPage />);
       await screen.findAllByTitle(/: \d+ prints?$/);

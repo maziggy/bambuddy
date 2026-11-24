@@ -10,6 +10,8 @@ class ArchivePurgePreviewResponse(BaseModel):
     total_bytes: int
     sample_filenames: list[str]
     older_than_days: int
+    # Favourites past the cutoff, which the purge keeps (#3700).
+    favorites_kept: int = 0
 
 
 class ArchivePurgeRequest(BaseModel):

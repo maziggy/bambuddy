@@ -358,7 +358,7 @@ async def _create_wallet_adjustment(
     if cost_center_id is None:
         # Personal transaction: validate and update user wallet
         new_balance = wallet.balance + amount
-        if new_balance < 0:
+        if amount < 0 and new_balance < 0:
             raise HTTPException(status_code=400, detail="Insufficient balance for withdrawal")
         balance_after = new_balance
     else:
@@ -371,10 +371,10 @@ async def _create_wallet_adjustment(
         )
         current_cc_balance = float(result.scalar() or 0.0)
         new_cc_balance = current_cc_balance + amount
-        if new_cc_balance < 0:
+        if amount < 0 and new_cc_balance < 0:
             raise HTTPException(status_code=400, detail="Insufficient cost center balance for withdrawal")
         balance_after = new_cc_balance
-        if affects_personal_wallet and wallet.balance + amount < 0:
+        if amount < 0 and affects_personal_wallet and wallet.balance + amount < 0:
             raise HTTPException(status_code=400, detail="Insufficient balance for withdrawal")
 
     tx = WalletTransaction(

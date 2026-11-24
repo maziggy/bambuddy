@@ -7493,7 +7493,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  createSpoolFromSlot: (data: { printer_id: number; ams_id: number; tray_id: number }) =>
+  createSpoolFromSlot: (data: { printer_id: number; ams_id: number; tray_id: number; tag_uid?: string; tray_uuid?: string }) =>
     request<InventorySpool>(`/inventory/spools/from-slot`, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -7754,7 +7754,19 @@ export const api = {
     request<{ status: string }>('/inventory/colors/reset', { method: 'POST' }),
   searchColors: (manufacturer?: string, material?: string) =>
     request<ColorCatalogEntry[]>(`/inventory/colors/search?${manufacturer ? `manufacturer=${encodeURIComponent(manufacturer)}` : ''}${manufacturer && material ? '&' : ''}${material ? `material=${encodeURIComponent(material)}` : ''}`),
-  linkTagToSpool: (spoolId: number, data: { tag_uid?: string; tray_uuid?: string; tag_type?: string; data_origin?: string }) =>
+  // move: take the tag from the spool that has it instead of a 409. A slot:
+  // also assign the spool there, as an RFID match does (#3658).
+  linkTagToSpool: (spoolId: number, data: {
+    tag_uid?: string;
+    tray_uuid?: string;
+    tag_type?: string;
+    data_origin?: string;
+    move?: boolean;
+    source_spool_id?: number;
+    printer_id?: number;
+    ams_id?: number;
+    tray_id?: number;
+  }) =>
     request<InventorySpool>(`/inventory/spools/${spoolId}/link-tag`, {
       method: 'PATCH',
       body: JSON.stringify(data),

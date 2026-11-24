@@ -28,6 +28,9 @@ import { normaliseFlow } from '../utils/nozzleFlow';
 import { parseUTCDate, toDateTimeLocalValue } from '../utils/date';
 import { SpoolUsageHistory } from './SpoolUsageHistory';
 import { AssignToAmsModal } from './spoolbuddy/AssignToAmsModal';
+import { useAuth } from '../contexts/AuthContext';
+import { hasRfidTag } from '../utils/rfidTagLink';
+import { LinkTagModal, type LinkTagTarget } from './LinkTagModal';
 import {
   invalidateInventoryLocations,
   invalidateSpoolAndLocationQueries,
@@ -68,6 +71,7 @@ export function SpoolFormModal({
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+  const { hasPermission } = useAuth();
 
   const refreshSpoolQueries = () =>
     invalidateSpoolAndLocationQueries(queryClient, spoolsQueryKey);
@@ -101,8 +105,13 @@ export function SpoolFormModal({
   const [quickAdd, setQuickAdd] = useState(false);
   const [quantity, setQuantity] = useState(1);
   const [showAssignModal, setShowAssignModal] = useState(false);
+  // Giving this spool's tag to the spool it belongs to (#3658).
+  const [moveTarget, setMoveTarget] = useState<LinkTagTarget | null>(null);
 
+  const [movedTag, setMovedTag] = useState(false);
   useEffect(() => {
+    setMoveTarget(null);
+    setMovedTag(false);
     setShowAssignModal(false);
   }, [isOpen, spool?.id]);
 
@@ -442,9 +451,14 @@ export function SpoolFormModal({
     [formData.slicer_filament, filamentOptions],
   );
 
-  // Reset form when modal opens/closes or spool changes
+  const editingKey = useRef<string | null>(null);
+  // A tag move refreshes this spool. Keep edits made in the same open dialog.
   useEffect(() => {
+    if (!isOpen) editingKey.current = null;
     if (isOpen) {
+      const key = mode + "-" + spool?.id;
+      if (editingKey.current === key) return;
+      editingKey.current = key;
       if (spool) {
         // Legacy rows may carry a malformed rgba (e.g. the 7-char 'FFFFFFF'
         // from #1055 before the create/update pattern was enforced). The
@@ -868,7 +882,7 @@ export function SpoolFormModal({
   // the slot assignment lives in the spoolman_slot_assignments table keyed by
   // spoolman_spool_id, not in the legacy spool_assignments table — #1336 was the
   // resulting "Unassign button is always disabled" report.
-  const { data: assignments, isLoading: assignmentsLoading } = useQuery({
+  const { data: assignments, isLoading: assignmentsLoading, isSuccess: assignmentsReady } = useQuery({
     queryKey: ['spool-assignments'],
     queryFn: () => api.getAssignments(),
     enabled: isOpen && isEditing && !spoolmanMode,
@@ -878,12 +892,13 @@ export function SpoolFormModal({
     queryFn: () => api.getSpoolmanSlotAssignments(),
     enabled: isOpen && isEditing && spoolmanMode,
   });
+  const heldSlots = assignments?.filter(a => a.spool_id === spool?.id) ?? [];
   const spoolAssignment = (() => {
     if (!spool) return undefined;
     if (spoolmanMode) {
       return spoolmanSlotAssignments?.find(a => a.spoolman_spool_id === spool.id);
     }
-    return assignments?.find(a => a.spool_id === spool.id);
+    return heldSlots[0];
   })();
   const assignmentLoading = spoolmanMode ? spoolmanAssignmentsLoading : assignmentsLoading;
 
@@ -1102,11 +1117,11 @@ export function SpoolFormModal({
       // The nested AMS assignment dialog owns Escape while it is open. Both
       // listeners live on document, so propagation control in the child would
       // not prevent this editor handler from running for the same key press.
-      if (e.key === 'Escape' && !showAssignModal) onClose();
+      if (e.key === 'Escape' && !showAssignModal && !moveTarget) onClose();
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose, showAssignModal]);
+  }, [isOpen, onClose, showAssignModal, moveTarget]);
 
   if (!isOpen) return null;
 
@@ -1439,9 +1454,9 @@ export function SpoolFormModal({
         </div>
 
         {/* Footer */}
-        <div className="flex gap-2 p-4 border-t border-bambu-dark-tertiary flex-shrink-0">
+        <div className="flex flex-wrap gap-2 p-4 border-t border-bambu-dark-tertiary flex-shrink-0">
           {isEditing && (
-            <div className="flex gap-2 mr-auto">
+            <div className="flex flex-wrap gap-2 mr-auto">
               {/* Either identifier counts as "tagged". A Bambu Lab spool is
                   linked by its 32-char tray UUID and carries no tag_uid at all
                   -- in Spoolman mode that is every Bambu spool, because
@@ -1452,11 +1467,19 @@ export function SpoolFormModal({
               <Button
                 variant="secondary"
                 onClick={() => deleteTagMutation.mutate()}
-                disabled={isPending || !(spool?.tag_uid || spool?.tray_uuid)}
+                disabled={isPending || movedTag || !(spool?.tag_uid || spool?.tray_uuid)}
               >
                 <Tag className="w-4 h-4" />
                 {t('inventory.clearRfid', 'Clear RFID Tag')}
               </Button>
+              {!spoolmanMode && settingsForForm?.spoolman_enabled === false && !movedTag && hasRfidTag(spool) &&
+                hasPermission('inventory:read') && hasPermission('inventory:update') && hasPermission('inventory:view_assignments') && (
+                <Button variant="secondary" onClick={() => setMoveTarget({ holder: spool, assignments: heldSlots })}
+                  disabled={isPending || !assignmentsReady}>
+                  <Tag className="w-4 h-4" />
+                  {t('inventory.rfidLink.moveTagEllipsis')}
+                </Button>
+              )}
               {spoolAssignment ? (
                 <Button
                   variant="secondary"
@@ -1510,6 +1533,13 @@ export function SpoolFormModal({
         printerId={null}
         variant="dialog"
         spoolmanMode={spoolmanMode}
+      />
+    )}
+    {moveTarget && !spoolmanMode && (
+      <LinkTagModal
+        target={moveTarget}
+        onClose={() => setMoveTarget(null)}
+        onLinked={() => setMovedTag(true)}
       />
     )}
     </>

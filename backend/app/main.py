@@ -745,8 +745,15 @@ async def _broadcast_unknown_tag(
     tray_color: str | None = None,
     tray_sub_brands: str | None = None,
     tray_count: int | None = None,
+    candidate_spool_ids: list[int] | None = None,
+    tray_info_idx: str | None = None,
 ) -> None:
-    """Broadcast unknown_tag, deduped so repeated MQTT pushes for the same slot+tag don't spam the UI."""
+    """Broadcast unknown_tag, deduped so repeated MQTT pushes for the same slot+tag don't spam the UI.
+
+    ``candidate_spool_ids`` lists the untagged spools that match the tag when
+    the matcher would not choose between them (#3658), so the prompt can ask
+    which one it is.
+    """
     _logger = logging.getLogger(__name__)
     slot_key = (ams_id, tray_id)
     tag_key = (tag_uid or "", tray_uuid or "")
@@ -784,6 +791,8 @@ async def _broadcast_unknown_tag(
             "tray_color": tray_color,
             "tray_sub_brands": tray_sub_brands,
             "tray_count": tray_count,
+            "candidate_spool_ids": candidate_spool_ids or [],
+            "tray_info_idx": tray_info_idx,
         }
     )
     per_printer[slot_key] = tag_key
@@ -3502,12 +3511,13 @@ async def on_ams_change(printer_id: int, ams_data: list):
             from backend.app.services.spool_tag_matcher import (
                 auto_assign_spool,
                 create_spool_from_tray,
-                find_matching_untagged_spool,
+                find_untagged_candidates,
                 get_spool_by_tag,
                 is_bambu_tag,
                 is_valid_tag,
                 link_tag_to_inventory_spool,
                 tag_belongs_to_archived_spool,
+                untagged_match_is_ambiguous,
             )
 
             _spoolman_on = await get_setting(db, "spoolman_enabled")
@@ -3607,7 +3617,27 @@ async def on_ams_change(printer_id: int, ams_data: list):
                                 continue
                             if not spool:
                                 # Try matching an untagged inventory spool (same material/color)
-                                spool = await find_matching_untagged_spool(db, tray)
+                                candidates = await find_untagged_candidates(db, tray)
+                                if untagged_match_is_ambiguous(candidates):
+                                    # Several spools match and they differ: only the
+                                    # user knows which one is in the slot. Ask, whatever
+                                    # the auto-add setting says, and leave the slot
+                                    # unassigned until they answer (#3658).
+                                    await _broadcast_unknown_tag(
+                                        printer_id=printer_id,
+                                        ams_id=ams_id,
+                                        tray_id=tray_id,
+                                        tag_uid=tag_uid,
+                                        tray_uuid=tray_uuid,
+                                        tray_type=tray.get("tray_type"),
+                                        tray_color=tray.get("tray_color"),
+                                        tray_sub_brands=tray.get("tray_sub_brands"),
+                                        tray_info_idx=tray_info_idx,
+                                        tray_count=len(ams_unit.get("tray", [])),
+                                        candidate_spool_ids=[s.id for s in candidates],
+                                    )
+                                    continue
+                                spool = candidates[0] if candidates else None
                                 if spool:
                                     await link_tag_to_inventory_spool(db, spool, tray)
                                 elif _auto_add_unknown:
@@ -3624,6 +3654,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
                                         tray_type=tray.get("tray_type"),
                                         tray_color=tray.get("tray_color"),
                                         tray_sub_brands=tray.get("tray_sub_brands"),
+                                        tray_info_idx=tray_info_idx,
                                         tray_count=len(ams_unit.get("tray", [])),
                                     )
                                     continue
@@ -3673,6 +3704,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
                                 tray_type=tray.get("tray_type"),
                                 tray_color=tray.get("tray_color"),
                                 tray_sub_brands=tray.get("tray_sub_brands"),
+                                tray_info_idx=tray_info_idx,
                                 tray_count=len(ams_unit.get("tray", [])),
                             )
                         # No-tag slots (generic non-RFID filament) are left alone:

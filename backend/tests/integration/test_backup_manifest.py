@@ -297,3 +297,43 @@ async def test_a_restore_stops_the_virtual_printers(async_client, monkeypatch, t
     assert response.status_code == 200, response.text
     stop_all.assert_awaited_once()
     configure.assert_not_awaited()
+
+
+def test_a_link_in_a_captured_folder_is_removed_not_followed(tmp_path):
+    """A symlink to a folder in the destination is unlinked; rmtree refuses
+    one, which left it behind, and what it points to is not touched."""
+    from backend.app.api.routes.settings import _restore_data_dirs
+
+    staged = tmp_path / "staged"
+    (staged / "icons").mkdir(parents=True)
+    (staged / "icons" / "a.png").write_bytes(b"backup")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "keep.txt").write_text("not part of the data")
+    dest = tmp_path / "icons"
+    dest.mkdir()
+    (dest / "link").symlink_to(outside, target_is_directory=True)
+
+    skipped = _restore_data_dirs([("icons", dest)], staged, ["icons"])
+
+    assert skipped == []
+    assert sorted(p.name for p in dest.iterdir()) == ["a.png"]
+    assert (outside / "keep.txt").read_text() == "not part of the data"
+
+
+def test_a_file_that_cannot_be_deleted_is_reported(tmp_path):
+    """The backup's files still go in, but the restore must not claim the
+    folder now matches the backup."""
+    from backend.app.api.routes.settings import _restore_data_dirs
+
+    staged = tmp_path / "staged"
+    (staged / "icons").mkdir(parents=True)
+    (staged / "icons" / "a.png").write_bytes(b"backup")
+    dest = tmp_path / "icons"
+    (dest / "stuck").mkdir(parents=True)
+
+    with patch("backend.app.api.routes.settings.shutil.rmtree", side_effect=OSError("busy")):
+        skipped = _restore_data_dirs([("icons", dest)], staged, ["icons"])
+
+    assert skipped == ["icons"]
+    assert (dest / "a.png").read_bytes() == b"backup"

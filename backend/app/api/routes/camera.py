@@ -2407,8 +2407,8 @@ async def cleanup_orphaned_streams():
                 # that recovers stalled streams, so it can least afford to
                 # block. The /proc scan above retries the kill next pass.
                 await asyncio.wait_for(proc.wait(), timeout=_FFMPEG_KILL_TIMEOUT)
-            except (ProcessLookupError, OSError):
-                pass
+            # TimeoutError first: it is a subclass of OSError, so after the
+            # OSError handler it would never be reached.
             except TimeoutError:
                 logger.error(
                     "ffmpeg (pid=%d) did not exit within %.1fs of SIGKILL; abandoning wait (stream_id=%s)",
@@ -2416,6 +2416,8 @@ async def cleanup_orphaned_streams():
                     _FFMPEG_KILL_TIMEOUT,
                     sid,
                 )
+            except (ProcessLookupError, OSError):
+                pass
             _active_streams.pop(sid, None)
             _disconnect_events.pop(sid, None)
             _stream_last_frame_times.pop(sid, None)

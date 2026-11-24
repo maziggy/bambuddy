@@ -491,26 +491,13 @@ function PrintActivityWidget({
   dateFrom?: string;
   dateTo?: string;
 }) {
-  const spanDays = useMemo(() => {
-    if (dateFrom && dateTo) {
-      return Math.max((new Date(dateTo).getTime() - new Date(dateFrom).getTime()) / 86400000, 0) + 1;
-    }
-    if (dateFrom) {
-      return Math.max((Date.now() - new Date(dateFrom).getTime()) / 86400000, 0) + 1;
-    }
-    return Infinity;
-  }, [dateFrom, dateTo]);
-
-  if (spanDays <= 7 && dateFrom && dateTo) {
+  // Date-only strings parse at UTC midnight, so DST cannot shorten or lengthen the day count.
+  if (dateFrom && dateTo && (Date.parse(dateTo) - Date.parse(dateFrom)) / 86400000 < 7) {
     return <HourlyHeatmap printDates={printDates} dateFrom={dateFrom} dateTo={dateTo} />;
   }
 
-  // Calculate months from the timeframe span, fall back to size-based default for all-time
-  const sizeDefault = size === 1 ? 3 : size === 2 ? 6 : 12;
-  const months = spanDays === Infinity
-    ? sizeDefault
-    : Math.max(1, Math.ceil(spanDays / 30));
-  return <PrintCalendar printDates={printDates} months={months} />;
+  const months = size === 1 ? 3 : size === 2 ? 6 : 12;
+  return <PrintCalendar printDates={printDates} dateFrom={dateFrom} dateTo={dateTo} months={months} />;
 }
 
 function PrinterStatsWidget({

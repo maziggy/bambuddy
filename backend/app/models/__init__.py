@@ -51,6 +51,7 @@ from backend.app.models.spool_k_profile import SpoolKProfile
 from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.models.spoolbuddy_device import SpoolBuddyDevice
 from backend.app.models.supplier import SpoolmanSpoolSupplier, SpoolSupplier, Supplier
+from backend.app.models.threedfp_spool_link import ThreeDfpSpoolLink
 from backend.app.models.user import User
 from backend.app.models.user_email_pref import UserEmailPreference
 from backend.app.models.user_otp_code import UserOTPCode
@@ -118,6 +119,7 @@ __all__ = [
     "Supplier",
     "SpoolSupplier",
     "SpoolmanSpoolSupplier",
+    "ThreeDfpSpoolLink",
     "ColorCatalogEntry",
     "SpoolBuddyDevice",
     "SponsorToastState",

@@ -293,4 +293,33 @@ describe('SettingsPage users & groups wiring', () => {
     expect(within(groupRow('Night shift')).queryAllByRole('button')).toHaveLength(0);
     expect(screen.queryByRole('button', { name: /^disable$/i })).not.toBeInTheDocument();
   });
+
+  // #3664: on a short screen these dialogs scroll inside their backdrop, so
+  // Save / Create stay reachable with the keyboard open.
+  describe('dialogs scroll inside their backdrop (#3664)', () => {
+    const scrollingBackdropOf = (el: Element) => el.closest('.overflow-y-auto.overscroll-contain');
+
+    it('create user', async () => {
+      const user = userEvent.setup();
+      await openUsersTab();
+      await user.click(screen.getByRole('button', { name: /add user/i }));
+      expect(scrollingBackdropOf(screen.getByRole('button', { name: /create user/i }))).not.toBeNull();
+    });
+
+    it('edit user', async () => {
+      const user = userEvent.setup();
+      await openUsersTab();
+      const [editBtn] = within(userRow('alice')).getAllByRole('button');
+      await user.click(editBtn);
+      expect(scrollingBackdropOf(await screen.findByRole('button', { name: /save changes/i }))).not.toBeNull();
+    });
+
+    it('change password', async () => {
+      const user = userEvent.setup();
+      await openUsersTab();
+      await user.click(screen.getByRole('button', { name: /change password/i }));
+      const current = await screen.findByPlaceholderText('Enter current password');
+      expect(scrollingBackdropOf(current)).not.toBeNull();
+    });
+  });
 });

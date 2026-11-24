@@ -44,6 +44,7 @@ from backend.app.models.slot_preset import SlotPresetMapping
 from backend.app.models.user import User
 from backend.app.schemas.slicer import PresetRef
 from backend.app.schemas.slicer_presets import (
+    LoadedSpoolNozzle,
     LoadedSpoolPreset,
     LoadedSpoolPrinter,
     LoadedSpoolsResponse,
@@ -59,6 +60,7 @@ from backend.app.services.bambu_cloud import (
     BambuCloudService,
 )
 from backend.app.services.bambu_cloud_credentials import get_stored_token
+from backend.app.services.nozzle_volume_type import fitted_nozzles
 from backend.app.services.orca_cloud import (
     OrcaCloudAuthError,
     OrcaCloudError,
@@ -882,10 +884,12 @@ async def list_loaded_spools(
     printers = (await db.execute(query)).scalars().all()
 
     connected: list[tuple[Printer, dict]] = []
+    states = {}
     for printer in printers:
         state = printer_manager.get_status(printer.id)
         if state is None or not state.connected:
             continue
+        states[printer.id] = state
         connected.append((printer, state.raw_data or {}))
     if not connected:
         return LoadedSpoolsResponse()
@@ -935,6 +939,10 @@ async def list_loaded_spools(
                 ams=units,
                 external=external,
                 external_holders=len(holders),
+                nozzles=[
+                    LoadedSpoolNozzle(extruder_id=n.extruder_id, diameter=n.diameter, flow=n.flow)
+                    for n in fitted_nozzles(states[printer.id], printer.nozzle_count)
+                ],
             )
         )
     return LoadedSpoolsResponse(printers=out)

@@ -2,12 +2,23 @@
 
 import logging
 import time
+from dataclasses import dataclass
 from enum import Enum, auto
 
 logger = logging.getLogger(__name__)
 
 MISS_THRESHOLD = 3  # Consecutive misses before declaring tag removed
 ERROR_RECOVERY_THRESHOLD = 10  # Consecutive errors before attempting RF reset
+# The most the backend takes as ndef_hex (#3657): an NTAG216's 888 bytes of
+# user memory (its CC reports 872 for the data area)
+MAX_NDEF_AREA = 888
+# NULL TLVs this long with nothing after them: an erased tag, not padding
+NDEF_NULL_RUN = 32
+# Tries per 4-page NDEF read: a plain READ, then reset and re-select (#3657)
+NDEF_READ_ATTEMPTS = 4
+# TLV types of an NTAG data area (NFC Forum Type 2): NULL, Lock Control,
+# Memory Control, NDEF Message, proprietary, Terminator
+_KNOWN_TLVS = frozenset((0x00, 0x01, 0x02, 0x03, 0xFD, 0xFE))
 
 
 class NFCState(Enum):
@@ -26,6 +37,10 @@ class NFCReader:
         self._error_count = 0
         self._poll_count = 0
         self._last_status_log = 0.0
+        # Set once an NDEF read needed a reset to get past its first READ: this
+        # reader then resets before every further READ instead of trying a
+        # plain one first (#3657)
+        self._ndef_reset_first = False
 
         try:
             from .pn5180 import PN5180
@@ -39,12 +54,7 @@ class NFCReader:
 
     def _init_rf(self):
         """Full RF initialization sequence."""
-        self._nfc.reset()
-        self._nfc.load_rf_config(0x00, 0x80)
-        time.sleep(0.010)
-        self._nfc.rf_on()
-        time.sleep(0.030)
-        self._nfc.set_transceive_mode()
+        _rf_init(self._nfc)
 
     def _full_reset(self):
         """Full hardware reset + RF init to recover from stuck state."""
@@ -293,6 +303,41 @@ class NFCReader:
                         tray_uuid = _extract_tray_uuid(blocks)
                         raw_blocks = _raw_blocks(blocks)
 
+                # An NTAG's NDEF message, for the backend to decode OpenTag3D,
+                # OpenSpool and FilaMan tags (#3657). As for a Bambu read, a
+                # reader fault only costs the tag data, never the scan.
+                ndef_hex = None
+                if tag_type == "ntag":
+                    stats = NdefReadStats(reset_first=self._ndef_reset_first)
+                    try:
+                        area = read_ndef_area(self._nfc, uid_bytes, stats)
+                    except Exception as e:
+                        logger.warning("NDEF read failed for %s: %s", uid_hex, e)
+                        area = None
+                    finally:
+                        if stats.reads:
+                            # Some PN5180s answer nothing after an NTAG READ
+                            # until a hardware reset, and the light RF cycle of
+                            # the next poll doesn't clear that: without this the
+                            # tag would read as removed, then found again, and
+                            # a write right after the scan couldn't select it.
+                            try:
+                                self._init_rf()
+                            except Exception as e:
+                                logger.warning("NFC reset after the NDEF read failed: %s", e)
+                    self._ndef_reset_first = stats.reset_first
+                    if area:
+                        ndef_hex = area.hex().upper()
+                    logger.log(
+                        logging.INFO if stats.resets or stats.errors else logging.DEBUG,
+                        "NDEF read of %s: %d bytes, %d READs, %d reader resets, %d errors",
+                        uid_hex,
+                        len(area or b""),
+                        stats.reads,
+                        stats.resets,
+                        stats.errors,
+                    )
+
                 logger.info("Tag detected: %s (SAK=0x%02X, type=%s)", uid_hex, sak, tag_type)
                 return "tag_detected", {
                     "tag_uid": uid_hex,
@@ -300,6 +345,7 @@ class NFCReader:
                     "tag_type": tag_type,
                     "tray_uuid": tray_uuid,
                     "raw_blocks": raw_blocks,
+                    "ndef_hex": ndef_hex,
                 }
 
             # Tag still present — no event
@@ -367,6 +413,149 @@ def choose_ndef(cc_pages: bytes | None, data_v1: bytes, data_v2: bytes) -> tuple
     if cc_pages and len(cc_pages) >= 4 and cc_pages[0] == 0xE1 and len(data_v2) <= cc_pages[2] * 8:
         return data_v2, "v2"
     return data_v1, "v1"
+
+
+@dataclass
+class NdefReadStats:
+    """What one NDEF read cost, and what it learned about the reader (#3657)."""
+
+    reset_first: bool = False  # reset before each READ after the first since a select
+    reads: int = 0
+    resets: int = 0
+    errors: int = 0
+    reads_since_select: int = 0
+    fallbacks_in_a_row: int = 0  # chunks in a row that only came after a reset
+
+
+def read_ndef_area(nfc, uid: bytes, stats: NdefReadStats | None = None) -> bytes | None:
+    """An NTAG's data area from page 4, up to the end of its NDEF message, or None (#3657).
+
+    Reads page 3 first (pages 3-6: the Capability Container and the first 12
+    data bytes), then only as many more pages as the TLVs say the message
+    needs, within the data area the CC reports. A tag without an NDEF CC, or
+    one that isn't the scanned tag any more, gives None. A tag with no
+    message gives the bytes up to its terminator, which the backend reports
+    as blank. Reading stops early, and sends what it has for the backend to
+    judge, when the bytes aren't TLVs, when a TLV claims more than the tag
+    holds, and after a long run of NULL TLVs (an erased tag).
+    """
+    if stats is None:
+        stats = NdefReadStats()
+    card = nfc.reactivate_card()
+    if card is None or card[0] != uid:
+        return None
+    first = _read_ndef_chunk(nfc, uid, 3, stats)
+    if first is None or first[0] != 0xE1:
+        return None
+    capacity = min(first[2] * 8, MAX_NDEF_AREA)
+    data = bytearray(first[4:])
+    while True:
+        end = ndef_area_end(bytes(data))
+        if end is not None and end > capacity:
+            # A TLV longer than the tag: reading on would only fetch the whole
+            # data area for the backend to call the message cut off
+            return bytes(data[:capacity])
+        if end is None and len(data) >= NDEF_NULL_RUN and not any(data):
+            return bytes(data[:capacity])
+        want = capacity if end is None else end
+        if len(data) >= want:
+            return bytes(data[:want])
+        page = 4 + len(data) // 4
+        chunk = _read_ndef_chunk(nfc, uid, page, stats)
+        if chunk is None:
+            # A read that stops early: send what there is, the backend says it's cut off
+            logger.warning("NDEF read stopped at page %d", page)
+            return bytes(data)
+        data.extend(chunk)
+
+
+def _read_ndef_chunk(nfc, uid: bytes, page: int, stats: NdefReadStats) -> bytes | None:
+    """Pages *page* to *page* + 3 of the selected NTAG, or None.
+
+    A plain READ first, as the daemon reads a tag back after writing it.
+    The Read Tag diagnostic found that some PN5180s answer nothing after one
+    NTAG READ until a hardware reset, so a READ that gets no answer, or
+    raises, is retried after a reset and a fresh select of the same tag. Once
+    two chunks in a row have needed that, ``stats.reset_first`` skips the
+    plain READs that would only fail.
+    """
+    for attempt in range(NDEF_READ_ATTEMPTS):
+        try:
+            if (attempt or (stats.reset_first and stats.reads_since_select)) and not _reset_and_reselect(
+                nfc, uid, stats
+            ):
+                continue
+            stats.reads += 1
+            stats.reads_since_select += 1
+            chunk = nfc.ntag_read_pages(start_page=page, num_pages=4, quiet=True)
+        except Exception as e:
+            stats.errors += 1
+            logger.debug("NDEF read of page %d, attempt %d: %s", page, attempt + 1, e)
+            continue
+        if chunk is not None and len(chunk) == 16:
+            # Two chunks in a row that needed a reset is a reader that needs one
+            # after every READ, not a stray error or a bad CRC
+            stats.fallbacks_in_a_row = stats.fallbacks_in_a_row + 1 if attempt else 0
+            if stats.fallbacks_in_a_row >= 2:
+                stats.reset_first = True
+            return chunk
+    return None
+
+
+def _rf_init(nfc) -> None:
+    """Hardware reset, then the reader back to ISO 14443A with the field on."""
+    nfc.reset()
+    nfc.load_rf_config(0x00, 0x80)  # ISO 14443A
+    time.sleep(0.010)
+    nfc.rf_on()
+    time.sleep(0.030)
+    nfc.set_transceive_mode()
+
+
+def _reset_and_reselect(nfc, uid: bytes, stats: NdefReadStats) -> bool:
+    """Reset the reader and select the tag again; False if it isn't *uid*."""
+    stats.resets += 1
+    stats.reads_since_select = 0
+    _rf_init(nfc)
+    card = nfc.activate_type_a()
+    return card is not None and card[0] == uid
+
+
+def ndef_area_end(data: bytes) -> int | None:
+    """Where to stop reading an NTAG data area, or None if *data* is too short to tell.
+
+    The end of the NDEF Message TLV, or just past a terminator that comes
+    before one. Tags written before #3500 carry a copy of the CC at page 4;
+    it is skipped as the backend skips it. At a byte that isn't a TLV type
+    the answer is everything read so far, so the backend sees the bytes and
+    can tell another kind of tag from a blank one.
+    """
+    pos = 4 if len(data) > 4 and data[0] == 0xE1 and data[4] == 0x03 else 0
+    while pos < len(data):
+        tlv_type = data[pos]
+        if tlv_type not in _KNOWN_TLVS:
+            # Not TLVs (a wiped tag reads FF, other tags hold their own data):
+            # no NDEF message to read on to
+            return len(data)
+        if tlv_type == 0x00:  # NULL
+            pos += 1
+            continue
+        if tlv_type == 0xFE:  # Terminator: no message
+            return pos + 1
+        if pos + 2 > len(data):
+            return None
+        length = data[pos + 1]
+        header = 2
+        if length == 0xFF:
+            if pos + 4 > len(data):
+                return None
+            length = (data[pos + 2] << 8) | data[pos + 3]
+            header = 4
+        end = pos + header + length
+        if tlv_type == 0x03:  # NDEF Message
+            return end
+        pos = end  # Lock Control, Memory Control, proprietary
+    return None
 
 
 def _raw_blocks(blocks: dict[int, bytes]) -> dict[str, str]:

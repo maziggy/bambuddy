@@ -133,6 +133,7 @@ async def nfc_poll_loop(config: Config, api: APIClient, shared: dict):
                     sak=event_data.get("sak"),
                     tag_type=event_data.get("tag_type"),
                     raw_blocks=event_data.get("raw_blocks"),
+                    ndef_hex=event_data.get("ndef_hex"),
                 )
             elif event_type == "tag_removed":
                 await api.tag_removed(

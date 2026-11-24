@@ -491,6 +491,55 @@ class TestNfcPollLoopTagScanned:
             sak=0x08,
             tag_type="mifare_classic",
             raw_blocks=raw_blocks,
+            ndef_hex=None,
+        )
+
+    @pytest.mark.asyncio
+    async def test_ndef_hex_reaches_tag_scanned(self):
+        """An NTAG's data area goes to the backend with the scan (#3657)."""
+        events = [
+            (
+                "tag_detected",
+                {
+                    "tag_uid": "04ECE673D32A81",
+                    "sak": 0x00,
+                    "tag_type": "ntag",
+                    "tray_uuid": None,
+                    "raw_blocks": None,
+                    "ndef_hex": "0300",
+                },
+            )
+        ]
+        nfc = MagicMock()
+        nfc.ok = True
+        nfc.poll = lambda: events.pop(0) if events else ("none", None)
+        api = AsyncMock()
+        config = _make_config(nfc_poll_interval=0.0)
+        shared = {"nfc": nfc, "display": MagicMock(), "pending_write": None}
+
+        async def _inline_to_thread(fn, *args, **kwargs):
+            return fn(*args, **kwargs)
+
+        with patch("daemon.main.asyncio.to_thread", _inline_to_thread):
+            task = asyncio.create_task(nfc_poll_loop(config, api, shared))
+            for _ in range(20):
+                await asyncio.sleep(0)
+                if api.tag_scanned.await_count:
+                    break
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        api.tag_scanned.assert_awaited_once_with(
+            device_id="dev-1",
+            tag_uid="04ECE673D32A81",
+            tray_uuid=None,
+            sak=0x00,
+            tag_type="ntag",
+            raw_blocks=None,
+            ndef_hex="0300",
         )
 
 

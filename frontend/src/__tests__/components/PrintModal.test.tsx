@@ -3167,7 +3167,11 @@ describe('PrintModal edit: moving a job to another printer', () => {
     // The dialog adds printers; moving the job is deselecting one, selecting the other.
     await user.click(await screen.findByText('Printer 01'));
     await user.click(screen.getByText('Printer 02'));
-    await user.click(screen.getByRole('button', { name: /save/i }));
+    // Save waits for Printer 02's status (the AMS mapping needs it); a click
+    // before that lands on a disabled button and sends nothing (#3715).
+    const save = screen.getByRole('button', { name: /save/i });
+    await waitFor(() => expect(save).toBeEnabled());
+    await user.click(save);
 
     await waitFor(() => expect(patched).toHaveLength(1));
     expect(patched[0].printer_id).toBe(2);

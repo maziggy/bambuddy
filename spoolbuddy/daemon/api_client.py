@@ -15,6 +15,20 @@ MAX_BUFFER_SIZE = 100
 WRITE_RESULT_PATH = "/nfc/write-result"
 
 
+def _state_key(path: str, data: dict) -> tuple[str, str] | str | None:
+    if path in ("/nfc/tag-scanned", "/nfc/tag-removed"):
+        return "tag", data["device_id"]
+    if path == "/scale/reading":
+        return "scale", data["device_id"]
+    if path.endswith(("/heartbeat", "/calibration/set-tare")):
+        return path  # These routes include the device ID.
+    return None
+
+
+def _is_result(path: str) -> bool:
+    return path.endswith(("/write-result", "/result", "/command-result"))
+
+
 def _says_unregistered(response: httpx.Response) -> bool:
     """The backend's own answer for a device it does not know -- not a bare
     404 from a reverse proxy while Bambuddy is restarting."""
@@ -32,6 +46,8 @@ class APIClient:
         self._backoff = 1.0
         self._max_backoff = 30.0
         self._buffer: deque[dict] = deque(maxlen=MAX_BUFFER_SIZE)
+        # NFC, scale and heartbeat loops can post while a replay is in flight.
+        self._send_lock = asyncio.Lock()
         self._connected = False
         # Set when a heartbeat is refused because the backend no longer knows
         # this device (an admin unregistered it); the heartbeat loop registers
@@ -42,6 +58,24 @@ class APIClient:
         await self._client.aclose()
 
     async def _post(self, path: str, data: dict) -> dict | None:
+        async with self._send_lock:
+            if self._buffer:
+                key = _state_key(path, data)
+                if key is not None:
+                    self._buffer = deque(
+                        (item for item in self._buffer if _state_key(item["path"], item["data"]) != key),
+                        maxlen=MAX_BUFFER_SIZE,
+                    )
+                elif _is_result(path):
+                    # A reboot can follow immediately. Try earlier results first
+                    # so this one can be sent in order before the daemon exits.
+                    for item in list(self._buffer):
+                        if _is_result(item["path"]) and not await self._replay(item):
+                            self._buffer.append({"path": path, "data": data})
+                            return None
+            return await self._send(path, data)
+
+    async def _send(self, path: str, data: dict) -> dict | None:
         try:
             resp = await self._client.post(f"{self._base}{path}", json=data)
             resp.raise_for_status()
@@ -81,20 +115,25 @@ class APIClient:
         """Whether a POST to *path* is still waiting in the buffer to be sent."""
         return any(item["path"] == path for item in self._buffer)
 
+    async def _replay(self, item: dict) -> bool:
+        """Retry one buffered POST under the send lock. Keep it on transient failure."""
+        try:
+            resp = await self._client.post(f"{self._base}{item['path']}", json=item["data"])
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code >= 500:
+                return False
+            # Refused: dropped, so the items behind it still go out.
+        except Exception:
+            return False
+        self._buffer.remove(item)
+        return True
+
     async def _flush_buffer(self):
-        while self._buffer:
-            item = self._buffer[0]
-            try:
-                resp = await self._client.post(f"{self._base}{item['path']}", json=item["data"])
-                resp.raise_for_status()
-                self._buffer.popleft()
-            except httpx.HTTPStatusError as e:
-                if e.response.status_code >= 500:
-                    break
-                # Refused: dropped, so the items behind it still go out.
-                self._buffer.popleft()
-            except Exception:
-                break
+        while True:
+            async with self._send_lock:
+                if not self._buffer or not await self._replay(self._buffer[0]):
+                    return
 
     async def register_device(
         self,

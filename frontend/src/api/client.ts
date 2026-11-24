@@ -1818,6 +1818,59 @@ export interface OrcaDevicePollResponse {
   user_id: string | null;
 }
 
+// 3D Filament Profiles (#2981): device-flow connection, filament lookup and
+// the 3DFP filament a spool is linked to.
+export interface ThreeDfpDeviceStartResponse {
+  user_code: string;
+  verification_uri: string;
+  verification_uri_complete: string;
+  interval: number;
+  expires_in: number;
+}
+
+export type ThreeDfpDevicePollStatus = OrcaDevicePollStatus;
+
+export interface ThreeDfpStatusResponse {
+  connected: boolean;
+  email: string | null;
+}
+
+export interface ThreeDfpAccount {
+  email: string | null;
+  plan: string | null;
+  active_scopes: string[];
+  quota: { limit: number | null; remaining: number | null; resets_at: string | null } | null;
+  upgrade_url: string | null;
+}
+
+export interface ThreeDfpStore {
+  region: string | null;
+  price: number | null;
+  currency: string | null;
+  availability: string | null;
+  updated_at: string | null;
+  url: string;
+}
+
+export interface ThreeDfpFilament {
+  id: number;
+  brand_name: string | null;
+  material: string | null;
+  material_type: string | null;
+  color: string | null;
+  rgb: string | null;
+  bambu_filament_id: string | null;
+  discontinued: boolean;
+  url: string | null;
+  nominal_weight: number | null;
+  spool_weight: number | null;
+  temp_min: number | null;
+  temp_max: number | null;
+  stores: ThreeDfpStore[];
+}
+
+export type ThreeDfpInventory = 'inventory' | 'spoolman';
+
 export interface OrcaAuthStatusResponse {
   connected: boolean;
   email: string | null;
@@ -4854,7 +4907,7 @@ export type Permission =
   | 'system:read'
   | 'settings:read' | 'settings:update' | 'settings:backup' | 'settings:restore'
   | 'github:backup' | 'github:restore'
-  | 'cloud:auth' | 'orca_cloud:auth'
+  | 'cloud:auth' | 'orca_cloud:auth' | 'threedfp:auth'
   | 'makerworld:view' | 'makerworld:import'
   | 'manyfold:view' | 'manyfold:import'
   | 'api_keys:read' | 'api_keys:create' | 'api_keys:update' | 'api_keys:delete'
@@ -6877,6 +6930,23 @@ export const api = {
     request<OrcaProfileListResponse>('/orca-cloud/profiles'),
   orcaCloudGetProfile: (id: string) =>
     request<OrcaProfileDetail>(`/orca-cloud/profiles/${id}`),
+  threedfpDeviceStart: () =>
+    request<ThreeDfpDeviceStartResponse>('/threedfp/device/start', { method: 'POST' }),
+  threedfpDevicePoll: () =>
+    request<{ status: ThreeDfpDevicePollStatus; connected: boolean }>('/threedfp/device/poll', { method: 'POST' }),
+  threedfpStatus: () => request<ThreeDfpStatusResponse>('/threedfp/status'),
+  threedfpAccount: () => request<ThreeDfpAccount>('/threedfp/account'),
+  threedfpDisconnect: () => request<{ success: boolean }>('/threedfp/disconnect', { method: 'POST' }),
+  threedfpLookup: (query: string) =>
+    request<{ results: ThreeDfpFilament[] }>(`/threedfp/lookup?q=${encodeURIComponent(query)}`),
+  threedfpGetFilament: (id: number) => request<ThreeDfpFilament>(`/threedfp/filaments/${id}`),
+  getThreedfpSpoolLink: (inventory: ThreeDfpInventory, spoolId: number) =>
+    request<{ filament_id: number | null }>(`/threedfp/spool-links/${inventory}/${spoolId}`),
+  setThreedfpSpoolLink: (inventory: ThreeDfpInventory, spoolId: number, filamentId: number | null) =>
+    request<{ filament_id: number | null }>(`/threedfp/spool-links/${inventory}/${spoolId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ filament_id: filamentId }),
+    }),
   getCloudSettings: (version = '02.04.00.70') =>
     request<SlicerSettingsResponse>(`/cloud/settings?version=${version}`),
   getBuiltinFilaments: () =>

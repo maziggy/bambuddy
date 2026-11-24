@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, Loader2, Save, Beaker, Palette, Zap, Tag, Link2, Unlink } from 'lucide-react';
 import { api, ApiError } from '../api/client';
-import type { InventorySpool, SlicerSetting, SpoolCatalogEntry, LocalPreset, BuiltinFilament, SpoolmanBulkCreateResult, SpoolFilamentPresetInput, SpoolKProfileInput, SpoolmanFilamentEntry, ResolvedProfileDefault } from '../api/client';
+import type { InventorySpool, SlicerSetting, SpoolCatalogEntry, LocalPreset, BuiltinFilament, SpoolmanBulkCreateResult, SpoolFilamentPresetInput, SpoolKProfileInput, SpoolmanFilamentEntry, ResolvedProfileDefault, ThreeDfpFilament } from '../api/client';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 import type {
@@ -22,6 +22,7 @@ import { ColorSection } from './spool-form/ColorSection';
 import { AdditionalSection } from './spool-form/AdditionalSection';
 import { SupplierSection, type SupplierLinkDraft } from './spool-form/SupplierSection';
 import { SpoolmanFilamentPicker } from './spool-form/SpoolmanFilamentPicker';
+import { ThreeDfpSection } from './spool-form/ThreeDfpSection';
 import { PrinterProfilesSection } from './spool-form/PrinterProfilesSection';
 import { ProfileDefaultOption, type ProfileDefaultScope } from './spool-form/ProfileDefaultOption';
 import { normaliseFlow } from '../utils/nozzleFlow';
@@ -102,6 +103,11 @@ export function SpoolFormModal({
   // sends them, see saveSupplierLinks.
   const [supplierLinks, setSupplierLinks] = useState<SupplierLinkDraft[]>([]);
   const [supplierLinksTouched, setSupplierLinksTouched] = useState(false);
+  // The 3D Filament Profiles filament the spool is linked to (#2981). Loaded
+  // with its own request, saved after the spool like the supplier links.
+  const [threedfpFilamentId, setThreedfpFilamentId] = useState<number | null>(null);
+  const [threedfpTouched, setThreedfpTouched] = useState(false);
+  const threedfpTouchedRef = useRef(false);
   const [quickAdd, setQuickAdd] = useState(false);
   const [quantity, setQuantity] = useState(1);
   const [showAssignModal, setShowAssignModal] = useState(false);
@@ -591,6 +597,27 @@ export function SpoolFormModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, spool?.id, spoolmanMode]);
 
+  // The spool's 3DFP link (#2981). A copy keeps it: it names the product.
+  useEffect(() => {
+    if (!isOpen) return;
+    setThreedfpFilamentId(null);
+    setThreedfpTouched(false);
+    threedfpTouchedRef.current = false;
+    if (!spool) return;
+    let cancelled = false;
+    api
+      .getThreedfpSpoolLink(spoolmanMode ? 'spoolman' : 'inventory', spool.id)
+      .then((link) => {
+        // A lookup made before this answered is the user's choice.
+        if (!cancelled && !threedfpTouchedRef.current) setThreedfpFilamentId(link.filament_id);
+      })
+      .catch((err) => console.error('Failed to load the 3D Filament Profiles link:', err));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, spool?.id, spoolmanMode]);
+
   // A new spool starts from its product's profile default (#1326): fill the
   // Printers tab, and an empty preset field, with what the create will apply,
   // so the user sees it and can change it before saving. Only for a fresh
@@ -740,6 +767,45 @@ export function SpoolFormModal({
     showToast(t('inventory.spoolmanFilamentSelected'), 'success');
   };
 
+  const linkThreedfp = (filamentId: number | null) => {
+    threedfpTouchedRef.current = true;
+    setThreedfpTouched(true);
+    setThreedfpFilamentId(filamentId);
+  };
+
+  // Fill the form from a 3D Filament Profiles filament (#2981) and link the
+  // spool to it. The preset is only filled when empty: for brands other than
+  // Bambu Lab, 3DFP gives the generic preset (GFL99 for PLA), and a preset the
+  // user chose is more specific than that.
+  const applyThreedfp = (filament: ThreeDfpFilament) => {
+    const presetId = filament.bambu_filament_id;
+    const fillPreset = !!presetId && !formData.slicer_filament;
+    if (spoolmanMode && formData.spoolman_filament_id !== null) {
+      showToast(t('inventory.spoolmanFilamentUnlinked'), 'info');
+    }
+    setFormData((prev) => ({
+      ...prev,
+      ...(filament.brand_name ? { brand: filament.brand_name } : {}),
+      ...(filament.material ? { material: filament.material } : {}),
+      subtype: filament.material_type ?? '',
+      ...(filament.color ? { color_name: filament.color } : {}),
+      ...(filament.rgb ? { rgba: `${filament.rgb.slice(1).toUpperCase()}FF`, extra_colors: '', effect_type: '' } : {}),
+      ...(filament.nominal_weight ? { label_weight: Math.round(filament.nominal_weight) } : {}),
+      ...(filament.spool_weight ? { core_weight: Math.round(filament.spool_weight), core_weight_catalog_id: null } : {}),
+      ...(fillPreset ? { slicer_filament: presetId } : {}),
+      // A different product than the Spoolman catalogue entry picked before.
+      ...(spoolmanMode ? { spoolman_filament_id: null } : {}),
+    }));
+    if (filament.spool_weight) setCoreWeightTouched(true);
+    if (fillPreset) {
+      presetFromDefault.current = false;
+      setPresetInputValue(builtinFilaments.find((b) => b.filament_id === presetId)?.name ?? presetId);
+    }
+    setErrors({});
+    linkThreedfp(filament.id);
+    showToast(t('inventory.threedfp.applied'), 'success');
+  };
+
   // Handle color selection
   const handleColorUsed = (color: ColorPreset) => {
     setRecentColors(prev => saveRecentColor(color, prev));
@@ -757,6 +823,7 @@ export function SpoolFormModal({
         if (!ok) return;
         const suppliersOk = await saveSupplierLinks(newSpool.id);
         if (!suppliersOk) return;
+        if (!(await saveThreedfpLink(newSpool.id))) return;
       }
       await saveProfileDefault();
       await refreshSpoolQueries();
@@ -806,6 +873,10 @@ export function SpoolFormModal({
           await saveSupplierLinks(s.id);
         }
       }
+      // Every copy is the same product, so every copy gets the 3DFP link.
+      for (const s of createdSpools) {
+        await saveThreedfpLink(s.id);
+      }
       await saveProfileDefault();
       await refreshSpoolQueries();
       if (onSpoolsCreated) onSpoolsCreated(createdSpools);
@@ -842,6 +913,7 @@ export function SpoolFormModal({
         if (!ok) return;
         const suppliersOk = await saveSupplierLinks(spool.id);
         if (!suppliersOk) return;
+        if (!(await saveThreedfpLink(spool.id))) return;
       }
       await saveProfileDefault();
       await refreshSpoolQueries();
@@ -998,6 +1070,24 @@ export function SpoolFormModal({
     } catch (err) {
       console.error('SpoolFormModal.saveSupplierLinks failed:', err);
       showToast(t('inventory.suppliers.saveFailed'), 'error');
+      return false;
+    }
+  };
+
+  // The 3DFP link (#2981): saved when changed, and on a copy, which carries
+  // the link of the spool it was copied from.
+  const shouldSaveThreedfpLink = threedfpTouched || (isCopying && threedfpFilamentId !== null);
+
+  const saveThreedfpLink = async (spoolId: number): Promise<boolean> => {
+    if (!shouldSaveThreedfpLink) return true;
+    // Nothing to remove on a spool that was just created.
+    if (!isEditing && threedfpFilamentId === null) return true;
+    try {
+      await api.setThreedfpSpoolLink(spoolmanMode ? 'spoolman' : 'inventory', spoolId, threedfpFilamentId);
+      return true;
+    } catch (err) {
+      console.error('SpoolFormModal.saveThreedfpLink failed:', err);
+      showToast(t('inventory.threedfp.linkSaveFailed'), 'error');
       return false;
     }
   };
@@ -1323,6 +1413,12 @@ export function SpoolFormModal({
                   )}
                 </div>
               )}
+
+              <ThreeDfpSection
+                filamentId={threedfpFilamentId}
+                onApply={applyThreedfp}
+                onUnlink={() => linkThreedfp(null)}
+              />
 
               {/* Filament Info Section */}
               <div>

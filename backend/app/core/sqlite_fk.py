@@ -54,6 +54,9 @@ APPLIED: frozenset[tuple[str, str]] = frozenset(
         ("spool_usage_history", "archive_id"),
         # spool
         ("spool_usage_history", "spool_id"),
+        # The next spool given the id would show the deleted one's 3DFP
+        # filament, price and Reorder link (#2981).
+        ("threedfp_spool_links", "spool_id"),
         ("telegram_pending_verdicts", "archive_id"),
         ("wallet_transactions", "print_archive_id"),
         # library_files. print_queue.library_file_id is CASCADE in the model, but

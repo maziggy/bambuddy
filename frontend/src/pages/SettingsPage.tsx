@@ -43,6 +43,7 @@ import { CreateUserAdvancedAuthModal } from '../components/CreateUserAdvancedAut
 import { LdapUserPicker } from '../components/LdapUserPicker';
 import { SpoolmanSettings } from '../components/SpoolmanSettings';
 import { SpoolCatalogSettings } from '../components/SpoolCatalogSettings';
+import { ThreeDfpSettings } from '../components/ThreeDfpSettings';
 import { ColorCatalogSettings } from '../components/ColorCatalogSettings';
 import { ProfileDefaultsSettings } from '../components/ProfileDefaultsSettings';
 import { ExternalLinksSettings } from '../components/ExternalLinksSettings';
@@ -135,6 +136,7 @@ registerSettingsSearch({ labelKey: 'settings.tabs.backup', tab: 'backup', keywor
 registerSettingsSearch({ labelKey: 'externalLinks.sidebarLayout', labelFallback: 'Sidebar', tab: 'general', keywords: 'sidebar layout links pages hide show external custom navigation url add', anchor: 'card-sidebar-links' });
 // Filament tab — integrations
 registerSettingsSearch({ labelKey: 'settings.filamentTracking', tab: 'filament', keywords: 'spoolman filament tracking inventory sync remote integration', anchor: 'card-spoolman' });
+registerSettingsSearch({ labelKey: 'settings.threedfp.title', tab: 'filament', keywords: '3d filament profiles 3dfp barcode lookup price reorder connect account', anchor: 'card-threedfp' });
 registerSettingsSearch({ labelKey: 'settings.catalog.spoolCatalog', labelFallback: 'Spool Catalog', tab: 'filament', keywords: 'spool catalog entries brand material reset import export', anchor: 'card-spool-catalog' });
 registerSettingsSearch({ labelKey: 'settings.colorCatalog.title', labelFallback: 'Color Catalog', tab: 'filament', keywords: 'color catalog hex swatch palette sync reset', anchor: 'card-color-catalog' });
 // Failure detection sub-cards
@@ -6656,6 +6658,7 @@ export function SettingsPage() {
           {/* Left Column (1/3) - Mode Selector + AMS Thresholds */}
           <div className="lg:w-1/3 space-y-3">
             <SpoolmanSettings />
+            <ThreeDfpSettings />
 
             <Card id="card-filamentchecks">
               <CardHeader>

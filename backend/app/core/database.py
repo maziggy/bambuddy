@@ -5384,6 +5384,17 @@ async def _run_migrations(conn):
     else:
         await _safe_execute(conn, "ALTER TABLE users ADD COLUMN IF NOT EXISTS orca_cloud_pending_at TIMESTAMP")
 
+    # Migration: per-user 3D Filament Profiles connection (#2981). Its table of
+    # spool links is new, so create_all() makes it on every database.
+    await _safe_execute(conn, "ALTER TABLE users ADD COLUMN threedfp_token VARCHAR(255)")
+    await _safe_execute(conn, "ALTER TABLE users ADD COLUMN threedfp_email VARCHAR(255)")
+    await _safe_execute(conn, "ALTER TABLE users ADD COLUMN threedfp_pending_device_code VARCHAR(255)")
+    await _safe_execute(conn, "ALTER TABLE users ADD COLUMN threedfp_pending_interval INTEGER")
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE users ADD COLUMN threedfp_pending_at DATETIME")
+    else:
+        await _safe_execute(conn, "ALTER TABLE users ADD COLUMN IF NOT EXISTS threedfp_pending_at TIMESTAMP")
+
     # Migration: record when Bambu rejects a stored cloud token. Until now the
     # only state we kept was the token string itself, so a dead credential was
     # indistinguishable from a live one and the UI reported "connected" forever
@@ -8359,6 +8370,10 @@ async def seed_default_groups():
                 perms.append("orca_cloud:auth")
                 changed = True
                 logger.info("Added orca_cloud:auth to Operators group (backfill)")
+            if non_admin_group_name == "Operators" and "threedfp:auth" not in perms:
+                perms.append("threedfp:auth")
+                changed = True
+                logger.info("Added threedfp:auth to Operators group (backfill)")
             if changed:
                 grp.permissions = perms
         await session.commit()

@@ -220,6 +220,25 @@ class TestReadPermissionMigration:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_operators_and_admins_get_threedfp_auth_but_viewers_do_not(self, async_client: AsyncClient):
+        """Upgraded installs get `threedfp:auth` (#2981) where fresh ones have
+        it: operators add spools, and the 3DFP lookup in the spool form runs on
+        their own account. Viewers don't add spools."""
+        await seed_default_groups()
+        async with _database_module.async_session() as session:
+            for name in ("Administrators", "Operators", "Viewers"):
+                grp = (await session.execute(select(Group).where(Group.name == name))).scalar_one()
+                grp.permissions = [p for p in (grp.permissions or []) if p != "threedfp:auth"]
+            await session.commit()
+
+        await seed_default_groups()
+
+        assert "threedfp:auth" in await _get_perms("Administrators")
+        assert "threedfp:auth" in await _get_perms("Operators")
+        assert "threedfp:auth" not in await _get_perms("Viewers")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_administrators_printer_sensor_history_read_backfilled(self, async_client: AsyncClient):
         """Admin without `printer_sensor_history:read` (older custom edit or
         a DB seeded before that permission existed) gets it backfilled —

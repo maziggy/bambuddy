@@ -24,6 +24,7 @@ from backend.app.api.routes.library import (
     _unique_external_name,
     slice_and_persist,
 )
+from backend.app.core.printer_scope import ALL_PRINTERS
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.schemas.slicer import SliceRequest
 from backend.app.services.slicer_api import SliceResult
@@ -174,6 +175,7 @@ class TestSliceAndPersistWritesToTheMount:
                 extra_metadata=None,
                 request=SliceRequest(printer_preset_id=1, process_preset_id=2, filament_preset_id=3),
                 current_user_id=None,
+                printer_scope=ALL_PRINTERS,
                 **owner,
             )
         file_row = await db_session.get(LibraryFile, response.library_file_id)

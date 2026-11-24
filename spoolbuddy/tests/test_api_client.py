@@ -285,3 +285,164 @@ class TestRejectedRequests:
 
         assert len(api._buffer) == 0
         assert api._client.post.await_count == 2
+
+
+@pytest.fixture
+def receiver(api):
+    """Record only POSTs that reached the backend, in arrival order."""
+    received = []
+    online = False
+
+    async def post(url, *, json):
+        if not online:
+            raise httpx.ConnectError("offline")
+        received.append((url.removeprefix(api._base), json))
+        return httpx.Response(200, json={"status": "ok"}, request=httpx.Request("POST", url))
+
+    def reconnect():
+        nonlocal online
+        online = True
+
+    api._client.post = post
+    return received, reconnect
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("offline", [False, True], ids=["connected", "reconnect"])
+async def test_tag_and_scale_after_two_heartbeats(api, receiver, offline):
+    received, reconnect = receiver
+    if not offline:
+        reconnect()
+    await api.tag_scanned("dev", "04A1")
+    await api.scale_reading("dev", 250, True)
+    reconnect()
+    await api.tag_removed("dev", "04A1")
+    await api.scale_reading("dev", 0, True)
+    for uptime in (10, 20):
+        await api.heartbeat("dev", True, True, uptime)
+
+    tags = [(path, data["tag_uid"]) for path, data in received if path.startswith("/nfc/")]
+    weights = [data["weight_grams"] for path, data in received if path == "/scale/reading"]
+    scanned = [] if offline else [("/nfc/tag-scanned", "04A1")]
+    assert tags == [*scanned, ("/nfc/tag-removed", "04A1")]
+    assert weights == ([0] if offline else [250, 0])
+
+
+@pytest.mark.asyncio
+async def test_buffer_keeps_latest_state_per_device_and_group(api, receiver):
+    received, reconnect = receiver
+    for device in ("first", "second"):
+        await api.tag_removed(device, "old")
+        await api.tag_scanned(device, "new")
+        await api.scale_reading(device, 250, False)
+        await api.scale_reading(device, 300, True)
+        await api.heartbeat(device, False, False, 1)
+        await api.update_tare(device, 10)
+        await api.update_tare(device, 20)
+
+    reconnect()
+    await api.update_tare("first", 30)
+    await api.heartbeat("first", True, True, 2)
+    assert [(path, data["uptime_s"]) for path, data in received if path.endswith("/heartbeat")] == [
+        ("/devices/first/heartbeat", 2),
+        ("/devices/second/heartbeat", 1),
+    ]
+    assert [(path, data["tare_offset"]) for path, data in received if path.endswith("/set-tare")] == [
+        ("/devices/first/calibration/set-tare", 30),
+        ("/devices/second/calibration/set-tare", 20),
+    ]
+    assert [(path, data["device_id"], data["tag_uid"]) for path, data in received if path.startswith("/nfc/")] == [
+        ("/nfc/tag-scanned", "first", "new"),
+        ("/nfc/tag-scanned", "second", "new"),
+    ]
+    assert [(data["device_id"], data["weight_grams"]) for path, data in received if path == "/scale/reading"] == [
+        ("first", 300),
+        ("second", 300),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_live_results_follow_buffered_results(api, receiver):
+    received, reconnect = receiver
+    for attempt in ("first", "second", "third"):
+        if attempt == "third":
+            reconnect()
+        await api.write_tag_result("dev", 7, "04A1", False, attempt)
+        await api.tag_scanned("dev", "04A1")
+        await api.diagnostic_result("dev", "nfc", True, attempt, 0)
+        await api.system_command_result("dev", "restart_browser", True, attempt)
+
+    await api.heartbeat("dev", True, True, 3)
+    assert [(path, data.get("message", data.get("output"))) for path, data in received if path.endswith("result")] == [
+        (path, attempt)
+        for attempt in ("first", "second", "third")
+        for path in (WRITE_RESULT_PATH, "/diagnostics/dev/result", "/devices/dev/system/command-result")
+    ]
+    assert not api.has_buffered(WRITE_RESULT_PATH)
+
+
+@pytest.mark.asyncio
+async def test_live_removal_during_replay_keeps_next_write_result(api, receiver):
+    received, reconnect = receiver
+    await api.tag_scanned("dev", "04A1")
+    await api.write_tag_result("dev", 7, "04A1", True)
+    reconnect()
+    post = api._client.post
+    replay_started = asyncio.Event()
+    resume = asyncio.Event()
+
+    async def delay_scan(url, *, json):
+        if url.endswith("/tag-scanned"):
+            replay_started.set()
+            await resume.wait()
+        return await post(url, json=json)
+
+    api._client.post = delay_scan
+    replay = asyncio.create_task(api.heartbeat("dev", True, True, 1))
+    await replay_started.wait()
+    removal = asyncio.create_task(api.tag_removed("dev", "04A1"))
+    await asyncio.sleep(0)  # Let the removal attempt its POST while the scan is in flight.
+    resume.set()
+    await asyncio.gather(replay, removal)
+    assert [path for path, _ in received if path.startswith("/nfc/tag-")] == ["/nfc/tag-scanned", "/nfc/tag-removed"]
+    assert [data["spool_id"] for path, data in received if path == WRITE_RESULT_PATH] == [7]
+
+
+@pytest.mark.asyncio
+async def test_command_result_can_be_sent_before_reboot_after_a_partial_flush(api, receiver):
+    received, reconnect = receiver
+    await api.write_tag_result("dev", 7, "04A1", True)
+    await api.diagnostic_result("dev", "nfc", True, "ok", 0)
+    reconnect()
+    post = api._client.post
+
+    async def fail_diagnostic(url, *, json):
+        if url.endswith("/result"):
+            return httpx.Response(503, request=httpx.Request("POST", url))
+        return await post(url, json=json)
+
+    api._client.post = fail_diagnostic
+    await api.heartbeat("dev", True, True, 1)
+    assert [path for path, _ in received if path.endswith("result")] == [WRITE_RESULT_PATH]
+
+    api._client.post = post
+    # The daemon can reboot as soon as this returns. There is no next heartbeat.
+    assert await api.system_command_result("dev", "reboot", True, "executing") == {"status": "ok"}
+    assert [path for path, _ in received if path.endswith("result")] == [
+        WRITE_RESULT_PATH,
+        "/diagnostics/dev/result",
+        "/devices/dev/system/command-result",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_refused_live_reading_does_not_replay_older_weight(api, receiver):
+    received, reconnect = receiver
+    await api.scale_reading("dev", 250, True)
+    reconnect()
+    post = api._client.post
+    api._client.post = AsyncMock(return_value=httpx.Response(422, request=httpx.Request("POST", api._base)))
+    assert await api.scale_reading("dev", 0, True) is None
+    api._client.post = post
+    await api.heartbeat("dev", True, True, 1)
+    assert [path for path, data in received] == ["/devices/dev/heartbeat"]

@@ -183,6 +183,7 @@ export interface FilamentSectionProps extends SectionProps {
   // legitimate combinations (Elegoo ASA) look impossible to enter.
   suggestedBrands: string[];
   suggestedMaterials: string[];
+  splitPresetProductLine?: boolean;
   quickAdd: boolean;
   // Whether preset/brand/subtype are mandatory for this submission — see
   // validateForm. Drives the " *" markers so the form never advertises a

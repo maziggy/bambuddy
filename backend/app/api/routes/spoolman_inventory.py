@@ -53,6 +53,7 @@ from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.models.spoolman_k_profile import SpoolmanKProfile
 from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 from backend.app.models.supplier import SpoolmanSpoolSupplier, Supplier
+from backend.app.models.threedfp_spool_link import ThreeDfpSpoolLink
 from backend.app.models.user import User
 from backend.app.schemas.spool import SpoolFilamentPresetBase, SpoolKProfileBase, naive_utc
 from backend.app.schemas.spool_usage import SpoolUsageHistoryResponse
@@ -1158,7 +1159,7 @@ async def _purge_local_rows_for_spool(db: AsyncSession, spool_id: int) -> None:
     """Drop the Bambuddy-side rows a deleted Spoolman spool leaves behind.
 
     Spoolman owns the spool; Bambuddy owns the K profiles, the filament preset
-    overrides and the supplier assignments, each keyed by the remote id with no
+    overrides, the supplier assignments and the 3DFP filament link, each keyed by the remote id with no
     foreign key that could cascade. The K-profile and preset leaks are inert,
     but a leaked ``spoolman_spool_suppliers`` row keeps the supplier's
     reference count non-zero, so deleting that supplier answers 409 forever
@@ -1169,7 +1170,7 @@ async def _purge_local_rows_for_spool(db: AsyncSession, spool_id: int) -> None:
 
     The caller commits.
     """
-    for model in (SpoolmanKProfile, SpoolmanFilamentPreset, SpoolmanSpoolSupplier):
+    for model in (SpoolmanKProfile, SpoolmanFilamentPreset, SpoolmanSpoolSupplier, ThreeDfpSpoolLink):
         await db.execute(delete(model).where(model.spoolman_spool_id == spool_id))
     await db.execute(
         update(SpoolUsageHistory).where(SpoolUsageHistory.spoolman_spool_id == spool_id).values(spoolman_spool_id=None)

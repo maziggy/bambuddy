@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useLayoutEffect, type ReactNode } from 're
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Droplets, Copy, Check, Settings2, Package, Unlink } from 'lucide-react';
+import { Droplets, Copy, Check, Settings2, Package, Unlink, Tag } from 'lucide-react';
 import { isLightColor, resolveSpoolColorName } from '../utils/colors';
 import { buildFilamentBackground, parseStops } from './filamentSwatchHelpers';
 
@@ -31,6 +31,12 @@ interface SpoolmanConfig {
 interface InventoryConfig {
   onAssignSpool?: () => void;
   onUnassignSpool?: () => void;
+  /** An RFID slot no spool is assigned to: link its tag to a spool already in
+   *  the inventory, e.g. after the unknown-tag prompt was missed (#3658). */
+  onLinkExistingSpool?: () => void;
+  /** The assigned spool got the slot's tag by an automatic match: give the tag
+   *  to the right spool instead (#3658). */
+  onMoveTag?: () => void;
   // `subtype` is part of the spool's name, not decoration: "PLA" and "PLA Wood"
   // are different filaments, and a card that prints only the material tells the
   // user their wood-filled roll is plain PLA (the display-side half of #2902).
@@ -281,7 +287,7 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
       window.removeEventListener('scroll', compute, true);
       window.removeEventListener('resize', compute);
     };
-  }, [isVisible]);
+  }, [isVisible, triggerRef, cardRef]);
 
   // Get fill bar color based on percentage
   const getFillColor = (fill: number): string => {
@@ -589,6 +595,20 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                           {t('inventory.openInInventory')}
                         </button>
                       )}
+                      {inventory.onMoveTag && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            triggerRef.current?.focus();
+                            dismiss();
+                            inventory.onMoveTag?.();
+                          }}
+                          className="w-full flex items-center justify-start gap-1.5 px-2 py-1.5 text-xs font-medium text-left rounded transition-colors bg-bambu-blue/20 hover:bg-bambu-blue/40 text-bambu-blue"
+                        >
+                          <Tag className="w-3.5 h-3.5 shrink-0" />
+                          {t('inventory.rfidLink.wrongSpoolMoveTag')}
+                        </button>
+                      )}
                       {inventory.onUnassignSpool && (
                         <button
                           onClick={(e) => {
@@ -603,6 +623,22 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                         </button>
                       )}
                     </>
+                  ) : inventory.onLinkExistingSpool ? (
+                    // An RFID slot can't take a plain assignment (its tag decides
+                    // the spool), so the disabled Assign button gives way to the
+                    // action that links the tag.
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        triggerRef.current?.focus();
+                        dismiss();
+                        inventory.onLinkExistingSpool?.();
+                      }}
+                      className="w-full flex items-center justify-start gap-1.5 px-2 py-1.5 text-xs font-medium text-left rounded transition-colors bg-bambu-blue/20 hover:bg-bambu-blue/40 text-bambu-blue"
+                    >
+                      <Tag className="w-3.5 h-3.5 shrink-0" />
+                      {t('inventory.rfidLink.linkExisting')}
+                    </button>
                   ) : inventory.onAssignSpool ? (
                     <button
                       onClick={inventory.isAssigned ? undefined : (e) => {
@@ -713,7 +749,7 @@ export function EmptySlotHoverCard({ children, className = '', configureSlot, on
       window.removeEventListener('scroll', compute, true);
       window.removeEventListener('resize', compute);
     };
-  }, [isVisible]);
+  }, [isVisible, triggerRef, cardRef]);
 
   return (
     <div

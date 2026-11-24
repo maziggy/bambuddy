@@ -81,6 +81,12 @@ _ACTIVE_PRINT_STATES = frozenset({"PREPARE", "SLICING", "RUNNING", "PAUSE"})
 # pushes; it is not a judgement about how short "short" is.
 _EARLY_DRY_END_MINUTES = 5
 
+# A cycle whose countdown reads 0 on the first report after the printer was out
+# of sight ended while nobody watched (#3662). It finished when its countdown
+# could have run out in that time, with this many minutes of slack for the
+# report interval; otherwise it was cut off, by a power loss most likely.
+_UNSEEN_DRY_END_SLACK_MINUTES = 2
+
 # CONNACK reason codes that mean the printer actively refused our credentials,
 # as opposed to being unreachable or busy. Bambu speaks MQTT 3.1.1, whose
 # single-byte CONNACK return codes paho maps onto the v5 reason-code space:
@@ -1680,6 +1686,18 @@ class BambuMQTTClient:
         # The target is copied here when the countdown starts because a stop
         # drops _drying_targets before the cycle ends (#2863).
         self._dry_cycles: dict[int, dict[str, object]] = {}
+        # Per-AMS monotonic stamp of the last report that carried dry_time, and
+        # the units that were drying when the printer went out of sight (MQTT
+        # dropped, or Bambuddy switched its plug off), with their countdown and
+        # that stamp: the first report after it decides how their cycle ended
+        # (#3662). The cycle state above is kept through the gap, so a network
+        # drop mid-cycle loses nothing.
+        self._dry_seen_at: dict[int, float] = {}
+        self._dry_unseen: dict[int, tuple[int, float]] = {}
+        # Bambuddy switched the printer's plug off while one of them dried, and
+        # the connection dropped after that: the power really went (#3662).
+        self._dry_power_cut = False
+        self._dry_power_cut_disconnected = False
         # Stage numbers this printer has reported that STAGE_NAMES has no entry
         # for, so each is reported once rather than on every transition into it.
         self._unnamed_stages_seen: set[int] = set()
@@ -1954,6 +1972,7 @@ class BambuMQTTClient:
         """
         if not self.state.connected:
             return False
+        self._note_drying_out_of_sight(power_cut=True)
         previous = self.state.state
         # Blank the state BEFORE recording what to restore. This runs on the
         # event loop while _on_message runs on the paho thread, and the restore
@@ -2039,6 +2058,7 @@ class BambuMQTTClient:
                     self.serial_number,
                 )
             self._last_stale_reconnect = now
+            self._note_drying_out_of_sight()
             self.state.connected = False
             if self.on_state_change:
                 self.on_state_change(self.state)
@@ -2298,6 +2318,7 @@ class BambuMQTTClient:
                 self.serial_number,
                 rc,
             )
+            self._note_drying_out_of_sight(disconnected=True)
             return
 
         # Ignore spurious disconnect callbacks if we've received a message recently
@@ -2311,6 +2332,8 @@ class BambuMQTTClient:
                 f"[{self.serial_number}] Ignoring spurious disconnect (last message {time_since_last_message:.1f}s ago)"
             )
             return
+
+        self._note_drying_out_of_sight(disconnected=True)
 
         # Carry the last CONNACK refusal into the disconnect line. paho reports
         # the drop that follows a refused CONNACK as "Unspecified error", so on
@@ -4394,6 +4417,7 @@ class BambuMQTTClient:
             seen_before = ams_id in self._previous_dry_times
             previous = self._previous_dry_times.get(ams_id, 0)
             self._previous_dry_times[ams_id] = current
+            cut_off = self._dry_end_was_cut_off(ams_id, previous, current)
             if current > 0:
                 cycle = self._dry_cycles.get(ams_id)
                 if cycle is None or previous == 0:
@@ -4420,9 +4444,24 @@ class BambuMQTTClient:
                 and now_mono - self._dry_time_changed_at[ams_id] > DRY_COUNTDOWN_STALL_SECONDS
             )
             if previous > 0 and current == 0:
-                self._log_drying_cycle_end(ams_id, previous, ams_unit, self._drying_targets.pop(ams_id, None))
-                if self.on_drying_complete:
-                    self.on_drying_complete(ams_id)
+                if cut_off:
+                    # Not a finished cycle: nothing may act on it as one, as
+                    # the drying auto-off did by switching the plug off again
+                    # five minutes after the power came back (#3662). Its end
+                    # is still recorded below: the cycle is over.
+                    self._drying_targets.pop(ams_id, None)
+                    self._drying_stops_sent.discard(ams_id)
+                    logger.info(
+                        "[%s] AMS %d drying was cut off while the printer was out of sight, with %d minutes "
+                        "still on the clock (power loss?); not treated as a finished cycle",
+                        self.serial_number,
+                        ams_id,
+                        previous,
+                    )
+                else:
+                    self._log_drying_cycle_end(ams_id, previous, ams_unit, self._drying_targets.pop(ams_id, None))
+                    if self.on_drying_complete:
+                        self.on_drying_complete(ams_id)
                 cycle = self._dry_cycles.pop(ams_id, None) or {"peak": previous, "start_seen": False, "target": None}
                 if self.on_drying_cycle_end:
                     self.on_drying_cycle_end(self._drying_cycle_end(ams_id, previous, cycle))
@@ -4483,6 +4522,45 @@ class BambuMQTTClient:
             target_temp=target_temp,
             target_hours=target_hours,
         )
+
+    def _note_drying_out_of_sight(self, *, power_cut: bool = False, disconnected: bool = False) -> None:
+        """Remember which AMS units were drying when the printer went out of sight (#3662).
+
+        Called when the MQTT connection drops or goes stale, and when Bambuddy
+        presumes the power gone because it switched the printer's plug off.
+        The first of these in a gap wins: it holds the last report before it.
+        """
+        now = time.monotonic()
+        for ams_id, remaining in self._previous_dry_times.items():
+            if remaining > 0 and ams_id not in self._dry_unseen:
+                self._dry_unseen[ams_id] = (remaining, self._dry_seen_at.get(ams_id, now))
+        if power_cut and self._dry_unseen:
+            self._dry_power_cut = True
+        if disconnected and self._dry_power_cut:
+            self._dry_power_cut_disconnected = True
+
+    def _dry_end_was_cut_off(self, ams_id: int, previous: int, current: int) -> bool:
+        """Did this unit's cycle end while the printer was out of sight, short of its time (#3662)?
+
+        Asked on every report that carries ``dry_time``; only the first one
+        after a gap for a unit that was drying then can answer True. That
+        report reading 0 is a cut-off cycle when its countdown could not have
+        run out in the gap, or when Bambuddy switched the plug off under it and
+        the connection then dropped. Otherwise the cycle may have finished
+        while unseen (a network drop near its end) and counts as finished.
+        """
+        now = time.monotonic()
+        self._dry_seen_at[ams_id] = now
+        unseen = self._dry_unseen.pop(ams_id, None)
+        power_cut = self._dry_power_cut and self._dry_power_cut_disconnected
+        if not self._dry_unseen:
+            self._dry_power_cut = False
+            self._dry_power_cut_disconnected = False
+        if unseen is None or current != 0 or previous <= 0:
+            return False
+        remaining, seen_at = unseen
+        minutes_unseen = (now - seen_at) / 60
+        return power_cut or remaining - minutes_unseen > _UNSEEN_DRY_END_SLACK_MINUTES
 
     def _log_drying_cycle_end(
         self,

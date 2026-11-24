@@ -165,6 +165,8 @@ class Permission(StrEnum):
     # Cloud Auth (admin-level)
     CLOUD_AUTH = "cloud:auth"
     ORCA_CLOUD_AUTH = "orca_cloud:auth"
+    # Connect a 3D Filament Profiles account and look filaments up with it (#2981)
+    THREEDFP_AUTH = "threedfp:auth"
 
     # MakerWorld Integration
     MAKERWORLD_VIEW = "makerworld:view"  # Resolve MakerWorld URLs and view model metadata
@@ -347,6 +349,7 @@ PERMISSION_CATEGORIES = {
     "Cloud": [
         Permission.CLOUD_AUTH,
         Permission.ORCA_CLOUD_AUTH,
+        Permission.THREEDFP_AUTH,
     ],
     "MakerWorld": [
         Permission.MAKERWORLD_VIEW,
@@ -437,6 +440,9 @@ DEFAULT_GROUPS = {
             # (CLOUD_AUTH) stays admin-only — that one is a more sensitive
             # account binding.
             Permission.ORCA_CLOUD_AUTH.value,
+            # 3D Filament Profiles (#2981): operators add spools, and the
+            # lookup in the spool form runs on their own connected account.
+            Permission.THREEDFP_AUTH.value,
             # Projects - full access
             Permission.PROJECTS_READ.value,
             Permission.PROJECTS_CREATE.value,

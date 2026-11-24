@@ -1345,7 +1345,7 @@ async def _build_backup_zip(output_path: Path | None) -> tuple[Path, str, list[s
                         columns = list(result.keys())
                         placeholders = ", ".join(["?"] * len(columns))
                         col_list = ", ".join(columns)
-                        insert_sql = f"INSERT INTO {table.name} ({col_list}) VALUES ({placeholders})"  # noqa: S608  # nosec B608 — table/column names from ORM metadata, not user input
+                        insert_sql = f"INSERT INTO {table.name} ({col_list}) VALUES ({placeholders})"  # noqa: S608  # nosec B608  # table/column names from ORM metadata, not user input
 
                         await in_thread(_export_rows, dst, insert_sql, rows)
 
@@ -1561,7 +1561,7 @@ def check_backup_schema_compatible(sqlite_path: Path, backup_version: str | None
                 continue
             # An empty table inserts nothing, so a column it cannot supply
             # cannot fail. Refusing a restore over one would be a false alarm.
-            if src.execute(f'SELECT 1 FROM "{name}" LIMIT 1').fetchone() is None:  # noqa: S608  # nosec B608 — name comes from ORM metadata
+            if src.execute(f'SELECT 1 FROM "{name}" LIMIT 1').fetchone() is None:  # noqa: S608  # nosec B608  # name comes from ORM metadata
                 continue
             src_columns = {row[1] for row in src.execute(f'PRAGMA table_info("{name}")')}
             _, _, unfillable = _missing_required_columns(pg_table, src_columns)

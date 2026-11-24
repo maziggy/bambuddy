@@ -288,14 +288,6 @@
                     "endColumn": 27,
                     "lineCount": 1
                 }
-            },
-            {
-                "code": "reportUnusedExcept",
-                "range": {
-                    "startColumn": 19,
-                    "endColumn": 31,
-                    "lineCount": 1
-                }
             }
         ],
         "./backend/app/api/routes/cloud.py": [

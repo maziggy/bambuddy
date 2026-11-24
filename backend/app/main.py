@@ -90,6 +90,7 @@ from backend.app.api.routes import (
     spoolman_inventory,
     support,
     system,
+    threedfp,
     updates,
     user_notifications,
     users,
@@ -12591,6 +12592,7 @@ async def lifespan(app: FastAPI):
     from backend.app.services.orca_cloud import (
         set_shared_http_client as set_shared_orca_http_client,
     )
+    from backend.app.services.threedfp import set_shared_http_client as set_shared_threedfp_http_client
 
     _shared_cloud_http_client = _httpx.AsyncClient(timeout=30.0)
     set_shared_http_client(_shared_cloud_http_client)
@@ -12600,6 +12602,7 @@ async def lifespan(app: FastAPI):
     # Same for Orca Cloud — without this the per-request OrcaCloudService()
     # each spun up (and never closed) its own client, leaking sockets.
     set_shared_orca_http_client(_shared_cloud_http_client)
+    set_shared_threedfp_http_client(_shared_cloud_http_client)
 
     # Fix queue items stuck with invalid "aborted" status (should be "cancelled").
     # This can happen when a print was cancelled mid-print on versions before this fix.
@@ -13104,6 +13107,7 @@ async def lifespan(app: FastAPI):
     set_shared_http_client(None)
     set_shared_makerworld_http_client(None)
     set_shared_orca_http_client(None)
+    set_shared_threedfp_http_client(None)
     await _shared_cloud_http_client.aclose()
 
     # Checkpoint WAL (SQLite only) and close all database connections
@@ -13668,6 +13672,8 @@ app.include_router(settings_routes.router, prefix=app_settings.api_prefix)
 app.include_router(overlay_branding.router, prefix=app_settings.api_prefix)
 app.include_router(cloud.router, prefix=app_settings.api_prefix)
 app.include_router(orca_cloud.router, prefix=app_settings.api_prefix)
+app.include_router(threedfp.router, prefix=app_settings.api_prefix)
+app.include_router(threedfp.links_router, prefix=app_settings.api_prefix)
 app.include_router(local_presets.router, prefix=app_settings.api_prefix)
 app.include_router(smart_plugs.router, prefix=app_settings.api_prefix)
 app.include_router(ha_sensors.router, prefix=app_settings.api_prefix)

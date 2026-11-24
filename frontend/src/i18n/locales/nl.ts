@@ -5156,6 +5156,35 @@ export default {
       projectExported: 'Project geëxporteerd',
       templateCreated: 'Sjabloon gemaakt',
     },
+    // Bag labels for a project's finished parts (#3655)
+    labels: {
+      button: 'Etiket',
+      buttonTitle: 'Een etiket printen voor de zak of doos met afgewerkte onderdelen',
+      title: 'Projectetiket printen',
+      intro: 'Een etiket voor de zak of doos waar de afgewerkte onderdelen van dit project in gaan. De QR-code opent dit project.',
+      quantity: 'Aantal in de zak',
+      quantityHint: 'Groot onderaan geprint. Laat leeg voor geen.',
+      quantityInvalid: 'Voer een geheel getal van 1 tot {{max}} in.',
+      note: 'Notitie',
+      notePlaceholder: 'bijv. Bestelling #1042 of Zak 2 van 3',
+      copies: 'Aantal etiketten',
+      copiesInvalid: 'Voer een geheel getal van 1 tot {{max}} in.',
+      previewInvalid: 'Voer een geldig aantal in om het etiket te zien.',
+      singleLabelPage: 'Eén etiket per pagina.',
+      pngTooLarge: 'Hiervoor zijn {{pages}} pagina’s nodig. Bij {{dpi}} dpi geldt voor PNG een maximum van {{maxPages}} pagina’s. Kies PDF, verlaag de resolutie of druk minder etiketten af.',
+      fields: {
+        parent: 'Bovenliggend project',
+        name: 'Projectnaam',
+        note: 'Notitie',
+        parts: 'Geprinte onderdelen',
+        dueDate: 'Deadline',
+        printed: 'Laatst geprint',
+        color: 'Projectkleur',
+        qr: 'QR-code',
+        quantity: 'Aantal',
+        projectId: 'Project-ID',
+      },
+    },
   },
 
   // System info
@@ -5634,6 +5663,7 @@ export default {
       pngTooLarge: 'PNG-export is beperkt tot {{maxPages}} vel-pagina’s bij {{dpi}} dpi, en dit zijn er {{pages}}. Gebruik PDF, een lagere resolutie of minder spoelen.',
       custom: {
         option: 'Eigen vel…',
+        loadFailed: 'De opgeslagen sjabloon kon niet worden geladen. Controleer het gekozen etiketformaat voordat je afdrukt.',
         savedGroup: 'Opgeslagen sjablonen',
         hint: 'Beschrijf hieronder je eigen labelvel.',
         layoutTitle: 'Indeling van het vel',

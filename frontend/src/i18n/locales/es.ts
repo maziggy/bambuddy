@@ -5128,6 +5128,35 @@ export default {
       projectExported: 'Proyecto exportado',
       templateCreated: 'Plantilla creada',
     },
+    // Bag labels for a project's finished parts (#3655)
+    labels: {
+      button: 'Etiqueta',
+      buttonTitle: 'Imprimir una etiqueta para la bolsa o caja de piezas terminadas',
+      title: 'Imprimir etiqueta del proyecto',
+      intro: 'Una etiqueta para la bolsa o caja donde van las piezas terminadas de este proyecto. Su código QR abre este proyecto.',
+      quantity: 'Cantidad en la bolsa',
+      quantityHint: 'Se imprime en grande abajo. Déjalo vacío para no mostrarla.',
+      quantityInvalid: 'Introduce un número entero de 1 a {{max}}.',
+      note: 'Nota',
+      notePlaceholder: 'p. ej. Pedido n.º 1042 o Bolsa 2 de 3',
+      copies: 'Número de etiquetas',
+      copiesInvalid: 'Introduce un número entero de 1 a {{max}}.',
+      previewInvalid: 'Introduce una cantidad válida para ver la etiqueta.',
+      singleLabelPage: 'Una etiqueta por página.',
+      pngTooLarge: 'Se necesitan {{pages}} páginas. A {{dpi}} ppp, el límite para PNG es de {{maxPages}} páginas. Elige PDF, baja la resolución o imprime menos etiquetas.',
+      fields: {
+        parent: 'Proyecto principal',
+        name: 'Nombre del proyecto',
+        note: 'Nota',
+        parts: 'Piezas impresas',
+        dueDate: 'Fecha límite',
+        printed: 'Última impresión',
+        color: 'Color del proyecto',
+        qr: 'Código QR',
+        quantity: 'Cantidad',
+        projectId: 'ID del proyecto',
+      },
+    },
   },
 
   // System info
@@ -5600,6 +5629,7 @@ export default {
       pngTooLarge: 'La exportación PNG está limitada a {{maxPages}} páginas de hoja a {{dpi}} ppp, y esto son {{pages}}. Usa PDF, una resolución menor o menos bobinas.',
       custom: {
         option: 'Hoja personalizada…',
+        loadFailed: 'No se pudo cargar la plantilla guardada. Comprueba el tamaño de etiqueta seleccionado antes de imprimir.',
         savedGroup: 'Plantillas guardadas',
         hint: 'Describe abajo tu propia hoja de etiquetas.',
         layoutTitle: 'Disposición de la hoja',

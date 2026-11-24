@@ -5188,6 +5188,35 @@ errors: {
       projectExported: 'Projekt exporterat',
       templateCreated: 'Mall skapad',
     },
+    // Bag labels for a project's finished parts (#3655)
+    labels: {
+      button: 'Etikett',
+      buttonTitle: 'Skriv ut en etikett för påsen eller lådan med färdiga delar',
+      title: 'Skriv ut projektetikett',
+      intro: 'En etikett för påsen eller lådan som projektets färdiga delar läggs i. Dess QR-kod öppnar projektet.',
+      quantity: 'Antal i påsen',
+      quantityHint: 'Skrivs ut stort längst ned. Lämna tomt för inget.',
+      quantityInvalid: 'Ange ett heltal från 1 till {{max}}.',
+      note: 'Anteckning',
+      notePlaceholder: 't.ex. Order #1042 eller Påse 2 av 3',
+      copies: 'Antal etiketter',
+      copiesInvalid: 'Ange ett heltal från 1 till {{max}}.',
+      previewInvalid: 'Ange ett giltigt antal för att se etiketten.',
+      singleLabelPage: 'En etikett per sida.',
+      pngTooLarge: 'Det behövs {{pages}} sidor. Vid {{dpi}} dpi är gränsen för PNG {{maxPages}} sidor. Välj PDF, sänk upplösningen eller skriv ut färre etiketter.',
+      fields: {
+        parent: 'Överordnat projekt',
+        name: 'Projektnamn',
+        note: 'Anteckning',
+        parts: 'Utskrivna delar',
+        dueDate: 'Förfallodatum',
+        printed: 'Senast utskriven',
+        color: 'Projektfärg',
+        qr: 'QR-kod',
+        quantity: 'Antal',
+        projectId: 'Projekt-ID',
+      },
+    },
   },
 
   // System info
@@ -5666,6 +5695,7 @@ errors: {
       pngTooLarge: 'PNG-export är begränsad till {{maxPages}} arksidor vid {{dpi}} dpi, och det här är {{pages}}. Använd PDF, lägre upplösning eller färre spolar.',
       custom: {
         option: 'Eget ark…',
+        loadFailed: 'Det gick inte att läsa in den sparade mallen. Kontrollera den valda etikettstorleken innan du skriver ut.',
         savedGroup: 'Sparade mallar',
         hint: 'Beskriv ditt eget etikettark nedan.',
         layoutTitle: 'Arkets layout',

@@ -5113,6 +5113,35 @@ export default {
       projectExported: '專案已匯出',
       templateCreated: '範本已建立',
     },
+    // Bag labels for a project's finished parts (#3655)
+    labels: {
+      button: '標籤',
+      buttonTitle: '為裝成品零件的袋子或盒子列印標籤',
+      title: '列印專案標籤',
+      intro: '貼在裝有此專案成品零件的袋子或盒子上的標籤。掃描 QR 碼可開啟此專案。',
+      quantity: '袋中數量',
+      quantityHint: '在底部以大字列印。留空則不列印。',
+      quantityInvalid: '請輸入 1 到 {{max}} 之間的整數。',
+      note: '備註',
+      notePlaceholder: '例如：訂單 #1042 或 第 2 袋/共 3 袋',
+      copies: '標籤數量',
+      copiesInvalid: '請輸入 1 到 {{max}} 之間的整數。',
+      previewInvalid: '請輸入有效數量以查看標籤。',
+      singleLabelPage: '每頁列印一張標籤。',
+      pngTooLarge: '需要 {{pages}} 頁。在 {{dpi}} dpi 下，PNG 最多可匯出 {{maxPages}} 頁。請選擇 PDF、降低解析度或減少標籤數量。',
+      fields: {
+        parent: '上層專案',
+        name: '專案名稱',
+        note: '備註',
+        parts: '已列印零件',
+        dueDate: '截止日期',
+        printed: '最後列印',
+        color: '專案顏色',
+        qr: 'QR 碼',
+        quantity: '數量',
+        projectId: '專案 ID',
+      },
+    },
   },
 
   // System info
@@ -5585,6 +5614,7 @@ export default {
       pngTooLarge: 'PNG 匯出在 {{dpi}} dpi 下最多 {{maxPages}} 頁標籤紙，而這次是 {{pages}} 頁。請改用 PDF、較低的解析度或較少的線材。',
       custom: {
         option: '自訂標籤紙…',
+        loadFailed: '無法載入已儲存的範本。請在列印前確認所選標籤尺寸。',
         savedGroup: '已儲存的範本',
         hint: '在下方描述你自己的標籤紙。',
         layoutTitle: '標籤紙版面',

@@ -5158,6 +5158,35 @@ export default {
       projectExported: 'Wyeksportowano projekt',
       templateCreated: 'Utworzono szablon',
     },
+    // Bag labels for a project's finished parts (#3655)
+    labels: {
+      button: 'Etykieta',
+      buttonTitle: 'Wydrukuj etykietę na torebkę lub pudełko z gotowymi częściami',
+      title: 'Drukuj etykietę projektu',
+      intro: 'Etykieta na torebkę lub pudełko, do którego trafiają gotowe części tego projektu. Jej kod QR otwiera ten projekt.',
+      quantity: 'Ilość w torebce',
+      quantityHint: 'Drukowana dużą czcionką na dole. Zostaw puste, aby pominąć.',
+      quantityInvalid: 'Wpisz liczbę całkowitą od 1 do {{max}}.',
+      note: 'Notatka',
+      notePlaceholder: 'np. Zamówienie nr 1042 lub Torebka 2 z 3',
+      copies: 'Liczba etykiet',
+      copiesInvalid: 'Wpisz liczbę całkowitą od 1 do {{max}}.',
+      previewInvalid: 'Wpisz prawidłową ilość, aby zobaczyć etykietę.',
+      singleLabelPage: 'Jedna etykieta na stronę.',
+      pngTooLarge: 'Liczba potrzebnych stron to {{pages}}. Przy {{dpi}} dpi limit dla PNG wynosi {{maxPages}}. Wybierz PDF, zmniejsz rozdzielczość lub wydrukuj mniej etykiet.',
+      fields: {
+        parent: 'Projekt nadrzędny',
+        name: 'Nazwa projektu',
+        note: 'Notatka',
+        parts: 'Wydrukowane części',
+        dueDate: 'Termin',
+        printed: 'Ostatni wydruk',
+        color: 'Kolor projektu',
+        qr: 'Kod QR',
+        quantity: 'Ilość',
+        projectId: 'ID projektu',
+      },
+    },
   },
 
   // System info
@@ -5636,6 +5665,7 @@ export default {
       pngTooLarge: 'Eksport PNG jest ograniczony do {{maxPages}} stron arkusza przy {{dpi}} dpi, a tu jest ich {{pages}}. Użyj PDF, niższej rozdzielczości lub mniejszej liczby szpul.',
       custom: {
         option: 'Własny arkusz…',
+        loadFailed: 'Nie udało się wczytać zapisanego szablonu. Przed drukowaniem sprawdź wybrany rozmiar etykiety.',
         savedGroup: 'Zapisane szablony',
         hint: 'Opisz poniżej własny arkusz etykiet.',
         layoutTitle: 'Układ arkusza',

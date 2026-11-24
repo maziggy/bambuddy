@@ -5126,6 +5126,35 @@ export default {
       projectExported: 'Projekt exportiert',
       templateCreated: 'Vorlage erstellt',
     },
+    // Bag labels for a project's finished parts (#3655)
+    labels: {
+      button: 'Etikett',
+      buttonTitle: 'Ein Etikett für den Beutel oder die Kiste mit fertigen Teilen drucken',
+      title: 'Projektetikett drucken',
+      intro: 'Ein Etikett für den Beutel oder die Kiste, in die die fertigen Teile dieses Projekts kommen. Sein QR-Code öffnet dieses Projekt.',
+      quantity: 'Anzahl im Beutel',
+      quantityHint: 'Wird groß unten gedruckt. Leer lassen für keine Angabe.',
+      quantityInvalid: 'Gib eine ganze Zahl von 1 bis {{max}} ein.',
+      note: 'Notiz',
+      notePlaceholder: 'z. B. Bestellung #1042 oder Beutel 2 von 3',
+      copies: 'Anzahl Etiketten',
+      copiesInvalid: 'Gib eine ganze Zahl von 1 bis {{max}} ein.',
+      previewInvalid: 'Gib eine gültige Anzahl ein, um das Etikett zu sehen.',
+      singleLabelPage: 'Ein Etikett pro Seite.',
+      pngTooLarge: 'Für diese Etiketten werden {{pages}} Seiten benötigt. Bei {{dpi}} dpi sind im PNG-Format höchstens {{maxPages}} Seiten möglich. Wähle PDF, verringere die Auflösung oder drucke weniger Etiketten.',
+      fields: {
+        parent: 'Übergeordnetes Projekt',
+        name: 'Projektname',
+        note: 'Notiz',
+        parts: 'Gedruckte Teile',
+        dueDate: 'Fälligkeitsdatum',
+        printed: 'Zuletzt gedruckt',
+        color: 'Projektfarbe',
+        qr: 'QR-Code',
+        quantity: 'Anzahl',
+        projectId: 'Projekt-ID',
+      },
+    },
   },
 
   // System info
@@ -5598,6 +5627,7 @@ export default {
       pngTooLarge: 'Der PNG-Export ist bei {{dpi}} dpi auf {{maxPages}} Bogenseiten begrenzt, dies sind {{pages}}. Nutze PDF, eine niedrigere Auflösung oder weniger Spulen.',
       custom: {
         option: 'Eigener Bogen…',
+        loadFailed: 'Die gespeicherte Vorlage konnte nicht geladen werden. Prüfe vor dem Drucken die ausgewählte Etikettengröße.',
         savedGroup: 'Gespeicherte Vorlagen',
         hint: 'Beschreibe unten deinen eigenen Etikettenbogen.',
         layoutTitle: 'Bogenlayout',

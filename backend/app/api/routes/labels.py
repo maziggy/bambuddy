@@ -22,8 +22,11 @@ import asyncio
 import io
 import logging
 import zipfile
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
-from typing import Annotated, Literal
+from functools import partial
+from typing import Annotated, Literal, ParamSpec
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
@@ -80,7 +83,9 @@ PREVIEW_DPI = 300
 SpoolId = Annotated[int, Field(gt=0)]
 
 
-class LabelOptions(BaseModel):
+class LabelLayoutOptions(BaseModel):
+    """Which label stock to print on: shared by spool and project labels (#3655)."""
+
     template: TemplateName | Literal["custom"]
     # The sheet, when ``template`` is "custom" (#3296). A saved template is
     # sent this way too: the dialog holds its layout, so printing never reads
@@ -89,17 +94,12 @@ class LabelOptions(BaseModel):
     # Black-and-white thermal printers: drop the colour swatch (prints as a
     # muddy grey block) and widen the text column instead (#1870).
     monochrome: bool = False
-    # The lines to print (#2981). Omitted: what labels always carried.
-    fields: list[LabelField] | None = Field(default=None, max_length=len(ALL_LABEL_FIELDS))
 
     @model_validator(mode="after")
-    def layout_only_for_custom(self) -> LabelOptions:
+    def layout_only_for_custom(self) -> LabelLayoutOptions:
         if (self.template == "custom") != (self.layout is not None):
             raise ValueError('layout is required for template "custom" and not allowed otherwise')
         return self
-
-    def field_set(self) -> frozenset[LabelField]:
-        return DEFAULT_LABEL_FIELDS if self.fields is None else frozenset(self.fields)
 
     def resolved_template(self) -> Template:
         if self.layout is not None:
@@ -108,6 +108,38 @@ class LabelOptions(BaseModel):
             # layout_only_for_custom refuses this, so a validated request never gets here.
             raise ValueError('layout is required for template "custom"')
         return self.template
+
+
+class LabelOptions(LabelLayoutOptions):
+    # The lines to print (#2981). Omitted: what labels always carried.
+    fields: list[LabelField] | None = Field(default=None, max_length=len(ALL_LABEL_FIELDS))
+
+    def field_set(self) -> frozenset[LabelField]:
+        return DEFAULT_LABEL_FIELDS if self.fields is None else frozenset(self.fields)
+
+
+def sheet_request_problem(
+    template: Template, label_count: int, starting_position: int, format: str, dpi: int, template_name: str
+) -> str | None:
+    """Why a download of ``label_count`` labels can't be made, or ``None``: a
+    starting position on a roll or past the sheet, or a PNG of too many sheet
+    pages. Spool and project labels (#3655) check the same."""
+    capacity = get_sheet_capacity(template)
+    if capacity is None:
+        if starting_position != 1:
+            return "starting_position is only supported for sheet label templates"
+        return None
+    if starting_position > capacity:
+        return f"starting_position must be between 1 and {capacity} for template {template_name}"
+    if format == "png":
+        pages = sheet_page_count(template, label_count, starting_position) or 0
+        if pages * dpi > MAX_PNG_SHEET_PAGES_X_DPI:
+            max_pages = MAX_PNG_SHEET_PAGES_X_DPI // dpi
+            return (
+                f"PNG export is limited to {max_pages} sheet pages at {dpi} dpi, and this is {pages}. "
+                "Use PDF, a lower resolution or fewer labels."
+            )
+    return None
 
 
 class LabelRequest(LabelOptions):
@@ -122,21 +154,11 @@ class LabelRequest(LabelOptions):
     def validate_starting_position(self) -> LabelRequest:
         if (self.template == "custom") != (self.layout is not None):
             return self  # layout_only_for_custom reports this one
-        capacity = get_sheet_capacity(self.resolved_template())
-        if capacity is None:
-            if self.starting_position != 1:
-                raise ValueError("starting_position is only supported for sheet label templates")
-            return self
-        if self.starting_position > capacity:
-            raise ValueError(f"starting_position must be between 1 and {capacity} for template {self.template}")
-        if self.format == "png":
-            pages = sheet_page_count(self.resolved_template(), len(self.spool_ids), self.starting_position) or 0
-            if pages * self.dpi > MAX_PNG_SHEET_PAGES_X_DPI:
-                max_pages = MAX_PNG_SHEET_PAGES_X_DPI // self.dpi
-                raise ValueError(
-                    f"PNG export is limited to {max_pages} sheet pages at {self.dpi} dpi, and this is {pages}. "
-                    "Use PDF, a lower resolution or fewer spools."
-                )
+        problem = sheet_request_problem(
+            self.resolved_template(), len(self.spool_ids), self.starting_position, self.format, self.dpi, self.template
+        )
+        if problem:
+            raise ValueError(problem)
         return self
 
 
@@ -152,7 +174,7 @@ def _split_extra_colors(raw: str | None) -> list[str] | None:
     return parts or None
 
 
-async def _resolve_deeplink_base(request: Request, db: AsyncSession) -> str:
+async def resolve_deeplink_base(request: Request, db: AsyncSession) -> str:
     """Where the QR codes should point. Prefers `external_url` when set so a
     phone scan reaches the user's public Bambuddy URL rather than an internal
     address; falls back to the request's own scheme+host when no setting is
@@ -241,20 +263,41 @@ def _stream_pdf(pdf: bytes, filename: str) -> StreamingResponse:
     )
 
 
+# ReportLab shares the registered TrueType fonts across documents. Build one
+# label PDF at a time, off the event loop, including single-label previews.
+_PDF_WORKER = ThreadPoolExecutor(max_workers=1, thread_name_prefix="label-pdf")
+_P = ParamSpec("_P")
+
+
+async def render_pdf_in_worker(render: Callable[_P, bytes], *args: _P.args, **kwargs: _P.kwargs) -> bytes:
+    return await asyncio.get_running_loop().run_in_executor(_PDF_WORKER, partial(render, *args, **kwargs))
+
+
 async def _render_response(body: LabelRequest, data_list: list[LabelData], filename_stem: str) -> Response:
     template = body.resolved_template()
-    pdf = render_labels(
+    pdf = await render_pdf_in_worker(
+        render_labels,
         template,
         data_list,
         monochrome=body.monochrome,
         starting_position=body.starting_position,
         fields=body.field_set(),
     )
-    if body.format == "pdf":
+    return await label_file_response(
+        pdf, template, filename_stem, body.format, body.dpi, [f"label-{d.spool_id}.png" for d in data_list]
+    )
+
+
+async def label_file_response(
+    pdf: bytes, template: Template, filename_stem: str, format: str, dpi: int, roll_names: list[str]
+) -> Response:
+    """The rendered labels as the download asked for: the PDF, one PNG, or a
+    ZIP of PNGs. ``roll_names`` names a roll template's PNGs, one per label."""
+    if format == "pdf":
         return _stream_pdf(pdf, f"{filename_stem}.pdf")
 
     # Rasterising a few hundred pages is CPU work; keep it off the event loop.
-    pngs = await asyncio.to_thread(pdf_to_pngs, pdf, body.dpi)
+    pngs = await asyncio.to_thread(pdf_to_pngs, pdf, dpi)
     if len(pngs) == 1:
         return Response(
             content=pngs[0],
@@ -265,10 +308,10 @@ async def _render_response(body: LabelRequest, data_list: list[LabelData], filen
             },
         )
 
-    # A roll template has one page per spool, so its files are named after
-    # the spool; a sheet's pages are numbered.
+    # A roll template has one page per label, so its files are named after
+    # what is on it; a sheet's pages are numbered.
     if get_sheet_capacity(template) is None:
-        names = [f"label-{d.spool_id}.png" for d in data_list]
+        names = roll_names
     else:
         names = [f"sheet-{n}.png" for n in range(1, len(pngs) + 1)]
     buf = io.BytesIO()
@@ -287,7 +330,14 @@ async def _render_response(body: LabelRequest, data_list: list[LabelData], filen
 
 
 async def _render_preview(body: LabelPreviewRequest, data: LabelData) -> Response:
-    pdf = render_label_preview_pdf(body.resolved_template(), data, monochrome=body.monochrome, fields=body.field_set())
+    pdf = await render_pdf_in_worker(
+        render_label_preview_pdf, body.resolved_template(), data, monochrome=body.monochrome, fields=body.field_set()
+    )
+    return await label_preview_response(pdf)
+
+
+async def label_preview_response(pdf: bytes) -> Response:
+    """A one-label PDF as the PNG the dialog's preview shows."""
     pngs = await asyncio.to_thread(pdf_to_pngs, pdf, PREVIEW_DPI)
     return Response(content=pngs[0], media_type="image/png", headers={"Cache-Control": "no-store"})
 
@@ -304,7 +354,7 @@ async def _local_label_data(spool_ids: list[int], request: Request, db: AsyncSes
     # Preserve caller's order so an Avery sheet print matches the on-screen list.
     ordered = sorted(spools, key=lambda s: spool_ids.index(s.id))
 
-    deeplink_base = await _resolve_deeplink_base(request, db)
+    deeplink_base = await resolve_deeplink_base(request, db)
     return [_spool_to_label_data(s, deeplink_base) for s in ordered]
 
 
@@ -332,7 +382,7 @@ async def _spoolman_label_data(spool_ids: list[int], request: Request, db: Async
     if missing:
         raise HTTPException(404, f"Spool(s) not found in Spoolman: {missing}")
 
-    deeplink_base = await _resolve_deeplink_base(request, db)
+    deeplink_base = await resolve_deeplink_base(request, db)
     return [_spoolman_dict_to_label_data(by_id[sid], deeplink_base) for sid in spool_ids]
 
 

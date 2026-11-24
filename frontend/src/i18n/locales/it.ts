@@ -5113,6 +5113,35 @@ export default {
       projectExported: 'Progetto esportato',
       templateCreated: 'Template creato',
     },
+    // Bag labels for a project's finished parts (#3655)
+    labels: {
+      button: 'Etichetta',
+      buttonTitle: 'Stampa un\'etichetta per il sacchetto o la scatola dei pezzi finiti',
+      title: 'Stampa etichetta progetto',
+      intro: 'Un\'etichetta per il sacchetto o la scatola in cui vanno i pezzi finiti di questo progetto. Il suo codice QR apre questo progetto.',
+      quantity: 'Quantità nel sacchetto',
+      quantityHint: 'Stampata in grande in basso. Lascia vuoto per nessuna.',
+      quantityInvalid: 'Inserisci un numero intero da 1 a {{max}}.',
+      note: 'Nota',
+      notePlaceholder: 'es. Ordine n. 1042 o Sacchetto 2 di 3',
+      copies: 'Numero di etichette',
+      copiesInvalid: 'Inserisci un numero intero da 1 a {{max}}.',
+      previewInvalid: 'Inserisci una quantità valida per vedere l\'etichetta.',
+      singleLabelPage: 'Una sola etichetta per pagina.',
+      pngTooLarge: 'Servono {{pages}} pagine. A {{dpi}} dpi il limite per il PNG è di {{maxPages}} pagine. Scegli il PDF, riduci la risoluzione o stampa meno etichette.',
+      fields: {
+        parent: 'Progetto padre',
+        name: 'Nome del progetto',
+        note: 'Nota',
+        parts: 'Pezzi stampati',
+        dueDate: 'Scadenza',
+        printed: 'Ultima stampa',
+        color: 'Colore del progetto',
+        qr: 'Codice QR',
+        quantity: 'Quantità',
+        projectId: 'ID progetto',
+      },
+    },
   },
 
   // System info
@@ -5585,6 +5614,7 @@ export default {
       pngTooLarge: 'L’esportazione PNG è limitata a {{maxPages}} pagine di foglio a {{dpi}} dpi, e queste sono {{pages}}. Usa il PDF, una risoluzione più bassa o meno bobine.',
       custom: {
         option: 'Foglio personalizzato…',
+        loadFailed: 'Impossibile caricare il modello salvato. Controlla il formato di etichetta selezionato prima di stampare.',
         savedGroup: 'Modelli salvati',
         hint: 'Descrivi qui sotto il tuo foglio di etichette.',
         layoutTitle: 'Disposizione del foglio',

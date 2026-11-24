@@ -5114,6 +5114,35 @@ export default {
       projectExported: 'Projet exporté',
       templateCreated: 'Modèle créé',
     },
+    // Bag labels for a project's finished parts (#3655)
+    labels: {
+      button: 'Étiquette',
+      buttonTitle: 'Imprimer une étiquette pour le sachet ou la boîte des pièces terminées',
+      title: 'Imprimer l\'étiquette du projet',
+      intro: 'Une étiquette pour le sachet ou la boîte où vont les pièces terminées de ce projet. Son code QR ouvre ce projet.',
+      quantity: 'Quantité dans le sachet',
+      quantityHint: 'Imprimée en grand en bas. Laissez ce champ vide pour omettre la quantité.',
+      quantityInvalid: 'Saisissez un nombre entier de 1 à {{max}}.',
+      note: 'Remarque',
+      notePlaceholder: 'p. ex. Commande n° 1042 ou Sachet 2 sur 3',
+      copies: 'Nombre d\'étiquettes',
+      copiesInvalid: 'Saisissez un nombre entier de 1 à {{max}}.',
+      previewInvalid: 'Saisissez une quantité valide pour voir l\'étiquette.',
+      singleLabelPage: 'Une étiquette par page.',
+      pngTooLarge: 'Il faut {{pages}} pages. À {{dpi}} ppp, l’export PNG est limité à {{maxPages}} pages. Choisissez le PDF, réduisez la résolution ou imprimez moins d’étiquettes.',
+      fields: {
+        parent: 'Projet parent',
+        name: 'Nom du projet',
+        note: 'Remarque',
+        parts: 'Pièces imprimées',
+        dueDate: 'Échéance',
+        printed: 'Dernière impression',
+        color: 'Couleur du projet',
+        qr: 'Code QR',
+        quantity: 'Quantité',
+        projectId: 'ID du projet',
+      },
+    },
   },
 
   // System info
@@ -5586,6 +5615,7 @@ export default {
       pngTooLarge: 'L’export PNG est limité à {{maxPages}} pages de planche à {{dpi}} ppp, et il y en a {{pages}}. Utilisez le PDF, une résolution plus basse ou moins de bobines.',
       custom: {
         option: 'Planche personnalisée…',
+        loadFailed: 'Impossible de charger le modèle enregistré. Vérifiez le format d’étiquette sélectionné avant d’imprimer.',
         savedGroup: 'Modèles enregistrés',
         hint: 'Décrivez ci-dessous votre propre planche d’étiquettes.',
         layoutTitle: 'Disposition de la planche',

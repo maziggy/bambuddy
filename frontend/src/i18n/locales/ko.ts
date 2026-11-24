@@ -4925,7 +4925,36 @@ export default {
       exportFailed: '내보내기 실패',
       projectExported: '프로젝트 내보냄',
       templateCreated: '템플릿 생성됨'
-    }
+    },
+    // Bag labels for a project's finished parts (#3655)
+    labels: {
+      button: '라벨',
+      buttonTitle: '완성된 부품을 담는 봉투나 상자용 라벨 인쇄',
+      title: '프로젝트 라벨 인쇄',
+      intro: '이 프로젝트의 완성된 부품을 담는 봉투나 상자에 붙이는 라벨입니다. QR 코드로 이 프로젝트가 열립니다.',
+      quantity: '봉투 안 수량',
+      quantityHint: '아래쪽에 크게 인쇄됩니다. 필요 없으면 비워 두세요.',
+      quantityInvalid: '1에서 {{max}} 사이의 정수를 입력하세요.',
+      note: '메모',
+      notePlaceholder: '예: 주문 #1042 또는 봉투 2/3',
+      copies: '라벨 수',
+      copiesInvalid: '1에서 {{max}} 사이의 정수를 입력하세요.',
+      previewInvalid: '라벨을 보려면 올바른 수량을 입력하세요.',
+      singleLabelPage: '페이지당 라벨 한 장을 인쇄합니다.',
+      pngTooLarge: '{{pages}}페이지가 필요합니다. {{dpi}} dpi에서 PNG로 내보낼 수 있는 최대 페이지 수는 {{maxPages}}입니다. PDF를 선택하거나 해상도를 낮추거나 라벨 수를 줄이세요.',
+      fields: {
+        parent: '상위 프로젝트',
+        name: '프로젝트 이름',
+        note: '메모',
+        parts: '인쇄된 부품',
+        dueDate: '마감일',
+        printed: '마지막 인쇄',
+        color: '프로젝트 색상',
+        qr: 'QR 코드',
+        quantity: '수량',
+        projectId: '프로젝트 ID',
+      },
+    },
   },
   system: {
     title: '시스템 정보',
@@ -5352,6 +5381,7 @@ export default {
       pngTooLarge: 'PNG 내보내기는 {{dpi}} dpi에서 시트 {{maxPages}}페이지까지인데 이 작업은 {{pages}}페이지입니다. PDF, 더 낮은 해상도 또는 더 적은 스풀을 사용하세요.',
       custom: {
         option: '사용자 지정 시트…',
+        loadFailed: '저장된 템플릿을 불러올 수 없습니다. 인쇄하기 전에 선택한 라벨 크기를 확인하세요.',
         savedGroup: '저장된 템플릿',
         hint: '아래에서 직접 라벨 시트를 설정하세요.',
         layoutTitle: '시트 레이아웃',

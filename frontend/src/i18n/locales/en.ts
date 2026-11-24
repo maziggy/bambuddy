@@ -5158,6 +5158,35 @@ export default {
       projectExported: 'Project exported',
       templateCreated: 'Template created',
     },
+    // Bag labels for a project's finished parts (#3655)
+    labels: {
+      button: 'Label',
+      buttonTitle: 'Print a label for the bag or box of finished parts',
+      title: 'Print project label',
+      intro: 'A label for the bag or box this project\'s finished parts go in. Its QR code opens this project.',
+      quantity: 'Quantity in the bag',
+      quantityHint: 'Printed big at the bottom. Leave empty for none.',
+      quantityInvalid: 'Enter a whole number from 1 to {{max}}.',
+      note: 'Note',
+      notePlaceholder: 'e.g. Order #1042 or Bag 2 of 3',
+      copies: 'Number of labels',
+      copiesInvalid: 'Enter a whole number from 1 to {{max}}.',
+      previewInvalid: 'Enter a valid quantity to see the label.',
+      singleLabelPage: 'One label per page.',
+      pngTooLarge: 'This needs {{pages}} sheet pages. At {{dpi}} dpi the PNG limit is {{maxPages}}. Choose PDF, lower the resolution or print fewer labels.',
+      fields: {
+        parent: 'Parent project',
+        name: 'Project name',
+        note: 'Note',
+        parts: 'Parts printed',
+        dueDate: 'Due date',
+        printed: 'Last printed',
+        color: 'Project colour',
+        qr: 'QR code',
+        quantity: 'Quantity',
+        projectId: 'Project ID',
+      },
+    },
   },
 
   // System info
@@ -5636,6 +5665,7 @@ export default {
       pngTooLarge: 'PNG export is limited to {{maxPages}} sheet pages at {{dpi}} dpi, and this is {{pages}}. Use PDF, a lower resolution or fewer spools.',
       custom: {
         option: 'Custom sheet…',
+        loadFailed: 'Could not load the saved template. Check the selected label size before printing.',
         savedGroup: 'Saved templates',
         hint: 'Describe your own label sheet below.',
         layoutTitle: 'Sheet layout',

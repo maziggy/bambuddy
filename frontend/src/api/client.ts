@@ -4144,6 +4144,54 @@ export interface PreviewSpoolLabelRequest {
   fields: SpoolLabelField[];
 }
 
+// Mirror of backend.app.services.project_label_renderer.ProjectLabelField, in
+// print order (#3655).
+export const PROJECT_LABEL_FIELDS = [
+  'parent',
+  'name',
+  'note',
+  'parts',
+  'due_date',
+  'printed',
+  'color',
+  'qr',
+  'quantity',
+  'project_id',
+] as const;
+export type ProjectLabelField = (typeof PROJECT_LABEL_FIELDS)[number];
+// Mirror of DEFAULT_PROJECT_LABEL_FIELDS: what a bag label needs.
+export const DEFAULT_PROJECT_LABEL_FIELDS: ProjectLabelField[] = [
+  'name',
+  'note',
+  'due_date',
+  'color',
+  'qr',
+  'quantity',
+];
+
+// One project label: the project, and what was typed for this bag.
+export interface ProjectLabelItem {
+  project_id: number;
+  quantity?: number | null;
+  note?: string | null;
+}
+
+interface ProjectLabelOptions {
+  template: SpoolLabelRequestTemplate;
+  layout?: LabelSheetLayout | null;
+  monochrome?: boolean;
+  fields?: ProjectLabelField[] | null;
+}
+
+export interface PrintProjectLabelsRequest extends ProjectLabelOptions {
+  items: ProjectLabelItem[];
+  starting_position?: number;
+  format?: 'pdf' | 'png';
+  dpi?: 203 | 300 | 600;
+}
+
+export type PreviewProjectLabelRequest = ProjectLabelItem & ProjectLabelOptions;
+
 export interface InventorySpool {
   id: number;
   material: string;
@@ -7603,6 +7651,11 @@ export const api = {
     postForBlob('/inventory/labels/preview', data, signal),
   previewSpoolmanSpoolLabel: (data: PreviewSpoolLabelRequest, signal?: AbortSignal): Promise<Blob> =>
     postForBlob('/spoolman/labels/preview', data, signal),
+  // Project labels for the bag or box of a project's parts (#3655).
+  printProjectLabels: (data: PrintProjectLabelsRequest): Promise<Blob> =>
+    postForBlob('/projects/labels', data),
+  previewProjectLabel: (data: PreviewProjectLabelRequest, signal?: AbortSignal): Promise<Blob> =>
+    postForBlob('/projects/labels/preview', data, signal),
   getLabelTemplates: () => request<SavedLabelTemplate[]>('/label-templates'),
   createLabelTemplate: (data: { name: string; layout: LabelSheetLayout }) =>
     request<SavedLabelTemplate>('/label-templates', { method: 'POST', body: JSON.stringify(data) }),

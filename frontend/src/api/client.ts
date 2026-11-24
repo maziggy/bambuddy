@@ -4144,6 +4144,54 @@ export interface PreviewSpoolLabelRequest {
   fields: SpoolLabelField[];
 }
 
+// Mirror of backend.app.services.project_label_renderer.ProjectLabelField, in
+// print order (#3655).
+export const PROJECT_LABEL_FIELDS = [
+  'parent',
+  'name',
+  'note',
+  'parts',
+  'due_date',
+  'printed',
+  'color',
+  'qr',
+  'quantity',
+  'project_id',
+] as const;
+export type ProjectLabelField = (typeof PROJECT_LABEL_FIELDS)[number];
+// Mirror of DEFAULT_PROJECT_LABEL_FIELDS: what a bag label needs.
+export const DEFAULT_PROJECT_LABEL_FIELDS: ProjectLabelField[] = [
+  'name',
+  'note',
+  'due_date',
+  'color',
+  'qr',
+  'quantity',
+];
+
+// One project label: the project, and what was typed for this bag.
+export interface ProjectLabelItem {
+  project_id: number;
+  quantity?: number | null;
+  note?: string | null;
+}
+
+interface ProjectLabelOptions {
+  template: SpoolLabelRequestTemplate;
+  layout?: LabelSheetLayout | null;
+  monochrome?: boolean;
+  fields?: ProjectLabelField[] | null;
+}
+
+export interface PrintProjectLabelsRequest extends ProjectLabelOptions {
+  items: ProjectLabelItem[];
+  starting_position?: number;
+  format?: 'pdf' | 'png';
+  dpi?: 203 | 300 | 600;
+}
+
+export type PreviewProjectLabelRequest = ProjectLabelItem & ProjectLabelOptions;
+
 export interface InventorySpool {
   id: number;
   material: string;
@@ -7445,7 +7493,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  createSpoolFromSlot: (data: { printer_id: number; ams_id: number; tray_id: number }) =>
+  createSpoolFromSlot: (data: { printer_id: number; ams_id: number; tray_id: number; tag_uid?: string; tray_uuid?: string }) =>
     request<InventorySpool>(`/inventory/spools/from-slot`, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -7603,6 +7651,11 @@ export const api = {
     postForBlob('/inventory/labels/preview', data, signal),
   previewSpoolmanSpoolLabel: (data: PreviewSpoolLabelRequest, signal?: AbortSignal): Promise<Blob> =>
     postForBlob('/spoolman/labels/preview', data, signal),
+  // Project labels for the bag or box of a project's parts (#3655).
+  printProjectLabels: (data: PrintProjectLabelsRequest): Promise<Blob> =>
+    postForBlob('/projects/labels', data),
+  previewProjectLabel: (data: PreviewProjectLabelRequest, signal?: AbortSignal): Promise<Blob> =>
+    postForBlob('/projects/labels/preview', data, signal),
   getLabelTemplates: () => request<SavedLabelTemplate[]>('/label-templates'),
   createLabelTemplate: (data: { name: string; layout: LabelSheetLayout }) =>
     request<SavedLabelTemplate>('/label-templates', { method: 'POST', body: JSON.stringify(data) }),
@@ -7701,7 +7754,19 @@ export const api = {
     request<{ status: string }>('/inventory/colors/reset', { method: 'POST' }),
   searchColors: (manufacturer?: string, material?: string) =>
     request<ColorCatalogEntry[]>(`/inventory/colors/search?${manufacturer ? `manufacturer=${encodeURIComponent(manufacturer)}` : ''}${manufacturer && material ? '&' : ''}${material ? `material=${encodeURIComponent(material)}` : ''}`),
-  linkTagToSpool: (spoolId: number, data: { tag_uid?: string; tray_uuid?: string; tag_type?: string; data_origin?: string }) =>
+  // move: take the tag from the spool that has it instead of a 409. A slot:
+  // also assign the spool there, as an RFID match does (#3658).
+  linkTagToSpool: (spoolId: number, data: {
+    tag_uid?: string;
+    tray_uuid?: string;
+    tag_type?: string;
+    data_origin?: string;
+    move?: boolean;
+    source_spool_id?: number;
+    printer_id?: number;
+    ams_id?: number;
+    tray_id?: number;
+  }) =>
     request<InventorySpool>(`/inventory/spools/${spoolId}/link-tag`, {
       method: 'PATCH',
       body: JSON.stringify(data),

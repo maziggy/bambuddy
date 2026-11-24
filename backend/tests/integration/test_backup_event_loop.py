@@ -516,6 +516,24 @@ async def test_a_zip_being_written_is_out_of_reach_until_it_is_complete(async_cl
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+async def test_a_staged_folder_that_cannot_be_listed_never_produces_a_backup(async_client, backup_env, monkeypatch):
+    from backend.app.api.routes.settings import create_backup_zip
+
+    scandir = os.scandir
+
+    def deny_staged_archive(path):
+        if isinstance(path, (str, Path)) and Path(path).is_relative_to(backup_env.temp) and Path(path).name == "1":
+            raise PermissionError("cannot list staged archive")
+        return scandir(path)
+
+    monkeypatch.setattr(os, "scandir", deny_staged_archive)
+    with pytest.raises(PermissionError, match="cannot list staged archive"):
+        await create_backup_zip(output_path=backup_env.out)
+    assert list(backup_env.out.iterdir()) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_a_failed_zip_leaves_nothing_in_the_backup_folder(async_client, backup_env, monkeypatch):
     from backend.app.api.routes import settings as settings_routes
     from backend.app.services.local_backup import LocalBackupService
@@ -594,7 +612,7 @@ def test_a_folder_that_could_not_be_read_counts_as_missing(monkeypatch, tmp_path
 
     monkeypatch.setattr(shutil, "copytree", denied)
 
-    assert settings_routes._copy_backup_dirs([("archive", source)], tmp_path / "stage") == ["archive/"]
+    assert settings_routes._copy_backup_dirs([("archive", source)], tmp_path / "stage") == ([], ["archive/"])
 
 
 @pytest.mark.asyncio
@@ -697,7 +715,10 @@ def test_the_apps_short_lived_files_stay_out_of_the_backup(tmp_path):
     (vp / "temp" / "keep.3mf").write_bytes(b"z")
 
     stage = tmp_path / "stage"
-    assert settings_routes._copy_backup_dirs([("archive", archive), ("virtual_printer", vp)], stage) == []
+    assert settings_routes._copy_backup_dirs([("archive", archive), ("virtual_printer", vp)], stage) == (
+        ["archive", "virtual_printer"],
+        [],
+    )
 
     assert not (stage / "archive" / "temp").exists()
     assert (stage / "archive" / "1" / "temp" / "part.3mf").read_bytes() == b"y"
@@ -729,8 +750,52 @@ def test_a_file_the_app_deleted_during_the_copy_is_not_missing(monkeypatch, tmp_
     stage = tmp_path / "stage"
 
     # It was never part of the data, so the backup is complete.
-    assert settings_routes._copy_backup_dirs([("archive", archive)], stage) == []
+    assert settings_routes._copy_backup_dirs([("archive", archive)], stage) == (["archive"], [])
     assert (stage / "archive" / "1" / "part.3mf").exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="creating symlinks may require elevated permissions on Windows")
+def test_a_dangling_link_does_not_make_a_directory_a_captured_empty_snapshot(tmp_path):
+    from backend.app.api.routes import settings as settings_routes
+
+    archive = tmp_path / "archive"
+    archive.mkdir()
+    (archive / "unavailable").symlink_to(tmp_path / "missing")
+    captured, warnings = settings_routes._copy_backup_dirs([("archive", archive)], tmp_path / "stage")
+    assert captured == []
+    assert warnings == ["archive/unavailable"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="creating symlinks may require elevated permissions on Windows")
+def test_partial_restore_keeps_links_and_continues_after_a_failed_file(tmp_path, monkeypatch):
+    from backend.app.api.routes import settings as settings_routes
+
+    source = tmp_path / "source"
+    source.mkdir()
+    storage = tmp_path / "storage"
+    storage.mkdir()
+    dest = tmp_path / "managed"
+    dest.symlink_to(storage, target_is_directory=True)
+    outside = tmp_path / "original"
+    outside.write_text("original")
+    (dest / "linked").symlink_to(outside)
+    (dest / "hardlinked").hardlink_to(outside)
+    (dest / "unwritable").write_text("current")
+    for name in ("unwritable", "linked", "hardlinked", "later"):
+        (source / name).write_text("saved")
+    copy2 = shutil.copy2
+
+    def fail_one(src, dst):
+        if src.name == "unwritable":
+            Path(dst).write_text("truncated")
+            raise OSError("Could not finish copying")
+        return copy2(src, dst)
+
+    monkeypatch.setattr(shutil, "copy2", fail_one)
+    settings_routes._restore_partial_dir(source, dest)
+    assert outside.read_text() == (dest / "linked").read_text() == "original"
+    assert (dest / "unwritable").read_text() == "current"
+    assert (dest / "hardlinked").read_text() == (dest / "later").read_text() == "saved"
 
 
 class _HeldRestore:

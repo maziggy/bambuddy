@@ -76,6 +76,7 @@ from backend.app.api.routes import (
     printer_locations,
     printer_sensor_history,
     printers,
+    project_labels,
     projects,
     scheduled_dryings,
     settings as settings_routes,
@@ -89,6 +90,7 @@ from backend.app.api.routes import (
     spoolman_inventory,
     support,
     system,
+    threedfp,
     updates,
     user_notifications,
     users,
@@ -744,8 +746,15 @@ async def _broadcast_unknown_tag(
     tray_color: str | None = None,
     tray_sub_brands: str | None = None,
     tray_count: int | None = None,
+    candidate_spool_ids: list[int] | None = None,
+    tray_info_idx: str | None = None,
 ) -> None:
-    """Broadcast unknown_tag, deduped so repeated MQTT pushes for the same slot+tag don't spam the UI."""
+    """Broadcast unknown_tag, deduped so repeated MQTT pushes for the same slot+tag don't spam the UI.
+
+    ``candidate_spool_ids`` lists the untagged spools that match the tag when
+    the matcher would not choose between them (#3658), so the prompt can ask
+    which one it is.
+    """
     _logger = logging.getLogger(__name__)
     slot_key = (ams_id, tray_id)
     tag_key = (tag_uid or "", tray_uuid or "")
@@ -783,6 +792,8 @@ async def _broadcast_unknown_tag(
             "tray_color": tray_color,
             "tray_sub_brands": tray_sub_brands,
             "tray_count": tray_count,
+            "candidate_spool_ids": candidate_spool_ids or [],
+            "tray_info_idx": tray_info_idx,
         }
     )
     per_printer[slot_key] = tag_key
@@ -1627,6 +1638,45 @@ def _compute_run_filament_grams(
             return round(archive_filament_used_grams * scale, 1)
 
     return None
+
+
+async def _report_recovered_charge_failed(run, error: Exception) -> None:
+    """The billing-failed alert for a charge startup could not write (#3581):
+    the print ended before the restart, so its completion can no longer
+    report it. To the interface and the notification providers, as a charge
+    that fails at a print's end is."""
+    printer_name = run.printer_name or f"Printer {run.printer_id}"
+    filename = run.print_name or "Unknown"
+    await ws_manager.broadcast(
+        {
+            "type": "billing_charge_failed",
+            "printer_id": run.printer_id,
+            "printer_name": printer_name,
+            "filename": filename,
+            "archive_id": run.archive_id,
+        }
+    )
+    async with async_session() as db:
+        await notification_service.on_billing_charge_failed(
+            run.printer_id, printer_name, filename, run.archive_id, str(error), db
+        )
+
+
+async def _run_wear_cost(db, printer_id: int, run, archive, completed_at, data: dict) -> float | None:
+    """The printer wear of the run that just ended at ``completed_at``, for
+    its charge (#3581): from the same duration and rate as its print log
+    entry. The charge is written before the entry is."""
+    from backend.app.models.printer import Printer
+    from backend.app.services.print_log import run_duration_seconds, wear_cost_for_run
+
+    started_at = run.started_at if run is not None and run.started_at is not None else archive.started_at
+    duration = run_duration_seconds(
+        started_at,
+        completed_at,
+        reconciled=bool(data.get("_reconciled")) and not data.get("_reconciled_completed_at"),
+    )
+    rate = await db.scalar(select(Printer.wear_cost_per_hour).where(Printer.id == printer_id))
+    return wear_cost_for_run(duration, rate)
 
 
 def _printing_here(printer_id: int, archive_id: int) -> bool:
@@ -3462,12 +3512,13 @@ async def on_ams_change(printer_id: int, ams_data: list):
             from backend.app.services.spool_tag_matcher import (
                 auto_assign_spool,
                 create_spool_from_tray,
-                find_matching_untagged_spool,
+                find_untagged_candidates,
                 get_spool_by_tag,
                 is_bambu_tag,
                 is_valid_tag,
                 link_tag_to_inventory_spool,
                 tag_belongs_to_archived_spool,
+                untagged_match_is_ambiguous,
             )
 
             _spoolman_on = await get_setting(db, "spoolman_enabled")
@@ -3567,7 +3618,27 @@ async def on_ams_change(printer_id: int, ams_data: list):
                                 continue
                             if not spool:
                                 # Try matching an untagged inventory spool (same material/color)
-                                spool = await find_matching_untagged_spool(db, tray)
+                                candidates = await find_untagged_candidates(db, tray)
+                                if untagged_match_is_ambiguous(candidates):
+                                    # Several spools match and they differ: only the
+                                    # user knows which one is in the slot. Ask, whatever
+                                    # the auto-add setting says, and leave the slot
+                                    # unassigned until they answer (#3658).
+                                    await _broadcast_unknown_tag(
+                                        printer_id=printer_id,
+                                        ams_id=ams_id,
+                                        tray_id=tray_id,
+                                        tag_uid=tag_uid,
+                                        tray_uuid=tray_uuid,
+                                        tray_type=tray.get("tray_type"),
+                                        tray_color=tray.get("tray_color"),
+                                        tray_sub_brands=tray.get("tray_sub_brands"),
+                                        tray_info_idx=tray_info_idx,
+                                        tray_count=len(ams_unit.get("tray", [])),
+                                        candidate_spool_ids=[s.id for s in candidates],
+                                    )
+                                    continue
+                                spool = candidates[0] if candidates else None
                                 if spool:
                                     await link_tag_to_inventory_spool(db, spool, tray)
                                 elif _auto_add_unknown:
@@ -3584,6 +3655,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
                                         tray_type=tray.get("tray_type"),
                                         tray_color=tray.get("tray_color"),
                                         tray_sub_brands=tray.get("tray_sub_brands"),
+                                        tray_info_idx=tray_info_idx,
                                         tray_count=len(ams_unit.get("tray", [])),
                                     )
                                     continue
@@ -3633,6 +3705,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
                                 tray_type=tray.get("tray_type"),
                                 tray_color=tray.get("tray_color"),
                                 tray_sub_brands=tray.get("tray_sub_brands"),
+                                tray_info_idx=tray_info_idx,
                                 tray_count=len(ams_unit.get("tray", [])),
                             )
                         # No-tag slots (generic non-RFID filament) are left alone:
@@ -10151,6 +10224,11 @@ async def _close_out_print(printer_id: int, data: dict):
 
     log_timing("Archive lookup")
 
+    # This run's end: written to the archive below, and the end its wear is
+    # charged to (#3581). Not read back from the archive, which another
+    # plate of it starting or ending meanwhile rewrites. A reconciled
+    # completed print ended at an estimated time, not at the reconnect (#3310).
+    run_completed_at = data.get("_reconciled_completed_at") or datetime.now(timezone.utc)
     # Update archive status
     logger.info("[ARCHIVE] Updating archive %s status...", archive_id)
     try:
@@ -10182,13 +10260,7 @@ async def _close_out_print(printer_id: int, data: dict):
             await service.update_archive_status(
                 archive_id,
                 status=status,
-                completed_at=(
-                    # A reconciled completed print ended at an estimated time,
-                    # not at the reconnect (#3310).
-                    data.get("_reconciled_completed_at") or datetime.now(timezone.utc)
-                    if status in ("completed", "failed", "aborted", "cancelled")
-                    else None
-                ),
+                completed_at=(run_completed_at if status in ("completed", "failed", "aborted", "cancelled") else None),
                 failure_reason=failure_reason,
             )
             logger.info(
@@ -10218,79 +10290,9 @@ async def _close_out_print(printer_id: int, data: dict):
 
     log_timing("Archive status update")
 
-    # Apply finance wallet charge or release reservations once. For all partial
-    # terminal states (failed, aborted at the printer display, or cancelled via
-    # Bambuddy) use this run's measured spool delta, falling back to the last
-    # valid printer progress. PrintArchive.filament_used_grams is the slicer
-    # estimate and therefore cannot represent an interrupted run.
-    try:
-        if data.get("status") in ("completed", "failed", "aborted", "cancelled"):
-            # A run its start did not get to price (a failure within seconds,
-            # a slow Spoolman, a restart) is priced now, before the session
-            # below holds the database: it is charged from that price (#3580).
-            await _price_unpriced_run(
-                printer_id,
-                archive_id,
-                printer_manager,
-                ams_mapping=stored_ams_mapping,
-                plate_id=billing_plate_id,
-                session_factory=async_session,
-            )
-            async with async_session() as db:
-                from backend.app.models.archive import PrintArchive
-                from backend.app.services.finance_billing import apply_print_charge_for_archive
-                from backend.app.services.print_log import run_being_ended
-
-                archive = await db.get(PrintArchive, archive_id)
-                # The run this end fills in below: charged as its own, not as
-                # the archive's latest dispatch (another plate of it, maybe).
-                charged_run = await run_being_ended(db, archive_id, printer_id, archive.started_at) if archive else None
-                if archive and billing_run_id is None and charged_run is None:
-                    billing_run_id = getattr(archive, "billing_run_id", None)
-                if archive and archive.created_by_id is None and _print_user_info:
-                    archive.created_by_id = await _print_user_id_if_still_there(db, _print_user_info)
-                    await db.flush()
-
-                # What the run was priced at when it started, at the spools
-                # mapped for it (#3580): a reprint is charged at those, not at
-                # the first run's cost the archive keeps. Without one (no run
-                # opened, no mapping, nothing to price it from even now)
-                # the archive's, as before. The grams it was priced for come
-                # with it: a run that did not finish pays its share of those.
-                run_planned_cost = charged_run.planned_cost if charged_run is not None else None
-                if charged_run is not None and run_planned_cost is not None and charged_run.planned_grams:
-                    billing_planned_grams = charged_run.planned_grams
-
-                run_status = data.get("status", "completed")
-                last_progress = data.get("last_progress")
-                if last_progress is None:
-                    last_progress = data.get("progress")
-                actual_run_grams = _compute_run_filament_grams(
-                    run_status,
-                    billing_planned_grams,
-                    last_progress,
-                    usage_results,
-                )
-                filament_usage = (actual_run_grams, billing_planned_grams) if run_status != "completed" else None
-                in_memory_cost_center_id = _print_cost_center_ids.pop((printer_id, archive_id), None)
-                charged = await apply_print_charge_for_archive(
-                    db,
-                    archive_id,
-                    charged_user_id=billing_user_id,
-                    cost_center_id=(
-                        billing_cost_center_id if billing_cost_center_id is not None else in_memory_cost_center_id
-                    ),
-                    print_queue_id=queue_item_id,
-                    print_run_id=billing_run_id,
-                    base_cost_override=run_planned_cost if run_planned_cost is not None else billing_base_cost,
-                    filament_usage=filament_usage,
-                    run_entry_id=charged_run.id if charged_run is not None else None,
-                    run_status=run_status,
-                )
-                await db.commit()
-                if charged:
-                    logger.info("[FINANCE] Applied print charge for archive %s", archive_id)
-    except Exception as e:
+    async def _report_billing_charge_failed(e: Exception) -> None:
+        """Tell the interface and the notification providers that the print's
+        charge could not be written, wherever it was tried."""
         logger.warning("[FINANCE] Failed to apply print charge for archive %s: %s", archive_id, e)
         printer_info = printer_manager.get_printer(printer_id)
         billing_printer_name = printer_info.name if printer_info else f"Printer {printer_id}"
@@ -10336,6 +10338,136 @@ async def _close_out_print(printer_id: int, data: dict):
             _notify_billing_charge_failed(),
             name=f"billing-charge-failed-{archive_id}",
         )
+
+    # Apply finance wallet charge or release reservations once. For all partial
+    # terminal states (failed, aborted at the printer display, or cancelled via
+    # Bambuddy) use this run's measured spool delta, falling back to the last
+    # valid printer progress. PrintArchive.filament_used_grams is the slicer
+    # estimate and therefore cannot represent an interrupted run.
+    # The run whose charge waits for its energy (#3581), written by the energy
+    # task below instead of here.
+    deferred_charge_run_id: int | None = None
+    try:
+        if data.get("status") in ("completed", "failed", "aborted", "cancelled"):
+            # A run its start did not get to price (a failure within seconds,
+            # a slow Spoolman, a restart) is priced now, before the session
+            # below holds the database: it is charged from that price (#3580).
+            await _price_unpriced_run(
+                printer_id,
+                archive_id,
+                printer_manager,
+                ams_mapping=stored_ams_mapping,
+                plate_id=billing_plate_id,
+                session_factory=async_session,
+            )
+            async with async_session() as db:
+                from backend.app.models.archive import PrintArchive
+                from backend.app.services.finance_billing import (
+                    apply_print_charge_for_archive,
+                    defer_print_charge,
+                    print_charge_policy,
+                )
+                from backend.app.services.print_log import energy_start_of, run_being_ended
+
+                archive = await db.get(PrintArchive, archive_id)
+                # The run this end fills in below: charged as its own, not as
+                # the archive's latest dispatch (another plate of it, maybe).
+                charged_run = await run_being_ended(db, archive_id, printer_id, archive.started_at) if archive else None
+                if archive and billing_run_id is None and charged_run is None:
+                    billing_run_id = getattr(archive, "billing_run_id", None)
+                if archive and archive.created_by_id is None and _print_user_info:
+                    archive.created_by_id = await _print_user_id_if_still_there(db, _print_user_info)
+                    await db.flush()
+
+                # What the run was priced at when it started, at the spools
+                # mapped for it (#3580): a reprint is charged at those, not at
+                # the first run's cost the archive keeps. Without one (no run
+                # opened, no mapping, nothing to price it from even now)
+                # the archive's, as before. The grams it was priced for come
+                # with it: a run that did not finish pays its share of those.
+                run_planned_cost = charged_run.planned_cost if charged_run is not None else None
+                if charged_run is not None and run_planned_cost is not None and charged_run.planned_grams:
+                    billing_planned_grams = charged_run.planned_grams
+
+                run_status = data.get("status", "completed")
+                last_progress = data.get("last_progress")
+                if last_progress is None:
+                    last_progress = data.get("progress")
+                actual_run_grams = _compute_run_filament_grams(
+                    run_status,
+                    billing_planned_grams,
+                    last_progress,
+                    usage_results,
+                )
+                filament_usage = (actual_run_grams, billing_planned_grams) if run_status != "completed" else None
+                in_memory_cost_center_id = _print_cost_center_ids.pop((printer_id, archive_id), None)
+                charge = {
+                    "charged_user_id": billing_user_id,
+                    "cost_center_id": (
+                        billing_cost_center_id if billing_cost_center_id is not None else in_memory_cost_center_id
+                    ),
+                    "print_queue_id": queue_item_id,
+                    "print_run_id": billing_run_id,
+                    "base_cost_override": run_planned_cost if run_planned_cost is not None else billing_base_cost,
+                    "filament_usage": filament_usage,
+                    "run_entry_id": charged_run.id if charged_run is not None else None,
+                    "run_status": run_status,
+                }
+                # What this run is charged, by the charging policy for how it
+                # ended (#3581), read now: a setting changed later does not
+                # alter the charge. By default the filament alone, written
+                # here, with exactly what it was written with before.
+                policy = await print_charge_policy(db, run_status)
+                if policy.partial_filament != "proportional":
+                    charge["partial_filament"] = policy.partial_filament
+                if policy.wear and archive is not None:
+                    charge["wear_cost"] = await _run_wear_cost(
+                        db, printer_id, charged_run, archive, run_completed_at, data
+                    )
+                # A print that ended while the printer was offline: the plug
+                # is read now, at the reconnect, so its energy would include
+                # everything since the real end (idle draw, other prints).
+                # Not charged, also when an end time was estimated for it:
+                # that gives its duration, and so its wear, but no plug
+                # reading at that time.
+                energy_unmeasured = bool(data.get("_reconciled"))
+                if charged_run is not None and charged_run.pending_charge:
+                    # A second end of a run whose charge already waits for
+                    # its energy (its real end, then a reconnect closing it
+                    # again): that one is written, by the task that waits
+                    # for it or by the next startup. This end knows less of
+                    # the print and would charge someone else.
+                    logger.info("[FINANCE] Run %s already has a print charge waiting; kept", charged_run.id)
+                    charged = False
+                elif (
+                    policy.energy
+                    and not energy_unmeasured
+                    and charged_run is not None
+                    and energy_start_of(charged_run, archive) is not None
+                ):
+                    # The energy is read from the plug after this, in the
+                    # background. The charge waits for it on the run row,
+                    # which a restart in between does not lose.
+                    defer_print_charge(charged_run, archive_id, {**charge, "partial_filament": policy.partial_filament})
+                    deferred_charge_run_id = charged_run.id
+                    charged = False
+                else:
+                    if policy.energy:
+                        # A run without a start reading has no energy to wait
+                        # for, and one that ended offline none to trust:
+                        # charged now, and its charge says so. So is a
+                        # print with no run row (none opened at its start):
+                        # the energy task may still work out its energy from
+                        # the archive's reading, but there is no row to keep
+                        # the waiting charge on across a restart.
+                        charge["energy_unavailable"] = True
+                    charged = await apply_print_charge_for_archive(db, archive_id, **charge)
+                await db.commit()
+                if charged:
+                    logger.info("[FINANCE] Applied print charge for archive %s", archive_id)
+    except Exception as e:
+        deferred_charge_run_id = None
+        await _report_billing_charge_failed(e)
 
     log_timing("Finance charge update")
 
@@ -10480,8 +10612,9 @@ async def _close_out_print(printer_id: int, data: dict):
     # Run slow operations as background tasks to avoid blocking the event loop
     # These operations can take 5-10+ seconds and would freeze the UI if awaited
 
-    async def _background_energy_calculation():
-        """Calculate and save energy usage in background.
+    async def _background_energy_calculation() -> float | None:
+        """Calculate and save energy usage in background. Returns the run's
+        energy cost, None when it could not be worked out.
 
         Reads the starting kWh from the archive row (#941: persisted so a mid-print
         backend restart no longer loses per-print energy data).
@@ -10580,10 +10713,62 @@ async def _close_out_print(printer_id: int, data: dict):
                     run_row.energy_kwh = energy_used
                     run_row.energy_cost = energy_cost_value
 
+                # The delta is one counter's only when both readings are the
+                # same plug's. The first plug that answers is read: with the
+                # start's plug silent now, that is another one (an accessory
+                # with a lifetime counter of its own), and the difference
+                # of two counters is not what the print used. Saved as
+                # before, but not charged (#3581).
+                same_plug = start.plug_id is not None and plug.id == start.plug_id
+                if not same_plug and run_row is not None:
+                    from backend.app.services.finance_billing import distrust_pending_charge_energy
+
+                    distrust_pending_charge_energy(run_row)
+                    logger.warning(
+                        "[ENERGY-BG] End reading of archive %s is from plug %s, its start reading from plug %s:"
+                        " the energy is not charged",
+                        archive_id,
+                        plug.id,
+                        start.plug_id,
+                    )
+
                 await db.commit()
                 logger.info("[ENERGY-BG] Saved: %s kWh, cost=%s", energy_used, energy_cost_value)
+                return energy_cost_value if same_plug else None
         except Exception as e:
             logger.warning("[ENERGY-BG] Failed: %s", e)
+        return None
+
+    async def _background_energy_and_charge() -> None:
+        """The energy calculation, then the charge that waited for it (#3581).
+
+        The calculation returns early on several paths (no plug, no reading,
+        a counter reset) and swallows its errors: all of them come back as no
+        energy, and the charge is then written without it. Stopped by a
+        restart before that, the charge is still on the run row and is
+        written at startup (``recover_pending_print_charges``).
+        """
+        energy_cost_value = await _background_energy_calculation()
+        run_id = deferred_charge_run_id
+        if run_id is None:
+            return
+        try:
+            from backend.app.core.database import run_with_retry
+            from backend.app.services.finance_billing import apply_pending_print_charge
+
+            async def _write_charge(db) -> bool:
+                charged = await apply_pending_print_charge(db, run_id, energy_cost=energy_cost_value)
+                await db.commit()
+                return charged
+
+            # Retried on a locked SQLite database: left waiting, the charge
+            # is not written before the next startup, and its reservation
+            # stays active until then.
+            charged = await run_with_retry(_write_charge, label="deferred print charge")
+            if charged:
+                logger.info("[FINANCE] Applied print charge for archive %s", archive_id)
+        except Exception as e:
+            await _report_billing_charge_failed(e)
 
     async def _background_finish_photo() -> str | None:
         """Capture finish photo in background. Returns photo filename if captured."""
@@ -10859,7 +11044,7 @@ async def _close_out_print(printer_id: int, data: dict):
                 except Exception as e:
                     logger.warning("[PLATE-RESTORE] printer %s: could not lower plate: %s", printer_id, e)
 
-    spawn_background_task(_background_energy_calculation(), name="background-energy-calc")
+    spawn_background_task(_background_energy_and_charge(), name="background-energy-calc")
     # Photo capture task - result will be used by notifications
     photo_task = spawn_background_task(_background_finish_photo(), name="background-finish-photo")
     log_timing("Background tasks scheduled (energy, photo)")
@@ -12371,6 +12556,15 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logging.warning("[BATCH] Startup status backfill failed: %s", exc)
 
+    # Print charges that waited for their run's energy when the backend
+    # stopped (#3581): written now, before any printer reports a new end.
+    try:
+        from backend.app.services.finance_billing import recover_pending_print_charges
+
+        await recover_pending_print_charges(async_session, on_failure=_report_recovered_charge_failed)
+    except Exception as exc:
+        logging.warning("[FINANCE] Could not settle the print charges a restart interrupted: %s", exc)
+
     # Each plate's estimate of archives made before they were kept (#3375),
     # read from their 3MFs in the background: the readers use the whole
     # file's figures until then.
@@ -12398,6 +12592,7 @@ async def lifespan(app: FastAPI):
     from backend.app.services.orca_cloud import (
         set_shared_http_client as set_shared_orca_http_client,
     )
+    from backend.app.services.threedfp import set_shared_http_client as set_shared_threedfp_http_client
 
     _shared_cloud_http_client = _httpx.AsyncClient(timeout=30.0)
     set_shared_http_client(_shared_cloud_http_client)
@@ -12407,6 +12602,7 @@ async def lifespan(app: FastAPI):
     # Same for Orca Cloud — without this the per-request OrcaCloudService()
     # each spun up (and never closed) its own client, leaking sockets.
     set_shared_orca_http_client(_shared_cloud_http_client)
+    set_shared_threedfp_http_client(_shared_cloud_http_client)
 
     # Fix queue items stuck with invalid "aborted" status (should be "cancelled").
     # This can happen when a print was cancelled mid-print on versions before this fix.
@@ -12836,6 +13032,10 @@ async def lifespan(app: FastAPI):
         logging.info("Virtual printer manager synced from database")
     except Exception as e:
         logging.warning("Failed to sync virtual printers: %s", e)
+    # Restarts a VP whose services end, e.g. one whose bind address was not
+    # assigned yet just now (#3687). Started after the first sync, and also
+    # when it failed: a later sync from the settings adds the VPs.
+    virtual_printer_manager.start_supervisor()
 
     yield
 
@@ -12913,6 +13113,7 @@ async def lifespan(app: FastAPI):
     set_shared_http_client(None)
     set_shared_makerworld_http_client(None)
     set_shared_orca_http_client(None)
+    set_shared_threedfp_http_client(None)
     await _shared_cloud_http_client.aclose()
 
     # Checkpoint WAL (SQLite only) and close all database connections
@@ -13471,11 +13672,14 @@ app.include_router(filaments.router, prefix=app_settings.api_prefix)
 app.include_router(finance.router, prefix=app_settings.api_prefix)
 app.include_router(inventory.router, prefix=app_settings.api_prefix)
 app.include_router(labels.router, prefix=app_settings.api_prefix)
+app.include_router(project_labels.router, prefix=app_settings.api_prefix)
 app.include_router(label_templates.router, prefix=app_settings.api_prefix)
 app.include_router(settings_routes.router, prefix=app_settings.api_prefix)
 app.include_router(overlay_branding.router, prefix=app_settings.api_prefix)
 app.include_router(cloud.router, prefix=app_settings.api_prefix)
 app.include_router(orca_cloud.router, prefix=app_settings.api_prefix)
+app.include_router(threedfp.router, prefix=app_settings.api_prefix)
+app.include_router(threedfp.links_router, prefix=app_settings.api_prefix)
 app.include_router(local_presets.router, prefix=app_settings.api_prefix)
 app.include_router(smart_plugs.router, prefix=app_settings.api_prefix)
 app.include_router(ha_sensors.router, prefix=app_settings.api_prefix)

@@ -17,6 +17,7 @@ import pytest
 from fastapi import HTTPException
 
 from backend.app.api.routes.library import _run_slicer_with_fallback
+from backend.app.core.printer_scope import ALL_PRINTERS
 from backend.app.schemas.slicer import PresetRef, SliceRequest
 
 pytestmark = pytest.mark.unit
@@ -120,6 +121,7 @@ async def _run(
             model_filename="cube.3mf" if embedded_fallback else "cube.stl",
             request=request,
             current_user_id=None,
+            printer_scope=ALL_PRINTERS,
         )
 
 

@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, Loader2, Save, Beaker, Palette, Zap, Tag, Link2, Unlink, Printer } from 'lucide-react';
 import { api, ApiError } from '../api/client';
-import type { InventorySpool, SlicerSetting, SpoolCatalogEntry, LocalPreset, BuiltinFilament, SpoolmanBulkCreateResult, SpoolFilamentPresetInput, SpoolKProfileInput, SpoolmanFilamentEntry, ResolvedProfileDefault } from '../api/client';
+import type { InventorySpool, SlicerSetting, SpoolCatalogEntry, LocalPreset, BuiltinFilament, SpoolmanBulkCreateResult, SpoolFilamentPresetInput, SpoolKProfileInput, SpoolmanFilamentEntry, ResolvedProfileDefault, ThreeDfpFilament } from '../api/client';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 import type {
@@ -22,12 +22,16 @@ import { ColorSection } from './spool-form/ColorSection';
 import { AdditionalSection } from './spool-form/AdditionalSection';
 import { SupplierSection, type SupplierLinkDraft } from './spool-form/SupplierSection';
 import { SpoolmanFilamentPicker } from './spool-form/SpoolmanFilamentPicker';
+import { ThreeDfpSection } from './spool-form/ThreeDfpSection';
 import { PrinterProfilesSection } from './spool-form/PrinterProfilesSection';
 import { ProfileDefaultOption, type ProfileDefaultScope } from './spool-form/ProfileDefaultOption';
 import { normaliseFlow } from '../utils/nozzleFlow';
 import { parseUTCDate, toDateTimeLocalValue } from '../utils/date';
 import { SpoolUsageHistory } from './SpoolUsageHistory';
 import { AssignToAmsModal } from './spoolbuddy/AssignToAmsModal';
+import { useAuth } from '../contexts/AuthContext';
+import { hasRfidTag } from '../utils/rfidTagLink';
+import { LinkTagModal, type LinkTagTarget } from './LinkTagModal';
 import {
   invalidateInventoryLocations,
   invalidateSpoolAndLocationQueries,
@@ -70,6 +74,7 @@ export function SpoolFormModal({
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+  const { hasPermission } = useAuth();
 
   const refreshSpoolQueries = () =>
     invalidateSpoolAndLocationQueries(queryClient, spoolsQueryKey);
@@ -100,6 +105,11 @@ export function SpoolFormModal({
   // sends them, see saveSupplierLinks.
   const [supplierLinks, setSupplierLinks] = useState<SupplierLinkDraft[]>([]);
   const [supplierLinksTouched, setSupplierLinksTouched] = useState(false);
+  // The 3D Filament Profiles filament the spool is linked to (#2981). Loaded
+  // with its own request, saved after the spool like the supplier links.
+  const [threedfpFilamentId, setThreedfpFilamentId] = useState<number | null>(null);
+  const [threedfpTouched, setThreedfpTouched] = useState(false);
+  const threedfpTouchedRef = useRef(false);
   const [quickAdd, setQuickAdd] = useState(false);
   const [quantity, setQuantity] = useState(1);
   const [showAssignModal, setShowAssignModal] = useState(false);
@@ -118,8 +128,13 @@ export function SpoolFormModal({
     const tape = labelSettings?.label_printer_tape || '50';
     printSavedSpoolLabels(spoolmanMode ? 'spoolman' : 'inventory', autoPrintRequests(spoolIds, tape), { t, showToast });
   };
+  // Giving this spool's tag to the spool it belongs to (#3658).
+  const [moveTarget, setMoveTarget] = useState<LinkTagTarget | null>(null);
 
+  const [movedTag, setMovedTag] = useState(false);
   useEffect(() => {
+    setMoveTarget(null);
+    setMovedTag(false);
     setShowAssignModal(false);
   }, [isOpen, spool?.id]);
 
@@ -459,9 +474,14 @@ export function SpoolFormModal({
     [formData.slicer_filament, filamentOptions],
   );
 
-  // Reset form when modal opens/closes or spool changes
+  const editingKey = useRef<string | null>(null);
+  // A tag move refreshes this spool. Keep edits made in the same open dialog.
   useEffect(() => {
+    if (!isOpen) editingKey.current = null;
     if (isOpen) {
+      const key = mode + "-" + spool?.id;
+      if (editingKey.current === key) return;
+      editingKey.current = key;
       if (spool) {
         // Legacy rows may carry a malformed rgba (e.g. the 7-char 'FFFFFFF'
         // from #1055 before the create/update pattern was enforced). The
@@ -588,6 +608,27 @@ export function SpoolFormModal({
         console.error('Failed to load filament preset overrides:', e);
         showToast(t('inventory.filamentPresetsLoadFailed'), 'warning');
       });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, spool?.id, spoolmanMode]);
+
+  // The spool's 3DFP link (#2981). A copy keeps it: it names the product.
+  useEffect(() => {
+    if (!isOpen) return;
+    setThreedfpFilamentId(null);
+    setThreedfpTouched(false);
+    threedfpTouchedRef.current = false;
+    if (!spool) return;
+    let cancelled = false;
+    api
+      .getThreedfpSpoolLink(spoolmanMode ? 'spoolman' : 'inventory', spool.id)
+      .then((link) => {
+        // A lookup made before this answered is the user's choice.
+        if (!cancelled && !threedfpTouchedRef.current) setThreedfpFilamentId(link.filament_id);
+      })
+      .catch((err) => console.error('Failed to load the 3D Filament Profiles link:', err));
     return () => {
       cancelled = true;
     };
@@ -743,6 +784,45 @@ export function SpoolFormModal({
     showToast(t('inventory.spoolmanFilamentSelected'), 'success');
   };
 
+  const linkThreedfp = (filamentId: number | null) => {
+    threedfpTouchedRef.current = true;
+    setThreedfpTouched(true);
+    setThreedfpFilamentId(filamentId);
+  };
+
+  // Fill the form from a 3D Filament Profiles filament (#2981) and link the
+  // spool to it. The preset is only filled when empty: for brands other than
+  // Bambu Lab, 3DFP gives the generic preset (GFL99 for PLA), and a preset the
+  // user chose is more specific than that.
+  const applyThreedfp = (filament: ThreeDfpFilament) => {
+    const presetId = filament.bambu_filament_id;
+    const fillPreset = !!presetId && !formData.slicer_filament;
+    if (spoolmanMode && formData.spoolman_filament_id !== null) {
+      showToast(t('inventory.spoolmanFilamentUnlinked'), 'info');
+    }
+    setFormData((prev) => ({
+      ...prev,
+      ...(filament.brand_name ? { brand: filament.brand_name } : {}),
+      ...(filament.material ? { material: filament.material } : {}),
+      subtype: filament.material_type ?? '',
+      ...(filament.color ? { color_name: filament.color } : {}),
+      ...(filament.rgb ? { rgba: `${filament.rgb.slice(1).toUpperCase()}FF`, extra_colors: '', effect_type: '' } : {}),
+      ...(filament.nominal_weight ? { label_weight: Math.round(filament.nominal_weight) } : {}),
+      ...(filament.spool_weight ? { core_weight: Math.round(filament.spool_weight), core_weight_catalog_id: null } : {}),
+      ...(fillPreset ? { slicer_filament: presetId } : {}),
+      // A different product than the Spoolman catalogue entry picked before.
+      ...(spoolmanMode ? { spoolman_filament_id: null } : {}),
+    }));
+    if (filament.spool_weight) setCoreWeightTouched(true);
+    if (fillPreset) {
+      presetFromDefault.current = false;
+      setPresetInputValue(builtinFilaments.find((b) => b.filament_id === presetId)?.name ?? presetId);
+    }
+    setErrors({});
+    linkThreedfp(filament.id);
+    showToast(t('inventory.threedfp.applied'), 'success');
+  };
+
   // Handle color selection
   const handleColorUsed = (color: ColorPreset) => {
     setRecentColors(prev => saveRecentColor(color, prev));
@@ -760,6 +840,7 @@ export function SpoolFormModal({
         if (!ok) return;
         const suppliersOk = await saveSupplierLinks(newSpool.id);
         if (!suppliersOk) return;
+        if (!(await saveThreedfpLink(newSpool.id))) return;
       }
       await saveProfileDefault();
       await refreshSpoolQueries();
@@ -810,6 +891,10 @@ export function SpoolFormModal({
           await saveSupplierLinks(s.id);
         }
       }
+      // Every copy is the same product, so every copy gets the 3DFP link.
+      for (const s of createdSpools) {
+        await saveThreedfpLink(s.id);
+      }
       await saveProfileDefault();
       await refreshSpoolQueries();
       if (onSpoolsCreated) onSpoolsCreated(createdSpools);
@@ -847,6 +932,7 @@ export function SpoolFormModal({
         if (!ok) return;
         const suppliersOk = await saveSupplierLinks(spool.id);
         if (!suppliersOk) return;
+        if (!(await saveThreedfpLink(spool.id))) return;
       }
       await saveProfileDefault();
       await refreshSpoolQueries();
@@ -887,7 +973,7 @@ export function SpoolFormModal({
   // the slot assignment lives in the spoolman_slot_assignments table keyed by
   // spoolman_spool_id, not in the legacy spool_assignments table — #1336 was the
   // resulting "Unassign button is always disabled" report.
-  const { data: assignments, isLoading: assignmentsLoading } = useQuery({
+  const { data: assignments, isLoading: assignmentsLoading, isSuccess: assignmentsReady } = useQuery({
     queryKey: ['spool-assignments'],
     queryFn: () => api.getAssignments(),
     enabled: isOpen && isEditing && !spoolmanMode,
@@ -897,12 +983,13 @@ export function SpoolFormModal({
     queryFn: () => api.getSpoolmanSlotAssignments(),
     enabled: isOpen && isEditing && spoolmanMode,
   });
+  const heldSlots = assignments?.filter(a => a.spool_id === spool?.id) ?? [];
   const spoolAssignment = (() => {
     if (!spool) return undefined;
     if (spoolmanMode) {
       return spoolmanSlotAssignments?.find(a => a.spoolman_spool_id === spool.id);
     }
-    return assignments?.find(a => a.spool_id === spool.id);
+    return heldSlots[0];
   })();
   const assignmentLoading = spoolmanMode ? spoolmanAssignmentsLoading : assignmentsLoading;
 
@@ -1002,6 +1089,24 @@ export function SpoolFormModal({
     } catch (err) {
       console.error('SpoolFormModal.saveSupplierLinks failed:', err);
       showToast(t('inventory.suppliers.saveFailed'), 'error');
+      return false;
+    }
+  };
+
+  // The 3DFP link (#2981): saved when changed, and on a copy, which carries
+  // the link of the spool it was copied from.
+  const shouldSaveThreedfpLink = threedfpTouched || (isCopying && threedfpFilamentId !== null);
+
+  const saveThreedfpLink = async (spoolId: number): Promise<boolean> => {
+    if (!shouldSaveThreedfpLink) return true;
+    // Nothing to remove on a spool that was just created.
+    if (!isEditing && threedfpFilamentId === null) return true;
+    try {
+      await api.setThreedfpSpoolLink(spoolmanMode ? 'spoolman' : 'inventory', spoolId, threedfpFilamentId);
+      return true;
+    } catch (err) {
+      console.error('SpoolFormModal.saveThreedfpLink failed:', err);
+      showToast(t('inventory.threedfp.linkSaveFailed'), 'error');
       return false;
     }
   };
@@ -1121,11 +1226,11 @@ export function SpoolFormModal({
       // The nested AMS assignment dialog owns Escape while it is open. Both
       // listeners live on document, so propagation control in the child would
       // not prevent this editor handler from running for the same key press.
-      if (e.key === 'Escape' && !showAssignModal) onClose();
+      if (e.key === 'Escape' && !showAssignModal && !moveTarget) onClose();
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose, showAssignModal]);
+  }, [isOpen, onClose, showAssignModal, moveTarget]);
 
   if (!isOpen) return null;
 
@@ -1346,6 +1451,12 @@ export function SpoolFormModal({
                 </div>
               )}
 
+              <ThreeDfpSection
+                filamentId={threedfpFilamentId}
+                onApply={applyThreedfp}
+                onUnlink={() => linkThreedfp(null)}
+              />
+
               {/* Filament Info Section */}
               <div>
                 <h3 className="text-sm font-semibold text-bambu-gray uppercase tracking-wide mb-3">
@@ -1364,6 +1475,7 @@ export function SpoolFormModal({
                   availableMaterials={availableMaterials}
                   suggestedBrands={suggestedBrands}
                   suggestedMaterials={suggestedMaterials}
+                  splitPresetProductLine={isCreating}
                   quickAdd={quickAdd}
                   detailsRequired={!quickAdd && !spoolmanMode && mode === 'create'}
                   quantity={quantity}
@@ -1476,9 +1588,9 @@ export function SpoolFormModal({
         </div>
 
         {/* Footer */}
-        <div className="flex gap-2 p-4 border-t border-bambu-dark-tertiary flex-shrink-0">
+        <div className="flex flex-wrap gap-2 p-4 border-t border-bambu-dark-tertiary flex-shrink-0">
           {isEditing && (
-            <div className="flex gap-2 mr-auto">
+            <div className="flex flex-wrap gap-2 mr-auto">
               {/* Either identifier counts as "tagged". A Bambu Lab spool is
                   linked by its 32-char tray UUID and carries no tag_uid at all
                   -- in Spoolman mode that is every Bambu spool, because
@@ -1489,11 +1601,19 @@ export function SpoolFormModal({
               <Button
                 variant="secondary"
                 onClick={() => deleteTagMutation.mutate()}
-                disabled={isPending || !(spool?.tag_uid || spool?.tray_uuid)}
+                disabled={isPending || movedTag || !(spool?.tag_uid || spool?.tray_uuid)}
               >
                 <Tag className="w-4 h-4" />
                 {t('inventory.clearRfid', 'Clear RFID Tag')}
               </Button>
+              {!spoolmanMode && settingsForForm?.spoolman_enabled === false && !movedTag && hasRfidTag(spool) &&
+                hasPermission('inventory:read') && hasPermission('inventory:update') && hasPermission('inventory:view_assignments') && (
+                <Button variant="secondary" onClick={() => setMoveTarget({ holder: spool, assignments: heldSlots })}
+                  disabled={isPending || !assignmentsReady}>
+                  <Tag className="w-4 h-4" />
+                  {t('inventory.rfidLink.moveTagEllipsis')}
+                </Button>
+              )}
               {spoolAssignment ? (
                 <Button
                   variant="secondary"
@@ -1547,6 +1667,13 @@ export function SpoolFormModal({
         printerId={null}
         variant="dialog"
         spoolmanMode={spoolmanMode}
+      />
+    )}
+    {moveTarget && !spoolmanMode && (
+      <LinkTagModal
+        target={moveTarget}
+        onClose={() => setMoveTarget(null)}
+        onLinked={() => setMovedTag(true)}
       />
     )}
     </>

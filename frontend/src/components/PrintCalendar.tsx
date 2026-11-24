@@ -5,10 +5,12 @@ import { localDateKey } from '../utils/date';
 
 interface PrintCalendarProps {
   printDates: string[]; // Array of ISO date strings
-  months?: number; // How many months to show (default 3)
+  dateFrom?: string; // Local YYYY-MM-DD
+  dateTo?: string;
+  months?: number; // Rolling window when no start is selected
 }
 
-export function PrintCalendar({ printDates, months = 3 }: PrintCalendarProps) {
+export function PrintCalendar({ printDates, dateFrom, dateTo, months = 3 }: PrintCalendarProps) {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -38,11 +40,11 @@ export function PrintCalendar({ printDates, months = 3 }: PrintCalendarProps) {
       if (day) counts[day] = (counts[day] || 0) + 1;
     });
 
-    // Generate weeks for the last N months
-    const today = new Date();
-    const startDate = new Date(today);
-    startDate.setMonth(startDate.getMonth() - months);
-    startDate.setDate(startDate.getDate() - startDate.getDay()); // Start from Sunday
+    // Walk local calendar days at noon, including in zones where DST skips midnight.
+    const endDate = dateTo ? new Date(dateTo + 'T12:00:00') : new Date();
+    endDate.setHours(12, 0, 0, 0);
+    const startDate = dateFrom ? new Date(dateFrom + 'T12:00:00') : new Date(endDate);
+    if (!dateFrom) startDate.setMonth(startDate.getMonth() - months);
 
     const weeks: Date[][] = [];
     const monthLabels: { month: string; weekIndex: number }[] = [];
@@ -50,9 +52,10 @@ export function PrintCalendar({ printDates, months = 3 }: PrintCalendarProps) {
     let lastMonth = -1;
 
     const current = new Date(startDate);
+    current.setDate(current.getDate() - current.getDay()); // Align the first column to Sunday
     let weekIndex = 0;
 
-    while (current <= today) {
+    while (current <= endDate) {
       if (current.getDay() === 0 && currentWeek.length > 0) {
         weeks.push(currentWeek);
         currentWeek = [];
@@ -60,7 +63,7 @@ export function PrintCalendar({ printDates, months = 3 }: PrintCalendarProps) {
       }
 
       // Track month labels
-      if (current.getMonth() !== lastMonth) {
+      if ((!dateFrom || current >= startDate) && current.getMonth() !== lastMonth) {
         monthLabels.push({
           month: current.toLocaleDateString('en-US', { month: 'short' }),
           weekIndex,
@@ -77,7 +80,7 @@ export function PrintCalendar({ printDates, months = 3 }: PrintCalendarProps) {
     }
 
     return { weeks, monthLabels, printCounts: counts };
-  }, [printDates, months]);
+  }, [printDates, dateFrom, dateTo, months]);
 
   const maxCount = Math.max(1, ...Object.values(printCounts));
 
@@ -102,22 +105,20 @@ export function PrintCalendar({ printDates, months = 3 }: PrintCalendarProps) {
   // Clamp cell size between 8 and 20 pixels
   const cellSize = Math.max(8, Math.min(20, calculatedCellSize));
   const fontSize = cellSize <= 10 ? 10 : 12;
+  // A partial first month may share a column with the following month.
+  const visibleMonthLabels = monthLabels.filter(({ weekIndex }, i) => {
+    const next = monthLabels[i + 1];
+    return !next || (next.weekIndex - weekIndex) * (cellSize + gap) >= 24;
+  });
 
   return (
-    <div ref={containerRef} className="w-full flex justify-center">
+    <div ref={containerRef} className="w-full overflow-x-auto">
       {containerWidth > 0 && (
-        <div>
+        <div className="w-max mx-auto">
           {/* Month labels */}
-          <div className="flex mb-1" style={{ marginLeft: dayLabelWidth + 4 }}>
-            {monthLabels.map(({ month, weekIndex }, i) => (
-              <div
-                key={i}
-                className="text-bambu-gray"
-                style={{
-                  fontSize,
-                  marginLeft: i === 0 ? 0 : `${(weekIndex - (monthLabels[i - 1]?.weekIndex || 0)) * (cellSize + gap) - 24}px`,
-                }}
-              >
+          <div className="grid mb-1" style={{ marginLeft: dayLabelWidth + 4, gridAutoColumns: cellSize, columnGap: gap }}>
+            {visibleMonthLabels.map(({ month, weekIndex }) => (
+              <div key={weekIndex} className="text-bambu-gray" style={{ fontSize, gridColumn: weekIndex + 1 }}>
                 {month}
               </div>
             ))}

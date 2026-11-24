@@ -19,6 +19,7 @@ vi.mock('../../api/client', async (importOriginal) => ({
     getLabelPrintJob: vi.fn(),
     previewSpoolLabel: vi.fn(),
     previewSpoolmanSpoolLabel: vi.fn(),
+    previewProjectLabel: vi.fn(),
     getSettings: vi.fn(),
     getAuthStatus: vi.fn().mockResolvedValue({ auth_enabled: false }),
     getCurrentUser: vi.fn(),
@@ -318,5 +319,24 @@ describe('direct label printing for a user without settings:read (#3612)', () =>
     await screen.findByTestId('label-print-button');
     await waitFor(() => expect(api.getUiSettings).toHaveBeenCalled());
     expect(screen.queryByTestId('label-direct-print-button')).not.toBeInTheDocument();
+  });
+
+  it('a project label has no roll format and no Print button, also with roll remembered', async () => {
+    localStorage.setItem('bambuddy-label-print-options', JSON.stringify({ template: 'roll' }));
+    vi.mocked(api.previewProjectLabel).mockResolvedValue(PNG_BLOB);
+    render(<LabelTemplatePickerModal isOpen onClose={vi.fn()} project={{ id: 7, name: 'Bag', color: null }} />);
+    await waitFor(() =>
+      expect(api.previewProjectLabel).toHaveBeenCalledWith(
+        expect.objectContaining({ project_id: 7, template: 'ams_holder_74x33' }),
+        expect.anything(),
+      ),
+    );
+    expect(vi.mocked(api.previewProjectLabel).mock.calls[0][0]).not.toHaveProperty('roll');
+    expect(screen.getByTestId('label-template-select')).toHaveValue('ams_holder_74x33');
+    expect(screen.queryByRole('option', { name: /Roll/ })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('label-roll-tape')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('label-direct-print-button')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('label-direct-hint')).not.toBeInTheDocument();
+    expect(screen.getByTestId('label-print-button')).toBeEnabled();
   });
 });

@@ -534,6 +534,32 @@ class AppSettings(BaseModel):
         default=False,
         description="Immediately stop printer jobs that start without Bambuddy authorization",
     )
+    # The charging policy (#3581): what a print's wallet charge is made of,
+    # for completed prints and for failed or cancelled ones. The defaults are
+    # the charge as it was before: the filament alone, proportional for a
+    # print that did not finish.
+    billing_completed_energy: bool = Field(
+        default=False, description="Add a completed print's energy cost to its wallet charge"
+    )
+    billing_completed_wear: bool = Field(
+        default=False, description="Add a completed print's printer wear cost to its wallet charge"
+    )
+    # A plain string on the way out, like energy_price_source: a stray value
+    # reads as "proportional" where charges are made. Writes are checked in
+    # AppSettingsUpdate.
+    billing_failed_filament: str = Field(
+        default="proportional",
+        description=(
+            "Filament charged for a failed or cancelled print: 'proportional' to what it used, "
+            "'full' for the whole print, 'none'"
+        ),
+    )
+    billing_failed_energy: bool = Field(
+        default=False, description="Add a failed or cancelled print's energy cost to its wallet charge"
+    )
+    billing_failed_wear: bool = Field(
+        default=False, description="Add a failed or cancelled print's printer wear cost to its wallet charge"
+    )
     finance_budget_reset_day: int = Field(
         default=1,
         ge=1,
@@ -954,6 +980,11 @@ class AppSettingsUpdate(BaseModel):
     stagger_interval_minutes: int | None = Field(default=None, ge=1, le=60)
     billing_enabled: bool | None = None
     printer_kill_switch_enabled: bool | None = None
+    billing_completed_energy: bool | None = None
+    billing_completed_wear: bool | None = None
+    billing_failed_filament: Literal["proportional", "full", "none"] | None = None
+    billing_failed_energy: bool | None = None
+    billing_failed_wear: bool | None = None
     finance_budget_reset_day: int | None = Field(default=None, ge=1, le=31)
     finance_budget_reset_timezone: str | None = None
     require_plate_clear: bool | None = None

@@ -84,6 +84,7 @@ _FAILURE_STATUSES = ("failed", "aborted", "cancelled", "stopped")
 # run must not contribute. NULL verdict (never asked / not answered) counts
 # as good, matching behaviour before the feature existed.
 _NOT_REJECTED = or_(PrintLogEntry.user_verdict.is_(None), PrintLogEntry.user_verdict != "reject")
+COMPLETED_PARTS_RUN = and_(PrintLogEntry.status == "completed", _NOT_REJECTED)
 
 # Soft-deleted archives (#1343) keep their row — and therefore their
 # ``project_id`` — after their files have been removed from disk, so that global
@@ -176,9 +177,7 @@ async def _load_totals(db: AsyncSession, project_ids: Sequence[int]) -> dict[int
             # A completed run the user marked as reject (#1898) produced no
             # usable parts — keep it out of the good-parts count.
             func.coalesce(
-                func.sum(
-                    case((and_(PrintLogEntry.status == "completed", _NOT_REJECTED), PrintArchive.quantity), else_=0)
-                ),
+                func.sum(case((COMPLETED_PARTS_RUN, PrintArchive.quantity), else_=0)),
                 0,
             ).label("completed_items"),
             func.coalesce(
@@ -477,9 +476,7 @@ async def list_projects(
                 func.count(PrintLogEntry.id).label("archive_count"),
                 func.coalesce(func.sum(PrintArchive.quantity), 0).label("total_items"),
                 func.coalesce(
-                    func.sum(
-                        case((and_(PrintLogEntry.status == "completed", _NOT_REJECTED), PrintArchive.quantity), else_=0)
-                    ),
+                    func.sum(case((COMPLETED_PARTS_RUN, PrintArchive.quantity), else_=0)),
                     0,
                 ).label("completed_count"),
                 func.coalesce(

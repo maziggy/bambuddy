@@ -270,10 +270,11 @@ class TestScalePollLoopWakeGating:
         return scale
 
     @staticmethod
-    async def _run_loop(scale, display, *, iterations: int):
+    async def _run_loop(scale, display, *, iterations: int, api=None):
         config = _make_config(scale_read_interval=0.0, scale_report_interval=0.0)
-        api = AsyncMock()
-        api.scale_reading = AsyncMock(return_value=None)
+        if api is None:
+            api = AsyncMock()
+            api.scale_reading = AsyncMock(return_value=None)
         shared = {"scale": scale, "display": display}
 
         # Bypass the real threadpool — call scale.read inline so each loop
@@ -352,6 +353,62 @@ class TestScalePollLoopWakeGating:
         # would still wake (delta 120 > 50), so this asserts both gating AND
         # the absence of poisoning.
         assert display.wake.call_count == 2
+
+
+class TestScalePollLoopReportsSettling:
+    """A reading that settles is reported, even when the weight barely moved (#3691).
+
+    A spool settles in steps under the 2 g report threshold, so the last
+    report of its weight was almost always unstable: the kiosk showed
+    "Settling" for good and its spool card never took the weight.
+    """
+
+    @staticmethod
+    async def _reports(readings, *, display=None):
+        api = AsyncMock()
+        api.scale_reading = AsyncMock(return_value=None)
+        scale = TestScalePollLoopWakeGating._make_scale(readings)
+        await TestScalePollLoopWakeGating._run_loop(scale, display or MagicMock(), iterations=40, api=api)
+        return [(c.kwargs["weight_grams"], c.kwargs["stable"]) for c in api.scale_reading.call_args_list]
+
+    @pytest.mark.asyncio
+    async def test_a_weight_that_settles_without_moving_2g_is_reported_stable(self):
+        reports = await self._reports(
+            [
+                (250.0, True, 5000),
+                (387.5, False, 7750),
+                (500.0, False, 10000),
+                (500.5, False, 10010),  # settling, under the threshold
+                (500.5, True, 10010),  # settled at the same weight
+            ]
+        )
+        assert reports == [(250.0, True), (387.5, False), (500.0, False), (500.5, True)]
+
+    @pytest.mark.asyncio
+    async def test_a_stable_weight_held_over_many_intervals_is_reported_once(self):
+        reports = await self._reports([(500.0, False, 10000)] + [(500.0, True, 10000)] * 10)
+        assert reports == [(500.0, False), (500.0, True)]
+
+    @pytest.mark.asyncio
+    async def test_a_reading_that_stops_being_stable_is_reported(self):
+        reports = await self._reports([(500.0, True, 10000), (500.0, True, 10000), (501.0, False, 10020)])
+        assert reports == [(500.0, True), (501.0, False)]
+
+    @pytest.mark.asyncio
+    async def test_a_spool_that_settles_under_the_threshold_wakes_the_display(self):
+        """The wake check runs on the settled report too: placing a spool
+        whose last 2 g step was still unstable never woke the kiosk."""
+        display = MagicMock()
+        await self._reports(
+            [
+                (0.0, True, 100),
+                (480.0, False, 9600),
+                (499.0, False, 9980),
+                (500.0, True, 10000),  # settled, 1 g from the last report
+            ],
+            display=display,
+        )
+        assert display.wake.call_count == 2  # the baseline, then the spool
 
 
 class TestReRegistration:

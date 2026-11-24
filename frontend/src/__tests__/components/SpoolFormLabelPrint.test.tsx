@@ -19,6 +19,7 @@ vi.mock('../../api/client', async (importOriginal) => ({
     getBuiltinFilaments: vi.fn().mockResolvedValue([]),
     getPrinters: vi.fn().mockResolvedValue([]),
     getSpoolUsageHistory: vi.fn().mockResolvedValue([]),
+    getThreedfpSpoolLink: vi.fn().mockResolvedValue({ filament_id: null }),
     createSpool: vi.fn().mockResolvedValue({ id: 99 }),
     bulkCreateSpools: vi.fn().mockResolvedValue([{ id: 100, k_profiles: [] }, { id: 101, k_profiles: [] }]),
     saveSpoolKProfiles: vi.fn().mockResolvedValue([]),

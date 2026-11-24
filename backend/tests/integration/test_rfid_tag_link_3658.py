@@ -466,3 +466,91 @@ async def test_moving_a_uid_with_a_zero_uuid_preserves_other_spools(async_client
     assert (await _reload(db_session, source.id)).tag_uid is None
     assert (await _reload(db_session, duplicate.id)).tag_uid is None
     assert (await _reload(db_session, unrelated.id)).tag_uid == OTHER_SIDE_UID
+
+
+class TestSlotSafeguards:
+    """What a link or move must refuse, so a stale dialog or a limited caller
+    cannot put a tag or a slot on the wrong spool."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_slot_on_a_printer_outside_the_scope_is_not_found(self, db_session, printer_factory):
+        from fastapi import HTTPException
+
+        from backend.app.api.routes.inventory import LinkTagRequest, link_tag_to_spool
+        from backend.app.core.printer_scope import PrinterScope
+
+        printer, other = await printer_factory(), await printer_factory()
+        target = await _spool(db_session)
+        request = LinkTagRequest(tag_uid=TAG_UID, tray_uuid=TRAY_UUID, printer_id=printer.id, ams_id=0, tray_id=0)
+
+        with patch("backend.app.services.printer_manager.printer_manager") as pm:
+            _printer_manager(pm)
+            with pytest.raises(HTTPException) as exc:
+                await link_tag_to_spool(target.id, request, db_session, None, PrinterScope(frozenset({other.id})))
+
+        assert exc.value.status_code == 404
+        assert await _slot_rows(db_session) == []
+        assert (await _reload(db_session, target.id)).tray_uuid is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_slot_assigned_to_another_spool_since_is_refused(
+        self, async_client: AsyncClient, db_session, printer_factory
+    ):
+        printer = await printer_factory()
+        occupant = await _spool(db_session)
+        target = await _spool(db_session, weight_used=175)
+        db_session.add(SpoolAssignment(spool_id=occupant.id, printer_id=printer.id, ams_id=0, tray_id=0))
+        await db_session.commit()
+
+        with patch("backend.app.services.printer_manager.printer_manager") as pm:
+            _printer_manager(pm)
+            resp = await async_client.patch(
+                f"/api/v1/inventory/spools/{target.id}/link-tag",
+                json={"tag_uid": TAG_UID, "tray_uuid": TRAY_UUID, "printer_id": printer.id, "ams_id": 0, "tray_id": 0},
+            )
+
+        assert resp.status_code == 409
+        assert await _slot_rows(db_session) == [(occupant.id, printer.id, 0, 0)]
+        assert (await _reload(db_session, target.id)).tray_uuid is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_shelf_move_from_a_spool_in_a_slot_is_refused(
+        self, async_client: AsyncClient, db_session, printer_factory
+    ):
+        printer = await printer_factory()
+        source = await _spool(db_session, tag_uid=TAG_UID, tray_uuid=TRAY_UUID, data_origin="rfid_linked")
+        target = await _spool(db_session)
+        db_session.add(SpoolAssignment(spool_id=source.id, printer_id=printer.id, ams_id=0, tray_id=0))
+        await db_session.commit()
+
+        resp = await async_client.patch(
+            f"/api/v1/inventory/spools/{target.id}/link-tag",
+            json={"tag_uid": TAG_UID, "tray_uuid": TRAY_UUID, "move": True, "source_spool_id": source.id},
+        )
+
+        assert resp.status_code == 409
+        kept = await _reload(db_session, source.id)
+        assert (kept.tag_uid, kept.tray_uuid) == (TAG_UID, TRAY_UUID)
+        assert (await _reload(db_session, target.id)).tray_uuid is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_from_slot_refuses_a_tag_a_shelf_spool_carries(
+        self, async_client: AsyncClient, db_session, printer_factory
+    ):
+        printer = await printer_factory()
+        holder = await _spool(db_session, tag_uid=TAG_UID, tray_uuid=TRAY_UUID, data_origin="rfid_linked")
+
+        with patch("backend.app.services.printer_manager.printer_manager") as pm:
+            _printer_manager(pm)
+            resp = await async_client.post(
+                "/api/v1/inventory/spools/from-slot", json={"printer_id": printer.id, "ams_id": 0, "tray_id": 0}
+            )
+
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["spool_id"] == holder.id
+        assert [s.id for s in await _all_spools(db_session)] == [holder.id]
+        assert await _slot_rows(db_session) == []

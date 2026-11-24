@@ -97,6 +97,19 @@ class TagScannedRequest(BaseModel):
     # Data blocks of a Bambu tag the daemon read, block number -> 32 hex chars
     # (#2685). Absent when no Bambu read succeeded.
     raw_blocks: dict[str, str] | None = None
+    # Data area of an NTAG the daemon read, from page 4, as hex (#3657): the
+    # TLVs holding its NDEF message. At most 888 bytes, an NTAG216's (1776
+    # hex chars). Absent for other tags.
+    ndef_hex: str | None = Field(None, max_length=1776)
+
+    @field_validator("ndef_hex")
+    @classmethod
+    def validate_ndef_hex(cls, v: str | None) -> str | None:
+        if not v:
+            return None
+        if len(v) % 2 or any(c not in "0123456789abcdefABCDEF" for c in v):
+            raise ValueError("ndef_hex is not whole bytes of hex")
+        return v
 
     @field_validator("raw_blocks")
     @classmethod

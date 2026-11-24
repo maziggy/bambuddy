@@ -8499,7 +8499,7 @@ export default {
       assignToAms: 'AMS zuweisen',
       syncWeight: 'Gewicht sync.',
       addToInventory: 'Zum Inventar hinzufügen',
-      quickAddFromTag: 'Fügt diese Spule mit den Daten von ihrem Bambu-Tag hinzu. Du kannst sie später in Bambuddy bearbeiten.',
+      quickAddFromTag: 'Fügt diese Spule mit den Daten von ihrem Tag hinzu. Du kannst sie später in Bambuddy bearbeiten.',
       assignToAmsTitle: 'AMS zuweisen',
       selectSlot: 'Slot auswählen',
       assign: 'Zuweisen',

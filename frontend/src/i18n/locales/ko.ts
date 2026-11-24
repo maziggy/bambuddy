@@ -8147,7 +8147,7 @@ export default {
       assignToAms: 'AMS에 할당',
       syncWeight: '무게 동기화',
       addToInventory: '재고에 추가',
-      quickAddFromTag: 'Bambu 태그에서 읽은 정보로 이 스풀을 추가합니다. 나중에 Bambuddy에서 수정할 수 있습니다.',
+      quickAddFromTag: '태그에서 읽은 정보로 이 스풀을 추가합니다. 나중에 Bambuddy에서 수정할 수 있습니다.',
       assignToAmsTitle: 'AMS에 할당',
       selectSlot: '슬롯 선택',
       assign: '할당',

@@ -194,6 +194,7 @@ async def scale_poll_loop(config: Config, api: APIClient, shared: dict):
 
     last_report = 0.0
     last_reported_grams: float | None = None
+    last_reported_stable: bool | None = None
     last_wake_grams: float | None = None
     REPORT_THRESHOLD = 2.0  # Only report if weight changed by more than this (grams)
     WAKE_THRESHOLD = 50.0  # Only wake display on large changes (spool placed/removed, not sensor bounce)
@@ -206,10 +207,16 @@ async def scale_poll_loop(config: Config, api: APIClient, shared: dict):
                 now = time.monotonic()
 
                 if now - last_report >= config.scale_report_interval:
-                    # Only send when weight changed meaningfully
+                    # Only send when weight changed meaningfully, or when the
+                    # reading settled (or stopped being settled) since the last
+                    # report. A spool settles in steps under the threshold, so
+                    # the last report of its weight is almost always unstable;
+                    # without the stability change the kiosk kept showing
+                    # "Settling" and its spool card never took the weight (#3691).
                     weight_changed = last_reported_grams is None or abs(grams - last_reported_grams) >= REPORT_THRESHOLD
+                    stability_changed = stable != last_reported_stable
 
-                    if weight_changed:
+                    if weight_changed or stability_changed:
                         # Wake display only on STABLE large weight changes (spool
                         # placed/removed). Without the stability gate, a noisy load
                         # cell that bounces ≥50g around a midpoint repeatedly trips
@@ -233,6 +240,7 @@ async def scale_poll_loop(config: Config, api: APIClient, shared: dict):
                             raw_adc=raw_adc,
                         )
                         last_reported_grams = grams
+                        last_reported_stable = stable
                     last_report = now
 
             await asyncio.sleep(config.scale_read_interval)

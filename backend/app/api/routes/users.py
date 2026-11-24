@@ -616,6 +616,15 @@ async def delete_user(
                 .values(created_by_id=None)
             )
 
+        # A charge waiting on a run of one of the archives deleted here for
+        # its energy is written first (#3581), while it still has an archive
+        # to charge and its reservation to consume.
+        from backend.app.services.finance_billing import settle_pending_print_charges
+
+        await settle_pending_print_charges(
+            db, PrintLogEntry.archive_id.in_(select(PrintArchive.id).where(PrintArchive.created_by_id == user_id))
+        )
+
         # Budget held for the queue items and archives deleted here: no print
         # completion can settle it any more (it finds no archive), and an
         # active reservation held the cost centre's budget, and kept the cost

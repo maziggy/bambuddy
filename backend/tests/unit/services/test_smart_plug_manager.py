@@ -820,6 +820,7 @@ class TestPendingAutoOffPersistence:
         """Verify time-based pending auto-offs turn off immediately on resume."""
         mock_plug = MagicMock()
         mock_plug.id = 1
+        mock_plug.plug_type = "tasmota"
         mock_plug.name = "Test Plug"
         mock_plug.ip_address = "192.168.1.100"
         mock_plug.username = None
@@ -845,8 +846,11 @@ class TestPendingAutoOffPersistence:
 
             mock_tasmota.turn_off = AsyncMock(return_value=True)
             mock_pm.is_print_active.return_value = False  # printer idle on restart
+            mock_pm.get_status.return_value = MagicMock(connected=True, raw_data={"ams": []})
 
             await manager.resume_pending_auto_offs()
+            # Runs as a pending off, which first waits out drying (#3660).
+            await manager._pending_off[1]
 
             mock_tasmota.turn_off.assert_called_once()
             mock_mark.assert_called_once_with(1)

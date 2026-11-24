@@ -309,3 +309,37 @@ describe('PrintersPage - AMS load/unload (#891)', () => {
     });
   });
 });
+
+describe('RFID choices on a printer slot (#3658)', () => {
+  it('waits for mode and assignments and requires a real tag', async () => {
+    let resolveAssignments!: () => void;
+    let resolveMode!: () => void;
+    const assignments = new Promise<void>(resolve => { resolveAssignments = resolve; });
+    const mode = new Promise<void>(resolve => { resolveMode = resolve; });
+    const status = { ...mockIdleStatusWithAms, ams: [{ ...mockIdleStatusWithAms.ams[0], tray: [
+      { ...baseTray, id: 0, tag_uid: '04556677', tray_uuid: null },
+      { ...baseTray, id: 1, tag_uid: '00000000', tray_uuid: '0'.repeat(32) },
+    ] }] };
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([mockPrinter])),
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json(status)),
+      http.get('/api/v1/settings/', async () => { await mode; return HttpResponse.json({ spoolman_enabled: false }); }),
+      http.get('/api/v1/spoolman/status', () => HttpResponse.json({ enabled: false, connected: false })),
+      http.get('/api/v1/inventory/assignments', async () => { await assignments; return HttpResponse.json([]); }),
+    );
+    render(<PrintersPage />);
+    const slots = await screen.findAllByTestId('filament-slot');
+    await hoverSlot(slots[0]);
+    const link = () => screen.queryByRole('button', { name: 'Link to existing spool…' });
+    expect(link()).toBeNull();
+    resolveMode();
+    await screen.findByText('Load');
+    expect(link()).toBeNull();
+    resolveAssignments();
+    await waitFor(() => expect(link()).toBeEnabled());
+    fireEvent.mouseLeave(slots[0]);
+    await waitFor(() => expect(link()).toBeNull());
+    await hoverSlot(slots[1]);
+    expect(link()).toBeNull();
+  });
+});

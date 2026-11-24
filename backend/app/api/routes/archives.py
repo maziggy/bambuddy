@@ -2994,6 +2994,11 @@ async def delete_archive(
 
         from backend.app.models.print_log import PrintLogEntry
 
+        # A charge waiting on one of them for its energy is written first (#3581).
+        from backend.app.services.finance_billing import settle_pending_print_charges
+
+        await settle_pending_print_charges(db, PrintLogEntry.archive_id == archive_id)
+
         # Its open run too (a print started on the printer, with no queue item
         # to refuse the delete): it has no archive left to end on.
         await db.execute(
@@ -5815,6 +5820,7 @@ async def slice_archive(
                     request=request,
                     source_archive=src_archive,
                     current_user_id=user_id,
+                    printer_scope=printer_scope,
                     job_id=job_id,
                     owner_id=owner_id,
                 )

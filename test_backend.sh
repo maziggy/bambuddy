@@ -2,6 +2,8 @@
 
 cd backend
 { ruff check && ruff format --check; } || exit 1
+# The SpoolBuddy daemon, linted and tested here too (its tests run below).
+{ ruff check ../spoolbuddy && ruff format --check ../spoolbuddy; } || exit 1
 
 # Type check against the pinned environment (see CONTRIBUTING.md). The venv is
 # rebuilt whenever the lock changes, so it holds what CI installs (on Python
@@ -87,6 +89,10 @@ if [ "$1" = "--full" ]; then
 else
 ../venv/bin/python3 -m pytest tests/ -v -n 30 --ignore=tests/unit/services/test_bambu_ftp.py || exit 1
 fi
+
+# The SpoolBuddy daemon's tests. It runs on the Raspberry Pi, not in the
+# Bambuddy image; the tests stub its hardware libraries.
+(cd ../spoolbuddy && ../venv/bin/python3 -m pytest tests/ -q) || exit 1
 
 # The same tests on PostgreSQL, in a throwaway container (--full only: about
 # three minutes). Tests of SQLite-only behaviour are skipped there.

@@ -108,6 +108,11 @@ class PrintLogEntry(Base):
     # The grams ``planned_cost`` was priced for: a run that did not finish is
     # charged its share of these, of that cost. Written with it.
     planned_grams: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # The run's wallet charge, kept while it waits for the run's energy
+    # (#3581): what the charge is made from, as JSON. Written when the print
+    # ends, cleared with the charge. One still here at startup is of a charge
+    # a restart interrupted, and is written then. NULL otherwise.
+    pending_charge: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 @event.listens_for(Session, "do_orm_execute")

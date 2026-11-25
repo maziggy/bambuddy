@@ -150,8 +150,8 @@ class TestMatcherShortIsMissing:
         scheduler = PrintScheduler()
         with patch.object(
             scheduler,
-            "_force_color_misses",
-            MagicMock(side_effect=lambda pid, overrides, raw=None: [] if pid == 3 else [(FORCED_RED[0], "PLA (Red)")]),
+            "_missing_force_color_pairs",
+            MagicMock(side_effect=lambda pid, overrides, raw=None: [] if pid == 3 else [("PLA (Red)", FORCED_RED[0])]),
         ):
             (printer_id, reason), holds = await self._find(ctx, scheduler, {3}, filament_overrides=FORCED_RED)
         assert printer_id is None
@@ -190,7 +190,7 @@ class TestStagedHold:
         await _run(ctx, scheduler, unmatched_items={item_id})
         staged = await _get(ctx, item_id)
         assert staged.manual_start is True
-        assert staged.waiting_reason == f"Needs {_BROWN_TEXT}"
+        assert staged.waiting_reason == f"X1C-1 needs {_BROWN_TEXT}"
         recorded = scheduler.filament_holds_snapshot()[item_id]
         assert [(h.printer_id, [f.type for f in h.filaments]) for h in recorded] == [(1, ["PLA"])]
 
@@ -199,7 +199,7 @@ class TestStagedHold:
 
         still = await _get(ctx, item_id)
         assert still.manual_start is True
-        assert still.waiting_reason == f"Needs {_BROWN_TEXT}"
+        assert still.waiting_reason == f"X1C-1 needs {_BROWN_TEXT}"
         assert scheduler.filament_holds_snapshot()[item_id] == recorded
 
 
@@ -343,14 +343,14 @@ class TestShortPrintersAreRecorded:
             return [PLA]
 
         def misses(pid, overrides, raw=None):
-            return [] if pid == 3 else [(FORCED_RED[0], "PLA (Red)")]
+            return [] if pid == 3 else [("PLA (Red)", FORCED_RED[0])]
 
         holds: dict[int, list[TodoFilament]] = {}
         with (
             patch("backend.app.services.print_scheduler.printer_manager.is_connected", MagicMock(return_value=True)),
             patch("backend.app.services.print_scheduler.printer_manager.get_status", MagicMock(return_value=None)),
             patch.object(scheduler, "_is_printer_idle", MagicMock(return_value=True)),
-            patch.object(scheduler, "_force_color_misses", MagicMock(side_effect=misses)),
+            patch.object(scheduler, "_missing_force_color_pairs", MagicMock(side_effect=misses)),
         ):
             async with ctx.session_maker() as db:
                 printer_id, reason = await scheduler._find_idle_printer_for_model(

@@ -66,6 +66,23 @@ describe('formatWaitingReason (#3587)', () => {
     );
   });
 
+  it('finds the priority suffix after an out-of-stock hint (#3590)', () => {
+    // The scheduler writes the stock hint on the filament and the priority at
+    // the very end, so the hint stays part of what the job waits for.
+    expect(
+      formatWaitingReason(
+        'No matching material/color. Waiting on PLA (Earth Brown) – none left in inventory · priority in 38 h',
+        t,
+      ),
+    ).toBe('queue.waiting.noMatch(PLA (Earth Brown) – none left in inventory) · queue.waiting.priorityIn(38)');
+    expect(
+      formatWaitingReason(
+        'Waiting for filament: P1 (needs PLA (Earth Brown) – none left in inventory) · has priority',
+        t,
+      ),
+    ).toBe('queue.waiting.filament(P1 (needs PLA (Earth Brown) – none left in inventory)) · queue.waiting.hasPriority');
+  });
+
   it('translates a filament part and leaves busy/offline parts untouched', () => {
     expect(
       formatWaitingReason('Busy: P1 | Waiting for filament: P2 (needs PLA) | Offline: P3 · priority in 1 h', t),

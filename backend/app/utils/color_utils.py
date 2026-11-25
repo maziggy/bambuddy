@@ -33,6 +33,16 @@ def spoolman_color_hex(rgba: str | None) -> str | None:
     return clean[:6]
 
 
+def color6_key(color: str | None) -> str:
+    """First six hex digits, lowercase, no hash: the key the queue's forced colour match compares on.
+
+    Shared by the scheduler and the inventory identity (#3590) so they cannot drift.
+    """
+    if not color:
+        return ""
+    return color.replace("#", "").lower()[:6]
+
+
 def color_match_key(color_hex: str | None) -> str:
     """Return the key two colours are compared on: **the shape they would be stored as**.
 

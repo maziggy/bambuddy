@@ -1,4 +1,4 @@
-"""Resolve a Bambu Lab roll's colour from the colour catalogue, and recognise its product line.
+"""Resolve a roll's colour from the colour catalogue, and recognise its product line.
 
 Extracted so the two inventory modes stop answering the same question in two
 places. ``spool_tag_matcher.create_spool_from_tray`` had this logic inline since
@@ -78,6 +78,47 @@ async def resolve_bambu_color(db: AsyncSession, rgba: str | None, sub_brand: str
     entry = (await db.execute(query)).scalar_one_or_none()
     if entry is None:
         return None
+    return CatalogColor(entry.color_name, entry.extra_colors, entry.effect_type)
+
+
+async def resolve_brand_color(
+    db: AsyncSession,
+    brand: str | None,
+    rgba: str | None,
+    material: str | None,
+    subtype: str | None,
+) -> CatalogColor | None:
+    """The catalogue's colour for a roll of *brand* at *rgba*, or None unless one row names it (#3657).
+
+    For a tag that carries brand and colour but no colour name (OpenSpool,
+    FilaMan System). Only an exact hex match counts: tag writers often pick a
+    hex near the real colour, and a near miss would give a wrong name that
+    reads as the tag's own. Where the brand has several rows at that hex, the
+    product line ("PETG Matte") and then the material ("PETG") narrow them;
+    rows still left with different names give no answer rather than a guess.
+    Alpha 00 is "Clear", as for a Bambu roll (#1545).
+    """
+    if rgba and len(rgba) == 8 and rgba[6:8].lower() == "00":
+        return CatalogColor("Clear")
+    if not brand or not brand.strip() or not rgba or len(rgba) < 6:
+        return None
+    query = (
+        select(ColorCatalogEntry)
+        .where(func.upper(ColorCatalogEntry.hex_color) == f"#{rgba[:6].upper()}")
+        .where(func.upper(ColorCatalogEntry.manufacturer) == brand.strip().upper())
+        .order_by(ColorCatalogEntry.id)
+    )
+    rows = list((await db.execute(query)).scalars())
+    line = _normalise(f"{material or ''} {subtype or ''}")
+    for wanted in (line, _normalise(material)):
+        if len({row.color_name for row in rows}) <= 1:
+            break
+        narrowed = [row for row in rows if wanted and _normalise(row.material) == wanted]
+        if narrowed:
+            rows = narrowed
+    if not rows or len({row.color_name for row in rows}) > 1:
+        return None
+    entry = rows[0]
     return CatalogColor(entry.color_name, entry.extra_colors, entry.effect_type)
 
 

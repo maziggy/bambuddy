@@ -5982,6 +5982,11 @@ export default {
     allMaterials: 'Alle Materialien',
     filterByBrand: 'Nach Marke filtern...',
     showArchived: 'Archivierte anzeigen',
+    lastUsed: {
+      hint: 'Werte Ihrer letzten Spule übernommen ({{name}})',
+      hintPlain: 'Werte Ihrer letzten Spule übernommen',
+      clear: 'Zurücksetzen',
+    },
     quickAdd: 'Schnellerfassung (Lager)',
     quantity: 'Menge',
     stock: 'Lager',
@@ -6058,6 +6063,11 @@ export default {
     showLess: 'Weniger',
     showAll: 'Alle',
     noColorsFound: 'Keine Farben gefunden',
+    catalogColors: {
+      showAll: 'Alle Farben anzeigen',
+      showMatching: 'Nur passende anzeigen',
+      allBrand: 'Alle {{brand}}-Farben',
+    },
     noResults: 'Keine Ergebnisse',
     // Multi-Color-Verlauf + visueller Effekt (#1154)
     extraColorsLabel: 'Zusätzliche Farben',

@@ -6054,6 +6054,11 @@ errors: {
     allMaterials: 'Alla material',
     filterByBrand: 'Filtrera efter märke...',
     showArchived: 'Visa arkiverade',
+    lastUsed: {
+      hint: 'Värden från din senaste rulle ({{name}})',
+      hintPlain: 'Värden från din senaste rulle',
+      clear: 'Rensa',
+    },
     quickAdd: 'Snabb-lägg-till (Lager)',
     quantity: 'Kvantitet',
     stock: 'Lager',
@@ -6133,6 +6138,11 @@ errors: {
     showLess: 'Visa färre',
     showAll: 'Visa alla',
     noColorsFound: 'Inga färger matchar din sökning',
+    catalogColors: {
+      showAll: 'Visa alla färger',
+      showMatching: 'Visa bara matchande',
+      allBrand: 'Alla {{brand}}-färger',
+    },
     noResults: 'Inga matchningar hittade',
     // Multi-color gradient + visual effect (#1154)
     extraColorsLabel: 'Extra färger',

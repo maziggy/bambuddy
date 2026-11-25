@@ -6020,6 +6020,11 @@ export default {
     allMaterials: 'Alle materialen',
     filterByBrand: 'Filteren op merk...',
     showArchived: 'Gearchiveerde tonen',
+    lastUsed: {
+      hint: 'Overgenomen van je laatste spoel ({{name}})',
+      hintPlain: 'Overgenomen van je laatste spoel',
+      clear: 'Wissen',
+    },
     quickAdd: 'Snel toevoegen (voorraad)',
     quantity: 'Aantal',
     stock: 'Voorraad',
@@ -6096,6 +6101,11 @@ export default {
     showLess: 'Minder tonen',
     showAll: 'Alles tonen',
     noColorsFound: 'Geen kleuren komen overeen met je zoekopdracht',
+    catalogColors: {
+      showAll: 'Alle kleuren tonen',
+      showMatching: 'Alleen passende kleuren tonen',
+      allBrand: 'Alle {{brand}}-kleuren',
+    },
     noResults: 'Geen overeenkomsten gevonden',
     // Multi-color gradient + visual effect (#1154)
     extraColorsLabel: 'Extra kleuren',

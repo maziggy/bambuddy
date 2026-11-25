@@ -3,7 +3,7 @@ import type { SlicerSetting, LocalPreset, BuiltinFilament, SpoolKProfileInput } 
 import { installedNozzleDiameters } from '../../utils/amsHelpers';
 import { filamentIdToSettingId, settingIdToFilamentId } from '../../utils/filamentIds';
 import type { CalibrationProfile, ColorPreset, FilamentOption } from './types';
-import { KNOWN_VARIANTS, DEFAULT_BRANDS, RECENT_COLORS_KEY, MAX_RECENT_COLORS, STANDARD_NOZZLE_DIAMETERS } from './constants';
+import { KNOWN_VARIANTS, DEFAULT_BRANDS, RECENT_COLORS_KEY, LAST_SPOOL_KEY, LAST_SPOOL_SPOOLMAN_KEY, MAX_RECENT_COLORS, STANDARD_NOZZLE_DIAMETERS } from './constants';
 
 /**
  * Fetch a printer's K-profiles across every nozzle it actually has installed
@@ -606,4 +606,122 @@ export function isMatchingCalibration(
   }
 
   return true;
+}
+
+// Last created spool (#3619). Only the fields that describe the product and
+// where it lives are carried; colour, note, usage, RFID/tag data, drying date,
+// material number, threshold and supplier article numbers are per-spool.
+export interface LastSpool {
+  brand?: string;
+  material?: string;
+  subtype?: string;
+  slicer_filament?: string;
+  slicer_filament_name?: string;
+  label_weight?: number;
+  core_weight?: number;
+  core_weight_catalog_id?: number | null;
+  location_id?: number | null;
+  cost_per_kg?: number | null;
+  category?: string;
+  supplier_ids?: number[];
+  // The preset was put there by a profile default, not chosen: the next product's default may replace it.
+  preset_from_default?: boolean;
+}
+
+export type LastSpoolMode = 'builtin' | 'spoolman';
+
+const lastSpoolKey = (mode: LastSpoolMode) => (mode === 'spoolman' ? LAST_SPOOL_SPOOLMAN_KEY : LAST_SPOOL_KEY);
+
+const isId = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v > 0;
+
+/** Reads the remembered spool; every field is type-checked, anything else is ignored. */
+export function loadLastSpool(mode: LastSpoolMode): LastSpool | null {
+  try {
+    const raw = localStorage.getItem(lastSpoolKey(mode));
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    const o = parsed as Record<string, unknown>;
+    if (o.v !== 1) return null;
+    const out: LastSpool = {};
+    for (const key of ['brand', 'material', 'subtype', 'slicer_filament', 'slicer_filament_name', 'category'] as const) {
+      const value = o[key];
+      if (typeof value === 'string' && value.trim()) out[key] = value;
+    }
+    if (typeof o.label_weight === 'number' && Number.isFinite(o.label_weight) && o.label_weight > 0) {
+      out.label_weight = o.label_weight;
+    }
+    if (typeof o.core_weight === 'number' && Number.isFinite(o.core_weight) && o.core_weight >= 0) {
+      out.core_weight = o.core_weight;
+    }
+    if (typeof o.cost_per_kg === 'number' && Number.isFinite(o.cost_per_kg) && o.cost_per_kg >= 0) {
+      out.cost_per_kg = o.cost_per_kg;
+    }
+    if (isId(o.core_weight_catalog_id)) out.core_weight_catalog_id = o.core_weight_catalog_id;
+    if (isId(o.location_id)) out.location_id = o.location_id;
+    if (o.preset_from_default === true) out.preset_from_default = true;
+    if (Array.isArray(o.supplier_ids)) {
+      const ids = o.supplier_ids.filter(isId);
+      if (ids.length > 0) out.supplier_ids = Array.from(new Set(ids));
+    }
+    return Object.keys(out).length > 0 ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Remembers a just-created spool for the next create form. Never throws. */
+export function saveLastSpool(mode: LastSpoolMode, data: LastSpool): void {
+  try {
+    const payload: Record<string, unknown> = {
+      v: 1,
+      brand: data.brand ?? '',
+      material: data.material ?? '',
+      subtype: data.subtype ?? '',
+      slicer_filament: data.slicer_filament ?? '',
+      slicer_filament_name: data.slicer_filament_name ?? '',
+      label_weight: data.label_weight ?? null,
+      core_weight: data.core_weight ?? null,
+      core_weight_catalog_id: data.core_weight_catalog_id ?? null,
+      location_id: data.location_id ?? null,
+      cost_per_kg: data.cost_per_kg ?? null,
+      category: data.category ?? '',
+      supplier_ids: data.supplier_ids ?? [],
+      preset_from_default: data.preset_from_default === true,
+    };
+    localStorage.setItem(lastSpoolKey(mode), JSON.stringify(payload));
+  } catch {
+    // Storage unavailable: the form just starts empty next time.
+  }
+}
+
+// Split a dropdown's options into the ones the catalog/presets pair with the
+// other field's current value and everything else (#1905). Suggestions are only
+// a sort order — nothing is ever hidden, so an unusual-but-real combination
+// (Elegoo ASA) stays one click away. `key` lets non-string options (#3619) be
+// matched by a text key.
+export function splitSuggested<T = string>(
+  options: T[],
+  suggested: string[],
+  key: (option: T) => string = (o) => String(o),
+): { top: T[]; rest: T[] } {
+  if (suggested.length === 0) return { top: [], rest: options };
+  const keys = new Set(suggested.map(s => s.toLowerCase()));
+  return {
+    top: options.filter(o => keys.has(key(o).toLowerCase())),
+    rest: options.filter(o => !keys.has(key(o).toLowerCase())),
+  };
+}
+
+// Catalog entries whose name starts with the brand, or one of its aliases (see
+// brandAliases), as a whole word, e.g. brand "Polymaker" → "PolyMaker - Cardboard"
+// and "PolyTerra PLA - Cardboard", brand "PolyTerra" → "PolyTerra PLA - Cardboard"
+// and "PolyMaker - Cardboard" (#3619). Returns the matching names (case-insensitive).
+export function brandSuggestedNames(names: string[], brand: string, aliases: string[] = []): string[] {
+  const prefixes = [brand, ...aliases].map(p => p.trim().toLowerCase()).filter(Boolean);
+  if (!brand.trim()) return [];
+  return names.filter(n => {
+    const l = n.trim().toLowerCase();
+    return prefixes.some(b => l.startsWith(b) && (l.length === b.length || !/[a-z0-9]/.test(l[b.length])));
+  });
 }

@@ -5964,6 +5964,11 @@ export default {
     allMaterials: 'Tutti i Materiali',
     filterByBrand: 'Filtra per marchio...',
     showArchived: 'Mostra archiviate',
+    lastUsed: {
+      hint: "Valori ripresi dall'ultima bobina ({{name}})",
+      hintPlain: "Valori ripresi dall'ultima bobina",
+      clear: 'Cancella',
+    },
     quickAdd: 'Aggiunta rapida (Scorta)',
     quantity: 'Quantità',
     stock: 'Scorta',
@@ -6040,6 +6045,11 @@ export default {
     showLess: 'Mostra meno',
     showAll: 'Mostra tutto',
     noColorsFound: 'Nessun colore corrisponde alla ricerca',
+    catalogColors: {
+      showAll: 'Mostra tutti i colori',
+      showMatching: 'Mostra solo i corrispondenti',
+      allBrand: 'Tutti i colori {{brand}}',
+    },
     noResults: 'Nessun risultato trovato',
     // Multi-color gradient + visual effect (#1154) — English fallback.
     extraColorsLabel: 'Colori extra',

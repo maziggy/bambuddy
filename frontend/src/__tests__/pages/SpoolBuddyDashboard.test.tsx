@@ -1074,6 +1074,62 @@ describe('SpoolBuddyDashboard', () => {
     });
   });
 
+  describe('Quick Add from a decoded NTAG (#3657)', () => {
+    // An OpenSpool tag: no weights, so those are null
+    const OPENSPOOL_DATA: UnknownTagData = {
+      material: 'PLA',
+      subtype: null,
+      color_name: null,
+      rgba: 'FFAABBFF',
+      extra_colors: null,
+      effect_type: null,
+      brand: 'Generic',
+      label_weight: null,
+      slicer_filament: null,
+      slicer_filament_name: null,
+      nozzle_temp_min: 220,
+      nozzle_temp_max: 240,
+      core_weight: null,
+      core_weight_catalog_id: null,
+      variant_id: null,
+      diameter: 1.75,
+      drying_temp: null,
+      drying_time: null,
+    };
+
+    it('leaves out a weight the tag does not give and fills the defaults', async () => {
+      const { api } = await import('../../api/client');
+      (api.getSpoolmanSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        spoolman_enabled: 'false',
+        spoolman_url: '',
+        spoolman_sync_mode: 'off',
+        spoolman_disable_weight_sync: 'false',
+        spoolman_report_partial_usage: 'false',
+      });
+      renderPage({ unknownTagUid: '04E115D15F6180', unknownTrayUuid: null, unknownTagData: OPENSPOOL_DATA });
+
+      await waitFor(() => expect(screen.getByText('Generic PLA')).toBeDefined());
+      fireEvent.click(screen.getAllByText('Add to Inventory')[0]);
+
+      await waitFor(() => expect(screen.getByText('1.75 mm')).toBeDefined());
+      expect(screen.queryByText(/null/)).toBeNull();
+
+      fireEvent.click(screen.getByText('Add'));
+      await waitFor(() => expect(api.createSpool).toHaveBeenCalledTimes(1));
+      expect((api.createSpool as ReturnType<typeof vi.fn>).mock.calls[0][0]).toMatchObject({
+        material: 'PLA',
+        brand: 'Generic',
+        rgba: 'FFAABBFF',
+        label_weight: 1000,
+        core_weight: 250,
+        nozzle_temp_min: 220,
+        nozzle_temp_max: 240,
+        tag_uid: '04E115D15F6180',
+        tag_type: 'generic',
+      });
+    });
+  });
+
   describe('Spoolman mode, spool lifted while a dialog is open', () => {
     // The reader state is cleared when the tag leaves the reader; the card and
     // its dialogs stay. Linking must use the tag the card shows.

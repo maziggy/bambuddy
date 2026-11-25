@@ -273,6 +273,11 @@ export const handlers = [
     return HttpResponse.json(mockPrinters);
   }),
 
+  // Built-in inventory as filament-override choices (#3590); none by default.
+  http.get('/api/v1/printers/inventory-filaments', () => {
+    return HttpResponse.json({ inventory_available: false, filaments: [] });
+  }),
+
   http.get('/api/v1/printers/:id', ({ params }) => {
     const printer = mockPrinters.find((p) => p.id === Number(params.id));
     if (!printer) {

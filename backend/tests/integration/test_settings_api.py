@@ -45,6 +45,18 @@ class TestSettingsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_filament_override_inventory_defaults_off_and_round_trips(self, async_client: AsyncClient):
+        """Install-wide inventory-colour opt-in (#3590): off by default, persisted via PATCH."""
+        assert (await async_client.get("/api/v1/settings/")).json()["filament_override_inventory"] is False
+        patched = await async_client.patch("/api/v1/settings/", json={"filament_override_inventory": True})
+        assert patched.status_code == 200
+        assert patched.json()["filament_override_inventory"] is True
+        assert (await async_client.get("/api/v1/settings/")).json()["filament_override_inventory"] is True
+        await async_client.patch("/api/v1/settings/", json={"filament_override_inventory": False})
+        assert (await async_client.get("/api/v1/settings/")).json()["filament_override_inventory"] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_require_plate_clear_updates_wled_mapping(self, async_client: AsyncClient, monkeypatch):
         from backend.app.services.wled import wled_manager
 

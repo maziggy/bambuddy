@@ -43,6 +43,8 @@ from backend.app.schemas.spoolbuddy import (
     WriteTagResultRequest,
 )
 from backend.app.services.bambu_tag_blocks import spool_prefill_from_tag
+from backend.app.services.color_catalog_lookup import resolve_brand_color
+from backend.app.services.ndef_tag_decoder import decode_ndef_tag
 from backend.app.services.spool_tag_matcher import (
     begins_with_cascade_level_1,
     cascade_level_1_uid,
@@ -778,11 +780,39 @@ async def nfc_tag_scanned(
     # What the tag itself says about the roll, so the kiosk's Quick Add can
     # create the spool AMS sync would have created, not a blank PLA (#2685)
     tag_data = None
+    tag_format = None
     if req.raw_blocks:
         try:
             tag_data = await spool_prefill_from_tag(db, req.raw_blocks)
         except Exception:
             logger.warning("Could not decode Bambu tag blocks for %s", req.tag_uid, exc_info=True)
+        if tag_data is not None:
+            tag_format = "bambu"
+    elif req.ndef_hex:
+        # An NTAG's NDEF message: OpenTag3D, OpenSpool, FilaMan System (#3657)
+        try:
+            ndef_tag = decode_ndef_tag(bytes.fromhex(req.ndef_hex), req.tag_uid)
+        except Exception:
+            logger.warning("Could not decode the NDEF data of %s", req.tag_uid, exc_info=True)
+            ndef_tag = None
+        if ndef_tag is not None:
+            tag_format = ndef_tag.tag_format
+            tag_data = ndef_tag.prefill or None
+        if tag_data is not None and not tag_data["color_name"]:
+            # A tag without a colour name may still match a catalogue row
+            try:
+                color = await resolve_brand_color(
+                    db, tag_data["brand"], tag_data["rgba"], tag_data["material"], tag_data["subtype"]
+                )
+            except Exception:
+                logger.warning("Colour catalogue lookup failed for %s", req.tag_uid, exc_info=True)
+                color = None
+            if color is not None:
+                tag_data["color_name"] = color.name
+                if not tag_data["extra_colors"]:
+                    tag_data["extra_colors"] = color.extra_colors
+                if not tag_data["effect_type"]:
+                    tag_data["effect_type"] = color.effect_type
 
     await ws_manager.broadcast(
         {
@@ -793,18 +823,22 @@ async def nfc_tag_scanned(
             "sak": req.sak,
             "tag_type": req.tag_type,
             "tag_data": tag_data,
+            "tag_format": tag_format,
         }
     )
     logger.info(
-        "SpoolBuddy unknown tag: uid=%s (len=%d), tray_uuid=%s (len=%d), type=%s, sak=%s",
+        "SpoolBuddy unknown tag: uid=%s (len=%d), tray_uuid=%s (len=%d), type=%s, sak=%s, format=%s",
         req.tag_uid,
         len(req.tag_uid or ""),
         tray_uuid,
         len(tray_uuid or ""),
         req.tag_type,
         req.sak,
+        tag_format,
     )
-    return {"status": "ok", "matched": False, "spool_id": None}
+    # The prefill goes back to the client too, so one with its own screen
+    # (ESPoolBuddy, SpoolmanScale) can show what the tag says (#3657)
+    return {"status": "ok", "matched": False, "spool_id": None, "tag_data": tag_data, "tag_format": tag_format}
 
 
 @router.post("/nfc/tag-removed")

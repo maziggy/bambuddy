@@ -256,7 +256,7 @@ class TestTwoCandidates:
         with serving(client) as ws, caplog.at_level(logging.WARNING):
             result = await _scan(async_client, NTAG_UID)
 
-        assert result == {"status": "ok", "matched": False, "spool_id": None}
+        assert result == {"status": "ok", "matched": False, "spool_id": None, "tag_data": None, "tag_format": None}
         assert _broadcast_types(ws) == ["spoolbuddy_unknown_tag"]
         assert f"Tag {NTAG_UID} " + AMBIGUOUS.format([3, 7]) in caplog.text
         client.add_native_tags.assert_not_awaited()

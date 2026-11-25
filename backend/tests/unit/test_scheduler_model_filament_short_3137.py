@@ -178,7 +178,7 @@ class TestMatcher:
     async def test_force_colour_jobs_pass_over_a_short_printer(self, queue_db):
         scheduler = PrintScheduler()
         overrides = [{"slot_id": 1, "type": "PLA", "color": "#FF0000", "force_color_match": True}]
-        with patch.object(scheduler, "_get_missing_force_color_slots", MagicMock(return_value=[])):
+        with patch.object(scheduler, "_missing_force_color_pairs", MagicMock(return_value=[])):
             result = await self._find(queue_db, scheduler, short={1}, filament_overrides=overrides)
         assert result == (2, None)
 

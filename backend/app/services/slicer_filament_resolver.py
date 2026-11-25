@@ -119,6 +119,25 @@ def _catalog_filament_id(preset_name: str) -> str:
     return ""
 
 
+def realign_builtin_filament_id(tray_info_idx: str, slicer_filament_name: str | None) -> str:
+    """The builtin id whose name is ``slicer_filament_name`` when ``tray_info_idx`` names another builtin.
+
+    No network. A resolution that landed on the wrong builtin (cloud detail
+    said PLA Basic, the spool is labelled PLA Matte) is realigned to the name;
+    anything else comes back unchanged.
+    """
+    if not tray_info_idx or not slicer_filament_name:
+        return tray_info_idx
+    from backend.app.api.routes.cloud import _BUILTIN_FILAMENT_NAMES
+
+    expected_name = _BUILTIN_FILAMENT_NAMES.get(tray_info_idx, "")
+    if expected_name and expected_name != slicer_filament_name:
+        for fid, fname in _BUILTIN_FILAMENT_NAMES.items():
+            if fname == slicer_filament_name:
+                return fid
+    return tray_info_idx
+
+
 async def lookup_orca_filament_id(
     db: AsyncSession,
     current_user: User | None,
@@ -510,15 +529,10 @@ async def resolve_slicer_filament(
     # when the current resolution lands on a builtin with a different name
     # (e.g. cloud detail returned PLA Basic but the spool was labelled PLA Matte).
     if tray_info_idx and slicer_filament_name:
-        from backend.app.api.routes.cloud import _BUILTIN_FILAMENT_NAMES
-
-        expected_name = _BUILTIN_FILAMENT_NAMES.get(tray_info_idx, "")
-        if expected_name and expected_name != slicer_filament_name:
-            for fid, fname in _BUILTIN_FILAMENT_NAMES.items():
-                if fname == slicer_filament_name:
-                    tray_info_idx = fid
-                    setting_id = filament_id_to_setting_id(fid)
-                    break
+        realigned = realign_builtin_filament_id(tray_info_idx, slicer_filament_name)
+        if realigned != tray_info_idx:
+            tray_info_idx = realigned
+            setting_id = filament_id_to_setting_id(realigned)
 
     # Defend against tray_info_idx values the slicer cannot resolve. Three
     # shapes leak through and must be discarded so the caller's generic-

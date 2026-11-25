@@ -19,6 +19,7 @@ from backend.app.services.color_catalog_lookup import (
     best_product_line_match,
     product_line_rank,
     resolve_bambu_color,
+    resolve_brand_color,
 )
 
 
@@ -181,6 +182,90 @@ async def test_an_unknown_colour_has_no_name_rather_than_a_wrong_one(db_session)
     await _seed(db_session, [BAMBU_BLACK])
 
     assert await resolve_bambu_color_name(db_session, "ABCDEFFF", "PLA Basic") is None
+
+
+# --- Any brand, for a tag with a colour but no name (#3657) ---
+
+
+def _row(brand, name, hex_color, material, **extra):
+    return {"manufacturer": brand, "color_name": name, "hex_color": hex_color, "material": material, **extra}
+
+
+async def brand_color_name(db, brand, rgba, material="PLA", subtype=None):
+    color = await resolve_brand_color(db, brand, rgba, material, subtype)
+    return color.name if color else None
+
+
+@pytest.mark.asyncio
+async def test_brand_and_exact_hex_name_the_colour(db_session):
+    await _seed(db_session, [_row("Sunlu", "Black", "#3C3C3C", "PLA"), _row("Overture", "Grey", "#3C3C3C", "PLA")])
+
+    assert await brand_color_name(db_session, "SUNLU", "3c3c3cff") == "Black"
+    assert await brand_color_name(db_session, "Overture", "3C3C3C") == "Grey"
+
+
+@pytest.mark.asyncio
+async def test_a_near_hex_or_another_brand_has_no_name(db_session):
+    """A hex one step off is not that colour, and Bambu's rows never name another brand's roll."""
+    await _seed(db_session, [_row("Sunlu", "Black", "#3C3C3C", "PLA"), BAMBU_BLACK])
+
+    assert await brand_color_name(db_session, "Sunlu", "3F4141FF") is None
+    assert await brand_color_name(db_session, "Sunlu", "000000FF") is None
+    assert await brand_color_name(db_session, "Generic", "3C3C3CFF") is None
+
+
+@pytest.mark.asyncio
+async def test_the_product_line_then_the_material_picks_between_rows(db_session):
+    await _seed(
+        db_session,
+        [
+            _row("Acme", "Snow", "#FFFFFF", "PLA"),
+            _row("Acme", "Chalk", "#FFFFFF", "PLA Matte"),
+            _row("Acme", "Ice", "#FFFFFF", "PETG"),
+        ],
+    )
+
+    assert await brand_color_name(db_session, "Acme", "FFFFFFFF", "PLA", "Matte") == "Chalk"
+    assert await brand_color_name(db_session, "Acme", "FFFFFFFF", "PLA", "Silk") == "Snow"
+    assert await brand_color_name(db_session, "Acme", "FFFFFFFF", "PETG", None) == "Ice"
+
+
+@pytest.mark.asyncio
+async def test_rows_that_still_disagree_give_no_name(db_session):
+    await _seed(db_session, [_row("Acme", "Snow", "#FFFFFF", "PLA"), _row("Acme", "Ice", "#FFFFFF", "PETG")])
+
+    assert await brand_color_name(db_session, "Acme", "FFFFFFFF", "ABS") is None
+    assert await brand_color_name(db_session, "Acme", "FFFFFFFF", None) is None
+
+
+@pytest.mark.asyncio
+async def test_rows_that_agree_on_the_name_are_one_answer(db_session):
+    await _seed(db_session, [_row("Acme", "Snow", "#FFFFFF", "PLA"), _row("Acme", "Snow", "#FFFFFF", "PETG")])
+
+    assert await brand_color_name(db_session, "Acme", "FFFFFFFF", "ABS") == "Snow"
+
+
+@pytest.mark.asyncio
+async def test_brand_lookup_hands_over_gradient_and_effect(db_session):
+    await _seed(
+        db_session,
+        [_row("Acme", "Sunset", "#FF8800", "PLA Silk", extra_colors="FF8800FF,AA00FFFF", effect_type="silk")],
+    )
+
+    assert await resolve_brand_color(db_session, "Acme", "FF8800FF", "PLA", "Silk") == CatalogColor(
+        "Sunset", "FF8800FF,AA00FFFF", "silk"
+    )
+
+
+@pytest.mark.asyncio
+async def test_brand_lookup_needs_a_brand_and_a_colour_but_clear_needs_neither(db_session):
+    await _seed(db_session, [_row("Sunlu", "Black", "#3C3C3C", "PLA")])
+
+    assert await brand_color_name(db_session, None, "3C3C3CFF") is None
+    assert await brand_color_name(db_session, "  ", "3C3C3CFF") is None
+    assert await brand_color_name(db_session, "Sunlu", None) is None
+    assert await brand_color_name(db_session, "Sunlu", "3C3C") is None
+    assert await brand_color_name(db_session, None, "3C3C3C00") == "Clear"
 
 
 class TestProductLineRank:

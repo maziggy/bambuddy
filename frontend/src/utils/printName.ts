@@ -9,7 +9,7 @@
 export function formatPrintName(
   name: string | null,
   gcodeFile: string | null | undefined,
-  t: (key: string, fallback: string, opts?: Record<string, unknown>) => string,
+  t: (key: string, fallback: string, opts: Record<string, unknown>) => string,
   plateLabel?: string | null,
 ): string {
   if (!name) return '';

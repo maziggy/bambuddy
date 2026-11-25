@@ -5931,6 +5931,11 @@ export default {
     allMaterials: '所有材料',
     filterByBrand: '按品牌篩選...',
     showArchived: '顯示已歸檔',
+    lastUsed: {
+      hint: '已沿用上一個耗材的數值（{{name}}）',
+      hintPlain: '已沿用上一個耗材的數值',
+      clear: '清除',
+    },
     quickAdd: '快速新增（庫存）',
     quantity: '數量',
     stock: '庫存',
@@ -6007,6 +6012,11 @@ export default {
     showLess: '顯示更少',
     showAll: '顯示全部',
     noColorsFound: '沒有顏色匹配您的搜尋',
+    catalogColors: {
+      showAll: '顯示所有顏色',
+      showMatching: '僅顯示符合的顏色',
+      allBrand: '{{brand}} 的所有顏色',
+    },
     noResults: '未找到匹配項',
     // 多色漸層 + 視覺效果 (#1154)
     extraColorsLabel: '附加顏色',

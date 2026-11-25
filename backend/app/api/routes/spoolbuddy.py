@@ -49,6 +49,7 @@ from backend.app.services.spool_tag_matcher import (
     begins_with_cascade_level_1,
     cascade_level_1_uid,
     cascade_level_1_uid_start,
+    default_spool_core_weight,
     get_spool_by_tag,
     warn_cascade_level_1_ambiguous,
 )
@@ -813,6 +814,17 @@ async def nfc_tag_scanned(
                     tag_data["extra_colors"] = color.extra_colors
                 if not tag_data["effect_type"]:
                     tag_data["effect_type"] = color.effect_type
+        if tag_data is not None and tag_data["core_weight"] is None and tag_data["brand"]:
+            # A tag without its own empty-spool weight (OpenSpool, FilaMan, an
+            # OpenTag3D tag that leaves it out) gets its brand's default spool
+            # (#3727); with none, Quick Add keeps its own default.
+            try:
+                default = await default_spool_core_weight(db, tag_data["brand"])
+            except Exception:
+                logger.warning("Spool catalogue lookup failed for %s", req.tag_uid, exc_info=True)
+                default = None
+            if default is not None:
+                tag_data["core_weight"], tag_data["core_weight_catalog_id"] = default
 
     await ws_manager.broadcast(
         {

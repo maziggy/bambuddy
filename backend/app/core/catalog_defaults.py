@@ -1,5 +1,7 @@
 """Default spool and color catalog entries."""
 
+import re
+
 # (name, weight_in_grams)
 DEFAULT_SPOOL_CATALOG: list[tuple[str, int]] = [
     ("3D FilaPrint - Cardboard", 210),
@@ -86,6 +88,9 @@ DEFAULT_SPOOL_CATALOG: list[tuple[str, int]] = [
     ("Sunlu - Plastic", 117),
     ("Sunlu - Plastic V2", 165),
     ("Sunlu - Plastic V3", 179),
+    # A V3 spool with the cardboard core Sunlu rolls ship on in 2026 (#3727):
+    # 216-217 g weighed on several, against 179 g for the bare V3 spool.
+    ("Sunlu - Plastic V3 + Cardboard Core", 217),
     ("Sunlu 250g - Plastic", 55),
     ("UltiMaker - Plastic", 235),
     ("Voolt3D - Plastic", 190),
@@ -94,6 +99,46 @@ DEFAULT_SPOOL_CATALOG: list[tuple[str, int]] = [
     ("Ziro - Plastic", 166),
     ("ZYLtech - Plastic", 179),
 ]
+
+# The spool each brand's rolls come on (#3727): manufacturer -> catalog row name.
+# Seeding and Reset mark these rows default_for_brand, and the migration does so
+# on an existing catalogue unless the brand already has a default there.
+DEFAULT_BRAND_SPOOLS: dict[str, str] = {
+    "Bambu Lab": "Bambu Lab - Plastic Low Temp",
+    "Sunlu": "Sunlu - Plastic V3 + Cardboard Core",
+}
+
+
+# Seeded names whose text before " - " is a product line, not the maker.
+_SEED_PRODUCT_LINES = {"3DJake ecoPLA": "3DJake", "PolyTerra PLA": "PolyMaker"}
+# A roll size after the maker's name: "Sunlu 250g", "eSUN 2.5kg".
+_SEED_SIZE_SUFFIX = re.compile(r"\s+\d+(?:\.\d+)?\s*k?g$", re.IGNORECASE)
+
+
+def seed_manufacturer(name: str) -> str | None:
+    """The manufacturer of a seeded spool row, from its name before " - ".
+
+    A roll size after the maker ("Sunlu 250g") is dropped and a product line
+    ("PolyTerra PLA") maps to its maker, so a brand's rows group together.
+    """
+    head, sep, _ = name.partition(" - ")
+    if not sep:
+        return None
+    head = _SEED_SIZE_SUFFIX.sub("", head.strip())
+    return _SEED_PRODUCT_LINES.get(head, head) or None
+
+
+def seed_spool_row(name: str, weight: int) -> dict:
+    """The column values of a seeded spool catalog row."""
+    manufacturer = seed_manufacturer(name)
+    return {
+        "name": name,
+        "weight": weight,
+        "is_default": True,
+        "manufacturer": manufacturer,
+        "default_for_brand": manufacturer is not None and DEFAULT_BRAND_SPOOLS.get(manufacturer) == name,
+    }
+
 
 # (manufacturer, color_name, hex_color, material)
 DEFAULT_COLOR_CATALOG: list[tuple[str, str, str, str]] = [

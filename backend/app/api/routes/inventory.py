@@ -23,7 +23,7 @@ from backend.app.core.auth import (
     RequirePrinterPermissionIfAuthEnabled,
     require_auth_if_enabled,
 )
-from backend.app.core.catalog_defaults import DEFAULT_COLOR_CATALOG, DEFAULT_SPOOL_CATALOG
+from backend.app.core.catalog_defaults import DEFAULT_COLOR_CATALOG, DEFAULT_SPOOL_CATALOG, seed_spool_row
 from backend.app.core.database import get_db, is_sqlite
 from backend.app.core.permissions import Permission
 from backend.app.core.printer_scope import PrinterScope
@@ -448,20 +448,46 @@ class CatalogEntryResponse(BaseModel):
     name: str
     weight: int
     is_default: bool
+    manufacturer: str | None = None
+    default_for_brand: bool = False
 
     class Config:
         from_attributes = True
 
 
+def _clean_manufacturer(v: str | None) -> str | None:
+    v = (v or "").strip()
+    return v or None
+
+
 class CatalogEntryCreate(BaseModel):
     name: str
     weight: int
+    # The brand whose rolls ship on this spool, and whether it is that brand's
+    # default (#3727). Both optional, so older clients and exports still work.
+    manufacturer: str | None = Field(None, max_length=100)
+    # None (sent explicitly as null) means False, as on update
+    default_for_brand: bool | None = False
+
+    clean_manufacturer = field_validator("manufacturer")(_clean_manufacturer)
 
 
 class CatalogEntryUpdate(IgnoresNullForRequiredColumns):
     __orm_table__ = "spool_catalog"
     name: str
     weight: int
+    # Applied only when sent, so a client that doesn't know them changes neither.
+    manufacturer: str | None = Field(None, max_length=100)
+    default_for_brand: bool | None = None
+
+    clean_manufacturer = field_validator("manufacturer")(_clean_manufacturer)
+
+
+class DefaultSpoolResponse(BaseModel):
+    """The empty spool a new roll starts on (#3727)."""
+
+    weight: int
+    catalog_id: int
 
 
 class BulkDeleteIdsRequest(BaseModel):
@@ -540,6 +566,17 @@ class ColorByMaterialResult(BaseModel):
 # ── Spool Catalog CRUD ─────────────────────────────────────────────────────
 
 
+async def _keep_one_brand_default(db: AsyncSession, row: SpoolCatalogEntry) -> None:
+    """When *row* is its brand's default, it becomes the only one (#3727)."""
+    from backend.app.services.spool_tag_matcher import brand_default_rows
+
+    if not (row.default_for_brand and row.manufacturer):
+        return
+    for other in await brand_default_rows(db, row.manufacturer):
+        if other.id != row.id:
+            other.default_for_brand = False
+
+
 @router.get("/catalog", response_model=list[CatalogEntryResponse])
 async def get_spool_catalog(
     db: AsyncSession = Depends(get_db, scope="function"),
@@ -550,6 +587,23 @@ async def get_spool_catalog(
     return list(result.scalars().all())
 
 
+@router.get("/catalog/default-spool", response_model=DefaultSpoolResponse | None)
+async def get_default_spool(
+    brand: str,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+):
+    """The empty spool a new roll of *brand* starts on, or null (#3727).
+
+    Asked by the Add Spool form when a brand is picked, so the form follows the
+    same rule as spools added from the AMS or a SpoolBuddy scan.
+    """
+    from backend.app.services.spool_tag_matcher import default_spool_core_weight
+
+    found = await default_spool_core_weight(db, brand)
+    return DefaultSpoolResponse(weight=found[0], catalog_id=found[1]) if found else None
+
+
 @router.post("/catalog", response_model=CatalogEntryResponse)
 async def add_catalog_entry(
     entry: CatalogEntryCreate,
@@ -557,8 +611,18 @@ async def add_catalog_entry(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Add a new spool catalog entry."""
-    row = SpoolCatalogEntry(name=entry.name, weight=entry.weight, is_default=False)
+    if entry.default_for_brand and not entry.manufacturer:
+        raise HTTPException(422, "A brand default needs a manufacturer")
+    row = SpoolCatalogEntry(
+        name=entry.name,
+        weight=entry.weight,
+        is_default=False,
+        manufacturer=entry.manufacturer,
+        default_for_brand=bool(entry.default_for_brand),
+    )
     db.add(row)
+    await db.flush()
+    await _keep_one_brand_default(db, row)
     await db.commit()
     await db.refresh(row)
     return row
@@ -578,6 +642,13 @@ async def update_catalog_entry(
         raise HTTPException(404, "Entry not found")
     row.name = entry.name
     row.weight = entry.weight
+    if "manufacturer" in entry.model_fields_set:
+        row.manufacturer = entry.manufacturer
+    if entry.default_for_brand is not None:
+        row.default_for_brand = entry.default_for_brand
+    if row.default_for_brand and not row.manufacturer:
+        raise HTTPException(422, "A brand default needs a manufacturer")
+    await _keep_one_brand_default(db, row)
     await db.commit()
     await db.refresh(row)
     return row
@@ -629,7 +700,7 @@ async def reset_spool_catalog(
         await db.delete(row)
     # Re-seed defaults
     for name, weight in DEFAULT_SPOOL_CATALOG:
-        db.add(SpoolCatalogEntry(name=name, weight=weight, is_default=True))
+        db.add(SpoolCatalogEntry(**seed_spool_row(name, weight)))
     await db.commit()
     return {"status": "reset"}
 

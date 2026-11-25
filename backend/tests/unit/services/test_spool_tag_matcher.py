@@ -3,6 +3,7 @@
 import pytest
 from sqlalchemy import inspect, select
 
+from backend.app.core.catalog_defaults import seed_spool_row
 from backend.app.models.color_catalog import ColorCatalogEntry
 from backend.app.models.spool import Spool
 from backend.app.models.spool_assignment import SpoolAssignment
@@ -1532,24 +1533,26 @@ async def test_find_matching_untagged_gradient_no_match_basic(db_session):
 
 
 async def _seed_bambu_spool_catalog(db_session):
-    """Seed the three Bambu Lab rows in DEFAULT_SPOOL_CATALOG order.
+    """Seed the three Bambu Lab rows in DEFAULT_SPOOL_CATALOG order, as seeding does.
 
     High Temp is inserted first on purpose: that is the row the old prefix query
     returned, so any test that expects 250 here would have failed before the fix.
+    Seeding marks Low Temp the Bambu Lab default (#3727), which the lookup follows.
     """
     for name, weight in (
         ("Bambu Lab - Plastic High Temp", 216),
         ("Bambu Lab - Plastic Low Temp", 250),
         ("Bambu Lab - Plastic White", 253),
     ):
-        db_session.add(SpoolCatalogEntry(name=name, weight=weight, is_default=True))
+        db_session.add(SpoolCatalogEntry(**seed_spool_row(name, weight)))
     await db_session.flush()
 
 
 @pytest.mark.asyncio
 async def test_core_weight_matches_low_temp_row_not_first_bambu_row(db_session):
     """Regression for #2909 — the lookup must select 'Bambu Lab - Plastic Low Temp'
-    by name, not take whichever 'Bambu Lab%' row the database returns first.
+    (by name then, by the Bambu Lab brand default since #3727), not take whichever
+    'Bambu Lab%' row the database returns first.
 
     Before the fix this asserted 216 (High Temp), because the query had neither a
     matching step nor an ORDER BY. core_weight is the tare in SpoolBuddy's weigh
@@ -1645,12 +1648,13 @@ async def test_core_weight_is_deterministic_when_the_name_is_duplicated(db_sessi
 
 
 @pytest.mark.asyncio
-async def test_core_weight_matches_the_row_name_case_insensitively(db_session):
-    """Matching mirrors the colour catalogue lookup above, which compares through
-    func.upper(). A user who has retyped the row's name in different case still
-    gets their row rather than silently dropping to the fallback constant.
+async def test_core_weight_matches_the_manufacturer_case_insensitively(db_session):
+    """A user who typed the Bambu default row's manufacturer in different case
+    still gets their row rather than silently dropping to the fallback constant.
     """
-    db_session.add(SpoolCatalogEntry(name="bambu lab - plastic low temp", weight=248, is_default=False))
+    db_session.add(
+        SpoolCatalogEntry(name="my bambu spool", weight=248, manufacturer="bambu lab", default_for_brand=True)
+    )
     await db_session.flush()
 
     spool = await create_spool_from_tray(db_session, SAMPLE_TRAY)

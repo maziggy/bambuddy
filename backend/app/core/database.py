@@ -5933,6 +5933,14 @@ async def _run_migrations(conn):
     # whatever this database actually holds.
     await _migrate_repair_rfid_core_weight(conn)
 
+    # Migration: the brand a spool catalog row belongs to, and the row a brand's
+    # rolls default to (#3727). BOOLEAN DEFAULT FALSE is accepted by SQLite and
+    # PostgreSQL alike, and fills the existing rows. The data part runs once,
+    # after the #2909 repair, which reads the Bambu row by name.
+    await _safe_execute(conn, "ALTER TABLE spool_catalog ADD COLUMN manufacturer VARCHAR(100)")
+    await _safe_execute(conn, "ALTER TABLE spool_catalog ADD COLUMN default_for_brand BOOLEAN DEFAULT FALSE")
+    await _migrate_spool_catalog_brand_defaults(conn)
+
     # Migration: the Bambu PLA Silk+ colours were seeded under "PLA Silk", so
     # an RFID roll reporting "PLA Silk+" never got its colour name. Relabel
     # the seeded rows, then name the spools that came in without one.
@@ -6530,6 +6538,7 @@ _PG_COLUMNS_SET_FROM_MODEL = (
     ("smart_plugs", "off_delay_after_drying_minutes"),
     ("smart_plugs", "rest_energy_total_multiplier"),
     ("spool", "weight_used_baseline"),
+    ("spool_catalog", "default_for_brand"),
     ("virtual_printers", "gcode_injection"),
     ("virtual_printers", "queue_force_color_match"),
     ("virtual_printers", "queue_remove_after_print"),
@@ -7704,6 +7713,105 @@ async def _migrate_drop_ams_slot_locations(conn) -> None:
         )
 
 
+# Seeded spool rows #3727 added. The migration adds them to an existing
+# catalogue; it never puts back other seeded rows a user deleted.
+_SPOOL_CATALOG_ROWS_ADDED_3727 = ("Sunlu - Plastic V3 + Cardboard Core",)
+
+
+async def _migrate_spool_catalog_brand_defaults(conn) -> None:
+    """Fill the #3727 columns on an existing spool catalogue, once.
+
+    Seeded rows get their manufacturer from the name (the text before " - ");
+    rows the user added stay empty, since their names follow no rule. The rows
+    #3727 seeds are added unless a row of that name exists, and each brand in
+    DEFAULT_BRAND_SPOOLS gets its default unless it already has one. An empty
+    catalogue is left alone: seed_spool_catalog() runs after the migrations and
+    only seeds an empty table, so a row added here would stop it. Existing
+    spools keep their empty-spool weight.
+    """
+    from sqlalchemy import text
+
+    from backend.app.core.catalog_defaults import (
+        DEFAULT_BRAND_SPOOLS,
+        DEFAULT_SPOOL_CATALOG,
+        seed_manufacturer,
+    )
+    from backend.app.services.spool_tag_matcher import brand_key
+
+    flag = "_migrate_3727_spool_brand_defaults_done"
+
+    async with conn.begin_nested():
+        already = (
+            await conn.execute(text('SELECT value FROM settings WHERE "key" = :k'), {"k": flag})
+        ).scalar_one_or_none()
+        if already:
+            return
+
+        rows = (await conn.execute(text("SELECT id, name, is_default, manufacturer FROM spool_catalog"))).fetchall()
+        if rows:
+            filled = 0
+            for row_id, name, is_default, manufacturer in rows:
+                if is_default and not manufacturer and (m := seed_manufacturer(name)):
+                    await conn.execute(
+                        text("UPDATE spool_catalog SET manufacturer = :m WHERE id = :id"), {"m": m, "id": row_id}
+                    )
+                    filled += 1
+
+            names = {name.upper() for _, name, _, _ in rows}
+            weights = dict(DEFAULT_SPOOL_CATALOG)
+            added = []
+            for name in _SPOOL_CATALOG_ROWS_ADDED_3727:
+                if name.upper() in names:
+                    continue
+                await conn.execute(
+                    text(
+                        "INSERT INTO spool_catalog (name, weight, is_default, manufacturer, default_for_brand) "
+                        "VALUES (:name, :weight, :on, :m, :off)"
+                    ),
+                    {"name": name, "weight": weights[name], "on": True, "m": seed_manufacturer(name), "off": False},
+                )
+                added.append(name)
+
+            # Brands compared in Python, as the lookups do: SQLite's UPPER()
+            # only folds ASCII.
+            has_default = {
+                brand_key(m)
+                for (m,) in (
+                    await conn.execute(
+                        text("SELECT manufacturer FROM spool_catalog WHERE default_for_brand = :on"), {"on": True}
+                    )
+                ).fetchall()
+            }
+            defaults = []
+            for manufacturer, name in DEFAULT_BRAND_SPOOLS.items():
+                if brand_key(manufacturer) in has_default:
+                    continue
+                row = (
+                    await conn.execute(
+                        text(
+                            "SELECT id, manufacturer FROM spool_catalog WHERE UPPER(name) = :name ORDER BY id LIMIT 1"
+                        ),
+                        {"name": name.upper()},
+                    )
+                ).first()
+                if row is None:
+                    continue
+                await conn.execute(
+                    text("UPDATE spool_catalog SET default_for_brand = :on, manufacturer = :m WHERE id = :id"),
+                    {"on": True, "m": row[1] or manufacturer, "id": row[0]},
+                )
+                defaults.append(manufacturer)
+
+            logger.info(
+                "Spool catalog (#3727): manufacturer filled on %d seeded rows, added %s, brand defaults set for %s",
+                filled,
+                added or "none",
+                defaults or "none",
+            )
+
+        await conn.execute(text('INSERT INTO settings ("key", value) VALUES (:k, :v)'), {"k": flag, "v": "true"})
+
+
 async def _migrate_repair_rfid_core_weight(conn) -> None:
     """Correct the tare of RFID-added spools that took the wrong catalogue row (#2909).
 
@@ -8555,7 +8663,7 @@ async def seed_spool_catalog():
 
     from sqlalchemy import func, select
 
-    from backend.app.core.catalog_defaults import DEFAULT_SPOOL_CATALOG
+    from backend.app.core.catalog_defaults import DEFAULT_SPOOL_CATALOG, seed_spool_row
     from backend.app.models.spool_catalog import SpoolCatalogEntry
 
     logger = logging.getLogger(__name__)
@@ -8567,7 +8675,7 @@ async def seed_spool_catalog():
             return  # Already seeded
 
         for name, weight in DEFAULT_SPOOL_CATALOG:
-            session.add(SpoolCatalogEntry(name=name, weight=weight, is_default=True))
+            session.add(SpoolCatalogEntry(**seed_spool_row(name, weight)))
         await session.commit()
         logger.info("Seeded %d default spool catalog entries", len(DEFAULT_SPOOL_CATALOG))
 

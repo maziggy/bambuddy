@@ -32,12 +32,13 @@ CASCADE_TAG = "88"
 # reports the SAK of level 1, so its 88 form always comes with this bit set.
 SAK_UID_INCOMPLETE = 0x04
 
-# Spool catalog row describing the reusable plastic spool Bambu Lab ships filament
-# on, and the weight to assume when that row is absent. DEFAULT_SPOOL_CATALOG holds
-# three "Bambu Lab%" rows (High Temp 216, Low Temp 250, White 253); this is the one
-# that matches the spool an RFID roll actually arrives on.
+# The spool catalog row an RFID roll arrives on, as #2909 named it. Since #3727
+# the lookup goes by the Bambu Lab brand default instead; the #2909 repair
+# migration still reads the row by this name.
 BAMBU_PLASTIC_SPOOL_CATALOG_NAME = "Bambu Lab - Plastic Low Temp"
+# The empty-spool weight of a Bambu roll when the catalogue has no Bambu Lab default.
 BAMBU_PLASTIC_SPOOL_CORE_WEIGHT = 250
+BAMBU_BRAND = "Bambu Lab"
 
 
 def is_valid_tag(tag_uid: str, tray_uuid: str) -> bool:
@@ -179,35 +180,56 @@ async def resolve_tray_fields(db: AsyncSession, tray_data: dict) -> dict:
     }
 
 
-async def bambu_spool_core_weight(db: AsyncSession) -> tuple[int, int | None]:
-    """The empty-spool weight an RFID roll arrives on, and the catalog row it came from (if any)."""
+def brand_key(brand: str | None) -> str:
+    """A manufacturer name as brands are compared (#3727): trimmed, any case.
+
+    Compared in Python, not with SQL UPPER(): SQLite's UPPER() only folds ASCII,
+    so "Süd" would never match itself there.
+    """
+    return (brand or "").strip().casefold()
+
+
+async def brand_default_rows(db: AsyncSession, brand: str | None) -> list:
+    """The catalog rows marked default for *brand*, oldest first (#3727).
+
+    The API keeps one, but a database edited by hand may hold more; ORDER BY id
+    keeps the pick the same every time, unlike the lookup #2909 replaced. There
+    are only ever a few default rows, so they are filtered here.
+    """
     from backend.app.models.spool_catalog import SpoolCatalogEntry
 
-    # Look up core weight from the spool catalog by exact name. The previous
-    # "Bambu Lab%" prefix query had no matching step and no ORDER BY, so it took
-    # whichever of the three Bambu Lab rows the database returned first — High Temp
-    # (216 g) on SQLite, undefined on Postgres once the table has seen updates.
-    # core_weight is the tare in SpoolBuddy's weigh flow, so a wrong value here
-    # silently biases every scale weighing of an RFID-created spool. See #2909.
-    #
-    # Falling back to the constant rather than to another catalog row keeps a
-    # missing or renamed entry from reintroducing the arbitrary pick, and matching
-    # by name means a user who has corrected that row to their own measurement gets
-    # their value.
-    core_weight = BAMBU_PLASTIC_SPOOL_CORE_WEIGHT
-    core_weight_catalog_id = None
-    cat_query = (
+    key = brand_key(brand)
+    if not key:
+        return []
+    result = await db.execute(
         select(SpoolCatalogEntry)
-        .where(func.upper(SpoolCatalogEntry.name) == BAMBU_PLASTIC_SPOOL_CATALOG_NAME.upper())
+        .where(SpoolCatalogEntry.default_for_brand.is_(True), SpoolCatalogEntry.manufacturer.is_not(None))
         .order_by(SpoolCatalogEntry.id)
-        .limit(1)
     )
-    cat_result = await db.execute(cat_query)
-    catalog_entry = cat_result.scalar_one_or_none()
-    if catalog_entry:
-        core_weight = catalog_entry.weight
-        core_weight_catalog_id = catalog_entry.id
-    return core_weight, core_weight_catalog_id
+    return [row for row in result.scalars().all() if brand_key(row.manufacturer) == key]
+
+
+async def default_spool_core_weight(db: AsyncSession, brand: str | None) -> tuple[int, int] | None:
+    """The empty spool a new roll of *brand* starts on (#3727): the weight and id
+    of the brand's default catalog row, or None when the brand has none.
+
+    The weight is read when a spool is created, so a row a user corrected to
+    their own measurement wins.
+    """
+    rows = await brand_default_rows(db, brand)
+    return (rows[0].weight, rows[0].id) if rows else None
+
+
+async def bambu_spool_core_weight(db: AsyncSession) -> tuple[int, int | None]:
+    """The empty-spool weight an RFID roll arrives on, and the catalog row it came from (if any).
+
+    The Bambu Lab brand default (#3727), which the seeded catalogue sets to the
+    Low Temp row; without one, the 250 g constant. Never "some Bambu Lab row":
+    the lookup #2909 replaced took whichever of the three the database returned
+    first (High Temp, 216 g, on SQLite), and core_weight is the tare in
+    SpoolBuddy's weigh flow, so a wrong value biases every weighing.
+    """
+    return await default_spool_core_weight(db, BAMBU_BRAND) or (BAMBU_PLASTIC_SPOOL_CORE_WEIGHT, None)
 
 
 async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:

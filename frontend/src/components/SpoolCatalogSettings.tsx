@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Database, Plus, Trash2, RotateCcw, Loader2, Pencil, Check, X, Search, Download, Upload } from 'lucide-react';
+import { Database, Plus, Trash2, RotateCcw, Loader2, Pencil, Check, X, Search, Download, Upload, Star } from 'lucide-react';
 import { api } from '../api/client';
-import type { SpoolCatalogEntry } from '../api/client';
+import type { SpoolCatalogEntry, SpoolCatalogEntryInput } from '../api/client';
+import { brandKey } from '../utils/spoolCatalog';
 import { useToast } from '../contexts/ToastContext';
 import { Card, CardHeader, CardContent } from './Card';
 import { ConfirmModal } from './ConfirmModal';
@@ -20,6 +21,9 @@ export function SpoolCatalogSettings() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formName, setFormName] = useState('');
   const [formWeight, setFormWeight] = useState('');
+  // The brand the spool belongs to, and whether its new rolls start from it (#3727)
+  const [formManufacturer, setFormManufacturer] = useState('');
+  const [formBrandDefault, setFormBrandDefault] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // Selection state
@@ -48,7 +52,26 @@ export function SpoolCatalogSettings() {
 
   const filteredCatalog = catalog.filter(entry =>
     entry.name.toLowerCase().includes(search.toLowerCase())
+    || (entry.manufacturer ?? '').toLowerCase().includes(search.toLowerCase())
   );
+
+  const resetForm = () => {
+    setFormName('');
+    setFormWeight('');
+    setFormManufacturer('');
+    setFormBrandDefault(false);
+  };
+
+  const formInput = (): SpoolCatalogEntryInput => {
+    const manufacturer = formManufacturer.trim() || null;
+    return {
+      name: formName.trim(),
+      weight: parseInt(formWeight),
+      manufacturer,
+      default_for_brand: formBrandDefault && !!manufacturer,
+    };
+  };
+
 
   const handleAdd = async () => {
     if (!formName.trim() || !formWeight) {
@@ -57,11 +80,11 @@ export function SpoolCatalogSettings() {
     }
     setSaving(true);
     try {
-      const entry = await api.addCatalogEntry({ name: formName.trim(), weight: parseInt(formWeight) });
-      setCatalog(prev => [...prev, entry].sort((a, b) => a.name.localeCompare(b.name)));
+      await api.addCatalogEntry(formInput());
+      // Reloaded: a new brand default takes the star off the brand's other row
+      await loadCatalog();
       setShowAddForm(false);
-      setFormName('');
-      setFormWeight('');
+      resetForm();
       showToast(t('settings.catalog.entryAdded'), 'success');
     } catch (err) {
       console.error('SpoolCatalogSettings.handleAdd failed:', err);
@@ -75,12 +98,13 @@ export function SpoolCatalogSettings() {
     setEditingId(entry.id);
     setFormName(entry.name);
     setFormWeight(entry.weight.toString());
+    setFormManufacturer(entry.manufacturer ?? '');
+    setFormBrandDefault(!!entry.default_for_brand);
   };
 
   const cancelEdit = () => {
     setEditingId(null);
-    setFormName('');
-    setFormWeight('');
+    resetForm();
   };
 
   const handleUpdate = async (id: number) => {
@@ -90,11 +114,10 @@ export function SpoolCatalogSettings() {
     }
     setSaving(true);
     try {
-      const updated = await api.updateCatalogEntry(id, { name: formName.trim(), weight: parseInt(formWeight) });
-      setCatalog(prev => prev.map(e => e.id === id ? updated : e).sort((a, b) => a.name.localeCompare(b.name)));
+      await api.updateCatalogEntry(id, formInput());
+      await loadCatalog();
       setEditingId(null);
-      setFormName('');
-      setFormWeight('');
+      resetForm();
       showToast(t('settings.catalog.entryUpdated'), 'success');
     } catch (err) {
       console.error('SpoolCatalogSettings.handleUpdate failed:', err);
@@ -164,7 +187,12 @@ export function SpoolCatalogSettings() {
   };
 
   const handleExport = () => {
-    const exportData = catalog.map(({ name, weight }) => ({ name, weight }));
+    const exportData = catalog.map(({ name, weight, manufacturer, default_for_brand }) => ({
+      name,
+      weight,
+      manufacturer: manufacturer ?? null,
+      default_for_brand: !!default_for_brand,
+    }));
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -182,30 +210,73 @@ export function SpoolCatalogSettings() {
     if (!file) return;
     try {
       const text = await file.text();
-      const data = JSON.parse(text) as Array<{ name: string; weight: number }>;
+      // Exports from before #3727 carry only name and weight.
+      const data = JSON.parse(text) as Array<{
+        name: string;
+        weight: number;
+        manufacturer?: unknown;
+        default_for_brand?: unknown;
+      }>;
       if (!Array.isArray(data)) throw new Error('Invalid format');
 
+      // An imported brand default never takes over from one already in the
+      // catalogue, nor from an earlier row of the same file.
+      const brandsWithDefault = new Set(
+        catalog.filter(c => c.default_for_brand && c.manufacturer).map(c => brandKey(c.manufacturer)),
+      );
       let added = 0;
       let skipped = 0;
       for (const item of data) {
         if (!item.name || typeof item.weight !== 'number') { skipped++; continue; }
         const exists = catalog.some(c => c.name.toLowerCase() === item.name.toLowerCase());
         if (exists) { skipped++; continue; }
+        const manufacturer = typeof item.manufacturer === 'string' && item.manufacturer.trim()
+          ? item.manufacturer.trim()
+          : null;
+        const key = brandKey(manufacturer);
+        const brandDefault = item.default_for_brand === true && !!manufacturer && !brandsWithDefault.has(key);
         try {
-          const entry = await api.addCatalogEntry({ name: item.name, weight: item.weight });
-          setCatalog(prev => [...prev, entry].sort((a, b) => a.name.localeCompare(b.name)));
+          await api.addCatalogEntry({
+            name: item.name,
+            weight: item.weight,
+            manufacturer,
+            default_for_brand: brandDefault,
+          });
+          if (brandDefault) brandsWithDefault.add(key);
           added++;
         } catch (err) {
           console.error('SpoolCatalogSettings import item failed:', err);
           skipped++;
         }
       }
+      await loadCatalog();
       showToast(t('settings.catalog.imported', { added, skipped }), 'success');
     } catch (err) {
       console.error('SpoolCatalogSettings.handleImport failed:', err);
       showToast(t('settings.catalog.importFailed'), 'error');
     }
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // Whether this row is the spool its brand's new rolls start from (#3727)
+  const brandDefaultToggle = () => {
+    const noManufacturer = !formManufacturer.trim();
+    return (
+      <button
+        type="button"
+        role="switch"
+        aria-checked={formBrandDefault && !noManufacturer}
+        aria-label={t('settings.catalog.brandDefault')}
+        title={noManufacturer ? t('settings.catalog.brandDefaultNeedsManufacturer') : t('settings.catalog.brandDefaultHint')}
+        disabled={noManufacturer}
+        onClick={() => setFormBrandDefault(v => !v)}
+        className={`p-2 rounded-lg shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${
+          formBrandDefault && !noManufacturer ? 'text-bambu-green bg-bambu-green/20' : 'text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary'
+        }`}
+      >
+        <Star className="w-4 h-4" />
+      </button>
+    );
   };
 
   return (
@@ -306,6 +377,14 @@ export function SpoolCatalogSettings() {
                 />
               </div>
               <input
+                type="text"
+                className="w-40 px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
+                placeholder={t('settings.catalog.manufacturerPlaceholder')}
+                aria-label={t('settings.catalog.manufacturer')}
+                value={formManufacturer}
+                onChange={(e) => setFormManufacturer(e.target.value)}
+              />
+              <input
                 type="number"
                 className="w-20 px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white text-center focus:border-bambu-green focus:outline-none"
                 placeholder="g"
@@ -313,6 +392,7 @@ export function SpoolCatalogSettings() {
                 onChange={(e) => setFormWeight(e.target.value)}
               />
               <span className="text-bambu-gray shrink-0">g</span>
+              {brandDefaultToggle()}
               <button
                 onClick={handleAdd}
                 disabled={saving}
@@ -322,7 +402,7 @@ export function SpoolCatalogSettings() {
                 {t('common.add')}
               </button>
               <button
-                onClick={() => { setShowAddForm(false); setFormName(''); setFormWeight(''); }}
+                onClick={() => { setShowAddForm(false); resetForm(); }}
                 className="p-2 rounded-lg text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary"
               >
                 <X className="w-4 h-4" />
@@ -350,6 +430,7 @@ export function SpoolCatalogSettings() {
                     />
                   </th>
                   <th className="px-4 py-2 text-left text-bambu-gray font-medium">{t('common.name')}</th>
+                  <th className="px-4 py-2 text-left text-bambu-gray font-medium w-32">{t('settings.catalog.manufacturer')}</th>
                   <th className="px-4 py-2 text-right text-bambu-gray font-medium w-24">{t('settings.catalog.weight')}</th>
                   <th className="px-4 py-2 text-center text-bambu-gray font-medium w-20">{t('settings.catalog.type')}</th>
                   <th className="px-4 py-2 w-24"></th>
@@ -358,7 +439,7 @@ export function SpoolCatalogSettings() {
               <tbody>
                 {filteredCatalog.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-bambu-gray">
+                    <td colSpan={6} className="px-4 py-8 text-center text-bambu-gray">
                       {search ? t('settings.catalog.noMatch') : t('settings.catalog.empty')}
                     </td>
                   </tr>
@@ -375,7 +456,7 @@ export function SpoolCatalogSettings() {
                               className="w-4 h-4 accent-bambu-green cursor-pointer"
                             />
                           </td>
-                          <td className="px-4 py-2">
+                          <td className="px-2 py-2">
                             <input
                               type="text"
                               className="w-full px-2 py-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white focus:border-bambu-green focus:outline-none"
@@ -383,7 +464,19 @@ export function SpoolCatalogSettings() {
                               onChange={(e) => setFormName(e.target.value)}
                             />
                           </td>
-                          <td className="px-4 py-2">
+                          <td className="px-2 py-2">
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="text"
+                                className="w-full px-2 py-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white focus:border-bambu-green focus:outline-none"
+                                aria-label={t('settings.catalog.manufacturer')}
+                                value={formManufacturer}
+                                onChange={(e) => setFormManufacturer(e.target.value)}
+                              />
+                              {brandDefaultToggle()}
+                            </div>
+                          </td>
+                          <td className="px-2 py-2">
                             <input
                               type="number"
                               className="w-full px-2 py-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-right focus:border-bambu-green focus:outline-none"
@@ -391,10 +484,10 @@ export function SpoolCatalogSettings() {
                               onChange={(e) => setFormWeight(e.target.value)}
                             />
                           </td>
-                          <td className="px-4 py-2 text-center">
+                          <td className="px-2 py-2 text-center">
                             <span className="text-xs text-bambu-gray">-</span>
                           </td>
-                          <td className="px-4 py-2">
+                          <td className="px-2 py-2">
                             <div className="flex justify-end gap-1">
                               <button
                                 onClick={() => handleUpdate(entry.id)}
@@ -420,6 +513,20 @@ export function SpoolCatalogSettings() {
                             />
                           </td>
                           <td className="px-4 py-2 text-white">{entry.name}</td>
+                          <td className="px-4 py-2 text-white">
+                            <span className="inline-flex items-center gap-1.5">
+                              {entry.manufacturer ?? <span className="text-bambu-gray">-</span>}
+                              {entry.default_for_brand && (
+                                <span
+                                  className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-bambu-green/20 text-bambu-green"
+                                  title={t('settings.catalog.brandDefaultHint')}
+                                >
+                                  <Star className="w-3 h-3" />
+                                  {t('settings.catalog.brandDefault')}
+                                </span>
+                              )}
+                            </span>
+                          </td>
                           <td className="px-4 py-2 text-right font-mono text-white">{entry.weight}g</td>
                           <td className="px-4 py-2 text-center">
                             {entry.is_default ? (

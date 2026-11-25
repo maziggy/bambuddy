@@ -2076,6 +2076,24 @@ export interface SpoolCatalogEntry {
   name: string;
   weight: number;
   is_default: boolean;
+  /** The brand whose rolls ship on this spool (#3727). */
+  manufacturer?: string | null;
+  /** The spool that brand's new rolls start from; at most one per brand. */
+  default_for_brand?: boolean;
+}
+
+/** The empty spool a new roll starts on (#3727). */
+export interface DefaultSpool {
+  weight: number;
+  catalog_id: number;
+}
+
+/** A spool catalogue row as created or updated; the #3727 fields are optional. */
+export interface SpoolCatalogEntryInput {
+  name: string;
+  weight: number;
+  manufacturer?: string | null;
+  default_for_brand?: boolean;
 }
 
 export interface StorageLocation {
@@ -7887,9 +7905,11 @@ export const api = {
   deleteLabelTemplate: (id: number) => request<void>(`/label-templates/${id}`, { method: 'DELETE' }),
   getSpoolCatalog: () =>
     request<SpoolCatalogEntry[]>('/inventory/catalog'),
-  addCatalogEntry: (data: { name: string; weight: number }) =>
+  addCatalogEntry: (data: SpoolCatalogEntryInput) =>
     request<SpoolCatalogEntry>('/inventory/catalog', { method: 'POST', body: JSON.stringify(data) }),
-  updateCatalogEntry: (id: number, data: { name: string; weight: number }) =>
+  getDefaultSpool: (brand: string) =>
+    request<DefaultSpool | null>(`/inventory/catalog/default-spool?brand=${encodeURIComponent(brand)}`),
+  updateCatalogEntry: (id: number, data: SpoolCatalogEntryInput) =>
     request<SpoolCatalogEntry>(`/inventory/catalog/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteCatalogEntry: (id: number) =>
     request<{ status: string }>(`/inventory/catalog/${id}`, { method: 'DELETE' }),

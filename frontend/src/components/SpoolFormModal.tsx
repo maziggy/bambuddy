@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, Loader2, Save, Beaker, Palette, Zap, Tag, Link2, Unlink, Printer } from 'lucide-react';
 import { api, ApiError } from '../api/client';
-import type { InventorySpool, Supplier, SlicerSetting, SpoolCatalogEntry, LocalPreset, BuiltinFilament, SpoolmanBulkCreateResult, SpoolFilamentPresetInput, SpoolKProfileInput, SpoolmanFilamentEntry, ResolvedProfileDefault, ThreeDfpFilament } from '../api/client';
+import type { DefaultSpool, InventorySpool, Supplier, SlicerSetting, SpoolCatalogEntry, LocalPreset, BuiltinFilament, SpoolmanBulkCreateResult, SpoolFilamentPresetInput, SpoolKProfileInput, SpoolmanFilamentEntry, ResolvedProfileDefault, ThreeDfpFilament } from '../api/client';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 import type {
@@ -97,6 +97,8 @@ export function SpoolFormModal({
   // so the id changes on forms nobody has touched. Both real user actions go
   // through core_weight.
   const [coreWeightTouched, setCoreWeightTouched] = useState(false);
+  const coreWeightTouchedRef = useRef(coreWeightTouched);
+  coreWeightTouchedRef.current = coreWeightTouched;
   const [locationIdTouched, setLocationIdTouched] = useState(false);
   // Sent only when changed, so saving an unrelated edit cannot put back a
   // drying date that an AMS run stamped while the form was open (#2863).
@@ -153,6 +155,11 @@ export function SpoolFormModal({
   // Spoolman mode: the tare on the form came from memory and the user has not set one
   // in this form. Picking a Spoolman filament releases it, see handleFilamentSelect.
   const tareFromMemory = useRef(false);
+  // The empty-spool weight on the form came with the brand (#3727), so picking
+  // another brand can take it back off. The counter drops an answer for a brand
+  // that has since been replaced.
+  const tareFromBrand = useRef(false);
+  const brandTareRequest = useRef(0);
   const [locationsLoaded, setLocationsLoaded] = useState(false);
   const [catalogLoaded, setCatalogLoaded] = useState(false);
 
@@ -628,6 +635,8 @@ export function SpoolFormModal({
       // A remembered tare on a Spoolman create is sent like a chosen one.
       setCoreWeightTouched((isCopying && spool?.core_weight_is_inherited === false) || (spoolmanMode && rememberedTare));
       tareFromMemory.current = spoolmanMode && rememberedTare;
+      tareFromBrand.current = false;
+      brandTareRequest.current++;
       setLocationIdTouched(false);
       setSupplierLinksTouched(false);
       setPrinterProfilesTouched(false);
@@ -724,6 +733,8 @@ export function SpoolFormModal({
     setLocationIdTouched(false);
     setCoreWeightTouched(false);
     tareFromMemory.current = false;
+    tareFromBrand.current = false;
+    brandTareRequest.current++;
     setPendingLast(null);
     setLastApplied(null);
     presetFromDefault.current = false;
@@ -909,6 +920,36 @@ export function SpoolFormModal({
   }, [isOpen, spool, storageLocations, formData.location_id, locationIdTouched]);
 
 
+  // The empty-spool weight that comes with picking a brand on a new spool
+  // (#3727), asked of the server so the form follows the same rule as the AMS
+  // and SpoolBuddy. Never over a weight the user set in this form, and not in
+  // Spoolman mode, where the tare comes from Spoolman. A brand without a default
+  // takes back only what an earlier brand put there.
+  const applyBrandTare = async (brand: string) => {
+    if (!isCreating || spoolmanMode) return;
+    const request = ++brandTareRequest.current;
+    let found: DefaultSpool | null = null;
+    try {
+      found = brand.trim() ? await api.getDefaultSpool(brand) : null;
+    } catch (err) {
+      console.error('SpoolFormModal: default spool lookup failed', err);
+      return;
+    }
+    if (request !== brandTareRequest.current || coreWeightTouchedRef.current) return;
+    if (found) {
+      const { weight, catalog_id } = found;
+      tareFromBrand.current = true;
+      setFormData((prev) => ({ ...prev, core_weight: weight, core_weight_catalog_id: catalog_id }));
+    } else if (tareFromBrand.current) {
+      tareFromBrand.current = false;
+      setFormData((prev) => ({
+        ...prev,
+        core_weight: defaultFormData.core_weight,
+        core_weight_catalog_id: defaultFormData.core_weight_catalog_id,
+      }));
+    }
+  };
+
   // Update field helper
   const updateField = <K extends keyof SpoolFormData>(key: K, value: SpoolFormData[K]) => {
     const isLinkedField = SPOOLMAN_LINKED_FIELDS.has(key);
@@ -927,7 +968,9 @@ export function SpoolFormModal({
       setCoreWeightTouched(true);
       // Set in this form: the user's, whatever filament is picked afterwards.
       tareFromMemory.current = false;
+      tareFromBrand.current = false;
     }
+    if (key === 'brand') void applyBrandTare(value as string);
     if (key === 'location_id') setLocationIdTouched(true);
     if (key === 'last_dried_at') setLastDriedTouched(true);
     // A preset the user picked is theirs: the next product's default leaves it alone.

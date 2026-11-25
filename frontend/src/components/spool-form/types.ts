@@ -227,6 +227,11 @@ export interface AdditionalSectionProps extends SectionProps {
   // When true the "Last dried" field is shown. Edit mode only: a new spool
   // has no drying record to correct (#2863).
   showLastDried?: boolean;
+  // Chosen brand: empty spools named after it are listed first (#3619).
+  brand?: string;
+  // Colour catalog: tells which product lines / manufacturer the brand goes by, so spool
+  // names of those are suggested too (#3619). Optional; without it only the brand matches.
+  catalogColors?: ColorSectionProps['catalogColors'];
   // When true the material number input is hidden: in Spoolman mode the
   // number is Spoolman's filament-level article_number, maintained in
   // Spoolman itself and shown read-only in the list (#2870).

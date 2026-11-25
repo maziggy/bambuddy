@@ -5943,6 +5943,11 @@ export default {
     allMaterials: 'Tous Matériaux',
     filterByBrand: 'Filtrer par marque...',
     showArchived: 'Afficher archivées',
+    lastUsed: {
+      hint: 'Valeurs reprises de votre dernière bobine ({{name}})',
+      hintPlain: 'Valeurs reprises de votre dernière bobine',
+      clear: 'Effacer',
+    },
     quickAdd: 'Ajout rapide (Stock)',
     quantity: 'Quantité',
     stock: 'Stock',
@@ -6019,6 +6024,11 @@ export default {
     showLess: 'Moins',
     showAll: 'Toutes',
     noColorsFound: 'Aucune couleur correspondante',
+    catalogColors: {
+      showAll: 'Afficher toutes les couleurs',
+      showMatching: 'Afficher uniquement les correspondantes',
+      allBrand: 'Toutes les couleurs {{brand}}',
+    },
     noResults: 'Aucun résultat',
     // Multi-color gradient + visual effect (#1154) — English fallback.
     extraColorsLabel: 'Couleurs supplémentaires',

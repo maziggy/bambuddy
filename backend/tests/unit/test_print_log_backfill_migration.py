@@ -245,3 +245,26 @@ async def test_backfill_skips_archives_with_any_costed_run(engine_with_legacy_da
     # there too, so the backfill UPDATE would set NULL → NULL anyway, which
     # is the desired no-op.
     assert dict(rows) == {1: 1.11, 2: None, 3: None, 4: None}
+
+
+async def test_linking_runs_once_so_a_later_null_archive_id_stays_null(engine_with_legacy_data):
+    """Since #1378 a NULL archive_id is a real answer: the run had no archive,
+    or its archive was deleted (ON DELETE SET NULL). A later start must not
+    link such a run to whichever archive shares its name."""
+    async with engine_with_legacy_data.begin() as conn:
+        await run_migrations(conn)
+        await conn.execute(
+            text(
+                "INSERT INTO print_log_entries (id, print_name, printer_id, status, created_at) "
+                "VALUES (5, 'cube.3mf', 1, 'completed', CURRENT_TIMESTAMP)"
+            )
+        )
+        await conn.execute(text("UPDATE print_log_entries SET archive_id = NULL WHERE id = 4"))
+    async with engine_with_legacy_data.begin() as conn:
+        await run_migrations(conn)
+
+    async with engine_with_legacy_data.connect() as conn:
+        result = await conn.execute(text("SELECT id, archive_id FROM print_log_entries ORDER BY id"))
+        rows = result.all()
+
+    assert rows == [(1, 1), (2, 1), (3, 1), (4, None), (5, None)]

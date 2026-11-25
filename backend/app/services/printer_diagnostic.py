@@ -11,6 +11,7 @@ user-side setup errors clustered on exactly these causes.
 
 import asyncio
 import ipaddress
+import json
 import logging
 import os
 import socket
@@ -253,8 +254,64 @@ def _has_native_interface() -> bool:
     return False
 
 
+# Link kinds that put a container straight onto the LAN with an address of
+# its own: the parent NIC's network, not a NAT behind the host.
+_LAN_LINK_KINDS = ("macvlan", "ipvlan")
+# The ``ip`` call reads the kernel's own table; a guard, not a budget.
+_IP_TIMEOUT = 2.0
+
+
+def _lan_link_kinds() -> dict[str, str] | None:
+    """The macvlan/ipvlan interfaces here: name -> "macvlan", "ipvlan" or
+    "ipvlan_l3" (L3 or L3S mode). None when the link kinds can't be read.
+
+    A macvlan or ipvlan interface is created in the host's namespace and
+    moved into the container's, so like a veth its ``iflink`` names an
+    interface elsewhere and ``_has_native_interface`` passes it by: such a
+    container read as bridge networking (#3417). Only the kernel's link kind
+    tells them apart, and only netlink carries it (``ip -d``): neither driver
+    gives sysfs a device type to read instead.
+    """
+    try:
+        result = subprocess.run(["ip", "-d", "-j", "link", "show"], capture_output=True, text=True, timeout=_IP_TIMEOUT)
+        if result.returncode != 0:
+            return None
+        found: dict[str, str] = {}
+        for link in json.loads(result.stdout or "[]"):
+            info = link.get("linkinfo") or {}
+            kind = info.get("info_kind")
+            if kind not in _LAN_LINK_KINDS or not link.get("ifname"):
+                continue
+            mode = (info.get("info_data") or {}).get("mode") if kind == "ipvlan" else None
+            # iproute2 prints l2/l3/l3s; L3 routes, so no broadcast or
+            # multicast crosses it. Any other mode is not known to.
+            found[link["ifname"]] = "ipvlan_l3" if mode in ("l3", "l3s") else kind
+        return found
+    except Exception:
+        logger.debug("ip -d link probe failed", exc_info=True)
+        return None
+
+
+def _lan_link_mode() -> str | None:
+    """How a macvlan or ipvlan interface here connects: ``macvlan``,
+    ``ipvlan`` (L2, or a mode not known to route), ``ipvlan_l3``; ``none``
+    when there is no such interface, None when it can't be told."""
+    kinds = _lan_link_kinds()
+    if kinds is None:
+        return None
+    values = set(kinds.values())
+    # A container on a bridge network and a macvlan one reaches the LAN
+    # through the macvlan; the most capable link answers.
+    for mode in ("macvlan", "ipvlan", "ipvlan_l3"):
+        if mode in values:
+            return mode
+    return "none"
+
+
 def _detect_container_network_mode(runtime: str | None) -> str | None:
-    """Return "host", "bridge", or None when it genuinely cannot be told.
+    """Return "host", "bridge", "macvlan", "ipvlan", "ipvlan_l3", or None
+    when it genuinely cannot be told. Reads the kernel's link table through
+    ``ip``: call it off the event loop.
 
     The first rule is the original Docker one and is kept exactly: a Docker
     *host* always has a docker0, so a container that can see it shares the
@@ -266,7 +323,8 @@ def _detect_container_network_mode(runtime: str | None) -> str | None:
     The second rule is the general form of the same idea and is what answers
     for Podman. The third is the fallback the first rule always implied: an
     OCI container that can see neither is isolated, which is what bridge
-    networking means.
+    networking means -- unless its interface is a macvlan or ipvlan, which
+    puts it on the LAN with an address of its own (#3417).
     """
     try:
         for _idx, name in socket.if_nameindex():
@@ -276,9 +334,11 @@ def _detect_container_network_mode(runtime: str | None) -> str | None:
         pass
     if _has_native_interface():
         return "host"
-    if runtime in OCI_RUNTIMES:
-        return "bridge"
-    return None
+    if runtime not in OCI_RUNTIMES:
+        return None
+    lan = _lan_link_mode()
+    # None without the link kinds: a veth and a macvlan look alike then.
+    return "bridge" if lan == "none" else lan
 
 
 def _host_source_ip(destination_ip: str) -> str | None:
@@ -512,17 +572,24 @@ async def run_connection_diagnostic(
             DiagnosticCheck(id="network_mode", status="skip", params={"reason": "system_container", "runtime": runtime})
         )
     else:
-        network_mode = _detect_container_network_mode(runtime)
+        # Off the loop: the link kinds come from `ip -d link show`.
+        network_mode = await asyncio.to_thread(_detect_container_network_mode, runtime)
         if network_mode is None:
             checks.append(
                 DiagnosticCheck(id="network_mode", status="skip", params={"reason": "unknown", "runtime": runtime})
             )
         else:
+            # macvlan and ipvlan L2 sit on the LAN with their own address, so
+            # discovery and the Virtual Printer work there. ipvlan L3 routes
+            # instead: no broadcast or multicast, so SSDP discovery can't.
+            params: dict = {"mode": network_mode, "runtime": runtime}
+            if network_mode in ("macvlan", "ipvlan", "ipvlan_l3"):
+                params["reason"] = network_mode
             checks.append(
                 DiagnosticCheck(
                     id="network_mode",
-                    status="pass" if network_mode == "host" else "warn",
-                    params={"mode": network_mode, "runtime": runtime},
+                    status="pass" if network_mode in ("host", "macvlan", "ipvlan") else "warn",
+                    params=params,
                 )
             )
 

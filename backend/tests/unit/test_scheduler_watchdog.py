@@ -586,6 +586,23 @@ class TestWatchdogRetryBudget:
         notify.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_a_send_that_never_started_drops_its_colour_note(self, db_session):
+        """#3279: the note says a slot printed in another colour; a print that
+        never started printed in none, on the pending row or the failed one."""
+        note = '[{"slot_id": 1, "type": "PLA", "wanted": "#A4AAAC", "got": "#000000", "tray": 1}]'
+        async with db_session() as db:
+            item = await db.get(PrintQueueItem, 1)
+            item.color_substitutions = note
+            await db.commit()
+
+        await self._wedge(db_session)
+
+        async with db_session() as db:
+            item = await db.get(PrintQueueItem, 1)
+            assert item.status == "pending"
+            assert item.color_substitutions is None
+
+    @pytest.mark.asyncio
     async def test_a_successful_start_never_touches_the_counter(self, db_session):
         """Only the revert path increments. A printer that picks the job up
         must not accumulate attempts towards a future give-up."""
@@ -907,3 +924,33 @@ class TestWatchdogNamesDryingAsTheObstacle:
             item = await db.get(PrintQueueItem, 1)
         assert item.status == "printing"
         assert (item.dispatch_attempts or 0) == 0
+
+
+class TestARefusedStart:
+    """FW-C1: the printer answered the start with a refusal. Nothing will
+    start, and the command was not lost: no full wait, no reconnect."""
+
+    @pytest.mark.asyncio
+    async def test_reverts_at_once_without_a_reconnect(self, db_session):
+        get_status = MagicMock(return_value=_status("FINISH", "OLD_SUBTASK", gcode_file="/old.3mf"))
+        client = MagicMock(last_start_refusal=("FAIL", "file not found"))
+
+        with (
+            patch("backend.app.services.print_scheduler.printer_manager.get_status", get_status),
+            patch("backend.app.services.print_scheduler.printer_manager.get_client", MagicMock(return_value=client)),
+            patch("backend.app.services.print_scheduler.async_session", db_session),
+            patch("backend.app.core.database.async_session", db_session),
+        ):
+            await PrintScheduler._watchdog_print_start(
+                queue_item_id=1,
+                printer_id=42,
+                pre_state="FINISH",
+                pre_subtask_id="OLD_SUBTASK",
+                pre_gcode_file="/old.3mf",
+                timeout=30,
+                poll_interval=0.05,
+            )
+
+        client.force_reconnect_stale_session.assert_not_called()
+        async with db_session() as db:
+            assert (await db.get(PrintQueueItem, 1)).status == "pending"

@@ -382,16 +382,3 @@ def find_interface_for_ip(target_ip: str) -> dict | None:
 
     logger.warning("No interface found for target IP %s", target_ip)
     return None
-
-
-def get_other_interfaces(exclude_ip: str) -> list[dict]:
-    """Get all interfaces except the one with the given IP.
-
-    Args:
-        exclude_ip: IP address of interface to exclude
-
-    Returns:
-        List of interface dicts
-    """
-    interfaces = get_network_interfaces()
-    return [iface for iface in interfaces if iface["ip"] != exclude_ip]

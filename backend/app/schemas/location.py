@@ -2,6 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
+from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
 from backend.app.services.location_service import normalize_location_name
 
 
@@ -15,7 +16,8 @@ class LocationCreate(BaseModel):
         return normalize_location_name(v)
 
 
-class LocationUpdate(BaseModel):
+class LocationUpdate(IgnoresNullForRequiredColumns):
+    __orm_table__ = "locations"
     name: str | None = Field(default=None, min_length=1, max_length=255)
     identifier: str | None = Field(default=None, max_length=100)
 

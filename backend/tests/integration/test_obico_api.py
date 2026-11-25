@@ -220,14 +220,24 @@ class TestObicoPrinterStatus:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_monitored_subset_is_returned(self, async_client: AsyncClient):
+    async def test_monitored_subset_is_returned(self, async_client: AsyncClient, db_session):
         """A configured obico_enabled_printers subset surfaces (as a sorted list) so
         the frontend can show the idle badge only on monitored printers."""
-        update = await async_client.put("/api/v1/settings/", json={"obico_enabled_printers": "[3, 1]"})
-        assert update.status_code == 200
+        from backend.app.models.printer import Printer
+
+        # The printers must exist: the setting refuses ids that have none.
+        printers = [
+            Printer(name=f"P{i}", serial_number=f"OBICO-SUBSET-{i}", ip_address=f"192.0.2.4{i}", access_code="x")
+            for i in range(2)
+        ]
+        db_session.add_all(printers)
+        await db_session.commit()
+        first, second = sorted(p.id for p in printers)
+        update = await async_client.put("/api/v1/settings/", json={"obico_enabled_printers": f"[{second}, {first}]"})
+        assert update.status_code == 200, update.text
         try:
             response = await async_client.get("/api/v1/obico/printer-status")
-            assert response.json()["monitored_printers"] == [1, 3]
+            assert response.json()["monitored_printers"] == [first, second]
         finally:
             await async_client.put("/api/v1/settings/", json={"obico_enabled_printers": ""})
 

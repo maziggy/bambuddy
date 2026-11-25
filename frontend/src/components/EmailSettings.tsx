@@ -64,6 +64,15 @@ export function EmailSettings() {
     }
   }, [existingSettings]);
 
+  // The saved password only goes to the server it was entered for.
+  const smtpPasswordNeedsReentry =
+    !!existingSettings &&
+    smtpSettings.smtp_auth_enabled &&
+    !smtpSettings.smtp_password &&
+    (smtpSettings.smtp_host !== existingSettings.smtp_host ||
+      smtpSettings.smtp_port !== existingSettings.smtp_port ||
+      smtpSettings.smtp_security !== existingSettings.smtp_security);
+
   const handleSecurityChange = (security: 'starttls' | 'ssl' | 'none') => {
     setSMTPSettings({
       ...smtpSettings,
@@ -145,8 +154,10 @@ export function EmailSettings() {
       showToast(t('settings.email.errors.enterTestEmail'), 'error');
       return;
     }
+    // What the form holds, saved or not.
     testMutation.mutate({
       test_recipient: testEmail,
+      smtp: smtpSettings,
     });
   };
 
@@ -292,10 +303,13 @@ export function EmailSettings() {
                     type="password"
                     value={smtpSettings.smtp_password || ''}
                     onChange={(e) => setSMTPSettings({ ...smtpSettings, smtp_password: e.target.value })}
-                    placeholder={existingSettings ? '••••••••' : 'App password'}
+                    placeholder={existingSettings ? '••••••••' : t('emailSettings.placeholders.appPassword')}
                     disabled={!smtpSettings.smtp_auth_enabled}
                     className={smtpSettings.smtp_auth_enabled ? inputClasses : disabledInputClasses}
                   />
+                  {smtpPasswordNeedsReentry && (
+                    <p className="text-xs mt-1 text-yellow-400">{t('common.secretReenter')}</p>
+                  )}
                 </div>
               </div>
 
@@ -367,7 +381,7 @@ export function EmailSettings() {
                     type="text"
                     value={smtpSettings.smtp_from_name}
                     onChange={(e) => setSMTPSettings({ ...smtpSettings, smtp_from_name: e.target.value })}
-                    placeholder="BamBuddy"
+                    placeholder={t('emailSettings.placeholders.fromName')}
                     className={inputClasses}
                   />
                 </div>

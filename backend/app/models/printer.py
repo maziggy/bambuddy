@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, String, func
+from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, String, false, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
@@ -8,6 +8,8 @@ from backend.app.core.database import Base
 
 class Printer(Base):
     __tablename__ = "printers"
+    # SQLite would give a freed id to the next row; see core/database AUTOINCREMENT_TABLES
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100))
@@ -23,6 +25,9 @@ class Printer(Base):
     # What an hour of printing costs in wear on this machine (#694). Empty or 0
     # leaves wear cost off for the printer.
     wear_cost_per_hour: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Place in the order "Any model" jobs pick printers when Settings > Queue >
+    # printer order is "priority" (#2915): lowest first, empty last, ties by id.
+    dispatch_priority: Mapped[int | None] = mapped_column(Integer, nullable=True)
     runtime_seconds: Mapped[int] = mapped_column(
         default=0
     )  # Accumulated active runtime (RUNNING state only — see #1521)
@@ -41,7 +46,7 @@ class Printer(Base):
     camera_rotation: Mapped[int] = mapped_column(default=0)  # 0, 90, 180, 270 degrees
     # Picked for the chamber light while the camera is in use (#1655). Only
     # counts when the app setting camera_light_mode is "selected".
-    camera_light_auto: Mapped[bool] = mapped_column(Boolean, default=False)
+    camera_light_auto: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # Plate detection - check if build plate is empty before starting print
     plate_detection_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     # ROI for plate detection (percentages: 0.0-1.0)
@@ -56,13 +61,23 @@ class Printer(Base):
     # when the global plate_clear_trigger is "door" — a farm mixes models, and some
     # doors get opened for reasons that are not clearing the plate (#2805).
     plate_clear_door_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Overrides the app setting require_plate_clear for this printer (#2860):
+    # True/False gates it or not, null follows the setting.
+    require_plate_clear: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Optional per-printer WLED preset mapping. WLED owns all visual effects.
+    wled_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
     # Relationships
     archives: Mapped[list["PrintArchive"]] = relationship(back_populates="printer", cascade="all, delete-orphan")
-    smart_plugs: Mapped[list["SmartPlug"]] = relationship(back_populates="printer")
-    notification_providers: Mapped[list["NotificationProvider"]] = relationship(back_populates="printer")
+    # Deleted with the printer, as providers: unassigned plugs are everyone's.
+    smart_plugs: Mapped[list["SmartPlug"]] = relationship(back_populates="printer", cascade="all, delete-orphan")
+    # Deleted with the printer: setting their printer_id to NULL (the default)
+    # would make them providers for all printers.
+    notification_providers: Mapped[list["NotificationProvider"]] = relationship(
+        back_populates="printer", cascade="all, delete-orphan"
+    )
     maintenance_items: Mapped[list["PrinterMaintenance"]] = relationship(
         back_populates="printer", cascade="all, delete-orphan"
     )

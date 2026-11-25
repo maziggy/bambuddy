@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -10,9 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.tasks import spawn_background_task
 from backend.app.services.homeassistant import homeassistant_service
+from backend.app.services.mqtt_relay import mqtt_relay
+from backend.app.services.plug_energy import get_plug_energy, mqtt_has_lifetime_counter
 from backend.app.services.printer_manager import printer_manager
 from backend.app.services.rest_smart_plug import rest_smart_plug_service
 from backend.app.services.tasmota import tasmota_service
+from backend.app.utils.ams_drying import is_drying_active
 from backend.app.utils.local_time import next_local_hour, to_naive_utc, utcnow_naive
 
 if TYPE_CHECKING:
@@ -21,14 +25,187 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+async def publish_plug_state(
+    plug_id: int, plug_name: str, printer_id: int | None, *, on: bool, ha_entity_id: str | None = None
+) -> None:
+    """Tell the MQTT relay a plug was switched (smart_plugs/on or /off).
+
+    Called after every successful on or off command, whatever sent it, also when
+    the plug already was in that state. A Home Assistant script run through its
+    entity is not a switch and publishes nothing. The printer name is read from
+    the database: the connection cache keeps a renamed printer's old name and has
+    none for an inactive one. Never raises: the plug did switch, and a broker
+    problem must not turn that into an error.
+    """
+    if ha_entity_id and ha_entity_id.startswith("script."):
+        return
+    if not mqtt_relay.enabled or not mqtt_relay.connected:
+        return
+    try:
+        printer_name = None
+        if printer_id:
+            from backend.app.core import database
+            from backend.app.models.printer import Printer
+
+            async with database.async_session() as db:
+                printer_name = (
+                    await db.execute(select(Printer.name).where(Printer.id == printer_id))
+                ).scalar_one_or_none()
+        await mqtt_relay.on_smart_plug_state(
+            plug_id=plug_id,
+            plug_name=plug_name,
+            state="on" if on else "off",
+            printer_id=printer_id,
+            printer_name=printer_name,
+        )
+    except Exception as e:
+        logger.debug("MQTT relay: failed to publish the state of plug %s: %s", plug_id, e)
+
+
+# How often a postponed auto-off looks whether drying is over (#3660), and how
+# long it waits for a printer that has not reported yet (just after a restart)
+# before switching off without knowing.
+_DRYING_POLL_SECONDS = 30
+_DRYING_UNKNOWN_WAIT_SECONDS = 120
+
+
+def _printer_drying(printer_id: int) -> bool | None:
+    """Is an AMS on this printer drying (#3660)? None while the printer has not reported.
+
+    From the printer's own report, so a cycle started on the printer or in
+    Bambu Handy counts as much as one Bambuddy started.
+    """
+    status = printer_manager.get_status(printer_id)
+    if status is None or not status.connected or not status.raw_data:
+        return None
+    units = status.raw_data.get("ams")
+    return isinstance(units, list) and any(is_drying_active(unit) for unit in units)
+
+
+def _after_drying_seconds(plug) -> int:
+    """How long a postponed auto-off waits once drying is over (#3660).
+
+    The drying delay when the plug switches off after drying anyway (which then
+    takes over, see ``on_drying_complete``), else the plug's own off delay.
+    """
+    minutes = plug.off_delay_after_drying_minutes if plug.auto_off_after_drying else plug.off_delay_minutes
+    return max(0, int(minutes or 0)) * 60
+
+
+def _cooled_down(temps: dict, temp_source: str, nozzle_threshold: int, bed_threshold: int) -> tuple[bool, str]:
+    """Whether a temperature-based auto-off may switch off, and what was read.
+
+    ``temp_source`` picks what must be below its threshold (#3464): the
+    hottest nozzle (the H2 series has two) or the bed. A reading the
+    printer hasn't reported counts as hot, so it keeps the plug on. Any other
+    value waits for the nozzle, as temperature mode did before #3464.
+    """
+    if temp_source == "bed":
+        bed_temp = temps.get("bed", 999)
+        return bed_temp < bed_threshold, f"bed={bed_temp}°C (threshold {bed_threshold}°C)"
+
+    nozzle_temp = temps.get("nozzle", 999)
+    nozzle_2_temp = temps.get("nozzle_2")
+    if nozzle_2_temp is not None:
+        reading = f"nozzle1={nozzle_temp}°C, nozzle2={nozzle_2_temp}°C"
+        nozzle_temp = max(nozzle_temp, nozzle_2_temp)
+    else:
+        reading = f"nozzle={nozzle_temp}°C"
+    return nozzle_temp < nozzle_threshold, f"{reading} (threshold {nozzle_threshold}°C)"
+
+
+def _is_script_plug(plug) -> bool:
+    """A Home Assistant script entity: it can be run, not switched."""
+    return (
+        getattr(plug, "plug_type", None) == "homeassistant"
+        and bool(getattr(plug, "ha_entity_id", None))
+        and plug.ha_entity_id.startswith("script.")
+    )
+
+
+def is_monitor_only(plug) -> bool:
+    """An MQTT plug: Bambuddy subscribes to it and never publishes, so it can
+    be neither turned on nor off (#3583). Its auto on / auto off default to on
+    and the UI hides both, so every switching path must skip it itself."""
+    return getattr(plug, "plug_type", None) == "mqtt"
+
+
+def can_turn_off(plug) -> bool:
+    """Whether an automatic turn-off can switch this plug off (#3583).
+
+    Not a Home Assistant script, which can only be run, and not a monitor-only
+    MQTT plug. Turning on is narrower on purpose: a script linked to a printer
+    is run by the auto-on paths, so they skip only :func:`is_monitor_only`.
+    """
+    return not _is_script_plug(plug) and not is_monitor_only(plug)
+
+
+async def run_linked_scripts(printer_id: int, plug_state: str, db: AsyncSession) -> None:
+    """Run the HA scripts linked to a printer after its power plug switched.
+
+    ON runs the scripts set to "Run when printer turns on", OFF those set to
+    "Run when printer turns off". Never raises: a script that fails must not
+    undo the switch that triggered it.
+    """
+    from backend.app.models.smart_plug import SmartPlug
+
+    result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
+    for plug in result.scalars().all():
+        # "Enabled" is the script's automation switch, as at print start.
+        if not _is_script_plug(plug) or not plug.enabled:
+            continue
+        if plug_state == "ON" and plug.auto_on:
+            logger.info("Auto-triggering script '%s' on printer power-on", plug.name)
+        elif plug_state == "OFF" and plug.auto_off:
+            logger.info("Auto-triggering script '%s' on printer power-off", plug.name)
+        else:
+            continue
+        try:
+            service = await smart_plug_manager.get_service_for_plug(plug, db)
+            await service.turn_on(plug)  # Scripts are triggered by calling turn_on
+        except Exception as e:
+            logger.error("Failed to trigger script '%s': %s", plug.name, e)
+
+
+# (printer_id, state) -> when its scripts last ran after an automatic switch.
+# Two plugs feeding one printer both auto-off after a print; the printer
+# turned off once.
+_recent_automatic_script_runs: dict[tuple[int, str], float] = {}
+_AUTOMATIC_SCRIPT_RUN_WINDOW_S = 120.0
+
+
+async def run_linked_scripts_after_automatic_switch(printer_id: int | None, plug, plug_state: str) -> None:
+    """Linked scripts for a printer's power plug switched by Bambuddy itself.
+
+    Only for a plug that feeds the printer: an accessory switching is not the
+    printer turning on or off. Print start is not routed here -- it runs the
+    "on" scripts itself, as linked plugs with auto-on.
+    """
+    if not printer_id or _is_script_plug(plug) or not getattr(plug, "controls_printer_power", True):
+        return
+    now = time.monotonic()
+    last = _recent_automatic_script_runs.get((printer_id, plug_state))
+    if last is not None and now - last < _AUTOMATIC_SCRIPT_RUN_WINDOW_S:
+        return
+    _recent_automatic_script_runs[(printer_id, plug_state)] = now
+    from backend.app.core.database import async_session
+
+    try:
+        async with async_session() as db:
+            await run_linked_scripts(printer_id, plug_state, db)
+    except Exception as e:
+        logger.warning("Could not run the scripts linked to printer %s: %s", printer_id, e)
+
+
 class SmartPlugManager:
     """Manages smart plug automation and delayed turn-off."""
 
     def __init__(self):
         self._pending_off: dict[int, asyncio.Task] = {}  # plug_id -> task
-        self._loop: asyncio.AbstractEventLoop | None = None
         self._scheduler_task: asyncio.Task | None = None
         self._snapshot_task: asyncio.Task | None = None
+        self._power_alert_task: asyncio.Task | None = None
+        self._relay_energy_task: asyncio.Task | None = None
         self._last_schedule_check: dict[int, str] = {}  # plug_id -> "HH:MM" last executed
 
     async def get_service_for_plug(self, plug: "SmartPlug", db: AsyncSession | None = None):
@@ -63,10 +240,6 @@ class SmartPlugManager:
         except Exception as e:
             logger.warning("Failed to configure HA service: %s", e)
 
-    def set_event_loop(self, loop: asyncio.AbstractEventLoop):
-        """Set the event loop for async operations."""
-        self._loop = loop
-
     def start_scheduler(self):
         """Start the background scheduler for time-based plug control."""
         if self._scheduler_task is None:
@@ -75,6 +248,12 @@ class SmartPlugManager:
         if self._snapshot_task is None:
             self._snapshot_task = asyncio.create_task(self._snapshot_loop())
             logger.info("Smart plug energy snapshot loop started")
+        if self._power_alert_task is None:
+            self._power_alert_task = asyncio.create_task(self._power_alert_loop())
+            logger.info("Smart plug power alert loop started")
+        if self._relay_energy_task is None:
+            self._relay_energy_task = asyncio.create_task(self._relay_energy_loop())
+            logger.info("Smart plug MQTT relay energy loop started")
 
     def stop_scheduler(self):
         """Stop the background scheduler."""
@@ -86,6 +265,14 @@ class SmartPlugManager:
             self._snapshot_task.cancel()
             self._snapshot_task = None
             logger.info("Smart plug energy snapshot loop stopped")
+        if self._power_alert_task:
+            self._power_alert_task.cancel()
+            self._power_alert_task = None
+            logger.info("Smart plug power alert loop stopped")
+        if self._relay_energy_task:
+            self._relay_energy_task.cancel()
+            self._relay_energy_task = None
+            logger.info("Smart plug MQTT relay energy loop stopped")
 
     async def _schedule_loop(self):
         """Background loop that checks scheduled on/off times every minute."""
@@ -96,6 +283,25 @@ class SmartPlugManager:
                 logger.error("Error in schedule check: %s", e)
 
             # Wait until the next minute
+            await asyncio.sleep(60)
+
+    async def _power_alert_loop(self):
+        """Background loop that checks plugs with power alerts on, once a minute.
+
+        Without it an alert would only be noticed while someone had a printer
+        page open, since the plug status is otherwise only read for display.
+        """
+        from backend.app.core import database
+        from backend.app.services.power_alerts import check_all_plugs
+
+        await asyncio.sleep(30)
+        while True:
+            try:
+                # Looked up on each pass: a backup restore replaces the session factory.
+                async with database.async_session() as db:
+                    await check_all_plugs(db)
+            except Exception as e:
+                logger.error("Error in power alert check: %s", e)
             await asyncio.sleep(60)
 
     async def _snapshot_loop(self):
@@ -125,6 +331,52 @@ class SmartPlugManager:
             delay = (next_local_hour(now) - now).total_seconds()
             await asyncio.sleep(max(delay, 60))
 
+    async def _relay_energy_loop(self):
+        """Background loop that publishes every plug's energy to the MQTT relay, once a minute.
+
+        The relay's smart_plugs/energy topic has nothing else feeding it: the
+        plug status is otherwise only read for display, for power alerts and,
+        hourly, for the lifetime counter.
+        """
+        from backend.app.core import database
+
+        await asyncio.sleep(30)
+        while True:
+            try:
+                # Looked up on each pass: a backup restore replaces the session factory.
+                async with database.async_session() as db:
+                    await self._publish_energy_to_relay(db)
+            except Exception as e:
+                logger.error("Error publishing plug energy to the MQTT relay: %s", e)
+            await asyncio.sleep(60)
+
+    async def _publish_energy_to_relay(self, db: AsyncSession) -> None:
+        """Read each enabled plug's power and energy and publish it to the MQTT relay.
+
+        Nothing is read while the relay is off or disconnected: on an install
+        without the relay this costs no request to any plug.
+        """
+        from backend.app.models.smart_plug import SmartPlug
+
+        if not mqtt_relay.enabled or not mqtt_relay.connected:
+            return
+        plugs = (await db.execute(select(SmartPlug).where(SmartPlug.enabled.is_(True)))).scalars().all()
+        for plug in plugs:
+            # An MQTT plug's values are its last message; once it stops
+            # reporting they are stale, not a reading.
+            if plug.plug_type == "mqtt" and not mqtt_relay.smart_plug_service.is_reachable(plug.id):
+                continue
+            try:
+                energy = await get_plug_energy(plug, db)
+            except Exception as e:
+                logger.debug("MQTT relay: failed to read energy from plug %s: %s", plug.id, e)
+                continue
+            if not energy:
+                continue
+            await mqtt_relay.on_smart_plug_energy(
+                plug.id, plug.name, energy.get("power"), energy.get("today"), energy.get("total")
+            )
+
     async def _capture_energy_snapshots(self):
         """Capture one energy snapshot row per plug with a usable lifetime counter."""
         from backend.app.core.database import async_session
@@ -147,14 +399,18 @@ class SmartPlugManager:
             price = await current_price(db, remember=True)
             captured = 0
             for plug in plugs:
-                # MQTT plugs only publish a "today" counter that resets at midnight —
-                # they can never feed cumulative snapshots, so skip them outright to
-                # avoid a noisy tasmota-service fallback attempt on an IP-less plug.
-                if plug.plug_type == "mqtt":
+                # An MQTT plug feeds the snapshots only with its lifetime counter
+                # (#3582); its one legacy energy value may be a daily counter that
+                # resets at midnight. Read through get_plug_energy, not the
+                # service lookup, which would fall back to Tasmota on an IP-less plug.
+                if plug.plug_type == "mqtt" and not mqtt_has_lifetime_counter(plug):
                     continue
                 try:
-                    service = await self.get_service_for_plug(plug, db)
-                    energy = await service.get_energy(plug)
+                    if plug.plug_type == "mqtt":
+                        energy = await get_plug_energy(plug, db)
+                    else:
+                        service = await self.get_service_for_plug(plug, db)
+                        energy = await service.get_energy(plug)
                 except Exception as e:
                     logger.debug("Snapshot: failed to read energy from plug %s: %s", plug.id, e)
                     continue
@@ -193,6 +449,9 @@ class SmartPlugManager:
             plugs = result.scalars().all()
 
             for plug in plugs:
+                # A schedule cannot switch a monitor-only MQTT plug (#3583).
+                if is_monitor_only(plug):
+                    continue
                 service = await self.get_service_for_plug(plug, db)
 
                 # Check if we should turn on
@@ -205,6 +464,10 @@ class SmartPlugManager:
                             plug.last_state = "ON"
                             plug.last_checked = utcnow_naive()
                             self._last_schedule_check[plug.id] = f"on:{current_time}"
+                            await publish_plug_state(
+                                plug.id, plug.name, plug.printer_id, on=True, ha_entity_id=plug.ha_entity_id
+                            )
+                            await run_linked_scripts_after_automatic_switch(plug.printer_id, plug, "ON")
 
                 # Check if we should turn off
                 if plug.schedule_off_time == current_time:
@@ -216,9 +479,13 @@ class SmartPlugManager:
                             plug.last_state = "OFF"
                             plug.last_checked = utcnow_naive()
                             self._last_schedule_check[plug.id] = f"off:{current_time}"
+                            await publish_plug_state(
+                                plug.id, plug.name, plug.printer_id, on=False, ha_entity_id=plug.ha_entity_id
+                            )
                             # Mark printer offline if this plug feeds it (#2629)
                             if plug.printer_id and plug.controls_printer_power:
                                 printer_manager.mark_printer_offline(plug.printer_id)
+                            await run_linked_scripts_after_automatic_switch(plug.printer_id, plug, "OFF")
 
             await db.commit()
 
@@ -251,6 +518,10 @@ class SmartPlugManager:
                 logger.debug("Smart plug '%s' auto_on is disabled", plug.name)
                 continue
 
+            if is_monitor_only(plug):
+                logger.debug("Smart plug '%s' is monitor-only, skipping auto-on", plug.name)
+                continue
+
             # Turn on the plug
             logger.info("Print started on printer %s, turning on plug '%s'", printer_id, plug.name)
             try:
@@ -261,6 +532,9 @@ class SmartPlugManager:
                     plug.last_state = "ON"
                     plug.last_checked = utcnow_naive()
                     plug.auto_off_executed = False  # Reset flag when turning on
+                    await publish_plug_state(
+                        plug.id, plug.name, plug.printer_id, on=True, ha_entity_id=plug.ha_entity_id
+                    )
             except Exception as e:
                 logger.warning("Failed to turn on plug '%s' for printer %s: %s", plug.name, printer_id, e)
 
@@ -295,9 +569,10 @@ class SmartPlugManager:
                 logger.debug("Smart plug '%s' auto_off is disabled", plug.name)
                 continue
 
-            # Skip auto-off for HA script entities (scripts can only be triggered, not turned off)
-            if plug.plug_type == "homeassistant" and plug.ha_entity_id and plug.ha_entity_id.startswith("script."):
-                logger.debug("Smart plug '%s' is a HA script entity, skipping auto-off", plug.name)
+            # Skip auto-off for HA script entities (scripts can only be triggered,
+            # not turned off) and monitor-only MQTT plugs (#3583).
+            if not can_turn_off(plug):
+                logger.debug("Smart plug '%s' cannot be switched off, skipping auto-off", plug.name)
                 continue
 
             logger.info(
@@ -313,7 +588,8 @@ class SmartPlugManager:
 
         Honours the per-plug ``off_delay_mode`` — ``time`` waits
         ``off_delay_minutes``; ``temperature`` waits until the nozzle drops
-        below ``off_temp_threshold`` (#1890 — the queue/scheduler auto-off
+        below ``off_temp_threshold``, or the bed below ``off_bed_temp_threshold``
+        (``off_temp_source``, #3464) (#1890 — the queue/scheduler auto-off
         paths used to hardcode 50°C / 600s and ignore these settings). Both
         branches register a cancellable task in ``_pending_off``, so a re-print
         cancels the pending off via :meth:`on_print_start`.
@@ -332,8 +608,8 @@ class SmartPlugManager:
         so unlike :meth:`on_print_complete` this does NOT gate on ``plug.auto_off``.
         It still honours ``enabled`` and skips HA-script entities (which can only
         be triggered, not turned off), and uses each plug's configured off
-        strategy via :meth:`_schedule_off_per_mode`. Replaces the three inline
-        ``wait_for_cooldown(50°C, 600s)`` blocks that ignored plug settings,
+        strategy via :meth:`_schedule_off_per_mode`. Replaces three inline
+        cooldown waits (50°C, 600s) that ignored plug settings,
         fired on the cooldown *timeout* regardless of print state, and could not
         be cancelled by a re-print (#1890).
         """
@@ -342,8 +618,8 @@ class SmartPlugManager:
             if not plug.enabled:
                 logger.debug("Smart plug '%s' is disabled, skipping queue auto-off", plug.name)
                 continue
-            if plug.plug_type == "homeassistant" and plug.ha_entity_id and plug.ha_entity_id.startswith("script."):
-                logger.debug("Smart plug '%s' is a HA script entity, skipping queue auto-off", plug.name)
+            if not can_turn_off(plug):
+                logger.debug("Smart plug '%s' cannot be switched off, skipping queue auto-off", plug.name)
                 continue
             logger.info(
                 "Queue job finished on printer %s, scheduling turn-off for plug '%s'",
@@ -377,10 +653,10 @@ class SmartPlugManager:
                 logger.debug("Smart plug '%s' auto_off_after_drying is disabled, skipping", plug.name)
                 continue
 
-            # HA script entities can only be triggered, not turned off — same
-            # guard the print-finish path uses.
-            if plug.plug_type == "homeassistant" and plug.ha_entity_id and plug.ha_entity_id.startswith("script."):
-                logger.debug("Smart plug '%s' is a HA script entity, skipping drying auto-off", plug.name)
+            # HA script entities can only be triggered, not turned off, and MQTT
+            # plugs not switched at all — same guard the print-finish path uses.
+            if not can_turn_off(plug):
+                logger.debug("Smart plug '%s' cannot be switched off, skipping drying auto-off", plug.name)
                 continue
 
             logger.info(
@@ -411,7 +687,9 @@ class SmartPlugManager:
                 plug.password,
                 printer_id,
                 delay_seconds,
+                after_drying_seconds=_after_drying_seconds(plug),
                 controls_printer_power=plug.controls_printer_power,
+                plug_name=plug.name,
                 rest_off_url=plug.rest_off_url if plug.plug_type == "rest" else None,
                 rest_off_body=plug.rest_off_body if plug.plug_type == "rest" else None,
                 rest_method=plug.rest_method if plug.plug_type == "rest" else None,
@@ -431,7 +709,9 @@ class SmartPlugManager:
         printer_id: int,
         delay_seconds: int,
         *,
+        after_drying_seconds: int = 0,
         controls_printer_power: bool = True,
+        plug_name: str = "",
         rest_off_url: str | None = None,
         rest_off_body: str | None = None,
         rest_method: str | None = None,
@@ -456,6 +736,9 @@ class SmartPlugManager:
                 await self._mark_auto_off_pending(plug_id, False)
                 return
 
+            # Never cut power under a drying cycle either (#3660).
+            await self._wait_out_drying(plug_id, printer_id, after_drying_seconds)
+
             # Create a minimal plug-like object for the service
             class PlugInfo:
                 def __init__(self):
@@ -470,6 +753,7 @@ class SmartPlugManager:
                     self.rest_off_body = rest_off_body
                     self.rest_method = rest_method
                     self.rest_headers = rest_headers
+                    self.controls_printer_power = controls_printer_power
 
             plug_info = PlugInfo()
             service = await self.get_service_for_plug(plug_info)
@@ -479,22 +763,77 @@ class SmartPlugManager:
             # Mark auto_off_executed in database and update printer status
             if success:
                 await self._mark_auto_off_executed(plug_id)
+                await publish_plug_state(
+                    plug_id, plug_name or f"plug_{plug_id}", printer_id, on=False, ha_entity_id=ha_entity_id
+                )
                 # Mark the printer as offline immediately — but only when this
                 # plug actually feeds the printer (#2629).
                 if controls_printer_power:
                     printer_manager.mark_printer_offline(printer_id)
+                await run_linked_scripts_after_automatic_switch(printer_id, plug_info, "OFF")
 
         except asyncio.CancelledError:
             logger.debug("Delayed turn-off cancelled for plug %s", plug_id)
         finally:
             self._pending_off.pop(plug_id, None)
 
+    async def _wait_out_drying(self, plug_id: int, printer_id: int, after_drying_seconds: int) -> None:
+        """Hold a pending auto-off while an AMS on the printer dries (#3660).
+
+        Switching the printer off stops the cycle. A print that finished
+        during drying, a queue job's auto-off, or one unit's drying finishing
+        while another still dries: all wait here, then the off runs
+        ``after_drying_seconds`` after the last cycle ended. The task stays
+        pending meanwhile, so a print start still cancels it, and so does
+        ``on_drying_complete`` when it schedules the drying auto-off.
+
+        A printer that has not reported yet (just after a restart) is given
+        ``_DRYING_UNKNOWN_WAIT_SECONDS``; one still silent then is switched
+        off as before.
+        """
+        waited_unknown = 0
+        while True:
+            postponed = False
+            while True:
+                drying = _printer_drying(printer_id)
+                if drying is None and waited_unknown < _DRYING_UNKNOWN_WAIT_SECONDS:
+                    await asyncio.sleep(_DRYING_POLL_SECONDS)
+                    waited_unknown += _DRYING_POLL_SECONDS
+                    continue
+                if not drying:
+                    break
+                if not postponed:
+                    logger.info(
+                        "Postponing auto-off for plug %s: an AMS on printer %s is drying",
+                        plug_id,
+                        printer_id,
+                    )
+                    postponed = True
+                await asyncio.sleep(_DRYING_POLL_SECONDS)
+            if not postponed or after_drying_seconds <= 0:
+                return
+            logger.info(
+                "Drying on printer %s is over, turning off plug %s in %s seconds",
+                printer_id,
+                plug_id,
+                after_drying_seconds,
+            )
+            await asyncio.sleep(after_drying_seconds)
+            # Look once more: a cycle started meanwhile is waited out the same way.
+
     def _schedule_temp_based_off(self, plug: "SmartPlug", printer_id: int, temp_threshold: int):
         """Monitor temperature and turn off when below threshold."""
         # Cancel any existing task for this plug
         self._cancel_pending_off(plug.id)
 
-        logger.info("Scheduling temperature-based turn-off for plug '%s' (threshold: %s°C)", plug.name, temp_threshold)
+        logger.info(
+            "Scheduling temperature-based turn-off for plug '%s' (waits for: %s, nozzle threshold: %s°C, "
+            "bed threshold: %s°C)",
+            plug.name,
+            plug.off_temp_source,
+            temp_threshold,
+            plug.off_bed_temp_threshold,
+        )
 
         # Mark as pending in database (survives restarts)
         spawn_background_task(self._mark_auto_off_pending(plug.id, True), name=f"plug-auto-off-pending-{plug.id}")
@@ -509,7 +848,11 @@ class SmartPlugManager:
                 plug.password,
                 printer_id,
                 temp_threshold,
+                temp_source=plug.off_temp_source,
+                bed_temp_threshold=plug.off_bed_temp_threshold,
+                after_drying_seconds=_after_drying_seconds(plug),
                 controls_printer_power=plug.controls_printer_power,
+                plug_name=plug.name,
                 rest_off_url=plug.rest_off_url if plug.plug_type == "rest" else None,
                 rest_off_body=plug.rest_off_body if plug.plug_type == "rest" else None,
                 rest_method=plug.rest_method if plug.plug_type == "rest" else None,
@@ -529,7 +872,11 @@ class SmartPlugManager:
         printer_id: int,
         temp_threshold: int,
         *,
+        temp_source: str = "nozzle",
+        bed_temp_threshold: int = 35,
+        after_drying_seconds: int = 0,
         controls_printer_power: bool = True,
+        plug_name: str = "",
         rest_off_url: str | None = None,
         rest_off_body: str | None = None,
         rest_method: str | None = None,
@@ -537,7 +884,9 @@ class SmartPlugManager:
     ):
         """Poll temperature until below threshold, then turn off.
 
-        For dual-extruder printers (H2 series), checks both nozzles.
+        ``temp_source`` is what has to cool (#3464): the nozzle (both nozzles
+        on dual-extruder H2 printers) below ``temp_threshold``, or the bed
+        below ``bed_temp_threshold``.
         """
         try:
             check_interval = 10  # seconds
@@ -548,26 +897,12 @@ class SmartPlugManager:
                 status = printer_manager.get_status(printer_id)
 
                 if status:
-                    temps = status.temperatures or {}
-                    nozzle_temp = temps.get("nozzle", 999)
-                    # Check second nozzle for dual-extruder printers (H2 series)
-                    nozzle_2_temp = temps.get("nozzle_2")
+                    cooled, reading = _cooled_down(
+                        status.temperatures or {}, temp_source, temp_threshold, bed_temp_threshold
+                    )
+                    logger.info("Temp check plug %s: %s", plug_id, reading)
 
-                    # Get the maximum temperature across all nozzles
-                    max_nozzle_temp = nozzle_temp
-                    if nozzle_2_temp is not None:
-                        max_nozzle_temp = max(nozzle_temp, nozzle_2_temp)
-                        logger.info(
-                            f"Temp check plug {plug_id}: nozzle1={nozzle_temp}°C, "
-                            f"nozzle2={nozzle_2_temp}°C, max={max_nozzle_temp}°C, "
-                            f"threshold={temp_threshold}°C"
-                        )
-                    else:
-                        logger.info(
-                            "Temp check plug %s: nozzle=%s°C, threshold=%s°C", plug_id, nozzle_temp, temp_threshold
-                        )
-
-                    if max_nozzle_temp < temp_threshold:
+                    if cooled:
                         # #1890: the nozzle can dip below the threshold between
                         # a finished print and a fresh one starting (e.g. a
                         # touchscreen reprint during the PREPARE/heating phase).
@@ -584,7 +919,10 @@ class SmartPlugManager:
                             elapsed += check_interval
                             continue
 
-                        # All nozzles are below threshold, turn off
+                        # Never cut power under a drying cycle either (#3660).
+                        await self._wait_out_drying(plug_id, printer_id, after_drying_seconds)
+
+                        # Cool enough, turn off
                         class PlugInfo:
                             def __init__(self):
                                 self.plug_type = plug_type
@@ -598,22 +936,24 @@ class SmartPlugManager:
                                 self.rest_off_body = rest_off_body
                                 self.rest_method = rest_method
                                 self.rest_headers = rest_headers
+                                self.controls_printer_power = controls_printer_power
 
                         plug_info = PlugInfo()
                         service = await self.get_service_for_plug(plug_info)
                         success = await service.turn_off(plug_info)
-                        logger.info(
-                            f"Turned off plug {plug_id} after nozzle temp dropped to "
-                            f"{max_nozzle_temp}°C (threshold: {temp_threshold}°C)"
-                        )
+                        logger.info("Turned off plug %s after cooling down: %s", plug_id, reading)
 
                         # Mark auto_off_executed in database and update printer status
                         if success:
                             await self._mark_auto_off_executed(plug_id)
+                            await publish_plug_state(
+                                plug_id, plug_name or f"plug_{plug_id}", printer_id, on=False, ha_entity_id=ha_entity_id
+                            )
                             # Mark the printer as offline immediately — but only
                             # when this plug actually feeds the printer (#2629).
                             if controls_printer_power:
                                 printer_manager.mark_printer_offline(printer_id)
+                            await run_linked_scripts_after_automatic_switch(printer_id, plug_info, "OFF")
 
                         break
 
@@ -679,10 +1019,16 @@ class SmartPlugManager:
             # Clear pending state in database
             spawn_background_task(self._mark_auto_off_pending(plug_id, False), name=f"plug-auto-off-pending-{plug_id}")
 
-    def cancel_all_pending(self):
-        """Cancel all pending turn-off tasks."""
-        for plug_id in list(self._pending_off.keys()):
-            self._cancel_pending_off(plug_id)
+    def forget_plug(self, plug_id: int) -> None:
+        """Cancel a deleted plug's pending turn-off.
+
+        The task holds the plug's address and printer id, so it would still switch
+        the outlet, and on SQLite read the next printer given the id. Nothing is
+        written: the row is gone, and SQLite gives its id to the next plug.
+        """
+        task = self._pending_off.pop(plug_id, None)
+        if task is not None:
+            task.cancel()
 
     async def resume_pending_auto_offs(self):
         """Resume any pending auto-offs that were interrupted by a restart.
@@ -705,6 +1051,14 @@ class SmartPlugManager:
                 pending_plugs = result.scalars().all()
 
                 for plug in pending_plugs:
+                    # A pending off left on an MQTT plug by an earlier version
+                    # can never run (#3583): clear it.
+                    if is_monitor_only(plug):
+                        plug.auto_off_pending = False
+                        plug.auto_off_pending_since = None
+                        await db.commit()
+                        continue
+
                     # Check how long it's been pending (timeout after 2 hours)
                     if plug.auto_off_pending_since:
                         pending_since = to_naive_utc(plug.auto_off_pending_since)
@@ -741,15 +1095,12 @@ class SmartPlugManager:
                     if plug.off_delay_mode == "temperature":
                         self._schedule_temp_based_off(plug, plug.printer_id, plug.off_temp_threshold)
                     else:
-                        # For time mode, just turn off immediately since delay already passed
+                        # The delay already passed, so the off runs now, through
+                        # the same path as a live one: it waits for the printer's
+                        # first report and for a drying cycle to end (#3660).
                         logger.info("Time-based auto-off was pending, turning off plug '%s' now", plug.name)
-
-                        service = await self.get_service_for_plug(plug, db)
-                        success = await service.turn_off(plug)
-                        if success:
-                            await self._mark_auto_off_executed(plug.id)
-                            if plug.controls_printer_power:
-                                printer_manager.mark_printer_offline(plug.printer_id)
+                        if plug.printer_id is not None:  # selected that way; for the type checker
+                            self._schedule_delayed_off(plug, plug.printer_id, 0)
 
                 if pending_plugs:
                     logger.info("Resumed %s pending auto-off(s)", len(pending_plugs))

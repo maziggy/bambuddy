@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Check } from 'lucide-react';
 import { FilamentSwatch } from '../FilamentSwatch';
@@ -51,6 +51,14 @@ export interface SlotPickerOption {
    *  every printer of a model, so two spools of the same type and colour
    *  collapse to one `TYPE|COLOR` value while still being two rows. */
   key?: string;
+  /** Shown but not selectable, e.g. a filament the user's group may not use (#3522). */
+  disabled?: boolean;
+  /** Tooltip saying why the row is disabled. */
+  disabledReason?: string;
+  /** Optional group header (#3590). Consecutive options with the same `group`
+   *  sit under one non-selectable header. The header is not a row, so the
+   *  arrow keys never land on it. Absent everywhere = the flat list as before. */
+  group?: string;
 }
 
 interface SlotPickerProps {
@@ -74,6 +82,8 @@ interface SlotPickerProps {
 }
 
 const SWATCH_CLASS = 'w-3 h-3';
+/** Gap kept between the open list and the screen's left and right edges. */
+const EDGE = 8;
 
 export function SlotPicker({
   value,
@@ -89,7 +99,7 @@ export function SlotPicker({
 }: SlotPickerProps) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [coords, setCoords] = useState<{ top: number; left: number; minWidth: number; maxWidth: number } | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -116,10 +126,27 @@ export function SlotPicker({
     const below = window.innerHeight - rect.bottom;
     const height = Math.min(listRef.current?.scrollHeight ?? 0, 240);
     const flip = below < height + 8 && rect.top > below;
+    // As wide as the rows want, never narrower than the trigger and never
+    // wider than the screen. Taking the trigger's width alone made the list
+    // unreadable on a phone held upright, where the trigger is a swatch and a
+    // chevron (#3294). clientWidth leaves out a desktop's vertical scrollbar,
+    // which innerWidth counts; jsdom reports 0 for it.
+    const screenWidth = document.documentElement.clientWidth || window.innerWidth;
+    const maxWidth = screenWidth - 2 * EDGE;
+    const minWidth = Math.min(rect.width, maxWidth);
+    // Measured with this trigger's minimum, not the one left from the last
+    // open, so the width used to keep it on screen is the one it will have.
+    // The maximum needs no such care: a list that wants more than the screen
+    // starts at the left margin either way.
+    const list = listRef.current;
+    if (list) list.style.minWidth = `${minWidth}px`;
+    const width = list?.offsetWidth ?? minWidth;
     setCoords({
       top: flip ? Math.max(8, rect.top - height - 4) : rect.bottom + 4,
-      left: rect.left,
-      width: rect.width,
+      // Under the trigger, moved left when that would run off the right edge.
+      left: Math.max(EDGE, Math.min(rect.left, screenWidth - EDGE - width)),
+      minWidth,
+      maxWidth,
     });
   }, []);
 
@@ -159,6 +186,9 @@ export function SlotPicker({
   }, [open, place]);
 
   const choose = (index: number) => {
+    // A disabled row is listed so the user can see why the slot is not used,
+    // not to be picked; the list stays open for another choice (#3522).
+    if (rows[index].disabled) return;
     onChange(rows[index].value);
     setOpen(false);
     triggerRef.current?.focus();
@@ -200,6 +230,14 @@ export function SlotPicker({
 
   const listId = `slot-picker-${ariaLabel.replace(/\W+/g, '-')}`;
 
+  // Keep the keyboard-active row visible in the scrolling list (#3590). Not
+  // every environment implements scrollIntoView (jsdom does not).
+  useLayoutEffect(() => {
+    if (!open) return;
+    const el = document.getElementById(`${listId}-${activeIndex}`);
+    if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'nearest' });
+  }, [open, activeIndex, listId]);
+
   const renderSwatch = (row: SlotPickerOption) =>
     row.rgba ? (
       <FilamentSwatch
@@ -211,6 +249,55 @@ export function SlotPicker({
         effectSize="table"
       />
     ) : null;
+
+  // Consecutive rows sharing a `group` render under one header (#3590). The
+  // headers are not rows, so `activeIndex` arithmetic never sees them.
+  const segments: Array<{ group?: string; indexes: number[] }> = [];
+  rows.forEach((row, index) => {
+    const last = segments[segments.length - 1];
+    if (last && last.group === row.group) last.indexes.push(index);
+    else segments.push({ group: row.group, indexes: [index] });
+  });
+
+  const renderRow = (row: SlotPickerOption, index: number) => (
+    <button
+      key={row.key ?? `${row.value}-${index}`}
+      id={`${listId}-${index}`}
+      type="button"
+      role="option"
+      // What `<option value>` carried before this was a listbox: the
+      // identity of the choice, separate from how it reads.
+      data-value={row.value}
+      aria-selected={index === selectedIndex}
+      aria-disabled={row.disabled || undefined}
+      title={row.disabled ? row.disabledReason : undefined}
+      onMouseEnter={() => setActiveIndex(index)}
+      onClick={() => choose(index)}
+      className={`w-full flex items-center gap-1.5 text-left px-2 py-1.5 rounded-md text-xs ${
+        index === selectedIndex
+          ? 'bg-bambu-green/15 text-bambu-green'
+          : index === activeIndex
+            ? 'bg-bambu-dark text-white'
+            : 'text-white'
+      }${row.disabled ? ' opacity-40 cursor-not-allowed' : ''}`}
+    >
+      {renderSwatch(row)}
+      {/* No title of its own on a disabled row: the label fills most
+          of the row, and its title would hide the row's reason. */}
+      <span className="flex-1 min-w-0 truncate" title={row.disabled ? undefined : row.label}>
+        {row.label}
+        {row.meta ? <span className="text-bambu-gray">{row.meta}</span> : null}
+      </span>
+      {row.hex ? (
+        <span className="shrink-0 font-mono text-[10px] uppercase text-bambu-gray">{row.hex}</span>
+      ) : null}
+      {row.exactMatch ? (
+        <span title={exactMatchLabel} className="shrink-0 text-bambu-green">
+          <Check className="w-3 h-3" />
+        </span>
+      ) : null}
+    </button>
+  );
 
   return (
     <>
@@ -251,47 +338,31 @@ export function SlotPicker({
             style={{
               top: coords?.top ?? -9999,
               left: coords?.left ?? -9999,
-              width: coords?.width,
+              width: 'max-content',
+              minWidth: coords?.minWidth,
+              maxWidth: coords?.maxWidth,
               // Hide until placed, so there is no flash at (-9999,-9999) —
               // same trick FilamentHoverCard uses.
               visibility: coords ? 'visible' : 'hidden',
             }}
           >
-            {rows.map((row, index) => (
-              <button
-                key={row.key ?? `${row.value}-${index}`}
-                id={`${listId}-${index}`}
-                type="button"
-                role="option"
-                // What `<option value>` carried before this was a listbox: the
-                // identity of the choice, separate from how it reads.
-                data-value={row.value}
-                aria-selected={index === selectedIndex}
-                onMouseEnter={() => setActiveIndex(index)}
-                onClick={() => choose(index)}
-                className={`w-full flex items-center gap-1.5 text-left px-2 py-1.5 rounded-md text-xs ${
-                  index === selectedIndex
-                    ? 'bg-bambu-green/15 text-bambu-green'
-                    : index === activeIndex
-                      ? 'bg-bambu-dark text-white'
-                      : 'text-white'
-                }`}
-              >
-                {renderSwatch(row)}
-                <span className="flex-1 min-w-0 truncate" title={row.label}>
-                  {row.label}
-                  {row.meta ? <span className="text-bambu-gray">{row.meta}</span> : null}
-                </span>
-                {row.hex ? (
-                  <span className="shrink-0 font-mono text-[10px] uppercase text-bambu-gray">{row.hex}</span>
-                ) : null}
-                {row.exactMatch ? (
-                  <span title={exactMatchLabel} className="shrink-0 text-bambu-green">
-                    <Check className="w-3 h-3" />
-                  </span>
-                ) : null}
-              </button>
-            ))}
+            {segments.map((seg) => {
+              const items = seg.indexes.map((index) => renderRow(rows[index], index));
+              if (!seg.group) return <Fragment key={`s${seg.indexes[0]}`}>{items}</Fragment>;
+              return (
+                <div key={`g${seg.indexes[0]}`} role="group" aria-label={seg.group}>
+                  <div
+                    role="presentation"
+                    aria-hidden="true"
+                    data-group-header={seg.group}
+                    className="px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wide text-bambu-gray select-none"
+                  >
+                    {seg.group}
+                  </div>
+                  {items}
+                </div>
+              );
+            })}
           </div>,
           document.body,
         )}

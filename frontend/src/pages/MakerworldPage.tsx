@@ -19,6 +19,7 @@ import { SliceModal, type SliceSource } from '../components/SliceModal';
 import { Cog } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { useUiSettings } from '../hooks/useUiSettings';
 
 // MakerWorld's API payloads are passed through as opaque dicts; these helpers
 // pull known fields out in a type-safe way so a missing/renamed field shows
@@ -173,10 +174,7 @@ export function MakerworldPage({ embedded = false }: { embedded?: boolean } = {}
     queryFn: () => api.getMakerworldRecentImports(10),
   });
 
-  const settingsQuery = useQuery({
-    queryKey: ['settings'],
-    queryFn: () => api.getSettings(),
-  });
+  const settingsQuery = useUiSettings();
   // MakerWorld plates are unsliced project files — they can't be sent
   // directly to a printer. The "slice in slicer" action below imports the
   // 3MF and hands it to the user's configured slicer; from there the

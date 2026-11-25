@@ -24,6 +24,8 @@ import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import anyio
+
 logger = logging.getLogger(__name__)
 
 # Long enough to cover a viewer reconnecting and the camera wall polling each
@@ -56,9 +58,14 @@ async def _read_settings() -> tuple[str, float]:
     from backend.app.api.routes.settings import get_setting
     from backend.app.core import database
 
-    async with database.async_session() as db:
-        mode = await get_setting(db, "camera_light_mode")
-        delay = await get_setting(db, "camera_light_delay")
+    # Shielded (#3515): a viewer leaving cancels the stream, and a read
+    # cancelled halfway costs its pooled connection. The two short reads and
+    # the session's close run to the end first.
+    mode = delay = None
+    with anyio.CancelScope(shield=True):
+        async with database.async_session() as db:
+            mode = await get_setting(db, "camera_light_mode")
+            delay = await get_setting(db, "camera_light_delay")
     mode = mode if mode in _MODES else "off"
     try:
         seconds = float(delay) if delay is not None else 2.0
@@ -167,18 +174,29 @@ def hand_back(printer_id: int) -> None:
 
 
 @asynccontextmanager
-async def camera_light(printer, *, wait: bool = True) -> AsyncIterator[None]:
+async def camera_light(
+    printer, *, wait: bool = True, any_mode: bool = False, settle: float | None = None
+) -> AsyncIterator[None]:
     """Keep the printer's chamber light on while the camera is in use.
 
     ``wait`` makes a snapshot wait the ``camera_light_delay`` setting after
     the light came on, so the light (and any light synced to it) has time to
     reach the picture. A live view doesn't wait.
+
+    ``any_mode`` holds the light whatever the light mode says, and ``settle``
+    replaces the delay setting: the plate check needs a lit plate on every
+    printer, and holding the light here rather than switching it itself keeps
+    it from switching the light off under a viewer who came meanwhile (SP-C11).
     """
     if printer is None:
         yield
         return
     mode, delay = await _light_settings()
-    if mode == "off" or (mode == "selected" and getattr(printer, "camera_light_auto", False) is not True):
+    if settle is not None:
+        delay = settle
+    if not any_mode and (
+        mode == "off" or (mode == "selected" and getattr(printer, "camera_light_auto", False) is not True)
+    ):
         yield
         return
 

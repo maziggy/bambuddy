@@ -43,16 +43,17 @@ export function UploadModal({ onClose, initialFiles }: UploadModalProps) {
   const uploadMutation = useMutation({
     mutationFn: (filesToUpload: File[]) =>
       api.uploadArchivesBulk(filesToUpload),
-    onSuccess: (result) => {
+    onSuccess: (result, sent) => {
       setUploadResult(result);
       queryClient.invalidateQueries({ queryKey: ['archives'] });
       queryClient.invalidateQueries({ queryKey: ['archiveStats'] });
 
-      // Update file statuses based on result
+      // Update file statuses based on result. Each outcome names its file by
+      // position in the batch sent; two files can share a name.
       setFiles((prev) =>
         prev.map((f) => {
-          const success = result.results.find((r) => r.filename === f.file.name);
-          const error = result.errors.find((e) => e.filename === f.file.name);
+          const success = result.results.find((r) => sent[r.index] === f.file);
+          const error = result.errors.find((e) => sent[e.index] === f.file);
           if (success) {
             return { ...f, status: 'success', archiveId: success.id };
           }
@@ -65,18 +66,18 @@ export function UploadModal({ onClose, initialFiles }: UploadModalProps) {
 
       // Show toast
       if (result.failed === 0) {
-        showToast(`${result.uploaded} file${result.uploaded !== 1 ? 's' : ''} uploaded`);
+        showToast(t('uploadModal.filesUploaded', { count: result.uploaded }));
       } else if (result.uploaded === 0) {
-        showToast(`Failed to upload ${result.failed} file${result.failed !== 1 ? 's' : ''}`, 'error');
+        showToast(t('uploadModal.filesFailed', { count: result.failed }), 'error');
       } else {
-        showToast(`${result.uploaded} uploaded, ${result.failed} failed`, 'warning');
+        showToast(t('uploadModal.partialUpload', { uploaded: result.uploaded, failed: result.failed }), 'warning');
       }
     },
     onError: () => {
       setFiles((prev) =>
-        prev.map((f) => ({ ...f, status: 'error', error: 'Upload failed' }))
+        prev.map((f) => ({ ...f, status: 'error', error: t('uploadModal.uploadFailed') }))
       );
-      showToast('Upload failed', 'error');
+      showToast(t('uploadModal.uploadFailed'), 'error');
     },
   });
 

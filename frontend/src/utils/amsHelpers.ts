@@ -4,6 +4,19 @@
  * for AMS, AMS-HT, and external spool configurations.
  */
 import { parseUTCDate } from './date';
+import { settingIdToFilamentId } from './filamentIds';
+import {
+  AmsType,
+  EXTERNAL_AMS_ID,
+  RACK_SLOT_COUNT,
+  externalHotend,
+  externalTrayId,
+  globalTrayId as studioGlobalTrayId,
+  isAmsHtId,
+  isRackAms,
+  trayLayoutOf,
+  unitAmsType,
+} from './trayIds';
 
 /**
  * Normalize color format from various sources for CSS rendering.
@@ -73,14 +86,15 @@ export function resolveSlotExtruder(
   return inlet ? FTS_INLET_EXTRUDER[inlet.toUpperCase()] : undefined;
 }
 
+const AMS3H_LABEL = 'AMS 3H';
+
 /**
  * AMS unit label using the codebase convention: "AMS-A / AMS-B / ..." for
  * regular AMS, "HT-A / HT-B / ..." for AMS-HT (single-tray modules with
- * IDs starting at 128). `trayCount` is required because the type can't be
- * inferred from the id alone — regular AMS IDs 0-3 can collide with the
- * normalized HT range otherwise.
+ * IDs 128-135), "AMS 3H" for the H3C's. The unit id decides: a regular AMS can
+ * report one tray.
  */
-export function getAmsLabel(amsId: number | string, trayCount: number): string {
+export function getAmsLabel(amsId: number | string, amsType?: number | null): string {
   const id = typeof amsId === 'string' ? parseInt(amsId, 10) : amsId;
   const safeId = isNaN(id) ? 0 : id;
   if (safeId === 255) return 'External';
@@ -88,10 +102,79 @@ export function getAmsLabel(amsId: number | string, trayCount: number): string {
   // ingest (see a2l-am-unit-16). No regular AMS uses id 6, so this is a safe,
   // self-scoping label for the Lite's 4-slot unit.
   if (safeId === 6) return 'AMS Lite';
-  const isHt = trayCount === 1;
+  if (isAms3hUnit({ id: safeId, ams_type: amsType })) return AMS3H_LABEL;
+  const isHt = isAmsHtUnit(safeId);
   const normalizedId = safeId >= 128 ? safeId - 128 : safeId;
   const letter = String.fromCharCode(65 + normalizedId);
   return isHt ? `HT-${letter}` : `AMS-${letter}`;
+}
+
+/** The H3C's AMS 3H: one nine-slot rack AMS whose slot k feeds hotend k. */
+export function isAms3hUnit(unit: { id: number; ams_type?: number | null } | null | undefined): boolean {
+  return !!unit && unitAmsType(unit.id, unit.ams_type) === AmsType.ZMULTI_A;
+}
+
+/** Tray state of an AMS 3H slot whose filament is in its hotend (26: held at the inlet, #3531). */
+export const AMS3H_TRAY_IN_HOTEND = 27;
+
+/** Whether any slot of an AMS 3H has its filament in its hotend, i.e. Unload all has work to do. */
+export function ams3hHasLoadedSlot(unit: { tray?: { state?: number | null }[] | null }): boolean {
+  return (unit.tray ?? []).some((tray) => tray.state === AMS3H_TRAY_IN_HOTEND);
+}
+
+/** How many slots a unit's card draws: nine for a rack AMS, one for an AMS-HT, else four. */
+export function amsUnitSlotCount(unit: { id: number; ams_type?: number | null }): number {
+  if (isAmsHtUnit(unit.id)) return 1;
+  return isRackAms(unitAmsType(unit.id, unit.ams_type)) ? RACK_SLOT_COUNT : 4;
+}
+
+/**
+ * An AMS 3H slot's place on a 10-column card grid, as on the unit and in Bambu
+ * Studio: 2, 4, 6, 8 in the back row, the odd slots in front, each back slot
+ * half a slot to the right of the front one before it.
+ */
+export function ams3hSlotGridPlacement(slotNumber: number): { gridRow: number; gridColumn: string } {
+  return { gridRow: slotNumber % 2 === 0 ? 1 : 2, gridColumn: `${slotNumber} / span 2` };
+}
+
+/**
+ * Back-row grid columns of the AMS 3H dryer box around its slots (tray ids
+ * 0-8). When it ends at slot 8 the free column 10 holds the dryer's readings,
+ * as in Bambu Studio. Null unless every dryer slot is a back-row one.
+ */
+export function ams3hDryerGridColumns(drySlots: ReadonlyArray<number> | null | undefined): { start: number; end: number; info: number | null } | null {
+  const numbers = (drySlots ?? []).map((slot) => slot + 1);
+  if (numbers.length === 0 || numbers.some((n) => n % 2 !== 0 || n < 2 || n > 8)) return null;
+  const first = Math.min(...numbers);
+  const last = Math.max(...numbers);
+  const info = last === 8 ? 10 : null;
+  return { start: first, end: (info ?? last + 1) + 1, info };
+}
+
+/** A rack printer's external input as Bambu Studio names it: "Ext-n" feeds hotend n. */
+export function rackExternalLabel(trayId: number): string {
+  return `Ext-${externalHotend(trayId) + 1}`;
+}
+
+/**
+ * Compact slot label for a spool assignment: "B3" / "HT-A" / "Ext", "3H-7" for
+ * an AMS 3H slot and "Ext-n" for a rack printer's external input.
+ */
+export function formatAssignmentSlotLabel(a: { ams_id: number; tray_id: number; printer_model?: string | null }): string {
+  const isExternal = a.ams_id === 254 || a.ams_id === EXTERNAL_AMS_ID;
+  const isHt = !isExternal && a.ams_id >= 128;
+  if (a.ams_id === EXTERNAL_AMS_ID && trayLayoutOf(null, null, a.printer_model).rack) {
+    return rackExternalLabel(externalTrayId(a.tray_id));
+  }
+  return formatSlotLabel(a.ams_id, a.tray_id, isHt, isExternal);
+}
+
+/** SpoolBuddy's unit name: "AMS A", "AMS HT A", "AMS 3H". */
+export function spoolBuddyAmsName(amsId: number, amsType?: number | null): string {
+  if (amsId <= 3) return `AMS ${String.fromCharCode(65 + amsId)}`;
+  if (isAmsHtUnit(amsId)) return `AMS HT ${String.fromCharCode(65 + amsId - 128)}`;
+  if (isAms3hUnit({ id: amsId, ams_type: amsType })) return AMS3H_LABEL;
+  return `AMS ${amsId}`;
 }
 
 /**
@@ -363,9 +446,11 @@ export function formatSlotLabel(
   amsId: number,
   trayId: number,
   isHt: boolean,
-  isExternal: boolean
+  isExternal: boolean,
+  amsType?: number | null,
 ): string {
   if (isExternal) return 'Ext';
+  if (!isHt && isAms3hUnit({ id: amsId, ams_type: amsType })) return `3H-${trayId + 1}`;
   // Convert AMS ID to letter (A, B, C, D)
   // AMS-HT uses IDs starting at 128
   const letter = String.fromCharCode(65 + (amsId >= 128 ? amsId - 128 : amsId));
@@ -379,17 +464,57 @@ export function formatSlotLabel(
  * @param amsId - AMS unit ID (0-3 for regular AMS, 128+ for AMS-HT)
  * @param trayId - Tray/slot ID within the AMS unit
  * @param isExternal - Whether this is the external spool holder
- * @returns Global tray ID (0-15 for AMS, 128+ for AMS-HT, 254 for external)
+ * @param amsType - The unit's `ams_type`, when known
+ * @returns Global tray ID (see utils/trayIds: 0-15 for AMS, 28-36 for the AMS 3H, 128+ for AMS-HT, 254 for external)
  */
 export function getGlobalTrayId(
   amsId: number,
   trayId: number,
-  isExternal: boolean
+  isExternal: boolean,
+  amsType?: number | null,
 ): number {
-  if (isExternal) return 254 + trayId;
-  // AMS-HT units have IDs starting at 128 with a single tray — use ID directly
-  if (amsId >= 128) return amsId;
-  return amsId * 4 + trayId;
+  if (isExternal) return externalTrayId(trayId);
+  return studioGlobalTrayId(amsId, trayId, amsType);
+}
+
+/**
+ * AMS-HT units are ids 128-135, one tray each. The id decides, not the tray
+ * count: a regular AMS can report fewer than four trays.
+ */
+export function isAmsHtUnit(amsId: number): boolean {
+  return isAmsHtId(amsId);
+}
+
+/**
+ * The tray reported for a slot of a regular AMS, by its tray id. An AMS can
+ * report only some of its trays, and then a position in the list is not the
+ * slot. Only when the ids do not tell the trays apart (a firmware that sends
+ * none: they all read 0) does the position decide.
+ */
+export function trayForSlot<T extends { id: number }>(trays: T[], slotIdx: number): T | undefined {
+  const idsUsable = new Set(trays.map(tray => tray.id)).size === trays.length;
+  return idsUsable ? trays.find(tray => tray.id === slotIdx) : trays[slotIdx];
+}
+
+/**
+ * Whether some spool of this AMS is threaded into the feed tube. The AMS turns
+ * its spools together, so one loaded slot keeps it from rotating them while
+ * drying (the firmware refuses with dry_sf_reason 3, consumable at AMS outlet).
+ *
+ * Tray state 11 means loaded, but not on every firmware, so the slot the
+ * printer reports as loaded (tray_now) counts too, and on a two-nozzle printer
+ * the slot each hotend is fed from (extruder_slots), since tray_now names only
+ * the active nozzle's.
+ */
+export function amsHasLoadedTray(
+  ams: { id: number; ams_type?: number | null; tray: { id: number; state?: number | null }[] } | undefined,
+  trayNow: number | null | undefined,
+  extruderSlots: Record<string, { ams_id: number | null; has_filament: boolean }> | null | undefined,
+): boolean {
+  if (!ams) return false;
+  if (ams.tray.some(tray => tray.state === 11)) return true;
+  if (trayNow != null && ams.tray.some(tray => getGlobalTrayId(ams.id, tray.id, false, ams.ams_type) === trayNow)) return true;
+  return Object.values(extruderSlots ?? {}).some(slot => slot.ams_id === ams.id && slot.has_filament);
 }
 
 /**
@@ -441,16 +566,6 @@ export function getFallbackSpoolTag(printerSerial: string, amsId: number, trayId
 }
 
 /**
- * Get minimum datetime for scheduling (now + 1 minute).
- * Returns ISO string format for datetime-local input.
- */
-export function getMinDateTime(): string {
-  const now = new Date();
-  now.setMinutes(now.getMinutes() + 1);
-  return now.toISOString().slice(0, 16);
-}
-
-/**
  * Check if a scheduled time is a placeholder far-future date.
  * Placeholder dates (more than 6 months out) are treated as ASAP.
  */
@@ -470,7 +585,7 @@ export function isPlaceholderDate(scheduledTime: string | null | undefined): boo
 function slotPriority(amsId: number | undefined, trayId: number | undefined): number {
   if (amsId == null || amsId < 0) return 10_000;
   if (amsId >= 128) return 1_000 + (amsId - 128) * 4 + (trayId ?? 0);
-  return amsId * 4 + (trayId ?? 0);
+  return studioGlobalTrayId(amsId, trayId ?? 0);
 }
 
 /**
@@ -531,12 +646,13 @@ export function effectivePreferLowest(
  */
 export function autoMatchFilament(
   req: { type?: string; color?: string; nozzle_id?: number | null },
-  loadedFilaments: { globalTrayId: number; amsId?: number; trayId?: number; type?: string; color?: string; extruderId?: number; remain?: number }[],
+  loadedFilaments: { globalTrayId: number; amsId?: number; trayId?: number; type?: string; color?: string; extruderId?: number; remain?: number; blocked?: boolean }[],
   usedTrayIds: Set<number>,
   preferLowest?: boolean,
   inventoryByTrayId?: Map<number, number>,
 ): typeof loadedFilaments[number] | undefined {
-  let nozzleFilaments = filterFilamentsByNozzle(loadedFilaments, req.nozzle_id);
+  // A tray the user's groups block is never auto-picked (#3522).
+  let nozzleFilaments = filterFilamentsByNozzle(loadedFilaments.filter((f) => !f.blocked), req.nozzle_id);
 
   if (preferLowest) {
     nozzleFilaments = [...nozzleFilaments].sort((a, b) =>
@@ -691,8 +807,9 @@ export function slotPresetDescribesTray(
   const tray = (trayInfoIdx || '').split('_')[0].toUpperCase();
   const recorded = (presetTrayInfoIdx || '').split('_')[0].toUpperCase();
   if (recorded && tray) return recorded === tray;
-  if (!preset.startsWith('GFS') || !tray.startsWith('GF') || tray.startsWith('GFS')) return true;
-  return `GF${preset.slice(3)}` === tray;
+  if (!preset.startsWith('GFS') || !tray.startsWith('GF')) return true;
+  // The full id, suffix included, decides some presets' filament_id (#3387).
+  return settingIdToFilamentId((presetId || '').toUpperCase()) === tray;
 }
 
 export interface AmsTrayLike {
@@ -705,6 +822,7 @@ export interface AmsTrayLike {
 
 export interface AmsUnitLike {
   id: number;
+  ams_type?: number | null;
   tray: AmsTrayLike[];
 }
 
@@ -787,7 +905,7 @@ export function computeBackupGroups(
     ams.tray.forEach((tray, slotIdx) => {
       if (!tray?.tray_type) return; // empty slot
       const preset = (tray.tray_info_idx || '').trim();
-      const globalTrayId = getGlobalTrayId(ams.id, slotIdx, false);
+      const globalTrayId = getGlobalTrayId(ams.id, slotIdx, false, ams.ams_type);
       const member = { amsId: ams.id, slotIdx, globalTrayId };
 
       let key: string;

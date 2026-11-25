@@ -12,6 +12,8 @@ import types
 from contextlib import ExitStack
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from backend.app.services.printer_diagnostic import (
     _check_ftps_tls,
     _host_source_ip,
@@ -366,6 +368,28 @@ class TestExistingPrinter:
         with _Env(runtime="Podman", network_mode="bridge", state=_state()):
             result = await run_connection_diagnostic("192.168.1.50", printer=_printer())
         assert _statuses(result)["network_mode"] == "warn"
+
+    @pytest.mark.parametrize("mode", ["macvlan", "ipvlan"])
+    async def test_a_container_on_the_lan_passes_and_checks_its_subnet(self, mode):
+        """#3417: its own LAN address, so discovery and the Virtual Printer work."""
+        with _Env(network_mode=mode, state=_state()):
+            result = await run_connection_diagnostic("192.168.1.50", printer=_printer())
+        check = _check(result, "network_mode")
+        assert check.status == "pass"
+        assert check.params["reason"] == mode
+        assert _statuses(result)["subnet"] == "pass"
+
+    async def test_ipvlan_l3_warns_about_discovery(self):
+        with _Env(network_mode="ipvlan_l3", state=_state()):
+            result = await run_connection_diagnostic("192.168.1.50", printer=_printer())
+        check = _check(result, "network_mode")
+        assert check.status == "warn"
+        assert check.params["reason"] == "ipvlan_l3"
+
+    async def test_bridge_mode_carries_no_variant(self):
+        with _Env(network_mode="bridge", state=_state()):
+            result = await run_connection_diagnostic("192.168.1.50", printer=_printer())
+        assert "reason" not in _check(result, "network_mode").params
 
     async def test_undetectable_mode_skips_rather_than_guessing(self):
         """A container we cannot read must not be told to recreate itself."""

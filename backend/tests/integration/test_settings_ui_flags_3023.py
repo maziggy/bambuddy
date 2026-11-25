@@ -115,6 +115,20 @@ class TestTheUserTheEndpointExistsFor:
 
 
 @pytest.mark.integration
+class TestInventoryOverrideFlag3590:
+    @pytest.mark.asyncio
+    async def test_flag_is_readable_without_settings_read(self, async_client: AsyncClient, db_session):
+        admin = await _setup_admin(async_client, "flagadmin4")
+        op = await _create_operator(async_client, admin, username="flagop4", permissions=["cost_centers:read_own"])
+        headers = {"Authorization": f"Bearer {op}"}
+
+        assert (await async_client.get(FLAGS_URL, headers=headers)).json()["filament_override_inventory"] is False
+        db_session.add(Settings(key="filament_override_inventory", value="true"))
+        await db_session.commit()
+        assert (await async_client.get(FLAGS_URL, headers=headers)).json()["filament_override_inventory"] is True
+
+
+@pytest.mark.integration
 class TestTheBoundaryItDraws:
     """Signed in is required; settings:read is not."""
 
@@ -138,7 +152,7 @@ class TestTheBoundaryItDraws:
 @pytest.mark.integration
 class TestWhatItExposes:
     @pytest.mark.asyncio
-    async def test_the_field_set_is_exactly_these_four(self, async_client: AsyncClient):
+    async def test_the_field_set_is_exactly_these(self, async_client: AsyncClient):
         """Pinned like the /ui-preferences set: anything added here is readable
         by every signed-in user, so adding one should require editing this."""
         resp = await async_client.get(FLAGS_URL)
@@ -147,7 +161,52 @@ class TestWhatItExposes:
             "user_notifications_enabled",
             "currency",
             "check_updates",
+            "queue_shortest_first",
+            "filament_override_inventory",
+            "use_slicer_api",
+            "open_in_slicer",
+            "preferred_slicer",
+            "disable_filament_warnings",
+            "prefer_lowest_filament",
+            "per_printer_mapping_expanded",
+            "default_filament_cost",
+            "default_bed_levelling",
+            "default_flow_cali",
+            "default_vibration_cali",
+            "default_layer_inspect",
+            "default_timelapse",
+            "default_nozzle_offset_cali",
+            "default_confirm_outcome",
+            "stagger_group_size",
+            "stagger_interval_minutes",
+            "library_disk_warning_gb",
+            "low_stock_threshold",
+            "location_sensor_poll_interval",
+            "location_sensor_alert_defaults",
+            "pipeline_max_copies",
+            "language",
+            "dark_style",
+            "dark_background",
+            "dark_accent",
+            "light_style",
+            "light_background",
+            "light_accent",
+            "spoolman_enabled",
+            "forecast_global_lead_time_days",
+            # Withheld (None) from a caller outside that printer's scope.
+            "default_printer_id",
+            "has_gcode_snippets",
         }
+
+    @pytest.mark.asyncio
+    async def test_gcode_snippets_are_reported_as_set_not_shown(self, async_client: AsyncClient, db_session):
+        db_session.add(Settings(key="gcode_snippets", value='{"X1C": {"start": "M117 SNIPPET_TEXT"}}'))
+        await db_session.commit()
+
+        resp = await async_client.get(FLAGS_URL)
+
+        assert resp.json()["has_gcode_snippets"] is True
+        assert "SNIPPET_TEXT" not in resp.text
 
     @pytest.mark.asyncio
     async def test_no_credential_ever_appears(self, async_client: AsyncClient, db_session):
@@ -167,3 +226,5 @@ class TestWhatItExposes:
         public = (await async_client.get("/api/v1/settings/ui-preferences")).json()
         assert "billing_enabled" not in public
         assert "user_notifications_enabled" not in public
+        assert "has_gcode_snippets" not in public
+        assert "queue_shortest_first" not in public

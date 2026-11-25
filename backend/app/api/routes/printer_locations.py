@@ -161,7 +161,7 @@ async def _broadcast() -> None:
 
 @router.get("/", response_model=list[PrinterLocationResponse])
 async def list_printer_locations(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -189,7 +189,7 @@ async def list_printer_locations(
 @router.post("/", response_model=PrinterLocationResponse, status_code=201)
 async def create_printer_location(
     data: PrinterLocationCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
 ):
     """Create a location, with or without printers in it yet."""
@@ -215,7 +215,7 @@ async def create_printer_location(
 @router.patch("/", response_model=PrinterLocationResponse)
 async def update_printer_location(
     data: PrinterLocationUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -280,7 +280,7 @@ async def update_printer_location(
 @router.post("/delete", response_model=PrinterLocationDeleteResult)
 async def delete_printer_locations(
     data: PrinterLocationDelete,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -317,7 +317,7 @@ async def delete_printer_locations(
 @router.post("/assign", response_model=PrinterLocationAssignResult)
 async def assign_printer_location(
     data: PrinterLocationAssign,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):

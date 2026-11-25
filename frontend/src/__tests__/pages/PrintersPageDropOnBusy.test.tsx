@@ -196,7 +196,7 @@ describe('PrintersPage — drop onto a busy printer (#2849)', () => {
     fireEvent.drop(el, { dataTransfer: { files: [stl] } });
 
     await waitFor(() =>
-      expect(screen.getByText('Only .gcode and .gcode.3mf files can be printed')).toBeInTheDocument()
+      expect(screen.getByText('Only sliced files can be printed (.gcode, .gcode.3mf or a sliced .3mf)')).toBeInTheDocument()
     );
     expect(uploads).toEqual([]);
   });

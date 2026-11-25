@@ -25,6 +25,7 @@ from backend.app.main import (
     _timelapse_baselines,
     register_expected_print,
 )
+from backend.app.services.bambu_ftp import FileListResult
 
 
 @pytest.fixture(autouse=True)
@@ -286,8 +287,8 @@ async def test_expected_archive_path_captures_timelapse_baseline():
         patch("backend.app.main._store_spoolman_print_data", new_callable=AsyncMock),
         patch("backend.app.main._send_print_start_notification", new_callable=AsyncMock),
         patch(
-            "backend.app.main._list_timelapse_videos",
-            new=AsyncMock(return_value=(existing_videos, "/timelapse")),
+            "backend.app.services.bambu_ftp.list_files_result_async",
+            new=AsyncMock(return_value=FileListResult(existing_videos, True)),
         ),
     ):
         mock_session_maker.return_value = mock_session

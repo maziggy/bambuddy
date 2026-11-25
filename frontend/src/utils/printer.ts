@@ -8,8 +8,10 @@ export function getPrinterImage(model: string | null | undefined): string {
   if (m.includes('h2dpro') || m.includes('h2d-pro')) return '/img/printers/h2dpro.png';
   if (m.includes('h2d')) return '/img/printers/h2d.png';
   if (m.includes('h2c')) return '/img/printers/h2c.png';
+  // Bambu Studio 02.09's own H3C render (resources/images/printer_thumbnail_N10_png.png).
+  if (m.includes('h3c') || m === 'n10') return '/img/printers/h3c.png';
   if (m.includes('h2s')) return '/img/printers/h2d.png';
-  if (m.includes('p2s')) return '/img/printers/p1s.png';
+  if (m.includes('p2s')) return '/img/printers/p2s.png';
   if (m.includes('p1s')) return '/img/printers/p1s.png';
   if (m.includes('p1p')) return '/img/printers/p1p.png';
   if (m.includes('a2l') || m === 'n9') return '/img/printers/a2l.png';
@@ -25,6 +27,9 @@ export function getPrinterImage(model: string | null | undefined): string {
 // (H2C / H2D / H2D Pro / H2S) and X2D heat the chamber to 65 °C; X1E tops out
 // at 60 and its firmware clamps anything higher.
 export const MAX_CHAMBER_TEMP_C = 65;
+
+/** Highest target a BIQU Panda Breath takes, from its firmware (#1466). */
+export const PANDA_BREATH_MAX_TARGET_C = 60;
 
 // G-code interchange families (#2578). Mirrors backend GCODE_COMPAT_FAMILIES
 // in backend/app/utils/printer_models.py — keep the two in sync. A sliced 3MF
@@ -58,6 +63,12 @@ export function getWifiStrength(rssi: number): { labelKey: string; color: string
 
 import type { PrinterStatus, PrintQueueItem } from '../api/client';
 
+/** Gcode states with no print loaded. */
+export const IDLE_PRINTER_STATES = ['IDLE', 'FINISH', 'FAILED'];
+
+/** Gcode states in which a print is loaded or starting (mirrors the backend's ACTIVE_PRINT_STATES). */
+export const ACTIVE_PRINT_STATES = ['RUNNING', 'PAUSE', 'PREPARE', 'SLICING'];
+
 /**
  * True when a queue item aimed at this printer would start now rather than wait.
  *
@@ -72,7 +83,7 @@ export function isPrinterCurrentlyDispatchable(status: PrinterStatus | undefined
   if (status.awaiting_plate_clear) return false;
   // A parked drying timer (#2896) never ends, so it does not hold a print back.
   if (status.ams?.some((ams) => ams.dry_time > 0 && !ams.dry_countdown_stalled)) return false;
-  return ['IDLE', 'FINISH', 'FAILED'].includes(status.state ?? '');
+  return IDLE_PRINTER_STATES.includes(status.state ?? '');
 }
 
 /**

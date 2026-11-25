@@ -5,6 +5,7 @@ import json
 import logging
 import re
 from datetime import datetime, timezone
+from urllib.parse import quote
 
 import httpx
 
@@ -378,7 +379,8 @@ class GitHubBackend(GitProviderBackend):
 
             ref_response = await client.get(f"{api_base}/repos/{owner}/{repo}/git/refs/heads/{branch}", headers=headers)
 
-            if ref_response.status_code == 404:
+            empty = self._is_empty_repository(ref_response)
+            if ref_response.status_code == 404 or empty:
                 if not _allow_branch_create:
                     return {
                         "status": "failed",
@@ -387,6 +389,10 @@ class GitHubBackend(GitProviderBackend):
                             "The next scheduled backup will retry."
                         ),
                     }
+                if empty:
+                    return await self._seed_empty_repository(
+                        client, headers, api_base, owner, repo, branch, files, repo_url, token
+                    )
                 return await self._create_branch_and_push(
                     client, headers, api_base, owner, repo, branch, files, repo_url, token
                 )
@@ -565,6 +571,10 @@ class GitHubBackend(GitProviderBackend):
             ref_response = await client.get(
                 f"{api_base}/repos/{owner}/{repo}/git/refs/heads/{default_branch}", headers=headers
             )
+            if self._is_empty_repository(ref_response):
+                return await self._seed_empty_repository(
+                    client, headers, api_base, owner, repo, branch, files, repo_url, token
+                )
             if ref_response.status_code != 200:
                 return await self._create_initial_commit(client, headers, api_base, owner, repo, branch, files)
 
@@ -589,6 +599,98 @@ class GitHubBackend(GitProviderBackend):
 
         except Exception as e:
             logger.exception("_create_branch_and_push failed for %s/%s branch=%s", owner, repo, branch)
+            return {"status": "failed", "message": str(e), "error": str(e)}
+
+    @staticmethod
+    def _is_empty_repository(response: httpx.Response) -> bool:
+        """Whether GitHub refused a Git Data call because the repository has no commits (#3565)."""
+        if response.status_code != 409:
+            return False
+        try:
+            body = response.json()
+        except ValueError:
+            return False
+        message = body.get("message") if isinstance(body, dict) else None
+        return isinstance(message, str) and "repository is empty" in message.lower()
+
+    async def _seed_empty_repository(
+        self,
+        client: httpx.AsyncClient,
+        headers: dict,
+        api_base: str,
+        owner: str,
+        repo: str,
+        branch: str,
+        files: dict,
+        repo_url: str,
+        token: str,
+    ) -> dict:
+        """Give a repository with no commits its first one, then push the rest (#3565).
+
+        GitHub answers every Git Data call -- refs, blobs, trees -- with 409 until a
+        repository has a commit, so the blob/tree path cannot make the first one.
+        The Contents API can: it writes one file and creates the commit and the
+        branch. The other files then go through push_files like any later backup.
+        """
+        if not files:
+            return {"status": "skipped", "message": "No changes to commit", "commit_sha": None, "files_changed": 0}
+        try:
+            path = next(iter(files))
+            content_bytes = json.dumps(files[path], indent=2, default=str).encode("utf-8")
+            payload = {
+                "message": f"Initial Bambuddy backup - {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}",
+                "content": base64.b64encode(content_bytes).decode(),
+                "branch": branch,
+            }
+            url = f"{api_base}/repos/{owner}/{repo}/contents/{quote(path)}"
+            response = await client.put(url, headers=headers, json=payload)
+            on_backup_branch = True
+            if response.status_code in (404, 422):
+                # Should GitHub not create a named branch in a repository that
+                # has none yet, the first commit goes to the default branch and
+                # push_files then branches the backup branch off it.
+                logger.info(
+                    "_seed_empty_repository %s/%s: branch %s refused (HTTP %s), seeding the default branch",
+                    owner,
+                    repo,
+                    branch,
+                    response.status_code,
+                )
+                default_branch_payload = {k: v for k, v in payload.items() if k != "branch"}
+                response = await client.put(url, headers=headers, json=default_branch_payload)
+                on_backup_branch = False
+            if response.status_code != 201:
+                msg = f"Failed to create the first commit (HTTP {response.status_code}): {self._truncated_response_text(response)}"
+                logger.warning("_seed_empty_repository %s/%s: %s", owner, repo, msg)
+                return {"status": "failed", "message": msg}
+
+            commit_sha, err = self._read_sha(response, "commit", "sha")
+            if err:
+                msg = f"Malformed contents response ({err}): {self._truncated_response_text(response)}"
+                logger.warning("_seed_empty_repository %s/%s: %s", owner, repo, msg)
+                return {"status": "failed", "message": msg}
+
+            seeded = {
+                "status": "success",
+                "message": f"Initial backup created - {len(files)} files",
+                "commit_sha": commit_sha,
+                "files_changed": len(files),
+            }
+            if len(files) == 1 and on_backup_branch:
+                return seeded
+
+            logger.info("Re-entering push_files after seeding %s/%s", owner, repo)
+            result = await self.push_files(
+                repo_url, token, branch, files, client, _allow_branch_create=not on_backup_branch
+            )
+            if result.get("status") == "skipped":
+                return seeded
+            if result.get("status") == "success":
+                return {**seeded, "commit_sha": result.get("commit_sha")}
+            return result
+
+        except Exception as e:
+            logger.exception("_seed_empty_repository failed for %s/%s branch=%s", owner, repo, branch)
             return {"status": "failed", "message": str(e), "error": str(e)}
 
     async def _create_initial_commit(

@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Bell, Trash2, Settings2, Edit2, Send, Loader2, CheckCircle, XCircle, Moon, Clock, ChevronDown, ChevronUp, Calendar, Camera, CameraOff } from 'lucide-react';
 import { api } from '../api/client';
 import { formatDateOnly, parseUTCDate } from '../utils/date';
+import { enabledPhotoEvents } from '../utils/notificationPhotoEvents';
 import type { NotificationProvider, NotificationProviderUpdate } from '../api/client';
 import { Card, CardContent } from './Card';
 import { Button } from './Button';
@@ -174,6 +175,9 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
             {provider.on_filament_low && (
               <span className="px-2 py-0.5 bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-400 text-xs rounded">{t('notifications.lowFilament')}</span>
             )}
+            {provider.on_filament_out_of_stock && (
+              <span className="px-2 py-0.5 bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-400 text-xs rounded">{t('notifications.outOfStock')}</span>
+            )}
             {provider.on_maintenance_due && (
               <span className="px-2 py-0.5 bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 text-xs rounded">{t('notifications.maintenance')}</span>
             )}
@@ -197,6 +201,9 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
             )}
             {provider.on_first_layer_complete && (
               <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-600/20 text-emerald-700 dark:text-emerald-300 text-xs rounded">{t('notifications.firstLayer')}</span>
+            )}
+            {provider.on_print_pause_upcoming && (
+              <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-xs rounded">{t('notifications.pauseUpcomingBadge')}</span>
             )}
             {provider.on_app_message && (
               <span className="px-2 py-0.5 bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-400 text-xs rounded">{t('notifications.appMessagesBadge')}</span>
@@ -371,6 +378,17 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                   <Toggle
                     checked={provider.on_first_layer_complete ?? false}
                     onChange={(checked) => updateMutation.mutate({ on_first_layer_complete: checked })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-white">{t('notifications.pauseUpcomingLabel')}</p>
+                    <p className="text-xs text-bambu-gray">{t('notifications.pauseUpcomingDescription')}</p>
+                  </div>
+                  <Toggle
+                    checked={provider.on_print_pause_upcoming ?? false}
+                    onChange={(checked) => updateMutation.mutate({ on_print_pause_upcoming: checked })}
                   />
                 </div>
 
@@ -639,6 +657,19 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
                 <div className="flex items-center justify-between">
                   <div>
+                    <p className="text-sm text-white">{t('notifications.filamentOutOfStock')}</p>
+                    <p className="text-xs text-bambu-gray">{t('notifications.filamentOutOfStockDescription')}</p>
+                    {/* Sent by the scheduler only while the inventory-colours setting is on (#3590). */}
+                    <p className="text-xs text-bambu-gray">{t('notifications.filamentOutOfStockNeedsSetting')}</p>
+                  </div>
+                  <Toggle
+                    checked={provider.on_filament_out_of_stock ?? false}
+                    onChange={(checked) => updateMutation.mutate({ on_filament_out_of_stock: checked })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
                     <p className="text-sm text-white">{t('notifications.jobSkipped')}</p>
                     <p className="text-xs text-bambu-gray">{t('notifications.jobSkippedDescription')}</p>
                   </div>
@@ -751,6 +782,18 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                   onChange={(checked) => updateMutation.mutate({ attach_photo: checked })}
                 />
               </div>
+              {!notifyPhotosUnsupported && (provider.attach_photo ?? true) && (() => {
+                // Per-event opt-out (#2877), edited in the provider dialog.
+                const skipped = enabledPhotoEvents(provider).filter(({ event }) =>
+                  (provider.photo_skip_events ?? []).includes(event)
+                );
+                if (skipped.length === 0) return null;
+                return (
+                  <p className="text-xs text-bambu-gray pl-6">
+                    {t('notifications.attachPhotoSkipped', { events: skipped.map(({ labelKey }) => t(labelKey)).join(', ') })}
+                  </p>
+                );
+              })()}
 
               {/* Action Buttons */}
               <div className="flex gap-2 pt-2">

@@ -1,5 +1,7 @@
-# Build frontend
-FROM node:22-bookworm-slim AS frontend-builder
+# Build frontend. Its output is plain JS/CSS, the same on every architecture,
+# so it is built natively on the build host: under QEMU emulation the arm64
+# vite build ran for hours or hung.
+FROM --platform=$BUILDPLATFORM node:22-bookworm-slim AS frontend-builder
 
 WORKDIR /app/frontend
 
@@ -52,10 +54,11 @@ RUN setcap cap_net_bind_service=+ep "$(readlink -f /usr/local/bin/python3)"
 # pip is upgraded to >=26.1 first to close CVE-2026-6357 — the python:3.13-slim
 # base image ships pip 26.0.1, which runs its self-update check after installing
 # wheels (so a hostile wheel could hijack stdlib imports during install).
-COPY requirements.txt ./
+# requirements.lock pins the exact versions that were tested (see CONTRIBUTING.md).
+COPY requirements.txt requirements.lock ./
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --root-user-action=ignore --upgrade 'pip>=26.1.2' \
- && pip install --root-user-action=ignore -r requirements.txt
+ && pip install --root-user-action=ignore -r requirements.lock
 
 # Copy backend
 COPY backend/ ./backend/

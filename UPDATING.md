@@ -58,7 +58,7 @@ cd /opt/bambuddy
 sudo systemctl stop bambuddy
 sudo -u bambuddy git fetch origin
 sudo -u bambuddy git reset --hard origin/main
-sudo -u bambuddy venv/bin/pip install -r requirements.txt
+sudo -u bambuddy venv/bin/pip install -r requirements.lock
 sudo systemctl start bambuddy
 ```
 

@@ -13,6 +13,33 @@ from backend.app.services.opentag3d import (
 )
 
 
+def _first_ndef_message(data: bytes) -> bytes | None:
+    """Walk the data area from page 4 the way an NFC Forum Type 2 reader does.
+
+    Returns the value of the first NDEF Message TLV (0x03), or None when the
+    walk reaches the terminator (0xFE) or the end without one.
+    """
+    i = 0
+    while i < len(data):
+        tlv_type = data[i]
+        if tlv_type == 0x00:  # NULL TLV, no length
+            i += 1
+            continue
+        if tlv_type == 0xFE:  # Terminator
+            return None
+        if i + 1 >= len(data):
+            return None
+        length = data[i + 1]
+        start = i + 2
+        if length == 0xFF:
+            length = int.from_bytes(data[i + 2 : i + 4], "big")
+            start = i + 4
+        if tlv_type == 0x03:
+            return data[start : start + length]
+        i = start + length
+    return None
+
+
 def _make_spool(**kwargs):
     """Create a mock Spool with default values."""
     defaults = {
@@ -105,27 +132,33 @@ class TestBuildPayload:
 
 
 class TestEncodeOpentag3d:
-    def test_starts_with_cc(self):
-        data = encode_opentag3d(_make_spool())
-        assert data[:4] == bytes([0xE1, 0x10, 0x12, 0x00])
-
-    def test_tlv_header(self):
+    def test_starts_with_the_ndef_tlv(self):
+        # #3500: page 4 is data on NTAG21x. A CC copy there hid the message.
         data = encode_opentag3d(_make_spool())
         # TLV type = 0x03
-        assert data[4] == 0x03
+        assert data[0] == 0x03
         # TLV length = 3 (record header) + 21 (mime type) + 102 (payload) = 126
-        assert data[5] == 126
+        assert data[1] == 126
 
     def test_ndef_record_header(self):
         data = encode_opentag3d(_make_spool())
-        # Record starts after CC(4) + TLV(2) = offset 6
-        assert data[6] == 0xD2  # MB|ME|SR + TNF=MIME
-        assert data[7] == len(OPENTAG3D_MIME_TYPE)  # type length = 21
-        assert data[8] == PAYLOAD_SIZE  # payload length = 102
+        # Record starts after TLV(2) = offset 2
+        assert data[2] == 0xD2  # MB|ME|SR + TNF=MIME
+        assert data[3] == len(OPENTAG3D_MIME_TYPE)  # type length = 21
+        assert data[4] == PAYLOAD_SIZE  # payload length = 102
+
+    def test_a_type_2_reader_finds_the_record(self):
+        data = encode_opentag3d(_make_spool(material="PLA", brand="Polymaker"))
+
+        record = _first_ndef_message(data)
+
+        assert record is not None
+        assert record[3 : 3 + 21] == OPENTAG3D_MIME_TYPE
+        assert record[3 + 21 :][0x02:0x05] == b"PLA"
 
     def test_mime_type(self):
         data = encode_opentag3d(_make_spool())
-        mime = data[9:30]
+        mime = data[5:26]
         assert mime == b"application/opentag3d"
 
     def test_ends_with_terminator(self):
@@ -134,8 +167,8 @@ class TestEncodeOpentag3d:
 
     def test_total_size(self):
         data = encode_opentag3d(_make_spool())
-        # CC(4) + TLV(2) + header(3) + type(21) + payload(102) + terminator(1) = 133
-        assert len(data) == 133
+        # TLV(2) + header(3) + type(21) + payload(102) + terminator(1) = 129
+        assert len(data) == 129
 
     def test_fits_ntag213(self):
         """NTAG213 has 36 writable pages (144 bytes). Our data must fit."""
@@ -255,11 +288,11 @@ class TestBuildPayloadFromDict:
 class TestEncodeOpentag3dFromMapped:
     def test_total_size(self):
         data = encode_opentag3d_from_mapped(MINIMAL_MAPPED)
-        assert len(data) == 133
+        assert len(data) == 129
 
-    def test_starts_with_cc(self):
+    def test_starts_with_the_ndef_tlv(self):
         data = encode_opentag3d_from_mapped(MINIMAL_MAPPED)
-        assert data[:4] == bytes([0xE1, 0x10, 0x12, 0x00])
+        assert data[:2] == bytes([0x03, 126])
 
     def test_ends_with_terminator(self):
         data = encode_opentag3d_from_mapped(MINIMAL_MAPPED)
@@ -317,5 +350,5 @@ class TestEncodeOpentag3dFromMapped:
         }
         mapped = _map_spoolman_spool(raw)
         data = encode_opentag3d_from_mapped(mapped)
-        assert len(data) == 133
-        assert data[:4] == bytes([0xE1, 0x10, 0x12, 0x00])
+        assert len(data) == 129
+        assert data[:2] == bytes([0x03, 126])

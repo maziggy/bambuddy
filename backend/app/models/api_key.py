@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, false, func, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.core.database import Base
@@ -10,6 +10,8 @@ class APIKey(Base):
     """API key for external webhook access."""
 
     __tablename__ = "api_keys"
+    # SQLite would give a freed id to the next row; see core/database AUTOINCREMENT_TABLES
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100))  # User-friendly name
@@ -31,30 +33,33 @@ class APIKey(Base):
     can_control_printer: Mapped[bool] = mapped_column(Boolean, default=False)  # Start/stop/cancel
     can_read_status: Mapped[bool] = mapped_column(Boolean, default=True)  # Query status
     can_manage_library: Mapped[bool] = mapped_column(
-        Boolean, default=True
+        Boolean, default=True, server_default=true()
     )  # Upload/rename/delete own library files + MakerWorld import
     can_manage_inventory: Mapped[bool] = mapped_column(
-        Boolean, default=True
+        Boolean, default=True, server_default=true()
     )  # Inventory write ops (incl. SpoolBuddy kiosk NFC/scale/system)
     can_manage_maintenance: Mapped[bool] = mapped_column(
-        Boolean, default=True
+        Boolean, default=True, server_default=true()
     )  # Log/reset per-printer maintenance, edit intervals, manage the type catalog (#1832 follow-up)
     can_manage_archives: Mapped[bool] = mapped_column(
-        Boolean, default=True
+        Boolean, default=True, server_default=true()
     )  # Create/update/delete print archives (not purge) (#1888)
     can_manage_projects: Mapped[bool] = mapped_column(
-        Boolean, default=True
+        Boolean, default=True, server_default=true()
     )  # Create/update/delete projects + manage membership (add archives) (#1893)
-    can_access_cloud: Mapped[bool] = mapped_column(Boolean, default=False)  # Read /cloud/* on the owner's behalf
+    can_access_cloud: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false()
+    )  # Read /cloud/* on the owner's behalf
     # Narrowly-scoped settings write: only POST /settings/electricity-price.
     # Lets HA/Tibber-style automations push dynamic tariff updates without
     # granting full SETTINGS_UPDATE (which is denied for API keys because it
     # could rewrite SMTP/LDAP/MQTT credentials).
-    can_update_energy_cost: Mapped[bool] = mapped_column(Boolean, default=False)
+    can_update_energy_cost: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # Send a message through the notification channels that accept app
-    # messages (POST /notifications/app-message). Nothing else: no reading or
-    # changing the channels themselves.
-    can_send_notifications: Mapped[bool] = mapped_column(Boolean, default=False)
+    # messages (POST /notifications/app-message), and set the count on the
+    # sidebar link pointing at the app (PUT /external-links/badge). Nothing
+    # else: no reading or changing the channels or the links themselves.
+    can_send_notifications: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
     # Optional scope limits
     printer_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)  # null = all printers

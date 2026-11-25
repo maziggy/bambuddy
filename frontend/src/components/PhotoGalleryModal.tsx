@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, ChevronLeft, ChevronRight, Download, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import { Button } from './Button';
 import { ConfirmModal } from './ConfirmModal';
@@ -24,6 +25,7 @@ type PhotoGalleryModalProps = PhotoSource & {
 
 export function PhotoGalleryModal(props: PhotoGalleryModalProps) {
   const { archiveName, photos, initialIndex, onClose, onDelete } = props;
+  const { t } = useTranslation();
   const [currentIndex, setCurrentIndex] = useState(() =>
     Math.min(Math.max(initialIndex ?? 0, 0), Math.max(photos.length - 1, 0))
   );
@@ -97,13 +99,13 @@ export function PhotoGalleryModal(props: PhotoGalleryModalProps) {
           <div>
             <h2 className="text-lg font-semibold text-white">{archiveName}</h2>
             <p className="text-sm text-bambu-gray">
-              Photo {currentIndex + 1} of {photos.length}
+              {t('photoGallery.photoOf', { current: currentIndex + 1, total: photos.length })}
             </p>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="secondary" size="sm" onClick={handleDownload}>
               <Download className="w-4 h-4" />
-              Download
+              {t('common.download')}
             </Button>
             {onDelete && (
               <Button variant="secondary" size="sm" onClick={handleDelete} className="text-red-400 hover:text-red-300">
@@ -134,7 +136,7 @@ export function PhotoGalleryModal(props: PhotoGalleryModalProps) {
           {/* Image */}
           <img
             src={photoUrl}
-            alt={`Photo ${currentIndex + 1}`}
+            alt={t('photoGallery.photoAlt', { number: currentIndex + 1 })}
             className="max-w-full max-h-full object-contain rounded-lg"
             style={{ maxHeight: 'calc(100vh - 200px)' }}
           />
@@ -165,7 +167,7 @@ export function PhotoGalleryModal(props: PhotoGalleryModalProps) {
               >
                 <img
                   src={resolvePhotoUrl(photo)}
-                  alt={`Thumbnail ${index + 1}`}
+                  alt={t('photoGallery.thumbnailAlt', { number: index + 1 })}
                   className="w-full h-full object-cover"
                 />
               </button>
@@ -181,9 +183,9 @@ export function PhotoGalleryModal(props: PhotoGalleryModalProps) {
       {showDeleteConfirm && (
         <div onClick={(e) => e.stopPropagation()}>
           <ConfirmModal
-            title="Delete Photo"
-            message="Delete this photo? This cannot be undone."
-            confirmText="Delete"
+            title={t('photoGallery.deletePhoto')}
+            message={t('photoGallery.deleteConfirm')}
+            confirmText={t('common.delete')}
             variant="danger"
             onConfirm={() => {
               onDelete?.(currentPhoto);

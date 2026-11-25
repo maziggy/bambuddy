@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo, useEffect, lazy, Suspense } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect, useId, lazy, Suspense, type DragEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueries, useMutation, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -44,6 +44,7 @@ import {
   RefreshCw,
   Lock,
   FolderSymlink,
+  FolderInput,
   Tag as TagIcon,
   FileText,
   FileSpreadsheet,
@@ -64,14 +65,15 @@ import type {
   LibraryFolderCreate,
   LibraryFolderUpdate,
   ExternalFolderCreate,
-  AppSettings,
   Archive,
   Permission,
 } from '../api/client';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
+import { LibraryTagFilterRail } from '../components/LibraryTagFilterRail';
 import { PrintModal } from '../components/PrintModal';
+import type { SeparateJobsProgress } from '../components/PrintModal/separateJobs';
 import { ModelViewerModal } from '../components/ModelViewerModal';
 import { SliceModal } from '../components/SliceModal';
 import { CombineFilesModal } from '../components/CombineFilesModal';
@@ -85,14 +87,25 @@ import { PurgeOldFilesModal } from '../components/PurgeOldFilesModal';
 import { useToast } from '../contexts/ToastContext';
 import { usePageFileDrop } from '../hooks/usePageFileDrop';
 import { useAuth } from '../contexts/AuthContext';
-import { formatDuration, parseUTCDate, formatDate } from '../utils/date';
+import { formatDuration, formatDate } from '../utils/date';
 import { formatFileSize } from '../utils/file';
 import { assignableProjects } from '../utils/projectTree';
 import { openInSlicer, resolveDesktopSlicer, type SlicerType } from '../utils/slicer';
 import { isSlicedLibraryFile, isSliceableLibraryFile } from '../utils/libraryFiles';
+import { useUiSettings } from '../hooks/useUiSettings';
+import { FOLDER_DRAG_TYPE, FILES_DRAG_TYPE, isValidFilesMove, isValidFolderMove, isWritableFolder, moveDisallowedFolderIds } from '../utils/libraryFolders';
+import { PendingUploadsPanel } from '../components/PendingUploadsPanel';
+import type { SortField, SortDirection } from './fileManager/filterSort';
+import { groupLibraryRows, groupRowLedBy, rowFiles, rowLeadFile, type GroupRow, type LibraryRow } from './fileManager/variantGroups';
+import { filterFiles } from './fileManager/filterSort';
+import { VariantGroupCard } from '../components/fileManager/VariantGroupCard';
+import { VariantGroupListRow } from '../components/fileManager/VariantGroupListRow';
+import { VariantGroupColumnRow } from '../components/fileManager/VariantGroupColumnRow';
+import { draggedMemberIds, selectableMembers } from './fileManager/variantSelection';
+import { useBulkVariantPrint } from './fileManager/useBulkVariantPrint';
+import { invalidateAfterLibraryDelete } from './fileManager/invalidate';
+import { useVariantGroupActions } from '../components/fileManager/useVariantGroupActions';
 
-type SortField = 'name' | 'date' | 'size' | 'type' | 'prints';
-type SortDirection = 'asc' | 'desc';
 type TFunction = (key: string, options?: Record<string, unknown>) => string;
 
 // Document previews (#2976) are code-split: pdf.js and the spreadsheet
@@ -117,6 +130,8 @@ function isStepType(fileType: string): boolean {
 
 // Mirrors IMAGE_EXTENSIONS in routes/library.py — the types the server both
 // stores and renders a thumbnail for, and so the ones that get an image icon.
+// The files pane's key where a focused row says which pane it is in (#3628).
+const COLUMNS_PANE = 'pane';
 const IMAGE_TYPES = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tiff', 'tif']);
 
 // The subset ImagePreviewModal can actually show: it hands the bytes to an
@@ -187,6 +202,25 @@ function isModelPreview(file: LibraryFileListItem): boolean {
   return isSlicedLibraryFile(file) || file.file_type === '3mf' || file.file_type === 'stl' || isStepType(file.file_type);
 }
 
+// The "Preview" entry of a file's menu, or null for a file with no preview.
+// Shared by the card and by a version line of a group (#3628).
+function previewMenuItem(
+  file: LibraryFileListItem,
+  onPreview: (file: LibraryFileListItem) => void,
+  canRead: boolean,
+  t: TFunction,
+): ContextMenuItem | null {
+  if (!isPreviewableLibraryFile(file)) return null;
+  const modelPreview = isModelPreview(file);
+  return {
+    label: modelPreview ? t('fileManager.preview3d') : t('fileManager.preview.open'),
+    icon: modelPreview ? <Box className="w-4 h-4" /> : documentPreviewIcon(file.file_type),
+    onClick: () => onPreview(file),
+    disabled: !canRead,
+    title: !canRead ? t('fileManager.noPermissionPreview') : undefined,
+  };
+}
+
 function documentPreviewIcon(fileType: string) {
   if (fileType === 'pdf') return <FileText className="w-4 h-4" />;
   if (isSpreadsheetType(fileType)) return <FileSpreadsheet className="w-4 h-4" />;
@@ -212,70 +246,6 @@ function fileTypeBadgeClass(fileType: string): string {
   if (fileType === 'pdf') return 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400';
   if (isSpreadsheetType(fileType)) return 'bg-teal-100 dark:bg-teal-500/20 text-teal-700 dark:text-teal-400';
   return 'bg-bambu-gray/20 text-bambu-gray';
-}
-
-// Search / type / user filtering plus the sort, shared by the main listing and
-// by each Miller column's file list so a column never sorts differently from
-// the pane beside it. `query` matches the filename and the embedded print name.
-function filterAndSortFiles(
-  files: LibraryFileListItem[],
-  opts: {
-    query?: string;
-    filterType: string;
-    filterUsername: string;
-    sortField: SortField;
-    sortDirection: SortDirection;
-  },
-): LibraryFileListItem[] {
-  let result = [...files];
-
-  const query = opts.query?.trim().toLowerCase();
-  if (query) {
-    result = result.filter(
-      (f) =>
-        f.filename.toLowerCase().includes(query) ||
-        (f.print_name && f.print_name.toLowerCase().includes(query))
-    );
-  }
-
-  if (opts.filterType !== 'all') {
-    result = result.filter((f) => f.file_type === opts.filterType);
-  }
-
-  const userQuery = opts.filterUsername.trim().toLowerCase();
-  if (userQuery) {
-    result = result.filter(
-      (f) => f.created_by_username && f.created_by_username.toLowerCase().includes(userQuery)
-    );
-  }
-
-  result.sort((a, b) => {
-    let comparison = 0;
-    switch (opts.sortField) {
-      case 'name':
-        comparison = (a.print_name || a.filename).localeCompare(b.print_name || b.filename);
-        break;
-      case 'date':
-        // #2680: sort by real on-disk mtime (matches `ls -t`), falling back to
-        // the DB created_at for managed uploads that have no filesystem mtime.
-        comparison =
-          (parseUTCDate(a.fs_modified_at ?? a.created_at)?.getTime() ?? 0) -
-          (parseUTCDate(b.fs_modified_at ?? b.created_at)?.getTime() ?? 0);
-        break;
-      case 'size':
-        comparison = a.file_size - b.file_size;
-        break;
-      case 'type':
-        comparison = a.file_type.localeCompare(b.file_type);
-        break;
-      case 'prints':
-        comparison = a.print_count - b.print_count;
-        break;
-    }
-    return opts.sortDirection === 'asc' ? comparison : -comparison;
-  });
-
-  return result;
 }
 
 // Keep the filename useful when fixed columns consume the available width,
@@ -524,6 +494,71 @@ function RenameModal({ type, currentName, onClose, onSave, isLoading, t }: Renam
   );
 }
 
+// Destination picker shared by "Move files" and "Move folder" (#3305): the
+// root entry, then the tree flattened with indentation. `disabledIds` greys a
+// folder out with `disabledTitle`; `currentId` marks (and disables) the one
+// the items already live in.
+type MoveTarget = { id: number | null; name: string; depth: number; canWrite: boolean };
+
+interface FolderTargetListProps {
+  folders: LibraryFolderTree[];
+  rootLabel: string;
+  currentId: number | null;
+  disabledIds?: Set<number>;
+  disabledTitle?: string;
+  // undefined = nothing picked yet (null is the root entry).
+  value: number | null | undefined;
+  onChange: (id: number | null) => void;
+  t: TFunction;
+}
+
+function FolderTargetList({ folders, rootLabel, currentId, disabledIds, disabledTitle, value, onChange, t }: FolderTargetListProps) {
+  // can_write: a library:read_own user moves files only into their own and
+  // shared folders (#3201); the rest stay listed so the tree keeps its shape.
+  const flattenFolders = (items: LibraryFolderTree[], depth = 0): MoveTarget[] => {
+    const result: MoveTarget[] = [];
+    for (const item of items) {
+      result.push({ id: item.id, name: item.name, depth, canWrite: isWritableFolder(item) });
+      if (item.children.length > 0) {
+        result.push(...flattenFolders(item.children, depth + 1));
+      }
+    }
+    return result;
+  };
+
+  const flatFolders: MoveTarget[] = [{ id: null, name: rootLabel, depth: 0, canWrite: true }, ...flattenFolders(folders)];
+
+  return (
+    <div className="max-h-64 overflow-y-auto space-y-1">
+      {flatFolders.map((folder) => {
+        const isCurrent = folder.id === currentId;
+        const isExcluded = folder.id !== null && disabledIds?.has(folder.id) === true;
+        const disabled = isCurrent || isExcluded || !folder.canWrite;
+        return (
+          <button
+            key={folder.id ?? 'root'}
+            onClick={() => onChange(folder.id)}
+            disabled={disabled}
+            title={isExcluded ? disabledTitle : !folder.canWrite ? t('fileManager.folderNotWritable') : undefined}
+            className={`w-full text-left px-3 py-2 rounded transition-colors flex items-center gap-2 ${
+              value === folder.id
+                ? 'bg-bambu-green/20 text-bambu-green'
+                : disabled
+                ? 'opacity-50 cursor-not-allowed text-bambu-gray'
+                : 'hover:bg-bambu-dark text-white'
+            }`}
+            style={{ paddingLeft: `${12 + folder.depth * 16}px` }}
+          >
+            <FolderOpen className="w-4 h-4" />
+            {folder.name}
+            {isCurrent && <span className="text-xs text-bambu-gray ml-auto">({t('fileManager.current')})</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // Move Files Modal
 interface MoveFilesModalProps {
   folders: LibraryFolderTree[];
@@ -538,22 +573,6 @@ interface MoveFilesModalProps {
 function MoveFilesModal({ folders, selectedFiles, currentFolderId, onClose, onMove, isLoading, t }: MoveFilesModalProps) {
   const [targetFolder, setTargetFolder] = useState<number | null>(null);
 
-  // can_write: a library:read_own user moves files only into their own and
-  // shared folders (#3201); the rest stay listed so the tree keeps its shape.
-  type MoveTarget = { id: number | null; name: string; depth: number; canWrite: boolean };
-  const flattenFolders = (items: LibraryFolderTree[], depth = 0): MoveTarget[] => {
-    const result: MoveTarget[] = [];
-    for (const item of items) {
-      result.push({ id: item.id, name: item.name, depth, canWrite: item.can_write !== false });
-      if (item.children.length > 0) {
-        result.push(...flattenFolders(item.children, depth + 1));
-      }
-    }
-    return result;
-  };
-
-  const flatFolders: MoveTarget[] = [{ id: null, name: t('fileManager.rootNoFolder'), depth: 0, canWrite: true }, ...flattenFolders(folders)];
-
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
       <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-sm border border-bambu-dark-tertiary">
@@ -561,33 +580,66 @@ function MoveFilesModal({ folders, selectedFiles, currentFolderId, onClose, onMo
           <h2 className="text-lg font-semibold text-white">{t('fileManager.moveFiles', { count: selectedFiles.length })}</h2>
         </div>
         <div className="p-4 space-y-4">
-          <div className="max-h-64 overflow-y-auto space-y-1">
-            {flatFolders.map((folder) => (
-              <button
-                key={folder.id ?? 'root'}
-                onClick={() => setTargetFolder(folder.id)}
-                disabled={folder.id === currentFolderId || !folder.canWrite}
-                title={!folder.canWrite ? t('fileManager.folderNotWritable') : undefined}
-                className={`w-full text-left px-3 py-2 rounded transition-colors flex items-center gap-2 ${
-                  targetFolder === folder.id
-                    ? 'bg-bambu-green/20 text-bambu-green'
-                    : folder.id === currentFolderId || !folder.canWrite
-                    ? 'opacity-50 cursor-not-allowed text-bambu-gray'
-                    : 'hover:bg-bambu-dark text-white'
-                }`}
-                style={{ paddingLeft: `${12 + folder.depth * 16}px` }}
-              >
-                <FolderOpen className="w-4 h-4" />
-                {folder.name}
-                {folder.id === currentFolderId && <span className="text-xs text-bambu-gray ml-auto">({t('fileManager.current')})</span>}
-              </button>
-            ))}
-          </div>
+          <FolderTargetList
+            folders={folders}
+            rootLabel={t('fileManager.rootNoFolder')}
+            currentId={currentFolderId}
+            value={targetFolder}
+            onChange={setTargetFolder}
+            t={t}
+          />
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={onClose}>
               {t('common.cancel')}
             </Button>
             <Button onClick={() => onMove(targetFolder)} disabled={isLoading}>
+              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : t('common.move')}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Move Folder Modal (#3305). Same picker as files, minus the folder itself,
+// its subtree and every external folder; "Root" lifts it to the top level.
+interface MoveFolderModalProps {
+  folders: LibraryFolderTree[];
+  folder: LibraryFolderTree;
+  onClose: () => void;
+  onMove: (parentId: number | null) => void;
+  isLoading: boolean;
+  t: TFunction;
+}
+
+function MoveFolderModal({ folders, folder, onClose, onMove, isLoading, t }: MoveFolderModalProps) {
+  const [targetFolder, setTargetFolder] = useState<number | null | undefined>(undefined);
+  const disabledIds = useMemo(() => moveDisallowedFolderIds(folders, folder.id), [folders, folder.id]);
+  const canMove = targetFolder !== undefined && isValidFolderMove(folders, folder, targetFolder);
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+      <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-sm border border-bambu-dark-tertiary">
+        <div className="p-4 border-b border-bambu-dark-tertiary">
+          <h2 className="text-lg font-semibold text-white truncate">{t('fileManager.moveFolderTo', { name: folder.name })}</h2>
+        </div>
+        <div className="p-4 space-y-4">
+          <FolderTargetList
+            folders={folders}
+            rootLabel={t('fileManager.moveToRoot')}
+            currentId={folder.parent_id}
+            disabledIds={disabledIds}
+            disabledTitle={t('fileManager.moveFolderInvalidTarget')}
+            value={targetFolder}
+            onChange={setTargetFolder}
+            t={t}
+          />
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={onClose}>
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={() => targetFolder !== undefined && onMove(targetFolder)} disabled={isLoading || !canMove}>
               {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : t('common.move')}
             </Button>
           </div>
@@ -767,6 +819,93 @@ function LinkFolderModal({ folder, onClose, onLink, isLoading, t }: LinkFolderMo
   );
 }
 
+// Folder drag and drop (#3305). The page owns the dragged folder (so drop
+// targets can decide validity during dragover, when the payload is not yet
+// readable), the one highlighted target and the mutation; rows and columns
+// only report where it landed.
+interface FolderDragProps {
+  canDrag: (folder: LibraryFolderTree) => boolean;
+  onDragStart: (folder: LibraryFolderTree, e: DragEvent) => void;
+  onDragEnd: () => void;
+  // Would dropping the folder being dragged onto this destination (null =
+  // root) be a real, allowed move? False while nothing is being dragged.
+  canDropOn: (destinationId: number | null) => boolean;
+  onDrop: (destinationId: number | null) => void;
+  // The drop target under the pointer (a useId key), or null. Shared so a
+  // column stops highlighting the moment a row inside it takes over.
+  activeTarget: string | null;
+  setActiveTarget: (key: string | null) => void;
+}
+
+// Drop-target behaviour for one destination: accepts the drag only when the
+// page says the move is valid and highlights while it is the active target.
+// A folder drag never travels past the innermost target, accepted or not:
+// a row that refuses the drop (e.g. the folder's own parent) must not hand it
+// to the column around it, which would move the folder somewhere else. It
+// also keeps the drag away from the page-wide upload zone.
+function useFolderDropTarget(folderDrag: FolderDragProps | undefined, destinationId: number | null) {
+  const key = useId();
+  if (!folderDrag) return { isOver: false, handlers: {} };
+  const isFolderDrag = (e: DragEvent) =>
+    e.dataTransfer.types.includes(FOLDER_DRAG_TYPE) || e.dataTransfer.types.includes(FILES_DRAG_TYPE);
+  const claim = (e: DragEvent) => {
+    e.stopPropagation();
+    const accepted = folderDrag.canDropOn(destinationId);
+    if (accepted) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    } else {
+      // Not cancelling the event is what makes the browser show "no drop".
+      e.dataTransfer.dropEffect = 'none';
+    }
+    const next = accepted ? key : null;
+    if (folderDrag.activeTarget !== next) folderDrag.setActiveTarget(next);
+  };
+  const handlers = {
+    onDragEnter: (e: DragEvent) => {
+      if (isFolderDrag(e)) claim(e);
+    },
+    onDragOver: (e: DragEvent) => {
+      if (isFolderDrag(e)) claim(e);
+    },
+    onDragLeave: (e: DragEvent) => {
+      const next = e.relatedTarget as Node | null;
+      if ((!next || !(e.currentTarget as Node).contains(next)) && folderDrag.activeTarget === key) {
+        folderDrag.setActiveTarget(null);
+      }
+    },
+    onDrop: (e: DragEvent) => {
+      if (!isFolderDrag(e)) return;
+      e.stopPropagation();
+      folderDrag.setActiveTarget(null);
+      if (!folderDrag.canDropOn(destinationId)) return;
+      e.preventDefault();
+      folderDrag.onDrop(destinationId);
+    },
+  };
+  return { isOver: folderDrag.activeTarget === key, handlers };
+}
+
+const FOLDER_DROP_TARGET_CLASS = 'ring-1 ring-inset ring-bambu-green bg-bambu-green/10';
+
+// A plain div that is also a folder drop target — for hosts that render rows
+// inside a `.map` and so cannot call the hook themselves.
+type FolderDropZoneProps = React.HTMLAttributes<HTMLDivElement> & {
+  folderDrag?: FolderDragProps;
+  destinationId: number | null;
+  // Accept drops at all; false renders a plain div (e.g. the external bucket).
+  enabled?: boolean;
+};
+
+function FolderDropZone({ folderDrag, destinationId, enabled = true, className = '', children, ...rest }: FolderDropZoneProps) {
+  const { isOver, handlers } = useFolderDropTarget(enabled ? folderDrag : undefined, destinationId);
+  return (
+    <div {...rest} {...handlers} className={`${className} ${isOver ? FOLDER_DROP_TARGET_CLASS : ''}`}>
+      {children}
+    </div>
+  );
+}
+
 // Folder Tree Item
 interface FolderTreeItemProps {
   folder: LibraryFolderTree;
@@ -775,7 +914,9 @@ interface FolderTreeItemProps {
   onDelete: (id: number) => void;
   onLink: (folder: LibraryFolderTree) => void;
   onRename: (folder: LibraryFolderTree) => void;
+  onMove?: (folder: LibraryFolderTree) => void;
   onToggleShared?: (folder: LibraryFolderTree) => void;
+  folderDrag?: FolderDragProps;
   depth?: number;
   wrapNames?: boolean;
   defaultExpanded?: boolean;
@@ -794,6 +935,8 @@ interface FolderActionsMenuProps {
   onDelete: (id: number) => void;
   onLink: (folder: LibraryFolderTree) => void;
   onRename: (folder: LibraryFolderTree) => void;
+  // Move to root or into another folder (#3305). Not offered for external folders.
+  onMove?: (folder: LibraryFolderTree) => void;
   // Share with every library:read_own user, or stop (#3201). library:update_all only.
   onToggleShared?: (folder: LibraryFolderTree) => void;
   hasPermission: (permission: Permission) => boolean;
@@ -806,7 +949,7 @@ interface FolderActionsMenuProps {
   t: TFunction;
 }
 
-function FolderActionsMenu({ folder, onDelete, onLink, onRename, onToggleShared, hasPermission, revealOnHover = false, tabIndex, t }: FolderActionsMenuProps) {
+function FolderActionsMenu({ folder, onDelete, onLink, onRename, onMove, onToggleShared, hasPermission, revealOnHover = false, tabIndex, t }: FolderActionsMenuProps) {
   const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -833,6 +976,9 @@ function FolderActionsMenu({ folder, onDelete, onLink, onRename, onToggleShared,
       ? t('fileManager.onlyOwnFoldersDeletable')
       : t('fileManager.noPermissionDeleteFolder');
   const canRename = folder.can_rename ?? hasPermission('library:update_all');
+  // Moving is the same backend update as renaming (#3305), so it follows the
+  // same gate; the picker handles where the folder may go.
+  const canMove = canRename;
   const canLink = hasPermission('library:update_all');
 
   const items: ContextMenuItem[] = [
@@ -843,6 +989,17 @@ function FolderActionsMenu({ folder, onDelete, onLink, onRename, onToggleShared,
       disabled: !canRename,
       title: !canRename ? t('fileManager.noPermissionRenameFolder') : undefined,
     },
+    ...(onMove && !isExternal
+      ? [
+          {
+            label: t('fileManager.moveFolder'),
+            icon: <FolderInput className="w-3.5 h-3.5" />,
+            onClick: () => onMove(folder),
+            disabled: !canMove,
+            title: !canMove ? t('fileManager.noPermissionMoveFolder') : undefined,
+          },
+        ]
+      : []),
     {
       label: isLinked ? t('fileManager.changeLink') : t('fileManager.linkTo'),
       icon: <Link2 className="w-3.5 h-3.5" />,
@@ -907,11 +1064,13 @@ function FolderActionsMenu({ folder, onDelete, onLink, onRename, onToggleShared,
   );
 }
 
-function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, onRename, onToggleShared, depth = 0, wrapNames = false, defaultExpanded = true, showModified = false, hasPermission, t }: FolderTreeItemProps) {
+function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, onRename, onMove, onToggleShared, folderDrag, depth = 0, wrapNames = false, defaultExpanded = true, showModified = false, hasPermission, t }: FolderTreeItemProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const hasChildren = folder.children.length > 0;
   const isLinked = folder.project_id || folder.archive_id;
   const isExternal = folder.is_external;
+  const canDrag = folderDrag?.canDrag(folder) === true;
+  const { isOver, handlers: dropHandlers } = useFolderDropTarget(folderDrag, folder.id);
 
   return (
     <div>
@@ -920,9 +1079,13 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
           selectedFolderId === folder.id
             ? 'bg-bambu-green/20 text-bambu-green'
             : 'hover:bg-bambu-dark text-white'
-        }`}
+        } ${isOver ? FOLDER_DROP_TARGET_CLASS : ''}`}
         style={{ paddingLeft: `${8 + depth * 12}px` }}
         onClick={() => onSelect(folder.id)}
+        draggable={canDrag || undefined}
+        onDragStart={canDrag ? (e) => folderDrag?.onDragStart(folder, e) : undefined}
+        onDragEnd={canDrag ? folderDrag?.onDragEnd : undefined}
+        {...dropHandlers}
       >
         {hasChildren ? (
           <button
@@ -961,7 +1124,9 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
           <button
             onClick={(e) => { e.stopPropagation(); onLink(folder); }}
             className="flex-shrink-0 flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-500/30 transition-colors"
-            title={`${folder.project_name ? `Project: ${folder.project_name}` : `Archive: ${folder.archive_name}`} (click to change)`}
+            title={folder.project_name
+              ? t('fileManager.linkedProjectTitle', { name: folder.project_name })
+              : t('fileManager.linkedArchiveTitle', { name: folder.archive_name })}
           >
             <Link2 className="w-3 h-3" />
             {folder.project_name ? (
@@ -1000,6 +1165,7 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
           onDelete={onDelete}
           onLink={onLink}
           onRename={onRename}
+          onMove={onMove}
           onToggleShared={onToggleShared}
           hasPermission={hasPermission}
           revealOnHover={!wrapNames}
@@ -1017,7 +1183,9 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
               onDelete={onDelete}
               onLink={onLink}
               onRename={onRename}
+              onMove={onMove}
               onToggleShared={onToggleShared}
+              folderDrag={folderDrag}
               depth={depth + 1}
               wrapNames={wrapNames}
               defaultExpanded={defaultExpanded}
@@ -1033,9 +1201,15 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
 }
 
 // File Card
+// The mark on a file a ?highlight= link points at; the Archives page's colour.
+const HIGHLIGHT_CARD_STYLE = { outline: '4px solid #facc15', outlineOffset: '2px' } as const;
+const HIGHLIGHT_ROW_STYLE = { outline: '2px solid #facc15', outlineOffset: '-2px' } as const;
+
 interface FileCardProps {
   file: LibraryFileListItem;
   isSelected: boolean;
+  /** The file a ?highlight= link points at, marked for a few seconds. */
+  isHighlighted?: boolean;
   onSelect: (id: number) => void;
   onDelete: (id: number) => void;
   onDownload: (id: number) => void;
@@ -1062,7 +1236,7 @@ interface FileCardProps {
   t: TFunction;
 }
 
-function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, onSlice, onOpenInSlicer, onRunPipeline, useSlicerApi, desktopSlicer, canSlice, onPreview, onRename, onDetails, onGenerateThumbnail, onTagClick, thumbnailVersion, hasPermission, canModify, authEnabled, showModified, t }: FileCardProps) {
+function FileCard({ file, isSelected, isHighlighted, onSelect, onDelete, onDownload, onPrint, onSlice, onOpenInSlicer, onRunPipeline, useSlicerApi, desktopSlicer, canSlice, onPreview, onRename, onDetails, onGenerateThumbnail, onTagClick, thumbnailVersion, hasPermission, canModify, authEnabled, showModified, t }: FileCardProps) {
   // Viewport coordinates rather than a flag, because the menu is rendered by
   // `ContextMenu` at `position: fixed` and anchored to the button (#2846). The
   // card it belongs to is only ~270px tall for a bare STL, which is shorter
@@ -1104,15 +1278,9 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, o
       title: !hasPermission('pipelines:run') ? t('library.runWithPipeline.noPermission') : undefined,
     });
   }
-  if (onPreview && isPreviewableLibraryFile(file)) {
-    const modelPreview = isModelPreview(file);
-    menuItems.push({
-      label: modelPreview ? t('fileManager.preview3d') : t('fileManager.preview.open'),
-      icon: modelPreview ? <Box className="w-4 h-4" /> : documentPreviewIcon(file.file_type),
-      onClick: () => onPreview(file),
-      disabled: !canPreview3d,
-      title: !canPreview3d ? t('fileManager.noPermissionPreview') : undefined,
-    });
+  if (onPreview) {
+    const preview = previewMenuItem(file, onPreview, canPreview3d, t);
+    if (preview) menuItems.push(preview);
   }
   menuItems.push({
     label: t('common.download'),
@@ -1168,6 +1336,8 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, o
 
   return (
     <div
+      data-file-id={file.id}
+      style={isHighlighted ? HIGHLIGHT_CARD_STYLE : undefined}
       className={`group relative bg-bambu-dark-secondary rounded-lg border transition-all cursor-pointer ${
         isSelected
           ? 'border-bambu-green ring-1 ring-bambu-green'
@@ -1530,6 +1700,7 @@ function FileActionStrip({ file, onPrint, onSlice, onOpenInSlicer, onRunPipeline
 interface ColumnFileRowProps {
   file: LibraryFileListItem;
   isSelected: boolean;
+  isHighlighted?: boolean;
   isFocused: boolean;
   showModified: boolean;
   thumbnailVersion?: number;
@@ -1539,11 +1710,12 @@ interface ColumnFileRowProps {
   t: TFunction;
 }
 
-function ColumnFileRow({ file, isSelected, isFocused, showModified, thumbnailVersion, onSelect, onOpen, actionProps, t }: ColumnFileRowProps) {
+function ColumnFileRow({ file, isSelected, isHighlighted, isFocused, showModified, thumbnailVersion, onSelect, onOpen, actionProps, t }: ColumnFileRowProps) {
   const thumbnailUrl = api.getLibraryFileThumbnailUrl(file.id);
   return (
     <div
       data-file-id={file.id}
+      style={isHighlighted ? HIGHLIGHT_ROW_STYLE : undefined}
       onClick={() => onSelect(file)}
       onDoubleClick={() => onOpen(file)}
       className={`group flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors ${
@@ -1631,8 +1803,20 @@ export function FileManagerPage() {
   const [showBulkTagsModal, setShowBulkTagsModal] = useState(false);
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
   const [linkFolder, setLinkFolder] = useState<LibraryFolderTree | null>(null);
+  // Folder being moved via the context menu picker / by drag (#3305).
+  const [moveFolder, setMoveFolder] = useState<LibraryFolderTree | null>(null);
+  const [draggingFolder, setDraggingFolder] = useState<LibraryFolderTree | null>(null);
+  // The one folder drop target under the pointer. A single page-level value
+  // (not one flag per target) so a column can never stay lit after a row
+  // inside it took the drag or the drop (#3305 review).
+  const [folderDropTarget, setFolderDropTarget] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'file' | 'folder' | 'bulk'; id: number; count?: number } | null>(null);
   const [printFile, setPrintFile] = useState<LibraryFileListItem | null>(null);
+  // A separate-jobs run (#3462) that was partly queued: what is in the queue,
+  // so closing the dialog after a refusal doesn't queue it again on the next
+  // Print (#3471 review). Kept while the selection is exactly the files left.
+  const [draggingGroupFiles, setDraggingGroupFiles] = useState<LibraryFileListItem[] | null>(null);
+  const [separateJobsRun, setSeparateJobsRun] = useState<SeparateJobsProgress | null>(null);
   const [sliceFile, setSliceFile] = useState<LibraryFileListItem | null>(null);
   const [showCombineModal, setShowCombineModal] = useState(false);
   // A file just built by "Combine to 3MF", handed straight to the SliceModal.
@@ -1655,6 +1839,14 @@ export function FileManagerPage() {
   // keys hijacking multi-select.
   const columnsViewRef = useRef<HTMLDivElement>(null);
   const [columnsFocusedFileId, setColumnsFocusedFileId] = useState<number | null>(null);
+  // Which pane the focused row is in: a version group can be listed in several
+  // visible columns under the same file id (#3628), so the id alone does not
+  // say which row has the focus. COLUMNS_PANE is the files pane.
+  const [columnsFocusedKey, setColumnsFocusedKey] = useState<string>(COLUMNS_PANE);
+  const focusColumnsRow = (id: number | null, key: string = COLUMNS_PANE) => {
+    setColumnsFocusedFileId(id);
+    setColumnsFocusedKey(key);
+  };
   const [wrapFolderNames, setWrapFolderNames] = useState(() => {
     return localStorage.getItem('library-wrap-folders') === 'true';
   });
@@ -1745,11 +1937,41 @@ export function FileManagerPage() {
     }
   }, [searchParams]);
 
+  // ?highlight=<file id> points at one file (the queue card's "View in File
+  // Manager"). The link carries only the id: the folder is looked up here, so
+  // a file moved since it was queued is still found. The folder's listing is
+  // refetched before the file is looked for in it, since a cached one may
+  // predate the move.
+  const highlightParam = searchParams.get('highlight');
+  const [pendingHighlight, setPendingHighlight] = useState<{ fileId: number; folderId: number | null; requestedAt: number } | null>(null);
+  const [highlightedFileId, setHighlightedFileId] = useState<number | null>(null);
+  const selectedFolderIdRef = useRef(selectedFolderId);
+  selectedFolderIdRef.current = selectedFolderId;
+  useEffect(() => {
+    const fileId = highlightParam ? parseInt(highlightParam, 10) : NaN;
+    if (!Number.isFinite(fileId)) return;
+    let cancelled = false;
+    const folderAtRequest = selectedFolderIdRef.current;
+    api.getLibraryFile(fileId).then(
+      (file) => {
+        // Someone who opened another folder meanwhile is not pulled back.
+        if (cancelled || selectedFolderIdRef.current !== folderAtRequest) return;
+        const requestedAt = Date.now();
+        queryClient.invalidateQueries({ queryKey: ['library-files'] });
+        setSelectedFolderId(file.folder_id);
+        setPendingHighlight({ fileId, folderId: file.folder_id, requestedAt });
+      },
+      () => {
+        if (!cancelled) showToast(t('fileManager.highlightedFileNotFound'), 'warning');
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [highlightParam, queryClient, showToast, t]);
+
   // Queries
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: () => api.getSettings() as Promise<AppSettings>,
-  });
+  const { data: settings } = useUiSettings();
 
   const preferredSlicer: SlicerType = resolveDesktopSlicer(settings?.open_in_slicer, settings?.preferred_slicer);
 
@@ -1897,7 +2119,7 @@ export function FileManagerPage() {
   // folder.
   const paneRootOnly = viewMode === 'columns' && selectedFolderId === null && !columnsFilterActive;
 
-  const { data: files, isLoading: filesLoading } = useQuery({
+  const { data: files, isLoading: filesLoading, dataUpdatedAt: filesUpdatedAt } = useQuery({
     queryKey: ['library-files', selectedFolderId, topLevelView, searchExpandsSubfolders, tagFilterKey, paneRootOnly],
     // When a specific folder is selected we list its contents directly; when
     // no folder is selected the topLevelView pseudo-node decides whether the
@@ -1913,6 +2135,7 @@ export function FileManagerPage() {
         selectedFolderId === null ? topLevelView : undefined,
         searchExpandsSubfolders,
         tagFilterKey,
+        true,
       ),
   });
 
@@ -1930,22 +2153,50 @@ export function FileManagerPage() {
   // Get unique file types for filter dropdown
   const fileTypes = useMemo(() => {
     if (!files) return [];
-    const types = new Set(files.map((f) => f.file_type));
+    const types = new Set(files.filter((f) => !f.variant_elsewhere).map((f) => f.file_type));
     return Array.from(types).sort();
   }, [files]);
 
-  // Filter and sort files
-  const filteredAndSortedFiles = useMemo(
+  // Filter and sort files. A variant group is one row (#3628); the flat list
+  // below is every file behind the rows, which selection and keyboard
+  // navigation still work on.
+  const libraryRows = useMemo(
     () =>
-      filterAndSortFiles(files ?? [], {
-        query: searchQuery,
-        filterType,
-        filterUsername,
-        sortField,
-        sortDirection,
-      }),
+      groupLibraryRows(
+        files ?? [],
+        { query: searchQuery, filterType, filterUsername },
+        { sortField, sortDirection },
+      ),
     [files, searchQuery, filterType, filterUsername, sortField, sortDirection],
   );
+  const filteredAndSortedFiles = useMemo(() => rowFiles(libraryRows), [libraryRows]);
+  // What the arrow keys walk: one file per row.
+  const paneNavFiles = useMemo(() => libraryRows.map(rowLeadFile), [libraryRows]);
+
+  // Once the file's folder is listed afresh, mark the file; then scroll to it
+  // and drop the mark after a few seconds, as the Archives page does.
+  useEffect(() => {
+    if (!pendingHighlight || filesLoading || !files || selectedFolderId !== pendingHighlight.folderId) return;
+    if (filesUpdatedAt < pendingHighlight.requestedAt) return;
+    if (filteredAndSortedFiles.some((f) => f.id === pendingHighlight.fileId)) {
+      setHighlightedFileId(pendingHighlight.fileId);
+      if (viewMode === 'columns') focusColumnsRow(pendingHighlight.fileId);
+    } else {
+      showToast(t('fileManager.highlightedFileNotFound'), 'warning');
+    }
+    setPendingHighlight(null);
+  }, [pendingHighlight, filesLoading, files, filesUpdatedAt, selectedFolderId, filteredAndSortedFiles, viewMode, showToast, t]);
+  useEffect(() => {
+    if (highlightedFileId === null) return;
+    const scrollTimer = setTimeout(() => {
+      document.querySelector(`[data-file-id="${highlightedFileId}"], [data-member-ids~="${highlightedFileId}"]`)?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+    }, 100);
+    const clearTimer = setTimeout(() => setHighlightedFileId(null), 5000);
+    return () => {
+      clearTimeout(scrollTimer);
+      clearTimeout(clearTimer);
+    };
+  }, [highlightedFileId]);
 
   // Check if disk space is low
   const isDiskSpaceLow = useMemo(() => {
@@ -2015,10 +2266,7 @@ export function FileManagerPage() {
   const deleteFileMutation = useMutation({
     mutationFn: (id: number) => api.deleteLibraryFile(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['library-files'] });
-      queryClient.invalidateQueries({ queryKey: ['library-folders'] });
-      queryClient.invalidateQueries({ queryKey: ['library-stats'] });
-      queryClient.invalidateQueries({ queryKey: ['library-trash-count'] });
+      invalidateAfterLibraryDelete(queryClient);
       setSelectedFiles((prev) => prev.filter((id) => id !== deleteConfirm?.id));
       setDeleteConfirm(null);
       showToast(t('fileManager.toast.fileDeleted'), 'success');
@@ -2046,10 +2294,7 @@ export function FileManagerPage() {
   const bulkDeleteMutation = useMutation({
     mutationFn: (fileIds: number[]) => api.bulkDeleteLibrary(fileIds, []),
     onSuccess: (_, fileIds) => {
-      queryClient.invalidateQueries({ queryKey: ['library-files'] });
-      queryClient.invalidateQueries({ queryKey: ['library-folders'] });
-      queryClient.invalidateQueries({ queryKey: ['library-stats'] });
-      queryClient.invalidateQueries({ queryKey: ['library-trash-count'] });
+      invalidateAfterLibraryDelete(queryClient);
       showToast(t('fileManager.toast.filesDeleted', { count: fileIds.length }), 'success');
       setSelectedFiles([]);
       setDeleteConfirm(null);
@@ -2087,6 +2332,62 @@ export function FileManagerPage() {
     },
     onError: (error: Error) => showToast(error.message, 'error'),
   });
+
+  // Move a folder to root (parent_id 0) or under another folder (#3305). The
+  // server repeats the cycle check and 400s a move into the folder's own
+  // subtree, which the toast then shows verbatim.
+  const moveFolderMutation = useMutation({
+    mutationFn: ({ id, parentId }: { id: number; parentId: number | null }) =>
+      api.updateLibraryFolder(id, { parent_id: parentId ?? 0 }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['library-folders'] });
+      queryClient.invalidateQueries({ queryKey: ['library-files'] });
+      queryClient.invalidateQueries({ queryKey: ['project-folders'] });
+      queryClient.invalidateQueries({ queryKey: ['archive-folders'] });
+      setMoveFolder(null);
+      showToast(t('fileManager.toast.folderMoved'), 'success');
+    },
+    onError: (error: Error) => {
+      setMoveFolder(null);
+      showToast(error.message, 'error');
+    },
+  });
+
+  // Drag a folder onto another folder row, a column, or "All Files" (= root).
+  // Drops that would change nothing or that the server would refuse are not
+  // accepted, so no request leaves for them.
+  const folderDrag: FolderDragProps = {
+    canDrag: (folder) => !folder.is_external && (folder.can_rename ?? hasPermission('library:update_all')),
+    onDragStart: (folder, e) => {
+      e.dataTransfer.setData(FOLDER_DRAG_TYPE, String(folder.id));
+      e.dataTransfer.effectAllowed = 'move';
+      setDraggingFolder(folder);
+    },
+    onDragEnd: () => {
+      setDraggingFolder(null);
+      setDraggingGroupFiles(null);
+      setFolderDropTarget(null);
+    },
+    canDropOn: (destinationId) =>
+      draggingGroupFiles !== null
+        ? !!folders && isValidFilesMove(folders, draggingGroupFiles, destinationId)
+        : draggingFolder !== null && !!folders && isValidFolderMove(folders, draggingFolder, destinationId),
+    onDrop: (destinationId) => {
+      // A version group dropped on a folder moves the versions of this folder (#3628).
+      if (draggingGroupFiles) {
+        if (folders && isValidFilesMove(folders, draggingGroupFiles, destinationId)) {
+          moveFilesMutation.mutate({ fileIds: draggingGroupFiles.map((f) => f.id), folderId: destinationId });
+        }
+        setDraggingGroupFiles(null);
+        return;
+      }
+      if (!draggingFolder || !folders || !isValidFolderMove(folders, draggingFolder, destinationId)) return;
+      moveFolderMutation.mutate({ id: draggingFolder.id, parentId: destinationId });
+      setDraggingFolder(null);
+    },
+    activeTarget: folderDropTarget,
+    setActiveTarget: setFolderDropTarget,
+  };
 
   const renameFileMutation = useMutation({
     mutationFn: ({ id, filename }: { id: number; filename: string }) =>
@@ -2205,21 +2506,51 @@ export function FileManagerPage() {
     });
   }, []);
 
+  // A group's tick box selects the versions in this folder, or clears them when
+  // all are already selected. Versions listed only because they sit in another
+  // folder are never ticked, so Delete, Move and Tag stay in this folder (#3628).
+  const handleGroupSelect = useCallback((row: GroupRow) => {
+    const ids = selectableMembers(row).map((m) => m.id);
+    setSelectedFiles((prev) =>
+      ids.every((id) => prev.includes(id))
+        ? prev.filter((id) => !ids.includes(id))
+        : [...prev, ...ids.filter((id) => !prev.includes(id))],
+    );
+  }, []);
+
+  const variantGroup = useVariantGroupActions({
+    onPrintGroup: (row) => void bulkPrint.printVariantGroup(row),
+    onFilesDeleted: (ids) => setSelectedFiles((prev) => prev.filter((id) => !ids.includes(id))),
+  });
+
   // In the columns view Select all adds the pane's files to what is ticked, so
   // a file ticked in an earlier column (still on screen) stays ticked (#3020).
   // Grid and list replace the selection: a file a search has hidden must not
   // stay ticked behind the user's back, or a bulk Delete would remove it.
+  //
+  // Only the folder's own files the search lets through: a version group's rows
+  // also carry versions that sit in other folders or that the search hides, and
+  // none of those may be ticked here (#3020, #3628).
+  const paneSelectableFiles = useMemo(
+    () =>
+      filterFiles((files ?? []).filter((f) => !f.variant_elsewhere), {
+        query: searchQuery,
+        filterType,
+        filterUsername,
+      }),
+    [files, searchQuery, filterType, filterUsername],
+  );
   const handleSelectAll = useCallback(() => {
-    if (filteredAndSortedFiles.length > 0) {
-      const paneIds = filteredAndSortedFiles.map((f) => f.id);
+    if (paneSelectableFiles.length > 0) {
+      const paneIds = paneSelectableFiles.map((f) => f.id);
       setSelectedFiles((prev) => (viewMode === 'columns' ? [...new Set([...prev, ...paneIds])] : paneIds));
     }
-  }, [filteredAndSortedFiles, viewMode]);
+  }, [paneSelectableFiles, viewMode]);
 
   // "Deselect all" once every file of the pane is ticked. The pane's own ids,
   // not a count: ticks in earlier columns count towards the selection too.
   const allPaneFilesSelected =
-    filteredAndSortedFiles.length > 0 && filteredAndSortedFiles.every((f) => selectedFiles.includes(f.id));
+    paneSelectableFiles.length > 0 && paneSelectableFiles.every((f) => selectedFiles.includes(f.id));
 
   const handleDeselectAll = useCallback(() => {
     setSelectedFiles([]);
@@ -2336,6 +2667,42 @@ export function FileManagerPage() {
     t,
   };
 
+  const [openVariantGroupId, setOpenVariantGroupId] = useState<number | null>(null);
+
+  const variantViewProps = {
+    selectedIds: selectedFiles,
+    highlightedFileId,
+    thumbnailVersions,
+    showModified,
+    authEnabled,
+    onToggleSelect: handleGroupSelect,
+    onTagClick: toggleTagFilter,
+    openGroupId: openVariantGroupId,
+    onOpenGroupChange: setOpenVariantGroupId,
+    memberActions: {
+      onDetails: setDetailsFile,
+      onDownload: handleDownload,
+      onRename: fileActionProps.onRename,
+      onDelete: fileActionProps.onDelete,
+      onPrintFile: (f: LibraryFileListItem) => bulkPrint.printVersion(f),
+      previewItem: (f: LibraryFileListItem) => previewMenuItem(f, openPreview, hasPermission('library:read'), t),
+    },
+    groupActions: variantGroup.actions,
+    groupDrag: {
+      canDrag: (row: GroupRow) => draggedMemberIds(row, (f) => canModify('library', 'update', f.created_by_id)).length > 0,
+      onDragStart: (row: GroupRow, e: React.DragEvent) => {
+        const ids = draggedMemberIds(row, (f) => canModify('library', 'update', f.created_by_id));
+        e.dataTransfer.setData(FILES_DRAG_TYPE, JSON.stringify(ids));
+        e.dataTransfer.effectAllowed = 'move';
+        setDraggingGroupFiles(row.members.filter((m) => ids.includes(m.id)));
+      },
+      onDragEnd: () => {
+        setDraggingGroupFiles(null);
+        setFolderDropTarget(null);
+      },
+    },
+  };
+
   const isLoading = foldersLoading || filesLoading;
 
   // The chain of folders from a top-level folder down to the selected one.
@@ -2417,18 +2784,24 @@ export function FileManagerPage() {
       // level's files" are the ones that sit in no folder at all. Under a
       // folder id the server already answers with that folder's own files.
       queryFn: () =>
-        api.getLibraryFiles(level.folderId, level.folderId === null, undefined, level.scope, false, []),
+        api.getLibraryFiles(level.folderId, level.folderId === null, undefined, level.scope, false, [], true),
     })),
   });
 
   // Keyed by column so the render stays a lookup. Deliberately not memoised:
   // useQueries hands back a fresh array every render, so a memo would recompute
   // anyway.
-  const columnFiles = new Map<string, { files: LibraryFileListItem[]; loading: boolean }>();
+  const columnFiles = new Map<string, { rows: LibraryRow[]; files: LibraryFileListItem[]; loading: boolean }>();
   columnFileLevels.forEach((level, i) => {
     const query = columnFileQueries.results[i];
+    const rows = groupLibraryRows(
+      query?.data ?? [],
+      { filterType, filterUsername },
+      { sortField, sortDirection },
+    );
     columnFiles.set(level.key, {
-      files: filterAndSortFiles(query?.data ?? [], { filterType, filterUsername, sortField, sortDirection }),
+      rows,
+      files: rows.map(rowLeadFile),
       loading: Boolean(query?.isPending),
     });
   });
@@ -2438,9 +2811,22 @@ export function FileManagerPage() {
   // (#3020). The toolbar's actions resolve the selection against this.
   const selectableFiles = useMemo(() => {
     const byId = new Map<number, LibraryFileListItem>();
-    for (const file of [...(files ?? []), ...columnFileQueries.files]) byId.set(file.id, file);
+    for (const file of [...(files ?? []), ...columnFileQueries.files]) {
+      // A file listed in one column only because it sits in another is still
+      // the file of the column it sits in: that entry wins.
+      if (file.variant_elsewhere && byId.has(file.id)) continue;
+      byId.set(file.id, file);
+    }
     return byId;
   }, [files, columnFileQueries.files]);
+
+  // The version groups on screen (#3628). A group can be on screen in several
+  // columns, each with its own row: what a row's tick selects is the versions
+  // in its own folder.
+  const visibleGroupRows: GroupRow[] = [];
+  for (const row of [...libraryRows, ...[...columnFiles.values()].flatMap((l) => l.rows)]) {
+    if (row.kind === 'group') visibleGroupRows.push(row);
+  }
 
   // The toolbar's Preview button acts on one file, so it is offered only for
   // a single previewable selection.
@@ -2459,6 +2845,27 @@ export function FileManagerPage() {
     [selectableFiles, selectedFiles],
   );
 
+  // Printing groups and versions: a fully selected group is one job (#3628).
+  const bulkPrint = useBulkVariantPrint({
+    selectedFiles,
+    setSelectedFiles,
+    selectableFiles,
+    groupRows: visibleGroupRows,
+    selectedSlicedFiles,
+    setPrintFile,
+  });
+  const printOverride = bulkPrint.printOverride;
+
+  // A version that is listed only because it sits elsewhere (it fell outside a
+  // tag filter after being ticked, say) leaves the selection, so Delete, Move
+  // and Tag never reach into another folder (#3628).
+  useEffect(() => {
+    setSelectedFiles((prev) => {
+      const next = prev.filter((id) => !selectableFiles.get(id)?.variant_elsewhere);
+      return next.length === prev.length ? prev : next;
+    });
+  }, [selectableFiles]);
+
   // "Combine to 3MF" is offered only when every selected file is an STL, so
   // the action never silently drops part of the selection. Resolved like the
   // rest, so an STL ticked in an earlier column counts too.
@@ -2474,16 +2881,51 @@ export function FileManagerPage() {
   const { data: printFileGroup } = useQuery({
     queryKey: ['variant-group', printFile?.variant_group_id],
     queryFn: () => api.getVariantGroup(printFile!.variant_group_id!),
-    enabled: !!printFile?.variant_group_id,
+    enabled: !!printFile?.variant_group_id && !printOverride,
   });
+
+  // The selection is the rest of a partly queued run: the files it left, and
+  // nothing else. Any other selection is a new print.
+  const selectionIsRunRest = useMemo(() => {
+    if (!separateJobsRun) return false;
+    const left = separateJobsRun.remainingFileIds;
+    return (
+      left.length > 0 &&
+      selectedSlicedFiles.length === left.length &&
+      selectedSlicedFiles.every((f) => left.includes(f.id))
+    );
+  }, [separateJobsRun, selectedSlicedFiles]);
+  // With several files selected the dialog shows the selection whichever
+  // file's Print was clicked, so it is the run's rest then too; otherwise a
+  // card's Print would start it as a new run and queue again what a printer
+  // already has (#3471 review). One file left resumes only from that file.
+  const resumeRun =
+    !printOverride &&
+    selectionIsRunRest &&
+    !!printFile &&
+    (selectedSlicedFiles.length > 1 || separateJobsRun!.remainingFileIds.includes(printFile.id));
+
+  // A run whose rest is no longer selected is over; a later selection of the
+  // same files is a new print.
+  useEffect(() => {
+    if (separateJobsRun && !printFile && !selectionIsRunRest) setSeparateJobsRun(null);
+  }, [separateJobsRun, printFile, selectionIsRunRest]);
 
   // Candidates for a cross-model print (#671), or undefined for an ordinary one.
   // An explicit multi-selection wins over the group: the user just said, in this
-  // action, which files they meant.
+  // action, which files they meant. The rest of a partly queued run stays a
+  // list even with one file left: a printer may already have it.
   const printVariantFiles = useMemo(() => {
     if (!printFile) return undefined;
-    if (selectedSlicedFiles.length > 1) {
-      return selectedSlicedFiles.map(f => ({
+    if (printOverride) return printOverride.variantFiles;
+    if (selectedSlicedFiles.length > 1 || resumeRun) {
+      // The rest of a run keeps the order the run had in its dialog, not the
+      // order the files were ticked in.
+      const order = resumeRun ? separateJobsRun!.remainingFileIds : null;
+      const files = order
+        ? [...selectedSlicedFiles].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id))
+        : selectedSlicedFiles;
+      return files.map(f => ({
         id: f.id,
         filename: f.filename,
         sliced_for_model: f.sliced_for_model,
@@ -2497,7 +2939,7 @@ export function FileManagerPage() {
       }));
     }
     return undefined;
-  }, [printFile, selectedSlicedFiles, printFileGroup]);
+  }, [resumeRun, separateJobsRun, printFile, printOverride, selectedSlicedFiles, printFileGroup]);
 
   // The list the arrow keys walk: the one that actually holds the focused
   // file, which may be an intermediate column rather than the selected
@@ -2505,10 +2947,29 @@ export function FileManagerPage() {
   const focusedFileColumnList =
     columnsFocusedFileId === null
       ? undefined
-      : columnFileLevels
-          .map((level) => columnFiles.get(level.key)?.files)
-          .find((list) => list?.some((f) => f.id === columnsFocusedFileId));
-  const focusedFileList = focusedFileColumnList ?? filteredAndSortedFiles;
+      : columnsFocusedKey !== COLUMNS_PANE
+        ? columnFiles.get(columnsFocusedKey)?.files
+        : paneNavFiles.some((f) => f.id === columnsFocusedFileId)
+          ? undefined
+          : columnFileLevels
+              .map((level) => columnFiles.get(level.key)?.files)
+              .find((list) => list?.some((f) => f.id === columnsFocusedFileId));
+  const focusedFileList = focusedFileColumnList ?? paneNavFiles;
+  // The version group under the keyboard focus, taken from the rows of the
+  // list that holds the focus and never from the page: a group with a version
+  // in a parent folder and one in the selected folder has a row in both
+  // columns, and a key must act on the versions of the focused one (#3628).
+  const focusedRows =
+    columnsFocusedFileId === null
+      ? undefined
+      : columnsFocusedKey !== COLUMNS_PANE
+        ? columnFiles.get(columnsFocusedKey)?.rows
+        : paneNavFiles.some((f) => f.id === columnsFocusedFileId)
+          ? libraryRows
+          : columnFileLevels
+              .map((level) => columnFiles.get(level.key)?.rows)
+              .find((rows) => rows?.some((row) => rowLeadFile(row).id === columnsFocusedFileId));
+  const focusedGroupRow = groupRowLedBy(focusedRows, columnsFocusedFileId);
 
   // Focus the columns pane when the view opens so arrow keys work right away,
   // and drop the file focus whenever the folder (and with it the file list)
@@ -2518,7 +2979,7 @@ export function FileManagerPage() {
     if (viewMode === 'columns') columnsViewRef.current?.focus({ preventScroll: true });
   }, [viewMode]);
   useEffect(() => {
-    setColumnsFocusedFileId(null);
+    focusColumnsRow(null);
   }, [selectedFolderId, viewMode]);
   // A selection belongs to the folder it was made in. Every column can tick a
   // file, so a selection that survived a folder change would leave Move and
@@ -2537,8 +2998,12 @@ export function FileManagerPage() {
   }, [selectedFolderId, viewMode]);
   useEffect(() => {
     if (viewMode !== 'columns' || columnsFocusedFileId === null) return;
-    columnsViewRef.current?.querySelector(`[data-file-id="${columnsFocusedFileId}"]`)?.scrollIntoView?.({ block: 'nearest' });
-  }, [columnsFocusedFileId, viewMode]);
+    const testId = columnsFocusedKey === COLUMNS_PANE ? 'columns-files-pane' : `columns-level-${columnsFocusedKey}`;
+    const pane = Array.from(columnsViewRef.current?.querySelectorAll<HTMLElement>('[data-testid]') ?? []).find(
+      (el) => el.dataset.testid === testId,
+    );
+    pane?.querySelector(`[data-file-id="${columnsFocusedFileId}"]`)?.scrollIntoView?.({ block: 'nearest' });
+  }, [columnsFocusedFileId, columnsFocusedKey, viewMode]);
 
   // Finder-style keys: Up/Down move within the current column, Right descends
   // (into the first child folder, then into the files), Left ascends, Enter
@@ -2549,12 +3014,22 @@ export function FileManagerPage() {
   // key (or Shift+F10) jumps there directly, or opens the selected folder's
   // kebab while no file is focused. Inside a strip Left/Right walk the
   // buttons, Enter/Space activate one natively and Escape returns to the pane.
+  // The pane the focused row is in: the same file can be listed in several
+  // visible columns, so a lookup by file id alone could land on another one.
+  const focusedPaneElement = (): HTMLElement | null => {
+    const root = columnsViewRef.current;
+    if (!root) return null;
+    const testId = columnsFocusedKey === COLUMNS_PANE ? 'columns-files-pane' : `columns-level-${columnsFocusedKey}`;
+    return (
+      Array.from(root.querySelectorAll<HTMLElement>('[data-testid]')).find((el) => el.dataset.testid === testId) ?? root
+    );
+  };
   const focusColumnsActions = () => {
     const root = columnsViewRef.current;
     if (!root) return;
     if (columnsFocusedFileId !== null) {
-      root
-        .querySelector<HTMLButtonElement>(`[data-file-id="${columnsFocusedFileId}"] [data-file-actions] button:not([disabled])`)
+      focusedPaneElement()
+        ?.querySelector<HTMLButtonElement>(`[data-file-id="${columnsFocusedFileId}"] [data-file-actions] button:not([disabled])`)
         ?.focus();
     } else if (selectedFolderId !== null) {
       const kebab = root.querySelector<HTMLButtonElement>(`[data-folder-id="${selectedFolderId}"] [data-folder-actions] button`);
@@ -2563,10 +3038,24 @@ export function FileManagerPage() {
       kebab?.click();
     }
   };
+  // Opens or closes the versions of the focused group row through its chevron,
+  // which owns the state. True when the row changed.
+  const setFocusedGroupOpen = (open: boolean): boolean => {
+    if (columnsFocusedFileId === null || !focusedGroupRow) return false;
+    const chevron = focusedPaneElement()?.querySelector<HTMLButtonElement>(
+      `[data-testid="variant-group-column-row"][data-file-id="${columnsFocusedFileId}"] button[aria-expanded]`,
+    );
+    if (!chevron || (chevron.getAttribute('aria-expanded') === 'true') === open) return false;
+    chevron.click();
+    return true;
+  };
   const handleColumnsKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const target = e.target as HTMLElement;
     if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable) return;
+    // A version line's kebab and the menu it opens (which sits inside the line)
+    // handle their own keys (#3628).
+    if (target.closest('[data-testid="variant-member-line"]')) return;
     if (target.closest('[data-folder-actions]')) {
       // A folder kebab (and the menu it opens) handles its own keys, except
       // that Escape and Up/Down hand focus back to the pane — otherwise the
@@ -2614,11 +3103,11 @@ export function FileManagerPage() {
           // lands on index 0, ArrowUp on -2 → no-op, both intended.
           const idx = focusedFileList.findIndex((f) => f.id === columnsFocusedFileId);
           const next = focusedFileList[idx + dir];
-          if (next) setColumnsFocusedFileId(next.id);
+          if (next) focusColumnsRow(next.id, columnsFocusedKey);
           else if (dir === -1 && idx === 0 && focusedFileColumnList) {
             // Off the top of a column's files: back onto that same column's
             // folders, which is where ArrowDown came from.
-            setColumnsFocusedFileId(null);
+            focusColumnsRow(null);
           }
         } else if (selectedFolderId === null) {
           if (dir === 1 && folderColumns[0].items.length > 0) {
@@ -2634,25 +3123,29 @@ export function FileManagerPage() {
             // exactly as they read on screen: the only way a keyboard
             // reaches an intermediate column's rows at all.
             const colFiles = col ? columnFiles.get(col.key)?.files : undefined;
-            if (colFiles?.length) setColumnsFocusedFileId(colFiles[0].id);
+            if (colFiles?.length && col) focusColumnsRow(colFiles[0].id, col.key);
           }
         }
         break;
       }
       case 'ArrowRight': {
         e.preventDefault();
-        if (inFiles) break;
+        if (inFiles) {
+          setFocusedGroupOpen(true);
+          break;
+        }
         if (!columnsFilterActive && selectedNode && selectedNode.children.length > 0) {
           setSelectedFolderId(selectedNode.children[0].id);
-        } else if (filteredAndSortedFiles.length > 0) {
-          setColumnsFocusedFileId(filteredAndSortedFiles[0].id);
+        } else if (paneNavFiles.length > 0) {
+          focusColumnsRow(paneNavFiles[0].id);
         }
         break;
       }
       case 'ArrowLeft': {
         e.preventDefault();
         if (inFiles) {
-          setColumnsFocusedFileId(null);
+          // Left closes an open group first, then leaves the files.
+          if (!setFocusedGroupOpen(false)) focusColumnsRow(null);
           break;
         }
         // With a filter active the folder columns are hidden — don't move a
@@ -2685,9 +3178,14 @@ export function FileManagerPage() {
           // descending, exactly like ArrowRight.
           if (!columnsFilterActive && selectedNode && selectedNode.children.length > 0) {
             setSelectedFolderId(selectedNode.children[0].id);
-          } else if (filteredAndSortedFiles.length > 0) {
-            setColumnsFocusedFileId(filteredAndSortedFiles[0].id);
+          } else if (paneNavFiles.length > 0) {
+            focusColumnsRow(paneNavFiles[0].id);
           }
+          break;
+        }
+        // On a version group Enter opens or closes its versions.
+        if (focusedGroupRow) {
+          if (!setFocusedGroupOpen(true)) setFocusedGroupOpen(false);
           break;
         }
         const file = focusedFileList.find((f) => f.id === columnsFocusedFileId);
@@ -2697,10 +3195,53 @@ export function FileManagerPage() {
       case ' ': {
         e.preventDefault();
         if (!inFiles) break;
-        if (columnsFocusedFileId !== null) handleFileSelect(columnsFocusedFileId);
+        if (columnsFocusedFileId !== null) {
+          if (focusedGroupRow) handleGroupSelect(focusedGroupRow);
+          else handleFileSelect(columnsFocusedFileId);
+        }
         break;
       }
     }
+  };
+
+  // One row of a column's file list: a file, or a version group (#3628).
+  const renderColumnRow = (row: LibraryRow, paneKey: string) => {
+    if (row.kind === 'group') {
+      const leadId = row.thumbnailFile.id;
+      return (
+        <VariantGroupColumnRow
+          key={`group-${row.id}`}
+          row={row}
+          isFocused={columnsFocusedFileId === leadId && columnsFocusedKey === paneKey}
+          onSelect={(r) => {
+            focusColumnsRow(r.thumbnailFile.id, paneKey);
+            handleGroupSelect(r);
+          }}
+          {...variantViewProps}
+        />
+      );
+    }
+    const file = row.file;
+    return (
+      <ColumnFileRow
+        key={file.id}
+        file={file}
+        isSelected={selectedFiles.includes(file.id)}
+        isHighlighted={highlightedFileId === file.id}
+        isFocused={columnsFocusedFileId === file.id && columnsFocusedKey === paneKey}
+        showModified={showModified}
+        thumbnailVersion={thumbnailVersions[file.id]}
+        onSelect={(f) => {
+          // Focusing a file in an intermediate column must not move the
+          // folder selection out from under it.
+          focusColumnsRow(f.id, paneKey);
+          handleFileSelect(f.id);
+        }}
+        onOpen={openPreview}
+        actionProps={fileActionProps}
+        t={t}
+      />
+    );
   };
 
   return (
@@ -2730,7 +3271,10 @@ export function FileManagerPage() {
             {t('fileManager.subtitle')}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        {/* Wraps: up to nine controls, which pushed the page sideways on a
+            phone (#3295). Next to the title it takes only the room left over
+            (flex-1 from zero), so the title is not squeezed to fit it. */}
+        <div className="flex flex-wrap items-center sm:justify-end sm:flex-1 gap-2 min-w-0">
           {/* View mode toggle */}
           <div className="flex items-center bg-bambu-dark rounded-lg p-1">
             <button
@@ -2876,6 +3420,10 @@ export function FileManagerPage() {
         </div>
       )}
 
+      {/* Uploads from a review-mode virtual printer, waiting for approval;
+          approving stores them in the File Manager. Renders nothing when none. */}
+      <PendingUploadsPanel />
+
       {/* Main content */}
       <div className="flex-1 flex flex-col lg:flex-row gap-4 lg:gap-6 min-h-0">
         {/* Mobile folder selector */}
@@ -3015,7 +3563,9 @@ export function FileManagerPage() {
             {/* All Files = the user's own uploaded / managed-storage files
                 only. External folders are surfaced separately below to keep
                 a linked NAS from drowning the user's own uploads (#1621). */}
-            <div
+            <FolderDropZone
+              folderDrag={folderDrag}
+              destinationId={null}
               className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors ${
                 selectedFolderId === null && topLevelView === 'internal'
                   ? 'bg-bambu-green/20 text-bambu-green'
@@ -3028,7 +3578,7 @@ export function FileManagerPage() {
             >
               <FileBox className="w-4 h-4" />
               <span className="text-sm">{t('fileManager.allFiles')}</span>
-            </div>
+            </FolderDropZone>
 
             {/* External (combined) — only shown when at least one external
                 folder is linked. Single folder users don't need a combined
@@ -3062,7 +3612,9 @@ export function FileManagerPage() {
                 onDelete={(id) => setDeleteConfirm({ type: 'folder', id })}
                 onLink={setLinkFolder}
                 onRename={(f) => setRenameItem({ type: 'folder', id: f.id, name: f.name })}
+                onMove={setMoveFolder}
                 onToggleShared={toggleFolderShared}
+                folderDrag={folderDrag}
                 wrapNames={wrapFolderNames}
                 defaultExpanded={!collapseFoldersByDefault}
                 showModified={showModified}
@@ -3080,46 +3632,15 @@ export function FileManagerPage() {
             via `order-first` and the page itself scrolls. */}
         <div className="flex-1 flex flex-col lg:flex-row min-w-0 min-h-0 gap-4 lg:gap-6">
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
-          {/* Tag filter rail (#1268). Lists every catalog tag as a togglable
-              chip — active chips are filled green and show an X, inactive
-              chips are outlined and toggle ON when clicked. Clicking an active
-              chip removes it from the filter. Hidden entirely when the
+          {/* Tag filter rail (#1268, #3411). Hidden entirely when the
               catalog is empty so brand-new installs don't see a stray rail. */}
           {tagCatalog.length > 0 && (
-            <div className="mb-3 flex flex-wrap items-center gap-2 p-2 sm:p-3 bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary">
-              <span className="text-xs text-bambu-gray font-medium shrink-0">
-                {t('fileManager.tags.filterLabel')}
-              </span>
-              {tagCatalog.map((tg) => {
-                const active = selectedTagIds.includes(tg.id);
-                return (
-                  <button
-                    key={tg.id}
-                    type="button"
-                    onClick={() => toggleTagFilter(tg.id)}
-                    className={
-                      active
-                        ? 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-bambu-green/20 text-bambu-green border border-bambu-green/40 hover:bg-bambu-green/30 transition-colors'
-                        : 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-bambu-dark text-bambu-gray border border-bambu-dark-tertiary hover:text-white hover:border-bambu-green/40 transition-colors'
-                    }
-                    title={tg.name}
-                  >
-                    <TagIcon className="w-3 h-3" />
-                    <span>{tg.name}</span>
-                    {active && <X className="w-3 h-3" />}
-                  </button>
-                );
-              })}
-              {selectedTagIds.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setSelectedTagIds([])}
-                  className="ml-auto text-xs text-bambu-gray hover:text-white shrink-0"
-                >
-                  {t('fileManager.tags.clearAll')}
-                </button>
-              )}
-            </div>
+            <LibraryTagFilterRail
+              tags={tagCatalog}
+              selectedIds={selectedTagIds}
+              onToggle={toggleTagFilter}
+              onClear={() => setSelectedTagIds([])}
+            />
           )}
           {/* External folder info bar */}
           {selectedFolder?.is_external && (
@@ -3274,7 +3795,7 @@ export function FileManagerPage() {
               {/* Results count */}
               {(searchQuery || filterType !== 'all' || filterUsername) && (
                 <span className="text-sm text-bambu-gray hidden sm:inline">
-                  {t('fileManager.resultsCount', { showing: filteredAndSortedFiles.length, total: files.length })}
+                  {t('fileManager.resultsCount', { showing: filteredAndSortedFiles.filter((f) => !f.variant_elsewhere).length, total: files.filter((f) => !f.variant_elsewhere).length })}
                 </span>
               )}
             </div>
@@ -3334,15 +3855,13 @@ export function FileManagerPage() {
                       <Button
                         variant="primary"
                         size="sm"
-                        onClick={() => setPrintFile(selectedSlicedFiles[0])}
+                        onClick={bulkPrint.handleBulkPrint}
                         disabled={!hasPermission('queue:create')}
                         title={!hasPermission('queue:create') ? t('fileManager.noPermissionAddToQueue') : undefined}
                       >
                         <Printer className="w-4 h-4 sm:mr-1" />
                         <span className="hidden sm:inline">
-                          {selectedSlicedFiles.length > 1
-                            ? t('fileManager.variants.printAlternatives', { count: selectedSlicedFiles.length })
-                            : t('common.print')}
+                          {bulkPrint.printLabel}
                         </span>
                       </Button>
                     )}
@@ -3459,19 +3978,31 @@ export function FileManagerPage() {
                   // column that only lists folders keeps that narrow width.
                   const wide = Boolean(level && (level.loading || level.files.length > 0));
                   return (
-                  <div
+                  /* Dropping a dragged folder on a column's empty space moves
+                     it into that column's folder (#3305); the external bucket's
+                     root column is not a destination. */
+                  <FolderDropZone
                     key={col.key}
+                    folderDrag={folderDrag}
+                    destinationId={col.folderId}
+                    enabled={!(col.folderId === null && currentBucketIsExternal)}
                     data-testid={`columns-level-${col.key}`}
                     className={`${wide ? 'w-[26rem]' : 'w-64'} flex-shrink-0 overflow-y-auto py-1`}
                   >
                     {col.items.map((folder) => {
                       const isSelectedFolder = selectedFolderId === folder.id;
+                      const canDragFolder = folderDrag.canDrag(folder);
                       return (
                         /* The row is a div, not the button itself: the kebab
                            is a button of its own and buttons don't nest. */
-                        <div
+                        <FolderDropZone
                           key={folder.id}
+                          folderDrag={folderDrag}
+                          destinationId={folder.id}
                           data-folder-id={folder.id}
+                          draggable={canDragFolder || undefined}
+                          onDragStart={canDragFolder ? (e) => folderDrag.onDragStart(folder, e) : undefined}
+                          onDragEnd={canDragFolder ? folderDrag.onDragEnd : undefined}
                           className={`group flex items-center pr-1.5 transition-colors ${
                             col.activeId === folder.id
                               ? 'bg-bambu-green/20 text-bambu-green'
@@ -3529,38 +4060,21 @@ export function FileManagerPage() {
                             onDelete={(id) => setDeleteConfirm({ type: 'folder', id })}
                             onLink={setLinkFolder}
                             onRename={(f) => setRenameItem({ type: 'folder', id: f.id, name: f.name })}
+                            onMove={setMoveFolder}
                             onToggleShared={toggleFolderShared}
                             hasPermission={hasPermission}
                             revealOnHover={!isSelectedFolder}
                             tabIndex={isSelectedFolder ? 0 : -1}
                             t={t}
                           />
-                        </div>
+                        </FolderDropZone>
                       );
                     })}
                     {level?.loading && (
                       <div className="px-3 py-2 text-sm text-bambu-gray" aria-hidden="true">…</div>
                     )}
-                    {level && !level.loading && level.files.map((file) => (
-                      <ColumnFileRow
-                        key={file.id}
-                        file={file}
-                        isSelected={selectedFiles.includes(file.id)}
-                        isFocused={columnsFocusedFileId === file.id}
-                        showModified={showModified}
-                        thumbnailVersion={thumbnailVersions[file.id]}
-                        onSelect={(f) => {
-                          // Focusing a file in an intermediate column must not
-                          // move the folder selection out from under it.
-                          setColumnsFocusedFileId(f.id);
-                          handleFileSelect(f.id);
-                        }}
-                        onOpen={openPreview}
-                        actionProps={fileActionProps}
-                        t={t}
-                      />
-                    ))}
-                  </div>
+                    {level && !level.loading && level.rows.map((row) => renderColumnRow(row, col.key))}
+                  </FolderDropZone>
                   );
                 })}
                 {/* Files pane — still the selected folder's contents, so a
@@ -3587,23 +4101,7 @@ export function FileManagerPage() {
                             : t('fileManager.noFilesYet')}
                     </div>
                   ) : (
-                    filteredAndSortedFiles.map((file) => (
-                      <ColumnFileRow
-                        key={file.id}
-                        file={file}
-                        isSelected={selectedFiles.includes(file.id)}
-                        isFocused={columnsFocusedFileId === file.id}
-                        showModified={showModified}
-                        thumbnailVersion={thumbnailVersions[file.id]}
-                        onSelect={(f) => {
-                          setColumnsFocusedFileId(f.id);
-                          handleFileSelect(f.id);
-                        }}
-                        onOpen={openPreview}
-                        actionProps={fileActionProps}
-                        t={t}
-                      />
-                    ))
+                    libraryRows.map((row) => renderColumnRow(row, COLUMNS_PANE))
                   )}
                 </div>
               </div>
@@ -3652,11 +4150,17 @@ export function FileManagerPage() {
           ) : viewMode === 'grid' ? (
             <div className="flex-1 lg:overflow-y-auto">
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
-                {filteredAndSortedFiles.map((file) => (
+                {libraryRows.map((row) => {
+                  if (row.kind === 'group') {
+                    return <VariantGroupCard key={`group-${row.id}`} row={row} {...variantViewProps} />;
+                  }
+                  const file = row.file;
+                  return (
                   <FileCard
                     key={file.id}
                     file={file}
                     isSelected={selectedFiles.includes(file.id)}
+                    isHighlighted={highlightedFileId === file.id}
                     t={t}
                     onSelect={handleFileSelect}
                     onDelete={(id) => setDeleteConfirm({ type: 'file', id })}
@@ -3679,7 +4183,8 @@ export function FileManagerPage() {
                     authEnabled={authEnabled}
                     showModified={showModified}
                   />
-                ))}
+                  );
+                })}
               </div>
             </div>
           ) : (
@@ -3710,10 +4215,25 @@ export function FileManagerPage() {
                   <div />
                 </div>
                 {/* List rows */}
-                {filteredAndSortedFiles.map((file) => (
+                {libraryRows.map((row) => {
+                  if (row.kind === 'group') {
+                    return (
+                      <VariantGroupListRow
+                        typeBadgeClass={fileTypeBadgeClass}
+                        key={`group-${row.id}`}
+                        row={row}
+                        gridClassName={fileListGridColumns(authEnabled)}
+                        {...variantViewProps}
+                      />
+                    );
+                  }
+                  const file = row.file;
+                  return (
                   <div
                     key={file.id}
                     data-testid="file-list-grid-row"
+                    data-file-id={file.id}
+                    style={highlightedFileId === file.id ? HIGHLIGHT_ROW_STYLE : undefined}
                     className={`grid ${fileListGridColumns(authEnabled)} ${fileListGridMinWidth} gap-4 px-4 py-3 items-center border-b border-bambu-dark-tertiary last:border-b-0 cursor-pointer hover:bg-bambu-dark/50 transition-colors ${
                       selectedFiles.includes(file.id) ? 'bg-bambu-green/10' : ''
                     }`}
@@ -3849,7 +4369,8 @@ export function FileManagerPage() {
                     {/* Actions */}
                     <FileActionStrip file={file} {...fileActionProps} />
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -3888,6 +4409,17 @@ export function FileManagerPage() {
           onClose={() => setShowMoveModal(false)}
           onMove={(folderId) => moveFilesMutation.mutate({ fileIds: selectedFiles, folderId })}
           isLoading={moveFilesMutation.isPending}
+          t={t}
+        />
+      )}
+
+      {moveFolder && folders && (
+        <MoveFolderModal
+          folders={folders}
+          folder={moveFolder}
+          onClose={() => setMoveFolder(null)}
+          onMove={(parentId) => moveFolderMutation.mutate({ id: moveFolder.id, parentId })}
+          isLoading={moveFolderMutation.isPending}
           t={t}
         />
       )}
@@ -3959,14 +4491,51 @@ export function FileManagerPage() {
         />
       )}
 
+      {variantGroup.dialogs}
+
+      {bulkPrint.partialPlan && (
+        <ConfirmModal
+          title={t('fileManager.variants.partialTitle')}
+          message={bulkPrint.partialPlan.partialGroups
+            .map((p) =>
+              t('fileManager.variants.partialMessage', {
+                selected: p.selected,
+                total: p.row.members.length,
+                name: p.row.name,
+              }),
+            )
+            .join('\n')}
+          confirmText={t('fileManager.variants.printAsOneJob')}
+          cancelText={t('fileManager.variants.printSelectionOnly')}
+          dismissible={false}
+          onConfirm={bulkPrint.confirmPartial}
+          onCancel={bulkPrint.printSelectionOnly}
+        >
+          <button
+            type="button"
+            onClick={bulkPrint.dismissPartial}
+            className="text-sm text-bambu-gray hover:text-white underline"
+          >
+            {t('common.cancel')}
+          </button>
+        </ConfirmModal>
+      )}
+
       {/* Held back until the variant group has loaded. The modal reads its
           candidate list once, on mount, so opening before the group arrives
           would show a single-file print for a file that has alternatives. */}
-      {printFile && (!printFile.variant_group_id || printFileGroup !== undefined) && (
+      {printFile && (printOverride || !printFile.variant_group_id || printFileGroup !== undefined) && (
         <PrintModal
+          key={`${printFile.id}-${printOverride ? 'group' : 'files'}`}
           mode="create"
           libraryFileId={printVariantFiles?.[0]?.id ?? printFile.id}
           variantFiles={printVariantFiles}
+          // A version group is by definition alternatives; only an explicit
+          // selection (the same one printVariantFiles prefers) may mean separate
+          // jobs (#3462).
+          separateJobsAllowed={!printOverride && (selectedSlicedFiles.length > 1 || resumeRun)}
+          resumeSeparateJobs={resumeRun ? separateJobsRun! : undefined}
+          onSeparateJobsProgress={setSeparateJobsRun}
           // Naming a cross-model job after one of its files reads as though the
           // others aren't part of it.
           archiveName={
@@ -3974,10 +4543,26 @@ export function FileManagerPage() {
               ? `${printVariantFiles[0].filename} ${t('common.plusNMore', { count: printVariantFiles.length - 1 })}`
               : printFile.print_name || printFile.filename
           }
-          onClose={() => setPrintFile(null)}
+          onClose={() => {
+            // onSuccess has just opened the next job of a bulk Print.
+            if (bulkPrint.consumeAdvance()) return;
+            setPrintFile(null);
+            bulkPrint.reset();
+            // Closed after a refusal: what went in leaves the selection, and the
+            // rest reopens as that run (see separateJobsRun).
+            if (separateJobsRun) {
+              const done = separateJobsRun.queuedFileIds;
+              setSelectedFiles((prev) => prev.filter((id) => !done.includes(id)));
+              queryClient.invalidateQueries({ queryKey: ['library-files'] });
+              queryClient.invalidateQueries({ queryKey: ['queue'] });
+            }
+          }}
           onSuccess={() => {
             setPrintFile(null);
-            setSelectedFiles([]);
+            setSeparateJobsRun(null);
+            // A group or a version leaves only itself out of the selection;
+            // the plain selection is cleared.
+            if (!bulkPrint.completeJob()) setSelectedFiles([]);
             queryClient.invalidateQueries({ queryKey: ['library-files'] });
             queryClient.invalidateQueries({ queryKey: ['queue'] });
             queryClient.invalidateQueries({ queryKey: ['archives'] });

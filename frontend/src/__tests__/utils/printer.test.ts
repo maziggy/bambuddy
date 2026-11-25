@@ -12,6 +12,18 @@ import { getPrinterImage, isGcodeCompatible, filterCompatibleQueueItems } from '
 import type { PrintQueueItem } from '../../api/client';
 
 describe('getPrinterImage', () => {
+  describe('H3C', () => {
+    it('uses its own image, by name or model code', () => {
+      expect(getPrinterImage('H3C')).toBe('/img/printers/h3c.png');
+      expect(getPrinterImage('h3c')).toBe('/img/printers/h3c.png');
+      expect(getPrinterImage('N10')).toBe('/img/printers/h3c.png');
+    });
+
+    it('does not take the H2C image', () => {
+      expect(getPrinterImage('H2C')).toBe('/img/printers/h2c.png');
+    });
+  });
+
   describe('X2D (#988)', () => {
     it('resolves display name "X2D" to x2d.png', () => {
       expect(getPrinterImage('X2D')).toBe('/img/printers/x2d.png');
@@ -74,10 +86,13 @@ describe('getPrinterImage', () => {
       expect(getPrinterImage('H2D Pro')).toBe('/img/printers/h2dpro.png');
     });
 
-    it('P2S → p1s.png (shared with P1S)', () => {
-      // Pre-existing behaviour: P2S currently reuses the P1S artwork. Not
-      // changed by the X2D diff; asserted to catch accidental regressions.
-      expect(getPrinterImage('P2S')).toBe('/img/printers/p1s.png');
+    it('P2S → p2s.png', () => {
+      expect(getPrinterImage('P2S')).toBe('/img/printers/p2s.png');
+    });
+
+    it('P1S → p1s.png', () => {
+      // Ensure that P1S still resolves correctly
+      expect(getPrinterImage('P1S')).toBe('/img/printers/p1s.png');
     });
 
     it('A1 Mini → a1mini.png (not a1.png)', () => {

@@ -120,6 +120,8 @@ class PipelineJobResponse(BaseModel):
         "completed",
         "failed",
         "cancelled",
+        # Dispatched, its queue entry gone without a final status stored.
+        "unknown",
     ]
     error_message: str | None = None
     dispatched_at: datetime | None = None

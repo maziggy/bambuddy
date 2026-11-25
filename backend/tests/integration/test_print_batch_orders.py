@@ -590,6 +590,8 @@ class TestBatchOrderDispatch:
         source.waiting_reason = "no idle printer"
         source.error_message = "previous failure"
         source.scheduled_time = datetime(2026, 1, 1, 12, 0, 0)
+        # A setting the request can't set: a virtual printer job's slicer pick.
+        source.slicer_ams_mapping = f'{{"mapping": [4, -1], "printer_id": {printer.id}}}'
         await db_session.commit()
 
         assert (await async_client.post(f"/api/v1/queue/batches/{order['id']}/dispatch", json={})).status_code == 200
@@ -813,6 +815,39 @@ class TestBatchOrderHeader:
         ).json()
         assert patched["name"] == "Renamed"
         assert patched["notes"] == "Updated"
+
+    @pytest.mark.parametrize("field", ["project_id", "due_date", "notes"])
+    async def test_patch_clears_only_the_supplied_planning_field(self, async_client, field):
+        project = await async_client.post("/api/v1/projects/", json={"name": "Bracket project"})
+        assert project.status_code == 200, project.text
+        batch = await async_client.post("/api/v1/queue/batches", json={"name": "Brackets"})
+        assert batch.status_code == 200, batch.text
+        url = f"/api/v1/queue/batches/{batch.json()['id']}"
+        planning = {"project_id": project.json()["id"], "due_date": "2027-06-02T12:00:00Z", "notes": "Rush job"}
+
+        assigned = await async_client.patch(url, json=planning)
+        assert assigned.status_code == 200, assigned.text
+        assert {key: assigned.json()[key] for key in planning} == planning
+
+        cleared = await async_client.patch(url, json={field: None})
+        assert cleared.status_code == 200, cleared.text
+        saved = await async_client.get(url)
+        assert saved.status_code == 200, saved.text
+        expected = {**planning, field: None}
+        for result in (cleared.json(), saved.json()):
+            assert {key: result[key] for key in planning} == expected
+
+    async def test_patch_rejects_unknown_project_before_clearing_notes(self, async_client):
+        batch = await async_client.post("/api/v1/queue/batches", json={"name": "Brackets", "notes": "Rush job"})
+        assert batch.status_code == 200, batch.text
+        url = f"/api/v1/queue/batches/{batch.json()['id']}"
+
+        rejected = await async_client.patch(url, json={"project_id": 999999, "notes": None})
+        assert rejected.status_code == 404
+        saved = await async_client.get(url)
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["project_id"] is None
+        assert saved.json()["notes"] == "Rush job"
 
     async def test_unknown_project_is_rejected(self, async_client, archive_factory):
         archive = await archive_factory()

@@ -53,6 +53,12 @@ class TestUseAmsReconcile:
         cmd = self._sent_command(mqtt_client)
         assert cmd["use_ams"] is True
 
+    def test_the_schedulers_plate_answer_is_not_overridden(self, mqtt_client):
+        """#3087 on a multi-plate file: this plate prints only from the spool
+        holder; the real tray belongs to another plate."""
+        assert mqtt_client.start_print("shell.3mf", ams_mapping=[5, 254], use_ams=False, plate_uses_only_external=True)
+        assert self._sent_command(mqtt_client)["use_ams"] is False
+
     def test_false_all_external_stays_false(self, mqtt_client):
         """An explicit external selection must NOT be force-enabled."""
         assert mqtt_client.start_print("shell.3mf", ams_mapping=[254], use_ams=False) is True

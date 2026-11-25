@@ -125,6 +125,26 @@ describe('Print Log columns', () => {
     mockLog();
   });
 
+  // Archive redesign P4: a print opens its archive's page at that print.
+  it("links a print to its archive's page", async () => {
+    await openLogView();
+
+    const link = within(screen.getByRole('table')).getByRole('link', { name: 'Califlower Calibration' });
+    expect(link.getAttribute('href')).toBe('/archives/10?run=1');
+  });
+
+  it('links no print of a deleted archive: its page is gone', async () => {
+    server.use(
+      http.get('/api/v1/print-log/', () =>
+        HttpResponse.json({ items: LOG_ENTRIES, total: 1, deleted_archive_ids: [10] }),
+      ),
+    );
+    await openLogView();
+
+    const table = screen.getByRole('table');
+    expect(within(table).getByText('Califlower Calibration').closest('a')).toBeNull();
+  });
+
   it('shows how much filament the run used, not just which filament', async () => {
     await openLogView();
 

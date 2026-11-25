@@ -247,3 +247,88 @@ async def test_revoke_is_idempotent(db_session, alice: User):
 
 async def test_revoke_unknown_id_returns_false(db_session):
     assert await revoke_token(db_session, 99_999) is False
+
+
+# ---------------------------------------------------------------------------
+# A failed last-used write (#3360)
+# ---------------------------------------------------------------------------
+
+
+def _commit_fails(db_session, monkeypatch) -> list:
+    from sqlalchemy.exc import OperationalError
+
+    calls: list = []
+
+    async def failing_commit():
+        calls.append(1)
+        raise OperationalError(
+            "UPDATE long_lived_tokens", {}, Exception("cannot execute UPDATE in a read-only transaction")
+        )
+
+    monkeypatch.setattr(db_session, "commit", failing_commit)
+    return calls
+
+
+async def test_a_failed_last_used_write_still_lets_the_token_in(db_session, alice: User, monkeypatch, caplog):
+    """A Cam Wall kiosk on a read-only replica: the token matched, only the write failed."""
+    created = await create_token(db_session, user_id=alice.id, name="Wall", expires_in_days=7, scope="camwall")
+    _commit_fails(db_session, monkeypatch)
+
+    record = await verify_token(db_session, created.plaintext, scope="camwall")
+
+    assert record is not None
+    assert record.id == created.record.id
+    assert "Could not record token" in caplog.text
+
+
+async def test_a_token_revoked_before_the_reread_is_refused(db_session, alice: User, monkeypatch):
+    created = await create_token(db_session, user_id=alice.id, name="Wall", expires_in_days=7, scope="camwall")
+    _commit_fails(db_session, monkeypatch)
+    original = db_session.refresh
+
+    async def refresh_after_revoking(instance, *args, **kwargs):
+        await original(instance, *args, **kwargs)
+        instance.revoked_at = datetime.now(timezone.utc)
+
+    monkeypatch.setattr(db_session, "refresh", refresh_after_revoking)
+
+    assert await verify_token(db_session, created.plaintext, scope="camwall") is None
+
+
+async def test_a_failing_write_is_not_retried_on_every_request(db_session, alice: User, monkeypatch):
+    created = await create_token(db_session, user_id=alice.id, name="Wall", expires_in_days=7, scope="camwall")
+    commits = _commit_fails(db_session, monkeypatch)
+
+    for _ in range(3):
+        assert await verify_token(db_session, created.plaintext, scope="camwall") is not None
+
+    assert len(commits) == 1
+
+
+async def test_a_token_expired_before_the_reread_is_refused(db_session, alice: User, monkeypatch):
+    created = await create_token(db_session, user_id=alice.id, name="Wall", expires_in_days=7, scope="camwall")
+    _commit_fails(db_session, monkeypatch)
+    original = db_session.refresh
+
+    async def refresh_after_expiring(instance, *args, **kwargs):
+        await original(instance, *args, **kwargs)
+        instance.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+
+    monkeypatch.setattr(db_session, "refresh", refresh_after_expiring)
+
+    assert await verify_token(db_session, created.plaintext, scope="camwall") is None
+
+
+async def test_a_failed_reread_refuses_the_token(db_session, alice: User, monkeypatch):
+    from sqlalchemy.exc import OperationalError
+
+    created = await create_token(db_session, user_id=alice.id, name="Wall", expires_in_days=7, scope="camwall")
+    _commit_fails(db_session, monkeypatch)
+
+    async def failing_refresh(instance, *args, **kwargs):
+        raise OperationalError("SELECT long_lived_tokens", {}, Exception("server closed the connection"))
+
+    monkeypatch.setattr(db_session, "refresh", failing_refresh)
+
+    with pytest.raises(OperationalError):
+        await verify_token(db_session, created.plaintext, scope="camwall")

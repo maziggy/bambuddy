@@ -61,6 +61,8 @@ vi.mock('../../api/client', () => ({
     }),
     triggerUpdate: vi.fn().mockResolvedValue({ status: 'ok', message: '' }),
     getSSHPublicKey: vi.fn().mockResolvedValue({ public_key: 'ssh-ed25519 AAAA test-key' }),
+    updateSystemConfig: vi.fn().mockResolvedValue({ status: 'queued' }),
+    systemCommand: vi.fn().mockResolvedValue({ status: 'queued' }),
   },
 }));
 
@@ -306,6 +308,65 @@ describe('SpoolBuddySettingsPage', () => {
     fireEvent.click(screen.getByText('System'));
     await waitFor(() => {
       expect(screen.getByText('Waiting for system stats...')).toBeDefined();
+    });
+  });
+
+  describe('saving the backend config', () => {
+    // The daemon writes the config to its .env file and keeps running on the
+    // old values: it takes effect when the daemon restarts.
+    async function saveConfig() {
+      renderPage();
+      const url = await screen.findByPlaceholderText('http://192.168.1.100:5000');
+      fireEvent.change(url, { target: { value: 'http://10.0.0.5:8000' } });
+      fireEvent.click(screen.getByText('Save'));
+    }
+
+    it('says a restart applies it and offers one', async () => {
+      const { spoolbuddyApi } = await import('../../api/client');
+      await saveConfig();
+
+      expect(await screen.findByText('Saved. Restart the daemon to apply it.')).toBeDefined();
+      fireEvent.click(screen.getByRole('button', { name: 'Restart Daemon' }));
+      await waitFor(() => {
+        expect(spoolbuddyApi.systemCommand).toHaveBeenCalledWith('sb-test-001', 'restart_daemon');
+      });
+      expect(await screen.findByText('Restarting the daemon...')).toBeDefined();
+    });
+
+    it('is not offered on the device state from before the save', async () => {
+      // The page's device data says nothing is pending until it is refetched.
+      const { spoolbuddyApi } = await import('../../api/client');
+      const [device] = await spoolbuddyApi.getDevices();
+      vi.mocked(spoolbuddyApi.updateSystemConfig).mockImplementationOnce(async () => {
+        vi.mocked(spoolbuddyApi.getDevices).mockImplementation(
+          () => new Promise((resolve) => setTimeout(() => resolve([{ ...device, pending_command: 'apply_system_config' }]), 300)),
+        );
+        return { status: 'queued' };
+      });
+      try {
+        await saveConfig();
+
+        const restart = await screen.findByRole('button', { name: 'Restart Daemon' });
+        expect((restart as HTMLButtonElement).disabled).toBe(true);
+      } finally {
+        vi.mocked(spoolbuddyApi.getDevices).mockResolvedValue([device]);
+      }
+    });
+
+    it('holds the restart until the device has taken the config', async () => {
+      // One command slot: a restart queued now would replace the config.
+      const { spoolbuddyApi } = await import('../../api/client');
+      const [device] = await spoolbuddyApi.getDevices();
+      vi.mocked(spoolbuddyApi.getDevices).mockResolvedValue([{ ...device, pending_command: 'apply_system_config' }]);
+      try {
+        await saveConfig();
+
+        const restart = await screen.findByRole('button', { name: 'Restart Daemon' });
+        await waitFor(() => expect((restart as HTMLButtonElement).disabled).toBe(true));
+        expect(screen.getByText('Waiting for the device to take the config...')).toBeDefined();
+      } finally {
+        vi.mocked(spoolbuddyApi.getDevices).mockResolvedValue([device]);
+      }
     });
   });
 });

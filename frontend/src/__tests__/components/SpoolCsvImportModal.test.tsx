@@ -55,6 +55,25 @@ describe('SpoolCsvImportModal', () => {
     expect(screen.getByText('Import 2 valid rows')).toBeInTheDocument();
   });
 
+  it('shows the id each spool keeps, and a dash for a new one (#3520)', async () => {
+    vi.mocked(api.importSpoolsCsvPreview).mockResolvedValue({
+      ...preview,
+      rows: [
+        { ...preview.rows[0], keeps_id: 417 },
+        { ...preview.rows[2], keeps_id: null },
+      ],
+    });
+
+    render(<SpoolCsvImportModal onClose={vi.fn()} onImported={vi.fn()} />);
+    selectFile();
+
+    expect(await screen.findByText('417')).toBeInTheDocument();
+    const rows = screen.getAllByRole('row');
+    // Header, then one row per CSV row; the id cell follows the row number.
+    expect(rows[1].querySelectorAll('td')[1].textContent).toBe('417');
+    expect(rows[2].querySelectorAll('td')[1].textContent).toBe('—');
+  });
+
   it('imports only when there are valid rows and reports the created count', async () => {
     vi.mocked(api.importSpoolsCsvPreview).mockResolvedValue(preview);
     vi.mocked(api.importSpoolsCsv).mockResolvedValue({ created: 2, skipped: 0, errors: 1, error_rows: [] });

@@ -1,9 +1,108 @@
 from datetime import datetime
+from typing import Literal
+from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
 
+from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
 from backend.app.schemas.printer_location import normalize_location_name
-from backend.app.utils.printer_models import supports_nozzle_flow_type
+
+
+def _mask_url_login(url: str | None) -> str | None:
+    """A stored camera URL with its login secret masked.
+
+    One URL, not a log line: the login runs to the last ``@`` before the
+    first ``/`` after the scheme, whitespace, ``?`` and ``#`` included (when
+    in doubt it is masked). The user part up to the first ``:`` survives;
+    without a ``:`` the login may be a token and goes whole.
+    """
+    if not url or "://" not in url:
+        return url
+    start = url.index("://") + 3
+    slash = url.find("/", start)
+    end = len(url) if slash == -1 else slash
+    if "@" not in url[start:end]:
+        return url
+    login, host = url[start:end].rsplit("@", 1)
+    shown = f"{login.split(':', 1)[0]}:[REDACTED]" if ":" in login else "[REDACTED]"
+    return f"{url[:start]}{shown}@{host}{url[end:]}"
+
+
+class WLEDPresets(BaseModel):
+    idle: int | None = Field(default=None, ge=1, le=250)
+    prepare: int | None = Field(default=None, ge=1, le=250)
+    printing: int | None = Field(default=None, ge=1, le=250)
+    paused: int | None = Field(default=None, ge=1, le=250)
+    finished: int | None = Field(default=None, ge=1, le=250)
+    error: int | None = Field(default=None, ge=1, le=250)
+    queue_waiting: int | None = Field(default=None, ge=1, le=250)
+    filament_problem: int | None = Field(default=None, ge=1, le=250)
+    hms_error: int | None = Field(default=None, ge=1, le=250)
+    offline: int | None = Field(default=None, ge=1, le=250)
+
+
+class WLEDStoredConfig(BaseModel):
+    enabled: bool = False
+    base_url: str | None = None
+    presets: WLEDPresets = Field(default_factory=WLEDPresets)
+    finished_timeout_seconds: int | None = Field(default=None, ge=0, le=86400)
+
+    @field_serializer("base_url")
+    def _mask_stored_url_login(self, value: str | None) -> str | None:
+        return _mask_url_login(value)
+
+
+class WLEDConfig(WLEDStoredConfig):
+    base_url: str | None = Field(default=None, max_length=500)
+
+    @field_validator("base_url")
+    @classmethod
+    def _validate_base_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().rstrip("/")
+        if not normalized:
+            return None
+
+        from backend.app.api.routes._url_safety import assert_safe_lan_service_url
+
+        assert_safe_lan_service_url(normalized, label="WLED URL")
+        parsed = urlparse(normalized)
+        if parsed.username is not None or parsed.password is not None:
+            raise ValueError("WLED URL must not include credentials")
+        return normalized
+
+    @model_validator(mode="after")
+    def _require_base_url_when_enabled(self):
+        if self.enabled and not self.base_url:
+            raise ValueError("base_url is required when WLED is enabled")
+        return self
+
+
+class WLEDPreset(BaseModel):
+    id: int
+    name: str
+
+
+class WLEDPresetListRequest(BaseModel):
+    base_url: str = Field(max_length=500)
+
+    @field_validator("base_url")
+    @classmethod
+    def _validate_base_url(cls, value: str) -> str:
+        normalized = WLEDConfig._validate_base_url(value)
+        if not normalized:
+            raise ValueError("base_url is required")
+        return normalized
+
+
+class WLEDPresetTestRequest(WLEDPresetListRequest):
+    preset_id: int = Field(ge=1, le=250)
+
+
+class WLEDConnectionInfo(BaseModel):
+    name: str | None = None
+    version: str | None = None
 
 
 class PrinterBase(BaseModel):
@@ -48,6 +147,9 @@ class PrinterCreate(PrinterBase):
     # PrinterResponse. Direct exposure on PRINTERS_READ would let a Viewer
     # connect to the printer's MQTT and bypass Bambuddy's RBAC.
     access_code: str = Field(..., min_length=1, max_length=20)
+    # Input shape validates the URL; PrinterResponse serialises stored rows
+    # with WLEDStoredConfig so one bad stored URL cannot break GET /printers.
+    wled_config: WLEDConfig | None = None
 
     # Input only, not on PrinterBase: SQLite never enforced the column width,
     # so a stored location may be longer, and the response must still read it.
@@ -63,7 +165,8 @@ class PlateDetectionROI(BaseModel):
     h: float = Field(..., ge=0.0, le=1.0)  # Height %
 
 
-class PrinterUpdate(BaseModel):
+class PrinterUpdate(IgnoresNullForRequiredColumns):
+    __orm_table__ = "printers"
     name: str | None = None
     ip_address: str | None = Field(
         default=None,
@@ -79,6 +182,11 @@ class PrinterUpdate(BaseModel):
     print_hours_offset: float | None = None
     # Wear cost per printing hour (#694); null or 0 turns it off.
     wear_cost_per_hour: float | None = Field(default=None, ge=0, le=100000)
+    # Place in the pick order of "Any model" jobs when the order setting is "priority"
+    # (#2915); lowest first, null last.
+    dispatch_priority: int | None = Field(default=None, ge=0, le=100000)
+    # Overrides the app setting require_plate_clear (#2860); null follows it.
+    require_plate_clear: bool | None = None
     external_camera_url: str | None = None
     external_camera_type: str | None = None
     external_camera_enabled: bool | None = None
@@ -88,9 +196,11 @@ class PrinterUpdate(BaseModel):
     plate_detection_enabled: bool | None = None
     plate_detection_roi: PlateDetectionROI | None = None
     plate_clear_door_enabled: bool | None = None
+    wled_config: WLEDConfig | None = None
 
 
 class PrinterResponse(PrinterBase):
+    wled_config: WLEDStoredConfig | None = None
     id: int
     is_active: bool
     nozzle_count: int = 1  # 1 or 2, auto-detected from MQTT
@@ -101,6 +211,8 @@ class PrinterResponse(PrinterBase):
     supports_nozzle_flow_type: bool = True
     print_hours_offset: float = 0.0
     wear_cost_per_hour: float | None = None  # #694
+    dispatch_priority: int | None = None  # #2915
+    require_plate_clear: bool | None = None  # #2860, null follows the app setting
     external_camera_url: str | None = None
     external_camera_type: str | None = None
     external_camera_enabled: bool = False
@@ -116,53 +228,15 @@ class PrinterResponse(PrinterBase):
     class Config:
         from_attributes = True
 
+    @field_validator("external_camera_url", "external_camera_snapshot_url", mode="after")
     @classmethod
-    def from_orm_with_roi(cls, printer) -> "PrinterResponse":
-        """Create response from ORM model, converting ROI fields to nested object."""
-        data = {
-            "id": printer.id,
-            "name": printer.name,
-            "serial_number": printer.serial_number,
-            "ip_address": printer.ip_address,
-            "model": printer.model,
-            "location": printer.location,
-            "auto_archive": printer.auto_archive,
-            "external_camera_url": printer.external_camera_url,
-            "external_camera_type": printer.external_camera_type,
-            "external_camera_enabled": printer.external_camera_enabled,
-            "external_camera_snapshot_url": printer.external_camera_snapshot_url,
-            "camera_rotation": printer.camera_rotation,
-            "camera_light_auto": bool(printer.camera_light_auto),
-            "is_active": printer.is_active,
-            "nozzle_count": printer.nozzle_count,
-            "supports_nozzle_flow_type": supports_nozzle_flow_type(printer.model),
-            "print_hours_offset": printer.print_hours_offset,
-            "wear_cost_per_hour": printer.wear_cost_per_hour,
-            "plate_detection_enabled": printer.plate_detection_enabled,
-            "plate_clear_door_enabled": printer.plate_clear_door_enabled,
-            "created_at": printer.created_at,
-            "updated_at": printer.updated_at,
-        }
-        # Build ROI object if any ROI field is set
-        if any(
-            [
-                printer.plate_detection_roi_x is not None,
-                printer.plate_detection_roi_y is not None,
-                printer.plate_detection_roi_w is not None,
-                printer.plate_detection_roi_h is not None,
-            ]
-        ):
-            data["plate_detection_roi"] = PlateDetectionROI(
-                x=printer.plate_detection_roi_x or 0.15,
-                y=printer.plate_detection_roi_y or 0.35,
-                w=printer.plate_detection_roi_w or 0.70,
-                h=printer.plate_detection_roi_h or 0.55,
-            )
-        return cls(**data)
+    def _camera_credentials(cls, value: str | None) -> str | None:
+        """Readers see the camera URLs without the password in them."""
+        return _mask_url_login(value)
 
 
 class PrinterResponseWithSecret(PrinterResponse):
-    """PrinterResponse + access_code. Returned ONLY to callers with
+    """PrinterResponse + access_code and the full camera URLs. Returned ONLY to callers with
     PRINTERS_UPDATE (Admin / Operator JWTs, or single-trust auth-disabled mode).
 
     Viewers and API keys never receive this shape — they get the bare
@@ -171,6 +245,12 @@ class PrinterResponseWithSecret(PrinterResponse):
     """
 
     access_code: str
+
+    @field_validator("external_camera_url", "external_camera_snapshot_url", mode="after")
+    @classmethod
+    def _camera_credentials(cls, value: str | None) -> str | None:
+        """Editors keep the full camera URLs, to edit them."""
+        return value
 
 
 class HMSErrorResponse(BaseModel):
@@ -260,7 +340,12 @@ class AMSUnit(BaseModel):
     dry_sf_reason: list[int] = []  # Cannot-dry reasons from firmware (see CannotDryReason)
     dry_target_temp: int | None = None  # Active-cycle target °C (Bambu doesn't echo this)
     dry_filament: str | None = None  # Active-cycle filament name we sent
-    module_type: str = ""  # "ams", "n3f", "n3s"
+    module_type: str = ""  # "ams", "ams_f1", "n3f", "n3s", "n10a" (the H3C's AMS 3H)
+    ams_type: int | None = None  # Studio's AMS type (utils.tray_ids.AmsType); decides the global tray ids
+    # The AMS 3H's dryer: its drying zone's two slots and readings. Empty elsewhere.
+    dryer_slots: list[int] = []
+    dryer_humidity: int | None = None
+    dryer_temp: float | None = None
 
 
 class NozzleInfoResponse(BaseModel):
@@ -275,12 +360,14 @@ class NozzleRackSlot(BaseModel):
     nozzle_type: str = ""
     nozzle_diameter: str = ""
     wear: int | None = None
+    print_time_s: int | None = None  # H2C: seconds this nozzle has printed, from "p_t" (#1908)
     stat: int | None = None  # Nozzle status (e.g. mounted/docked)
     max_temp: int = 0  # Max temperature rating °C (0 = not set)
     serial_number: str = ""  # Nozzle serial number
     filament_color: str = ""  # RGBA hex ("00000000" = no filament)
     filament_id: str = ""  # Bambu filament ID
     filament_type: str = ""  # Material type (e.g. "PLA", "PETG")
+    addr_id: int | None = None  # H3C: home rack position 0-8 (the mounted hotend reports id 0)
 
 
 class AmsLabelBody(BaseModel):
@@ -359,6 +446,36 @@ class PrintOptionsResponse(BaseModel):
     airprint_sensitivity: str = "medium"
     auto_recovery_step_loss: bool = True
     filament_tangle_detect: bool = False
+
+
+class NextPause(BaseModel):
+    """The next pause the slicer put into the running print (#2984)."""
+
+    layer: int
+    # Minutes until the printer gets there; None while it reports no time left.
+    minutes: int | None = None
+
+
+class PandaBreathState(BaseModel):
+    """What a Panda Breath reports, as the printer card shows it (#1466)."""
+
+    device_id: str
+    online: bool | None = None
+    chamber_temp: float | None = None
+    target_temp: float | None = None
+    work_on: bool | None = None
+    mode: str | None = None
+    filament_drying_mode: str | None = None
+    drying_running: bool | None = None
+    drying_remaining_min: float | None = None
+
+
+class PandaBreathCommand(BaseModel):
+    """One change for a printer's Panda Breath: exactly one field set."""
+
+    work_on: bool | None = None
+    mode: Literal["auto mode", "power on", "filament drying"] | None = None
+    target_temp: int | None = Field(default=None, ge=0, le=60)
 
 
 class PrinterStatus(BaseModel):
@@ -448,12 +565,16 @@ class PrinterStatus(BaseModel):
     last_ams_update: float = 0.0
     # Number of printable objects in current print (for skip objects feature)
     printable_objects_count: int = 0
+    # The next pause the slicer put into the print, while it is running (#2984)
+    next_pause: NextPause | None = None
     # Fan speeds (0-100 percentage, None if not available for this model)
     cooling_fan_speed: int | None = None  # Part cooling fan
     big_fan1_speed: int | None = None  # Auxiliary fan
     big_fan2_speed: int | None = None  # Chamber/exhaust fan
     heatbreak_fan_speed: int | None = None  # Hotend heatbreak fan
-    # Left auxiliary part cooling fan (optional P2S/X2D accessory, airduct part id 10).
+    # Second auxiliary part cooling fan (airduct part id 10). Named for the P2S,
+    # where it is the left fan (an accessory kit); on the X2D it is the RIGHT one
+    # and big_fan1_speed (part 2) the left (#3373). The name stays for API clients.
     # None = not installed / not reported by this model.
     left_aux_fan_speed: int | None = None
     # Chamber exhaust fan present (P2S/X2D External Exhaust Fan kit; airduct part id 3).
@@ -488,6 +609,8 @@ class PrinterStatus(BaseModel):
     # Set for every active print regardless of plate count; the frontend decides
     # whether to render it based on current_archive_id's is_multi_plate flag.
     current_plate_id: int | None = None
+    # BIQU Panda Breath bound to this printer (#1466), None without one.
+    panda_breath: PandaBreathState | None = None
 
 
 class DiagnosticCheck(BaseModel):

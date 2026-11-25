@@ -46,7 +46,7 @@ def _clear_cover_state():
 @pytest.mark.asyncio
 async def test_concurrent_cover_requests_download_once():
     printer = SimpleNamespace(id=1, ip_address="127.0.0.1", access_code="x", model="X1C", name="P")
-    state = SimpleNamespace(subtask_name="job", state="RUNNING")
+    state = SimpleNamespace(subtask_name="job", state="RUNNING", subtask_id="", gcode_file="", current_print="")
 
     produce_calls = {"n": 0}
 
@@ -74,7 +74,7 @@ async def test_concurrent_cover_requests_download_once():
 async def test_second_request_serves_from_positive_cache():
     """A follower arriving after the leader filled the cache serves it directly."""
     printer = SimpleNamespace(id=1, ip_address="127.0.0.1", access_code="x", model="X1C", name="P")
-    state = SimpleNamespace(subtask_name="job", state="RUNNING")
+    state = SimpleNamespace(subtask_name="job", state="RUNNING", subtask_id="", gcode_file="", current_print="")
 
     produce_calls = {"n": 0}
 

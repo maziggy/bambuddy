@@ -7,6 +7,7 @@ import { spoolbuddyApi, type SpoolBuddyDevice } from '../../api/client';
 import { DiagnosticModal } from '../../components/spoolbuddy/DiagnosticModal';
 import { FileText, Wand2, Zap } from 'lucide-react';
 import { parseUTCDate } from '../../utils/date';
+import { useKioskDevice } from '../../hooks/useKioskDevice';
 
 
 function formatUptime(seconds: number): string {
@@ -25,8 +26,9 @@ function formatDateTime(iso: string | null): string {
     d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
 
-const BLANK_OPTIONS = [
-  { label: 'Off', value: 0 },
+// label null = Off, translated at render (t isn't available at module load)
+const BLANK_OPTIONS: { label: string | null; value: number }[] = [
+  { label: null, value: 0 },
   { label: '1m', value: 60 },
   { label: '2m', value: 120 },
   { label: '5m', value: 300 },
@@ -38,11 +40,18 @@ const BLANK_OPTIONS = [
 
 function DeviceTab({ device }: { device: SpoolBuddyDevice }) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const [diagnosticOpen, setDiagnosticOpen] = useState<'nfc' | 'scale' | 'read_tag' | null>(null);
   const [backendUrl, setBackendUrl] = useState('');
   const [apiToken, setApiToken] = useState('');
   const [systemBusy, setSystemBusy] = useState(false);
   const [systemMsg, setSystemMsg] = useState<{ type: 'ok' | 'error'; text: string } | null>(null);
+  // The daemon writes a saved config to its .env file and keeps running on
+  // the old values until it restarts.
+  const [restartOffered, setRestartOffered] = useState(false);
+  // One command slot per device: a restart queued before the daemon took the
+  // config would replace it.
+  const configPending = device.pending_command === 'apply_system_config';
 
   useEffect(() => {
     if (!backendUrl && device.backend_url) {
@@ -64,7 +73,24 @@ function DeviceTab({ device }: { device: SpoolBuddyDevice }) {
         backendUrl.trim(),
         apiToken.trim() || undefined
       );
-      setSystemMsg({ type: 'ok', text: t('spoolbuddy.settings.systemQueued', 'Config queued.') });
+      // Offered only once the device data shows the queued config, so the
+      // button cannot be pressed on state from before the save.
+      await queryClient.refetchQueries({ queryKey: ['spoolbuddy-devices'] });
+      setSystemMsg({ type: 'ok', text: t('spoolbuddy.settings.systemSavedRestart', 'Saved. Restart the daemon to apply it.') });
+      setRestartOffered(true);
+    } catch (e) {
+      setSystemMsg({ type: 'error', text: e instanceof Error ? e.message : t('common.error', 'Error') });
+    } finally {
+      setSystemBusy(false);
+    }
+  };
+
+  const restartDaemon = async () => {
+    setSystemBusy(true);
+    try {
+      await spoolbuddyApi.systemCommand(device.device_id, 'restart_daemon');
+      setRestartOffered(false);
+      setSystemMsg({ type: 'ok', text: t('spoolbuddy.settings.systemRestarting', 'Restarting the daemon...') });
     } catch (e) {
       setSystemMsg({ type: 'error', text: e instanceof Error ? e.message : t('common.error', 'Error') });
     } finally {
@@ -172,6 +198,22 @@ function DeviceTab({ device }: { device: SpoolBuddyDevice }) {
           {systemMsg && (
             <div className={`text-xs ${systemMsg.type === 'ok' ? 'text-green-400' : 'text-red-400'}`}>
               {systemMsg.text}
+            </div>
+          )}
+          {restartOffered && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={restartDaemon}
+                disabled={systemBusy || configPending}
+                className="px-3 py-1.5 rounded bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-xs font-medium text-zinc-100"
+              >
+                {t('spoolbuddy.quickMenu.restartDaemon', 'Restart Daemon')}
+              </button>
+              {configPending && (
+                <span className="text-xs text-zinc-500">
+                  {t('spoolbuddy.settings.systemApplying', 'Waiting for the device to take the config...')}
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -322,7 +364,7 @@ function DisplayTab({ device, onBrightnessChange }: {
                   : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
               }`}
             >
-              {opt.label}
+              {opt.label ?? t('common.off')}
             </button>
           ))}
         </div>
@@ -716,7 +758,7 @@ function UpdatesTab({ device }: { device: SpoolBuddyDevice }) {
       await spoolbuddyApi.triggerUpdate(device.device_id);
       // Don't clear busy — keep showing spinner until isUpdating takes over or timeout
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to trigger update');
+      setError(e instanceof Error ? e.message : t('spoolbuddy.settings.triggerUpdateFailed', 'Failed to trigger update'));
       setBusy(null);
     }
   };
@@ -1018,16 +1060,9 @@ export function SpoolBuddySettingsPage() {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<SettingsTab>('device');
 
-  const { data: devices = [] } = useQuery({
-    queryKey: ['spoolbuddy-devices'],
-    queryFn: () => spoolbuddyApi.getDevices(),
-    refetchInterval: 10000,
-  });
-
-  // Use first device (most common setup) or find one matching current state
-  const device = sbState.deviceId
-    ? devices.find((d) => d.device_id === sbState.deviceId) ?? devices[0]
-    : devices[0];
+  // This kiosk's device, not the one the last WebSocket event came from:
+  // every device's weight updates reach every kiosk (#3504).
+  const { device } = useKioskDevice(10000);
 
 
   const tabs: { id: SettingsTab; label: string }[] = [

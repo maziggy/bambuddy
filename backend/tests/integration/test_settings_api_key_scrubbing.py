@@ -36,7 +36,6 @@ async def sensitive_settings(db_session):
         "mqtt_password",
         "ha_token",
         "prometheus_token",
-        "virtual_printer_access_code",
         "ldap_bind_password",
     ]
     for key in _credential_keys:
@@ -66,7 +65,6 @@ class TestSettingsScrubForApiKey:
         assert data["mqtt_password"] == ""
         assert data["ha_token"] == ""
         assert data["prometheus_token"] == ""
-        assert data["virtual_printer_access_code"] == ""
         assert data["ldap_bind_password"] == ""
 
     @pytest.mark.asyncio

@@ -147,6 +147,15 @@ class TestLoadedSpools:
         assert ext["saved_preset"]["preset_name"] == "Generic PETG"
         assert entry["external_holders"] == 2
 
+    async def test_a_regular_ams_listing_one_tray_is_not_ht(self, async_client: AsyncClient, printer_factory):
+        """AMS-HT is the unit id 128-135, not a one-tray list."""
+        printer = await printer_factory()
+        with _patched_status({printer.id: _status({"ams": [_ams(1, [_tray(0, "PLA")])]})}):
+            response = await async_client.get(URL)
+
+        [unit] = response.json()["printers"][0]["ams"]
+        assert (unit["id"], unit["is_ams_ht"]) == (1, False)
+
     async def test_tolerates_malformed_status(self, async_client: AsyncClient, printer_factory):
         printer = await printer_factory()
         raw = {"ams": ["garbage", {"id": 1, "tray": [None, _tray(0, "ABS")]}], "vt_tray": None}
@@ -189,3 +198,34 @@ class TestLoadedSpoolsAccess:
 
         response = await async_client.get(URL, headers=_auth(jwt))
         assert response.status_code == 403
+
+
+class TestFittedNozzles:
+    """The Slice dialog's nozzle flow default reads the fitted nozzles (#3136)."""
+
+    @staticmethod
+    def _with_nozzles(*nozzles: tuple[str, str]) -> SimpleNamespace:
+        status = _status({"ams": []})
+        status.nozzles = [SimpleNamespace(nozzle_type=t, nozzle_diameter=d) for t, d in nozzles]
+        return status
+
+    async def test_a_p2s_reports_its_high_flow_nozzle(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(model="P2S")
+        with _patched_status({printer.id: self._with_nozzles(("HH01", "0.8"), ("", ""))}):
+            response = await async_client.get(URL)
+        assert response.json()["printers"][0]["nozzles"] == [{"extruder_id": 0, "diameter": "0.8", "flow": "High Flow"}]
+
+    async def test_a_dual_nozzle_printer_reports_both_by_extruder_id(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(model="H2D", nozzle_count=2)
+        with _patched_status({printer.id: self._with_nozzles(("HS01", "0.4"), ("HH01", "0.6"))}):
+            response = await async_client.get(URL)
+        assert response.json()["printers"][0]["nozzles"] == [
+            {"extruder_id": 0, "diameter": "0.4", "flow": "Standard"},
+            {"extruder_id": 1, "diameter": "0.6", "flow": "High Flow"},
+        ]
+
+    async def test_a_nozzle_material_is_no_flow(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(model="X1C")
+        with _patched_status({printer.id: self._with_nozzles(("hardened_steel", "0.4"), ("", ""))}):
+            response = await async_client.get(URL)
+        assert response.json()["printers"][0]["nozzles"] == [{"extruder_id": 0, "diameter": "0.4", "flow": None}]

@@ -35,6 +35,8 @@ const createMockPlug = (overrides: Partial<SmartPlug> = {}): SmartPlug => ({
   mqtt_energy_topic: null,
   mqtt_energy_path: null,
   mqtt_energy_multiplier: 1.0,
+  mqtt_energy_total_path: null,
+  mqtt_energy_total_multiplier: 1.0,
   // MQTT state fields
   mqtt_state_topic: null,
   mqtt_state_path: null,
@@ -48,6 +50,8 @@ const createMockPlug = (overrides: Partial<SmartPlug> = {}): SmartPlug => ({
   off_delay_mode: 'time',
   off_delay_minutes: 5,
   off_temp_threshold: 70,
+  off_temp_source: 'nozzle',
+  off_bed_temp_threshold: 35,
   username: null,
   password: null,
   power_alert_enabled: false,
@@ -79,6 +83,25 @@ describe('SmartPlugCard', () => {
       render(<SmartPlugCard plug={plug} onEdit={mockOnEdit} />);
 
       expect(screen.getByText('My Test Plug')).toBeInTheDocument();
+    });
+
+    it('names a REST plug by its URL for an editor and by its type for a reader', () => {
+      const { unmount } = render(
+        <SmartPlugCard
+          plug={createMockPlug({ plug_type: 'rest', ip_address: null, rest_on_url: 'http://plug.example/on' })}
+          onEdit={mockOnEdit}
+        />,
+      );
+      expect(screen.getByText('http://plug.example/on')).toBeInTheDocument();
+      unmount();
+
+      render(
+        <SmartPlugCard
+          plug={createMockPlug({ plug_type: 'rest', ip_address: null, rest_on_url: null, rest_off_url: null })}
+          onEdit={mockOnEdit}
+        />,
+      );
+      expect(screen.getByText('REST')).toBeInTheDocument();
     });
 
     it('renders plug IP address', () => {

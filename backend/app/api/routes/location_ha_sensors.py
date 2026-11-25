@@ -110,7 +110,7 @@ async def _refresh_quietly(sensor: LocationHASensor, db: AsyncSession) -> None:
 @router.get("/", response_model=list[LocationHASensorResponse])
 async def list_location_ha_sensors(
     location_id: int | None = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = _READ,
 ):
     """List configured sensors, grouped by location and in display order."""
@@ -125,7 +125,7 @@ async def list_location_ha_sensors(
 @router.get("/entities", response_model=list[HADisplayEntity])
 async def list_bindable_entities(
     search: str | None = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = _READ,
 ):
     """List the Home Assistant entities that can be bound to a storage location."""
@@ -146,7 +146,7 @@ async def list_bindable_entities(
 async def get_location_sensor_readings(
     location_id: int,
     show_on_card: bool = True,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = _READ,
 ):
     """Live state of a location's card-visible sensors.
@@ -192,7 +192,7 @@ async def get_location_sensor_readings(
 @router.post("/", response_model=LocationHASensorResponse)
 async def create_location_ha_sensor(
     data: LocationHASensorCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = _CREATE,
 ):
     """Bind a Home Assistant entity to a storage location."""
@@ -235,7 +235,7 @@ async def create_location_ha_sensor(
 @router.get("/{sensor_id}", response_model=LocationHASensorResponse)
 async def get_location_ha_sensor(
     sensor_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = _READ,
 ):
     sensor = await db.get(LocationHASensor, sensor_id)
@@ -248,7 +248,7 @@ async def get_location_ha_sensor(
 async def update_location_ha_sensor(
     sensor_id: int,
     data: LocationHASensorUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = _UPDATE,
 ):
     sensor = await db.get(LocationHASensor, sensor_id)
@@ -309,7 +309,7 @@ async def update_location_ha_sensor(
 @router.delete("/{sensor_id}")
 async def delete_location_ha_sensor(
     sensor_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = _DELETE,
 ):
     sensor = await db.get(LocationHASensor, sensor_id)

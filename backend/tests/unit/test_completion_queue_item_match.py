@@ -14,9 +14,15 @@ the unverifiable cases through rather than strand an item in ``printing``.
 
 import pytest
 
-from backend.app.main import _completion_belongs_to_queue_item, _subtask_name_from_filename
+from backend.app.main import (
+    _ask_outcome_for_external_print,
+    _completion_belongs_to_queue_item,
+    _subtask_name_from_filename,
+)
 from backend.app.models.archive import PrintArchive
 from backend.app.models.print_queue import PrintQueueItem
+from backend.app.models.printer import Printer
+from backend.app.models.settings import Settings
 
 
 class TestSubtaskNameFromFilename:
@@ -47,10 +53,13 @@ class TestSubtaskNameFromFilename:
 
 async def _seed(db, *, archive_filename: str | None) -> PrintQueueItem:
     """A printing queue item, optionally linked to an archive."""
+    printer = Printer(name="P", serial_number="00M09A000000001", ip_address="192.168.1.100", access_code="12345678")
+    db.add(printer)
+    await db.flush()
     archive_id = None
     if archive_filename is not None:
         archive = PrintArchive(
-            printer_id=1,
+            printer_id=printer.id,
             filename=archive_filename,
             file_path=f"archive/1/{archive_filename}",
             file_size=1,
@@ -60,7 +69,7 @@ async def _seed(db, *, archive_filename: str | None) -> PrintQueueItem:
         await db.flush()
         archive_id = archive.id
 
-    item = PrintQueueItem(printer_id=1, status="printing", archive_id=archive_id)
+    item = PrintQueueItem(printer_id=printer.id, status="printing", archive_id=archive_id)
     db.add(item)
     await db.flush()
     return item
@@ -85,6 +94,37 @@ class TestCompletionBelongsToQueueItem:
 
         assert await _completion_belongs_to_queue_item(db_session, item, {"subtask_name": "ams_rack"}) is True
 
+    @pytest.mark.parametrize(
+        ("archive_filename", "subtask"),
+        [
+            # A1 mini after power-loss recovery: dispatched as the bare name,
+            # resumed and completed under the file name (#3485).
+            (
+                "Bottom-heavy; stands upright without saucer.3mf",
+                "Bottom-heavy;_stands_upright_without_saucer.3mf",
+            ),
+            ("mini-bench_plate_1.3mf", "mini-bench_plate_1.3mf"),
+            ("new bench.gcode.3mf", "new_bench.3mf"),
+            ("new bench.gcode.3mf", "new_bench.gcode.3mf"),
+        ],
+    )
+    async def test_accepts_its_own_print_echoed_with_the_extension(self, db_session, archive_filename, subtask):
+        item = await _seed(db_session, archive_filename=archive_filename)
+
+        assert await _completion_belongs_to_queue_item(db_session, item, {"subtask_name": subtask}) is True
+
+    async def test_a_model_named_like_a_file_still_matches(self, db_session):
+        # "Foo.3mf" is the model's own name here; stripping the echo to "Foo"
+        # must not be the only form tried.
+        item = await _seed(db_session, archive_filename="Foo.3mf.gcode.3mf")
+
+        assert await _completion_belongs_to_queue_item(db_session, item, {"subtask_name": "Foo.3mf"}) is True
+
+    async def test_an_extension_does_not_make_another_print_match(self, db_session):
+        item = await _seed(db_session, archive_filename="AMS_Rack.gcode.3mf")
+
+        assert await _completion_belongs_to_queue_item(db_session, item, {"subtask_name": "Test.3mf"}) is False
+
     @pytest.mark.parametrize("subtask", [None, "", "   "])
     async def test_lets_an_unidentified_completion_through(self, db_session, subtask):
         # No subtask name to compare means unverifiable, not wrong. Refusing here
@@ -107,6 +147,7 @@ class TestCompletionBelongsToQueueItem:
 
         assert await _completion_belongs_to_queue_item(db_session, item, {"subtask_name": "Anything"}) is True
 
+    @pytest.mark.sqlite_only  # a dangling reference needs foreign keys off
     async def test_lets_a_dangling_archive_reference_through(self, db_session):
         item = await _seed(db_session, archive_filename=None)
         item.archive_id = 999999
@@ -114,6 +155,27 @@ class TestCompletionBelongsToQueueItem:
         assert await _completion_belongs_to_queue_item(db_session, item, {"subtask_name": "Anything"}) is True
 
 
+@pytest.mark.asyncio
+class TestOutcomePromptForAResumedQueuePrint:
+    """The outcome prompt holds a printing queue row against the observed name
+    with the same rule, so a resumed queue print must not read as external."""
+
+    async def test_a_resumed_queue_print_is_not_asked_about(self, db_session):
+        item = await _seed(db_session, archive_filename="mini-bench_plate_1.3mf")
+        db_session.add(Settings(key="confirm_outcome_external_prints", value="true"))
+        await db_session.flush()
+
+        assert await _ask_outcome_for_external_print(db_session, item.printer_id, "mini-bench_plate_1.3mf") is False
+
+    async def test_another_file_is_still_asked_about(self, db_session):
+        item = await _seed(db_session, archive_filename="mini-bench_plate_1.3mf")
+        db_session.add(Settings(key="confirm_outcome_external_prints", value="true"))
+        await db_session.flush()
+
+        assert await _ask_outcome_for_external_print(db_session, item.printer_id, "Other.3mf") is True
+
+
+@pytest.mark.sqlite_only  # on PostgreSQL the guard checks the throwaway server's databases instead
 class TestDisposableDatabaseGuard:
     """The suite must never be able to open a session against a real database.
 

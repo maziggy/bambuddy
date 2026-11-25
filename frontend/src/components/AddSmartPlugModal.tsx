@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import type { SmartPlug, SmartPlugCreate, SmartPlugUpdate, DiscoveredTasmotaDevice } from '../api/client';
 import { Button } from './Button';
+import { SECRET_PLACEHOLDER, selectPlaceholderOnFocus } from '../utils/secrets';
 
 interface AddSmartPlugModalProps {
   plug?: SmartPlug | null;
@@ -38,6 +39,10 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
   const [mqttEnergyMultiplier, setMqttEnergyMultiplier] = useState<string>(
     (plug?.mqtt_energy_multiplier ?? 1).toString()
   );
+  const [mqttEnergyTotalPath, setMqttEnergyTotalPath] = useState(plug?.mqtt_energy_total_path || '');
+  const [mqttEnergyTotalMultiplier, setMqttEnergyTotalMultiplier] = useState<string>(
+    (plug?.mqtt_energy_total_multiplier ?? 1).toString()
+  );
   // MQTT fields - State
   const [mqttStateTopic, setMqttStateTopic] = useState(plug?.mqtt_state_topic || '');
   const [mqttStatePath, setMqttStatePath] = useState(plug?.mqtt_state_path || '');
@@ -56,6 +61,15 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
   const [restPowerPath, setRestPowerPath] = useState(plug?.rest_power_path || '');
   const [restPowerMultiplier, setRestPowerMultiplier] = useState<string>((plug?.rest_power_multiplier ?? 1).toString());
   const [restEnergyUrl, setRestEnergyUrl] = useState(plug?.rest_energy_url || '');
+  // A saved secret does not follow a changed address: it must be entered again.
+  const passwordNeedsReentry = password === SECRET_PLACEHOLDER && ipAddress !== (plug?.ip_address || '');
+  const headersNeedReentry =
+    restHeaders === SECRET_PLACEHOLDER &&
+    (restOnUrl !== (plug?.rest_on_url || '') ||
+      restOffUrl !== (plug?.rest_off_url || '') ||
+      restStatusUrl !== (plug?.rest_status_url || '') ||
+      restPowerUrl !== (plug?.rest_power_url || '') ||
+      restEnergyUrl !== (plug?.rest_energy_url || ''));
   const [restEnergyPath, setRestEnergyPath] = useState(plug?.rest_energy_path || '');
   const [restEnergyMultiplier, setRestEnergyMultiplier] = useState<string>((plug?.rest_energy_multiplier ?? 1).toString());
   const [restEnergyTotalPath, setRestEnergyTotalPath] = useState(plug?.rest_energy_total_path || '');
@@ -255,7 +269,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
 
   // Test connection mutation
   const testMutation = useMutation({
-    mutationFn: () => api.testSmartPlugConnection(ipAddress, username || null, password || null),
+    mutationFn: () => api.testSmartPlugConnection(ipAddress, username || null, password || null, plug?.id),
     onSuccess: (result) => {
       setTestResult(result);
       setError(null);
@@ -321,7 +335,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
     }
 
     if (plugType === 'tasmota' && !ipAddress.trim()) {
-      setError('IP address is required for Tasmota plugs');
+      setError(t('smartPlugs.tasmotaIpRequired'));
       return;
     }
 
@@ -366,6 +380,8 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
       mqtt_energy_topic: plugType === 'mqtt' ? (mqttEnergyTopic.trim() || null) : null,
       mqtt_energy_path: plugType === 'mqtt' ? (mqttEnergyPath.trim() || null) : null,
       mqtt_energy_multiplier: plugType === 'mqtt' ? (parseFloat(mqttEnergyMultiplier) || 1) : 1,
+      mqtt_energy_total_path: plugType === 'mqtt' ? (mqttEnergyTotalPath.trim() || null) : null,
+      mqtt_energy_total_multiplier: plugType === 'mqtt' ? (parseFloat(mqttEnergyTotalMultiplier) || 1) : 1,
       // MQTT state fields
       mqtt_state_topic: plugType === 'mqtt' ? (mqttStateTopic.trim() || null) : null,
       mqtt_state_path: plugType === 'mqtt' ? (mqttStatePath.trim() || null) : null,
@@ -1062,7 +1078,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                         type="text"
                         value={mqttEnergyTopic}
                         onChange={(e) => setMqttEnergyTopic(e.target.value)}
-                        placeholder="Same as power topic, or different"
+                        placeholder={t('smartPlugs.sameAsPowerTopic')}
                         className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
                       />
                     </div>
@@ -1091,6 +1107,34 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                     <p className="text-xs text-bambu-gray" style={{ whiteSpace: 'pre-line' }}>
                       {t('smartPlugs.mqttEnergyHint')}
                     </p>
+                    {/* Lifetime counter on the same topic (#3582) — per-print energy reads it. */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label htmlFor="mqtt-energy-total-path" className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.restEnergyTotalPath')}</label>
+                        <input
+                          id="mqtt-energy-total-path"
+                          type="text"
+                          value={mqttEnergyTotalPath}
+                          onChange={(e) => setMqttEnergyTotalPath(e.target.value)}
+                          placeholder={t('smartPlugs.mqttEnergyTotalPathHint')}
+                          className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="mqtt-energy-total-multiplier" className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.restEnergyTotalMultiplier')}</label>
+                        <input
+                          id="mqtt-energy-total-multiplier"
+                          type="text"
+                          value={mqttEnergyTotalMultiplier}
+                          onChange={(e) => setMqttEnergyTotalMultiplier(e.target.value)}
+                          placeholder="1"
+                          className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs text-bambu-gray">
+                      {t('smartPlugs.mqttEnergyTotalHint')}
+                    </p>
                   </div>
 
                   {/* State Section */}
@@ -1102,7 +1146,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                         type="text"
                         value={mqttStateTopic}
                         onChange={(e) => setMqttStateTopic(e.target.value)}
-                        placeholder="Same as power topic, or different"
+                        placeholder={t('smartPlugs.sameAsPowerTopic')}
                         className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
                       />
                     </div>
@@ -1205,10 +1249,16 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                   <textarea
                     value={restHeaders}
                     onChange={(e) => setRestHeaders(e.target.value)}
+                    onFocus={selectPlaceholderOnFocus}
                     placeholder={t('smartPlugs.restHeadersHint')}
                     rows={2}
                     className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none font-mono text-sm"
                   />
+                  {restHeaders === SECRET_PLACEHOLDER && (
+                    <p className={`text-xs mt-1 ${headersNeedReentry ? 'text-yellow-400' : 'text-bambu-gray'}`}>
+                      {t(headersNeedReentry ? 'common.secretReenter' : 'common.secretKept')}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -1362,7 +1412,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                       setTestResult(null);
                       try {
                         const url = restOnUrl.trim() || restOffUrl.trim();
-                        const result = await api.testRESTConnection(url, restMethod, restHeaders.trim() || null);
+                        const result = await api.testRESTConnection(url, restMethod, restHeaders.trim() || null, plug?.id);
                         setTestResult({ success: result.success });
                         if (!result.success) {
                           setError(result.error || t('smartPlugs.addSmartPlug.connectionFailed'));
@@ -1479,9 +1529,15 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    onFocus={selectPlaceholderOnFocus}
                     placeholder="********"
                     className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                   />
+                  {password === SECRET_PLACEHOLDER && (
+                    <p className={`text-xs mt-1 ${passwordNeedsReentry ? 'text-yellow-400' : 'text-bambu-gray'}`}>
+                      {t(passwordNeedsReentry ? 'common.secretReenter' : 'common.secretKept')}
+                    </p>
+                  )}
                 </div>
               </div>
               <p className="text-xs text-bambu-gray -mt-2">
@@ -1558,7 +1614,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                       type="number"
                       value={powerAlertHigh}
                       onChange={(e) => setPowerAlertHigh(e.target.value)}
-                      placeholder="e.g. 200"
+                      placeholder={t('smartPlugs.examplePlaceholder', { value: 200 })}
                       min="0"
                       max="5000"
                       className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
@@ -1570,7 +1626,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                       type="number"
                       value={powerAlertLow}
                       onChange={(e) => setPowerAlertLow(e.target.value)}
-                      placeholder="e.g. 10"
+                      placeholder={t('smartPlugs.examplePlaceholder', { value: 10 })}
                       min="0"
                       max="5000"
                       className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"

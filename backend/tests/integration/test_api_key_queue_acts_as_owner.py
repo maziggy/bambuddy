@@ -10,6 +10,8 @@ nothing and may use no cost center.
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
+from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
@@ -261,7 +263,8 @@ class TestSources:
 
     async def test_another_users_library_file_is_not_found(self, async_client, db_session, world):
         await _set(db_session, "billing_enabled", "false")
-        rel_path = "archive/library/files/probe_3256.gcode.3mf"
+        # Unique: the checkout's library folder is shared by every xdist worker.
+        rel_path = f"archive/library/files/probe_3256_{uuid4().hex}.gcode.3mf"
         abs_path = Path(app_settings.base_dir) / rel_path
         abs_path.parent.mkdir(parents=True, exist_ok=True)
         abs_path.write_bytes(b"probe")
@@ -309,6 +312,62 @@ class TestBatches:
         assert ungroup.status_code in (403, 404)
         await db_session.refresh(batch)
         assert batch.name == "theirs"
+
+
+class TestAnOwnOnlyOwner:
+    """An owner who may change only their own queue items.
+
+    Their key changes their items and no other user's item (see
+    test_api_key_own_rows.py), and an owner's deactivation stops it.
+    """
+
+    async def _items(self, db_session, world) -> tuple[PrintQueueItem, PrintQueueItem]:
+        await _set(db_session, "billing_enabled", "false")
+        mine = await _archive(db_session, world["owner"].id, 1)
+        theirs = await _archive(db_session, world["other"].id, 2)
+        own = PrintQueueItem(
+            printer_id=world["printer"].id, archive_id=mine.id, status="pending", created_by_id=world["owner"].id
+        )
+        other = PrintQueueItem(
+            printer_id=world["printer"].id, archive_id=theirs.id, status="pending", created_by_id=world["other"].id
+        )
+        db_session.add_all([own, other])
+        await db_session.commit()
+        return own, other
+
+    async def test_another_users_item_is_left_alone(self, async_client, db_session, world):
+        own, other = await self._items(db_session, world)
+        key = await _key(db_session, world["owner"].id)
+
+        patched = await async_client.patch(f"/api/v1/queue/{other.id}", json={"manual_start": True}, headers=key)
+        bulk = await async_client.patch(
+            "/api/v1/queue/bulk", json={"item_ids": [own.id, other.id], "manual_start": True}, headers=key
+        )
+        deleted = await async_client.delete(f"/api/v1/queue/{other.id}", headers=key)
+
+        assert patched.status_code in (403, 404)
+        assert bulk.status_code == 200, bulk.text
+        assert bulk.json()["skipped_count"] == 1
+        assert deleted.status_code in (403, 404)
+        await db_session.refresh(other)
+        assert other.manual_start is False
+        assert await db_session.get(PrintQueueItem, other.id) is not None
+
+    async def test_a_deactivated_owners_key_changes_nothing(self, async_client, db_session, world):
+        """An admin's key, so the deactivation alone is what refuses it."""
+        own, _other = await self._items(db_session, world)
+        key = await _key(db_session, world["admin"].id)
+        world["admin"].is_active = False
+        await db_session.commit()
+
+        patched = await async_client.patch(f"/api/v1/queue/{own.id}", json={"manual_start": True}, headers=key)
+        deleted = await async_client.delete(f"/api/v1/queue/{own.id}", headers=key)
+
+        assert patched.status_code in (401, 403)
+        assert deleted.status_code in (401, 403)
+        await db_session.refresh(own)
+        assert own.manual_start is False
+        assert await db_session.get(PrintQueueItem, own.id) is not None
 
 
 @pytest.fixture
@@ -471,3 +530,51 @@ class TestArchivesAndPipelines:
         # Refused by the ownership check, not later for the missing file
         assert response.status_code == 404
         assert response.json()["detail"] == "File not found"
+
+
+class TestSlicedThroughAKeyIsTheOwners:
+    """A key without the cloud scope resolves no cloud presets, but what it
+    slices is still its owner's, as a pipeline run it starts is."""
+
+    async def _slice(self, async_client, url, key):
+        from dataclasses import dataclass
+
+        @dataclass
+        class _Job:
+            id: int = 1
+            status: str = "pending"
+
+        with patch(
+            "backend.app.services.slice_dispatch.slice_dispatch.enqueue", new=AsyncMock(return_value=_Job())
+        ) as enqueue:
+            response = await async_client.post(url, json=_SLICE_BODY, headers=key)
+        assert response.status_code == 202, response.text
+        return enqueue.await_args.kwargs["owner_id"]
+
+    async def test_a_library_file(self, async_client, db_session, library_world, tmp_path, monkeypatch):
+        monkeypatch.setattr(app_settings, "base_dir", tmp_path)
+        (tmp_path / "mine.3mf").write_bytes(b"PK")
+        mine = LibraryFile(
+            filename="mine.3mf",
+            file_path="mine.3mf",
+            file_type="3mf",
+            file_size=2,
+            created_by_id=library_world["owner"].id,
+        )
+        db_session.add(mine)
+        await db_session.commit()
+
+        owner = await self._slice(async_client, f"/api/v1/library/files/{mine.id}/slice", library_world["key"])
+
+        assert owner == library_world["owner"].id
+
+    async def test_an_archive(self, async_client, db_session, library_world, tmp_path, monkeypatch):
+        monkeypatch.setattr(app_settings, "base_dir", tmp_path)
+        (tmp_path / "mine_archive.3mf").write_bytes(b"PK")
+        archive = await _archive(db_session, library_world["owner"].id, 77)
+        archive.file_path = "mine_archive.3mf"
+        await db_session.commit()
+
+        owner = await self._slice(async_client, f"/api/v1/archives/{archive.id}/slice", library_world["key"])
+
+        assert owner == library_world["owner"].id

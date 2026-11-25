@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, false, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
@@ -17,8 +17,8 @@ class GitHubBackupConfig(Base):
     repository_url: Mapped[str] = mapped_column(String(500))  # Full GitHub URL
     access_token: Mapped[str] = mapped_column(Text)  # Personal Access Token
     branch: Mapped[str] = mapped_column(String(100), default="main")
-    provider: Mapped[str] = mapped_column(String(30), default="github")
-    allow_insecure_http: Mapped[bool] = mapped_column(Boolean, default=False)
+    provider: Mapped[str] = mapped_column(String(30), default="github", server_default="github")
+    allow_insecure_http: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
     # Schedule configuration
     schedule_enabled: Mapped[bool] = mapped_column(Boolean, default=False)

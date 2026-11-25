@@ -35,7 +35,6 @@ describe('PAProfileSection nozzle-specific profiles (#2618)', () => {
       <I18nextProvider i18n={i18n}>
         <PAProfileSection
           formData={{ ...defaultFormData, material: 'PAHT-CF', slicer_filament: 'GFN05' }}
-          updateField={vi.fn()}
           printersWithCalibrations={printers}
           selectedProfiles={new Set()}
           setSelectedProfiles={vi.fn()}

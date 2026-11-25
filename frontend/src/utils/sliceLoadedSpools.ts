@@ -32,16 +32,12 @@ import type {
   UnifiedPresetsResponse,
 } from '../api/client';
 import { slotPresetDescribesTray } from './amsHelpers';
-import { SLICE_MODAL_TIER_ORDER, statesDifferentMaterial } from './slicePresetPicker';
+import { listedRef, refValue, SLICE_MODAL_TIER_ORDER, statesDifferentMaterial } from './slicePresetPicker';
 import {
   matchesPrinterModelSuffix,
   presetCompatibility,
   type PrinterCompatibilityIndex,
 } from './slicerPrinterMatch';
-
-export function refValue(ref: PresetRef): string {
-  return `${ref.source}:${ref.id}`;
-}
 
 /**
  * The model short name of a printer profile ("Bambu Lab X1 Carbon 0.4
@@ -155,13 +151,14 @@ export function savedPresetFor(tray: LoadedSpoolTray): LoadedSpoolPreset | null 
   return slotPresetDescribesTray(saved.preset_id, tray.tray_info_idx, saved.tray_info_idx) ? saved : null;
 }
 
-function savedRef(saved: LoadedSpoolPreset): PresetRef | null {
+function savedRef(saved: LoadedSpoolPreset, data: UnifiedPresetsResponse): PresetRef | null {
   if (saved.preset_source === 'local') {
     const m = saved.preset_id.match(/^local_(\d+)$/);
     return m ? { source: 'local', id: m[1] } : null;
   }
   if (saved.preset_source === 'cloud' || saved.preset_source === 'orca_cloud') {
-    return saved.preset_id ? { source: saved.preset_source, id: saved.preset_id } : null;
+    // A ref the listing hides is pointed at the twin it lists (#3386).
+    return saved.preset_id ? listedRef(data, { source: saved.preset_source, id: saved.preset_id }) : null;
   }
   // "builtin_<filament id>" names a bundled filament by its id, which the
   // bundled listing doesn't carry; its saved name is matched below instead.
@@ -231,14 +228,14 @@ export function matchSlotPreset(
   const fits = (p: UnifiedPreset) => presetCompatibility(p, 'filament', selectedPrinterName, compatIndex);
 
   if (saved) {
-    const ref = savedRef(saved);
+    const ref = savedRef(saved, data);
     const preset = ref ? data[ref.source].filament.find((p) => p.id === ref.id) : undefined;
     // The user picked this profile for the slot, so its material isn't
     // second-guessed — only whether it is for the selected printer.
     if (ref && preset && fits(preset) !== 'mismatch') return { ref, preset };
   }
 
-  const savedSource = saved ? savedRef(saved)?.source : undefined;
+  const savedSource = saved ? savedRef(saved, data)?.source : undefined;
   for (const name of nameCandidates(tray, saved)) {
     const entries = index.get(presetBaseName(name)) ?? [];
     // The tier the saved profile came from goes first, then the usual order.

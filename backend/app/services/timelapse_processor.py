@@ -1,15 +1,37 @@
 """Timelapse video processing service using FFmpeg."""
 
 import asyncio
+import contextlib
 import json
 import logging
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 from backend.app.services.camera import get_ffmpeg_path
-from backend.app.utils.ffmpeg_output import NO_FFMPEG_OUTPUT, summarize_ffmpeg_stderr
+from backend.app.utils.ffmpeg_output import NO_FFMPEG_OUTPUT, X264_BOUNDED_ARGS, summarize_ffmpeg_stderr
 
 logger = logging.getLogger(__name__)
+
+# ffprobe and a single thumbnail frame take well under a second on a healthy
+# file; these bound a broken or unreadable one, which runs inside a request.
+PROBE_TIMEOUT_SECONDS = 60
+THUMBNAIL_TIMEOUT_SECONDS = 30
+
+
+async def _communicate(process: asyncio.subprocess.Process, timeout: float) -> tuple[bytes, bytes]:
+    """``process.communicate()`` that kills the process when it takes too long."""
+    try:
+        return await asyncio.wait_for(process.communicate(), timeout)
+    except (TimeoutError, asyncio.CancelledError):
+        _kill(process)
+        await process.wait()
+        raise
+
+
+def _kill(process: asyncio.subprocess.Process) -> None:
+    with contextlib.suppress(ProcessLookupError):
+        process.kill()
 
 
 class TimelapseProcessor:
@@ -41,7 +63,10 @@ class TimelapseProcessor:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await process.communicate()
+        try:
+            stdout, stderr = await _communicate(process, PROBE_TIMEOUT_SECONDS)
+        except TimeoutError:
+            raise RuntimeError(f"ffprobe took longer than {PROBE_TIMEOUT_SECONDS} s") from None
 
         if process.returncode != 0:
             # Summarised once and used for both: the raise carried a second,
@@ -124,7 +149,11 @@ class TimelapseProcessor:
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
-                await process.communicate()
+                try:
+                    await _communicate(process, THUMBNAIL_TIMEOUT_SECONDS)
+                except TimeoutError:
+                    logger.warning("Timelapse thumbnail at %.1f s took too long; skipped", timestamp)
+                    continue
 
                 if output_path.exists():
                     thumbnails.append((timestamp, output_path.read_bytes()))
@@ -139,6 +168,7 @@ class TimelapseProcessor:
         speed: float = 1.0,
         audio_path: Path | None = None,
         audio_volume: float = 1.0,
+        on_progress: Callable[[float], None] | None = None,
     ) -> bool:
         """Process video with trim, speed, and optional audio overlay.
 
@@ -149,10 +179,28 @@ class TimelapseProcessor:
             speed: Speed multiplier (0.25 to 4.0)
             audio_path: Optional music file to overlay
             audio_volume: Volume for audio overlay (0.0 to 1.0)
+            on_progress: Called with the share done (0.0 to 1.0) as ffmpeg
+                reports its position
 
         Returns:
             True if processing succeeded, False otherwise
+
+        Cancelling the call stops ffmpeg and removes the partial output.
         """
+        # The output's length, for progress: what is kept of the input, at
+        # the new speed. An audio overlay with -shortest may end it earlier.
+        expected_seconds = None
+        if on_progress is not None:
+            end = trim_end if trim_end is not None and trim_end > trim_start else None
+            if end is None:
+                try:
+                    end = (await self.get_info())["duration"]
+                except Exception as e:
+                    # Progress is a nicety: encode without it.
+                    logger.warning("Timelapse length unknown, no progress: %s", e)
+            if end is not None:
+                expected_seconds = max(end - trim_start, 0) / speed
+
         # Build FFmpeg command
         cmd = [self.ffmpeg, "-y"]
 
@@ -213,12 +261,18 @@ class TimelapseProcessor:
                 "fast",
                 "-crf",
                 "23",
+                # Bounded memory, as for the layer-timelapse stitch (#3292).
+                *X264_BOUNDED_ARGS,
                 "-c:a",
                 "aac",
                 "-b:a",
                 "128k",
                 "-movflags",
                 "+faststart",  # Enable streaming
+                # Position reports on stdout, for progress.
+                "-progress",
+                "pipe:1",
+                "-nostats",
                 str(output_path),
             ]
         )
@@ -232,13 +286,40 @@ class TimelapseProcessor:
             stderr=asyncio.subprocess.PIPE,
         )
 
-        _, stderr = await process.communicate()
+        try:
+            _, stderr = await asyncio.gather(
+                self._read_progress(process, expected_seconds, on_progress),
+                process.stderr.read(),  # type: ignore[union-attr]
+            )
+            await process.wait()
+        except asyncio.CancelledError:
+            _kill(process)
+            await process.wait()
+            output_path.unlink(missing_ok=True)
+            raise
 
         if process.returncode != 0:
             logger.error("FFmpeg processing failed: %s", summarize_ffmpeg_stderr(stderr) or NO_FFMPEG_OUTPUT)
             return False
 
         return output_path.exists()
+
+    @staticmethod
+    async def _read_progress(
+        process: asyncio.subprocess.Process,
+        expected_seconds: float | None,
+        on_progress: Callable[[float], None] | None,
+    ) -> None:
+        """Read ffmpeg's ``-progress`` lines, passing on the share done."""
+        assert process.stdout is not None
+        async for raw in process.stdout:
+            key, _, value = raw.decode(errors="replace").strip().partition("=")
+            if on_progress is None or not expected_seconds or key != "out_time_us":
+                continue
+            try:
+                on_progress(int(value) / 1_000_000 / expected_seconds)
+            except ValueError:
+                pass  # "N/A" before the first frame
 
     def _build_atempo_chain(self, speed: float) -> str:
         """Build atempo filter chain.

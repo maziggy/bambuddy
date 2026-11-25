@@ -7,6 +7,7 @@ import { parseUTCDate, formatTimeOnly, formatDateTime, type TimeFormat } from '.
 import type { NotificationLogEntry } from '../api/client';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
+import { useUiSettings } from '../hooks/useUiSettings';
 
 const EVENT_COLORS: Record<string, string> = {
   print_start: 'text-blue-700 dark:text-blue-400',
@@ -33,10 +34,7 @@ export function NotificationLogViewer({ onClose }: NotificationLogViewerProps) {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [showFailedOnly, setShowFailedOnly] = useState(false);
 
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
-  });
+  const { data: settings } = useUiSettings();
 
   const timeFormat: TimeFormat = settings?.time_format || 'system';
 
@@ -62,7 +60,7 @@ export function NotificationLogViewer({ onClose }: NotificationLogViewerProps) {
       queryClient.invalidateQueries({ queryKey: ['notification-log-stats'] });
     },
     onError: (error: Error) => {
-      showToast(`Failed to clear logs: ${error.message}`, 'error');
+      showToast(t('notificationLog.clearFailed', { message: error.message }), 'error');
     },
   });
 

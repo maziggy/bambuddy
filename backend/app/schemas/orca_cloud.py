@@ -74,7 +74,7 @@ class OrcaProfileListResponse(BaseModel):
 
 
 class OrcaProfileDetail(BaseModel):
-    """Single profile's full content, shaped to match ``SlicerSettingDetail``
+    """Single profile's full content, shaped to match the frontend's ``SlicerSettingDetail``
     so the frontend's detail modal can render it without translation."""
 
     setting_id: str

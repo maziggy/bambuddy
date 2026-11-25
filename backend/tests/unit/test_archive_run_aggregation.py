@@ -344,6 +344,10 @@ class TestComputeTimeAccuracyMultiRun:
             started_at=started_at,
             completed_at=completed_at,
             status=status,
+            plate_id=None,
+            filament_used_grams=None,
+            # Plates not read: the file's estimate stands for the print.
+            plate_estimates=None,
         )
 
     def test_single_run_keeps_original_behaviour(self):
@@ -377,11 +381,11 @@ class TestComputeTimeAccuracyMultiRun:
         assert result["actual_time_seconds"] == 3000
         assert result["time_accuracy"] == 120.0  # 3600/3000
 
-    def test_multi_run_archive_suppresses_both_fields(self):
+    def test_multi_run_archive_suppresses_the_badge(self):
         """Reporter's case (archive #65, 3 plates, 9 logged runs): one-run
         actual (6364s) vs whole-file estimate (18354s) → +188% badge that
-        means nothing. Multi-run must clear both fields so the card falls
-        through to the estimate display with no badge."""
+        means nothing. Without the file's plates known, a multi-run archive
+        shows its latest print's time and no badge (#3375)."""
         from backend.app.api.routes.archives import compute_time_accuracy
 
         archive = self._make_archive(
@@ -391,7 +395,9 @@ class TestComputeTimeAccuracyMultiRun:
         )
         result = compute_time_accuracy(archive, run_aggregate={"run_count": 9})
 
-        assert result["actual_time_seconds"] is None
+        # The latest print's own time stands; no badge against the whole file
+        # (#3375: its plates are not known here).
+        assert result["actual_time_seconds"] == 6364
         assert result["time_accuracy"] is None
 
     def test_run_count_zero_keeps_original_behaviour(self):
@@ -420,9 +426,9 @@ async def test_archive_list_suppresses_time_accuracy_for_multi_run_archives(
     async_client: AsyncClient, archive_factory, printer_factory, db_session
 ):
     """#1608 integration: the card response from the main list endpoint
-    must report ``actual_time_seconds = null`` and ``time_accuracy = null``
-    for an archive with multiple logged runs, so the frontend renders the
-    slicer estimate without the misleading +N% badge."""
+    must report ``time_accuracy = null`` for an archive with multiple logged
+    runs whose plates are not known, so the frontend shows no misleading
+    +N% badge; its time is the latest print's own (#3375)."""
     printer = await printer_factory()
 
     # 3-plate file: estimate is the whole-file sum, latest run is one plate.
@@ -452,10 +458,9 @@ async def test_archive_list_suppresses_time_accuracy_for_multi_run_archives(
     assert response.status_code == 200
     row = next(r for r in response.json() if r["id"] == archive.id)
 
-    # Frontend renders archive.actual_time_seconds || archive.print_time_seconds —
-    # with actual cleared, it falls through to the estimate; with accuracy
-    # cleared, no badge renders.
-    assert row["actual_time_seconds"] is None, "multi-run actual is incommensurable with the estimate — must be null"
+    # The latest print's own time, and no badge: the file's plates are not
+    # known, so the whole-file estimate is no measure of one print (#3375).
+    assert row["actual_time_seconds"] == 6364
     assert row["time_accuracy"] is None, "no badge for multi-run archives — the scopes don't match"
     # The estimate itself is preserved so the card has something to display.
     assert row["print_time_seconds"] == 18354
@@ -496,3 +501,187 @@ async def test_archive_list_keeps_time_accuracy_for_single_run_archives(
     assert row["actual_time_seconds"] == 3600
     assert row["time_accuracy"] == 100.0
     assert row["run_count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# #3310: a print that finished while Bambuddy restarted is logged with its
+# slicer estimate as its duration. That is no measurement, so neither the
+# card's badge nor the Statistics average may compare it with the estimate.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_an_estimated_run_shows_no_time_accuracy(
+    async_client: AsyncClient, archive_factory, printer_factory, db_session
+):
+    printer = await printer_factory()
+    archive = await archive_factory(
+        printer.id,
+        status="completed",
+        print_time_seconds=3600,
+        started_at=datetime(2026, 5, 1, 10, 0, tzinfo=timezone.utc),
+        completed_at=datetime(2026, 5, 1, 11, 0, tzinfo=timezone.utc),
+        with_run=False,
+    )
+    db_session.add(
+        PrintLogEntry(
+            archive_id=archive.id,
+            printer_id=printer.id,
+            status="completed",
+            started_at=datetime(2026, 5, 1, 10, 0, tzinfo=timezone.utc),
+            completed_at=datetime(2026, 5, 1, 11, 0, tzinfo=timezone.utc),
+            duration_seconds=3600,
+            duration_unmeasured=True,
+        )
+    )
+    await db_session.commit()
+
+    row = next(r for r in (await async_client.get("/api/v1/archives/")).json() if r["id"] == archive.id)
+    assert (row["actual_time_seconds"], row["time_accuracy"]) == (None, None)
+    assert row["print_time_seconds"] == 3600
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_an_estimated_run_is_no_accuracy_sample_but_counts_its_time(
+    async_client: AsyncClient, archive_factory, printer_factory, db_session
+):
+    printer = await printer_factory()
+    measured = await archive_factory(printer.id, print_time_seconds=3600, with_run=False)
+    estimated = await archive_factory(printer.id, print_time_seconds=7200, with_run=False)
+    db_session.add(
+        PrintLogEntry(archive_id=measured.id, printer_id=printer.id, status="completed", duration_seconds=4000)
+    )
+    db_session.add(
+        PrintLogEntry(
+            archive_id=estimated.id,
+            printer_id=printer.id,
+            status="completed",
+            duration_seconds=7200,
+            duration_unmeasured=True,
+        )
+    )
+    await db_session.commit()
+
+    body = (await async_client.get("/api/v1/archives/stats")).json()
+    assert body["average_time_accuracy"] == pytest.approx(90.0, abs=0.1)
+    assert body["time_accuracy_by_printer"][str(printer.id)] == pytest.approx(90.0, abs=0.1)
+    assert body["total_print_time_hours"] == pytest.approx(11200 / 3600, abs=0.06)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_run_without_an_estimate_shows_no_reconnect_gap(
+    async_client: AsyncClient, archive_factory, printer_factory, db_session
+):
+    """#3310: with no estimate the archive ends at the reconnect, 9 h after a
+    6 h print started; that gap is neither its time nor an accuracy sample."""
+    printer = await printer_factory()
+    started = datetime(2026, 5, 1, 10, 0, tzinfo=timezone.utc)
+    reconnect = datetime(2026, 5, 1, 19, 0, tzinfo=timezone.utc)
+    archive = await archive_factory(
+        printer.id,
+        status="completed",
+        print_time_seconds=6 * 3600,
+        started_at=started,
+        completed_at=reconnect,
+        with_run=False,
+    )
+    db_session.add(
+        PrintLogEntry(
+            archive_id=archive.id,
+            printer_id=printer.id,
+            status="completed",
+            started_at=started,
+            completed_at=reconnect,
+            duration_seconds=0,
+            duration_unmeasured=True,
+        )
+    )
+    await db_session.commit()
+
+    row = next(r for r in (await async_client.get("/api/v1/archives/")).json() if r["id"] == archive.id)
+    assert (row["actual_time_seconds"], row["time_accuracy"]) == (None, None)
+    body = (await async_client.get("/api/v1/archives/stats")).json()
+    assert body["average_time_accuracy"] is None
+
+
+def _plate_run(archive, day: int, *, grams: float, cost: float, energy_kwh=None, energy_cost=None) -> PrintLogEntry:
+    started = datetime(2026, 11, day, 10, 0, tzinfo=timezone.utc)
+    return PrintLogEntry(
+        archive_id=archive.id,
+        printer_id=archive.printer_id,
+        status="completed",
+        started_at=started,
+        completed_at=started,
+        duration_seconds=3600,
+        filament_used_grams=grams,
+        cost=cost,
+        energy_kwh=energy_kwh,
+        energy_cost=energy_cost,
+        created_at=started,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_an_archive_printed_plate_by_plate_carries_what_all_its_prints_cost(
+    async_client: AsyncClient, archive_factory, printer_factory, db_session
+):
+    """Each plate of a multi-plate file is a run of one archive (#3609).
+
+    The archive keeps the file's filament and the first print's energy; the
+    totals are what the card shows, and what Statistics adds up.
+    """
+    printer = await printer_factory()
+    archive = await archive_factory(
+        printer.id,
+        status="completed",
+        filament_used_grams=837.0,  # the whole file, all plates
+        cost=45.17,
+        energy_kwh=0.2,
+        energy_cost=0.24,  # the first plate's
+        with_run=False,
+    )
+    db_session.add_all(
+        [
+            _plate_run(archive, 1, grams=120.0, cost=6.8, energy_kwh=0.2, energy_cost=0.24),
+            _plate_run(archive, 2, grams=150.0, cost=8.5, energy_kwh=0.5, energy_cost=0.61),
+            _plate_run(archive, 3, grams=90.0, cost=5.1, energy_kwh=0.3, energy_cost=0.38),
+        ]
+    )
+    await db_session.commit()
+
+    body = (await async_client.get(f"/api/v1/archives/{archive.id}")).json()
+
+    assert body["run_count"] == 3
+    assert body["total_filament_actual_grams"] == pytest.approx(360.0)
+    assert body["total_cost"] == pytest.approx(20.4)
+    assert body["total_energy_kwh"] == pytest.approx(1.0)
+    assert body["total_energy_cost"] == pytest.approx(1.23)
+    # The archive's own figures are unchanged (#1378).
+    assert body["cost"] == pytest.approx(45.17)
+    assert body["energy_cost"] == pytest.approx(0.24)
+
+    stats = (await async_client.get("/api/v1/archives/stats")).json()
+    assert stats["total_cost"] == pytest.approx(body["total_cost"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_no_energy_total_when_no_print_measured_any(
+    async_client: AsyncClient, archive_factory, printer_factory, db_session
+):
+    printer = await printer_factory()
+    archive = await archive_factory(printer.id, status="completed", with_run=False)
+    db_session.add_all([_plate_run(archive, 1, grams=10.0, cost=1.0), _plate_run(archive, 2, grams=10.0, cost=1.0)])
+    await db_session.commit()
+
+    body = (await async_client.get("/api/v1/archives/")).json()
+    row = next(a for a in body if a["id"] == archive.id)
+
+    assert row["total_cost"] == pytest.approx(2.0)
+    # Unknown, not zero: no smart plug measured either print.
+    assert row["total_energy_kwh"] is None
+    assert row["total_energy_cost"] is None

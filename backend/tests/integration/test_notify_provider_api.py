@@ -13,6 +13,8 @@ CONFIG = {
     "live_activities": True,
     "lock_screen_widgets": True,
 }
+# Responses show the token as the placeholder (write-only secret).
+SHOWN = {**CONFIG, "token": "********"}
 
 
 async def create_provider(client):
@@ -26,7 +28,7 @@ async def create_provider(client):
 async def test_notify_settings_round_trip_and_push_flags_remain_independent(async_client):
     provider_id = await create_provider(async_client)
     response = await async_client.get(f"/api/v1/notifications/{provider_id}")
-    assert response.json()["config"] == CONFIG
+    assert response.json()["config"] == SHOWN
     assert response.json()["on_print_start"] is False
     assert response.json()["on_print_progress"] is False
 
@@ -80,7 +82,7 @@ async def test_empty_config_update_is_rejected_and_keeps_previous_credentials(as
     response = await async_client.patch(f"/api/v1/notifications/{provider_id}", json={"config": {}})
     assert response.status_code == 422
     saved = await async_client.get(f"/api/v1/notifications/{provider_id}")
-    assert saved.json()["config"] == CONFIG
+    assert saved.json()["config"] == SHOWN
 
 
 async def test_credential_change_queues_old_device_cleanup_with_old_credentials(async_client):
@@ -99,7 +101,7 @@ async def test_credential_change_queues_old_device_cleanup_with_old_credentials(
     assert response.status_code == 200
     cleanup.assert_awaited_once_with(provider_id, CONFIG)
     widget_cleanup.assert_awaited_once_with(provider_id, CONFIG)
-    assert response.json()["config"]["token"] == "replacement-token"
+    assert response.json()["config"]["token"] == "********"
 
 
 async def test_disabling_or_changing_push_thread_leaves_cleanup_to_durable_worker(async_client):
@@ -152,7 +154,7 @@ async def test_lock_screen_widgets_can_be_enabled_without_live_activities_or_pus
         },
     )
     assert response.status_code == 200
-    assert response.json()["config"] == config
+    assert response.json()["config"] == {**config, "token": "********"}
     assert response.json()["on_print_start"] is False
     assert response.json()["on_print_complete"] is False
     assert response.json()["on_print_failed"] is False

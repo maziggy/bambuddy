@@ -10,6 +10,7 @@ from backend.app import main as main_module
 def clear_kill_switch_state():
     main_module._kill_switch_setting_cache = None
     main_module._unauthorized_print_kill_sent.clear()
+    main_module._kill_switch_stopped.clear()
     main_module._kill_switch_notification_tasks.clear()
     main_module._expected_prints.clear()
     main_module._active_prints.clear()
@@ -20,6 +21,7 @@ def clear_kill_switch_state():
         if not task.done():
             task.cancel()
     main_module._unauthorized_print_kill_sent.clear()
+    main_module._kill_switch_stopped.clear()
     main_module._kill_switch_notification_tasks.clear()
     main_module._expected_prints.clear()
     main_module._active_prints.clear()
@@ -93,6 +95,10 @@ async def test_unauthorized_active_print_triggers_stop(monkeypatch):
         tray_now=255,
         door_open=False,
         ams_filament_backup=False,
+        firmware_version=None,
+        developer_mode=None,
+        airduct_mode=0,
+        print_ams_mapping=None,
         current_print=None,
         subtask_name="foreign_job",
         subtask_id="external-task-1",
@@ -105,6 +111,8 @@ async def test_unauthorized_active_print_triggers_stop(monkeypatch):
     assert stop_calls == [7]
     unauthorized.assert_awaited_once()
     assert 7 in main_module._unauthorized_print_kill_sent
+    # Its completion is archived as a cancel with the kill switch as reason.
+    assert 7 in main_module._kill_switch_stopped
     broadcast.assert_awaited_once_with(
         {
             "type": "kill_switch_triggered",
@@ -186,6 +194,10 @@ async def test_bambuddy_authorized_print_is_not_stopped(monkeypatch):
         tray_now=255,
         door_open=False,
         ams_filament_backup=False,
+        firmware_version=None,
+        developer_mode=None,
+        airduct_mode=0,
+        print_ams_mapping=None,
         current_print=None,
         subtask_name="foreign_job",
         gcode_file="foreign_job.gcode",
@@ -271,6 +283,10 @@ async def test_unauthorized_print_state_is_cleared_when_print_ends(monkeypatch):
         tray_now=255,
         door_open=False,
         ams_filament_backup=False,
+        firmware_version=None,
+        developer_mode=None,
+        airduct_mode=0,
+        print_ams_mapping=None,
         current_print=None,
         subtask_name="foreign_job",
         subtask_id="external-task-1",
@@ -301,6 +317,10 @@ async def test_unauthorized_print_state_is_cleared_when_print_ends(monkeypatch):
         tray_now=255,
         door_open=False,
         ams_filament_backup=False,
+        firmware_version=None,
+        developer_mode=None,
+        airduct_mode=0,
+        print_ams_mapping=None,
         current_print=None,
         subtask_name="",
         subtask_id=None,
@@ -328,7 +348,8 @@ async def test_persisted_print_is_authorized_after_restart(monkeypatch, printer_
         created_by_id=None,
     )
     query_result = SimpleNamespace(scalar_one_or_none=lambda: archive)
-    db = SimpleNamespace(execute=AsyncMock(return_value=query_result))
+    # No open run for it: a print started before runs were opened at start.
+    db = SimpleNamespace(execute=AsyncMock(return_value=query_result), scalar=AsyncMock(return_value=None))
 
     class FakeSessionContext:
         async def __aenter__(self):
@@ -385,6 +406,10 @@ async def test_persisted_print_is_authorized_after_restart(monkeypatch, printer_
         tray_now=255,
         door_open=False,
         ams_filament_backup=False,
+        firmware_version=None,
+        developer_mode=None,
+        airduct_mode=0,
+        print_ams_mapping=None,
         current_print=None,
         subtask_name="owned_job",
         subtask_id="bambuddy-task-123",
@@ -418,12 +443,14 @@ async def test_kill_switch_defers_when_restart_identity_is_not_available(monkeyp
 
 
 def _authorization_db(archive, dispatched_queue_item_id=None):
-    """Fake session answering the two lookups `_is_bambuddy_authorized_print` makes."""
+    """Fake session answering the lookups `_is_bambuddy_authorized_print` makes:
+    the job's open run (none here: a print started before runs were opened at
+    start), the archive, then the queue."""
 
     query_result = SimpleNamespace(scalar_one_or_none=lambda: archive)
     return SimpleNamespace(
         execute=AsyncMock(return_value=query_result),
-        scalar=AsyncMock(return_value=dispatched_queue_item_id),
+        scalar=AsyncMock(side_effect=[None, dispatched_queue_item_id]),
     )
 
 
@@ -473,8 +500,9 @@ async def test_either_dispatch_marker_authorizes_after_a_restart(monkeypatch, ma
 
     assert await main_module._is_bambuddy_authorized_print(9, _running_state(), db) is True
     assert main_module._active_prints[(9, "some_job.gcode.3mf")] == 77
-    # The fast path is rehydrated, so the queue is never consulted.
-    db.scalar.assert_not_awaited()
+    # The fast path is rehydrated, so the queue is never consulted: the one
+    # scalar read is the open-run lookup.
+    assert db.scalar.await_count == 1
 
 
 @pytest.mark.asyncio

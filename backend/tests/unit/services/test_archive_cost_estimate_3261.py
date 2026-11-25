@@ -65,6 +65,9 @@ async def _setup(db_session, printer_factory, archive_factory, *, spoolman=False
         status="printing",
         cost=14.18,
         with_run=with_run,
+        # An earlier run of the archive, ended; a run still printing is open
+        # and counts as none.
+        run_status="completed" if with_run else None,
         file_path="archive/print.3mf",
         filament_used_grams=grams,
         filament_type="PLA",
@@ -377,3 +380,41 @@ class TestRaceWithCompletion:
         await db_session.refresh(archive)
         assert archive.cost == 1.23
         ws.assert_not_awaited()
+
+
+class TestCompletionStopsTheEstimate:
+    @pytest.mark.asyncio
+    async def test_settling_cancels_a_running_estimate_before_it_writes(self):
+        """COST-4: completion commits the real cost before it marks the archive
+        ended, so an estimate still waiting on Spoolman saw "printing" and wrote
+        over it. Completion now stops the estimate first."""
+        import asyncio
+        from contextlib import asynccontextmanager
+
+        wrote: list[int] = []
+        blocked = asyncio.Event()
+
+        async def slow_estimate(*_args):
+            await blocked.wait()
+            wrote.append(1)
+
+        @asynccontextmanager
+        async def fake_session():
+            yield object()
+
+        with (
+            patch("backend.app.core.database.async_session", new=fake_session),
+            patch.object(archive_cost_estimate, "estimate_archive_cost_at_start", new=slow_estimate),
+        ):
+            task = archive_cost_estimate.schedule_archive_cost_estimate(3, 42, "pm")
+            await asyncio.sleep(0)
+            await archive_cost_estimate.settle_archive_cost_estimate(3, 42)
+            blocked.set()
+            await asyncio.sleep(0)
+
+        assert task.cancelled()
+        assert wrote == []
+
+    @pytest.mark.asyncio
+    async def test_settling_with_nothing_running_is_harmless(self):
+        await archive_cost_estimate.settle_archive_cost_estimate(3, 9999)

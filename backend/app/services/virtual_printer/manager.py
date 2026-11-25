@@ -8,6 +8,7 @@ import asyncio
 import json
 import logging
 import time
+import uuid
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,19 +16,23 @@ from typing import TYPE_CHECKING
 
 from backend.app.core.config import settings as app_settings
 from backend.app.models.virtual_printer import (
-    VP_MODE_ARCHIVE,
+    VP_MODE_LIBRARY,
     VP_MODE_PROXY,
     VP_MODE_QUEUE,
     normalize_vp_mode,
 )
+from backend.app.services import slicer_ams_pick
 from backend.app.services.bambu_mqtt import resolve_external_spools_in_mapping
 from backend.app.services.virtual_printer.bind_server import BindServer
+from backend.app.services.virtual_printer.camera_bridge import CHAMBER, RTSP, AcceptedCode, CameraBridge
 from backend.app.services.virtual_printer.certificate import CertificateService
 from backend.app.services.virtual_printer.ftp_server import VirtualPrinterFTPServer, compute_passive_port_slice
 from backend.app.services.virtual_printer.mqtt_bridge import MQTTBridge
 from backend.app.services.virtual_printer.mqtt_server import SimpleMQTTServer
 from backend.app.services.virtual_printer.ssdp_server import SSDPProxy, VirtualPrinterSSDPServer
-from backend.app.services.virtual_printer.tcp_proxy import SlicerProxyManager, TCPProxy
+from backend.app.services.virtual_printer.tcp_proxy import SlicerProxyManager
+from backend.app.utils.printer_models import has_ams3h, is_nozzle_rack_model
+from backend.app.utils.tray_ids import TrayLayout
 
 if TYPE_CHECKING:
     from backend.app.services.printer_manager import PrinterManager
@@ -63,6 +68,8 @@ VIRTUAL_PRINTER_MODELS = {
     "O1C": "H2C",  # H2C
     "O1C2": "H2C",  # H2C (dual nozzle variant)
     "O1S": "H2S",  # H2S
+    # H3 Series
+    "N10": "H3C",  # H3C
 }
 
 # Serial number prefixes for each model (based on Bambu Lab serial number format)
@@ -94,13 +101,45 @@ MODEL_SERIAL_PREFIXES = {
     "O1D": "09400A",  # H2D
     "O1E": "09400A",  # H2D Pro (same prefix family as H2D)
     "O2D": "09400A",  # H2D Pro
-    "O1C": "09400A",  # H2C
-    "O1C2": "09400A",  # H2C (dual nozzle variant)
+    "O1C": "09400A",  # H2C, older units: they share the H2D's 094 prefix
+    # H2C from 2026: real serials start 31B8B (31B model, 8B revision, then the
+    # revision letter), e.g. 31B8BP... A virtual one in the H2D's 094 family
+    # also got the H2D's HMS texts in the slicer.
+    "O1C2": "31B8BP",
     "O1S": "09400A",  # H2S
+    # H3 Series
+    # H3C: first 6 characters of a real H3C serial (#3442); Bambu Studio knows
+    # an H3C by "32X" (sn_prefix in resources/printers/N10.json).
+    "N10": "32X99B",
 }
 
 # Reverse mapping: display name → SSDP model code (for auto-inheriting from printer model)
 DISPLAY_NAME_TO_MODEL_CODE = {v: k for k, v in VIRTUAL_PRINTER_MODELS.items()}
+
+# Models whose display name covers more than one code, told apart by the
+# printer's serial: (first characters, code). The first match wins; no match
+# keeps the code the name maps to.
+_CODES_BY_SERIAL: dict[str, tuple[tuple[str, str], ...]] = {
+    "H2C": (("31B", "O1C2"), ("094", "O1C")),
+}
+
+
+def model_code_for_printer(printer_model: str | None, serial: str | None = None) -> str | None:
+    """The VP model code for a printer's model (display name or SSDP code) and serial.
+
+    An H2C is an O1C or an O1C2, which only its serial tells: a slicer syncs
+    with the virtual printer only when it reports the printer's own code.
+    """
+    if not printer_model:
+        return None
+    code = printer_model if printer_model in VIRTUAL_PRINTER_MODELS else DISPLAY_NAME_TO_MODEL_CODE.get(printer_model)
+    name = VIRTUAL_PRINTER_MODELS.get(code or "")
+    if name and serial:
+        for prefix, by_serial in _CODES_BY_SERIAL.get(name, ()):
+            if serial.upper().startswith(prefix):
+                return by_serial
+    return code
+
 
 # Default model
 DEFAULT_VIRTUAL_PRINTER_MODEL = "BL-P001"  # X1C
@@ -131,13 +170,13 @@ _SLICER_OPTIONS_WAIT_TIMEOUT = 5.0
 _RECENT_QUEUE_ITEM_TTL = 30.0
 
 # BambuStudio's tri-state calibration options (bed_leveling / flow_cali /
-# nozzle_offset_cali) travel on the project_file command as a bool plus an int
-# companion — off=0, on=1, auto=2 (getValueInt parity). The int carries the full
-# state; the bool is true only for "on".
+# nozzle_offset_cali) travel on the project_file command as an int — off=0,
+# on=1, auto=2 (getValueInt parity). Bed levelling and flow calibration add a
+# bool that is true only for "on"; nozzle offset calibration is the int alone.
 _TRISTATE_INT = {0: "off", 1: "on", 2: "auto"}
 
 
-def _tristate_from_slicer(data: dict, bool_field: str, int_field: str) -> str | None:
+def _tristate_from_slicer(data: dict, bool_field: str | None, int_field: str) -> str | None:
     """Reconstruct off/on/auto from a captured slicer project_file dict.
 
     Prefer the int companion (auto_bed_leveling / extrude_cali_flag / etc.) which
@@ -151,12 +190,14 @@ def _tristate_from_slicer(data: dict, bool_field: str, int_field: str) -> str | 
             resolved = None
         if resolved is not None:
             return resolved
-    if bool_field in data:
+    if bool_field is not None and bool_field in data:
         return "on" if bool(data[bool_field]) else "off"
     return None
 
 
-def _extract_slicer_ams_mapping_json(data: dict, log_prefix: str, *, is_dual_nozzle: bool = False) -> str | None:
+def _extract_slicer_ams_mapping_json(
+    data: dict, log_prefix: str, *, is_dual_nozzle: bool = False, layout: TrayLayout | None = None
+) -> str | None:
     """Pull the slicer's own AMS-slot pick out of a captured project_file payload.
 
     BambuStudio/OrcaSlicer resolves the physical AMS tray for each filament
@@ -191,7 +232,8 @@ def _extract_slicer_ams_mapping_json(data: dict, log_prefix: str, *, is_dual_noz
     turns that back into the external-spool entry. Kept as ``-1`` it dispatched
     as unmapped and the printer stopped with 0700-8012 (#3237).
     ``is_dual_nozzle`` is the target printer's, since that decides which
-    global tray an external spool is.
+    global tray an external spool is. So is ``layout``: on a rack printer
+    (H3C) each hotend has its own external input, 247-255.
 
     Returns ``None`` when the field is absent, unparsable, or the classic
     "all -1" unresolved-race sentinel (#2589) — never worth trusting over a
@@ -217,7 +259,7 @@ def _extract_slicer_ams_mapping_json(data: dict, log_prefix: str, *, is_dual_noz
             detail = json.loads(detail)
         except json.JSONDecodeError:
             detail = None
-    raw = resolve_external_spools_in_mapping(raw, detail, is_dual_nozzle)
+    raw = resolve_external_spools_in_mapping(raw, detail, is_dual_nozzle, layout)
     if all(v < 0 for v in raw):
         # #2589 sentinel — every slot unresolved. Let the scheduler compute a
         # fresh mapping from live AMS state instead of trusting this.
@@ -256,7 +298,6 @@ class VirtualPrinterInstance:
         gcode_injection: bool = False,
         bind_ip: str = "",
         remote_interface_ip: str = "",
-        tailscale_disabled: bool = True,
         base_dir: Path,
         session_factory: Callable | None = None,
         printer_manager: "PrinterManager | None" = None,
@@ -267,7 +308,7 @@ class VirtualPrinterInstance:
         # canonical values, even when a legacy DB row hasn't been migrated
         # yet (e.g. fresh-from-disk during the boot window before the
         # one-shot migration in `core/database.py` has executed).
-        self.mode = normalize_vp_mode(mode) or VP_MODE_ARCHIVE
+        self.mode = normalize_vp_mode(mode) or VP_MODE_LIBRARY
         self.model = model
         self.access_code = access_code
         self.serial_suffix = serial_suffix
@@ -280,7 +321,6 @@ class VirtualPrinterInstance:
         self.gcode_injection = gcode_injection
         self.bind_ip = bind_ip
         self.remote_interface_ip = remote_interface_ip
-        self.tailscale_disabled = tailscale_disabled
         self._session_factory = session_factory
         self._printer_manager = printer_manager
 
@@ -301,7 +341,8 @@ class VirtualPrinterInstance:
             shared_ca_dir=shared_ca_dir,
         )
 
-        # Pending files for MQTT correlation
+        # Uploads received and not yet archived or queued; only counted, for
+        # the status's pending_files.
         self._pending_files: dict[str, Path] = {}
 
         # Slicer-side print options captured from the MQTT `project_file`
@@ -325,17 +366,23 @@ class VirtualPrinterInstance:
         # `_RECENT_QUEUE_ITEM_TTL` are evicted opportunistically on each
         # queue-add.
         self._recent_queue_items: dict[str, tuple[list[int], float]] = {}
+        # Per entry above: the highest slot id each queued plate prints, so a
+        # late slicer AMS mapping is stamped only onto plates it reaches.
+        self._recent_queue_item_reach: dict[str, dict[int, int]] = {}
 
         # Per-instance services
         self._proxy: SlicerProxyManager | None = None
         self._ftp: VirtualPrinterFTPServer | None = None
         self._mqtt: SimpleMQTTServer | None = None
         self._mqtt_bridge: MQTTBridge | None = None
-        self._rtsp_proxy: TCPProxy | None = None
+        self._rtsp_proxy: CameraBridge | None = None
         self._bind: BindServer | None = None
         self._ssdp: VirtualPrinterSSDPServer | None = None
         self._ssdp_proxy: SSDPProxy | None = None
         self._tasks: list[asyncio.Task] = []
+        # The services the slicer cannot reach the VP without, by name. When
+        # one of their tasks has ended, the manager restarts the VP (#3687).
+        self._core_tasks: dict[str, asyncio.Task] = {}
 
         # Pending timer that re-fires gcode_state=FINISH after a project_file
         # ack. See ``_schedule_finish_release`` for the #1658 rationale.
@@ -362,6 +409,25 @@ class VirtualPrinterInstance:
     def is_running(self) -> bool:
         return len(self._tasks) > 0 and all(not t.done() for t in self._tasks)
 
+    def ended_services(self) -> list[str]:
+        """The core services whose task has ended, by name.
+
+        They return when they cannot bind (an address not assigned yet, a port
+        taken), and the VP is then unreachable for the slicer. The camera
+        bridge is not one of them: the VP works without it, and restarting the
+        whole VP would not free a port another program holds.
+        """
+        return [name for name, task in self._core_tasks.items() if task.done()]
+
+    async def restart(self) -> None:
+        """Stop this VP's services and start them again with the same settings."""
+        if self.is_proxy:
+            await self.stop_proxy()
+            await self.start_proxy()
+        else:
+            await self.stop_server()
+            await self.start_server()
+
     def generate_certificates(self) -> tuple[Path, Path]:
         """Generate certificates for this instance."""
         self._cert_service.serial = self.serial if not self.is_proxy else (self.target_printer_serial or self.serial)
@@ -374,23 +440,95 @@ class VirtualPrinterInstance:
 
     # -- File handling callbacks --
 
-    async def on_file_received(self, file_path: Path, source_ip: str) -> None:
-        """Handle file upload completion from FTP."""
+    async def authenticate_user_code(self, code: str) -> int | None:
+        """The user whose personal access code ``code`` is, if they may send here (#1430).
+
+        Asked by the FTP and MQTT servers when a sign-in is not the VP's own
+        code. Checked fresh at each sign-in; see ``user_codes.user_for_code``.
+        """
+        if not self._session_factory or self.is_proxy:
+            return None
+        from backend.app.services.virtual_printer.user_codes import user_for_code
+
+        try:
+            async with self._session_factory() as db:
+                user = await user_for_code(db, code, mode=self.mode, target_printer_id=self.target_printer_id)
+        except Exception as e:  # noqa: BLE001 -- a lookup error refuses the sign-in, never crashes it
+            logger.error("[VP %s] Personal access code check failed: %s", self.name, e)
+            return None
+        return user.id if user is not None else None
+
+    async def user_may_control_target(self, user_id: int) -> bool:
+        """Whether a personal-code user may send commands to the target printer now (#1430).
+
+        Asked for every command the bridge would pass to the real printer for
+        a connection that signed in with a personal code: sending files does
+        not include stopping prints or sending G-code. Fresh each time, so it
+        follows the user's account and permissions while the slicer stays on.
+        """
+        if not self._session_factory or self.target_printer_id is None:
+            return False
+        from backend.app.services.virtual_printer.user_codes import may_control_printer
+
+        try:
+            async with self._session_factory() as db:
+                return await may_control_printer(db, user_id, self.target_printer_id)
+        except Exception as e:  # noqa: BLE001 -- a lookup error refuses the command
+            logger.error("[VP %s] Printer control check failed: %s", self.name, e)
+            return False
+
+    def _target_access_code(self) -> str | None:
+        """The target printer's own access code, which its camera checks."""
+        if self._printer_manager is None or self.target_printer_id is None:
+            return None
+        client = self._printer_manager.get_client(self.target_printer_id)
+        code = getattr(client, "access_code", None) if client is not None else None
+        return code if isinstance(code, str) and code else None
+
+    async def camera_codes(self) -> list[AcceptedCode]:
+        """Codes the slicer's camera view through this VP accepts (#1430).
+
+        The VP's own, the target printer's own, and the personal codes of
+        users who may watch the target printer now. Asked at each camera
+        connection.
+        """
+        accepted = [AcceptedCode(self.access_code)]
+        printer_code = self._target_access_code()
+        if printer_code and printer_code != self.access_code:
+            accepted.append(AcceptedCode(printer_code))
+        if self._session_factory is None or self.target_printer_id is None:
+            return accepted
+        from backend.app.services.virtual_printer.user_codes import camera_codes
+
+        try:
+            async with self._session_factory() as db:
+                personal = await camera_codes(db, self.target_printer_id)
+        except Exception as e:  # noqa: BLE001 -- a lookup error leaves only the shared codes
+            logger.error("[VP %s] Personal camera code lookup failed: %s", self.name, e)
+            return accepted
+        return accepted + [AcceptedCode(code, user_id) for code, user_id in personal]
+
+    async def on_file_received(self, file_path: Path, source_ip: str, user_id: int | None = None) -> None:
+        """Handle file upload completion from FTP.
+
+        ``user_id``: who sent it, when the slicer signed in with a personal
+        access code (#1430); the File Manager file and queue jobs are theirs.
+        """
         logger.info("[VP %s] Received file: %s from %s", self.name, file_path.name, source_ip)
 
         self._pending_files[file_path.name] = file_path
 
-        # Accept both canonical (`archive`/`queue`) and legacy
-        # (`immediate`/`print_queue`) wire values so a stale row that hasn't
-        # been migrated yet still dispatches correctly. Migration in
+        # Accept both canonical (`library`/`queue`) and legacy
+        # (`immediate`/`archive`/`print_queue`) wire values so a stale row that
+        # hasn't been migrated yet still dispatches correctly. Migration in
         # `core/database.py` rewrites existing rows once at boot.
         mode = normalize_vp_mode(self.mode)
-        if mode == VP_MODE_ARCHIVE:
-            await self._archive_file(file_path, source_ip)
+        if mode == VP_MODE_LIBRARY:
+            await self._store_in_library(file_path, source_ip, user_id=user_id)
         elif mode == VP_MODE_QUEUE:
-            await self._add_to_print_queue(file_path, source_ip)
+            await self._add_to_print_queue(file_path, source_ip, user_id=user_id)
         else:
-            await self._queue_file(file_path, source_ip)
+            await self._queue_file(file_path, source_ip, user_id=user_id)
 
         # Signal job completion to the slicer. Send-flow slicers don't watch the
         # post-upload state and would be happy with anything; the Print flow
@@ -411,6 +549,28 @@ class VirtualPrinterInstance:
             # IDLE reset was wrong — staying at FINISH is the designed
             # behaviour. The next upload's PREPARE→FINISH cycle starts fresh.
 
+    def _keeps_slicer_nozzle_mapping(self) -> bool:
+        """Whether the slicer's ``nozzle_mapping`` is stored on the queue item.
+
+        On a rack model (H2C) it holds physical rack positions, which name the
+        rack of the printer the slicer was looking at: kept only when this VP
+        targets that one printer. A VP for any printer of the model leaves it
+        empty, and the dispatch resolves the positions against the rack of the
+        printer it picks. Elsewhere it holds extruder indices, which are the
+        same on every printer of the model.
+        """
+        return self.target_printer_id is not None or not is_nozzle_rack_model(self.model)
+
+    def _keeps_slicer_use_ams(self) -> bool:
+        """Whether the slicer's ``use_ams`` is stored on the queue item.
+
+        The slicer was looking at this VP, which advertises no AMS. Only a VP
+        bound to one printer stands for a machine whose AMS the user chose to
+        use or not; a VP for any printer of the model leaves it on and the
+        dispatch reconciles it against the printer it picks (#2595).
+        """
+        return self.target_printer_id is not None
+
     def _target_is_dual_nozzle(self) -> bool:
         """Whether the target printer has two nozzles, which decides the global
         tray of an external spool in the slicer's mapping (#3237).
@@ -430,6 +590,19 @@ class VirtualPrinterInstance:
                 getattr(client, "model", None)
             )
         return is_dual_nozzle_model(self.model)
+
+    def _target_tray_layout(self) -> TrayLayout:
+        """How the target printer numbers its trays, which places an H3C's
+        per-hotend external inputs in the slicer's mapping.
+
+        The target's live AMS data, else its model; without a target printer
+        ("any available" queue mode), the VP's own model.
+        """
+        if self._printer_manager is not None and self.target_printer_id is not None:
+            from backend.app.services.printer_manager import printer_tray_layout
+
+            return printer_tray_layout(self.target_printer_id, self._printer_manager)
+        return TrayLayout.ams3h() if has_ams3h(self.model) else TrayLayout()
 
     async def on_print_command(self, filename: str, data: dict) -> None:
         """Handle print command from MQTT.
@@ -511,11 +684,13 @@ class VirtualPrinterInstance:
         committed for this filename and patches in the slicer's
         ``nozzle_mapping`` + ``ams_mapping`` + workflow flags, but only
         while the items are still ``pending`` (scheduler hasn't dispatched
-        them yet).
+        them yet). The two mappings pass the same gates as in
+        ``_add_to_print_queue``.
         """
         if not self._session_factory:
             return
         entry = self._recent_queue_items.get(stash_key)
+        plate_reach = self._recent_queue_item_reach.pop(stash_key, {})
         if entry is None:
             return
         queue_item_ids, committed_at = entry
@@ -534,6 +709,7 @@ class VirtualPrinterInstance:
         for bool_field, int_field, column in (
             ("bed_leveling", "auto_bed_leveling", "bed_levelling"),
             ("flow_cali", "extrude_cali_flag", "flow_cali"),
+            (None, "nozzle_offset_cali", "nozzle_offset_cali"),
         ):
             resolved = _tristate_from_slicer(data, bool_field, int_field)
             if resolved is not None:
@@ -545,10 +721,13 @@ class VirtualPrinterInstance:
             ("timelapse", "timelapse"),
             ("use_ams", "use_ams"),
         ):
+            if mqtt_field == "use_ams" and not self._keeps_slicer_use_ams():
+                continue
             if mqtt_field in data:
                 patch[column] = bool(data[mqtt_field])
 
-        raw = data.get("nozzle_mapping")
+        # Same gate as in `_add_to_print_queue`.
+        raw = data.get("nozzle_mapping") if self._keeps_slicer_nozzle_mapping() else None
         if raw is not None:
             if isinstance(raw, str):
                 try:
@@ -571,7 +750,10 @@ class VirtualPrinterInstance:
         # #1766 backup gate).
         ams_mapping_json = (
             _extract_slicer_ams_mapping_json(
-                data, f"[VP {self.name}] Late MQTT", is_dual_nozzle=self._target_is_dual_nozzle()
+                data,
+                f"[VP {self.name}] Late MQTT",
+                is_dual_nozzle=self._target_is_dual_nozzle(),
+                layout=self._target_tray_layout(),
             )
             if self.target_printer_id is not None and self.save_ams_mapping
             else None
@@ -597,24 +779,62 @@ class VirtualPrinterInstance:
 
         try:
             async with self._session_factory() as db:
-                # Only stamp items still pending; once the scheduler has
-                # picked the row up we can't safely race the dispatcher.
+                # Only stamp items still pending and unclaimed; once the
+                # scheduler has picked the row up we can't safely race the
+                # dispatcher. A claim leaves the status "pending" while the
+                # upload runs with the row's current mapping, so the claim is
+                # checked too, and again in the writes below.
+                unclaimed = (PrintQueueItem.status == "pending", PrintQueueItem.dispatching_at.is_(None))
                 result = await db.execute(
-                    select(PrintQueueItem.id, PrintQueueItem.archive_id).where(
+                    select(PrintQueueItem.id, PrintQueueItem.archive_id, PrintQueueItem.dispatching_at).where(
                         PrintQueueItem.id.in_(queue_item_ids),
                         PrintQueueItem.status == "pending",
                     )
                 )
                 rows = result.all()
-                eligible_ids = [row[0] for row in rows]
-                if not eligible_ids:
+                eligible_ids = [row[0] for row in rows if row[2] is None]
+                # A claimed job's archive still takes the slicer's pick below:
+                # that copy serves later reprints, not this run.
+                if not eligible_ids and (ams_mapping_json is None or not rows):
                     self._recent_queue_items.pop(stash_key, None)
                     return
-                if patch:
-                    await db.execute(update(PrintQueueItem).where(PrintQueueItem.id.in_(eligible_ids)).values(**patch))
+                # As in `_add_to_print_queue`: a mapping shorter than a plate's
+                # highest slot id cannot address that plate's own slots, so that
+                # plate is left to the scheduler's computed mapping.
+                short_ids: list[int] = []
+                if "ams_mapping" in patch:
+                    reach = len(json.loads(patch["ams_mapping"]))
+                    short_ids = [i for i in eligible_ids if plate_reach.get(i, 0) > reach]
+                    if short_ids:
+                        logger.warning(
+                            "[VP %s] Late slicer ams_mapping has %d entries, too few for queue item(s) %s; "
+                            "leaving those to the scheduler's mapping.",
+                            self.name,
+                            reach,
+                            short_ids,
+                        )
+                reached_ids = [i for i in eligible_ids if i not in short_ids]
+                if patch and reached_ids:
+                    await db.execute(
+                        update(PrintQueueItem).where(PrintQueueItem.id.in_(reached_ids), *unclaimed).values(**patch)
+                    )
+                short_patch = {k: v for k, v in patch.items() if k != "ams_mapping"}
+                if short_ids and short_patch:
+                    await db.execute(
+                        update(PrintQueueItem).where(PrintQueueItem.id.in_(short_ids), *unclaimed).values(**short_patch)
+                    )
 
-                # The archive was already created (with no slicer_ams_mapping)
-                # before this late MQTT arrived — see
+                # The queue items keep the pick for the archive their print
+                # makes (a claimed one too: its archive may not exist yet).
+                if ams_mapping_json is not None and rows:
+                    await db.execute(
+                        update(PrintQueueItem)
+                        .where(PrintQueueItem.id.in_([row[0] for row in rows]))
+                        .values(slicer_ams_mapping=slicer_ams_pick.pack(ams_mapping_json, self.target_printer_id))
+                    )
+
+                # An item whose print already started has its archive, made
+                # before this late MQTT arrived (with no slicer_ams_mapping) — see
                 # `_extract_slicer_ams_mapping_json`'s docstring. Patch it here
                 # too so a reprint later still picks up the slicer's pick, and
                 # the "AMS mapping from slicer" badge reflects reality instead
@@ -697,71 +917,50 @@ class VirtualPrinterInstance:
         self._mqtt.set_gcode_state("FINISH", filename=filename, prepare_percent="100")
         logger.debug("[VP %s] Re-set gcode_state=FINISH after project_file ack (%s)", self.name, filename)
 
-    async def _archive_file(self, file_path: Path, source_ip: str) -> None:
-        """Archive file immediately."""
+    async def _store_in_library(self, file_path: Path, source_ip: str, user_id: int | None = None) -> None:
+        """Store the upload in the File Manager (library mode)."""
         if not self._session_factory:
-            logger.error("Cannot archive: no database session factory configured")
-            return
-
-        if file_path.suffix.lower() != ".3mf":
-            logger.debug("Skipping non-3MF file: %s", file_path.name)
+            logger.error("Cannot store upload: no database session factory configured")
             self._pending_files.pop(file_path.name, None)
-            try:
-                file_path.unlink()
-            except OSError:
-                pass
             return
 
-        archived = False
         try:
-            from backend.app.api.routes.settings import get_setting
-            from backend.app.services.archive import ArchiveService
+            if file_path.suffix.lower() != ".3mf":
+                logger.debug("Skipping non-3MF file: %s", file_path.name)
+                return
+            from backend.app.services.virtual_printer.library_store import store_upload, upload_settings
 
             async with self._session_factory() as db:
-                name_source = await get_setting(db, "virtual_printer_archive_name_source")
-                prefer_filename = name_source == "filename"
-                service = ArchiveService(db)
-                archive = await service.archive_print(
-                    printer_id=None,
-                    source_file=file_path,
-                    print_data={
-                        "status": "archived",
-                        "source": "virtual_printer",
-                        "source_ip": source_ip,
-                    },
-                    prefer_filename_for_name=prefer_filename,
+                folder_id, _ = await upload_settings(db, self.id)
+                library_file, reused = await store_upload(
+                    db, source_path=file_path, filename=file_path.name, folder_id=folder_id, owner_id=user_id
                 )
-                if archive:
-                    logger.info("[VP %s] Archived: %s - %s", self.name, archive.id, archive.print_name)
-                    await self._broadcast_archive_created(archive)
-                    archived = True
-                else:
-                    logger.error("Failed to archive file: %s", file_path.name)
+            logger.info(
+                "[VP %s] %s File Manager file %s (%s) from %s",
+                self.name,
+                "Same file as" if reused else "Stored as",
+                library_file.id,
+                library_file.filename,
+                source_ip,
+            )
+            await self._broadcast_library_files_changed()
         except Exception as e:
-            logger.error("Error archiving file: %s", e)
+            logger.error("[VP %s] Error storing %s in the File Manager: %s", self.name, file_path.name, e)
         finally:
-            # Always release the in-flight marker and delete the temp file —
-            # previously the failure paths only logged and the next upload of
-            # the same name was silently rejected with "already uploading",
-            # the upload_dir filled up indefinitely, and the slicer received
-            # a clean 226 even though no archive existed (#audit-R2-1).
+            # Always drop it from the pending count and delete the temp file:
+            # the File Manager holds its own copy, and a failed one must not
+            # pile up in the upload dir (#audit-R2-1).
             self._pending_files.pop(file_path.name, None)
-            if archived:
-                try:
-                    file_path.unlink()
-                except OSError:
-                    pass
-            else:
-                # Drop the failed temp file so it doesn't accumulate.
-                try:
-                    file_path.unlink(missing_ok=True)
-                except OSError:
-                    pass
+            try:
+                file_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
-    async def _queue_file(self, file_path: Path, source_ip: str) -> None:
+    async def _queue_file(self, file_path: Path, source_ip: str, user_id: int | None = None) -> None:
         """Queue file for user review."""
         if not self._session_factory:
             logger.error("Cannot queue: no database session factory configured")
+            self._pending_files.pop(file_path.name, None)
             return
 
         if file_path.suffix.lower() != ".3mf":
@@ -788,6 +987,24 @@ class VirtualPrinterInstance:
         except Exception as e:
             logger.debug("[VP %s] Metadata title peek failed for %s: %s", self.name, file_path.name, e)
 
+        # The upload waits for its review in a folder of its own: the slicer
+        # sends the next file under the same name to the same place, which
+        # would replace this one, so it would be approved with someone else's
+        # content and owner (#1430).
+        received_name = file_path.name
+        waiting = (
+            self.upload_dir / "pending" / uuid.uuid4().hex / received_name
+        )  # SEC-PATH-OK: received_name = the FTP upload's Path(arg).name (a basename), folder a fresh uuid4
+        try:
+            waiting.parent.mkdir(parents=True, exist_ok=True)
+            file_path.replace(waiting)
+            file_path = waiting
+        except OSError as e:
+            logger.error("[VP %s] Could not keep %s for review: %s", self.name, received_name, e)
+            self._pending_files.pop(received_name, None)
+            file_path.unlink(missing_ok=True)
+            return
+
         try:
             from backend.app.models.pending_upload import PendingUpload
 
@@ -797,6 +1014,8 @@ class VirtualPrinterInstance:
                     file_path=str(file_path),
                     file_size=file_path.stat().st_size,
                     source_ip=source_ip,
+                    virtual_printer_id=self.id,
+                    uploaded_by_id=user_id,
                     status="pending",
                     uploaded_at=datetime.now(timezone.utc),
                     metadata_print_name=metadata_print_name,
@@ -813,15 +1032,15 @@ class VirtualPrinterInstance:
             except OSError:
                 pass
         finally:
-            # Always release the in-flight marker so concurrent uploads
-            # with the same filename aren't spuriously rejected after
-            # a queue failure.
-            self._pending_files.pop(file_path.name, None)
+            # Always drop it from the pending count, also after a queue
+            # failure.
+            self._pending_files.pop(received_name, None)
 
-    async def _add_to_print_queue(self, file_path: Path, source_ip: str) -> None:
-        """Archive file and add to print queue, assigned to target printer or model."""
+    async def _add_to_print_queue(self, file_path: Path, source_ip: str, user_id: int | None = None) -> None:
+        """Store the file in the File Manager and queue it, for the target printer or model."""
         if not self._session_factory:
             logger.error("Cannot add to print queue: no database session factory configured")
+            self._pending_files.pop(file_path.name, None)
             return
 
         if file_path.suffix.lower() != ".3mf":
@@ -852,7 +1071,7 @@ class VirtualPrinterInstance:
             try:
                 await asyncio.wait_for(event.wait(), timeout=_SLICER_OPTIONS_WAIT_TIMEOUT)
                 slicer_opts = self._slicer_print_options.pop(file_path.name, None)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 slicer_opts = None
             finally:
                 self._slicer_print_options_events.pop(file_path.name, None)
@@ -872,37 +1091,19 @@ class VirtualPrinterInstance:
         try:
             import json
 
-            from backend.app.api.routes.settings import get_setting
             from backend.app.models.print_queue import PrintQueueItem
-            from backend.app.services.archive import ArchiveService
             from backend.app.services.filament_requirements import extract_filament_requirements
             from backend.app.services.print_confirmation import confirm_outcome_for_new_queue_item
+            from backend.app.services.print_defaults import default_print_options
+            from backend.app.services.virtual_printer.library_store import store_upload, upload_settings
 
             async with self._session_factory() as db:
-                name_source = await get_setting(db, "virtual_printer_archive_name_source")
-                prefer_filename = name_source == "filename"
-
-                # Read workflow defaults from settings. Without this the
+                # Workflow defaults from settings. Without this the
                 # PrintQueueItem below would fall back to the column-level
                 # defaults and ignore the user's workflow preferences (#1235).
-                # Fallbacks match AppSettings defaults in schemas/settings.py.
                 # The slicer-side options captured above (if any) take
                 # precedence per-field over these defaults.
-                def _bool_setting(value: str | None, default: bool) -> bool:
-                    return value.lower() == "true" if value is not None else default
-
-                def _tristate_setting(value: str | None, default: str) -> str:
-                    """Tri-state workflow default, coercing legacy true/false rows."""
-                    if value is None:
-                        return default
-                    low = value.strip().lower()
-                    if low in ("on", "off", "auto"):
-                        return low
-                    if low in ("true", "1"):
-                        return "on"
-                    if low in ("false", "0"):
-                        return "off"
-                    return default
+                defaults = await default_print_options(db)
 
                 def _slicer_or(field_mqtt: str, settings_default: bool) -> bool:
                     """Slicer's MQTT value if present, else the settings default.
@@ -915,7 +1116,7 @@ class VirtualPrinterInstance:
                         return bool(slicer_opts[field_mqtt])
                     return settings_default
 
-                def _slicer_tristate(bool_field: str, int_field: str, settings_default: str) -> str:
+                def _slicer_tristate(bool_field: str | None, int_field: str, settings_default: str) -> str:
                     """Slicer's tri-state (off/on/auto) if present, else the default."""
                     if slicer_opts is not None:
                         resolved = _tristate_from_slicer(slicer_opts, bool_field, int_field)
@@ -929,28 +1130,48 @@ class VirtualPrinterInstance:
                 bed_levelling = _slicer_tristate(
                     "bed_leveling",
                     "auto_bed_leveling",
-                    _tristate_setting(await get_setting(db, "default_bed_levelling"), "auto"),
+                    defaults["bed_levelling"],
                 )
                 flow_cali = _slicer_tristate(
                     "flow_cali",
                     "extrude_cali_flag",
-                    _tristate_setting(await get_setting(db, "default_flow_cali"), "auto"),
+                    defaults["flow_cali"],
                 )
-                vibration_cali = _slicer_or(
-                    "vibration_cali", _bool_setting(await get_setting(db, "default_vibration_cali"), True)
+                nozzle_offset_cali = _slicer_tristate(
+                    None,
+                    "nozzle_offset_cali",
+                    defaults["nozzle_offset_cali"],
                 )
-                layer_inspect = _slicer_or(
-                    "layer_inspect", _bool_setting(await get_setting(db, "default_layer_inspect"), False)
-                )
-                timelapse = _slicer_or("timelapse", _bool_setting(await get_setting(db, "default_timelapse"), False))
+                vibration_cali = _slicer_or("vibration_cali", defaults["vibration_cali"])
+                layer_inspect = _slicer_or("layer_inspect", defaults["layer_inspect"])
+                timelapse = _slicer_or("timelapse", defaults["timelapse"])
+                # No setting for it: the column default (on) when the slicer is
+                # silent, or when the VP does not stand for one printer.
+                use_ams = _slicer_or("use_ams", True) if self._keeps_slicer_use_ams() else True
 
                 # "Ask for Outcome" is a default print option like the ones
                 # above. A plate sent here from Bambu Studio is also one of the
                 # prints `confirm_outcome_external_prints` names — but it
                 # arrives with a queue item, so on_print_start resumes the
-                # archive created below instead of treating it as external, and
+                # archive its dispatch creates instead of treating it as external, and
                 # without this the setting could never reach it (#1898).
                 confirm_outcome = await confirm_outcome_for_new_queue_item(db, started_outside_bambuddy=True)
+
+                # Sent with a personal access code (#1430): the jobs are that
+                # user's, and wait for a reviewer if their jobs must (#1620),
+                # as when they queue from Bambuddy itself.
+                review_required = False
+                if user_id is not None:
+                    from sqlalchemy import select as _select
+                    from sqlalchemy.orm import selectinload
+
+                    from backend.app.core.auth import queue_review_required_for
+                    from backend.app.models.user import User
+
+                    sender = (
+                        await db.execute(_select(User).where(User.id == user_id).options(selectinload(User.groups)))
+                    ).scalar_one_or_none()
+                    review_required = queue_review_required_for(sender)
 
                 # H2C dual-nozzle-rack slicer-pick preservation (#1780).
                 # BambuStudio's project_file MQTT command for rack-swap models
@@ -965,8 +1186,13 @@ class VirtualPrinterInstance:
                 # in the original fix but BambuStudio never actually sends it
                 # — verified via wire capture on H2C — so only `nozzle_mapping`
                 # is forwarded now.)
+                #
+                # On a rack model only for a VP that targets one printer: the
+                # positions name that printer's rack. An "Any <model>" VP leaves
+                # them to the dispatch, which resolves them against the rack of
+                # the printer it picks. See `_keeps_slicer_nozzle_mapping`.
                 nozzle_mapping_json: str | None = None
-                if slicer_opts is not None:
+                if slicer_opts is not None and self._keeps_slicer_nozzle_mapping():
                     raw = slicer_opts.get("nozzle_mapping")
                     if raw is not None:
                         # BambuStudio's NetworkAgent embeds this as parsed
@@ -1018,7 +1244,10 @@ class VirtualPrinterInstance:
                 ams_mapping_json: str | None = None
                 if slicer_opts is not None and self.target_printer_id is not None and self.save_ams_mapping:
                     ams_mapping_json = _extract_slicer_ams_mapping_json(
-                        slicer_opts, f"[VP {self.name}]", is_dual_nozzle=self._target_is_dual_nozzle()
+                        slicer_opts,
+                        f"[VP {self.name}]",
+                        is_dual_nozzle=self._target_is_dual_nozzle(),
+                        layout=self._target_tray_layout(),
                     )
 
                 # `Force color match` is the user asking Bambuddy to do the
@@ -1034,7 +1263,7 @@ class VirtualPrinterInstance:
                 queue_ams_mapping_json = ams_mapping_json
                 if queue_ams_mapping_json is not None and self.queue_force_color_match:
                     logger.info(
-                        "[VP %s] Saved the slicer's AMS pick to the archive but not onto the queue item(s): "
+                        "[VP %s] Kept the slicer's AMS pick for the archive but not onto the queue item(s): "
                         "'Force color match' is on, so the scheduler matches against live trays for this print.",
                         self.name,
                     )
@@ -1043,27 +1272,27 @@ class VirtualPrinterInstance:
                 # Parsed once for the per-plate length check in the loop below.
                 queue_ams_mapping = json.loads(queue_ams_mapping_json) if queue_ams_mapping_json else None
 
-                service = ArchiveService(db)
-                archive = await service.archive_print(
-                    printer_id=None,
-                    source_file=file_path,
-                    print_data={
-                        "status": "archived",
-                        "source": "virtual_printer",
-                        "source_ip": source_ip,
-                    },
-                    prefer_filename_for_name=prefer_filename,
-                    # Slicer's own live AMS-slot pick -- promoted to
-                    # `extra_data.slicer_ams_mapping` by archive_print() so a
-                    # later reprint can reuse it. Already gated on the per-VP
-                    # `save_ams_mapping` opt-in above. Tagged with the printer
-                    # it was resolved against so a later reprint on a
-                    # *different* printer knows not to reuse it (#2700 review).
-                    slicer_ams_mapping=(json.loads(ams_mapping_json) if ams_mapping_json else None),
-                    slicer_ams_mapping_printer_id=self.target_printer_id,
+                # The file goes to the File Manager; the queue items print it
+                # from there, and the archive is made when one starts printing
+                # (an archive is a print that happened).
+                folder_id, remove_after_print = await upload_settings(db, self.id)
+                # A file its print removes must be this upload's own.
+                library_file, reused = await store_upload(
+                    db,
+                    source_path=file_path,
+                    filename=file_path.name,
+                    folder_id=folder_id,
+                    owner_id=user_id,
+                    reuse=not remove_after_print,
                 )
-                if archive:
-                    logger.info("[VP %s] Archived: %s - %s", self.name, archive.id, archive.print_name)
+                if library_file:
+                    logger.info(
+                        "[VP %s] %s File Manager file %s (%s)",
+                        self.name,
+                        "Same file as" if reused else "Stored as",
+                        library_file.id,
+                        library_file.filename,
+                    )
                     # Assign to specific printer if configured, otherwise use model for "Any X" scheduling
                     target_model = None
                     if not self.target_printer_id and self.model:
@@ -1109,6 +1338,7 @@ class VirtualPrinterInstance:
                     # force_color_match=True when the per-VP setting is on, so
                     # upgraders keep the old behaviour by default.
                     queue_item_ids: list[int] = []
+                    queue_item_reach: dict[int, int] = {}
                     for offset, plate_id in enumerate(plate_ids, start=1):
                         required_filament_types_json: str | None = None
                         filament_overrides_json: str | None = None
@@ -1152,6 +1382,7 @@ class VirtualPrinterInstance:
                         # back to a computed mapping for that plate instead
                         # (#2700 review).
                         plate_ams_mapping_json = queue_ams_mapping_json
+                        plate_max_slot = max((r.get("slot_id") or 0) for r in requirements) if requirements else 0
                         if queue_ams_mapping is not None and requirements:
                             max_slot_id = max((r.get("slot_id") or 0) for r in requirements)
                             if max_slot_id > len(queue_ams_mapping):
@@ -1168,18 +1399,25 @@ class VirtualPrinterInstance:
                         queue_item = PrintQueueItem(
                             printer_id=self.target_printer_id,
                             target_model=target_model,
-                            archive_id=archive.id,
+                            library_file_id=library_file.id,
+                            # Theirs when a personal access code signed in (#1430).
+                            created_by_id=user_id,
+                            # "Remove from File Manager once it prints": the
+                            # dispatch moves the file into the archive.
+                            cleanup_library_after_dispatch=remove_after_print,
                             plate_id=plate_id,
                             position=max_pos + offset,
                             status="pending",
-                            manual_start=not self.auto_dispatch,
+                            manual_start=not self.auto_dispatch or review_required,
                             required_filament_types=required_filament_types_json,
                             filament_overrides=filament_overrides_json,
                             bed_levelling=bed_levelling,
                             flow_cali=flow_cali,
+                            nozzle_offset_cali=nozzle_offset_cali,
                             vibration_cali=vibration_cali,
                             layer_inspect=layer_inspect,
                             timelapse=timelapse,
+                            use_ams=use_ams,
                             confirm_outcome=confirm_outcome,
                             # Per-VP opt-in for auto-print G-code injection (#1516).
                             # Default off; when on, the scheduler still no-ops unless
@@ -1194,10 +1432,16 @@ class VirtualPrinterInstance:
                             # Slicer's own live AMS-slot pick, when present —
                             # see `_extract_slicer_ams_mapping_json`.
                             ams_mapping=plate_ams_mapping_json,
+                            # The slicer's pick for the archive this print makes,
+                            # so a reprint can reuse it; set with "Force color
+                            # match" too, which keeps it off ams_mapping above.
+                            # Already gated on `save_ams_mapping` and a target.
+                            slicer_ams_mapping=slicer_ams_pick.pack(ams_mapping_json, self.target_printer_id),
                         )
                         db.add(queue_item)
                         await db.flush()  # populate queue_item.id before logging
                         queue_item_ids.append(queue_item.id)
+                        queue_item_reach[queue_item.id] = plate_max_slot
                     await db.commit()
                     # Track the freshly-committed queue items so
                     # `on_print_command` can retroactively stamp slicer-side
@@ -1210,6 +1454,10 @@ class VirtualPrinterInstance:
                     cutoff = now - _RECENT_QUEUE_ITEM_TTL
                     self._recent_queue_items = {k: v for k, v in self._recent_queue_items.items() if v[1] > cutoff}
                     self._recent_queue_items[file_path.name] = (list(queue_item_ids), now)
+                    self._recent_queue_item_reach = {
+                        k: v for k, v in self._recent_queue_item_reach.items() if k in self._recent_queue_items
+                    }
+                    self._recent_queue_item_reach[file_path.name] = queue_item_reach
                     # Last-chance check: MQTT for this filename could have
                     # arrived during ANY await between the initial pop and
                     # now — wait_for itself, archive_print, db.flush,
@@ -1237,9 +1485,10 @@ class VirtualPrinterInstance:
                             plate_ids,
                             queue_item_ids,
                         )
-                    await self._broadcast_archive_created(archive)
-                else:
-                    logger.error("Failed to archive file: %s", file_path.name)
+                    await self._broadcast_library_files_changed()
+                    from backend.app.services.queue_announcements import announce_queue_jobs_added
+
+                    await announce_queue_jobs_added(db, queue_item_ids)
         except Exception as e:
             logger.error("Error adding to print queue: %s", e)
         finally:
@@ -1253,27 +1502,14 @@ class VirtualPrinterInstance:
             except OSError:
                 pass
 
-    async def _broadcast_archive_created(self, archive) -> None:
-        """Notify connected clients that a new archive exists.
-
-        Real-printer prints get this from main.py's MQTT print_start handler;
-        VP-uploaded prints need their own broadcast or the Archives page stays
-        stale until the user switches tabs (#1282).
-        """
+    async def _broadcast_library_files_changed(self) -> None:
+        """Let open File Manager pages refetch: a file arrived outside a request."""
         try:
             from backend.app.core.websocket import ws_manager
 
-            await ws_manager.send_archive_created(
-                {
-                    "id": archive.id,
-                    "printer_id": archive.printer_id,
-                    "filename": archive.filename,
-                    "print_name": archive.print_name,
-                    "status": archive.status,
-                }
-            )
-        except Exception as e:
-            logger.debug("[VP %s] archive_created broadcast failed: %s", self.name, e)
+            await ws_manager.send_library_files_changed()
+        except Exception as e:  # noqa: BLE001 -- a broadcast must never fail an upload
+            logger.debug("[VP %s] library_files_changed broadcast failed: %s", self.name, e)
 
     @staticmethod
     def _extract_plate_ids(file_path: Path) -> list[int]:
@@ -1334,8 +1570,11 @@ class VirtualPrinterInstance:
         advertise = self.remote_interface_ip or self.bind_ip or ""
         return cert_path, key_path, advertise
 
-    async def start_server(self) -> None:
-        """Start server-mode services (FTP, MQTT, SSDP, Bind) on this VP's bind_ip."""
+    async def start_server(self) -> bool:
+        """Start server-mode services (FTP, MQTT, SSDP, Bind) on this VP's bind_ip.
+
+        False when one of them could not bind; the manager tries again.
+        """
         logger.info("[VP %s] Starting server-mode services on %s", self.name, self.bind_ip)
 
         cert_path, key_path, advertise_addr = self._resolve_cert_and_advertise()
@@ -1365,13 +1604,13 @@ class VirtualPrinterInstance:
             vp_name=self.name,
             passive_port_min=passive_port_min,
             passive_port_max=passive_port_max,
+            authenticate_user=self.authenticate_user_code,
         )
-        self._tasks.append(
-            asyncio.create_task(
-                run_with_logging(self._ftp.start(), "FTP"),
-                name=f"vp_{self.id}_ftp",
-            )
+        self._core_tasks["FTP"] = asyncio.create_task(
+            run_with_logging(self._ftp.start(), "FTP"),
+            name=f"vp_{self.id}_ftp",
         )
+        self._tasks.append(self._core_tasks["FTP"])
 
         # MQTT server
         self._mqtt = SimpleMQTTServer(
@@ -1383,13 +1622,14 @@ class VirtualPrinterInstance:
             model=self.model or DEFAULT_VIRTUAL_PRINTER_MODEL,
             bind_address=bind_addr,
             vp_name=self.name,
+            authenticate_user=self.authenticate_user_code,
+            authorize_control=self.user_may_control_target,
         )
-        self._tasks.append(
-            asyncio.create_task(
-                run_with_logging(self._mqtt.start(), "MQTT"),
-                name=f"vp_{self.id}_mqtt",
-            )
+        self._core_tasks["MQTT"] = asyncio.create_task(
+            run_with_logging(self._mqtt.start(), "MQTT"),
+            name=f"vp_{self.id}_mqtt",
         )
+        self._tasks.append(self._core_tasks["MQTT"])
 
         # MQTT bridge — fans out the target printer's pushes to slicers connected
         # to this VP and forwards their commands back to the printer. Only meaningful
@@ -1426,12 +1666,19 @@ class VirtualPrinterInstance:
                 from backend.app.services.camera import get_camera_port
 
                 camera_port = get_camera_port(target_model)
-                self._rtsp_proxy = TCPProxy(
-                    name=f"Camera-{camera_port}",
+                # Signs the slicer in with the printer's own code, so the camera
+                # also works with a personal access code (#1430).
+                self._rtsp_proxy = CameraBridge(
+                    name=f"[VP {self.name}] Camera-{camera_port}",
+                    protocol=RTSP if camera_port == 322 else CHAMBER,
                     listen_port=camera_port,
+                    bind_address=bind_addr,
                     target_host=target_ip,
                     target_port=camera_port,
-                    bind_address=bind_addr,
+                    cert_path=cert_path,
+                    key_path=key_path,
+                    codes=self.camera_codes,
+                    printer_code=self._target_access_code,
                 )
                 self._tasks.append(
                     asyncio.create_task(
@@ -1449,12 +1696,11 @@ class VirtualPrinterInstance:
             cert_path=cert_path,
             key_path=key_path,
         )
-        self._tasks.append(
-            asyncio.create_task(
-                run_with_logging(self._bind.start(), "Bind"),
-                name=f"vp_{self.id}_bind",
-            )
+        self._core_tasks["Bind"] = asyncio.create_task(
+            run_with_logging(self._bind.start(), "Bind"),
+            name=f"vp_{self.id}_bind",
         )
+        self._tasks.append(self._core_tasks["Bind"])
 
         # SSDP server — advertise_addr is the remote_interface_ip (Tailscale
         # IP, when chosen from the bind_ip dropdown) or the bind_ip. SSDP
@@ -1468,40 +1714,59 @@ class VirtualPrinterInstance:
             advertise_ip=advertise_addr,
             bind_ip=bind_addr,
         )
-        self._tasks.append(
-            asyncio.create_task(
-                run_with_logging(self._ssdp.start(), "SSDP"),
-                name=f"vp_{self.id}_ssdp",
-            )
+        self._core_tasks["SSDP"] = asyncio.create_task(
+            run_with_logging(self._ssdp.start(), "SSDP"),
+            name=f"vp_{self.id}_ssdp",
         )
+        self._tasks.append(self._core_tasks["SSDP"])
 
         # Wait briefly for every child service to actually finish binding its
         # socket so ``is_running`` doesn't lie. Without this barrier a caller
         # racing the start (e.g. the diagnostic route) would see is_running=True
         # while ports were still in the gap between task creation and the
-        # ``asyncio.start_server`` returning. Bounded timeout — if a child
-        # hangs we log it and move on; the existing task tracking still
-        # catches the failure on the next iteration.
-        ready_targets = [
-            ("FTP", self._ftp.ready),
-            ("MQTT", self._mqtt.ready),
-            ("Bind", self._bind.ready),
-            ("SSDP", self._ssdp.ready),
-        ]
+        # ``asyncio.start_server`` returning. A service that cannot bind ends
+        # its task instead, which settles its wait at once. Bounded timeout —
+        # a child still binding after it is logged and left to finish.
+        ready_events = {
+            "FTP": self._ftp.ready,
+            "MQTT": self._mqtt.ready,
+            "Bind": self._bind.ready,
+            "SSDP": self._ssdp.ready,
+        }
+
+        async def bound_or_ended(name: str) -> None:
+            waiter = asyncio.ensure_future(ready_events[name].wait())
+            try:
+                await asyncio.wait({waiter, self._core_tasks[name]}, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                waiter.cancel()
+
         try:
-            await asyncio.wait_for(
-                asyncio.gather(*(e.wait() for _, e in ready_targets)),
-                timeout=5.0,
-            )
+            await asyncio.wait_for(asyncio.gather(*(bound_or_ended(name) for name in ready_events)), timeout=5.0)
         except TimeoutError:
-            not_ready = [name for name, e in ready_targets if not e.is_set()]
+            pass
+
+        failed = self.ended_services()
+        if failed:
+            # The manager restarts it (#3687): the bind address may simply not
+            # be assigned yet, e.g. a DHCP interface still waiting for its lease.
+            logger.warning(
+                "[VP %s] Not started on %s: %s could not start; trying again shortly",
+                self.name,
+                bind_addr,
+                ", ".join(failed),
+            )
+            return False
+        not_ready = [name for name, event in ready_events.items() if not event.is_set()]
+        if not_ready:
             logger.warning(
                 "[VP %s] Sub-service(s) didn't bind within 5s: %s — continuing anyway",
                 self.name,
-                ", ".join(not_ready) or "(none)",
+                ", ".join(not_ready),
             )
 
         logger.info("[VP %s] Server-mode services started on %s", self.name, bind_addr)
+        return True
 
     async def stop_server(self) -> None:
         """Stop server-mode services."""
@@ -1577,23 +1842,22 @@ class VirtualPrinterInstance:
                     target_printer_ip=self.target_printer_ip,
                     name=self.name,
                 )
-                self._tasks.append(
-                    asyncio.create_task(
-                        run_with_logging(self._ssdp_proxy.start(), "SSDP Proxy"),
-                        name=f"vp_{self.id}_ssdp_proxy",
-                    )
+                self._core_tasks["SSDP Proxy"] = asyncio.create_task(
+                    run_with_logging(self._ssdp_proxy.start(), "SSDP Proxy"),
+                    name=f"vp_{self.id}_ssdp_proxy",
                 )
+                self._tasks.append(self._core_tasks["SSDP Proxy"])
             else:
                 self._start_fallback_ssdp(proxy_serial, run_with_logging)
         else:
             self._start_fallback_ssdp(proxy_serial, run_with_logging)
 
-        self._tasks.append(
-            asyncio.create_task(
-                run_with_logging(self._proxy.start(), "Proxy"),
-                name=f"vp_{self.id}_proxy",
-            )
+        # The proxy's task ends once every one of its listeners has.
+        self._core_tasks["Proxy"] = asyncio.create_task(
+            run_with_logging(self._proxy.start(), "Proxy"),
+            name=f"vp_{self.id}_proxy",
         )
+        self._tasks.append(self._core_tasks["Proxy"])
 
     def _start_fallback_ssdp(self, proxy_serial: str, run_with_logging) -> None:
         """Start single-interface SSDP server as fallback for proxy mode."""
@@ -1604,12 +1868,11 @@ class VirtualPrinterInstance:
             advertise_ip=self.bind_ip or "",
             bind_ip=self.bind_ip or "",
         )
-        self._tasks.append(
-            asyncio.create_task(
-                run_with_logging(self._ssdp.start(), "SSDP"),
-                name=f"vp_{self.id}_ssdp",
-            )
+        self._core_tasks["SSDP"] = asyncio.create_task(
+            run_with_logging(self._ssdp.start(), "SSDP"),
+            name=f"vp_{self.id}_ssdp",
         )
+        self._tasks.append(self._core_tasks["SSDP"])
 
     async def stop_proxy(self) -> None:
         """Stop proxy mode services for this instance."""
@@ -1634,6 +1897,7 @@ class VirtualPrinterInstance:
             except TimeoutError:
                 pass
         self._tasks = []
+        self._core_tasks = {}
 
     def get_status(self) -> dict:
         """Get status for this instance."""
@@ -1652,6 +1916,12 @@ class VirtualPrinterManager:
     Every VP runs its own independent services on a dedicated bind IP.
     """
 
+    # How often the supervisor looks for a VP whose services have ended, and
+    # how long it waits between restarts of one that keeps failing (#3687).
+    SUPERVISE_INTERVAL = 10.0
+    RESTART_BACKOFF_MIN = 10.0
+    RESTART_BACKOFF_MAX = 300.0
+
     def __init__(self):
         self._session_factory: Callable | None = None
         self._printer_manager: PrinterManager | None = None
@@ -1663,6 +1933,10 @@ class VirtualPrinterManager:
         # user holds the lock with a long-running start they intended
         # to anyway.
         self._sync_lock = asyncio.Lock()
+        self._supervisor_task: asyncio.Task | None = None
+        # vp_id -> (delay before the next restart, loop time it is due at),
+        # for a VP that is down. Cleared when it runs again or is removed.
+        self._restart_backoff: dict[int, tuple[float, float]] = {}
 
         # Directories
         self._base_dir = app_settings.base_dir / "virtual_printer"
@@ -1781,6 +2055,9 @@ class VirtualPrinterManager:
             db_mode = normalize_vp_mode(vp.mode)
             changed = (
                 instance.mode != db_mode
+                # The name is advertised to the slicer (SSDP, bind) by the
+                # running services, so a rename only reaches it on restart.
+                or instance.name != vp.name
                 or instance.model != (vp.model or DEFAULT_VIRTUAL_PRINTER_MODEL)
                 or instance.access_code != (vp.access_code or "")
                 or instance.bind_ip != (vp.bind_ip or "")
@@ -1805,7 +2082,8 @@ class VirtualPrinterManager:
                 )
                 await self.remove_instance(vp.id)
 
-        # Start instances for all enabled VPs (skip already running)
+        # Start instances for all enabled VPs. One already there is left
+        # alone: if its services have ended, the supervisor restarts it.
         for vp in enabled_vps:
             if vp.id in self._instances:
                 continue
@@ -1825,10 +2103,16 @@ class VirtualPrinterManager:
                     serial_suffix=vp.serial_suffix,
                     target_printer_ip=target_ip,
                     target_printer_serial=target_serial,
+                    # Carried although the proxy does not use them: the change
+                    # check above compares them with the row, and a missing
+                    # value restarted every proxy VP on every sync.
+                    target_printer_id=vp.target_printer_id,
                     auto_dispatch=vp.auto_dispatch,
+                    queue_force_color_match=vp.queue_force_color_match,
+                    save_ams_mapping=vp.save_ams_mapping,
+                    gcode_injection=vp.gcode_injection,
                     bind_ip=vp.bind_ip or "",
                     remote_interface_ip=vp.remote_interface_ip or "",
-                    tailscale_disabled=vp.tailscale_disabled,
                     base_dir=self._base_dir,
                     session_factory=self._session_factory,
                 )
@@ -1850,17 +2134,75 @@ class VirtualPrinterManager:
                     gcode_injection=vp.gcode_injection,
                     bind_ip=vp.bind_ip or "",
                     remote_interface_ip=vp.remote_interface_ip or "",
-                    tailscale_disabled=vp.tailscale_disabled,
                     base_dir=self._base_dir,
                     session_factory=self._session_factory,
                     printer_manager=self._printer_manager,
                 )
                 self._instances[vp.id] = instance
-                await instance.start_server()
-                logger.info("Started server-mode VP: %s on %s", instance.name, vp.bind_ip)
+                if await instance.start_server():
+                    logger.info("Started server-mode VP: %s on %s", instance.name, vp.bind_ip)
+
+    def start_supervisor(self) -> None:
+        """Restart, from now on, any VP whose services end (#3687).
+
+        A VP whose bind address is not assigned yet when Bambuddy starts (a
+        DHCP interface still waiting for its lease) cannot bind, and its
+        services end at once. Nothing else would try again until the VP was
+        turned off and on.
+        """
+        if self._supervisor_task is None or self._supervisor_task.done():
+            self._supervisor_task = asyncio.create_task(self._supervise(), name="vp_supervisor")
+
+    async def _supervise(self) -> None:
+        loop = asyncio.get_running_loop()
+        while True:
+            await asyncio.sleep(self.SUPERVISE_INTERVAL)
+            try:
+                async with self._sync_lock:
+                    await self._restart_ended_locked(loop.time())
+            except Exception:
+                logger.exception("Virtual printer supervisor check failed")
+
+    async def _restart_ended_locked(self, now: float) -> None:
+        """Restart each VP whose core services have ended, with a backoff.
+
+        Caller holds ``self._sync_lock``, so a restart never races a sync.
+        Logs once when a VP goes down and once when it runs again; the
+        attempts in between log only what the services themselves report.
+        """
+        for vp_id in list(self._restart_backoff):
+            if vp_id not in self._instances:
+                del self._restart_backoff[vp_id]
+
+        for vp_id, instance in list(self._instances.items()):
+            ended = instance.ended_services()
+            backoff = self._restart_backoff.get(vp_id)
+            if not ended:
+                if backoff is not None:
+                    del self._restart_backoff[vp_id]
+                    logger.info("[VP %s] Running again", instance.name)
+                continue
+            if backoff is None:
+                logger.warning(
+                    "[VP %s] %s stopped, the VP is unreachable; restarting it until it starts",
+                    instance.name,
+                    ", ".join(ended),
+                )
+                delay = self.RESTART_BACKOFF_MIN
+            else:
+                delay, due = backoff
+                if now < due:
+                    continue
+                delay = min(delay * 2, self.RESTART_BACKOFF_MAX)
+            self._restart_backoff[vp_id] = (delay, now + delay)
+            try:
+                await instance.restart()
+            except Exception:
+                logger.exception("[VP %s] Restart failed", instance.name)
 
     async def remove_instance(self, vp_id: int) -> None:
         """Stop and remove a single VP instance."""
+        self._restart_backoff.pop(vp_id, None)
         instance = self._instances.pop(vp_id, None)
         if instance:
             if instance.is_proxy:
@@ -1873,6 +2215,14 @@ class VirtualPrinterManager:
         """Shutdown all virtual printer services."""
         logger.info("Stopping all virtual printer services...")
 
+        if self._supervisor_task is not None:
+            self._supervisor_task.cancel()
+            try:
+                await self._supervisor_task
+            except asyncio.CancelledError:
+                pass
+            self._supervisor_task = None
+
         for vp_id in list(self._instances.keys()):
             await self.remove_instance(vp_id)
 
@@ -1881,18 +2231,6 @@ class VirtualPrinterManager:
     def get_instance(self, vp_id: int) -> VirtualPrinterInstance | None:
         """Get a running instance by ID."""
         return self._instances.get(vp_id)
-
-    def get_all_status(self) -> list[dict]:
-        """Get status for all running instances."""
-        return [
-            {
-                "id": inst.id,
-                "name": inst.name,
-                "mode": inst.mode,
-                **inst.get_status(),
-            }
-            for inst in self._instances.values()
-        ]
 
     # -- Legacy single-printer compat --
 
@@ -1918,7 +2256,7 @@ class VirtualPrinterManager:
         return {
             "enabled": False,
             "running": False,
-            "mode": VP_MODE_ARCHIVE,
+            "mode": VP_MODE_LIBRARY,
             "name": "Bambuddy",
             "serial": "",
             "model": DEFAULT_VIRTUAL_PRINTER_MODEL,
@@ -1930,7 +2268,7 @@ class VirtualPrinterManager:
         self,
         enabled: bool,
         access_code: str = "",
-        mode: str = VP_MODE_ARCHIVE,
+        mode: str = VP_MODE_LIBRARY,
         model: str = "",
         target_printer_ip: str = "",
         target_printer_serial: str = "",

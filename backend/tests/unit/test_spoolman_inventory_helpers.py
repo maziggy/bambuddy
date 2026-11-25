@@ -192,6 +192,21 @@ class TestMapSpoolmanSpool:
         result = _map_spoolman_spool(spool)
         assert result["cost_per_kg"] is None
 
+    @pytest.mark.parametrize(
+        ("spool_price", "filament_price", "own", "charged"),
+        [(None, 24.0, None, 24.0), (30.0, 24.0, 30.0, 30.0), (None, None, None, None)],
+        ids=["filament-only", "spool-wins", "unpriced"],
+    )
+    def test_the_rate_prints_are_charged_at(self, spool_price, filament_price, own, charged):
+        """SM-C8: with only a filament price, Cost/kg read "-" although every
+        print was charged at it. cost_per_kg stays the spool's own, which the
+        edit form writes back."""
+        filament = {**MINIMAL_SPOOL["filament"], "weight": 1000, "price": filament_price}
+        result = _map_spoolman_spool({**MINIMAL_SPOOL, "price": spool_price, "filament": filament})
+
+        assert result["cost_per_kg"] == (pytest.approx(own) if own is not None else None)
+        assert result["effective_cost_per_kg"] == (pytest.approx(charged) if charged is not None else None)
+
     def test_infinity_weight_falls_back(self):
         spool = {**MINIMAL_SPOOL, "filament": {**MINIMAL_SPOOL["filament"], "weight": math.inf}}
         result = _map_spoolman_spool(spool)
@@ -264,12 +279,14 @@ class TestMapSpoolmanSpool:
             **MINIMAL_SPOOL,
             "filament": {
                 **MINIMAL_SPOOL["filament"],
-                "name": "PLA Basic Red",
+                # No finish in the name, so it reads as Bambuddy's own
+                # "<material> <subtype>" and the colour is synthesised (#3561).
+                "name": "PLA Jade White",
                 # No color_name field.
             },
         }
         result = _map_spoolman_spool(spool)
-        assert result["color_name"] == "Basic Red"
+        assert result["color_name"] == "Jade White"
         assert result["color_name_is_synthesized"] is True
 
     def test_color_name_falls_back_to_subtype_when_field_missing(self):
@@ -283,15 +300,15 @@ class TestMapSpoolmanSpool:
             **MINIMAL_SPOOL,
             "filament": {
                 **MINIMAL_SPOOL["filament"],
-                "name": "PLA Basic Red",
+                "name": "PLA Jade White",
                 # No color_name field — the common case for default Spoolman installs.
             },
         }
         result = _map_spoolman_spool(spool)
-        # subtype is filament_name minus material prefix → "Basic Red"
-        assert result["subtype"] == "Basic Red"
+        # No finish in the name: subtype is filament_name minus material prefix.
+        assert result["subtype"] == "Jade White"
         # color_name falls back to subtype.
-        assert result["color_name"] == "Basic Red"
+        assert result["color_name"] == "Jade White"
 
     def test_color_name_read_from_spool_extra_first(self):
         """#1357: the canonical store for color_name is
@@ -339,11 +356,11 @@ class TestMapSpoolmanSpool:
             "extra": {"bambu_color_name": '""'},
             "filament": {
                 **MINIMAL_SPOOL["filament"],
-                "name": "PLA Basic Red",
+                "name": "PLA Jade White",
             },
         }
         result = _map_spoolman_spool(spool)
-        assert result["color_name"] == "Basic Red"
+        assert result["color_name"] == "Jade White"
         assert result["color_name_is_synthesized"] is True
 
     def test_color_name_none_when_both_fields_empty(self):

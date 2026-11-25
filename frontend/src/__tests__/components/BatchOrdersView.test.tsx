@@ -122,6 +122,24 @@ describe('BatchOrdersView (#342)', () => {
     expect(screen.getByText('queue.batchOrders.status.completed')).toBeInTheDocument();
   });
 
+  it('lists a grouping that ended in failures under Failed', async () => {
+    server.use(
+      http.get('/api/v1/queue/batches', ({ request }) => {
+        const status = new URL(request.url).searchParams.get('status');
+        if (status !== 'failed') return HttpResponse.json([]);
+        return HttpResponse.json([batch({ status: 'failed', failed_count: 2 })]);
+      }),
+    );
+    const user = userEvent.setup();
+    render(<BatchOrdersView hasPermission={allow} t={passthroughT} />);
+
+    await waitFor(() => expect(screen.getByText('queue.batchOrders.emptyTitle')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: 'queue.batchOrders.filter.failed' }));
+
+    await waitFor(() => expect(screen.getByText('Widget run')).toBeInTheDocument());
+    expect(screen.getByText('queue.batchOrders.status.failed')).toBeInTheDocument();
+  });
+
   it('offers to queue what a failed run still owes', async () => {
     let dispatched: { plate_id?: number | null; only_plate?: boolean } | null = null;
     server.use(

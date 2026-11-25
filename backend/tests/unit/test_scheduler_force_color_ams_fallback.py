@@ -65,11 +65,9 @@ class TestBuildOverrideDirectMapping:
         )
         overrides = [{"slot_id": 1, "type": "PLA", "color": "#CBC6B8", "force_color_match": True}]
         result = scheduler._build_override_direct_mapping(overrides, status)
-        # Type matches but color is far off (red vs beige) → type-only fallback → [0]
-        # If colour threshold is exceeded, falls back to type-only, which IS a match.
-        # The important thing: result is not None and has the right length.
-        assert result is not None
-        assert len(result) == 1
+        # Type matches but the colour does not: a forced slot never falls back to
+        # type-only (#3280), so the slot stays unresolved and the job is held.
+        assert result == [-1]
 
     def test_multiple_overrides_map_multiple_slots(self, scheduler):
         """Two overrides with different slot_ids produce a two-element mapping."""
@@ -161,6 +159,7 @@ class TestComputeAmsMappingFallback:
         item.plate_id = None
         item.filament_overrides = filament_overrides_json
         item.printer_id = 5
+        item.created_by_id = None  # no creator: unrestricted filament scope (#3522)
         return item
 
     def _make_status(self) -> MagicMock:

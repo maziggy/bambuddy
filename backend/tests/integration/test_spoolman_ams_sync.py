@@ -100,6 +100,33 @@ def _make_printer_state(remain=75):
 class TestSyncSpoolmanAmsWeights:
     @pytest.mark.asyncio
     @pytest.mark.integration
+    @pytest.mark.parametrize("gcode_state", ["PREPARE", "RUNNING", "PAUSE"])
+    async def test_a_printing_printers_spool_is_left_alone(
+        self, async_client: AsyncClient, sync_settings, test_printer, slot_assignment, gcode_state
+    ):
+        """Its usage is charged when the print completes; a remaining weight
+        set from remain% halfway through would be charged again on top."""
+        spoolman_client = _make_spoolman_client()
+        printer_state = _make_printer_state(remain=75)
+        printer_state.state = gcode_state
+
+        with (
+            patch(
+                "backend.app.api.routes.spoolman_inventory._get_client",
+                AsyncMock(return_value=spoolman_client),
+            ),
+            patch("backend.app.api.routes.spoolman_inventory.printer_manager") as pm_mock,
+        ):
+            pm_mock.get_status = MagicMock(return_value=printer_state)
+
+            response = await async_client.post("/api/v1/spoolman/inventory/sync-ams-weights")
+
+        assert response.status_code == 200
+        assert (response.json()["synced"], response.json()["printing"]) == (0, 1)
+        spoolman_client.update_spool_full.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_happy_path_synced_count(
         self, async_client: AsyncClient, sync_settings, test_printer, slot_assignment
     ):

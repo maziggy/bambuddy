@@ -43,6 +43,7 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@davisgoodmanv](https://github.com/davisgoodman)
 - [@Heidelberger2000](https://github.com/Heidelberger2000)
 - [@Xethm81](https://github.com/Xethm81)
+- [@JmanB52D](https://github.com/JmanB52D)
 
 ## Backers ($5/mo+)
 
@@ -52,7 +53,6 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@sentinel-center](https://github.com/sentinel-center)
 - [@brianehlert](https://github.com/brianehlert)
 - [@agntcoopersea](https://github.com/agntcoopersea)
-- [@PJMCL1618033](https://github.com/PJMCL1618033
 - [@mgf99](https://github.com/mgf99)
 - [@Geoff-S](https://github.com/Geoff-S)
 - [@andyspinball](https://github.com/andyspinball
@@ -73,8 +73,7 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@MorganMLGman](https://github.com/MorganMLGman)
 - [@NeighborGeek](https://github.com/NeighborGeek)
 - [@frantiseklorenc](https://github.com/frantiseklorenc)
-- [@adamspicedev](https://github.com/adamspicedev)
-
+- [@jsstone88-oss](https://github.com/jsstone88-oss)
 ---
 
 ## One-time and historical supporters

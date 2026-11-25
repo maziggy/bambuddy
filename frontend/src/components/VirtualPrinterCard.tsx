@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import {
@@ -6,7 +6,7 @@ import {
   ChevronDown, ChevronRight, ArrowRightLeft, Trash2, ShieldCheck, Copy, Stethoscope,
 } from 'lucide-react';
 import { api, multiVirtualPrinterApi } from '../api/client';
-import type { VirtualPrinterConfig } from '../api/client';
+import type { LibraryFolderTree, VirtualPrinterConfig } from '../api/client';
 import { Card, CardContent } from './Card';
 import { Button } from './Button';
 import { ConfirmModal } from './ConfirmModal';
@@ -14,37 +14,59 @@ import { VirtualPrinterDiagnosticModal } from './VirtualPrinterDiagnosticModal';
 import { useToast } from '../contexts/ToastContext';
 import { copyTextToClipboard } from '../utils/clipboard';
 
-type LocalMode = 'archive' | 'review' | 'queue' | 'proxy';
+type LocalMode = 'library' | 'review' | 'queue' | 'proxy';
 
 const MODE_LABELS: Record<string, string> = {
-  archive: 'archive',
+  library: 'library',
   review: 'review',
   queue: 'queue',
   proxy: 'proxy',
 };
 
-// Legacy wire values (`immediate` → `archive`, `print_queue` → `queue`) shipped
-// before the UI labels were aligned with the wire format. Backend migration
-// flips existing rows but the function tolerates either form so a stale fetch
-// doesn't show an unselected mode (#1429 follow-up).
+// Legacy wire values (`immediate` and `archive` → `library`, `print_queue` →
+// `queue`). Backend migration flips existing rows but the function tolerates
+// either form so a stale fetch doesn't show an unselected mode (#1429 follow-up).
 function normalizeMode(value: string | undefined): LocalMode {
-  if (value === 'immediate') return 'archive';
+  if (value === 'immediate' || value === 'archive') return 'library';
   if (value === 'print_queue' || value === 'queue') return 'queue';
-  if (value === 'archive' || value === 'review' || value === 'proxy') return value;
-  return 'archive';
+  if (value === 'library' || value === 'review' || value === 'proxy') return value;
+  return 'library';
+}
+
+// The folders a virtual printer can store uploads in, as a flat list with
+// their depth: internal ones the user may add files to (an external mount
+// refuses a second file of the same name, and slicer names repeat).
+function uploadFolderOptions(tree: LibraryFolderTree[] | undefined, depth = 0): { id: number; label: string }[] {
+  return (tree ?? [])
+    .filter((folder) => !folder.is_external)
+    .flatMap((folder) => [
+      ...(folder.can_write ? [{ id: folder.id, label: `${'\u00a0\u00a0'.repeat(depth)}${folder.name}` }] : []),
+      ...uploadFolderOptions(folder.children, depth + 1),
+    ]);
 }
 
 interface VirtualPrinterCardProps {
   printer: VirtualPrinterConfig;
   models: Record<string, string>;
+  // Serial family per model code, shown for codes that share a display name (H2C: O1C / O1C2).
+  modelSerialPrefixes?: Record<string, string>;
+  // Collapsed by default: with several virtual printers the page stays a list.
+  defaultExpanded?: boolean;
 }
 
-export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps) {
+/** Whether the codes called ``name`` are told apart by their serial (H2C: O1C 094, O1C2 31B). */
+function serialTellsApart(models: Record<string, string>, prefixes: Record<string, string>, name: string | undefined): boolean {
+  if (!name) return false;
+  const families = new Set<string | undefined>(Object.entries(models).filter(([, n]) => n === name).map(([code]) => prefixes[code]));
+  return families.size > 1 && !families.has(undefined);
+}
+
+export function VirtualPrinterCard({ printer, models, modelSerialPrefixes = {}, defaultExpanded = false }: VirtualPrinterCardProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
 
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const [localEnabled, setLocalEnabled] = useState(printer.enabled);
   const [localName, setLocalName] = useState(printer.name);
   const [localAccessCode, setLocalAccessCode] = useState('');
@@ -57,6 +79,8 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
   const [localQueueForceColorMatch, setLocalQueueForceColorMatch] = useState(printer.queue_force_color_match ?? false);
   const [localSaveAmsMapping, setLocalSaveAmsMapping] = useState(printer.save_ams_mapping ?? false);
   const [localGcodeInjection, setLocalGcodeInjection] = useState(printer.gcode_injection ?? false);
+  const [localFolderId, setLocalFolderId] = useState<number | null>(printer.library_folder_id ?? null);
+  const [localRemoveAfterPrint, setLocalRemoveAfterPrint] = useState(printer.queue_remove_after_print ?? false);
   const [localTailscaleDisabled, setLocalTailscaleDisabled] = useState(printer.tailscale_disabled ?? true);
   const [showAccessCode, setShowAccessCode] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
@@ -76,6 +100,12 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
   const tailscaleFqdn = tailscaleStatus?.available ? tailscaleStatus.fqdn : '';
   const tailscaleIp = tailscaleStatus?.available ? tailscaleStatus.tailscale_ips?.[0] ?? '' : '';
 
+  // Cleared on unmount: a timer left running sets state on a card that is gone.
+  const fqdnCopiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (fqdnCopiedTimer.current) clearTimeout(fqdnCopiedTimer.current);
+  }, []);
+
   const handleCopyFqdn = async (e: React.MouseEvent) => {
     e.stopPropagation();
     const fqdn = tailscaleFqdn;
@@ -84,7 +114,8 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
     if (ok) {
       setFqdnCopied(true);
       showToast(t('printers.copied'));
-      setTimeout(() => setFqdnCopied(false), 2000);
+      if (fqdnCopiedTimer.current) clearTimeout(fqdnCopiedTimer.current);
+      fqdnCopiedTimer.current = setTimeout(() => setFqdnCopied(false), 2000);
     } else {
       showToast(t('virtualPrinter.toast.copyFailed'), 'error');
     }
@@ -104,6 +135,8 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
       setLocalQueueForceColorMatch(printer.queue_force_color_match ?? false);
       setLocalSaveAmsMapping(printer.save_ams_mapping ?? false);
       setLocalGcodeInjection(printer.gcode_injection ?? false);
+      setLocalFolderId(printer.library_folder_id ?? null);
+      setLocalRemoveAfterPrint(printer.queue_remove_after_print ?? false);
       setLocalTailscaleDisabled(printer.tailscale_disabled ?? true);
     }
   }, [printer, pendingAction]);
@@ -119,6 +152,13 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
     queryKey: ['network-interfaces'],
     queryFn: () => api.getNetworkInterfaces().then(res => res.interfaces),
   });
+
+  const { data: libraryFolders } = useQuery({
+    queryKey: ['library-folders'],
+    queryFn: api.getLibraryFolders,
+    enabled: localMode !== 'proxy',
+  });
+  const folderOptions = uploadFolderOptions(libraryFolders);
 
   const updateMutation = useMutation({
     mutationFn: (data: Parameters<typeof multiVirtualPrinterApi.update>[1]) =>
@@ -141,6 +181,8 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
       setLocalQueueForceColorMatch(printer.queue_force_color_match ?? false);
       setLocalSaveAmsMapping(printer.save_ams_mapping ?? false);
       setLocalGcodeInjection(printer.gcode_injection ?? false);
+      setLocalFolderId(printer.library_folder_id ?? null);
+      setLocalRemoveAfterPrint(printer.queue_remove_after_print ?? false);
       setPendingAction(null);
     },
   });
@@ -215,12 +257,12 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
     updateMutation.mutate({ model });
   };
 
-  const handleTargetPrinterChange = (printerId: number) => {
+  const handleTargetPrinterChange = (printerId: number | null) => {
     // The new target's access code becomes this VP's access code on the
     // backend write. If the slicer was already bound with the old code,
     // it has to rebind; flag this so the user doesn't sit there confused.
     const previousCode = targetPrinter?.access_code;
-    const nextCode = printers?.find(p => p.id === printerId)?.access_code;
+    const nextCode = printerId === null ? undefined : printers?.find(p => p.id === printerId)?.access_code;
     setLocalTargetPrinterId(printerId);
     setPendingAction('targetPrinter');
     updateMutation.mutate(
@@ -242,7 +284,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
   };
 
   const isRunning = printer.status?.running || false;
-  const modeLabel = t(`virtualPrinter.mode.${MODE_LABELS[localMode] || 'archive'}`);
+  const modeLabel = t(`virtualPrinter.mode.${MODE_LABELS[localMode] || 'library'}`);
   const targetPrinter = printers?.find(p => p.id === localTargetPrinterId);
   const targetPrinterName = targetPrinter?.name;
   // The bridge in non-proxy modes (and the transparent relay in proxy mode)
@@ -268,7 +310,11 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
           className="px-4 py-3 flex items-center gap-3 cursor-pointer select-none"
           onClick={() => setExpanded(!expanded)}
         >
-          <button className="text-bambu-gray flex-shrink-0">
+          <button
+            className="text-bambu-gray flex-shrink-0"
+            aria-expanded={expanded}
+            aria-label={expanded ? t('common.collapse') : t('common.expand')}
+          >
             {expanded
               ? <ChevronDown className="w-4 h-4" />
               : <ChevronRight className="w-4 h-4" />
@@ -390,7 +436,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
             <div>
               <div className="text-white text-sm font-medium mb-2">{t('virtualPrinter.mode.title')}</div>
               <div className="grid grid-cols-2 gap-2">
-                {(['archive', 'review', 'queue', 'proxy'] as const).map((mode) => (
+                {(['library', 'review', 'queue', 'proxy'] as const).map((mode) => (
                   <button
                     key={mode}
                     onClick={() => handleModeChange(mode)}
@@ -414,6 +460,71 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
                 ))}
               </div>
             </div>
+
+            {/* File Manager folder - every mode that receives files */}
+            {localMode !== 'proxy' && (
+              <div className="pt-2 border-t border-bambu-dark-tertiary">
+                <div className="text-white text-sm font-medium mb-1">{t('virtualPrinter.uploadFolder.title')}</div>
+                <div className="relative">
+                  <select
+                    aria-label={t('virtualPrinter.uploadFolder.title')}
+                    value={localFolderId ?? ''}
+                    onChange={(e) => {
+                      const id = e.target.value === '' ? null : parseInt(e.target.value, 10);
+                      setLocalFolderId(id);
+                      setPendingAction('uploadFolder');
+                      updateMutation.mutate({ library_folder_id: id });
+                    }}
+                    disabled={pendingAction === 'uploadFolder'}
+                    className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-md px-3 py-1.5 text-white text-sm appearance-none cursor-pointer disabled:opacity-50 pr-10"
+                  >
+                    <option value="">{t('virtualPrinter.uploadFolder.default')}</option>
+                    {folderOptions.map((folder) => (
+                      <option key={folder.id} value={folder.id}>{folder.label}</option>
+                    ))}
+                    {/* A folder the user can't add to still shows as what it is. */}
+                    {localFolderId !== null && !folderOptions.some((f) => f.id === localFolderId) && (
+                      <option value={localFolderId}>{t('virtualPrinter.uploadFolder.other')}</option>
+                    )}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
+                </div>
+                <p className="text-xs text-bambu-gray mt-1">{t(`virtualPrinter.uploadFolder.hint.${localMode}`)}</p>
+              </div>
+            )}
+
+            {/* Remove-after-print toggle - only for queue mode */}
+            {localMode === 'queue' && (
+              <div className="pt-2 border-t border-bambu-dark-tertiary">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-white text-sm font-medium">{t('virtualPrinter.removeAfterPrint.title')}</div>
+                    <div className="text-[10px] text-bambu-gray">{t('virtualPrinter.removeAfterPrint.description')}</div>
+                  </div>
+                  <button
+                    role="switch"
+                    aria-checked={localRemoveAfterPrint}
+                    aria-label={t('virtualPrinter.removeAfterPrint.title')}
+                    onClick={() => {
+                      const newVal = !localRemoveAfterPrint;
+                      setLocalRemoveAfterPrint(newVal);
+                      setPendingAction('removeAfterPrint');
+                      updateMutation.mutate({ queue_remove_after_print: newVal });
+                    }}
+                    disabled={pendingAction === 'removeAfterPrint'}
+                    className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${
+                      localRemoveAfterPrint ? 'bg-bambu-green' : 'bg-bambu-dark-tertiary'
+                    } ${pendingAction === 'removeAfterPrint' ? 'opacity-50' : ''}`}
+                  >
+                    <span
+                      className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                        localRemoveAfterPrint ? 'translate-x-5' : ''
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Auto-dispatch toggle - only for queue mode */}
             {localMode === 'queue' && (
@@ -576,11 +687,20 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
                     className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-md px-3 py-1.5 text-white text-sm appearance-none cursor-pointer disabled:opacity-50 pr-10"
                   >
                     {Object.entries(models).map(([code, name]) => (
-                      <option key={code} value={code}>{name} ({code})</option>
+                      <option key={code} value={code}>
+                        {serialTellsApart(models, modelSerialPrefixes, name)
+                          ? t('virtualPrinter.model.optionSerial', { name, code, prefix: modelSerialPrefixes[code] })
+                          : `${name} (${code})`}
+                      </option>
                     ))}
                   </select>
                   <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
                 </div>
+                {serialTellsApart(models, modelSerialPrefixes, models[localModel]) && (
+                  <p className="text-xs text-bambu-gray mt-1" data-testid="vp-model-same-name-hint">
+                    {t('virtualPrinter.model.sameNameHint', { menu: t('printers.printerInformation') })}
+                  </p>
+                )}
               </div>
             )}
 
@@ -676,6 +796,8 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
                     )}
                   </>
                 )}
+                {/* Personal access codes (#1430): users can sign in with their own. */}
+                <p className="text-xs text-bambu-gray mt-1">{t('virtualPrinter.accessCode.personalHint')}</p>
               </div>
             )}
 
@@ -686,19 +808,37 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
                 <select
                   value={localTargetPrinterId ?? ''}
                   onChange={(e) => {
+                    if (e.target.value === '') {
+                      // Proxy mode needs a printer, so its empty entry is only a prompt.
+                      if (localMode !== 'proxy' && localTargetPrinterId !== null) handleTargetPrinterChange(null);
+                      return;
+                    }
                     const id = parseInt(e.target.value, 10);
                     if (!isNaN(id)) handleTargetPrinterChange(id);
                   }}
                   disabled={pendingAction === 'targetPrinter'}
                   className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-md px-3 py-1.5 text-white text-sm appearance-none cursor-pointer disabled:opacity-50 pr-10"
                 >
-                  <option value="">{t('virtualPrinter.targetPrinter.placeholder')}</option>
+                  <option value="">
+                    {localMode === 'proxy'
+                      ? t('virtualPrinter.targetPrinter.placeholder')
+                      : localMode === 'queue'
+                        ? t('virtualPrinter.targetPrinter.anyOfModel', { model: models[localModel] || localModel })
+                        : t('virtualPrinter.targetPrinter.none')}
+                  </option>
                   {printers?.map((p) => (
                     <option key={p.id} value={p.id}>{p.name} ({p.ip_address})</option>
                   ))}
                 </select>
                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
               </div>
+              {localMode === 'queue' && (
+                <p className="text-xs text-bambu-gray mt-1">
+                  {localTargetPrinterId !== null
+                    ? t('virtualPrinter.targetPrinter.queueFixedHint')
+                    : t('virtualPrinter.targetPrinter.queueAnyHint', { model: models[localModel] || localModel })}
+                </p>
+              )}
             </div>
 
             {/* Bind Interface */}

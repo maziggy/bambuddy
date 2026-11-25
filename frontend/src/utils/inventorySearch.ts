@@ -2,6 +2,18 @@ import type { InventorySpool } from '../api/client';
 import { resolveSpoolColorName } from './colors';
 
 /**
+ * The spool ID a "#<number>" query asks for, or null for any other query.
+ *
+ * A hash-prefixed number is an explicit spool ID lookup. Plain numeric
+ * searches stay backwards-compatible ("3" can still match #3, #13, #30, ...),
+ * while "#3" selects only the physical spool whose label says #3.
+ */
+export function exactSpoolIdQuery(query: string): number | null {
+  const match = query.trim().match(/^#(\d+)$/);
+  return match ? Number(match[1]) : null;
+}
+
+/**
  * Return true when spool matches the search query across all searchable text fields.
  * Case-insensitive. Empty query always returns true.
  */
@@ -9,13 +21,8 @@ export function spoolMatchesQuery(spool: InventorySpool, query: string): boolean
   const q = query.trim().toLowerCase();
   if (!q) return true;
 
-  // A hash-prefixed number is an explicit spool ID lookup. Keep plain numeric
-  // searches backwards-compatible ("3" can still match #3, #13, #30, ...),
-  // while "#3" selects only the physical spool whose label says #3.
-  const exactIdQuery = q.match(/^#(\d+)$/);
-  if (exactIdQuery) {
-    return spool.id === Number(exactIdQuery[1]);
-  }
+  const exactId = exactSpoolIdQuery(q);
+  if (exactId !== null) return spool.id === exactId;
 
   return (
     String(spool.id).includes(q) ||

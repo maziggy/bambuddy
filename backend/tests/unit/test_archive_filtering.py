@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from backend.app.core.printer_scope import ALL_PRINTERS
+from backend.app.services.bambu_ftp import FileListResult
 
 # Patch paths for lazy imports inside functions
 _FTP_MODULE = "backend.app.services.bambu_ftp"
@@ -289,6 +290,8 @@ class TestScanForTimelapseWithRetries:
                 scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[]))),
             )
         )
+        # The claimed-videos lookup reads runs and archives with scalars().
+        mock_session.scalars = AsyncMock(return_value=MagicMock(all=MagicMock(return_value=[])))
         return mock_session
 
     @pytest.mark.asyncio
@@ -320,6 +323,10 @@ class TestScanForTimelapseWithRetries:
         with (
             patch("backend.app.main.async_session", return_value=mock_session),
             patch("backend.app.main._list_timelapse_videos", side_effect=mock_list_mp4s),
+            # The baseline is one walk of its own (#3474), so it reads the card here.
+            patch(
+                f"{_FTP_MODULE}.list_files_result_async", AsyncMock(return_value=FileListResult(baseline_files, True))
+            ),
             patch("backend.app.main.ws_manager") as mock_ws,
             patch("backend.app.main.asyncio.sleep", new_callable=AsyncMock),
             patch("backend.app.main.ArchiveService", return_value=mock_service),
@@ -365,6 +372,10 @@ class TestScanForTimelapseWithRetries:
         with (
             patch("backend.app.main.async_session", return_value=mock_session),
             patch("backend.app.main._list_timelapse_videos", side_effect=mock_list_mp4s),
+            # The baseline is one walk of its own (#3474), so it reads the card here.
+            patch(
+                f"{_FTP_MODULE}.list_files_result_async", AsyncMock(return_value=FileListResult(baseline_files, True))
+            ),
             patch("backend.app.main.ws_manager") as mock_ws,
             patch("backend.app.main.asyncio.sleep", new_callable=AsyncMock),
             patch("backend.app.main.ArchiveService", return_value=mock_service),
@@ -417,6 +428,10 @@ class TestScanForTimelapseWithRetries:
         with (
             patch("backend.app.main.async_session", return_value=mock_session),
             patch("backend.app.main._list_timelapse_videos", side_effect=mock_list_mp4s),
+            # The baseline is one walk of its own (#3474), so it reads the card here.
+            patch(
+                f"{_FTP_MODULE}.list_files_result_async", AsyncMock(return_value=FileListResult(baseline_files, True))
+            ),
             patch("backend.app.main.ws_manager") as mock_ws,
             patch("backend.app.main.asyncio.sleep", new_callable=AsyncMock),
             patch("backend.app.main.ArchiveService", return_value=mock_service),
@@ -509,6 +524,7 @@ class TestScanForTimelapseWithRetries:
         with (
             patch("backend.app.main.async_session", return_value=mock_session),
             patch("backend.app.main._list_timelapse_videos", side_effect=mock_list_mp4s),
+            patch(f"{_FTP_MODULE}.list_files_result_async", AsyncMock(return_value=FileListResult([], True))),
             patch("backend.app.main.ws_manager") as mock_ws,
             patch("backend.app.main.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
             patch("backend.app.main.ArchiveService", return_value=mock_service),
@@ -633,10 +649,12 @@ class TestListTimelapseVideosAvi:
                 scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[]))),
             )
         )
+        mock_session.scalars = AsyncMock(return_value=MagicMock(all=MagicMock(return_value=[])))
 
         with (
             patch("backend.app.main.async_session", return_value=mock_session),
             patch("backend.app.main._list_timelapse_videos", side_effect=mock_list_videos),
+            patch(f"{_FTP_MODULE}.list_files_result_async", AsyncMock(return_value=FileListResult([], True))),
             patch("backend.app.main.ws_manager") as mock_ws,
             patch("backend.app.main.asyncio.sleep", new_callable=AsyncMock),
             patch("backend.app.main.ArchiveService", return_value=mock_service),
@@ -663,8 +681,7 @@ class TestConvertTimelapseToMp4:
     """Test the background AVI-to-MP4 conversion."""
 
     @pytest.mark.asyncio
-    async def test_converts_avi_to_mp4(self, tmp_path):
-        """Should call FFmpeg to convert and update the DB path."""
+    async def _convert(self, tmp_path, shown: str):
         source = tmp_path / "video.avi"
         source.write_bytes(b"fake avi")
         mp4_path = tmp_path / "video.mp4"
@@ -675,7 +692,7 @@ class TestConvertTimelapseToMp4:
 
         mock_archive = MagicMock()
         mock_archive.id = 42
-        mock_archive.timelapse_path = "archives/42/video.avi"
+        mock_archive.timelapse_path = shown
 
         mock_session = AsyncMock()
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
@@ -691,6 +708,7 @@ class TestConvertTimelapseToMp4:
             patch("backend.app.services.archive.settings") as mock_settings,
             patch("backend.app.utils.archive_paths.settings") as mock_paths_settings,
             patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec,
+            patch("backend.app.services.archive._announce_timelapse", AsyncMock()) as announce,
         ):
             mock_settings.base_dir = tmp_path
             mock_paths_settings.base_dir = tmp_path
@@ -703,6 +721,27 @@ class TestConvertTimelapseToMp4:
 
             await _convert_timelapse_to_mp4(42, source)
 
+        mock_session.announce = announce
+        return mock_exec, mock_session, mock_archive, mp4_path
+
+    @pytest.mark.asyncio
+    async def test_the_converted_video_is_announced(self, tmp_path):
+        """Open Archives pages refresh to the MP4 (TL-5)."""
+        _, session, _, _ = await self._convert(tmp_path, shown="video.avi")
+
+        session.announce.assert_awaited_once_with(42, attached=True)
+
+    @pytest.mark.asyncio
+    async def test_a_discarded_conversion_is_not_announced(self, tmp_path):
+        _, session, _, _ = await self._convert(tmp_path, shown="other.avi")
+
+        session.announce.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_converts_avi_to_mp4(self, tmp_path):
+        """Should call FFmpeg to convert and update the DB path."""
+        mock_exec, mock_session, mock_archive, _ = await self._convert(tmp_path, shown="video.avi")
+
         # FFmpeg should have been called
         mock_exec.assert_called_once()
         cmd_args = mock_exec.call_args[0]
@@ -713,6 +752,15 @@ class TestConvertTimelapseToMp4:
         # DB should have been updated to .mp4 path
         mock_session.commit.assert_called_once()
         assert mock_archive.timelapse_path == "video.mp4"
+
+    @pytest.mark.asyncio
+    async def test_an_archive_that_moved_on_keeps_what_it_shows(self, tmp_path):
+        """The video was deleted, or a reprint's replaced it, while it converted."""
+        _, mock_session, mock_archive, mp4_path = await self._convert(tmp_path, shown="other.mp4")
+
+        mock_session.commit.assert_not_called()
+        assert mock_archive.timelapse_path == "other.mp4"
+        assert not mp4_path.exists()
 
     @pytest.mark.asyncio
     async def test_skips_when_no_ffmpeg(self, tmp_path):
@@ -779,6 +827,8 @@ class TestAttachTimelapseBackgroundConversion:
             patch("backend.app.services.archive.settings") as mock_settings,
             patch("backend.app.utils.archive_paths.settings") as mock_paths_settings,
             patch("asyncio.create_task") as mock_create_task,
+            # Its broadcast opens a session task of its own
+            patch("backend.app.services.archive._announce_timelapse", AsyncMock()),
         ):
             mock_settings.base_dir = tmp_path
             mock_paths_settings.base_dir = tmp_path
@@ -808,6 +858,8 @@ class TestAttachTimelapseBackgroundConversion:
             patch("backend.app.services.archive.settings") as mock_settings,
             patch("backend.app.utils.archive_paths.settings") as mock_paths_settings,
             patch("asyncio.create_task") as mock_create_task,
+            # Its broadcast opens a session task of its own
+            patch("backend.app.services.archive._announce_timelapse", AsyncMock()),
         ):
             mock_settings.base_dir = tmp_path
             mock_paths_settings.base_dir = tmp_path

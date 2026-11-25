@@ -7,6 +7,7 @@ from sqlalchemy import delete, func, nullslast, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import (
+    ApiKeyActor,
     MediaOrRequestPrinterScope,
     RequestPrinterScope,
     RequirePermissionIfAuthEnabled,
@@ -17,9 +18,10 @@ from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.core.printer_scope import PrinterScope
-from backend.app.models.print_log import PrintLogEntry
+from backend.app.models.print_log import RUN_OPEN, PrintLogEntry
 from backend.app.models.user import User
 from backend.app.schemas.print_log import PrintLogEntrySchema, PrintLogEntryUpdate, PrintLogResponse
+from backend.app.services.finance_billing import settle_pending_print_charges
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +65,8 @@ async def get_print_log(
     offset: int = Query(default=0, ge=0),
     sort_by: str = Query(default="date"),
     sort_dir: str = Query(default="desc", pattern="^(asc|desc)$"),
-    db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    db: AsyncSession = Depends(get_db, scope="function"),
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
             Permission.ARCHIVES_READ_OWN,
@@ -135,17 +137,30 @@ async def get_print_log(
     # It lost failure_reason that way (#1687 part 4), then cost / energy_kwh /
     # energy_cost, which were written to the table but never sent — so the
     # Print Log's cost and energy columns read empty for every run (#2636).
+    # Archives of these prints that were deleted (soft, #1343: their prints
+    # stay logged), so the log doesn't link to an archive page that is gone.
+    from backend.app.models.archive import PrintArchive
+
+    archive_ids = {e.archive_id for e in entries if e.archive_id is not None}
+    deleted = (
+        await db.scalars(
+            select(PrintArchive.id).where(PrintArchive.id.in_(archive_ids), PrintArchive.deleted_at.is_not(None))
+        )
+        if archive_ids
+        else None
+    )
     return PrintLogResponse(
         items=[PrintLogEntrySchema.model_validate(e) for e in entries],
         total=total,
+        deleted_archive_ids=sorted(deleted.all()) if deleted is not None else [],
     )
 
 
 @router.get("/{entry_id}/thumbnail")
 async def get_print_log_thumbnail(
     entry_id: int,
-    db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    db: AsyncSession = Depends(get_db, scope="function"),
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_media_token_ownership(
             Permission.ARCHIVES_READ_ALL,
             Permission.ARCHIVES_READ_OWN,
@@ -189,7 +204,7 @@ async def get_print_log_thumbnail(
 
 @router.delete("/")
 async def clear_print_log(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_DELETE_ALL),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -199,8 +214,14 @@ async def clear_print_log(
     """
     # Entries for printers the caller can't see stay (#1727)
     statement = delete(PrintLogEntry)
-    if (clause := printer_scope.where(PrintLogEntry.printer_id)) is not None:
+    clause = printer_scope.where(PrintLogEntry.printer_id)
+    if clause is not None:
         statement = statement.where(clause)
+    # A charge waiting on one of them for its energy is written first (#3581).
+    # Only on the runs the delete removes: it leaves open runs out (the
+    # open-run filter), and the charge of a run still being closed waits
+    # for its energy.
+    await settle_pending_print_charges(db, PrintLogEntry.status != RUN_OPEN, *([clause] if clause is not None else []))
     result = await db.execute(statement)
     deleted = result.rowcount
     await db.commit()
@@ -212,8 +233,8 @@ async def clear_print_log(
 @router.delete("/{entry_id}")
 async def delete_print_log_entry(
     entry_id: int,
-    db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    db: AsyncSession = Depends(get_db, scope="function"),
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_DELETE_ALL,
             Permission.ARCHIVES_DELETE_OWN,
@@ -239,6 +260,8 @@ async def delete_print_log_entry(
         if entry.created_by_id is None or (user is not None and entry.created_by_id != user.id):
             raise HTTPException(403, "You can only delete your own print log entries")
 
+    # A charge waiting on it for its energy is written first (#3581).
+    await settle_pending_print_charges(db, PrintLogEntry.id == entry.id)
     await db.delete(entry)
     await db.commit()
 
@@ -270,6 +293,8 @@ _FAILURE_REASON_KEYS = frozenset(
         # recognise, so leaving it out would delete the classification on the
         # next save of such an archive.
         "noStatusUpdate",
+        # A print the printer kill switch stopped (written at its completion).
+        "killSwitch",
         "other",
     }
 )
@@ -282,8 +307,8 @@ _STATUS_KEYS = frozenset({"completed", "failed", "stopped", "cancelled", "skippe
 async def update_print_log_entry(
     entry_id: int,
     update: PrintLogEntryUpdate,
-    db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    db: AsyncSession = Depends(get_db, scope="function"),
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_UPDATE_ALL,
             Permission.ARCHIVES_UPDATE_OWN,
@@ -333,6 +358,15 @@ async def update_print_log_entry(
         if new_status not in _STATUS_KEYS:
             raise HTTPException(400, f"Unknown status: {new_status!r}")
         entry.status = new_status
+
+    if "notes" in payload:
+        entry.notes = (payload["notes"] or "").strip() or None
+
+    if entry.archive_id is not None:
+        from backend.app.services.print_log import mirror_latest_run
+
+        # The archive card shows its latest run; this may be it.
+        await mirror_latest_run(db, entry.archive_id)
 
     await db.commit()
     await db.refresh(entry)

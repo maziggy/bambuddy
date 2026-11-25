@@ -4,8 +4,11 @@ import { useQueries } from '@tanstack/react-query';
 import { Settings as SettingsIcon } from 'lucide-react';
 import { DEFAULT_CAM_WALL_TILE_SIZE, camWallGridClasses } from './camWallTileSize';
 import { CameraTile, type CameraTileMode, type CameraTileStatusMode } from './CameraTile';
+import { CameraTileControls } from './CameraTileControls';
+import type { CamWallControlsMode } from './camWallControls';
 import { filterKnownHMSErrors } from './HMSErrorModal';
 import { api, type PrinterStatus } from '../api/client';
+import type { TimeFormat } from '../utils/date';
 
 // The wall only ever reads these three fields off a printer, so it asks for no
 // more than that. Printer[] satisfies this structurally, and so does the
@@ -30,6 +33,9 @@ export interface CameraWallStatus {
   subtask_name?: string | null;
   gcode_file?: string | null;
   hms_errors?: PrinterStatus['hms_errors'];
+  // Not in the kiosk feed: a kiosk tile shows neither (#3479).
+  temperatures?: PrinterStatus['temperatures'];
+  chamber_light?: boolean;
 }
 
 interface CameraWallProps {
@@ -53,6 +59,15 @@ interface CameraWallProps {
   // 1=S, 2=M, 3=L, 4=XL, the same scale as the printer cards (#2735). Sets how
   // many tiles share a row; the tiles stay 16:9.
   tileSize?: number;
+  // Pause/resume, stop and the chamber light on each tile (#3479), for a user
+  // with printers:control. Never on a kiosk wall: nobody stands at a TV, and
+  // its token is read-only.
+  showControls?: boolean;
+  // Whether those controls wait for hover or are always shown. The setting is
+  // offered only on a wall that has the controls.
+  controlsMode?: CamWallControlsMode;
+  onChangeControlsMode?: (next: CamWallControlsMode) => void;
+  timeFormat?: TimeFormat;
 }
 
 const MIN_MAX_LIVE = 1;
@@ -60,6 +75,7 @@ const MAX_MAX_LIVE = 16;
 const MIN_SNAPSHOT_SEC = 2;
 const MAX_SNAPSHOT_SEC = 60;
 const STATUS_MODES: CameraTileStatusMode[] = ['off', 'compact', 'full'];
+const CONTROLS_MODES: CamWallControlsMode[] = ['hover', 'always'];
 
 export function CameraWall({
   printers,
@@ -73,6 +89,10 @@ export function CameraWall({
   statuses,
   showSettings: settingsEnabled = true,
   tileSize = DEFAULT_CAM_WALL_TILE_SIZE,
+  showControls = false,
+  controlsMode = 'hover',
+  onChangeControlsMode,
+  timeFormat = 'system',
 }: CameraWallProps) {
   const { t } = useTranslation();
   const tileRefs = useRef<Map<number, HTMLDivElement | null>>(new Map());
@@ -270,6 +290,38 @@ export function CameraWall({
                   {t('printers.camWall.settings.statusOverlayHint')}
                 </span>
               </div>
+              {showControls && onChangeControlsMode && (
+                <div className="space-y-1">
+                  <span className="block text-xs font-medium text-white">
+                    {t('printers.camWall.settings.controls')}
+                  </span>
+                  <div
+                    role="radiogroup"
+                    aria-label={t('printers.camWall.settings.controls')}
+                    className="flex overflow-hidden rounded-md border border-bambu-dark-tertiary"
+                  >
+                    {CONTROLS_MODES.map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        role="radio"
+                        aria-checked={controlsMode === m}
+                        onClick={() => onChangeControlsMode(m)}
+                        className={`flex-1 px-2 py-1 text-xs ${
+                          controlsMode === m
+                            ? 'bg-bambu-green text-black font-semibold'
+                            : 'bg-bambu-dark text-white hover:bg-bambu-dark-tertiary'
+                        }`}
+                      >
+                        {t(`printers.camWall.controlsMode.${m}`)}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="block text-[11px] text-bambu-gray">
+                    {t('printers.camWall.settings.controlsHint')}
+                  </span>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -279,6 +331,7 @@ export function CameraWall({
       <div className={`grid gap-3 ${camWallGridClasses(tileSize)}`} data-testid="camwall-grid">
         {printers.map((p) => {
           const mode = modeByPrinter.get(p.id) ?? 'paused';
+          const status = statusByPrinter.get(p.id);
           return (
             <div
               key={p.id}
@@ -286,6 +339,7 @@ export function CameraWall({
                 tileRefs.current.set(p.id, el);
               }}
               data-printer-id={p.id}
+              className="group/tile relative"
             >
               <CameraTile
                 printerId={p.id}
@@ -308,8 +362,31 @@ export function CameraWall({
                 hmsErrorCount={
                   filterKnownHMSErrors(statusByPrinter.get(p.id)?.hms_errors ?? []).length
                 }
+                temperatures={status?.temperatures ?? null}
+                timeFormat={timeFormat}
                 onClick={onTileClick ? () => onTileClick(p.id, p.name) : undefined}
               />
+              {/* Beside the tile, not in it: the tile is a button. Shown on
+                  hover or focus where there is a pointer, always on a touch
+                  screen, which has no hover. */}
+              {showControls && (
+                <div
+                  data-testid="camwall-tile-controls"
+                  className={`absolute right-2 top-8 ${
+                    controlsMode === 'always'
+                      ? ''
+                      : 'opacity-0 transition-opacity focus-within:opacity-100 group-hover/tile:opacity-100 [@media(hover:none)]:opacity-100'
+                  }`}
+                >
+                  <CameraTileControls
+                    printerId={p.id}
+                    printerName={p.name}
+                    connected={status?.connected ?? false}
+                    printerState={status?.state ?? null}
+                    chamberLight={status?.chamber_light ?? null}
+                  />
+                </div>
+              )}
             </div>
           );
         })}

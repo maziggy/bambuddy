@@ -30,10 +30,18 @@ export function invalidateProjectViews(queryClient: QueryClient) {
   );
 }
 
-/** As above, plus the archive list itself — for mutations that change both. */
+/**
+ * Every key read from an archive or its prints, beside the list: the archive
+ * page's archive and print list and the calendar's prints (archive redesign
+ * P4). Prefixes, as above.
+ */
+export const ARCHIVE_VIEW_QUERY_KEYS = [['archive'], ['archive-runs'], ['calendar-runs']] as const;
+
+/** As above, plus the archive list and pages — for mutations that change both. */
 export function invalidateArchiveAndProjectViews(queryClient: QueryClient) {
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: ['archives'] }),
+    ...ARCHIVE_VIEW_QUERY_KEYS.map((queryKey) => queryClient.invalidateQueries({ queryKey: [...queryKey] })),
     invalidateProjectViews(queryClient),
   ]);
 }

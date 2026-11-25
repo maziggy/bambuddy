@@ -114,6 +114,37 @@ describe('PrintLogModal', () => {
     expect(screen.queryByText('filamentRunout')).not.toBeInTheDocument();
   });
 
+  it('names the plate of each run once another plate printed', async () => {
+    vi.mocked(api.getArchiveRuns).mockResolvedValue({
+      total: 2,
+      items: [
+        { ...sampleRuns.items[0], plate_id: 2 },
+        { ...sampleRuns.items[1], plate_id: 1 },
+      ],
+    });
+    render(<PrintLogModal archiveId={42} archiveName="Benchy" onClose={vi.fn()} />);
+    await waitFor(() => {
+      expect(screen.getByText('Plate 2')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Plate 1')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Plate' })).toBeInTheDocument();
+  });
+
+  it('shows no plate column for a file only ever printed as plate 1', async () => {
+    vi.mocked(api.getArchiveRuns).mockResolvedValue({
+      total: 2,
+      items: [
+        { ...sampleRuns.items[0], plate_id: 1 },
+        { ...sampleRuns.items[1], plate_id: null },
+      ],
+    });
+    render(<PrintLogModal archiveId={42} archiveName="Benchy" onClose={vi.fn()} />);
+    await waitFor(() => {
+      expect(screen.getByText(/100\.0 g/)).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('columnheader', { name: 'Plate' })).not.toBeInTheDocument();
+  });
+
   it('shows the empty state when there are no runs', async () => {
     vi.mocked(api.getArchiveRuns).mockResolvedValue({ total: 0, items: [] });
     render(<PrintLogModal archiveId={42} archiveName="Benchy" onClose={vi.fn()} />);

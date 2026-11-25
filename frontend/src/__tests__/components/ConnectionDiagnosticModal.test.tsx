@@ -245,6 +245,40 @@ describe('ConnectionDiagnosticModal', () => {
     spy.mockRestore();
   });
 
+  it('passes a macvlan container without offering host networking (#3417)', async () => {
+    const spy = vi.spyOn(api, 'diagnosePrinter').mockResolvedValue({
+      ...PROBLEM_RESULT,
+      overall: 'ok',
+      checks: [{ id: 'network_mode', status: 'pass', params: { mode: 'macvlan', reason: 'macvlan', runtime: 'Docker' } }],
+    });
+
+    renderModal({ printerId: 1, printerName: 'Test P1S', onClose: vi.fn() });
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(/Running in Docker on a macvlan network/i)).toBeInTheDocument();
+    expect(screen.queryByText(/host networking/i)).not.toBeInTheDocument();
+
+    spy.mockRestore();
+  });
+
+  it('warns that ipvlan L3 hides the Virtual Printer from the slicer (#3417)', async () => {
+    const spy = vi.spyOn(api, 'diagnosePrinter').mockResolvedValue({
+      ...PROBLEM_RESULT,
+      overall: 'warnings',
+      checks: [
+        { id: 'network_mode', status: 'warn', params: { mode: 'ipvlan_l3', reason: 'ipvlan_l3', runtime: 'Docker' } },
+      ],
+    });
+
+    renderModal({ printerId: 1, printerName: 'Test P1S', onClose: vi.fn() });
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(/slicer cannot find the Virtual Printer/i)).toBeInTheDocument();
+    expect(screen.queryByText(/bridge networking/i)).not.toBeInTheDocument();
+
+    spy.mockRestore();
+  });
+
   it('names the interpreter when macOS has no signature to grant against (#3114)', async () => {
     const spy = vi.spyOn(api, 'diagnosePrinter').mockResolvedValue({
       ...PROBLEM_RESULT,

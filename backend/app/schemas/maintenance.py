@@ -2,7 +2,9 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
 
 
 # Maintenance Type schemas
@@ -20,7 +22,8 @@ class MaintenanceTypeCreate(MaintenanceTypeBase):
     pass
 
 
-class MaintenanceTypeUpdate(BaseModel):
+class MaintenanceTypeUpdate(IgnoresNullForRequiredColumns):
+    __orm_table__ = "maintenance_types"
     name: str | None = None
     description: str | None = None
     default_interval_hours: float | None = Field(default=None, ge=1.0)
@@ -46,11 +49,8 @@ class PrinterMaintenanceBase(BaseModel):
     enabled: bool = True
 
 
-class PrinterMaintenanceCreate(PrinterMaintenanceBase):
-    pass
-
-
-class PrinterMaintenanceUpdate(BaseModel):
+class PrinterMaintenanceUpdate(IgnoresNullForRequiredColumns):
+    __orm_table__ = "printer_maintenance"
     custom_interval_hours: float | None = None
     custom_interval_type: str | None = Field(default=None, pattern="^(hours|days)$")
     enabled: bool | None = None
@@ -75,10 +75,6 @@ class PrinterMaintenanceResponse(BaseModel):
 # Maintenance History schemas
 class MaintenanceHistoryBase(BaseModel):
     notes: str | None = None
-
-
-class MaintenanceHistoryCreate(MaintenanceHistoryBase):
-    pass
 
 
 class MaintenanceHistoryResponse(MaintenanceHistoryBase):
@@ -132,7 +128,45 @@ class PrinterMaintenanceOverview(BaseModel):
     warning_count: int
 
 
+# Generous: the endpoint took notes of any length before the maintenance log,
+# and automations (Home Assistant) post whole reports; this only bounds a row.
+MAINTENANCE_NOTES_MAX_LENGTH = 10000
+
+
 class PerformMaintenanceRequest(BaseModel):
     """Request to mark maintenance as performed."""
 
-    notes: str | None = None
+    # The optional comment logged with the reset.
+    notes: str | None = Field(default=None, max_length=MAINTENANCE_NOTES_MAX_LENGTH)
+
+    @field_validator("notes", mode="before")
+    @classmethod
+    def _trim_notes(cls, value: object) -> object:
+        """Trimmed before the length check, so surrounding whitespace never
+        counts against the limit; blank is no comment."""
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
+
+
+class MaintenanceLogEntryResponse(BaseModel):
+    """One reset in a printer's maintenance log."""
+
+    id: int
+    printer_id: int | None  # None once the printer is deleted
+    printer_name: str
+    maintenance_type_id: int | None  # None once the custom task is deleted
+    maintenance_type_name: str
+    hours_at_maintenance: float
+    notes: str | None
+    performed_by_id: int | None
+    performed_by_username: str | None  # None when authentication was off
+    performed_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class MaintenanceLogPage(BaseModel):
+    items: list[MaintenanceLogEntryResponse]
+    total: int

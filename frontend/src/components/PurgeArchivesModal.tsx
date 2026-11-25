@@ -7,6 +7,7 @@ import { api } from '../api/client';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 import { formatFileSize } from '../utils/file';
+import { ScrollableModalOverlay } from './ScrollableModalOverlay';
 
 interface PurgeArchivesModalProps {
   onClose: () => void;
@@ -38,7 +39,8 @@ export function PurgeArchivesModal({ onClose, initialDays }: PurgeArchivesModalP
   });
 
   const purgeMutation = useMutation({
-    mutationFn: () => api.executeArchivePurge(days, purgeStats),
+    // The age the shown preview was made for, never one still being typed.
+    mutationFn: () => api.executeArchivePurge(debouncedDays, purgeStats),
     onSuccess: (res) => {
       showToast(t('archivePurge.toast.success', { count: res.deleted }), 'success');
       queryClient.invalidateQueries({ queryKey: ['archives'] });
@@ -59,10 +61,11 @@ export function PurgeArchivesModal({ onClose, initialDays }: PurgeArchivesModalP
   const preview = previewQuery.data;
   const count = preview?.count ?? 0;
   const totalBytes = preview?.total_bytes ?? 0;
-  const canConfirm = count > 0 && !purgeMutation.isPending;
+  // Only once the preview matches the field: the button shows its count.
+  const canConfirm = count > 0 && days === debouncedDays && !previewQuery.isFetching && !purgeMutation.isPending;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <ScrollableModalOverlay className="bg-black/50">
       <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl max-w-lg w-full">
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
@@ -111,6 +114,7 @@ export function PurgeArchivesModal({ onClose, initialDays }: PurgeArchivesModalP
               <li>{t('archivePurge.effect2')}</li>
               <li>{t('archivePurge.effect3')}</li>
               <li>{t('archivePurge.effect4')}</li>
+              <li>{t('archivePurge.effect5')}</li>
             </ul>
           </div>
 
@@ -139,6 +143,11 @@ export function PurgeArchivesModal({ onClose, initialDays }: PurgeArchivesModalP
                       </li>
                     )}
                   </ul>
+                )}
+                {(preview?.favorites_kept ?? 0) > 0 && (
+                  <div className="mt-2 text-xs text-gray-600 dark:text-gray-400">
+                    {t('archivePurge.favoritesKept', { count: preview?.favorites_kept })}
+                  </div>
                 )}
               </div>
             )}
@@ -184,6 +193,6 @@ export function PurgeArchivesModal({ onClose, initialDays }: PurgeArchivesModalP
           </Button>
         </div>
       </div>
-    </div>
+    </ScrollableModalOverlay>
   );
 }

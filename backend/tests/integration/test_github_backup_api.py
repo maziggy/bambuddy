@@ -566,3 +566,55 @@ class TestGitHubBackupTriggerAPI:
         response = await async_client.post("/api/v1/github-backup/run")
         assert response.status_code == 400
         assert "disabled" in response.json()["detail"].lower()
+
+
+class TestConnectionTestCredentials:
+    """POST /github-backup/test takes the credentials in a JSON body."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_credentials_in_the_body(self, async_client: AsyncClient, _mock_private_repo_check):
+        response = await async_client.post(
+            "/api/v1/github-backup/test",
+            json={"repo_url": "https://github.com/test/repo", "token": "ghp_body_value", "provider": "gitea"},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["success"] is True
+        _mock_private_repo_check.assert_awaited_once_with(
+            "https://github.com/test/repo", "ghp_body_value", provider="gitea"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_provider_defaults_to_github(self, async_client: AsyncClient, _mock_private_repo_check):
+        response = await async_client.post(
+            "/api/v1/github-backup/test",
+            json={"repo_url": "https://github.com/test/repo", "token": "ghp_body_value"},
+        )
+
+        assert response.status_code == 200, response.text
+        assert _mock_private_repo_check.await_args.kwargs["provider"] == "github"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_credentials_in_the_query_are_not_used(self, async_client: AsyncClient, _mock_private_repo_check):
+        response = await async_client.post(
+            "/api/v1/github-backup/test?repo_url=https://github.com/test/repo&token=ghp_query_value"
+        )
+
+        assert response.status_code == 422
+        _mock_private_repo_check.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("repo_url", ["file:///etc/passwd", "http://169.254.169.254/org/repo"])
+    async def test_a_refused_repository_url_is_not_contacted(
+        self, async_client: AsyncClient, _mock_private_repo_check, repo_url
+    ):
+        response = await async_client.post(
+            "/api/v1/github-backup/test", json={"repo_url": repo_url, "token": "ghp_body_value", "provider": "gitea"}
+        )
+
+        assert response.status_code == 422
+        _mock_private_repo_check.assert_not_awaited()

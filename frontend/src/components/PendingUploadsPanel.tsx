@@ -1,29 +1,18 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Archive, Trash2, FileBox, Clock, Upload, ChevronDown, ChevronUp } from 'lucide-react';
+import { Loader2, FolderInput, Trash2, FileBox, Clock, Upload, ChevronDown, ChevronUp } from 'lucide-react';
 import { pendingUploadsApi } from '../api/client';
 import type { PendingUpload, ProjectListItem } from '../api/client';
 import { api } from '../api/client';
 import { Card, CardContent, CardHeader } from './Card';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
+import { useAuth } from '../contexts/AuthContext';
 import { ConfirmModal } from './ConfirmModal';
 import { formatFileSize } from '../utils/file';
 import { assignableProjects } from '../utils/projectTree';
-
-function formatTimeAgo(dateStr: string): string {
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-  const diffDays = Math.floor(diffHours / 24);
-  return `${diffDays}d ago`;
-}
+import { formatRelativeTime } from '../utils/date';
 
 interface PendingUploadItemProps {
   upload: PendingUpload;
@@ -32,6 +21,7 @@ interface PendingUploadItemProps {
   onDiscard: (id: number) => void;
   isArchiving: boolean;
   isDiscarding: boolean;
+  canApprove: boolean;
 }
 
 function PendingUploadItem({
@@ -41,7 +31,9 @@ function PendingUploadItem({
   onDiscard,
   isArchiving,
   isDiscarding,
+  canApprove,
 }: PendingUploadItemProps) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const [tags, setTags] = useState(upload.tags || '');
   const [notes, setNotes] = useState(upload.notes || '');
@@ -61,12 +53,12 @@ function PendingUploadItem({
                 <span>·</span>
                 <span className="flex items-center gap-1">
                   <Clock className="w-3 h-3" />
-                  {formatTimeAgo(upload.uploaded_at)}
+                  {formatRelativeTime(upload.uploaded_at, 'system', t)}
                 </span>
                 {upload.source_ip && (
                   <>
                     <span>·</span>
-                    <span>from {upload.source_ip}</span>
+                    <span>{t('pendingUploads.from', { ip: upload.source_ip })}</span>
                   </>
                 )}
               </div>
@@ -75,6 +67,7 @@ function PendingUploadItem({
           <div className="flex items-center gap-2">
             <button
               onClick={() => setExpanded(!expanded)}
+              aria-label={expanded ? t('common.collapse') : t('common.expand')}
               className="p-1 text-bambu-gray hover:text-white transition-colors"
             >
               {expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
@@ -83,14 +76,15 @@ function PendingUploadItem({
               variant="primary"
               size="sm"
               onClick={() => onArchive(upload.id, { tags, notes, project_id: projectId || undefined })}
-              disabled={isArchiving}
+              disabled={isArchiving || !canApprove}
+              title={canApprove ? undefined : t('pendingUploads.noApprovePermission')}
             >
               {isArchiving ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <>
-                  <Archive className="w-4 h-4" />
-                  Archive
+                  <FolderInput className="w-4 h-4" />
+                  {t('pendingUploads.addToFileManager')}
                 </>
               )}
             </Button>
@@ -99,6 +93,7 @@ function PendingUploadItem({
               size="sm"
               onClick={() => setShowDiscardConfirm(true)}
               disabled={isDiscarding}
+              aria-label={t('pendingUploads.discard')}
             >
               {isDiscarding ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -112,9 +107,9 @@ function PendingUploadItem({
         {/* Discard Confirmation Modal */}
         {showDiscardConfirm && (
           <ConfirmModal
-            title="Discard Upload"
-            message={`Are you sure you want to discard "${upload.filename}"? This cannot be undone.`}
-            confirmText="Discard"
+            title={t('pendingUploads.discardUpload')}
+            message={t('pendingUploads.discardConfirm', { name: upload.filename })}
+            confirmText={t('pendingUploads.discard')}
             variant="danger"
             onConfirm={() => {
               onDiscard(upload.id);
@@ -128,33 +123,33 @@ function PendingUploadItem({
         {expanded && (
           <div className="mt-4 pt-4 border-t border-bambu-dark-tertiary space-y-3">
             <div>
-              <label className="block text-sm text-bambu-gray mb-1">Tags</label>
+              <label className="block text-sm text-bambu-gray mb-1">{t('pendingUploads.tags')}</label>
               <input
                 type="text"
                 value={tags}
                 onChange={(e) => setTags(e.target.value)}
-                placeholder="e.g., functional, prototype, gift"
+                placeholder={t('pendingUploads.placeholders.tags')}
                 className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-md px-3 py-2 text-white placeholder-bambu-gray text-sm"
               />
             </div>
             <div>
-              <label className="block text-sm text-bambu-gray mb-1">Notes</label>
+              <label className="block text-sm text-bambu-gray mb-1">{t('pendingUploads.notes')}</label>
               <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Add notes about this print..."
+                placeholder={t('pendingUploads.placeholders.notes')}
                 rows={2}
                 className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-md px-3 py-2 text-white placeholder-bambu-gray text-sm resize-none"
               />
             </div>
             <div>
-              <label className="block text-sm text-bambu-gray mb-1">Project</label>
+              <label className="block text-sm text-bambu-gray mb-1">{t('pendingUploads.project')}</label>
               <select
                 value={projectId || ''}
                 onChange={(e) => setProjectId(e.target.value ? Number(e.target.value) : null)}
                 className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-md px-3 py-2 text-white text-sm"
               >
-                <option value="">No project</option>
+                <option value="">{t('pendingUploads.noProject')}</option>
                 {projects.map((project) => (
                   <option key={project.id} value={project.id}>
                     {project.name}
@@ -170,7 +165,11 @@ function PendingUploadItem({
 }
 
 export function PendingUploadsPanel() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
+  // Approving adds a File Manager file, so it needs both (the backend checks).
+  const { hasPermission } = useAuth();
+  const canApprove = hasPermission('queue:create') && hasPermission('library:upload');
   const { showToast } = useToast();
   const [showArchiveAllConfirm, setShowArchiveAllConfirm] = useState(false);
   const [showDiscardAllConfirm, setShowDiscardAllConfirm] = useState(false);
@@ -192,7 +191,7 @@ export function PendingUploadsPanel() {
     select: (rows) => assignableProjects([...rows].sort((a, b) => a.name.localeCompare(b.name))),
   });
 
-  // Archive mutation
+  // Approve: the file goes to its virtual printer's File Manager folder.
   const archiveMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data?: { tags?: string; notes?: string; project_id?: number } }) =>
       pendingUploadsApi.archive(id, data),
@@ -208,11 +207,12 @@ export function PendingUploadsPanel() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['pending-uploads'] });
-      queryClient.invalidateQueries({ queryKey: ['archives'] });
-      showToast(`Archived: ${data.print_name}`);
+      queryClient.invalidateQueries({ queryKey: ['library-files'] });
+      queryClient.invalidateQueries({ queryKey: ['library-folders'] });
+      showToast(t('pendingUploads.toast.added', { name: data.filename }));
     },
     onError: (error: Error) => {
-      showToast(error.message || 'Failed to archive', 'error');
+      showToast(error.message || t('pendingUploads.toast.addFailed'), 'error');
     },
   });
 
@@ -231,23 +231,29 @@ export function PendingUploadsPanel() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pending-uploads'] });
-      showToast('Upload discarded');
+      showToast(t('pendingUploads.toast.discarded'));
     },
     onError: (error: Error) => {
-      showToast(error.message || 'Failed to discard', 'error');
+      showToast(error.message || t('pendingUploads.toast.discardFailed'), 'error');
     },
   });
 
-  // Archive all mutation
+  // Approve all
   const archiveAllMutation = useMutation({
     mutationFn: pendingUploadsApi.archiveAll,
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['pending-uploads'] });
-      queryClient.invalidateQueries({ queryKey: ['archives'] });
-      showToast(`Archived ${data.archived} files${data.failed > 0 ? `, ${data.failed} failed` : ''}`);
+      queryClient.invalidateQueries({ queryKey: ['library-files'] });
+      queryClient.invalidateQueries({ queryKey: ['library-folders'] });
+      showToast(
+        data.failed > 0
+          ? t('pendingUploads.toast.addedAllSomeFailed', { count: data.stored, failed: data.failed })
+          : t('pendingUploads.toast.addedAll', { count: data.stored }),
+        data.failed > 0 ? 'error' : 'success',
+      );
     },
     onError: (error: Error) => {
-      showToast(error.message || 'Failed to archive all', 'error');
+      showToast(error.message || t('pendingUploads.toast.addFailed'), 'error');
     },
   });
 
@@ -256,10 +262,10 @@ export function PendingUploadsPanel() {
     mutationFn: pendingUploadsApi.discardAll,
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['pending-uploads'] });
-      showToast(`Discarded ${data.discarded} files`);
+      showToast(t('pendingUploads.toast.discardedAll', { count: data.discarded }));
     },
     onError: (error: Error) => {
-      showToast(error.message || 'Failed to discard all', 'error');
+      showToast(error.message || t('pendingUploads.toast.discardFailed'), 'error');
     },
   });
 
@@ -285,7 +291,7 @@ export function PendingUploadsPanel() {
             <div className="flex items-center gap-2">
               <Upload className="w-5 h-5 text-yellow-500" />
               <h2 className="text-lg font-semibold text-white">
-                Pending Uploads ({uploads.length})
+                {t('pendingUploads.title', { count: uploads.length })}
               </h2>
             </div>
             <div className="flex items-center gap-2">
@@ -293,14 +299,15 @@ export function PendingUploadsPanel() {
                 variant="primary"
                 size="sm"
                 onClick={() => setShowArchiveAllConfirm(true)}
-                disabled={archiveAllMutation.isPending}
+                disabled={archiveAllMutation.isPending || !canApprove}
+                title={canApprove ? undefined : t('pendingUploads.noApprovePermission')}
               >
                 {archiveAllMutation.isPending ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
                   <>
-                    <Archive className="w-4 h-4" />
-                    Archive All
+                    <FolderInput className="w-4 h-4" />
+                    {t('pendingUploads.addAll')}
                   </>
                 )}
               </Button>
@@ -315,7 +322,7 @@ export function PendingUploadsPanel() {
                 ) : (
                   <>
                     <Trash2 className="w-4 h-4" />
-                    Discard All
+                    {t('pendingUploads.discardAll')}
                   </>
                 )}
               </Button>
@@ -324,7 +331,7 @@ export function PendingUploadsPanel() {
         </CardHeader>
         <CardContent>
           <p className="text-sm text-bambu-gray mb-4">
-            These files were uploaded via the virtual printer. Review and archive them to add to your collection.
+            {t('pendingUploads.description')}
           </p>
           <div className="space-y-3">
             {uploads.map((upload) => (
@@ -336,6 +343,7 @@ export function PendingUploadsPanel() {
                 onDiscard={(id) => discardMutation.mutate(id)}
                 isArchiving={archivingIds.has(upload.id)}
                 isDiscarding={discardingIds.has(upload.id)}
+                canApprove={canApprove}
               />
             ))}
           </div>
@@ -345,9 +353,9 @@ export function PendingUploadsPanel() {
       {/* Archive All Confirmation */}
       {showArchiveAllConfirm && (
         <ConfirmModal
-          title="Archive All Uploads"
-          message={`Are you sure you want to archive all ${uploads.length} pending uploads?`}
-          confirmText="Archive All"
+          title={t('pendingUploads.addAllUploads')}
+          message={t('pendingUploads.addAllConfirm', { count: uploads.length })}
+          confirmText={t('pendingUploads.addAll')}
           onConfirm={() => {
             archiveAllMutation.mutate();
             setShowArchiveAllConfirm(false);
@@ -359,9 +367,9 @@ export function PendingUploadsPanel() {
       {/* Discard All Confirmation */}
       {showDiscardAllConfirm && (
         <ConfirmModal
-          title="Discard All Uploads"
-          message={`Are you sure you want to discard all ${uploads.length} pending uploads? This cannot be undone.`}
-          confirmText="Discard All"
+          title={t('pendingUploads.discardAllUploads')}
+          message={t('pendingUploads.discardAllConfirm', { count: uploads.length })}
+          confirmText={t('pendingUploads.discardAll')}
           variant="danger"
           onConfirm={() => {
             discardAllMutation.mutate();

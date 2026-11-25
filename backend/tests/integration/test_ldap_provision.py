@@ -531,3 +531,60 @@ class TestLdapFirstLoginProvisionsOnce:
             second = await async_client.post("/api/v1/auth/login", json={"username": "tofm", "password": "irrelevant"})
         assert second.status_code == 200
         assert second.json()["user"]["email"] == "new@test.com"
+
+
+class TestLdapUserCreationIsAdminOnly:
+    """Creating a user is admin-only (users.create_user); the LDAP way in is too."""
+
+    @staticmethod
+    async def _creator_token(async_client: AsyncClient, admin_token: str) -> str:
+        auth = {"Authorization": f"Bearer {admin_token}"}
+        group = await async_client.post(
+            "/api/v1/groups", json={"name": "User creators", "permissions": ["users:create"]}, headers=auth
+        )
+        assert group.status_code == 201, group.text
+        # pragma: allowlist secret — test fixture only, not a real credential
+        password = "Creator1pass!"  # noqa: S105
+        created = await async_client.post(
+            "/api/v1/users",
+            json={"username": "ldapcreator", "password": password, "group_ids": [group.json()["id"]]},
+            headers=auth,
+        )
+        assert created.status_code == 201, created.text
+        login = await async_client.post("/api/v1/auth/login", json={"username": "ldapcreator", "password": password})
+        return login.json()["access_token"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_provision_refuses_a_non_admin(
+        self, async_client: AsyncClient, admin_token: str, db_session: AsyncSession
+    ):
+        await _seed_ldap_settings(db_session)
+        token = await self._creator_token(async_client, admin_token)
+        fake_ldap = LDAPUserInfo(username="jdoe", email="jdoe@test.com", display_name=None, groups=[])
+
+        with patch("backend.app.services.ldap_service.lookup_ldap_user", return_value=fake_ldap):
+            response = await async_client.post(
+                "/api/v1/auth/ldap/provision",
+                json={"username": "jdoe"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        assert response.status_code == 403
+        assert (await db_session.execute(select(User).where(User.username == "jdoe"))).scalar_one_or_none() is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_search_refuses_a_non_admin(
+        self, async_client: AsyncClient, admin_token: str, db_session: AsyncSession
+    ):
+        await _seed_ldap_settings(db_session)
+        token = await self._creator_token(async_client, admin_token)
+
+        with patch("backend.app.services.ldap_service.search_ldap_users", return_value=[]) as search:
+            response = await async_client.get(
+                "/api/v1/auth/ldap/search?q=jdoe", headers={"Authorization": f"Bearer {token}"}
+            )
+
+        assert response.status_code == 403
+        search.assert_not_called()

@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
+
 
 class WalletBalanceResponse(BaseModel):
     user_id: int
@@ -13,7 +15,7 @@ class WalletBalanceResponse(BaseModel):
 
 class WalletTransactionResponse(BaseModel):
     id: int
-    user_id: int
+    user_id: int | None  # None once the user is deleted
     cost_center_id: int | None = None
     transaction_type: Literal["print_charge", "deposit", "withdraw", "manual_adjustment"]
     amount: float
@@ -66,7 +68,8 @@ class WalletAdjustmentResponse(BaseModel):
     balance: WalletBalanceResponse
 
 
-class TransactionEditRequest(BaseModel):
+class TransactionEditRequest(IgnoresNullForRequiredColumns):
+    __orm_table__ = "wallet_transactions"
     user_id: int | None = None
     cost_center_id: int | None = None
     amount: float | None = None
@@ -88,7 +91,8 @@ class CostCenterCreateRequest(BaseModel):
     is_active: bool = True
 
 
-class CostCenterUpdateRequest(BaseModel):
+class CostCenterUpdateRequest(IgnoresNullForRequiredColumns):
+    __orm_table__ = "cost_centers"
     name: str | None = Field(default=None, min_length=1, max_length=150)
     is_active: bool | None = None
 

@@ -2,8 +2,9 @@
 
 Age-based hard-delete of print archives. Unlike the library trash flow there is
 no soft-delete intermediate — archives are historical print records, so the
-"undo" window the library bin provides doesn't apply here. A user who wants to
-keep an archive should download or favourite it before the purge window elapses.
+"undo" window the library bin provides doesn't apply here. A favourite archive
+is never purged (#3700); a user who wants to keep any other should download or
+favourite it before the purge window elapses.
 
 The sweeper runs on the same 15-minute cadence as the library trash sweeper but
 throttles actual purge runs to once per 24h. Admins can also trigger a manual
@@ -22,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core import database as _database
 from backend.app.models.archive import PrintArchive
 from backend.app.models.settings import Settings
-from backend.app.services.archive import ArchiveService
+from backend.app.services.archive import ArchiveService, _count_related_queue_items
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,20 @@ def _last_activity_expr():
         PrintArchive.started_at,
         PrintArchive.created_at,
     )
+
+
+def _purge_eligible(cutoff: datetime):
+    """Archives a purge with this cutoff removes: not printed since, and not a favourite.
+
+    Favourites are kept (#3700): the purge modal and the changelog told people
+    to favourite what they want to keep.
+    """
+    return (_last_activity_expr() < cutoff) & (PrintArchive.is_favorite == False)  # noqa: E712
+
+
+def _kept_favourites(cutoff: datetime):
+    """Favourites past the cutoff, which the purge leaves alone."""
+    return (_last_activity_expr() < cutoff) & (PrintArchive.is_favorite == True)  # noqa: E712
 
 
 class ArchivePurgeService:
@@ -198,19 +213,22 @@ class ArchivePurgeService:
                 "total_bytes": 0,
                 "sample_filenames": [],
                 "older_than_days": older_than_days,
+                "favorites_kept": 0,
             }
         now = datetime.now(timezone.utc)
         cutoff = _age_cutoff(now, older_than_days)
         last_activity = _last_activity_expr()
-        clause = last_activity < cutoff
+        clause = _purge_eligible(cutoff)
 
         count_stmt = select(func.count(PrintArchive.id)).where(clause)
         size_stmt = select(func.coalesce(func.sum(PrintArchive.file_size), 0)).where(clause)
         sample_stmt = select(PrintArchive.filename).where(clause).order_by(last_activity).limit(sample_limit)
+        kept_stmt = select(func.count(PrintArchive.id)).where(_kept_favourites(cutoff))
         if not purge_stats:
             count_stmt = count_stmt.where(PrintArchive.deleted_at.is_(None))
             size_stmt = size_stmt.where(PrintArchive.deleted_at.is_(None))
             sample_stmt = sample_stmt.where(PrintArchive.deleted_at.is_(None))
+            kept_stmt = kept_stmt.where(PrintArchive.deleted_at.is_(None))
 
         count_result = await db.execute(count_stmt)
         count = int(count_result.scalar() or 0)
@@ -221,11 +239,14 @@ class ArchivePurgeService:
         sample_result = await db.execute(sample_stmt)
         samples = [row[0] for row in sample_result.all()]
 
+        favorites_kept = int((await db.execute(kept_stmt)).scalar() or 0)
+
         return {
             "count": count,
             "total_bytes": total_bytes,
             "sample_filenames": samples,
             "older_than_days": older_than_days,
+            "favorites_kept": favorites_kept,
         }
 
     async def purge_older_than(
@@ -235,7 +256,7 @@ class ArchivePurgeService:
         *,
         purge_stats: bool = False,
     ) -> int:
-        """Bulk-delete archives older than ``older_than_days``. Returns count.
+        """Bulk-delete archives older than ``older_than_days``, except favourites. Returns count.
 
         Two modes, parameter-controlled (#1390):
 
@@ -262,7 +283,7 @@ class ArchivePurgeService:
         # a repeat sweeper run keeps re-touching the same rows. Hard-delete
         # mode doesn't filter — already-soft-deleted rows are eligible for
         # promotion to hard-delete when the user opts in.
-        select_stmt = select(PrintArchive.id).where(_last_activity_expr() < cutoff)
+        select_stmt = select(PrintArchive.id).where(_purge_eligible(cutoff))
         if not purge_stats:
             select_stmt = select_stmt.where(PrintArchive.deleted_at.is_(None))
         id_result = await db.execute(select_stmt)
@@ -274,6 +295,12 @@ class ArchivePurgeService:
         for archive_id in ids:
             async with _database.async_session() as delete_db:
                 service = ArchiveService(delete_db)
+                # Both modes remove the archive's queue items; one that is
+                # printing stays with its archive until the next run, as
+                # DELETE /archives/{id} refuses with 409 (#1734).
+                _total, printing = await _count_related_queue_items(delete_db, archive_id)
+                if printing:
+                    continue
                 if purge_stats:
                     # Hard-delete linked PrintLogEntry rows first so their
                     # filament / cost contributions stop counting in /stats.
@@ -284,7 +311,18 @@ class ArchivePurgeService:
 
                     from backend.app.models.print_log import PrintLogEntry
 
-                    await delete_db.execute(sa_delete(PrintLogEntry).where(PrintLogEntry.archive_id == archive_id))
+                    # A charge waiting on one of them for its energy is
+                    # written first (#3581).
+                    from backend.app.services.finance_billing import settle_pending_print_charges
+
+                    await settle_pending_print_charges(delete_db, PrintLogEntry.archive_id == archive_id)
+
+                    # Its open run too: it has no archive left to end on.
+                    await delete_db.execute(
+                        sa_delete(PrintLogEntry)
+                        .where(PrintLogEntry.archive_id == archive_id)
+                        .execution_options(include_open_runs=True)
+                    )
                     await delete_db.commit()
                     if await service.delete_archive(archive_id):
                         deleted += 1

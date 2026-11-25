@@ -1,14 +1,57 @@
 """Pydantic schemas for slice requests."""
 
 import re
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # `#RRGGBB` or `#RRGGBBAA`. Bambu Studio writes the 6-digit form into
 # `filament_colour` but accepts and round-trips the 8-digit one, and the AMS
 # reports colours with an alpha byte, so both have to pass.
 _HEX_COLOUR = re.compile(r"#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})")
+
+# The ``curr_bed_type`` values the slicers know: ``s_keys_map_BedType`` in
+# BambuStudio's and OrcaSlicer's PrintConfig.cpp (Textured Cool Plate is Orca
+# only). The slicer CLI does not refuse any other name: it slices as Cool Plate
+# and then fails on filaments the Cool Plate does not take (#3359). "Default
+# Plate" is left out: it only means "the global plate" on a plate, and as the
+# global plate the CLI has no bed temperature to read for it.
+BED_TYPES = frozenset(
+    {
+        "Cool Plate",
+        "Engineering Plate",
+        "High Temp Plate",
+        "Textured PEI Plate",
+        "Supertack Plate",
+        "Textured Cool Plate",
+    }
+)
+
+# Plates only OrcaSlicer has; Bambu Studio slices them as Cool Plate.
+ORCA_ONLY_BED_TYPES = frozenset({"Textured Cool Plate"})
+
+# Names the Slice modal sent before #3359. Saved pipelines may still hold them.
+# Smooth PEI is not a plate of its own: the slicers call it High Temp Plate.
+_OLD_BED_TYPE_NAMES = {
+    "Cool Plate (SuperTack)": "Supertack Plate",
+    "Smooth PEI Plate": "High Temp Plate",
+}
+
+
+def canonical_bed_type(bed_type: str | None) -> str | None:
+    """The slicer's name for a bed type; empty means no override."""
+    if not bed_type:
+        return bed_type
+    return _OLD_BED_TYPE_NAMES.get(bed_type, bed_type)
+
+
+def checked_bed_type(bed_type: str | None) -> str | None:
+    """``canonical_bed_type`` for request bodies: a name no slicer knows is
+    refused instead of being sliced as Cool Plate."""
+    bed_type = canonical_bed_type(bed_type)
+    if bed_type and bed_type not in BED_TYPES:
+        raise ValueError(f"unknown bed_type {bed_type!r}, expected one of: {', '.join(sorted(BED_TYPES))}")
+    return bed_type
 
 
 class PresetRef(BaseModel):
@@ -101,6 +144,41 @@ class SliceRequest(BaseModel):
         ),
     )
 
+    # Every Bambu dual-nozzle printer has two slicer extruders; a nozzle rack
+    # (H2C) switches hotends on those two. The sidecar takes any positive id
+    # and hands it to the CLI, so one past 2 is refused here.
+    filament_map: list[Annotated[int, Field(ge=1, le=2)]] | None = Field(
+        default=None,
+        description=(
+            "Dual-nozzle printers only. The 1-based slicer extruder each filament "
+            "prints from, in the same plate-slot order as ``filament_presets`` "
+            "(for example ``[1, 2]``), 1 or 2. Sent to the slicer as ``--filament-map`` "
+            "in Manual mode, which is the only place the CLI reads it from. "
+            "``None`` lets Bambuddy work one out from the spools loaded on the "
+            "target printer, and leaves the slicer's default grouping when it "
+            "cannot. An explicit list is used as given."
+        ),
+    )
+
+    # Sliced with profiles, the CLI cuts every extruder for a Standard nozzle
+    # unless told otherwise, and a printer with a High Flow nozzle then warns
+    # that the file does not match it (#3136).
+    nozzle_volume_type: list[Literal["Standard", "High Flow"]] | None = Field(
+        default=None,
+        min_length=1,
+        max_length=2,
+        description=(
+            "The nozzle flow to slice for, one per slicer extruder in extruder "
+            'order: ``Standard`` or ``High Flow`` (for example ``["High Flow"]``, '
+            'or ``["High Flow", "Standard"]`` on a dual-nozzle printer). '
+            "``None`` takes it from the first connected printer of the profile's "
+            "model, by name, that reports its nozzles' flow at the profile's "
+            "nozzle size (the target printer when the caller names one), and "
+            "slices for Standard when none does. Not used when slicing with the "
+            "file's own settings, which keep the file's flow."
+        ),
+    )
+
     plate: int | None = Field(
         default=None,
         ge=0,
@@ -163,11 +241,12 @@ class SliceRequest(BaseModel):
         default=None,
         max_length=64,
         description=(
-            "Override the process preset's curr_bed_type for this slice. Canonical "
-            "BambuStudio / OrcaSlicer values: 'Cool Plate', 'Engineering Plate', "
-            "'High Temp Plate', 'Textured PEI Plate', 'Smooth PEI Plate', "
-            "'Cool Plate (SuperTack)', 'Supertack Plate'. None ⇒ inherit from the "
-            "process preset unchanged (#1337)."
+            "Override the process preset's curr_bed_type for this slice. One of "
+            "the BambuStudio / OrcaSlicer values: 'Cool Plate', 'Engineering Plate', "
+            "'High Temp Plate' (Smooth PEI), 'Textured PEI Plate', 'Supertack "
+            "Plate', 'Textured Cool Plate' (OrcaSlicer only). "
+            "Any other name is refused (#3359). None ⇒ inherit from the process "
+            "preset unchanged (#1337)."
         ),
     )
     auto_orient: bool = Field(
@@ -191,6 +270,11 @@ class SliceRequest(BaseModel):
             "embedded-settings path too (#2548)."
         ),
     )
+
+    @field_validator("bed_type")
+    @classmethod
+    def check_bed_type(cls, value: str | None) -> str | None:
+        return checked_bed_type(value)
 
     @model_validator(mode="after")
     def normalise_preset_refs(self) -> "SliceRequest":
@@ -252,6 +336,14 @@ class SliceRequest(BaseModel):
                 raise ValueError(f"filament_colours[{i}] must be '#RRGGBB' or '#RRGGBBAA', got {colour!r}")
             normalised.append("#" + value[1:].upper())
         self.filament_colours = normalised
+
+        # The slicer pairs the map with the loaded filaments index by index,
+        # so a map of another length cannot mean what the caller intended.
+        if self.filament_map is not None and len(self.filament_map) != len(self.filament_presets):
+            raise ValueError(
+                f"filament_map has {len(self.filament_map)} entries but there are "
+                f"{len(self.filament_presets)} filament presets"
+            )
         return self
 
 

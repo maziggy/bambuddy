@@ -22,7 +22,6 @@ class TestPrinterScope:
         scope = PrinterScope(frozenset({1, 2}))
         assert scope.allows(1)
         assert not scope.allows(3)
-        assert scope.filter_ids([3, 2, 1]) == [2, 1]
 
     def test_no_printer_is_always_in_scope(self):
         # Rows not bound to a printer (orphaned archives, model-based jobs)
@@ -118,11 +117,15 @@ class TestScopeRefresh:
         socket.close = AsyncMock()
         mgr.active_connections = [socket]
 
+        scope_lookup = AsyncMock(side_effect=RuntimeError("db down"))
         with (
             patch("backend.app.core.auth.is_auth_enabled", AsyncMock(return_value=True)),
-            patch("backend.app.core.auth.principal_printer_scope", AsyncMock(side_effect=RuntimeError("db down"))),
+            # Still allowed to connect, so the refresh reaches the scope lookup.
+            patch("backend.app.core.auth.principal_may_connect", AsyncMock(return_value=True)),
+            patch("backend.app.core.auth.principal_printer_scope", scope_lookup),
         ):
             await mgr.refresh_printer_scopes()
 
+        scope_lookup.assert_awaited_once()
         assert socket.state.bambuddy_printer_scope == PrinterScope(frozenset())
         socket.close.assert_awaited_once_with(code=4401)

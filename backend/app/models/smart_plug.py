@@ -39,6 +39,13 @@ class SmartPlug(Base):
     mqtt_energy_topic: Mapped[str | None] = mapped_column(String(200), nullable=True)  # Topic for energy data
     mqtt_energy_path: Mapped[str | None] = mapped_column(String(100), nullable=True)  # e.g., "energy_l1"
     mqtt_energy_multiplier: Mapped[float] = mapped_column(Float, default=1.0)  # Unit conversion for energy
+    # Lifetime counter that never resets, read from the energy topic (#3582).
+    # A Tasmota publishes ENERGY.Today and ENERGY.Total in the same SENSOR
+    # message. Per-print energy is the difference of two readings, so it needs
+    # this counter: a daily one drops back to zero at midnight and loses the
+    # print. Unset, the energy path is still used as both, as before.
+    mqtt_energy_total_path: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    mqtt_energy_total_multiplier: Mapped[float] = mapped_column(Float, nullable=False, server_default="1.0")
 
     # State monitoring
     mqtt_state_topic: Mapped[str | None] = mapped_column(String(200), nullable=True)  # Topic for state data
@@ -80,8 +87,10 @@ class SmartPlug(Base):
     rest_energy_total_path: Mapped[str | None] = mapped_column(String(200), nullable=True)
     rest_energy_total_multiplier: Mapped[float] = mapped_column(Float, server_default="1.0")
 
-    # Link to printer (multiple plugs/scripts can be linked to one printer)
-    printer_id: Mapped[int | None] = mapped_column(ForeignKey("printers.id", ondelete="SET NULL"), nullable=True)
+    # Link to printer (multiple plugs/scripts can be linked to one printer).
+    # CASCADE, not SET NULL: a plug without a printer is everyone's, so one left
+    # by a deleted printer would open the hardware it powers to every user.
+    printer_id: Mapped[int | None] = mapped_column(ForeignKey("printers.id", ondelete="CASCADE"), nullable=True)
 
     # Whether this plug actually feeds the printer's own power (#2629). The
     # printer link is also used for accessories that merely follow the print
@@ -101,6 +110,13 @@ class SmartPlug(Base):
     off_delay_mode: Mapped[str] = mapped_column(String(20), default="time")
     off_delay_minutes: Mapped[int] = mapped_column(Integer, default=5)  # For time mode
     off_temp_threshold: Mapped[int] = mapped_column(Integer, default=70)  # For temp mode (°C)
+    # What temp mode waits for (#3464): "nozzle" or "bed". The bed
+    # holds its heat long after the nozzle has cooled, so a plug that cuts
+    # power on the nozzle alone drops the printer before the bed is cool
+    # enough to take the print off, and before the bed-cooled notification.
+    # The bed has its own threshold: nozzle and bed values are far apart.
+    off_temp_source: Mapped[str] = mapped_column(String(20), default="nozzle", server_default="nozzle")
+    off_bed_temp_threshold: Mapped[int] = mapped_column(Integer, default=35, server_default="35")
 
     # Auto-off after AMS drying completes (#1349). Independent of `auto_off`
     # (which only fires after a print finishes). Uses its own delay because

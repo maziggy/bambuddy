@@ -162,7 +162,7 @@ def external(monkeypatch):
     opened: list[int] = []
     closed: list[int] = []
 
-    def _fake_stream_rtsp(_url, _fps, on_process=None):
+    def _fake_stream_rtsp(_url, _fps, on_process=None, freeze=None):
         frames = sessions.pop(0) if sessions else 0
         index = len(opened)
         opened.append(frames)
@@ -230,7 +230,7 @@ async def test_a_cancelled_viewer_is_not_redialled(monkeypatch):
     reading = asyncio.Event()
     swallow = [True]
 
-    def _fake_stream_rtsp(_url, _fps, on_process=None):
+    def _fake_stream_rtsp(_url, _fps, on_process=None, freeze=None):
         opened.append(len(opened))
 
         async def _gen():

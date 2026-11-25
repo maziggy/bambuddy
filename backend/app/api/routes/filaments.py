@@ -19,7 +19,7 @@ router = APIRouter(prefix="/filament-catalog", tags=["filament-catalog"])
 
 @router.get("/", response_model=list[FilamentResponse])
 async def list_filaments(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
 ):
     """List all filaments."""
@@ -30,7 +30,7 @@ async def list_filaments(
 @router.post("/", response_model=FilamentResponse)
 async def create_filament(
     filament_data: FilamentCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_CREATE),
 ):
     """Create a new filament entry."""
@@ -44,7 +44,7 @@ async def create_filament(
 @router.get("/{filament_id}", response_model=FilamentResponse)
 async def get_filament(
     filament_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
 ):
     """Get a specific filament."""
@@ -59,7 +59,7 @@ async def get_filament(
 async def update_filament(
     filament_id: int,
     filament_data: FilamentUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
 ):
     """Update a filament."""
@@ -79,7 +79,7 @@ async def update_filament(
 @router.delete("/{filament_id}")
 async def delete_filament(
     filament_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_DELETE),
 ):
     """Delete a filament."""
@@ -97,7 +97,7 @@ async def delete_filament(
 async def calculate_cost(
     filament_id: int,
     weight_grams: float,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
 ):
     """Calculate the cost for a given weight of filament."""
@@ -120,7 +120,7 @@ async def calculate_cost(
 @router.get("/by-type/{filament_type}", response_model=list[FilamentResponse])
 async def get_filaments_by_type(
     filament_type: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
 ):
     """Get all filaments of a specific type."""
@@ -130,7 +130,7 @@ async def get_filaments_by_type(
 
 @router.post("/seed-defaults")
 async def seed_default_filaments(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_CREATE),
 ):
     """Seed the database with common filament types."""

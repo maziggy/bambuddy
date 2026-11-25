@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 from . import __version__, system_stats
-from .api_client import APIClient
+from .api_client import WRITE_RESULT_PATH, APIClient
 from .config import Config
 from .display_control import DisplayControl
 from .nfc_reader import NFCReader, NFCState
@@ -132,6 +132,7 @@ async def nfc_poll_loop(config: Config, api: APIClient, shared: dict):
                     tray_uuid=event_data.get("tray_uuid"),
                     sak=event_data.get("sak"),
                     tag_type=event_data.get("tag_type"),
+                    raw_blocks=event_data.get("raw_blocks"),
                 )
             elif event_type == "tag_removed":
                 await api.tag_removed(
@@ -144,7 +145,7 @@ async def nfc_poll_loop(config: Config, api: APIClient, shared: dict):
             if pending and nfc.state == NFCState.TAG_PRESENT:
                 if nfc.current_sak in (0x00, 0x04):
                     logger.info("Executing pending tag write for spool %d", pending["spool_id"])
-                    success, msg = await asyncio.to_thread(nfc.write_ntag, pending["ndef_data"])
+                    success, msg = await asyncio.to_thread(nfc.write_ntag, pending["ndef_data"], pending.get("ndef_v2"))
                     await api.write_tag_result(
                         device_id=config.device_id,
                         spool_id=pending["spool_id"],
@@ -153,6 +154,11 @@ async def nfc_poll_loop(config: Config, api: APIClient, shared: dict):
                         message=msg,
                     )
                     shared.pop("pending_write", None)
+                    if api.has_buffered(WRITE_RESULT_PATH):
+                        # The backend keeps the write command until it has the
+                        # result, so heartbeats keep bringing it back meanwhile
+                        # (#3076). See the write_tag handling in heartbeat_loop.
+                        shared["write_result_unsent"] = pending["spool_id"]
                 else:
                     # Fail fast when a non-NTAG is presented during write mode.
                     # Without this, UI can appear stuck on "waiting for SpoolBuddy".
@@ -188,6 +194,7 @@ async def scale_poll_loop(config: Config, api: APIClient, shared: dict):
 
     last_report = 0.0
     last_reported_grams: float | None = None
+    last_reported_stable: bool | None = None
     last_wake_grams: float | None = None
     REPORT_THRESHOLD = 2.0  # Only report if weight changed by more than this (grams)
     WAKE_THRESHOLD = 50.0  # Only wake display on large changes (spool placed/removed, not sensor bounce)
@@ -200,10 +207,16 @@ async def scale_poll_loop(config: Config, api: APIClient, shared: dict):
                 now = time.monotonic()
 
                 if now - last_report >= config.scale_report_interval:
-                    # Only send when weight changed meaningfully
+                    # Only send when weight changed meaningfully, or when the
+                    # reading settled (or stopped being settled) since the last
+                    # report. A spool settles in steps under the threshold, so
+                    # the last report of its weight is almost always unstable;
+                    # without the stability change the kiosk kept showing
+                    # "Settling" and its spool card never took the weight (#3691).
                     weight_changed = last_reported_grams is None or abs(grams - last_reported_grams) >= REPORT_THRESHOLD
+                    stability_changed = stable != last_reported_stable
 
-                    if weight_changed:
+                    if weight_changed or stability_changed:
                         # Wake display only on STABLE large weight changes (spool
                         # placed/removed). Without the stability gate, a noisy load
                         # cell that bounces ≥50g around a midpoint repeatedly trips
@@ -227,11 +240,43 @@ async def scale_poll_loop(config: Config, api: APIClient, shared: dict):
                             raw_adc=raw_adc,
                         )
                         last_reported_grams = grams
+                        last_reported_stable = stable
                     last_report = now
 
             await asyncio.sleep(config.scale_read_interval)
     finally:
         scale.close()
+
+
+async def _register(config: Config, api: APIClient, nfc, scale, display, ip: str) -> None:
+    """Register with the backend (retries until it answers) and take its
+    calibration. At startup, and again when the device was unregistered."""
+    reg = await api.register_device(
+        device_id=config.device_id,
+        hostname=config.hostname,
+        ip_address=ip,
+        firmware_version=__version__,
+        has_nfc=True,
+        has_scale=True,
+        tare_offset=config.tare_offset,
+        calibration_factor=config.calibration_factor,
+        nfc_reader_type=nfc.reader_type if nfc else None,
+        nfc_connection=nfc.connection if nfc else None,
+        backend_url=config.backend_url,
+        has_backlight=display.has_backlight,
+    )
+
+    # Use server-side calibration if available
+    if reg:
+        config.tare_offset = reg.get("tare_offset", config.tare_offset)
+        config.calibration_factor = reg.get("calibration_factor", config.calibration_factor)
+        if scale:
+            scale.update_calibration(config.tare_offset, config.calibration_factor)
+
+        # Auto-deploy Bambuddy's SSH public key for remote updates
+        ssh_key = reg.get("ssh_public_key")
+        if ssh_key:
+            _deploy_ssh_key(ssh_key)
 
 
 async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shared: dict):
@@ -258,6 +303,14 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
             backend_url=config.backend_url,
             system_stats=stats,
         )
+
+        if api.unregistered is True:
+            # An admin removed the device while it kept running: register again
+            # so it reappears (the route's documented behaviour).
+            logger.info("Backend no longer knows this device, registering again")
+            api.unregistered = False
+            await _register(config, api, nfc, scale, display, ip)
+            continue
 
         if result:
             ssh_key = result.get("ssh_public_key")
@@ -375,10 +428,29 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
                 continue
             elif cmd == "write_tag":
                 write_payload = result.get("pending_write_payload")
-                if write_payload:
+                unsent = shared.get("write_result_unsent")
+                if write_payload and unsent is not None and write_payload["spool_id"] == unsent:
+                    # The write was done; its result hadn't reached the backend
+                    # when this heartbeat was answered, so the command is the
+                    # same write again. Running it would write the tag on the
+                    # reader a second time, a different one if it was swapped
+                    # (#3076). Once the result is out, the backend clears the
+                    # command and a new write request arrives as usual.
+                    if not api.has_buffered(WRITE_RESULT_PATH):
+                        shared.pop("write_result_unsent", None)
+                    logger.info(
+                        "Write tag command for spool %d ignored: the result of that write is still on its way",
+                        unsent,
+                    )
+                elif write_payload:
                     shared["pending_write"] = {
                         "spool_id": write_payload["spool_id"],
                         "ndef_data": bytes.fromhex(write_payload["ndef_data_hex"]),
+                        # OpenTag3D v2 for a tag with room for it (#3500);
+                        # absent from an older Bambuddy.
+                        "ndef_v2": bytes.fromhex(write_payload["ndef_v2_hex"])
+                        if write_payload.get("ndef_v2_hex")
+                        else None,
                     }
                     logger.info("Write tag command received for spool %d", write_payload["spool_id"])
             elif cmd in ("reboot", "shutdown", "restart_daemon", "restart_browser"):
@@ -441,31 +513,7 @@ async def main():
     display = DisplayControl()
 
     # Register with backend (retries until success)
-    reg = await api.register_device(
-        device_id=config.device_id,
-        hostname=config.hostname,
-        ip_address=ip,
-        firmware_version=__version__,
-        has_nfc=True,
-        has_scale=True,
-        tare_offset=config.tare_offset,
-        calibration_factor=config.calibration_factor,
-        nfc_reader_type=nfc.reader_type,
-        nfc_connection=nfc.connection,
-        backend_url=config.backend_url,
-        has_backlight=display.has_backlight,
-    )
-
-    # Use server-side calibration if available
-    if reg:
-        config.tare_offset = reg.get("tare_offset", config.tare_offset)
-        config.calibration_factor = reg.get("calibration_factor", config.calibration_factor)
-        scale.update_calibration(config.tare_offset, config.calibration_factor)
-
-        # Auto-deploy Bambuddy's SSH public key for remote updates
-        ssh_key = reg.get("ssh_public_key")
-        if ssh_key:
-            _deploy_ssh_key(ssh_key)
+    await _register(config, api, nfc, scale, display, ip)
 
     logger.info("Device registered, starting poll loops")
 

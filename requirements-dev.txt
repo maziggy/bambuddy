@@ -27,8 +27,14 @@ pip-audit>=2.7.0
 # (Unpacker SEGV/DoS on reuse after caught error). Not a runtime dep of
 # Bambuddy — pinned here so the audit stays clean.
 msgpack>=1.2.1
-# Transitive of pre-commit. 21.7.13 closes four advisories in 21.6.x.
+# Transitive of pre-commit. 21.14.9 closes eight advisories in 21.14.6.
 # Not a runtime dep of Bambuddy — pinned here so the audit stays clean.
-virtualenv>=21.7.13
+virtualenv>=21.14.9
+# Transitive of pre-commit→virtualenv. 4.2.1 closes three advisories in
+# 3.x. Not a runtime dep of Bambuddy — pinned here so the audit stays clean.
+filelock>=4.2.1
+# Transitive of bandit[sarif]→pbr. 84.1.0 closes one advisory in 83.x.
+# Not a runtime dep of Bambuddy — pinned here so the audit stays clean.
+setuptools>=84.1.0
 # Secrets scan: gitleaks (Go binary, not a Python package).
 # Install: go install github.com/zricethezav/gitleaks/v8@latest

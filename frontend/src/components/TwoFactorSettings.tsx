@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import { Card, CardContent, CardHeader } from './Card';
 import { Button } from './Button';
+import { ConfirmModal } from './ConfirmModal';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -110,7 +111,7 @@ function TOTPSetupWizard({ onDone }: { onDone: () => void }) {
         <div className="flex justify-center">
           <img
             src={`data:image/png;base64,${setupData.qr_code_b64}`}
-            alt="TOTP QR Code"
+            alt={t('settings.twoFa.qrCodeAlt')}
             className="w-48 h-48 rounded-lg"
           />
         </div>
@@ -182,6 +183,7 @@ export function TwoFactorSettings() {
   const [disableCode, setDisableCode] = useState('');
   const [regenCode, setRegenCode] = useState('');
   const [newBackupCodes, setNewBackupCodes] = useState<string[] | null>(null);
+  const [unlinkTarget, setUnlinkTarget] = useState<{ providerId: number; providerName: string } | null>(null);
 
   // Email OTP enable: two-step proof-of-possession flow
   const [emailSetupToken, setEmailSetupToken] = useState<string | null>(null);
@@ -324,7 +326,7 @@ export function TwoFactorSettings() {
           ) : showDisableTOTP ? (
             <div className="space-y-4">
               <p className="text-bambu-gray-light text-sm">{t('settings.twoFa.disableConfirmHint')}</p>
-              <CodeInput value={disableCode} onChange={setDisableCode} placeholder="000000 or XXXXXXXX" maxLength={8} />
+              <CodeInput value={disableCode} onChange={setDisableCode} placeholder={t('settings.twoFa.codeOrBackupPlaceholder')} maxLength={8} />
               <div className="flex gap-3">
                 <Button variant="secondary" onClick={() => { setShowDisableTOTP(false); setDisableCode(''); }} className="flex-1">
                   {t('common.cancel')}
@@ -342,7 +344,7 @@ export function TwoFactorSettings() {
           ) : showRegenBackup ? (
             <div className="space-y-4">
               <p className="text-bambu-gray-light text-sm">{t('settings.twoFa.regenBackupHint')}</p>
-              <CodeInput value={regenCode} onChange={setRegenCode} placeholder="000000 or XXXXXXXX" maxLength={8} />
+              <CodeInput value={regenCode} onChange={setRegenCode} placeholder={t('settings.twoFa.codeOrBackupPlaceholder')} maxLength={8} />
               <div className="flex gap-3">
                 <Button variant="secondary" onClick={() => { setShowRegenBackup(false); setRegenCode(''); }} className="flex-1">
                   {t('common.cancel')}
@@ -531,7 +533,7 @@ export function TwoFactorSettings() {
                   <Button
                     variant="danger"
                     size="sm"
-                    onClick={() => unlinkOIDCMutation.mutate(link.provider_id)}
+                    onClick={() => setUnlinkTarget({ providerId: link.provider_id, providerName: link.provider_name })}
                     disabled={unlinkOIDCMutation.isPending}
                   >
                     <Trash2 className="w-4 h-4" />
@@ -541,6 +543,20 @@ export function TwoFactorSettings() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {unlinkTarget && (
+        <ConfirmModal
+          title={t('settings.twoFa.oidcUnlinkConfirmTitle')}
+          message={t('settings.twoFa.oidcUnlinkConfirmMessage', { provider: unlinkTarget.providerName })}
+          confirmText={t('settings.twoFa.oidcUnlinkConfirmAction')}
+          variant="danger"
+          onConfirm={() => {
+            unlinkOIDCMutation.mutate(unlinkTarget.providerId);
+            setUnlinkTarget(null);
+          }}
+          onCancel={() => setUnlinkTarget(null)}
+        />
       )}
     </div>
   );

@@ -1,5 +1,7 @@
 """Integration tests for Print Queue API endpoints."""
 
+import json
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -62,7 +64,7 @@ class TestPrintQueueAPI:
             defaults = {
                 "filename": f"test_print_{counter}.3mf",
                 "print_name": f"Test Print {counter}",
-                "file_path": f"/tmp/test_print_{counter}.3mf",
+                "file_path": f"/tmp/test_print_{counter}.3mf",  # nosec B108 -- a stored path, never opened
                 "file_size": 1024,
                 "content_hash": f"testhash{counter:08d}",
                 "status": "completed",
@@ -118,6 +120,22 @@ class TestPrintQueueAPI:
         response = await async_client.get("/api/v1/queue/")
         assert response.status_code == 200
         assert isinstance(response.json(), list)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_filters_on_several_statuses(self, async_client: AsyncClient, queue_item_factory):
+        """The wiki documents ?status=pending,printing; it was matched as one
+        literal status, so it returned nothing."""
+        pending = await queue_item_factory(status="pending")
+        printing = await queue_item_factory(status="printing")
+        await queue_item_factory(status="completed")
+
+        several = await async_client.get("/api/v1/queue/?status=pending,printing")
+        one = await async_client.get("/api/v1/queue/?status=printing")
+
+        assert several.status_code == 200
+        assert sorted(item["id"] for item in several.json()) == sorted([pending.id, printing.id])
+        assert [item["id"] for item in one.json()] == [printing.id]
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -416,6 +434,24 @@ class TestPrintQueueAPI:
         assert response.status_code == 200
         assert response.json()["cost_center_id"] == cost_center.id
         assert response.json()["estimated_cost"] == 1.25
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_colour_substitutions_are_returned_parsed(self, async_client: AsyncClient, queue_item_factory):
+        """#3279: the queue row reads which slots printed in another colour."""
+        subs = [{"slot_id": 1, "type": "PLA", "wanted": "#A4AAAC", "got": "#000000", "tray": 1}]
+        item = await queue_item_factory(color_substitutions=json.dumps(subs))
+        unreadable = await queue_item_factory(color_substitutions="{")
+        not_a_list = await queue_item_factory(color_substitutions='{"slot_id": 1}')
+        bad_entries = await queue_item_factory(color_substitutions='[1, {"slot_id": 1}]')
+
+        assert (await async_client.get(f"/api/v1/queue/{item.id}")).json()["color_substitutions"] == subs
+        assert (await async_client.get(f"/api/v1/queue/{unreadable.id}")).json()["color_substitutions"] is None
+        assert (await async_client.get(f"/api/v1/queue/{not_a_list.id}")).json()["color_substitutions"] is None
+        assert (await async_client.get(f"/api/v1/queue/{bad_entries.id}")).json()["color_substitutions"] is None
+        # One bad row must not fail the whole list.
+        listed = (await async_client.get("/api/v1/queue/")).json()
+        assert {i["id"]: i["color_substitutions"] for i in listed}[item.id] == subs
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -731,6 +767,51 @@ class TestPrintQueueAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_a_vp_job_shows_the_pick_it_keeps_for_its_archive(
+        self, async_client: AsyncClient, printer_factory, db_session
+    ):
+        """A virtual printer's job prints a File Manager file and has no
+        archive until it prints, but keeps the slicer's pick for it (#2700):
+        the badge shows, and the edit dialog's Mapping button gets the pick."""
+        from backend.app.models.library import LibraryFile
+        from backend.app.models.print_queue import PrintQueueItem
+
+        printer = await printer_factory()
+        other_printer = await printer_factory()
+        kept = json.dumps({"mapping": [4, -1, 12], "printer_id": printer.id})
+        library_file = LibraryFile(
+            filename="vp.gcode.3mf",
+            file_path="library/vp.3mf",
+            file_type="3mf",
+            file_size=1,
+            source_type="virtual_printer",
+        )
+        db_session.add(library_file)
+        await db_session.flush()
+        fixed = PrintQueueItem(
+            printer_id=printer.id, library_file_id=library_file.id, status="pending", slicer_ams_mapping=kept
+        )
+        model_based = PrintQueueItem(
+            target_model="X1C", library_file_id=library_file.id, status="pending", slicer_ams_mapping=kept
+        )
+        # Moved to another printer: the trays were resolved on the first one.
+        moved = PrintQueueItem(
+            printer_id=other_printer.id, library_file_id=library_file.id, status="pending", slicer_ams_mapping=kept
+        )
+        db_session.add_all([fixed, model_based, moved])
+        await db_session.commit()
+
+        rows = {row["id"]: row for row in (await async_client.get("/api/v1/queue/")).json()}
+
+        assert rows[fixed.id]["slicer_ams_mapping"] == [4, -1, 12]
+        assert rows[fixed.id]["archive_has_slicer_ams_mapping"] is True
+        assert rows[model_based.id]["slicer_ams_mapping"] is None
+        assert rows[model_based.id]["archive_has_slicer_ams_mapping"] is False
+        assert rows[moved.id]["slicer_ams_mapping"] is None
+        assert rows[moved.id]["archive_has_slicer_ams_mapping"] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_add_to_queue_with_plate_id(
         self, async_client: AsyncClient, printer_factory, archive_factory, db_session
     ):
@@ -1017,7 +1098,7 @@ class TestQueueStartEndpoint:
             defaults = {
                 "filename": f"test_print_{counter}.3mf",
                 "print_name": f"Test Print {counter}",
-                "file_path": f"/tmp/test_print_{counter}.3mf",
+                "file_path": f"/tmp/test_print_{counter}.3mf",  # nosec B108 -- a stored path, never opened
                 "file_size": 1024,
                 "content_hash": f"testhash{counter:08d}",
                 "status": "completed",
@@ -1365,7 +1446,7 @@ class TestQueueCancelEndpoint:
             defaults = {
                 "filename": "cancel_test.3mf",
                 "print_name": "Cancel Test Print",
-                "file_path": "/tmp/cancel_test.3mf",
+                "file_path": "/tmp/cancel_test.3mf",  # nosec B108 -- a stored path, never opened
                 "file_size": 1024,
                 "content_hash": "cancelhash001",
                 "status": "completed",
@@ -1684,7 +1765,7 @@ class TestBulkUpdateEndpoint:
             defaults = {
                 "filename": f"bulk_test_{counter}.3mf",
                 "print_name": f"Bulk Test Print {counter}",
-                "file_path": f"/tmp/bulk_test_{counter}.3mf",
+                "file_path": f"/tmp/bulk_test_{counter}.3mf",  # nosec B108 -- a stored path, never opened
                 "file_size": 1024,
                 "content_hash": f"bulkhash{counter:04d}",
                 "status": "completed",
@@ -1965,7 +2046,7 @@ class TestTargetLocationFeature:
             defaults = {
                 "filename": f"location_test_{counter}.3mf",
                 "print_name": f"Location Test Print {counter}",
-                "file_path": f"/tmp/location_test_{counter}.3mf",
+                "file_path": f"/tmp/location_test_{counter}.3mf",  # nosec B108 -- a stored path, never opened
                 "file_size": 1024,
                 "content_hash": f"lochash{counter:08d}",
                 "status": "completed",
@@ -2294,7 +2375,7 @@ class TestAbortedStatusNormalisation:
             defaults = {
                 "filename": f"abort_test_{counter}.3mf",
                 "print_name": f"Abort Test Print {counter}",
-                "file_path": f"/tmp/abort_test_{counter}.3mf",
+                "file_path": f"/tmp/abort_test_{counter}.3mf",  # nosec B108 -- a stored path, never opened
                 "file_size": 1024,
                 "content_hash": f"aborthash{counter:06d}",
                 "status": "completed",
@@ -3782,6 +3863,10 @@ class TestForceColorOverridesAreScopedToThePlate:
         file_path = tmp_path / "three_plates.gcode.3mf"
         with zipfile.ZipFile(file_path, "w") as zf:
             zf.writestr("Metadata/slice_info.config", self.THREE_PLATES)
+            # Sliced, or the queue refuses it (#3435). One plate's G-code only:
+            # with more, a job naming no plate would print the default one
+            # rather than the whole file these tests queue.
+            zf.writestr("Metadata/plate_1.gcode", "; plate 1")
 
         archive = PrintArchive(
             filename="three_plates.gcode.3mf",
@@ -3914,6 +3999,7 @@ class TestForceColorOverridesAreScopedToThePlate:
         file_path = tmp_path / "mixed_types.gcode.3mf"
         with zipfile.ZipFile(file_path, "w") as zf:
             zf.writestr("Metadata/slice_info.config", xml)
+            zf.writestr("Metadata/plate_1.gcode", "; plate 1")  # sliced (#3435)
         archive = PrintArchive(
             filename="mixed_types.gcode.3mf",
             print_name="Mixed",
@@ -4033,7 +4119,40 @@ async def test_stop_offline_reconciles_linked_archive_status_2603(
     assert item.status == "cancelled"
     assert archive.status == "cancelled", "an offline stop must reconcile the archive, not leave it 'printing'"
     assert archive.completed_at is not None
-    assert archive.failure_reason == "Stopped by user (printer was offline)"
+    # A vocabulary key (#2974), not prose: the stop's detail is on the queue row.
+    assert archive.failure_reason == "userCancelled"
+
+
+@pytest.mark.asyncio
+async def test_stop_offline_logs_the_run_with_the_items_plate(
+    async_client: AsyncClient, printer_factory, archive_factory, db_session
+):
+    """The run's own plate is the queue item's: the archive's is only its
+    latest run's, and a reprint of another plate may not have changed it."""
+    from unittest.mock import MagicMock, patch
+
+    from sqlalchemy import select
+
+    from backend.app.models.print_log import PrintLogEntry
+    from backend.app.models.print_queue import PrintQueueItem
+
+    printer = await printer_factory(name="Offline printer")
+    archive = await archive_factory(printer.id, status="printing", plate_id=1, with_run=False)
+    item = PrintQueueItem(printer_id=printer.id, archive_id=archive.id, status="printing", plate_id=3)
+    db_session.add(item)
+    await db_session.commit()
+
+    with patch(
+        "backend.app.services.printer_manager.printer_manager.stop_print",
+        MagicMock(return_value=False),
+    ):
+        resp = await async_client.post(f"/api/v1/queue/{item.id}/stop")
+
+    assert resp.status_code == 200
+    plates = list(
+        await db_session.scalars(select(PrintLogEntry.plate_id).where(PrintLogEntry.archive_id == archive.id))
+    )
+    assert plates == [3]
 
 
 @pytest.mark.asyncio

@@ -1,7 +1,8 @@
 """Regression test for the VP mode wire-value rename migration (#1429 follow-up).
 
 The UI buttons "Archive" and "Queue" had always saved the wire values
-`immediate` and `print_queue` — confusing in every support bundle. The
+`immediate` and `print_queue` — confusing in every support bundle. Later
+`archive` became `library`, when uploads moved to the File Manager. The
 rename migration in ``run_migrations`` rewrites existing rows to the
 canonical names. This test verifies it on both fresh and legacy schemas
 and confirms it's idempotent so reruns are safe (boot-on-boot).
@@ -79,9 +80,9 @@ async def engine():
 
 @pytest.mark.asyncio
 async def test_legacy_mode_rows_get_canonical_names(engine):
-    """Existing rows with `immediate` / `print_queue` get rewritten to
-    `archive` / `queue` while canonical values and unrelated modes pass
-    through untouched."""
+    """Existing rows with `immediate` / `archive` / `print_queue` get
+    rewritten to `library` / `queue` while canonical values and unrelated
+    modes pass through untouched."""
     async with engine.begin() as conn:
         await conn.execute(
             text(
@@ -91,7 +92,8 @@ async def test_legacy_mode_rows_get_canonical_names(engine):
                 "(3, 'C', 0, 'review', '391800003', 3),"
                 "(4, 'D', 0, 'proxy', '391800004', 4),"
                 "(5, 'E', 0, 'archive', '391800005', 5),"
-                "(6, 'F', 0, 'queue', '391800006', 6)"
+                "(6, 'F', 0, 'queue', '391800006', 6),"
+                "(7, 'G', 0, 'library', '391800007', 7)"
             )
         )
 
@@ -102,12 +104,13 @@ async def test_legacy_mode_rows_get_canonical_names(engine):
         result = await conn.execute(text("SELECT id, mode FROM virtual_printers ORDER BY id"))
         rows = dict(result.fetchall())
 
-    assert rows[1] == "archive"  # immediate → archive
+    assert rows[1] == "library"  # immediate → archive → library
     assert rows[2] == "queue"  # print_queue → queue
     assert rows[3] == "review"  # untouched
     assert rows[4] == "proxy"  # untouched
-    assert rows[5] == "archive"  # already canonical
+    assert rows[5] == "library"  # archive → library
     assert rows[6] == "queue"  # already canonical
+    assert rows[7] == "library"  # already canonical
 
 
 @pytest.mark.asyncio
@@ -125,7 +128,7 @@ async def test_legacy_settings_row_gets_canonical_name(engine):
         result = await conn.execute(text("SELECT value FROM settings WHERE key = 'virtual_printer_mode'"))
         value = result.scalar()
 
-    assert value == "archive"
+    assert value == "library"
 
 
 @pytest.mark.asyncio
@@ -148,4 +151,4 @@ async def test_migration_is_idempotent(engine):
 
     async with engine.connect() as conn:
         result = await conn.execute(text("SELECT mode FROM virtual_printers WHERE id = 1"))
-        assert result.scalar() == "archive"
+        assert result.scalar() == "library"

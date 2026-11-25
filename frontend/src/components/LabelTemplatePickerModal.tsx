@@ -1,16 +1,38 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { X, Loader2, Printer, CheckSquare, Square, Search, Download } from 'lucide-react';
 import {
   api,
+  ApiError,
+  DEFAULT_PROJECT_LABEL_FIELDS,
   DEFAULT_SPOOL_LABEL_FIELDS,
+  PROJECT_LABEL_FIELDS,
   SPOOL_LABEL_FIELDS,
+  type LabelSheetLayout,
+  type ProjectLabelField,
+  type SavedLabelTemplate,
   type SpoolLabelField,
+  type SpoolLabelRequestTemplate,
   type SpoolLabelTemplate,
   type InventorySpool,
 } from '../api/client';
 import { Button } from './Button';
+import { ConfirmModal } from './ConfirmModal';
+import { LabelSheetDiagram, LabelSheetLayoutEditor } from './LabelSheetLayoutEditor';
+import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import {
+  DEFAULT_LAYOUT,
+  MAX_PNG_SHEET_PAGES_X_DPI,
+  draftFromLayout,
+  formatMm,
+  isLayoutDraft,
+  layoutProblem,
+  parseDraft,
+  sheetPageCount,
+  type LayoutDraft,
+} from '../utils/labelSheetLayout';
 import { getSwatchStyle, resolveSpoolColorName } from '../utils/colors';
 import { useColorCatalogVersion } from '../hooks/useColorCatalogVersion';
 
@@ -20,9 +42,14 @@ type SpoolForLabel = Pick<
   'id' | 'material' | 'subtype' | 'brand' | 'color_name' | 'color_name_is_synthesized' | 'rgba'
 >;
 
-interface LabelTemplatePickerModalProps {
-  isOpen: boolean;
-  onClose: () => void;
+/** The project a bag label is printed for (#3655). */
+export interface ProjectForLabel {
+  id: number;
+  name: string;
+  color: string | null;
+}
+
+interface SpoolLabelProps {
   /** All spools the modal can choose from. Typically the page's current
    *  filter result so the modal stays consistent with what the user sees. */
   availableSpools: SpoolForLabel[];
@@ -31,7 +58,31 @@ interface LabelTemplatePickerModalProps {
    *  "all checked" and refines downward. */
   initialSelectedIds: number[];
   spoolmanMode: boolean;
+  project?: undefined;
 }
+
+interface ProjectLabelProps {
+  /** Print labels for this project's finished parts instead of spools: the
+   *  spool list gives way to how many are in the bag, a note and the number
+   *  of labels; the label sizes, sheets and output are the same (#3655). */
+  project: ProjectForLabel;
+  availableSpools?: undefined;
+  initialSelectedIds?: undefined;
+  spoolmanMode?: undefined;
+}
+
+type LabelTemplatePickerModalProps = {
+  isOpen: boolean;
+  onClose: () => void;
+} & (SpoolLabelProps | ProjectLabelProps);
+
+const NO_SPOOLS: SpoolForLabel[] = [];
+const NO_IDS: number[] = [];
+
+// Bounds of the project label inputs, as on the server (project_labels.py).
+const MAX_PROJECT_QUANTITY = 100_000;
+const MAX_PROJECT_NOTE_LENGTH = 200;
+const MAX_PROJECT_COPIES = 100;
 
 interface TemplateOption {
   value: SpoolLabelTemplate;
@@ -104,14 +155,52 @@ const FIELD_LABELS: Record<SpoolLabelField, { i18nKey: string; fallback: string 
   spool_id: { i18nKey: 'spoolId', fallback: 'Spool ID' },
 };
 
+// The project label's lines (#3655), read from projectDetail.labels.fields.
+const PROJECT_FIELD_LABELS: Record<ProjectLabelField, { i18nKey: string; fallback: string }> = {
+  parent: { i18nKey: 'parent', fallback: 'Parent project' },
+  name: { i18nKey: 'name', fallback: 'Project name' },
+  note: { i18nKey: 'note', fallback: 'Note' },
+  parts: { i18nKey: 'parts', fallback: 'Parts printed' },
+  due_date: { i18nKey: 'dueDate', fallback: 'Due date' },
+  printed: { i18nKey: 'printed', fallback: 'Last printed' },
+  color: { i18nKey: 'color', fallback: 'Project colour' },
+  qr: { i18nKey: 'qr', fallback: 'QR code' },
+  quantity: { i18nKey: 'quantity', fallback: 'Quantity' },
+  project_id: { i18nKey: 'projectId', fallback: 'Project ID' },
+};
+
 // Remembered per browser. Printing only needs inventory access, and a server
 // setting would need settings access to save.
 const PREFS_STORAGE_KEY = 'bambuddy-label-print-options';
 
+// What the label size dropdown holds: a built-in template, a one-off custom
+// sheet, or a saved template by id (#3296).
+type TemplateChoice = SpoolLabelTemplate | 'custom' | `saved:${number}`;
+
+const SAVED_TEMPLATES_KEY = ['labelTemplates'];
+
+function savedChoice(id: number): TemplateChoice {
+  return `saved:${id}`;
+}
+
+function savedIdOf(choice: TemplateChoice): number | null {
+  return choice.startsWith('saved:') ? Number(choice.slice('saved:'.length)) : null;
+}
+
+function isTemplateChoice(value: unknown): value is TemplateChoice {
+  if (typeof value !== 'string') return false;
+  if (value === 'custom' || /^saved:[1-9]\d*$/.test(value)) return true;
+  return TEMPLATE_OPTIONS.some((o) => o.value === value);
+}
+
 interface LabelPrefs {
-  template: SpoolLabelTemplate;
+  template: TemplateChoice;
   /** Chosen lines per template: a 40 × 30 roll and an A4 sheet fit different amounts. */
-  fields: Partial<Record<SpoolLabelTemplate, SpoolLabelField[]>>;
+  fields: Partial<Record<TemplateChoice, SpoolLabelField[]>>;
+  /** The same for project labels (#3655), which have lines of their own. */
+  projectFields: Partial<Record<TemplateChoice, ProjectLabelField[]>>;
+  /** The one-off custom sheet, as last typed. */
+  customDraft: LayoutDraft;
   monochrome: boolean;
   format: OutputFormat;
   dpi: PngDpi;
@@ -120,6 +209,8 @@ interface LabelPrefs {
 const DEFAULT_PREFS: LabelPrefs = {
   template: TEMPLATE_OPTIONS[0].value,
   fields: {},
+  projectFields: {},
+  customDraft: draftFromLayout(DEFAULT_LAYOUT),
   monochrome: false,
   format: 'pdf',
   dpi: 300,
@@ -134,21 +225,29 @@ function loadPrefs(): LabelPrefs {
   }
   if (!raw || typeof raw !== 'object') return DEFAULT_PREFS;
   const r = raw as Partial<Record<keyof LabelPrefs, unknown>>;
-  const templates = TEMPLATE_OPTIONS.map((o) => o.value);
   const fields: LabelPrefs['fields'] = {};
   if (r.fields && typeof r.fields === 'object') {
     for (const [tpl, list] of Object.entries(r.fields as Record<string, unknown>)) {
-      if (!templates.includes(tpl as SpoolLabelTemplate) || !Array.isArray(list)) continue;
-      fields[tpl as SpoolLabelTemplate] = list.filter((f): f is SpoolLabelField =>
+      if (!isTemplateChoice(tpl) || !Array.isArray(list)) continue;
+      fields[tpl] = list.filter((f): f is SpoolLabelField =>
         (SPOOL_LABEL_FIELDS as readonly string[]).includes(f),
       );
     }
   }
+  const projectFields: LabelPrefs['projectFields'] = {};
+  if (r.projectFields && typeof r.projectFields === 'object') {
+    for (const [tpl, list] of Object.entries(r.projectFields as Record<string, unknown>)) {
+      if (!isTemplateChoice(tpl) || !Array.isArray(list)) continue;
+      projectFields[tpl] = list.filter((f): f is ProjectLabelField =>
+        (PROJECT_LABEL_FIELDS as readonly string[]).includes(f),
+      );
+    }
+  }
   return {
-    template: templates.includes(r.template as SpoolLabelTemplate)
-      ? (r.template as SpoolLabelTemplate)
-      : DEFAULT_PREFS.template,
+    template: isTemplateChoice(r.template) ? r.template : DEFAULT_PREFS.template,
     fields,
+    projectFields,
+    customDraft: isLayoutDraft(r.customDraft) ? r.customDraft : DEFAULT_PREFS.customDraft,
     monochrome: r.monochrome === true,
     format: r.format === 'png' ? 'png' : 'pdf',
     dpi: PNG_DPIS.includes(r.dpi as PngDpi) ? (r.dpi as PngDpi) : DEFAULT_PREFS.dpi,
@@ -163,8 +262,19 @@ function savePrefs(prefs: LabelPrefs): void {
   }
 }
 
-function fieldsFor(prefs: LabelPrefs, template: SpoolLabelTemplate): SpoolLabelField[] {
+function fieldsFor(prefs: LabelPrefs, template: TemplateChoice): SpoolLabelField[] {
   return prefs.fields[template] ?? DEFAULT_SPOOL_LABEL_FIELDS;
+}
+
+function projectFieldsFor(prefs: LabelPrefs, template: TemplateChoice): ProjectLabelField[] {
+  return prefs.projectFields[template] ?? DEFAULT_PROJECT_LABEL_FIELDS;
+}
+
+/** A whole number from ``min`` to ``max``, or null. */
+function wholeNumber(text: string, min: number, max: number): number | null {
+  if (!/^\d+$/.test(text)) return null;
+  const n = Number(text);
+  return n >= min && n <= max ? n : null;
 }
 
 function openBlobInNewTab(blob: Blob): void {
@@ -191,7 +301,7 @@ function openBlobInNewTab(blob: Blob): void {
 }
 
 /** Save a PNG, or a ZIP of PNGs when there were several pages. */
-function downloadBlob(blob: Blob, template: SpoolLabelTemplate): void {
+function downloadBlob(blob: Blob, template: SpoolLabelRequestTemplate): void {
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -278,15 +388,21 @@ function colorSortKey(rgba: string | null | undefined): [number, number] {
 export function LabelTemplatePickerModal({
   isOpen,
   onClose,
-  availableSpools,
-  initialSelectedIds,
-  spoolmanMode,
+  availableSpools = NO_SPOOLS,
+  initialSelectedIds = NO_IDS,
+  spoolmanMode = false,
+  project,
 }: LabelTemplatePickerModalProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   // The spool filter below resolves colour names through the catalog; its
   // memo has to recompute when the catalog finishes loading (#3090).
   const colorCatalogVersion = useColorCatalogVersion();
   const { showToast } = useToast();
+  const { hasPermission } = useAuth();
+  // Saving, editing and deleting templates is inventory:update, like storage
+  // locations; anyone who can print can use them (#3296).
+  const canManageTemplates = hasPermission('inventory:update');
+  const queryClient = useQueryClient();
   const [pending, setPending] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [search, setSearch] = useState('');
@@ -294,12 +410,67 @@ export function LabelTemplatePickerModal({
   const [sortMode, setSortMode] = useState<SortMode>('id');
   const [prefs, setPrefs] = useState<LabelPrefs>(DEFAULT_PREFS);
   const [startingPositionInput, setStartingPositionInput] = useState('1');
+  // Project labels (#3655): typed per print, not remembered.
+  const [quantityInput, setQuantityInput] = useState('');
+  const [noteInput, setNoteInput] = useState('');
+  const [copiesInput, setCopiesInput] = useState('1');
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   // The object URL on screen. Freed when its replacement arrives, not when the
   // options change, so the old label stays visible while the new one renders.
   const previewUrlRef = useRef<string | null>(null);
+  // A saved template being edited: its name and layout as typed, not yet saved.
+  const [editing, setEditing] = useState<{ name: string; draft: LayoutDraft } | null>(null);
+  // The name typed for "Save as template"; null while that form is closed.
+  const [newTemplateName, setNewTemplateName] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  // When the dialog last opened: a remembered template is only given up on
+  // when a list fetched since then lacks it, not a cached one (#3296 review).
+  const openedAtRef = useRef(0);
+
+  const savedQuery = useQuery({
+    queryKey: SAVED_TEMPLATES_KEY,
+    queryFn: api.getLabelTemplates,
+    enabled: isOpen,
+    // Someone else may have saved or deleted one since the last open.
+    staleTime: 0,
+  });
+  const savedTemplates = useMemo(() => savedQuery.data ?? [], [savedQuery.data]);
+
+  const saveMutation = useMutation({
+    mutationFn: ({ id, name, layout }: { id?: number; name: string; layout: LabelSheetLayout }) =>
+      id === undefined ? api.createLabelTemplate({ name, layout }) : api.updateLabelTemplate(id, { name, layout }),
+    onSuccess: (saved) => {
+      // In the list before it is selected, so the selection doesn't fall back.
+      queryClient.setQueryData<SavedLabelTemplate[]>(SAVED_TEMPLATES_KEY, (old = []) => [
+        ...old.filter((tpl) => tpl.id !== saved.id),
+        saved,
+      ]);
+      void queryClient.invalidateQueries({ queryKey: SAVED_TEMPLATES_KEY });
+    },
+    onError: (err) => {
+      if (err instanceof ApiError && err.status === 409) {
+        showToast(t('inventory.labels.custom.nameTaken', 'A label template with this name already exists.'), 'error');
+        return;
+      }
+      const msg = err instanceof Error ? err.message : String(err);
+      showToast(t('inventory.labels.custom.saveFailed', 'Could not save the template: {{msg}}', { msg }), 'error');
+    },
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => api.deleteLabelTemplate(id),
+    onSuccess: (_, id) => {
+      queryClient.setQueryData<SavedLabelTemplate[]>(SAVED_TEMPLATES_KEY, (old = []) =>
+        old.filter((tpl) => tpl.id !== id),
+      );
+      void queryClient.invalidateQueries({ queryKey: SAVED_TEMPLATES_KEY });
+    },
+    onError: (err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      showToast(t('inventory.labels.custom.deleteFailed', 'Could not delete the template: {{msg}}', { msg }), 'error');
+    },
+  });
 
   // Sync from caller and reset transient state on open. Intentionally not
   // reactive to props while open — once the user starts editing we don't want
@@ -307,6 +478,7 @@ export function LabelTemplatePickerModal({
   // label options come back as the user last left them.
   useEffect(() => {
     if (isOpen) {
+      openedAtRef.current = Date.now();
       const allowed = new Set(availableSpools.map((s) => s.id));
       setSelectedIds(new Set(initialSelectedIds.filter((id) => allowed.has(id))));
       setSearch('');
@@ -314,7 +486,13 @@ export function LabelTemplatePickerModal({
       setSortMode('id');
       setPrefs(loadPrefs());
       setStartingPositionInput('1');
+      setQuantityInput('');
+      setNoteInput('');
+      setCopiesInput('1');
       setPending(false);
+      setEditing(null);
+      setNewTemplateName(null);
+      setConfirmDelete(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
@@ -364,11 +542,68 @@ export function LabelTemplatePickerModal({
   const allVisibleChecked =
     visibleSpools.length > 0 && visibleSpools.every((s) => selectedIds.has(s.id));
 
-  const template = prefs.template;
-  const fields = fieldsFor(prefs, template);
+  // A failed refresh can still use a cached layout. With no usable layout,
+  // show the default stock this time and keep the saved choice for a retry.
+  const preferredId = savedIdOf(prefs.template);
+  const missingOnError = savedQuery.isError && preferredId !== null && !editing &&
+    !savedTemplates.some((tpl) => tpl.id === preferredId);
+  const template = missingOnError ? DEFAULT_PREFS.template : prefs.template;
+  // Spool labels and project labels (#3655) have their own lines to choose from.
+  const fieldOptions: readonly string[] = project ? PROJECT_LABEL_FIELDS : SPOOL_LABEL_FIELDS;
+  const defaultFields: readonly string[] = project ? DEFAULT_PROJECT_LABEL_FIELDS : DEFAULT_SPOOL_LABEL_FIELDS;
+  const fields: readonly string[] = project ? projectFieldsFor(prefs, template) : fieldsFor(prefs, template);
   const fieldsKey = fields.join(',');
-  // The preview shows the first spool that will print, in print order.
+
+  // What a project label's bag holds, and how many labels to print.
+  const quantity = wholeNumber(quantityInput, 1, MAX_PROJECT_QUANTITY);
+  const quantityIsValid = quantityInput === '' || quantity !== null;
+  const note = noteInput.trim();
+  const copies = wholeNumber(copiesInput, 1, MAX_PROJECT_COPIES);
+
+  // A saved template or a one-off custom sheet prints as "custom" with its
+  // layout. The layout on screen is what prints, so an edit can be tried
+  // before it is saved.
+  const savedId = savedIdOf(template);
+  const savedTemplate = savedId === null ? undefined : savedTemplates.find((tpl) => tpl.id === savedId);
+  const isCustomSheet = template === 'custom' || savedId !== null;
+  const activeDraft: LayoutDraft | null =
+    template === 'custom'
+      ? prefs.customDraft
+      : editing
+        ? editing.draft
+        : savedTemplate
+          ? draftFromLayout(savedTemplate.layout)
+          : null;
+  const problem = activeDraft ? layoutProblem(activeDraft) : null;
+  const activeLayout = activeDraft && !problem ? parseDraft(activeDraft) : null;
+  // Waiting for the saved list, or a layout that can't print: nothing to send.
+  const sheetReady = !isCustomSheet || activeLayout !== null;
+  const requestTemplate: SpoolLabelRequestTemplate = isCustomSheet ? 'custom' : (template as SpoolLabelTemplate);
+  const layoutKey = activeLayout ? JSON.stringify(activeLayout) : '';
+
+  // A remembered saved template that has since been deleted: back to the
+  // default, and out of any edit of it, which would otherwise still send its
+  // layout with the built-in template (a 422). Only once a list fetched since
+  // the dialog opened says so.
+  const savedListIsFresh =
+    savedQuery.isSuccess && !savedQuery.isFetching && savedQuery.dataUpdatedAt >= openedAtRef.current;
+  useEffect(() => {
+    if (!isOpen || !savedListIsFresh || savedId === null) return;
+    if (savedTemplates.some((tpl) => tpl.id === savedId)) return;
+    setEditing(null);
+    setNewTemplateName(null);
+    setConfirmDelete(false);
+    setPrefs((prev) => {
+      const next = { ...prev, template: DEFAULT_PREFS.template };
+      savePrefs(next);
+      return next;
+    });
+  }, [isOpen, savedListIsFresh, savedTemplates, savedId]);
+  // The preview shows the first spool that will print, in print order, or
+  // the project's label once what was typed for it is valid.
   const previewSpoolId = sortedSpools.find((s) => selectedIds.has(s.id))?.id ?? null;
+  const projectId = project?.id;
+  const previewTarget = projectId !== undefined ? (quantityIsValid ? projectId : null) : previewSpoolId;
 
   function showPreview(url: string | null) {
     if (previewUrlRef.current) window.URL.revokeObjectURL(previewUrlRef.current);
@@ -379,7 +614,7 @@ export function LabelTemplatePickerModal({
   // Re-render the preview a moment after the last change, dropping any
   // request still in flight so a slow answer can't overwrite a newer one.
   useEffect(() => {
-    if (!isOpen || previewSpoolId === null) {
+    if (!isOpen || previewTarget === null || !sheetReady) {
       showPreview(null);
       setPreviewError(null);
       setPreviewLoading(false);
@@ -388,16 +623,27 @@ export function LabelTemplatePickerModal({
     const controller = new AbortController();
     setPreviewLoading(true);
     const timer = window.setTimeout(async () => {
-      const request = {
-        spool_id: previewSpoolId,
-        template,
+      const options = {
+        template: requestTemplate,
+        ...(layoutKey ? { layout: JSON.parse(layoutKey) as LabelSheetLayout } : {}),
         monochrome: prefs.monochrome,
-        fields: fieldsKey ? (fieldsKey.split(',') as SpoolLabelField[]) : [],
       };
+      const chosen = fieldsKey ? fieldsKey.split(',') : [];
       try {
-        const blob = spoolmanMode
-          ? await api.previewSpoolmanSpoolLabel(request, controller.signal)
-          : await api.previewSpoolLabel(request, controller.signal);
+        const blob = projectId !== undefined
+          ? await api.previewProjectLabel(
+              { ...options, project_id: previewTarget, quantity, note: note || null, fields: chosen as ProjectLabelField[] },
+              controller.signal,
+            )
+          : spoolmanMode
+            ? await api.previewSpoolmanSpoolLabel(
+                { ...options, spool_id: previewTarget, fields: chosen as SpoolLabelField[] },
+                controller.signal,
+              )
+            : await api.previewSpoolLabel(
+                { ...options, spool_id: previewTarget, fields: chosen as SpoolLabelField[] },
+                controller.signal,
+              );
         if (controller.signal.aborted) return;
         showPreview(window.URL.createObjectURL(blob));
         setPreviewError(null);
@@ -413,7 +659,19 @@ export function LabelTemplatePickerModal({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [isOpen, previewSpoolId, template, fieldsKey, prefs.monochrome, spoolmanMode]);
+  }, [
+    isOpen,
+    previewTarget,
+    projectId,
+    sheetReady,
+    requestTemplate,
+    layoutKey,
+    fieldsKey,
+    prefs.monochrome,
+    spoolmanMode,
+    quantity,
+    note,
+  ]);
 
   // Free the last preview when the modal unmounts.
   useEffect(
@@ -426,13 +684,41 @@ export function LabelTemplatePickerModal({
   if (!isOpen) return null;
 
   const selectedCount = selectedIds.size;
-  const noSelection = selectedCount === 0;
-  const sheetCapacity = SHEET_CAPACITIES[template];
+  // Labels this print makes: the ticked spools, or the project label's copies.
+  const labelCount = project ? (copies ?? 0) : selectedCount;
+  const noSelection = project ? !quantityIsValid || copies === null : selectedCount === 0;
+  const sheetCapacity = isCustomSheet
+    ? activeLayout
+      ? activeLayout.cols * activeLayout.rows
+      : undefined
+    : SHEET_CAPACITIES[template as SpoolLabelTemplate];
   const startingPosition = Number(startingPositionInput);
   const startingPositionIsValid =
     sheetCapacity === undefined ||
     (Number.isInteger(startingPosition) && startingPosition >= 1 && startingPosition <= sheetCapacity);
   const templateOption = TEMPLATE_OPTIONS.find((o) => o.value === template) ?? TEMPLATE_OPTIONS[0];
+  let templateHint;
+  if (template === 'custom') {
+    templateHint = t('inventory.labels.custom.hint', 'Describe your own label sheet below.');
+  } else if (savedId !== null) {
+    templateHint = savedTemplate ? layoutSummary(savedTemplate.layout) : null;
+  } else if (project && sheetCapacity === undefined) {
+    templateHint = t('projectDetail.labels.singleLabelPage', 'One label per page.');
+  } else {
+    templateHint = t(`inventory.labels.templates.${templateOption.i18nKey}.hint`, templateOption.fallbackHint);
+  }
+  // PNG of whole sheet pages is capped at pages × dpi, as on the server.
+  const pngSheetPages =
+    prefs.format === 'png' && sheetCapacity !== undefined && startingPositionIsValid
+      ? sheetPageCount(sheetCapacity, labelCount, startingPosition)
+      : 0;
+  const pngTooLarge = pngSheetPages * prefs.dpi > MAX_PNG_SHEET_PAGES_X_DPI;
+  const pngLimit = {
+    maxPages: Math.floor(MAX_PNG_SHEET_PAGES_X_DPI / prefs.dpi),
+    dpi: prefs.dpi,
+    pages: pngSheetPages,
+  };
+  const canPrint = !noSelection && !pending && startingPositionIsValid && sheetReady && !pngTooLarge;
 
   function updatePrefs(change: Partial<LabelPrefs>) {
     setPrefs((prev) => {
@@ -442,13 +728,100 @@ export function LabelTemplatePickerModal({
     });
   }
 
-  function setFields(next: SpoolLabelField[]) {
-    // Stored in print order, so the saved list reads like the label.
-    const ordered = SPOOL_LABEL_FIELDS.filter((f) => next.includes(f));
-    updatePrefs({ fields: { ...prefs.fields, [template]: ordered } });
+  function chooseTemplate(choice: TemplateChoice) {
+    setEditing(null);
+    setNewTemplateName(null);
+    updatePrefs({ template: choice });
   }
 
-  function toggleField(field: SpoolLabelField) {
+  function layoutSummary(layout: LabelSheetLayout): string {
+    return t(
+      'inventory.labels.custom.summary',
+      '{{page}} · {{width}} × {{height}} mm · {{capacity}} labels ({{cols}} × {{rows}})',
+      {
+        page:
+          layout.page === 'a4'
+            ? t('inventory.labels.custom.pageShortA4', 'A4')
+            : t('inventory.labels.custom.pageShortLetter', 'Letter'),
+        width: formatMm(layout.label_w_mm, i18n.language),
+        height: formatMm(layout.label_h_mm, i18n.language),
+        capacity: layout.cols * layout.rows,
+        cols: layout.cols,
+        rows: layout.rows,
+      },
+    );
+  }
+
+  function saveNewTemplate(name: string, layout: LabelSheetLayout) {
+    // The new template keeps the lines chosen for the sheet it was made from,
+    // as they are when the save completes: they can be ticked meanwhile.
+    const source = template;
+    saveMutation.mutate(
+      { name: name.trim(), layout },
+      {
+        onSuccess: (saved) => {
+          setEditing(null);
+          setNewTemplateName(null);
+          const choice = savedChoice(saved.id);
+          setPrefs((prev) => {
+            const next = {
+              ...prev,
+              template: choice,
+              fields: { ...prev.fields, [choice]: fieldsFor(prev, source) },
+              projectFields: { ...prev.projectFields, [choice]: projectFieldsFor(prev, source) },
+            };
+            savePrefs(next);
+            return next;
+          });
+          showToast(t('inventory.labels.custom.saved', 'Template "{{name}}" saved', { name: saved.name }), 'success');
+        },
+      },
+    );
+  }
+
+  function saveEditedTemplate(id: number, name: string, layout: LabelSheetLayout) {
+    saveMutation.mutate(
+      { id, name: name.trim(), layout },
+      {
+        onSuccess: (saved) => {
+          setEditing(null);
+          showToast(t('inventory.labels.custom.saved', 'Template "{{name}}" saved', { name: saved.name }), 'success');
+        },
+      },
+    );
+  }
+
+  function deleteSavedTemplate(tpl: SavedLabelTemplate) {
+    deleteMutation.mutate(tpl.id, {
+      onSuccess: () => {
+        setConfirmDelete(false);
+        setEditing(null);
+        updatePrefs({ template: DEFAULT_PREFS.template });
+        showToast(t('inventory.labels.custom.deleted', 'Template "{{name}}" deleted', { name: tpl.name }), 'success');
+      },
+    });
+  }
+
+  function setFields(next: readonly string[]) {
+    // Stored in print order, so the saved list reads like the label.
+    const ordered = fieldOptions.filter((f) => next.includes(f));
+    if (project) {
+      updatePrefs({ projectFields: { ...prefs.projectFields, [template]: ordered as ProjectLabelField[] } });
+    } else {
+      updatePrefs({ fields: { ...prefs.fields, [template]: ordered as SpoolLabelField[] } });
+    }
+  }
+
+  function fieldText(field: string): string {
+    if (project) {
+      const { i18nKey, fallback } = PROJECT_FIELD_LABELS[field as ProjectLabelField];
+      return t(`projectDetail.labels.fields.${i18nKey}`, fallback);
+    }
+    const { i18nKey, fallback } = FIELD_LABELS[field as SpoolLabelField];
+    return t(`inventory.labels.fields.${i18nKey}`, fallback);
+  }
+
+  function toggleField(field: string) {
     setFields(fields.includes(field) ? fields.filter((f) => f !== field) : [...fields, field]);
   }
 
@@ -482,27 +855,38 @@ export function LabelTemplatePickerModal({
   }
 
   async function handlePrint() {
-    if (noSelection || pending || !startingPositionIsValid) return;
+    if (!canPrint) return;
     // Order matters: the backend (labels.py) prints labels in the same order
     // we send IDs. Use the sorted list so a "by colour" sort flows through to
     // the output instead of being clobbered by an ascending-ID re-sort.
     const ids = sortedSpools.filter((s) => selectedIds.has(s.id)).map((s) => s.id);
-    const request = {
-      spool_ids: ids,
-      template,
+    const options = {
+      template: requestTemplate,
+      ...(activeLayout ? { layout: activeLayout } : {}),
       monochrome: prefs.monochrome,
       starting_position: sheetCapacity === undefined ? 1 : startingPosition,
-      fields,
       format: prefs.format,
       dpi: prefs.dpi,
     };
     setPending(true);
     try {
-      const blob = spoolmanMode
-        ? await api.printSpoolmanSpoolLabels(request)
-        : await api.printSpoolLabels(request);
+      let blob: Blob;
+      if (project) {
+        // One item per label: the same bag, `copies` times.
+        const item = { project_id: project.id, quantity, note: note || null };
+        blob = await api.printProjectLabels({
+          ...options,
+          items: Array.from({ length: copies ?? 1 }, () => item),
+          fields: fields as ProjectLabelField[],
+        });
+      } else {
+        const request = { ...options, spool_ids: ids, fields: fields as SpoolLabelField[] };
+        blob = spoolmanMode
+          ? await api.printSpoolmanSpoolLabels(request)
+          : await api.printSpoolLabels(request);
+      }
       if (prefs.format === 'pdf') openBlobInNewTab(blob);
-      else downloadBlob(blob, template);
+      else downloadBlob(blob, requestTemplate);
       onClose();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -538,9 +922,11 @@ export function LabelTemplatePickerModal({
           <div className="flex items-center gap-2">
             <Printer className="w-5 h-5 text-bambu-green" />
             <h2 className="text-lg font-semibold text-white">
-              {t('inventory.labels.title', 'Print spool labels')}
+              {project
+                ? t('projectDetail.labels.title', 'Print project label')
+                : t('inventory.labels.title', 'Print spool labels')}
             </h2>
-            {selectedCount > 0 && (
+            {!project && selectedCount > 0 && (
               <span className="text-sm text-bambu-gray">
                 ({t('inventory.labels.selectedCount', '{{count}} selected', { count: selectedCount })})
               </span>
@@ -558,154 +944,168 @@ export function LabelTemplatePickerModal({
         {/* Two columns from md up: which spools on the left, what the label
             looks like on the right. Stacked and scrolled as one on phones. */}
         <div className="flex-1 min-h-0 overflow-y-auto md:overflow-hidden grid grid-cols-1 md:grid-cols-2">
-          <div className="flex flex-col min-h-0 md:border-r border-bambu-dark-tertiary">
-            {/* Search + material chips */}
-            <div className="p-4 space-y-2 border-b border-bambu-dark-tertiary">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
-                <input
-                  type="search"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder={t('inventory.labels.searchPlaceholder', 'Search name, brand, or #ID')}
-                  className="w-full pl-9 pr-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder:text-bambu-gray focus:outline-none focus:border-bambu-green"
-                />
-              </div>
-              {materials.length > 1 && (
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-xs text-bambu-gray mr-1">
-                    {t('inventory.labels.filterByMaterial', 'Material:')}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setMaterialFilter('')}
-                    className={`px-2 py-0.5 text-xs rounded-full border transition ${
-                      materialFilter === ''
-                        ? 'bg-bambu-green text-bambu-dark border-bambu-green'
-                        : 'bg-bambu-dark text-bambu-gray border-bambu-dark-tertiary hover:border-bambu-gray'
-                    }`}
-                  >
-                    {t('inventory.labels.allMaterials', 'All')}
-                  </button>
-                  {materials.map((m) => (
+          {project ? (
+            <ProjectLabelInputs
+              project={project}
+              quantity={quantityInput}
+              onQuantityChange={setQuantityInput}
+              quantityIsValid={quantityIsValid}
+              note={noteInput}
+              onNoteChange={setNoteInput}
+              copies={copiesInput}
+              onCopiesChange={setCopiesInput}
+              copiesAreValid={copies !== null}
+            />
+          ) : (
+            <div className="flex flex-col min-h-0 md:border-r border-bambu-dark-tertiary">
+              {/* Search + material chips */}
+              <div className="p-4 space-y-2 border-b border-bambu-dark-tertiary">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
+                  <input
+                    type="search"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder={t('inventory.labels.searchPlaceholder', 'Search name, brand, or #ID')}
+                    className="w-full pl-9 pr-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder:text-bambu-gray focus:outline-none focus:border-bambu-green"
+                  />
+                </div>
+                {materials.length > 1 && (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-xs text-bambu-gray mr-1">
+                      {t('inventory.labels.filterByMaterial', 'Material:')}
+                    </span>
                     <button
-                      key={m}
                       type="button"
-                      onClick={() => setMaterialFilter(m)}
+                      onClick={() => setMaterialFilter('')}
                       className={`px-2 py-0.5 text-xs rounded-full border transition ${
-                        materialFilter === m
+                        materialFilter === ''
                           ? 'bg-bambu-green text-bambu-dark border-bambu-green'
                           : 'bg-bambu-dark text-bambu-gray border-bambu-dark-tertiary hover:border-bambu-gray'
                       }`}
                     >
-                      {m}
+                      {t('inventory.labels.allMaterials', 'All')}
                     </button>
-                  ))}
+                    {materials.map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setMaterialFilter(m)}
+                        className={`px-2 py-0.5 text-xs rounded-full border transition ${
+                          materialFilter === m
+                            ? 'bg-bambu-green text-bambu-dark border-bambu-green'
+                            : 'bg-bambu-dark text-bambu-gray border-bambu-dark-tertiary hover:border-bambu-gray'
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs text-bambu-gray mr-1">
+                    {t('inventory.labels.sortBy.label')}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSortMode('id')}
+                    className={`px-2 py-0.5 text-xs rounded-full border transition ${
+                      sortMode === 'id'
+                        ? 'bg-bambu-green text-bambu-dark border-bambu-green'
+                        : 'bg-bambu-dark text-bambu-gray border-bambu-dark-tertiary hover:border-bambu-gray'
+                    }`}
+                  >
+                    {t('inventory.labels.sortBy.id')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSortMode('color')}
+                    className={`px-2 py-0.5 text-xs rounded-full border transition ${
+                      sortMode === 'color'
+                        ? 'bg-bambu-green text-bambu-dark border-bambu-green'
+                        : 'bg-bambu-dark text-bambu-gray border-bambu-dark-tertiary hover:border-bambu-gray'
+                    }`}
+                  >
+                    {t('inventory.labels.sortBy.color')}
+                  </button>
                 </div>
-              )}
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-xs text-bambu-gray mr-1">
-                  {t('inventory.labels.sortBy.label')}
+              </div>
+
+              {/* Action bar */}
+              <div className="px-4 pt-3 pb-2 flex items-center justify-between gap-3 flex-wrap">
+                <span className="text-sm text-bambu-gray">
+                  {t('inventory.labels.pickSpools', 'Pick which spools to print labels for:')}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => setSortMode('id')}
-                  className={`px-2 py-0.5 text-xs rounded-full border transition ${
-                    sortMode === 'id'
-                      ? 'bg-bambu-green text-bambu-dark border-bambu-green'
-                      : 'bg-bambu-dark text-bambu-gray border-bambu-dark-tertiary hover:border-bambu-gray'
-                  }`}
-                >
-                  {t('inventory.labels.sortBy.id')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSortMode('color')}
-                  className={`px-2 py-0.5 text-xs rounded-full border transition ${
-                    sortMode === 'color'
-                      ? 'bg-bambu-green text-bambu-dark border-bambu-green'
-                      : 'bg-bambu-dark text-bambu-gray border-bambu-dark-tertiary hover:border-bambu-gray'
-                  }`}
-                >
-                  {t('inventory.labels.sortBy.color')}
-                </button>
-              </div>
-            </div>
-
-            {/* Action bar */}
-            <div className="px-4 pt-3 pb-2 flex items-center justify-between gap-3 flex-wrap">
-              <span className="text-sm text-bambu-gray">
-                {t('inventory.labels.pickSpools', 'Pick which spools to print labels for:')}
-              </span>
-              <div className="flex items-center gap-3 text-xs">
-                <button
-                  type="button"
-                  onClick={allVisibleChecked ? deselectVisible : selectAllVisible}
-                  disabled={visibleSpools.length === 0}
-                  className="text-bambu-green hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
-                >
-                  {allVisibleChecked
-                    ? t('inventory.labels.deselectVisible', 'Deselect visible')
-                    : t('inventory.labels.selectVisible', 'Select all visible ({{count}})', {
-                        count: visibleSpools.length,
-                      })}
-                </button>
-                <button
-                  type="button"
-                  onClick={clearAll}
-                  disabled={selectedCount === 0}
-                  className="text-bambu-gray hover:text-white hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
-                >
-                  {t('inventory.labels.clearAll', 'Clear all')}
-                </button>
-              </div>
-            </div>
-
-            {/* Spool list */}
-            <div className="flex-1 overflow-y-auto px-2 pb-2 min-h-0 max-h-72 md:max-h-none">
-              {visibleSpools.length === 0 ? (
-                <div className="text-center text-sm text-bambu-gray py-6">
-                  {sortedSpools.length === 0
-                    ? t('inventory.labels.noSpoolsToShow', 'No spools to show. Adjust your filter and try again.')
-                    : t('inventory.labels.noMatches', 'No spools match the current search or filter.')}
+                <div className="flex items-center gap-3 text-xs">
+                  <button
+                    type="button"
+                    onClick={allVisibleChecked ? deselectVisible : selectAllVisible}
+                    disabled={visibleSpools.length === 0}
+                    className="text-bambu-green hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
+                  >
+                    {allVisibleChecked
+                      ? t('inventory.labels.deselectVisible', 'Deselect visible')
+                      : t('inventory.labels.selectVisible', 'Select all visible ({{count}})', {
+                          count: visibleSpools.length,
+                        })}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearAll}
+                    disabled={selectedCount === 0}
+                    className="text-bambu-gray hover:text-white hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
+                  >
+                    {t('inventory.labels.clearAll', 'Clear all')}
+                  </button>
                 </div>
-              ) : (
-                <ul className="space-y-0.5">
-                  {visibleSpools.map((s) => {
-                    const checked = selectedIds.has(s.id);
-                    return (
-                      <li key={s.id}>
-                        <label className="flex items-center gap-3 px-2 py-1.5 rounded hover:bg-bambu-dark-tertiary/50 cursor-pointer">
-                          {checked ? (
-                            <CheckSquare className="w-4 h-4 text-bambu-green shrink-0" />
-                          ) : (
-                            <Square className="w-4 h-4 text-bambu-gray shrink-0" />
-                          )}
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleOne(s.id)}
-                            className="sr-only"
-                          />
-                          <span
-                            className="w-4 h-4 rounded border border-black/20 shrink-0"
-                            style={swatchStyle(s.rgba)}
-                          />
-                          <span className="flex-1 min-w-0 truncate text-sm text-white">
-                            {spoolDisplayName(s)}
-                          </span>
-                          <span className="text-xs font-mono text-bambu-gray shrink-0">
-                            #{s.id}
-                          </span>
-                        </label>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
+              </div>
 
-          </div>
+              {/* Spool list */}
+              <div className="flex-1 overflow-y-auto px-2 pb-2 min-h-0 max-h-72 md:max-h-none">
+                {visibleSpools.length === 0 ? (
+                  <div className="text-center text-sm text-bambu-gray py-6">
+                    {sortedSpools.length === 0
+                      ? t('inventory.labels.noSpoolsToShow', 'No spools to show. Adjust your filter and try again.')
+                      : t('inventory.labels.noMatches', 'No spools match the current search or filter.')}
+                  </div>
+                ) : (
+                  <ul className="space-y-0.5">
+                    {visibleSpools.map((s) => {
+                      const checked = selectedIds.has(s.id);
+                      return (
+                        <li key={s.id}>
+                          <label className="flex items-center gap-3 px-2 py-1.5 rounded hover:bg-bambu-dark-tertiary/50 cursor-pointer">
+                            {checked ? (
+                              <CheckSquare className="w-4 h-4 text-bambu-green shrink-0" />
+                            ) : (
+                              <Square className="w-4 h-4 text-bambu-gray shrink-0" />
+                            )}
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleOne(s.id)}
+                              className="sr-only"
+                            />
+                            <span
+                              className="w-4 h-4 rounded border border-black/20 shrink-0"
+                              style={swatchStyle(s.rgba)}
+                            />
+                            <span className="flex-1 min-w-0 truncate text-sm text-white">
+                              {spoolDisplayName(s)}
+                            </span>
+                            <span className="text-xs font-mono text-bambu-gray shrink-0">
+                              #{s.id}
+                            </span>
+                          </label>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+
+            </div>
+          )}
 
           <div className="md:overflow-y-auto p-4 space-y-4 border-t md:border-t-0 border-bambu-dark-tertiary">
             {/* Label size */}
@@ -717,7 +1117,7 @@ export function LabelTemplatePickerModal({
                 id="label-template"
                 data-testid="label-template-select"
                 value={template}
-                onChange={(e) => updatePrefs({ template: e.target.value as SpoolLabelTemplate })}
+                onChange={(e) => chooseTemplate(e.target.value as TemplateChoice)}
                 className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green"
               >
                 {TEMPLATE_OPTIONS.map((opt) => (
@@ -725,16 +1125,136 @@ export function LabelTemplatePickerModal({
                     {t(`inventory.labels.templates.${opt.i18nKey}.label`, opt.fallbackLabel)}
                   </option>
                 ))}
+                {savedTemplates.length > 0 && (
+                  <optgroup label={t('inventory.labels.custom.savedGroup', 'Saved templates')}>
+                    {savedTemplates.map((tpl) => (
+                      <option key={tpl.id} value={savedChoice(tpl.id)}>
+                        {tpl.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                <option value="custom">{t('inventory.labels.custom.option', 'Custom sheet…')}</option>
               </select>
-              <p className="text-xs text-bambu-gray">
-                {t(`inventory.labels.templates.${templateOption.i18nKey}.hint`, templateOption.fallbackHint)}
+              {missingOnError && (
+                <p role="status" className="text-xs text-amber-500">
+                  {t('inventory.labels.custom.loadFailed', 'Could not load the saved template. Check the selected label size before printing.')}
+                </p>
+              )}
+              <p data-testid="label-template-hint" className="text-xs text-bambu-gray">
+                {templateHint}
               </p>
             </div>
+
+            {/* A saved template: its sheet, and Edit / Delete for those who may (#3296). */}
+            {savedTemplate && !editing && (
+              <div className="space-y-2">
+                <LabelSheetDiagram layout={savedTemplate.layout} startingPosition={startingPositionIsValid ? startingPosition : 1} />
+                {canManageTemplates && (
+                  <div className="flex justify-center gap-4 text-xs">
+                    <button
+                      type="button"
+                      data-testid="label-template-edit"
+                      onClick={() =>
+                        setEditing({ name: savedTemplate.name, draft: draftFromLayout(savedTemplate.layout) })
+                      }
+                      className="text-bambu-green hover:underline"
+                    >
+                      {t('inventory.labels.custom.edit', 'Edit')}
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="label-template-delete"
+                      onClick={() => setConfirmDelete(true)}
+                      className="text-red-400 hover:underline"
+                    >
+                      {t('inventory.labels.custom.delete', 'Delete')}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Editing a saved template: the name and the whole layout. */}
+            {savedTemplate && editing && (
+              <div className="space-y-3">
+                <TemplateNameInput
+                  value={editing.name}
+                  onChange={(name) => setEditing({ ...editing, name })}
+                />
+                <LabelSheetLayoutEditor
+                  draft={editing.draft}
+                  onChange={(draft) => setEditing({ ...editing, draft })}
+                  problem={problem}
+                  startingPosition={startingPositionIsValid ? startingPosition : 1}
+                />
+                <div className="flex flex-wrap justify-end gap-2">
+                  <Button variant="secondary" onClick={() => setEditing(null)} disabled={saveMutation.isPending}>
+                    {t('common.cancel', 'Cancel')}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    data-testid="label-template-save-as-new"
+                    disabled={!activeLayout || !editing.name.trim() || saveMutation.isPending}
+                    onClick={() => activeLayout && saveNewTemplate(editing.name, activeLayout)}
+                  >
+                    {t('inventory.labels.custom.saveAsNew', 'Save as new')}
+                  </Button>
+                  <Button
+                    data-testid="label-template-save-changes"
+                    disabled={!activeLayout || !editing.name.trim() || saveMutation.isPending}
+                    onClick={() => activeLayout && saveEditedTemplate(savedTemplate.id, editing.name, activeLayout)}
+                  >
+                    {t('inventory.labels.custom.saveChanges', 'Save changes')}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* A one-off custom sheet, and saving it under a name. */}
+            {template === 'custom' && (
+              <div className="space-y-3">
+                <LabelSheetLayoutEditor
+                  draft={prefs.customDraft}
+                  onChange={(customDraft) => updatePrefs({ customDraft })}
+                  problem={problem}
+                  startingPosition={startingPositionIsValid ? startingPosition : 1}
+                />
+                {canManageTemplates &&
+                  (newTemplateName === null ? (
+                    <button
+                      type="button"
+                      data-testid="label-template-save-as"
+                      disabled={!activeLayout}
+                      onClick={() => setNewTemplateName('')}
+                      className="text-xs text-bambu-green hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
+                    >
+                      {t('inventory.labels.custom.saveAs', 'Save as template…')}
+                    </button>
+                  ) : (
+                    <div className="flex flex-wrap items-end gap-2">
+                      <div className="flex-1 min-w-40">
+                        <TemplateNameInput value={newTemplateName} onChange={setNewTemplateName} autoFocus />
+                      </div>
+                      <Button variant="secondary" onClick={() => setNewTemplateName(null)} disabled={saveMutation.isPending}>
+                        {t('common.cancel', 'Cancel')}
+                      </Button>
+                      <Button
+                        data-testid="label-template-save"
+                        disabled={!activeLayout || !newTemplateName.trim() || saveMutation.isPending}
+                        onClick={() => activeLayout && saveNewTemplate(newTemplateName, activeLayout)}
+                      >
+                        {t('inventory.labels.custom.save', 'Save')}
+                      </Button>
+                    </div>
+                  ))}
+              </div>
+            )}
 
             {/* Preview */}
             <div className="space-y-1">
               <div className="text-sm font-medium text-white">
-                {previewSpoolId === null
+                {project || previewSpoolId === null
                   ? t('inventory.labels.preview', 'Preview')
                   : t('inventory.labels.previewOf', 'Preview of #{{id}}', { id: previewSpoolId })}
               </div>
@@ -742,9 +1262,15 @@ export function LabelTemplatePickerModal({
                 data-testid="label-preview"
                 className="relative flex items-center justify-center min-h-40 p-3 rounded-lg bg-bambu-dark border border-bambu-dark-tertiary"
               >
-                {previewSpoolId === null ? (
+                {previewTarget === null ? (
                   <span className="text-sm text-bambu-gray text-center">
-                    {t('inventory.labels.previewNoSelection', 'Select a spool to see its label.')}
+                    {project
+                      ? t('projectDetail.labels.previewInvalid', 'Enter a valid quantity to see the label.')
+                      : t('inventory.labels.previewNoSelection', 'Select a spool to see its label.')}
+                  </span>
+                ) : !sheetReady ? (
+                  <span className="text-sm text-bambu-gray text-center">
+                    {t('inventory.labels.custom.previewWaiting', 'The preview appears once the sheet layout is complete.')}
                   </span>
                 ) : previewError ? (
                   <span className="text-sm text-red-400 text-center">
@@ -761,9 +1287,11 @@ export function LabelTemplatePickerModal({
                   <Loader2 className="absolute top-2 right-2 w-4 h-4 animate-spin text-bambu-green" />
                 )}
               </div>
-              <p className="text-xs text-bambu-gray">
-                {t('inventory.labels.previewHint', 'Lines that don\'t fit on this label size are left out.')}
-              </p>
+              {!project && (
+                <p className="text-xs text-bambu-gray">
+                  {t('inventory.labels.previewHint', 'Lines that don\'t fit on this label size are left out.')}
+                </p>
+              )}
             </div>
 
             {/* Label content */}
@@ -774,16 +1302,15 @@ export function LabelTemplatePickerModal({
                 </legend>
                 <button
                   type="button"
-                  onClick={() => setFields(DEFAULT_SPOOL_LABEL_FIELDS)}
+                  onClick={() => setFields(defaultFields)}
                   className="text-xs text-bambu-green hover:underline"
                 >
                   {t('inventory.labels.resetFields', 'Reset to default')}
                 </button>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1">
-                {SPOOL_LABEL_FIELDS.map((field) => {
+                {fieldOptions.map((field) => {
                   const checked = fields.includes(field);
-                  const { i18nKey, fallback } = FIELD_LABELS[field];
                   return (
                     <label
                       key={field}
@@ -801,9 +1328,7 @@ export function LabelTemplatePickerModal({
                         onChange={() => toggleField(field)}
                         className="sr-only"
                       />
-                      <span className="text-sm text-white">
-                        {t(`inventory.labels.fields.${i18nKey}`, fallback)}
-                      </span>
+                      <span className="text-sm text-white">{fieldText(field)}</span>
                     </label>
                   );
                 })}
@@ -874,6 +1399,15 @@ export function LabelTemplatePickerModal({
                 </div>
               )}
 
+              {sheetCapacity !== undefined && (
+                <p data-testid="label-scale-hint" className="text-xs text-bambu-gray">
+                  {t(
+                    'inventory.labels.scaleHint',
+                    'Print sheets at 100% (actual size), not "Fit to page": a shrunk page drifts off the labels.',
+                  )}
+                </p>
+              )}
+
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="text-sm text-white mr-1">
                   {t('inventory.labels.format', 'Output:')}
@@ -920,6 +1454,17 @@ export function LabelTemplatePickerModal({
                   )}
                 </p>
               )}
+              {pngTooLarge && (
+                <p data-testid="label-png-too-large" className="text-xs text-red-400">
+                  {project
+                    ? t('projectDetail.labels.pngTooLarge', pngLimit)
+                    : t(
+                        'inventory.labels.pngTooLarge',
+                        'PNG export is limited to {{maxPages}} sheet pages at {{dpi}} dpi, and this is {{pages}}. Use PDF, a lower resolution or fewer spools.',
+                        pngLimit,
+                      )}
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -931,7 +1476,7 @@ export function LabelTemplatePickerModal({
           <Button
             data-testid="label-print-button"
             onClick={handlePrint}
-            disabled={noSelection || pending || !startingPositionIsValid}
+            disabled={!canPrint}
           >
             {pending ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -946,6 +1491,151 @@ export function LabelTemplatePickerModal({
           </Button>
         </div>
       </div>
+
+      {confirmDelete && savedTemplate && (
+        <ConfirmModal
+          title={t('inventory.labels.custom.deleteTitle', 'Delete label template')}
+          message={t(
+            'inventory.labels.custom.deleteMessage',
+            'Delete "{{name}}" for everyone? Labels already printed are not affected.',
+            { name: savedTemplate.name },
+          )}
+          confirmText={t('inventory.labels.custom.delete', 'Delete')}
+          variant="danger"
+          overlayZIndex="z-[60]"
+          isLoading={deleteMutation.isPending}
+          onConfirm={() => deleteSavedTemplate(savedTemplate)}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      )}
     </div>
+  );
+}
+
+/** The left column of a project label (#3655): what is in this bag, and how many labels. */
+function ProjectLabelInputs({
+  project,
+  quantity,
+  onQuantityChange,
+  quantityIsValid,
+  note,
+  onNoteChange,
+  copies,
+  onCopiesChange,
+  copiesAreValid,
+}: {
+  project: ProjectForLabel;
+  quantity: string;
+  onQuantityChange: (value: string) => void;
+  quantityIsValid: boolean;
+  note: string;
+  onNoteChange: (value: string) => void;
+  copies: string;
+  onCopiesChange: (value: string) => void;
+  copiesAreValid: boolean;
+}) {
+  const { t } = useTranslation();
+  const inputClass =
+    'w-full px-3 py-2 bg-bambu-dark border rounded-lg text-white text-sm placeholder:text-bambu-gray focus:outline-none focus:border-bambu-green';
+  return (
+    <div data-testid="project-label-inputs" className="p-4 space-y-4 md:border-r border-bambu-dark-tertiary">
+      <div className="flex items-center gap-2">
+        <span
+          className="w-3 h-3 rounded-full shrink-0"
+          style={{ backgroundColor: project.color || '#6b7280' }}
+        />
+        <span className="text-sm font-medium text-white truncate">{project.name}</span>
+      </div>
+      <p className="text-xs text-bambu-gray">
+        {t(
+          'projectDetail.labels.intro',
+          'A label for the bag or box this project\'s finished parts go in. Its QR code opens this project.',
+        )}
+      </p>
+
+      <div className="space-y-1">
+        <label htmlFor="project-label-quantity" className="block text-sm text-white">{t('projectDetail.labels.quantity', 'Quantity in the bag')}</label>
+        <input
+          id="project-label-quantity"
+          data-testid="project-label-quantity"
+          aria-invalid={!quantityIsValid}
+          aria-describedby="project-label-quantity-help"
+          type="text"
+          inputMode="numeric"
+          value={quantity}
+          onChange={(e) => onQuantityChange(e.target.value)}
+          className={`${inputClass} ${quantityIsValid ? 'border-bambu-dark-tertiary' : 'border-red-400'}`}
+        />
+        <span id="project-label-quantity-help" className={`block text-xs ${quantityIsValid ? 'text-bambu-gray' : 'text-red-400'}`}>
+          {quantityIsValid
+            ? t('projectDetail.labels.quantityHint', 'Printed big at the bottom. Leave empty for none.')
+            : t('projectDetail.labels.quantityInvalid', 'Enter a whole number from 1 to {{max}}.', {
+                max: MAX_PROJECT_QUANTITY,
+              })}
+        </span>
+      </div>
+
+      <label className="block space-y-1">
+        <span className="text-sm text-white">{t('projectDetail.labels.note', 'Note')}</span>
+        <input
+          data-testid="project-label-note"
+          type="text"
+          value={note}
+          placeholder={t('projectDetail.labels.notePlaceholder', 'e.g. Order #1042 or Bag 2 of 3')}
+          onChange={(e) => onNoteChange(Array.from(e.target.value).slice(0, MAX_PROJECT_NOTE_LENGTH).join(''))}
+          className={`${inputClass} border-bambu-dark-tertiary`}
+        />
+      </label>
+
+      <div className="space-y-1">
+        <label htmlFor="project-label-copies" className="block text-sm text-white">{t('projectDetail.labels.copies', 'Number of labels')}</label>
+        <input
+          id="project-label-copies"
+          data-testid="project-label-copies"
+          aria-invalid={!copiesAreValid}
+          aria-describedby={copiesAreValid ? undefined : 'project-label-copies-error'}
+          type="text"
+          inputMode="numeric"
+          value={copies}
+          onChange={(e) => onCopiesChange(e.target.value)}
+          className={`w-24 px-3 py-2 bg-bambu-dark border rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green ${
+            copiesAreValid ? 'border-bambu-dark-tertiary' : 'border-red-400'
+          }`}
+        />
+        {!copiesAreValid && (
+          <span id="project-label-copies-error" className="block text-xs text-red-400">
+            {t('projectDetail.labels.copiesInvalid', 'Enter a whole number from 1 to {{max}}.', {
+              max: MAX_PROJECT_COPIES,
+            })}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TemplateNameInput({
+  value,
+  onChange,
+  autoFocus = false,
+}: {
+  value: string;
+  onChange: (name: string) => void;
+  autoFocus?: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <label className="block space-y-0.5">
+      <span className="text-xs text-bambu-gray">{t('inventory.labels.custom.name', 'Template name')}</span>
+      <input
+        data-testid="label-template-name"
+        type="text"
+        maxLength={100}
+        autoFocus={autoFocus}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full px-2 py-1 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white text-sm focus:outline-none focus:border-bambu-green"
+      />
+    </label>
   );
 }

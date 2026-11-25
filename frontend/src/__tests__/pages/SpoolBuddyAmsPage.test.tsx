@@ -24,6 +24,12 @@ import { MemoryRouter, Route, Routes, Outlet } from 'react-router-dom';
 import { ToastProvider } from '../../contexts/ToastContext';
 import { SpoolBuddyAmsPage } from '../../pages/spoolbuddy/SpoolBuddyAmsPage';
 
+// The kiosk runs signed in; these tests render it without the auth provider.
+vi.mock('../../contexts/AuthContext', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../contexts/AuthContext')>();
+  return { ...actual, useAuth: () => ({ hasPermission: () => true }) };
+});
+
 // Capture every props payload that AssignSpoolModal receives so tests can
 // inspect spoolmanEnabled threading. Render nothing — we don't need to render
 // the modal contents; we only verify the parent wires the prop correctly.
@@ -73,9 +79,10 @@ vi.mock('../../api/client', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, fallback?: string | Record<string, unknown>) => {
-      if (typeof fallback === 'string') return fallback;
-      return key;
+    t: (key: string, fallback?: string | Record<string, unknown>, options?: Record<string, unknown>) => {
+      const text = typeof fallback === 'string' ? fallback : key;
+      const values = typeof fallback === 'object' ? fallback : options;
+      return text.replace(/\{\{(\w+)\}\}/g, (m, name) => (values && name in values ? String(values[name]) : m));
     },
     i18n: { language: 'en', changeLanguage: vi.fn() },
   }),
@@ -201,6 +208,29 @@ describe('SpoolBuddyAmsPage Phase 13', () => {
     mockShowToast.mockClear();
   });
 
+  describe('fill levels by inventory mode (#3430)', () => {
+    // Slot 1 (tray 0) reports 80 %; a built-in row for it says 10 % is left.
+    async function slotOneWidths() {
+      apiResponses.getAssignments = [
+        { id: 1, spool_id: 2, printer_id: 1, ams_id: 0, tray_id: 0, spool: { label_weight: 1000, weight_used: 900 } },
+      ];
+      renderPage();
+      const slot = await findAmsSlot(1);
+      await waitFor(() => expect(apiCallCounts.getAssignments).toBeGreaterThan(0));
+      await new Promise((r) => setTimeout(r, 30));
+      return [...slot.querySelectorAll<HTMLElement>('[style*="width"]')].map((el) => el.style.width);
+    }
+
+    it('built-in mode fills the slot from its assignment', async () => {
+      expect(await slotOneWidths()).toContain('10%');
+    });
+
+    it('Spoolman mode, even while Spoolman is down, ignores a kept built-in row', async () => {
+      spoolmanStatusValue = { enabled: true, connected: false };
+      expect(await slotOneWidths()).toContain('80%');
+    });
+  });
+
   describe('P13-4 — AssignSpoolModal receives spoolmanEnabled prop', () => {
     it('passes spoolmanEnabled=false in local mode', async () => {
       spoolmanStatusValue = { enabled: false, connected: false };
@@ -249,7 +279,7 @@ describe('SpoolBuddyAmsPage Phase 13', () => {
   });
 
   describe('P13-5 — unlinkSpoolMutation invalidates all 5 dependent query keys', () => {
-    it('invalidates linked-spools, unlinked-spools, spoolman-slot-assignments, spoolman-slot-assignments-all, spoolman-inventory-spools', async () => {
+    it('invalidates linked-spools, unlinked-spools, spoolman-slot-assignments (all printers too, by prefix), spoolman-inventory-spools', async () => {
       spoolmanStatusValue = { enabled: true, connected: true };
       // BL slot 0 has tray_uuid that maps to a linked spool — so the unlink
       // button is reachable in the picker.
@@ -287,7 +317,6 @@ describe('SpoolBuddyAmsPage Phase 13', () => {
           'linked-spools',
           'unlinked-spools',
           'spoolman-slot-assignments',
-          'spoolman-slot-assignments-all',
           'spoolman-inventory-spools',
         ]));
       });
@@ -296,7 +325,7 @@ describe('SpoolBuddyAmsPage Phase 13', () => {
   });
 
   describe('P13-6a — Spoolman queries fire when spoolmanEnabled', () => {
-    it('fetches spoolman-slot-assignments-all and spoolman-inventory-spools when spoolman is enabled', async () => {
+    it('fetches the all-printers spoolman-slot-assignments and spoolman-inventory-spools when spoolman is enabled', async () => {
       spoolmanStatusValue = { enabled: true, connected: true };
       renderPage();
 
@@ -447,5 +476,42 @@ describe('SpoolBuddyAmsPage Phase 14 — SlotActionPicker BL-detection in local 
     fireEvent.click(emptySlot);
 
     await screen.findByText('Track a spool from your inventory');
+  });
+
+  describe('the H3C (AMS 3H unit 32, per-hotend external inputs)', () => {
+    function h3cStatus(trayNow: number) {
+      return {
+        connected: true,
+        state: 'IDLE',
+        ams: [{
+          id: 32, ams_type: 6, module_type: 'n10a', humidity: 33, temp: 25,
+          tray: Array.from({ length: 9 }, (_, k) => ({ id: k, tray_type: 'PLA', tray_color: 'DE4343FF', remain: -1 })),
+        }],
+        vt_tray: Array.from({ length: 9 }, (_, k) => ({ id: 247 + k, tray_type: k === 3 ? 'PETG' : '' })),
+        tray_now: trayNow,
+        active_extruder: 0,
+      };
+    }
+
+    it('rings the slot tray_now names as 28 + slot', async () => {
+      apiResponses.getPrinterStatus = h3cStatus(34);
+      renderPage();
+
+      const slots = await screen.findAllByTestId('ams-slot');
+      expect(slots).toHaveLength(9);
+      expect(slots[6]).toHaveAttribute('aria-pressed', 'true');
+      expect(slots.filter((slot) => slot.getAttribute('aria-pressed') === 'true')).toHaveLength(1);
+    });
+
+    it('names a slot "AMS 3H Slot n" and the external inputs Ext-n', async () => {
+      apiResponses.getPrinterStatus = h3cStatus(255);
+      renderPage();
+
+      fireEvent.click(await findAmsSlot(7));
+      expect(await screen.findByRole('heading', { name: 'AMS 3H Slot 7' })).toBeInTheDocument();
+      // Input 250 feeds hotend 5: Ext-6. No Ext-L / Ext-R on a single-extruder rack printer.
+      for (let n = 1; n <= 9; n++) expect(screen.getByText(`Ext-${n}`)).toBeInTheDocument();
+      expect(screen.queryByText('Ext-L')).not.toBeInTheDocument();
+    });
   });
 });

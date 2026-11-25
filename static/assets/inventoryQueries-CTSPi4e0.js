@@ -1,0 +1,1 @@
+var e=[`inventory-locations`];function t(t){return t.invalidateQueries({queryKey:e})}var n=[`inventory-suppliers`];function r(e){return e.invalidateQueries({queryKey:n})}function i(e,n){return Promise.all([e.invalidateQueries({queryKey:[...n]}),t(e)])}export{n as a,e as i,r as n,i as r,t};

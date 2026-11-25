@@ -45,7 +45,7 @@ async def test_printer_scoped_provider_does_not_get_location_alerts_by_default(s
     await session.commit()
 
     service = NotificationService()
-    providers = await service._get_providers_for_event(session, "on_location_ha_sensor_alert", None)
+    providers = await service._get_providers_for_event(session, "on_location_ha_sensor_alert", fleet_wide=True)
 
     assert providers == []
 
@@ -72,7 +72,7 @@ async def test_provider_opted_into_location_alerts_receives_them(session):
     await session.commit()
 
     service = NotificationService()
-    providers = await service._get_providers_for_event(session, "on_location_ha_sensor_alert", None)
+    providers = await service._get_providers_for_event(session, "on_location_ha_sensor_alert", fleet_wide=True)
 
     assert {p.name for p in providers} == {"Global", "Printer 5, opted into location alerts too"}
 

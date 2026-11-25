@@ -28,6 +28,7 @@ from sqlalchemy.orm import selectinload
 from backend.app.models.print_batch import PrintBatch, PrintBatchPlate
 from backend.app.models.print_log import PrintLogEntry
 from backend.app.models.print_queue import PrintQueueItem, PrintQueueVariant
+from backend.app.services.queue_item_printer import drop_printer_resolved
 from backend.app.services.queue_position import next_queue_position
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,9 @@ CLONED_SETTING_COLUMNS = (
     "project_id",
     "batch_id",
     "ams_mapping",
+    # A virtual printer job's slicer pick for its archive (#2700): each copy's
+    # print makes or joins an archive too.
+    "slicer_ams_mapping",
     "filament_overrides",
     "plate_id",
     "print_time_seconds",
@@ -77,6 +81,9 @@ CLONED_SETTING_COLUMNS = (
     "preheat_override",
     "preheat_chamber_target_override",
     "skip_filament_check",
+    # The scheduler bills and budget-checks from it; dispatch_batch checks the
+    # dispatcher may use it.
+    "cost_center_id",
 )
 
 CLONED_VARIANT_COLUMNS = (
@@ -364,6 +371,19 @@ async def refresh_batch_status(db: AsyncSession, batch: PrintBatch) -> bool:
             batch.status = "cancelled"
             logger.info("Batch %s had every item cancelled — marked cancelled", batch.id)
             return True
+        # Likewise finished, but with real failures among its jobs and nothing
+        # produced: neither "completed" nor "cancelled" says that. Not while a
+        # job is skipped: resuming the printer puts it back in the queue.
+        if settled and progress.failed > 0 and progress.skipped == 0:
+            batch.status = "failed"
+            logger.info("Batch %s ended with failures and nothing printed — marked failed", batch.id)
+            return True
+
+    # A failed grouping that has open work again (a job added to it) is active.
+    if batch.status == "failed" and (progress.pending > 0 or progress.printing > 0):
+        batch.status = "active"
+        logger.info("Batch %s has open work again — reopened", batch.id)
+        return True
 
     if batch.status == "completed" and not progress.is_fulfilled:
         batch.status = "active"
@@ -419,6 +439,53 @@ async def backfill_batch_statuses(db: AsyncSession) -> int:
     return changed
 
 
+async def refresh_batches_for_items(db: AsyncSession, queue_item_ids: list[int]) -> None:
+    """Re-evaluate every batch owning one of *queue_item_ids*, once each.
+
+    For the paths that end items without a print completing (a cancel, a stop,
+    the stranded-item sweep, a library delete): a grouping whose last item was
+    cancelled, or an order whose last run was closed, would otherwise stay
+    active until the next restart. Changes are left for the caller to commit.
+    """
+    if not queue_item_ids:
+        return
+    await db.flush()
+    batch_ids = (
+        (
+            await db.execute(
+                select(PrintQueueItem.batch_id)
+                .where(PrintQueueItem.id.in_(queue_item_ids))
+                .where(PrintQueueItem.batch_id.is_not(None))
+                .distinct()
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for batch_id in batch_ids:
+        batch = await db.get(PrintBatch, batch_id)
+        if batch is not None:
+            await refresh_batch_status(db, batch)
+
+
+async def refresh_batches_after(queue_item_ids: list[int]) -> None:
+    """:func:`refresh_batches_for_items` in its own session, after the caller's commit.
+
+    Best-effort, as on the print-completion path: an order's status must not
+    be the reason a cancel, a stop or a scheduler step fails or rolls back.
+    """
+    if not queue_item_ids:
+        return
+    from backend.app.core import database
+
+    try:
+        async with database.async_session() as db:
+            await refresh_batches_for_items(db, queue_item_ids)
+            await db.commit()
+    except Exception as e:
+        logger.warning("Failed to refresh the batch status of queue items %s: %s", queue_item_ids, e)
+
+
 async def refresh_batch_status_for_item(db: AsyncSession, queue_item_id: int) -> None:
     """Re-evaluate the batch owning *queue_item_id*, if it has one.
 
@@ -448,10 +515,11 @@ def _clone_queue_item(source: PrintQueueItem, *, position: int, created_by_id: i
     either fire immediately (it is in the past) or silently park the new run
     until a moment the user chose for a different print.
 
-    ``cleanup_library_after_dispatch`` is forced off. It only ever comes from
-    the Printers-page direct-print flow, where it deletes the transient library
-    row after dispatch — replaying that on a clone would delete the source file
-    out from under the rest of the order.
+    ``cleanup_library_after_dispatch`` is forced off. It comes from the
+    Printers-page direct-print flow and from a queue virtual printer's "Remove
+    from File Manager once it prints", and deletes the library row at dispatch
+    — replaying that on a clone would delete the source file out from under the
+    rest of the order.
     """
     clone = PrintQueueItem(
         status="pending",
@@ -461,6 +529,31 @@ def _clone_queue_item(source: PrintQueueItem, *, position: int, created_by_id: i
     )
     for column in CLONED_SETTING_COLUMNS:
         setattr(clone, column, getattr(source, column))
+    # A printer the scheduler picked for a model-based job (or one with
+    # printer alternatives) was that run's pick, not the user's: each copy
+    # waits for any printer of the model again.
+    if source.printer_id is not None and (source.target_model or source.variants):
+        clone.printer_id = None
+        drop_printer_resolved(clone)
+    return clone
+
+
+async def add_queue_item_clone(
+    db: AsyncSession, source: PrintQueueItem, *, position: int, created_by_id: int | None
+) -> PrintQueueItem:
+    """Add a clone of *source* (see ``_clone_queue_item``) with its cross-model
+    candidates (#671), and return it flushed, with an id.
+
+    *source* must have its ``variants`` loaded.
+    """
+    clone = _clone_queue_item(source, position=position, created_by_id=created_by_id)
+    db.add(clone)
+    await db.flush()
+    for variant in source.variants:
+        cloned_variant = PrintQueueVariant(queue_item_id=clone.id)
+        for column in CLONED_VARIANT_COLUMNS:
+            setattr(cloned_variant, column, getattr(variant, column))
+        db.add(cloned_variant)
     return clone
 
 
@@ -538,16 +631,8 @@ async def dispatch_remaining(
         position = await next_queue_position(db)
 
         for _ in range(wanted):
-            clone = _clone_queue_item(source, position=position, created_by_id=created_by_id)
+            created.append(await add_queue_item_clone(db, source, position=position, created_by_id=created_by_id))
             position += 1
-            db.add(clone)
-            await db.flush()
-            for variant in source.variants:
-                cloned_variant = PrintQueueVariant(queue_item_id=clone.id)
-                for column in CLONED_VARIANT_COLUMNS:
-                    setattr(cloned_variant, column, getattr(variant, column))
-                db.add(cloned_variant)
-            created.append(clone)
 
     if not created and stranded:
         names = ", ".join(_plate_label(p) for p in stranded)

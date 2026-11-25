@@ -4,6 +4,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
+from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
+
 # ============ Folder Schemas ============
 
 
@@ -26,8 +28,10 @@ class ExternalFolderCreate(BaseModel):
     parent_id: int | None = None
 
 
-class FolderUpdate(BaseModel):
+class FolderUpdate(IgnoresNullForRequiredColumns):
     """Schema for updating a folder."""
+
+    __orm_table__ = "library_folders"
 
     name: str | None = Field(None, min_length=1, max_length=255)
     parent_id: int | None = None
@@ -118,22 +122,10 @@ class FolderTreeItem(BaseModel):
 # ============ File Schemas ============
 
 
-class FileCreate(BaseModel):
-    """Schema for creating a file entry (internal use after upload)."""
-
-    filename: str
-    file_path: str
-    file_type: str
-    file_size: int
-    file_hash: str | None = None
-    thumbnail_path: str | None = None
-    metadata: dict | None = None
-    folder_id: int | None = None
-    project_id: int | None = None
-
-
-class FileUpdate(BaseModel):
+class FileUpdate(IgnoresNullForRequiredColumns):
     """Schema for updating a file."""
+
+    __orm_table__ = "library_files"
 
     filename: str | None = Field(None, min_length=1, max_length=255)
     folder_id: int | None = None
@@ -262,6 +254,16 @@ class FileListResponse(BaseModel):
     # query so the badge and the smart-print decision cost no extra request.
     variant_group_id: int | None = None
     variant_count: int = 0
+    # Only filled with ``with_variant_members=true`` (#3628): the group's name and
+    # this file's place in it, whether the caller may change the group (ungroup
+    # it, take a version out), whether the row was added because its group is in
+    # the result although the file itself is in another folder, and that folder's
+    # name (only set on those rows).
+    variant_group_name: str | None = None
+    variant_position: int | None = None
+    variant_group_editable: bool | None = None
+    variant_elsewhere: bool = False
+    folder_name: str | None = None
 
     # Metadata indicators (#3077). The list never ships the notes text itself —
     # ``has_notes`` is enough for the card badge; the details modal loads the rest.
@@ -295,8 +297,10 @@ class TagCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=64)
 
 
-class TagUpdate(BaseModel):
+class TagUpdate(IgnoresNullForRequiredColumns):
     """Rename a tag. ``name`` is required — there's nothing else to update."""
+
+    __orm_table__ = "library_tags"
 
     name: str = Field(..., min_length=1, max_length=64)
 
@@ -512,12 +516,14 @@ class VariantGroupCreate(BaseModel):
     name: str | None = Field(None, max_length=255)
 
 
-class VariantGroupUpdate(BaseModel):
+class VariantGroupUpdate(IgnoresNullForRequiredColumns):
     """Rename a group and/or re-order its members.
 
     ``member_file_ids`` must list exactly the group's current members; a partial
     list is rejected rather than guessing where the omitted ones belong.
     """
+
+    __orm_table__ = "file_variant_groups"
 
     name: str | None = Field(None, max_length=255)
     member_file_ids: list[int] | None = None

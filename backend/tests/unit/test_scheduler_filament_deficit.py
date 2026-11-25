@@ -155,3 +155,20 @@ async def test_skip_filament_check_short_circuits_without_compute(scheduler, db_
     # acknowledged the deficit.
     assert item.filament_short is False
     assert item.manual_start is False
+
+
+@pytest.mark.asyncio
+async def test_the_waiting_notification_names_the_printer(scheduler, db_session, queue_item):
+    """A channel limited to the job's printer is told the job is short."""
+    item = await queue_item()
+    waiting = AsyncMock()
+    deficit = FilamentDeficit(
+        slot_id=1, ams_id=0, tray_id=0, filament_type="PLA", required_grams=270.0, remaining_grams=200.0
+    )
+    with (
+        patch("backend.app.services.print_scheduler.compute_deficit_for_queue_item", AsyncMock(return_value=[deficit])),
+        patch("backend.app.services.notification_service.notification_service.on_queue_job_waiting", waiting),
+    ):
+        await scheduler._block_on_filament_deficit(db_session, item)
+
+    assert waiting.await_args.kwargs["printer_id"] == item.printer_id

@@ -20,6 +20,11 @@ from backend.app.utils.paho_teardown import retire_paho_client
 logger = logging.getLogger(__name__)
 
 
+# Fields the printer status topic takes from the same dict the REST status and the
+# WebSocket send, so a subscriber reads them in the shape it already knows (#3401).
+_STATUS_FIELDS_FROM_STATE = ("door_open", "active_extruder", "tray_now", "ams", "vt_tray", "hms_errors")
+
+
 class MQTTRelayService:
     """Publishes BamBuddy events to an external MQTT broker."""
 
@@ -36,6 +41,7 @@ class MQTTRelayService:
         self._broker = ""
         self._port = 1883
         self._last_printer_status: dict[int, float] = {}  # printer_id -> last publish timestamp
+        self._last_printer_connected: dict[int, bool] = {}  # printer_id -> `connected` in the last publish
         self._smart_plug_service = None  # Lazy import to avoid circular dependency
         self._settings: dict = {}  # Store settings for smart plug service
         self._disconnection_event: threading.Event | None = None
@@ -47,6 +53,10 @@ class MQTTRelayService:
         """
         self.enabled = settings.get("mqtt_enabled", False)
         self._settings = settings  # Store for smart plug service
+        # Panda Breath heaters (#1466) use this broker too; it decides on its own
+        # whether to connect, so it is told on every path below, including a
+        # broker that was cleared.
+        await self._configure_panda_breath(settings)
 
         if not self.enabled:
             await self.disconnect()
@@ -94,6 +104,15 @@ class MQTTRelayService:
         except Exception as e:
             logger.error("Failed to configure MQTT smart plug service: %s", e)
 
+    @staticmethod
+    async def _configure_panda_breath(settings: dict):
+        try:
+            from backend.app.services.panda_breath import panda_breath_service
+
+            await panda_breath_service.configure(settings)
+        except Exception as e:
+            logger.error("Failed to configure Panda Breath: %s", e)
+
     @property
     def smart_plug_service(self):
         """Get the MQTT smart plug service instance."""
@@ -112,6 +131,11 @@ class MQTTRelayService:
                 client_id=f"bambuddy-{id(self)}",
                 protocol=mqtt.MQTTv311,
             )
+
+            # Last Will: the broker publishes this when the connection drops without a
+            # clean disconnect (crash, killed container), which would otherwise leave the
+            # retained "online" in place for good (#3401). It replaces that retained message.
+            self.client.will_set(f"{self.topic_prefix}/status", json.dumps({"status": "offline"}), qos=1, retain=True)
 
             # Set up callbacks
             self.client.on_connect = self._on_connect
@@ -250,16 +274,28 @@ class MQTTRelayService:
         printer_serial: str,
         awaiting_plate_clear: bool = False,
     ):
-        """Publish printer status change (throttled to 1 update/sec per printer)."""
+        """Publish printer status change (throttled to 1 update/sec per printer).
+
+        A change of ``connected`` is never throttled: the update that says a printer
+        dropped is retained, and held back it would leave the previous status
+        standing for as long as the printer stays quiet (#3401).
+        """
         if not self.enabled or not self.connected:
             return
 
         # Throttle status updates to avoid flooding MQTT broker
         now = time.time()
         last_publish = self._last_printer_status.get(printer_id, 0)
-        if now - last_publish < self.STATUS_THROTTLE_SECONDS:
+        last_connected = self._last_printer_connected.get(printer_id)
+        connected_changed = last_connected is not None and last_connected != state.connected
+        if not connected_changed and now - last_publish < self.STATUS_THROTTLE_SECONDS:
             return  # Skip this update, too soon since last publish
         self._last_printer_status[printer_id] = now
+        self._last_printer_connected[printer_id] = state.connected
+
+        from backend.app.services.printer_manager import printer_state_to_dict
+
+        snapshot = printer_state_to_dict(state, printer_id)
 
         # Build status payload from PrinterState
         payload = {
@@ -286,6 +322,7 @@ class MQTTRelayService:
             "heatbreak_fan_speed": state.heatbreak_fan_speed,
             "left_aux_fan_speed": state.left_aux_fan_speed,
             "exhaust_fan_present": state.exhaust_fan_present,
+            **{field: snapshot[field] for field in _STATUS_FIELDS_FROM_STATE},
             # Bambuddy-side gate, not printer telemetry (#2525). Mirrors what the
             # Web UI already receives via printer_state_to_dict, so an external
             # automation can tell "finished" from "finished and still waiting for
@@ -553,8 +590,13 @@ class MQTTRelayService:
         maintenance_type: str,
         current_value: float,
         threshold: float,
+        unit: str,
     ):
-        """Publish maintenance alert triggered event."""
+        """Publish that a maintenance item is due or nearly due.
+
+        current_value is the hours (or days) since it was last done, threshold
+        its interval, and unit says which: "hours" or "days".
+        """
         if not self.enabled or not self.connected:
             return
 
@@ -566,26 +608,7 @@ class MQTTRelayService:
                 "maintenance_type": maintenance_type,
                 "current_value": current_value,
                 "threshold": threshold,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            },
-        )
-
-    async def on_maintenance_acknowledged(
-        self,
-        printer_id: int,
-        printer_name: str,
-        maintenance_type: str,
-    ):
-        """Publish maintenance alert acknowledged event."""
-        if not self.enabled or not self.connected:
-            return
-
-        self._publish(
-            f"{self.topic_prefix}/maintenance/acknowledged",
-            {
-                "printer_id": printer_id,
-                "printer_name": printer_name,
-                "maintenance_type": maintenance_type,
+                "unit": unit,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },
         )
@@ -657,27 +680,105 @@ class MQTTRelayService:
         )
 
     # =========================================================================
+    # Run Events (archive redesign: each print of an archive is a run)
+    # =========================================================================
+
+    @staticmethod
+    def _run_payload(run, archive, printer_name: str | None) -> dict:
+        def iso(moment):
+            # Stored as naive UTC: say so.
+            if moment is None:
+                return None
+            return (moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)).isoformat()
+
+        return {
+            "run_id": run.id,
+            "archive_id": run.archive_id,
+            "print_name": run.print_name or (archive.print_name if archive is not None else None),
+            "printer_id": run.printer_id,
+            "printer_name": printer_name or run.printer_name,
+            "plate_id": run.plate_id,
+            "status": run.status,
+            "started_at": iso(run.started_at),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    async def on_run_started(self, run, archive, printer_serial: str, printer_name: str | None):
+        """Publish a print's run opened at its start: the print of an archive,
+        which the print and archive events above do not name yet."""
+        if not self.enabled or not self.connected:
+            return
+        self._publish(
+            f"{self.topic_prefix}/printers/{printer_serial}/run/started",
+            self._run_payload(run, archive, printer_name),
+        )
+
+    async def on_run_completed(self, run, archive, printer_serial: str, printer_name: str | None):
+        """Publish a print's run as its end wrote it: outcome and figures."""
+        if not self.enabled or not self.connected:
+            return
+        payload = self._run_payload(run, archive, printer_name)
+        completed_at = run.completed_at
+        if completed_at is not None and completed_at.tzinfo is None:
+            completed_at = completed_at.replace(tzinfo=timezone.utc)
+        payload.update(
+            {
+                "completed_at": completed_at.isoformat() if completed_at is not None else None,
+                "duration_seconds": run.duration_seconds,
+                # Not measured: an end found at a reconnect, its time the
+                # estimate or nothing (0).
+                "duration_unmeasured": bool(run.duration_unmeasured),
+                "failure_reason": run.failure_reason,
+                "filament_used_grams": run.filament_used_grams,
+                "cost": run.cost,
+                "energy_kwh": run.energy_kwh,
+            }
+        )
+        self._publish(f"{self.topic_prefix}/printers/{printer_serial}/run/completed", payload)
+
+    async def on_run_discarded(self, run, printer_serial: str, printer_name: str | None):
+        """Publish a run dropped without an end: its print ended unseen (a new
+        print started on the printer) or its archive was deleted. Its id is
+        gone after this."""
+        if not self.enabled or not self.connected:
+            return
+        self._publish(
+            f"{self.topic_prefix}/printers/{printer_serial}/run/discarded",
+            self._run_payload(run, None, printer_name),
+        )
+
+    # =========================================================================
     # Filament/Spoolman Events
     # =========================================================================
 
     async def on_filament_low(
         self,
+        printer_id: int,
+        printer_name: str,
+        printer_serial: str,
+        slot: str,
+        remaining_percent: int,
+        color: str | None,
         spool_id: int,
-        spool_name: str,
-        remaining_weight: float,
-        remaining_percent: float,
     ):
-        """Publish filament inventory low event."""
+        """Publish that the spool in an AMS slot crossed its low-stock threshold.
+
+        Sent once per crossing, at the same point as the Low Filament
+        notification (print_scheduler._emit_filament_low).
+        """
         if not self.enabled or not self.connected:
             return
 
         self._publish(
-            f"{self.topic_prefix}/filament/low",
+            f"{self.topic_prefix}/printers/{printer_serial}/filament/low",
             {
-                "spool_id": spool_id,
-                "spool_name": spool_name,
-                "remaining_weight": remaining_weight,
+                "printer_id": printer_id,
+                "printer_name": printer_name,
+                "printer_serial": printer_serial,
+                "slot": slot,
                 "remaining_percent": remaining_percent,
+                "color": color,
+                "spool_id": spool_id,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },
         )
@@ -716,11 +817,11 @@ class MQTTRelayService:
         self,
         plug_id: int,
         plug_name: str,
-        power: float,
-        energy_today: float,
-        energy_total: float,
+        power: float | None,
+        energy_today: float | None,
+        energy_total: float | None,
     ):
-        """Publish smart plug energy update event."""
+        """Publish a plug's power and energy; a value the plug doesn't report is null."""
         if not self.enabled or not self.connected:
             return
 

@@ -5,13 +5,16 @@ import { Circle, Check, AlertTriangle, RefreshCw, ChevronDown, ChevronUp, Palett
 import { api } from '../../api/client';
 import type { SlotSpoolIdentity } from '../../api/client';
 import { useFilamentMapping } from '../../hooks/useFilamentMapping';
-import { getGlobalTrayId, effectivePreferLowest, FTS_INLET_SIDE, normalizeColorForCompare } from '../../utils/amsHelpers';
+import { effectivePreferLowest, FTS_INLET_SIDE, normalizeColorForCompare } from '../../utils/amsHelpers';
 import { disambiguateColorNames, getColorName } from '../../utils/colors';
 import { SlotPicker } from './SlotPicker';
 import { displayHex } from './displayHex';
 import { useFilamentLabels } from './useFilamentLabels';
 import { autoAssignRackPositions, rackOptionsForGroup } from '../../utils/nozzleRack';
 import type { FilamentMappingProps, RackGroupInfo } from './types';
+import { useUiSettings } from '../../hooks/useUiSettings';
+import { useFilamentPolicies } from '../../hooks/useFilamentPolicies';
+import { filamentName } from '../../utils/filamentScope';
 
 /**
  * Filament mapping UI for comparing required filaments with loaded AMS slots.
@@ -20,6 +23,7 @@ import type { FilamentMappingProps, RackGroupInfo } from './types';
 export function FilamentMapping({
   printerId,
   filamentReqs,
+  blockedFilaments,
   manualMappings,
   onManualMappingChange,
   onEstimatedCostChange,
@@ -97,19 +101,11 @@ export function FilamentMapping({
     enabled: !!printerId,
   });
 
-  const { data: assignments } = useQuery({
-    queryKey: ['spool-assignments', printerId],
-    queryFn: () => api.getAssignments(printerId),
-    enabled: !!printerId,
-  });
-
   // Settings + inventory map drive the same prefer-lowest + AMS-backup gate
   // the dispatcher uses (#1766). Without this, the per-slot dropdown's
   // auto-suggestion could disagree with what actually gets dispatched.
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
-  });
+  const { data: settings } = useUiSettings();
+  const filamentPolicies = useFilamentPolicies();
   const { data: inventoryRemain } = useQuery({
     queryKey: ['printer-inventory-remain', printerId],
     queryFn: () => api.getInventoryRemain(printerId),
@@ -160,7 +156,15 @@ export function FilamentMapping({
       gatedPreferLowest,
       inventoryByTrayId,
       slotSpools,
+      filamentPolicies,
     );
+
+  // Filaments this file needs that the user's group may not print with
+  // (#3522). The server refuses such a job; this says so before submitting.
+  // The dialog passes the list its submit check uses, so the two never disagree.
+  const blockedReqNames = blockedFilaments;
+  const blockedSlotReason = (f: { type: string; trayInfoIdx?: string }) =>
+    t('printModal.filamentBlockedSlot', { filament: filamentName(f.type, f.trayInfoIdx) });
 
   // Per-slot sub-brand + material-disambiguated colour labels (#1718). Same
   // shared hook the model-mode FilamentOverride uses so both panels render
@@ -169,30 +173,25 @@ export function FilamentMapping({
   // resolved — never blanks out the required row.
   const filamentLabels = useFilamentLabels(filamentReqs?.filaments);
 
+  // Price and grams left per slot, from the mode-aware bindings above. The
+  // built-in assignment table these came from holds nothing in Spoolman mode,
+  // or rows from before the switch, so the estimate priced a Spoolman print at
+  // the default rate or at a spool the printer is not drawing on.
   const trayCostMap = useMemo(() => {
     const map = new Map<number, number | null>();
-    for (const assignment of assignments || []) {
-      const isExternal = assignment.ams_id === 255;
-      const globalTrayId = getGlobalTrayId(assignment.ams_id, assignment.tray_id, isExternal);
-      map.set(globalTrayId, assignment.spool?.cost_per_kg ?? null);
+    for (const slot of inventoryRemain?.slot_materials ?? []) {
+      map.set(slot.global_tray_id, slot.cost_per_kg ?? null);
     }
     return map;
-  }, [assignments]);
+  }, [inventoryRemain]);
 
   const trayRemainingWeightMap = useMemo(() => {
     const map = new Map<number, number | null>();
-    for (const assignment of assignments || []) {
-      const isExternal = assignment.ams_id === 255;
-      const globalTrayId = getGlobalTrayId(assignment.ams_id, assignment.tray_id, isExternal);
-      const spool = assignment.spool;
-      if (!spool) {
-        map.set(globalTrayId, null);
-        continue;
-      }
-      map.set(globalTrayId, Math.max(0, Math.round((spool.label_weight ?? 0) - (spool.weight_used ?? 0))));
+    for (const slot of inventoryRemain?.slot_materials ?? []) {
+      map.set(slot.global_tray_id, Math.max(0, Math.round(slot.remaining_g)));
     }
     return map;
-  }, [assignments]);
+  }, [inventoryRemain]);
 
   const totalCost = useMemo(() => {
     let total = 0;
@@ -311,7 +310,10 @@ export function FilamentMapping({
   }
 
   // Determine status indicator color
-  const statusColor = hasTypeMismatch
+  // A blocked filament outranks every mismatch: Print is disabled for it (#3522).
+  const statusColor = blockedReqNames.length > 0
+    ? '#ef4444' // red
+    : hasTypeMismatch
     ? '#f97316' // orange
     : hasColorMismatch
     ? '#facc15' // yellow
@@ -355,7 +357,9 @@ export function FilamentMapping({
       >
         <Circle className="w-4 h-4" fill={statusColor} stroke="none" />
         <span>{plateLabel ? `${t('printModal.filamentMapping')} — ${plateLabel}` : t('printModal.filamentMapping')}</span>
-        {hasTypeMismatch ? (
+        {blockedReqNames.length > 0 ? (
+          <span className="text-xs text-red-700 dark:text-red-400">({t('printModal.statusBlocked')})</span>
+        ) : hasTypeMismatch ? (
           <span className="text-xs text-orange-700 dark:text-orange-400">({t('printModal.statusTypeNotFound')})</span>
         ) : hasColorMismatch ? (
           <span className="text-xs text-yellow-700 dark:text-yellow-400">({t('printModal.statusColorMismatch')})</span>
@@ -368,6 +372,15 @@ export function FilamentMapping({
           <ChevronDown className="w-4 h-4 ml-auto" />
         )}
       </button>
+
+      {/* Outside the collapsible part: the panel starts collapsed, and this is
+          the reason the submit button is disabled (#3522). */}
+      {blockedReqNames.length > 0 && (
+        <div role="alert" className="mt-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-300 dark:border-red-500/20 text-red-700 dark:text-red-400 text-xs">
+          <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+          {t('printModal.filamentBlockedFile', { filaments: blockedReqNames.join(', ') })}
+        </div>
+      )}
 
       {isExpanded && (
         <div className="mt-2 bg-bambu-dark rounded-lg p-3 space-y-2">
@@ -427,19 +440,24 @@ export function FilamentMapping({
             );
             return (
             <div key={idx} className="space-y-1">
+              {/*
+                The rack picker sits inside the required-filament cell, so on a
+                rack machine that cell has to carry the name *and* an ~85px
+                dropdown. Raising only the floor (not the fraction) keeps every
+                other printer's layout exactly as it was, and keeps the AMS
+                dropdown — which names type, colour and remaining weight — the
+                widest column.
+
+                Below `sm` the slot picker gets a line of its own under the
+                required filament (#3294): on a phone held upright, the 210px
+                floor left it about 55px, a swatch and a chevron.
+              */}
               <div
-                className="grid items-center gap-2 text-xs"
-                style={{
-                  // The rack picker sits inside the required-filament cell, so
-                  // on a rack machine that cell has to carry the name *and* an
-                  // ~85px dropdown. Raising only the floor (not the fraction)
-                  // keeps every other printer's layout exactly as it was, and
-                  // keeps the AMS dropdown — which names type, colour and
-                  // remaining weight — the widest column.
-                  gridTemplateColumns: hasRack
-                    ? '16px minmax(210px, 1.4fr) auto 2fr 16px'
-                    : '16px minmax(70px, 1fr) auto 2fr 16px',
-                }}
+                className={`grid items-center gap-2 text-xs grid-cols-[16px_minmax(0,1fr)_16px] ${
+                  hasRack
+                    ? 'sm:grid-cols-[16px_minmax(210px,1.4fr)_auto_2fr_16px]'
+                    : 'sm:grid-cols-[16px_minmax(70px,1fr)_auto_2fr_16px]'
+                }`}
               >
                 {/* Required color */}
                 <span title={t('printModal.requiredTooltip', { name: resolvedName, color: requiredColorLabel })}>
@@ -448,7 +466,7 @@ export function FilamentMapping({
                 {/* Required type + grams + nozzle badge. Only the name
                     truncates; the gram usage is pinned (shrink-0) so it never
                     clips on narrow/mobile widths (#2669). */}
-                <span className="text-white flex items-center gap-1 min-w-0">
+                <span className="text-white flex items-center gap-1 min-w-0 col-span-2 sm:col-span-1">
                   {hasRack && item.group_id != null && item.group ? (
                     item.group.on_rack ? (
                       <select
@@ -557,11 +575,21 @@ export function FilamentMapping({
                         exactMatch:
                           normalizeColorForCompare(item.color) !== '' &&
                           normalizeColorForCompare(f.color) === normalizeColorForCompare(item.color),
+                        // Listed but not selectable: the group may not use it (#3522).
+                        disabled: f.blocked,
+                        disabledReason: f.blocked ? blockedSlotReason(f) : undefined,
                       };
                   })}
                 />
-                {/* Status icon */}
-                {item.status === 'match' ? (
+                {/* Status icon. A blocked tray outranks the match status: it
+                    can still be the chosen one through a manual pick (an older
+                    queue job, the archive's saved mapping), and the server
+                    will pick another tray for it (#3522). */}
+                {item.loaded?.blocked ? (
+                  <span role="img" title={blockedSlotReason(item.loaded)} aria-label={blockedSlotReason(item.loaded)}>
+                    <AlertTriangle className="w-3 h-3 text-red-600 dark:text-red-400" />
+                  </span>
+                ) : item.status === 'match' ? (
                   <Check className="w-3 h-3 text-bambu-green" />
                 ) : item.status === 'type_only' ? (
                   <span

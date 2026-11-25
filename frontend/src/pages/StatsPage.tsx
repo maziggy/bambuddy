@@ -46,45 +46,15 @@ import { getCurrencySymbol } from '../utils/currency';
 import { formatWeight } from '../utils/weight';
 import { parseUTCDate, formatDuration } from '../utils/date';
 import { MetricToggle, type Metric } from '../components/MetricToggle';
+import { useUiSettings } from '../hooks/useUiSettings';
+import { computeDateRange, localDate, type TimeframePreset } from '../utils/statsDateRange';
 
 // Timeframe types and helpers
-type TimeframePreset = 'today' | 'this-week' | 'this-month' | 'last-7' | 'last-30' | 'last-90' | 'this-year' | 'all-time' | 'custom';
 
 interface TimeframeState {
   preset: TimeframePreset;
   dateFrom: string | undefined; // YYYY-MM-DD
   dateTo: string | undefined;   // YYYY-MM-DD
-}
-
-function computeDateRange(preset: TimeframePreset): { dateFrom?: string; dateTo?: string } {
-  const now = new Date();
-  const y = now.getUTCFullYear(), m = now.getUTCMonth(), d = now.getUTCDate();
-  const fmt = (dt: Date) => dt.toISOString().split('T')[0];
-  const todayStr = fmt(now);
-
-  switch (preset) {
-    case 'today':
-      return { dateFrom: todayStr, dateTo: todayStr };
-    case 'this-week': {
-      const day = now.getUTCDay();
-      const start = new Date(Date.UTC(y, m, d - (day === 0 ? 6 : day - 1)));
-      return { dateFrom: fmt(start), dateTo: todayStr };
-    }
-    case 'this-month':
-      return { dateFrom: fmt(new Date(Date.UTC(y, m, 1))), dateTo: todayStr };
-    case 'last-7':
-      return { dateFrom: fmt(new Date(Date.UTC(y, m, d - 6))), dateTo: todayStr };
-    case 'last-30':
-      return { dateFrom: fmt(new Date(Date.UTC(y, m, d - 29))), dateTo: todayStr };
-    case 'last-90':
-      return { dateFrom: fmt(new Date(Date.UTC(y, m, d - 89))), dateTo: todayStr };
-    case 'this-year':
-      return { dateFrom: fmt(new Date(Date.UTC(y, 0, 1))), dateTo: todayStr };
-    case 'all-time':
-      return { dateFrom: undefined, dateTo: undefined };
-    case 'custom':
-      return {};
-  }
 }
 
 const TIMEFRAME_PRESETS: TimeframePreset[] = [
@@ -94,7 +64,15 @@ const TIMEFRAME_PRESETS: TimeframePreset[] = [
 ];
 
 // Constants
-const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const DAY_LABEL_KEYS = [
+  'stats.weekdays.mon',
+  'stats.weekdays.tue',
+  'stats.weekdays.wed',
+  'stats.weekdays.thu',
+  'stats.weekdays.fri',
+  'stats.weekdays.sat',
+  'stats.weekdays.sun',
+];
 
 const HOUR_LABELS = [
   '12am', '1am', '2am', '3am', '4am', '5am',
@@ -401,6 +379,7 @@ function TimeAccuracyWidget({
 }
 
 function HourlyHeatmap({ printDates, dateFrom, dateTo }: { printDates: string[]; dateFrom: string; dateTo: string }) {
+  const { t } = useTranslation();
   const { days, hourlyCounts, maxCount } = useMemo(() => {
     const start = new Date(dateFrom + 'T00:00:00');
     const end = new Date(dateTo + 'T00:00:00');
@@ -477,7 +456,7 @@ function HourlyHeatmap({ printDates, dateFrom, dateTo }: { printDates: string[];
                   key={hour}
                   className={`rounded-sm ${getColor(count)}`}
                   style={{ width: cellSize, height: cellSize }}
-                  title={`${day.label} ${HOUR_LABELS[hour]}: ${count} print${count !== 1 ? 's' : ''}`}
+                  title={t('stats.heatmapCellTitle', { day: day.label, hour: HOUR_LABELS[hour], count })}
                 />
               );
             })}
@@ -487,7 +466,7 @@ function HourlyHeatmap({ printDates, dateFrom, dateTo }: { printDates: string[];
 
       {/* Legend */}
       <div className="flex items-center gap-2 mt-3 text-bambu-gray text-xs">
-        <span>Less</span>
+        <span>{t('stats.heatmapLess')}</span>
         <div className="flex" style={{ gap }}>
           <div className="rounded-sm bg-bambu-dark" style={{ width: cellSize, height: cellSize }} />
           <div className="rounded-sm bg-bambu-green/30" style={{ width: cellSize, height: cellSize }} />
@@ -495,7 +474,7 @@ function HourlyHeatmap({ printDates, dateFrom, dateTo }: { printDates: string[];
           <div className="rounded-sm bg-bambu-green/75" style={{ width: cellSize, height: cellSize }} />
           <div className="rounded-sm bg-bambu-green" style={{ width: cellSize, height: cellSize }} />
         </div>
-        <span>More</span>
+        <span>{t('stats.heatmapMore')}</span>
       </div>
     </div>
   );
@@ -512,26 +491,13 @@ function PrintActivityWidget({
   dateFrom?: string;
   dateTo?: string;
 }) {
-  const spanDays = useMemo(() => {
-    if (dateFrom && dateTo) {
-      return Math.max((new Date(dateTo).getTime() - new Date(dateFrom).getTime()) / 86400000, 0) + 1;
-    }
-    if (dateFrom) {
-      return Math.max((Date.now() - new Date(dateFrom).getTime()) / 86400000, 0) + 1;
-    }
-    return Infinity;
-  }, [dateFrom, dateTo]);
-
-  if (spanDays <= 7 && dateFrom && dateTo) {
+  // Date-only strings parse at UTC midnight, so DST cannot shorten or lengthen the day count.
+  if (dateFrom && dateTo && (Date.parse(dateTo) - Date.parse(dateFrom)) / 86400000 < 7) {
     return <HourlyHeatmap printDates={printDates} dateFrom={dateFrom} dateTo={dateTo} />;
   }
 
-  // Calculate months from the timeframe span, fall back to size-based default for all-time
-  const sizeDefault = size === 1 ? 3 : size === 2 ? 6 : 12;
-  const months = spanDays === Infinity
-    ? sizeDefault
-    : Math.max(1, Math.ceil(spanDays / 30));
-  return <PrintCalendar printDates={printDates} months={months} />;
+  const months = size === 1 ? 3 : size === 2 ? 6 : 12;
+  return <PrintCalendar printDates={printDates} dateFrom={dateFrom} dateTo={dateTo} months={months} />;
 }
 
 function PrinterStatsWidget({
@@ -631,11 +597,11 @@ function PrinterStatsWidget({
       weeksSet.add(`${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`);
     });
     const numWeeks = Math.max(weeksSet.size, 1);
-    return DAY_LABELS.map((name, i) => ({
-      name,
+    return DAY_LABEL_KEYS.map((nameKey, i) => ({
+      name: t(nameKey),
       avg: Math.round((dayValues[i] / numWeeks) * 10) / 10,
     }));
-  }, [archives, habitsMetric]);
+  }, [archives, habitsMetric, t]);
 
   const metricStyle = (m: Metric) => ({
     unit: m === 'weight' ? 'g' : m === 'time' ? 'h' : '',
@@ -1077,10 +1043,7 @@ export function StatsPage() {
     queryFn: () => api.getArchivesSlim(effectiveDateRange.dateFrom, effectiveDateRange.dateTo, createdByIdParam),
   });
 
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
-  });
+  const { data: settings } = useUiSettings();
 
   // The supplier widget aggregates the internal spool table, which is empty
   // in Spoolman mode — there the assignments live in the Spoolman twin table.
@@ -1141,6 +1104,9 @@ export function StatsPage() {
       const result = await api.recalculateCosts();
       await Promise.all([refetchStats(), refetchArchives()]);
       showToast(t('stats.recalculatedCosts', { count: result.updated }));
+      if (result.spoolman_unreachable) {
+        showToast(t('stats.recalculateSpoolmanUnreachable', { count: result.spoolman_unreachable }), 'warning');
+      }
     } catch {
       showToast(t('stats.recalculateFailed'), 'error');
     } finally {
@@ -1439,7 +1405,7 @@ export function StatsPage() {
                         <input
                           type="date"
                           value={timeframe.dateFrom || ''}
-                          max={timeframe.dateTo || new Date().toISOString().split('T')[0]}
+                          max={timeframe.dateTo || localDate(new Date())}
                           onChange={(e) => setTimeframe(prev => ({ ...prev, dateFrom: e.target.value || undefined }))}
                           className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded-md px-3 py-1.5 text-sm text-white"
                         />
@@ -1450,7 +1416,7 @@ export function StatsPage() {
                           type="date"
                           value={timeframe.dateTo || ''}
                           min={timeframe.dateFrom}
-                          max={new Date().toISOString().split('T')[0]}
+                          max={localDate(new Date())}
                           onChange={(e) => setTimeframe(prev => ({ ...prev, dateTo: e.target.value || undefined }))}
                           className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded-md px-3 py-1.5 text-sm text-white"
                         />

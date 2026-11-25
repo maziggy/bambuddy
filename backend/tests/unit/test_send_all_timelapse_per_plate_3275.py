@@ -119,6 +119,8 @@ def _service(tmp_path: Path, monkeypatch, current: str | None):
 
     db = MagicMock()
     db.commit = AsyncMock()
+    # No run logged: a video attached by hand to an archive printed before runs.
+    db.scalar = AsyncMock(return_value=None)
     service = ArchiveService(db)
     archive = MagicMock()
     archive.file_path = "archive/1/20260101_plates/Plates.3mf"
@@ -230,13 +232,13 @@ class TestEviction:
         m._evict_stale_expected_prints()
 
         assert (1, "Plates.gcode") not in m._expected_prints
-        assert m._print_plate_ids[42] == 2
-        assert m._print_ams_mappings[42] == [0]
+        assert m._print_plate_ids[(1, 42)] == 2
+        assert m._print_ams_mappings[(1, 42)] == [0]
 
     def test_a_print_that_never_started_still_releases_it(self):
         m = self._register_and_start()
 
         m._evict_stale_expected_prints()
 
-        assert 42 not in m._print_plate_ids
-        assert 42 not in m._print_ams_mappings
+        assert (1, 42) not in m._print_plate_ids
+        assert (1, 42) not in m._print_ams_mappings

@@ -28,6 +28,27 @@ H2C_PAYLOAD = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _fake_file_manager_store():
+    """Uploads go to the File Manager (library_store); its own tests cover it.
+
+    Here it stands in with file id 1 and the default folder settings, so these
+    tests see what the virtual printer does around it.
+    """
+    stored = MagicMock(id=1, filename="upload.3mf", folder_id=None)
+    with (
+        patch(
+            "backend.app.services.virtual_printer.library_store.store_upload",
+            AsyncMock(return_value=(stored, False)),
+        ) as store,
+        patch(
+            "backend.app.services.virtual_printer.library_store.upload_settings",
+            AsyncMock(return_value=(None, False)),
+        ),
+    ):
+        yield store
+
+
 def _extract(data, is_dual_nozzle):
     raw = _extract_slicer_ams_mapping_json(data, "[test]", is_dual_nozzle=is_dual_nozzle)
     return None if raw is None else json.loads(raw)
@@ -129,17 +150,78 @@ async def test_queue_item_and_archive_keep_left_external_spool(tmp_path):
     file_path.write_bytes(b"fake3mf")
     await inst.on_print_command(file_path.name, dict(H2C_PAYLOAD))
 
-    mock_archive = MagicMock(id=1, print_name="test")
-    with (
-        patch("backend.app.api.routes.settings.get_setting", new_callable=AsyncMock, return_value=None),
-        patch(
-            "backend.app.services.archive.ArchiveService.archive_print",
-            new_callable=AsyncMock,
-            return_value=mock_archive,
-        ) as archive_print,
-    ):
+    with patch("backend.app.api.routes.settings.get_setting", new_callable=AsyncMock, return_value=None):
         await inst._add_to_print_queue(file_path, "192.168.1.100")
 
     assert len(added_items) == 1
     assert json.loads(added_items[0].ams_mapping) == [254, 3, 2]
-    assert archive_print.await_args.kwargs["slicer_ams_mapping"] == [254, 3, 2]
+    # Kept on the item for the archive its print makes.
+    assert json.loads(added_items[0].slicer_ams_mapping)["mapping"] == [254, 3, 2]
+
+
+# An H3C job: AMS 3H slot 1, then the external inputs of hotends 0, 1 and 5.
+H3C_PAYLOAD = {
+    "command": "project_file",
+    "ams_mapping": [28, -1, -1, -1],
+    "ams_mapping2": [
+        {"ams_id": 32, "slot_id": 0},
+        {"ams_id": 255, "slot_id": 0},
+        {"ams_id": 254, "slot_id": 0},
+        {"ams_id": 250, "slot_id": 0},
+    ],
+}
+
+
+class TestRackPrinterExternalInputs:
+    """An H3C has one external input per hotend (247-255); each keeps its own id."""
+
+    def test_rack_layout_keeps_each_input(self):
+        from backend.app.utils.tray_ids import TrayLayout
+
+        raw = _extract_slicer_ams_mapping_json(H3C_PAYLOAD, "[test]", layout=TrayLayout.ams3h())
+        assert json.loads(raw) == [28, 255, 254, 250]
+
+    def test_target_h3c_layout_from_its_model(self, tmp_path):
+        manager = _manager_with(None)
+        manager.get_status = MagicMock(return_value=None)
+        manager.get_model = MagicMock(return_value="H3C")
+        assert _instance(tmp_path, model="N10", printer_manager=manager)._target_tray_layout().rack
+
+    def test_any_available_h3c_uses_the_vp_model(self, tmp_path):
+        inst = _instance(tmp_path, model="N10")
+        inst.target_printer_id = None
+        assert inst._target_tray_layout().rack
+
+    def test_other_targets_are_not_rack(self, tmp_path):
+        manager = _manager_with(None)
+        manager.get_status = MagicMock(return_value=None)
+        manager.get_model = MagicMock(return_value="H2C")
+        assert not _instance(tmp_path, printer_manager=manager)._target_tray_layout().rack
+        inst = _instance(tmp_path, model="BL-P001")
+        inst.target_printer_id = None
+        assert not inst._target_tray_layout().rack
+
+    @pytest.mark.asyncio
+    async def test_queue_item_keeps_h3c_external_inputs(self, tmp_path):
+        added_items = []
+        mock_db = AsyncMock()
+        mock_db.add = MagicMock(side_effect=added_items.append)
+        mock_db.commit = AsyncMock()
+        session_ctx = AsyncMock()
+        session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        session_ctx.__aexit__ = AsyncMock(return_value=False)
+        session_factory = MagicMock(return_value=session_ctx)
+
+        manager = _manager_with(MagicMock(_is_dual_nozzle=False, model="N10"))
+        manager.get_status = MagicMock(return_value=None)
+        manager.get_model = MagicMock(return_value="N10")
+        inst = _instance(tmp_path, model="N10", printer_manager=manager, session_factory=session_factory)
+
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(b"fake3mf")
+        await inst.on_print_command(file_path.name, dict(H3C_PAYLOAD))
+        with patch("backend.app.api.routes.settings.get_setting", new_callable=AsyncMock, return_value=None):
+            await inst._add_to_print_queue(file_path, "192.168.1.100")
+
+        assert len(added_items) == 1
+        assert json.loads(added_items[0].ams_mapping) == [28, 255, 254, 250]

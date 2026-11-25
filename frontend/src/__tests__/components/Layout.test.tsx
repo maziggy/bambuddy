@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { render } from '../utils';
 import { Layout } from '../../components/Layout';
 import { getAuthToken, setAuthToken } from '../../api/client';
@@ -77,6 +77,21 @@ describe('Layout', () => {
     );
   });
 
+  describe('pending uploads badge', () => {
+    it('counts review-mode uploads on the File Manager entry, where they wait', async () => {
+      server.use(http.get('/api/v1/pending-uploads/count', () => HttpResponse.json({ count: 3 })));
+      render(<Layout />);
+
+      const files = await waitFor(() => {
+        const link = document.querySelector('a[href="/files"]');
+        if (!link?.textContent?.includes('3')) throw new Error('badge not shown yet');
+        return link;
+      });
+      expect(files.textContent).toContain('3');
+      expect(document.querySelector('a[href="/archives"]')?.textContent).not.toContain('3');
+    });
+  });
+
   describe('rendering', () => {
     it('renders the sidebar', async () => {
       render(<Layout />);
@@ -96,6 +111,43 @@ describe('Layout', () => {
         const links = document.querySelectorAll('a');
         expect(links.length).toBeGreaterThan(0);
       });
+    });
+  });
+
+  describe('external link count', () => {
+    // A connected app (Bambuddy Orders) reports its To do count for the link
+    // pointing at it; the sidebar shows it like the queue's badge.
+    const link = (id: number, name: string, badge_count: number | null, open_in_new_tab = false) => ({
+      id,
+      name,
+      url: `http://app${id}.local:8090`,
+      icon: 'Package',
+      open_in_new_tab,
+      custom_icon: null,
+      sort_order: id,
+      created_at: '2026-10-21T00:00:00Z',
+      updated_at: '2026-10-21T00:00:00Z',
+      badge_count,
+    });
+
+    it('shows the count an app reports, capped at 99+', async () => {
+      server.use(
+        http.get('/api/v1/external-links/', () =>
+          HttpResponse.json([
+            link(1, 'Orders', 7),
+            link(2, 'Shop', 150, true),
+            link(3, 'Wiki', 0),
+            link(4, 'Docs', null),
+          ]),
+        ),
+      );
+      render(<Layout />);
+
+      const orders = await screen.findByTestId('external-link-badge-1');
+      expect(orders).toHaveTextContent('7');
+      expect(screen.getByTestId('external-link-badge-2')).toHaveTextContent('99+');
+      expect(screen.queryByTestId('external-link-badge-3')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('external-link-badge-4')).not.toBeInTheDocument();
     });
   });
 
@@ -339,6 +391,102 @@ describe('Layout', () => {
     });
   });
 
+  describe('camera launcher (#2737)', () => {
+    const originalMatchMedia = window.matchMedia;
+    const originalWidth = window.innerWidth;
+    /** Below 1144px the sidebar is a drawer and the compact header shows. */
+    function compactViewport() {
+      Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 390 });
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: (query: string) => ({ ...originalMatchMedia(query), matches: /max-width/.test(query) }),
+      });
+    }
+
+    beforeEach(() => {
+      server.use(
+        http.post('/api/v1/printers/:id/camera/stop', () => HttpResponse.json({ success: true })),
+        http.get('/api/v1/printers/:id/camera/status', () => HttpResponse.json({ active: true, stalled: false })),
+      );
+    });
+
+    afterEach(() => {
+      Object.defineProperty(window, 'matchMedia', { writable: true, configurable: true, value: originalMatchMedia });
+      Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: originalWidth });
+    });
+
+    it('is on the Printers row of the sidebar, not in its footer', async () => {
+      render(<Layout />);
+
+      await waitFor(() => expect(document.querySelector('header')).toBeNull());
+      const aside = document.querySelector('aside')!;
+      const button = within(aside).getByRole('button', { name: 'Cameras' });
+      expect(button.closest('li')?.querySelector('a[href="/"]')).not.toBeNull();
+      expect(within(aside).getAllByRole('button', { name: 'Cameras' })).toHaveLength(1);
+    });
+
+    it('opens the camera list with the C key', async () => {
+      render(<Layout />);
+      await waitFor(() => expect(document.querySelector('aside')).not.toBeNull());
+
+      fireEvent.keyDown(document, { key: 'c' });
+      expect(await screen.findByRole('button', { name: /X1 Carbon/ })).toBeInTheDocument();
+
+      fireEvent.keyDown(document, { key: 'c' });
+      await waitFor(() => expect(screen.queryByRole('region', { name: 'Cameras' })).toBeNull());
+    });
+
+    it('leaves the C key alone while typing', async () => {
+      render(
+        <>
+          <input aria-label="search" />
+          <Layout />
+        </>,
+      );
+      await waitFor(() => expect(document.querySelector('aside')).not.toBeNull());
+
+      fireEvent.keyDown(screen.getByRole('textbox', { name: 'search' }), { key: 'c' });
+
+      expect(screen.queryByRole('region', { name: 'Cameras' })).toBeNull();
+    });
+
+    it('opens the header\'s list with the C key in the compact layout', async () => {
+      compactViewport();
+      render(<Layout />);
+      await waitFor(() => expect(document.querySelector('header')).not.toBeNull());
+
+      fireEvent.keyDown(document, { key: 'c' });
+
+      expect(await screen.findByRole('region', { name: 'Cameras' })).toBeInTheDocument();
+      // One list, the header's, not also the one in the closed drawer.
+      expect(screen.getAllByRole('region', { name: 'Cameras' })).toHaveLength(1);
+      expect(within(document.querySelector('header')!).getByRole('button', { name: 'Cameras' })).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      );
+    });
+
+    it('is in the compact header, beside the bug report', async () => {
+      compactViewport();
+      render(<Layout />);
+
+      await waitFor(() => expect(document.querySelector('header')).not.toBeNull());
+      expect(within(document.querySelector('header')!).getByRole('button', { name: 'Cameras' })).toBeInTheDocument();
+    });
+
+    it('opens a camera overlay on a page other than Printers', async () => {
+      compactViewport();
+      render(<Layout />);
+      await waitFor(() => expect(document.querySelector('header')).not.toBeNull());
+
+      fireEvent.click(within(document.querySelector('header')!).getByRole('button', { name: 'Cameras' }));
+      fireEvent.click(await screen.findByRole('button', { name: /X1 Carbon/ }));
+
+      expect(await screen.findByTitle('Refresh stream')).toBeInTheDocument();
+    });
+  });
+
   describe('theme toggle', () => {
     it('has theme toggle button', async () => {
       render(<Layout />);
@@ -411,6 +559,22 @@ describe('Layout', () => {
         // Modal should appear with "Print Paused!" text
         expect(document.body.textContent).toContain('Print Paused!');
         expect(document.body.textContent).toContain('Test Printer');
+      });
+    });
+
+    it('warns when a plate check could not run, naming why', async () => {
+      render(<Layout />);
+
+      window.dispatchEvent(
+        new CustomEvent('plate-check-failed', {
+          detail: { printer_id: 1, printer_name: 'Test Printer', reason: 'no_camera_frame' },
+        })
+      );
+
+      await waitFor(() => {
+        expect(document.body.textContent).toContain(
+          'Plate check could not run on Test Printer (no camera image). The print continues.'
+        );
       });
     });
 
@@ -779,6 +943,28 @@ describe('Layout', () => {
       expect(await screen.findByTestId('confirm-outcome-dialog')).toBeInTheDocument();
     });
 
+    it('opens the dialog on the plate the link names', async () => {
+      // Plates of one archive each have their own question (#1898).
+      let requestedRun: string | null = null;
+      server.use(
+        http.get('/api/v1/archives/42', ({ request }) => {
+          requestedRun = new URL(request.url).searchParams.get('run_id');
+          return HttpResponse.json({ ...archive, run_id: 7 });
+        }),
+      );
+      window.history.replaceState({}, '', '/archives?confirm=42&run=7&status=completed');
+
+      render(<Layout />);
+
+      await screen.findByTestId('confirm-outcome-dialog');
+      await waitFor(() => {
+        expect(requestedRun).toBe('7');
+      });
+      await waitFor(() => {
+        expect(window.location.search).toBe('?status=completed');
+      });
+    });
+
     it('strips the parameter but keeps the rest of the query', async () => {
       window.history.replaceState({}, '', '/archives?confirm=42&status=completed');
 
@@ -893,6 +1079,67 @@ describe('Layout', () => {
       );
 
       expect(await screen.findByTestId('confirm-outcome-dialog')).toBeInTheDocument();
+    });
+
+    it('opens from the WebSocket event on the plate it names', async () => {
+      let requestedRun: string | null = null;
+      server.use(
+        http.get('/api/v1/archives/42', ({ request }) => {
+          requestedRun = new URL(request.url).searchParams.get('run_id');
+          return HttpResponse.json({ ...archive, run_id: 7 });
+        }),
+      );
+      render(<Layout />);
+
+      await waitFor(() => {
+        expect(document.querySelector('aside')).toBeInTheDocument();
+      });
+      window.dispatchEvent(
+        new CustomEvent('print-confirm-request', { detail: { archive_id: 42, run_id: 7 } })
+      );
+
+      await screen.findByTestId('confirm-outcome-dialog');
+      await waitFor(() => {
+        expect(requestedRun).toBe('7');
+      });
+    });
+  });
+
+  // #3664: on a short screen the dialog scrolls inside its backdrop, so its
+  // buttons stay reachable with the keyboard open.
+  describe('Change Password from the account menu', () => {
+    let priorToken: string | null = null;
+
+    afterEach(() => {
+      setAuthToken(priorToken, 'session');
+      priorToken = null;
+    });
+
+    it('scrolls inside its backdrop', async () => {
+      server.use(
+        http.get('/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({
+            id: 2,
+            username: 'operator',
+            role: 'user',
+            is_active: true,
+            is_admin: false,
+            groups: [],
+            permissions: [],
+            created_at: '2026-01-01T00:00:00Z',
+          }),
+        ),
+      );
+      priorToken = getAuthToken();
+      setAuthToken('test-token', 'session');
+
+      render(<Layout />);
+      fireEvent.click((await screen.findAllByRole('button', { name: 'Account' }))[0]);
+      fireEvent.click(await screen.findByRole('button', { name: 'Change Password' }));
+
+      const current = await screen.findByPlaceholderText('Enter current password');
+      expect(current.closest('.overflow-y-auto.overscroll-contain')).not.toBeNull();
     });
   });
 });

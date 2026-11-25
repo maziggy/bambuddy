@@ -47,6 +47,7 @@ from dataclasses import dataclass
 
 from backend.app.utils.fts_routing import slot_extruder
 from backend.app.utils.printer_models import is_dual_nozzle_model
+from backend.app.utils.tray_ids import TrayLayout
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +107,33 @@ def normalise_flow(raw: str | None) -> str | None:
     """
     text = (raw or "").strip().upper()
     return text[:2] if text[:2] in ("HH", "HS") else None
+
+
+def reports_two_nozzles(state) -> bool:
+    """Whether the live state shows a dual-nozzle printer.
+
+    Decides which extruder an external spool feeds (254 = left = extruder 1,
+    255 = right = extruder 0). ``ams_extruder_map`` alone is not enough: it is
+    derived from AMS info bits, so a dual-nozzle printer with no AMS reports an
+    empty map, and its external spools then matched no nozzle (#2771).
+
+    ``nozzles`` is always a two-entry list (the state seeds two empty stubs), so
+    its length proves nothing; only a populated diameter on the second entry
+    means real hardware. The other two signals cover firmware revisions that
+    surface one but not the other: a populated ``ams_extruder_map`` is
+    dual-nozzle by construction, and so is more than one ``vt_tray`` entry,
+    since single-nozzle printers expose exactly one external feed.
+    """
+    raw_data = getattr(state, "raw_data", None) or {}
+    nozzles = getattr(state, "nozzles", None) or []
+    vt_trays = raw_data.get("vt_tray") or []
+    return bool(
+        (len(nozzles) > 1 and getattr(nozzles[1], "nozzle_diameter", ""))
+        or raw_data.get("ams_extruder_map")
+        # isinstance, because a dict here would count its keys as trays. An
+        # H3C's one input per hotend is not a second extruder.
+        or (isinstance(vt_trays, list) and len(vt_trays) > 1 and not TrayLayout.from_units(None, vt_trays).rack)
+    )
 
 
 def nozzle_flow_for_extruder(state, extruder: int | None, model: str | None = None) -> str | None:

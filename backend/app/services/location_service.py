@@ -20,9 +20,8 @@ logger = logging.getLogger(__name__)
 DUPLICATE_LOCATION_NAME = "A location with this name already exists"
 
 # AMS residency markers, not storage locations. Bambuddy used to write the slot
-# a spool was loaded into -- "<printer> - AMS A1", the shape
-# `SpoolmanClient.convert_ams_slot_to_location` still produces -- straight into
-# Spoolman's `location` field. That writer went away when Storage Location
+# a spool was loaded into -- "<printer> - AMS A1", "<printer> - AMS-HT A1" or
+# "<printer> - External Spool" -- straight into Spoolman's `location` field. That writer went away when Storage Location
 # became a place the user chooses (#1114), but the strings survive on people's
 # Spoolman spools, and importing them offers a printer slot as somewhere to put
 # a spool away. A slot is where a spool is loaded, not where it is stored, and
@@ -208,21 +207,6 @@ async def count_internal_spools_at_location(db: AsyncSession, location_id: int) 
         .where(
             Spool.location_id == location_id,
             Spool.archived_at.is_(None),
-        )
-    )
-    return int(result.scalar() or 0)
-
-
-async def count_spools_at_location_by_name(db: AsyncSession, name: str) -> int:
-    normalized = name.strip()
-    if not normalized:
-        return 0
-    result = await db.execute(
-        select(func.count())
-        .select_from(Spool)
-        .where(
-            Spool.archived_at.is_(None),
-            func.lower(func.trim(Spool.storage_location)) == normalized.lower(),
         )
     )
     return int(result.scalar() or 0)

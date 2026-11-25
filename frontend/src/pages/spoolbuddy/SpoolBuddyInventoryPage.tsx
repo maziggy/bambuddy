@@ -2,21 +2,22 @@ import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useOutletContext } from 'react-router-dom';
-import { Search, X, Package } from 'lucide-react';
+import { Search, X, Package, QrCode } from 'lucide-react';
 import { api } from '../../api/client';
 import type { InventorySpool } from '../../api/client';
 import { resolveSpoolColorName, getSwatchStyle, spoolColorString } from '../../utils/colors';
 import { SpoolPaint, SpoolShade } from '../../components/spoolbuddy/SpoolIcon';
 import { hasFilamentPaint, spoolSwatchStyle } from '../../components/spoolbuddy/spoolPaint';
-import { formatSlotLabel } from '../../utils/amsHelpers';
+import { formatAssignmentSlotLabel } from '../../utils/amsHelpers';
 import { filterSpoolsByQuery } from '../../utils/inventorySearch';
 import { useColorCatalogVersion } from '../../hooks/useColorCatalogVersion';
 import { InventorySpoolInfoCard } from '../../components/spoolbuddy/InventorySpoolInfoCard';
 import { AssignToAmsModal } from '../../components/spoolbuddy/AssignToAmsModal';
+import { QrAssignTargetModal } from '../../components/QrAssignTargetModal';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
 import { useToast } from '../../contexts/ToastContext';
 
-type SlotInfo = { ams_id: number; tray_id: number; printer_name?: string | null };
+type SlotInfo = { ams_id: number; tray_id: number; printer_name?: string | null; printer_model?: string | null };
 
 type FilterMode = 'all' | 'in_ams' | string; // string = material name
 
@@ -40,9 +41,7 @@ function spoolDisplayName(spool: InventorySpool): string {
 }
 
 function assignmentLabel(a: SlotInfo): string {
-  const isExternal = a.ams_id === 254 || a.ams_id === 255;
-  const isHt = !isExternal && a.ams_id >= 128;
-  return formatSlotLabel(a.ams_id, a.tray_id, isHt, isExternal);
+  return formatAssignmentSlotLabel(a);
 }
 
 /* Spool circle — same style as AMS page tray slots */
@@ -92,6 +91,7 @@ export function SpoolBuddyInventoryPage() {
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [selectedSpoolId, setSelectedSpoolId] = useState<number | null>(null);
   const [showAssignAmsModal, setShowAssignAmsModal] = useState(false);
+  const [qrTargetModalOpen, setQrTargetModalOpen] = useState(false);
 
   const { data: spoolmanSettings } = useQuery({
     queryKey: ['spoolman-settings'],
@@ -135,11 +135,11 @@ export function SpoolBuddyInventoryPage() {
   const assignmentMap = useMemo((): Record<number, SlotInfo> => {
     if (spoolmanMode) {
       const map: Record<number, SlotInfo> = {};
-      spoolmanAssignments.forEach(a => { map[a.spoolman_spool_id] = { ams_id: a.ams_id, tray_id: a.tray_id }; });
+      spoolmanAssignments.forEach(a => { map[a.spoolman_spool_id] = { ams_id: a.ams_id, tray_id: a.tray_id, printer_model: a.printer_model }; });
       return map;
     }
     const map: Record<number, SlotInfo> = {};
-    assignments.forEach(a => { map[a.spool_id] = { ams_id: a.ams_id, tray_id: a.tray_id, printer_name: a.printer_name }; });
+    assignments.forEach(a => { map[a.spool_id] = { ams_id: a.ams_id, tray_id: a.tray_id, printer_name: a.printer_name, printer_model: a.printer_model }; });
     return map;
   }, [spoolmanMode, assignments, spoolmanAssignments]);
 
@@ -186,6 +186,15 @@ export function SpoolBuddyInventoryPage() {
     <div className="h-full flex flex-col">
       {/* Search + filter pills */}
       <div className="px-3 pt-3 pb-2 space-y-2.5">
+        {/* Scan-to-location (#1574) */}
+        <button
+          onClick={() => setQrTargetModalOpen(true)}
+          className="w-full flex items-center justify-center gap-2 py-2 bg-bambu-green/20 border border-bambu-green text-bambu-green rounded-lg text-sm font-medium hover:bg-bambu-green/30 transition-colors"
+        >
+          <QrCode className="w-4 h-4" />
+          {t('inventory.qrAssign.button')}
+        </button>
+
         {/* Search */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
@@ -297,6 +306,14 @@ export function SpoolBuddyInventoryPage() {
           </>
         );
       })()}
+
+      {qrTargetModalOpen && (
+        <QrAssignTargetModal
+          isOpen={qrTargetModalOpen}
+          onClose={() => setQrTargetModalOpen(false)}
+          spoolmanMode={spoolmanMode}
+        />
+      )}
     </div>
   );
 }

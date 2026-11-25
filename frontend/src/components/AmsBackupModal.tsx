@@ -20,6 +20,8 @@ import { useTranslation } from 'react-i18next';
 import { Toggle } from './Toggle';
 import {
   computeBackupGroups,
+  isAms3hUnit,
+  isAmsHtUnit,
   normalizeColor,
   type AmsUnitLike,
   type BackupGroup,
@@ -41,8 +43,9 @@ interface AmsBackupModalProps {
  * Compact slot label like "A·3" / "HT·1" — the ring is small, every char
  * counts toward readability.
  */
-function formatSlotLabel(amsId: number, slotIdx: number, totalTraysOnUnit: number): string {
-  const isHt = totalTraysOnUnit === 1 || amsId >= 128;
+function formatSlotLabel(amsId: number, slotIdx: number): string {
+  if (isAms3hUnit({ id: amsId })) return `3H·${slotIdx + 1}`;
+  const isHt = isAmsHtUnit(amsId);
   const normalizedId = amsId >= 128 ? amsId - 128 : amsId;
   const letter = String.fromCharCode(65 + normalizedId);
   return isHt ? `HT·${slotIdx + 1}` : `${letter}·${slotIdx + 1}`;
@@ -62,7 +65,6 @@ function pickContrastTextColor(rgbaHex: string | null | undefined): string {
 
 function BackupRing({
   group,
-  trayCountByAms,
   innerBg,
   textPrimary,
   textSecondary,
@@ -70,7 +72,6 @@ function BackupRing({
   extruderLabel,
 }: {
   group: BackupGroup;
-  trayCountByAms: Map<number, number>;
   innerBg: string;
   textPrimary: string;
   textSecondary: string;
@@ -142,7 +143,7 @@ function BackupRing({
           const rad = (angleDeg * Math.PI) / 180;
           const x = labelRadius * Math.cos(rad);
           const y = labelRadius * Math.sin(rad);
-          const label = formatSlotLabel(m.amsId, m.slotIdx, trayCountByAms.get(m.amsId) ?? 4);
+          const label = formatSlotLabel(m.amsId, m.slotIdx);
           // Approximate pill width based on char count (each digit ≈ 6.5 px @ 12 px font).
           const pillWidth = Math.max(22, label.length * 7 + 8);
           return (
@@ -230,9 +231,6 @@ export function AmsBackupModal({
   })();
 
   const groups = computeBackupGroups(amsUnits, amsExtruderMap, effectiveDualNozzle);
-  const trayCountByAms = new Map<number, number>(
-    (amsUnits || []).map((u) => [u.id, u.tray.length]),
-  );
 
   // Only pairs are rendered — lone slots are deliberately suppressed.
   const pairs = groups.filter((g) => g.members.length >= 2);
@@ -313,7 +311,6 @@ export function AmsBackupModal({
                 <BackupRing
                   key={g.key}
                   group={g}
-                  trayCountByAms={trayCountByAms}
                   innerBg={modalBg}
                   textPrimary={textPrimary}
                   textSecondary={textSecondary}

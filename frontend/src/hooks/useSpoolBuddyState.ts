@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useCallback } from 'react';
+import { useEffect, useLayoutEffect, useReducer, useCallback, useRef } from 'react';
 
 export interface MatchedSpool {
   id: number;
@@ -20,6 +20,32 @@ export interface MatchedSpool {
   weight_used: number;
 }
 
+// What an unknown tag says about the roll, decoded by the backend: a Bambu
+// tag's blocks, resolved the way AMS auto-creation resolves a tray (#2685), or
+// an NTAG's OpenTag3D / OpenSpool record (#3657), where a field the tag leaves
+// out is null. Quick Add creates the spool from it. Absent when the tag says
+// nothing usable, and for older daemons.
+export interface UnknownTagData {
+  material: string;
+  subtype: string | null;
+  color_name: string | null;
+  rgba: string | null;
+  extra_colors: string | null;
+  effect_type: string | null;
+  brand: string | null;
+  label_weight: number | null;
+  slicer_filament: string | null;
+  slicer_filament_name: string | null;
+  nozzle_temp_min: number | null;
+  nozzle_temp_max: number | null;
+  core_weight: number | null;
+  core_weight_catalog_id: number | null;
+  variant_id: string | null;
+  diameter: number | null;
+  drying_temp: number | null;
+  drying_time: number | null;
+}
+
 export interface SpoolBuddyState {
   weight: number | null;
   weightStable: boolean;
@@ -27,6 +53,7 @@ export interface SpoolBuddyState {
   matchedSpool: MatchedSpool | null;
   unknownTagUid: string | null;
   unknownTrayUuid: string | null;
+  unknownTagData: UnknownTagData | null;
   deviceOnline: boolean;
   deviceId: string | null;
 }
@@ -34,7 +61,7 @@ export interface SpoolBuddyState {
 type Action =
   | { type: 'WEIGHT_UPDATE'; weight: number; stable: boolean; rawAdc: number; deviceId: string }
   | { type: 'TAG_MATCHED'; spool: MatchedSpool; deviceId: string }
-  | { type: 'UNKNOWN_TAG'; tagUid: string; trayUuid: string | null; deviceId: string }
+  | { type: 'UNKNOWN_TAG'; tagUid: string; trayUuid: string | null; tagData: UnknownTagData | null; deviceId: string }
   | { type: 'TAG_REMOVED'; deviceId: string }
   | { type: 'DEVICE_ONLINE'; deviceId: string }
   | { type: 'DEVICE_OFFLINE'; deviceId: string };
@@ -46,6 +73,7 @@ const initialState: SpoolBuddyState = {
   matchedSpool: null,
   unknownTagUid: null,
   unknownTrayUuid: null,
+  unknownTagData: null,
   deviceOnline: false,
   deviceId: null,
 };
@@ -67,6 +95,7 @@ function reducer(state: SpoolBuddyState, action: Action): SpoolBuddyState {
         matchedSpool: action.spool,
         unknownTagUid: null,
         unknownTrayUuid: null,
+        unknownTagData: null,
         deviceId: action.deviceId,
       };
     case 'UNKNOWN_TAG':
@@ -75,6 +104,7 @@ function reducer(state: SpoolBuddyState, action: Action): SpoolBuddyState {
         matchedSpool: null,
         unknownTagUid: action.tagUid,
         unknownTrayUuid: action.trayUuid ?? null,
+        unknownTagData: action.tagData,
         deviceId: action.deviceId,
       };
     case 'TAG_REMOVED':
@@ -83,6 +113,7 @@ function reducer(state: SpoolBuddyState, action: Action): SpoolBuddyState {
         matchedSpool: null,
         unknownTagUid: null,
         unknownTrayUuid: null,
+        unknownTagData: null,
       };
     case 'DEVICE_ONLINE':
       return {
@@ -103,29 +134,49 @@ function reducer(state: SpoolBuddyState, action: Action): SpoolBuddyState {
   }
 }
 
-export function useSpoolBuddyState() {
-  const [state, dispatch] = useReducer(reducer, initialState);
+/**
+ * The live state of a SpoolBuddy kiosk from the WebSocket events.
+ *
+ * Events from every device reach every kiosk, so with *deviceId* (the
+ * kiosk's own device, see useKioskDevice) the others are ignored: their
+ * weight, tags and online state belong to another reader (#3504).
+ */
+export function useSpoolBuddyState(deviceId?: string | null) {
+  const [rawState, dispatch] = useReducer(reducer, initialState);
+  const deviceIdRef = useRef(deviceId);
+  useLayoutEffect(() => {
+    deviceIdRef.current = deviceId;
+  }, [deviceId]);
+  const fromOtherDevice = useCallback(
+    (detail: { device_id?: string } | null | undefined) =>
+      !!deviceIdRef.current && !!detail?.device_id && detail.device_id !== deviceIdRef.current,
+    [],
+  );
+  // State that the previous device left behind is not this one's.
+  const state = deviceId && rawState.deviceId && rawState.deviceId !== deviceId ? initialState : rawState;
 
   const handleWeight = useCallback((e: Event) => {
     const detail = (e as CustomEvent).detail;
+    if (fromOtherDevice(detail)) return;
     dispatch({
       type: 'WEIGHT_UPDATE',
-      weight: detail.weight_grams ?? detail.data?.weight_grams,
-      stable: detail.stable ?? detail.data?.stable ?? false,
-      rawAdc: detail.raw_adc ?? detail.data?.raw_adc ?? null,
-      deviceId: detail.device_id ?? detail.data?.device_id ?? '',
+      weight: detail.weight_grams,
+      stable: detail.stable ?? false,
+      rawAdc: detail.raw_adc ?? null,
+      deviceId: detail.device_id ?? '',
     });
-  }, []);
+  }, [fromOtherDevice]);
 
   const handleTagMatched = useCallback((e: Event) => {
     const detail = (e as CustomEvent).detail;
-    const spool = detail.spool ?? detail.data?.spool;
+    if (fromOtherDevice(detail)) return;
+    const spool = detail.spool;
     if (spool) {
       dispatch({
         type: 'TAG_MATCHED',
         spool: {
           id: spool.id,
-          tag_uid: detail.tag_uid ?? detail.data?.tag_uid ?? '',
+          tag_uid: detail.tag_uid ?? '',
           material: spool.material ?? '',
           subtype: spool.subtype ?? null,
           color_name: spool.color_name ?? null,
@@ -138,44 +189,49 @@ export function useSpoolBuddyState() {
           core_weight: spool.core_weight ?? 0,
           weight_used: spool.weight_used ?? 0,
         },
-        deviceId: detail.device_id ?? detail.data?.device_id ?? '',
+        deviceId: detail.device_id ?? '',
       });
     }
-  }, []);
+  }, [fromOtherDevice]);
 
   const handleUnknownTag = useCallback((e: Event) => {
     const detail = (e as CustomEvent).detail;
+    if (fromOtherDevice(detail)) return;
     dispatch({
       type: 'UNKNOWN_TAG',
-      tagUid: detail.tag_uid ?? detail.data?.tag_uid ?? '',
-      trayUuid: detail.tray_uuid ?? detail.data?.tray_uuid ?? null,
-      deviceId: detail.device_id ?? detail.data?.device_id ?? '',
+      tagUid: detail.tag_uid ?? '',
+      trayUuid: detail.tray_uuid ?? null,
+      tagData: detail.tag_data ?? null,
+      deviceId: detail.device_id ?? '',
     });
-  }, []);
+  }, [fromOtherDevice]);
 
   const handleTagRemoved = useCallback((e: Event) => {
     const detail = (e as CustomEvent).detail;
+    if (fromOtherDevice(detail)) return;
     dispatch({
       type: 'TAG_REMOVED',
-      deviceId: detail.device_id ?? detail.data?.device_id ?? '',
+      deviceId: detail.device_id ?? '',
     });
-  }, []);
+  }, [fromOtherDevice]);
 
   const handleOnline = useCallback((e: Event) => {
     const detail = (e as CustomEvent).detail;
+    if (fromOtherDevice(detail)) return;
     dispatch({
       type: 'DEVICE_ONLINE',
-      deviceId: detail.device_id ?? detail.data?.device_id ?? '',
+      deviceId: detail.device_id ?? '',
     });
-  }, []);
+  }, [fromOtherDevice]);
 
   const handleOffline = useCallback((e: Event) => {
     const detail = (e as CustomEvent).detail;
+    if (fromOtherDevice(detail)) return;
     dispatch({
       type: 'DEVICE_OFFLINE',
-      deviceId: detail.device_id ?? detail.data?.device_id ?? '',
+      deviceId: detail.device_id ?? '',
     });
-  }, []);
+  }, [fromOtherDevice]);
 
   useEffect(() => {
     window.addEventListener('spoolbuddy-weight', handleWeight);

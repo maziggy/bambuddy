@@ -38,12 +38,15 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import (
+    RequireAdminIfAuthEnabled,
     RequirePermissionIfAuthEnabled,
     get_current_user,
     get_password_hash,
     get_user_by_username,
     is_auth_enabled,
     security,
+    session_dated,
+    token_outlived_its_session,
     verify_password,
 )
 from backend.app.core.database import get_db
@@ -118,7 +121,7 @@ async def _get_app_or_404(db: AsyncSession, app_id: int) -> ConnectedApp:
 
 @router.get("/apps", response_model=list[ConnectedAppResponse])
 async def list_connected_apps(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     result = await db.execute(select(ConnectedApp).order_by(ConnectedApp.created_at.desc()))
@@ -128,7 +131,8 @@ async def list_connected_apps(
 @router.post("/apps", response_model=ConnectedAppSecretResponse)
 async def create_connected_app(
     data: ConnectedAppCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _admin: User | None = RequireAdminIfAuthEnabled(),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Register an app. The client secret is in this response and nowhere else."""
@@ -156,7 +160,8 @@ async def create_connected_app(
 async def update_connected_app(
     app_id: int,
     data: ConnectedAppUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     app = await _get_app_or_404(db, app_id)
@@ -174,7 +179,8 @@ async def update_connected_app(
 @router.post("/apps/{app_id}/rotate-secret", response_model=ConnectedAppSecretResponse)
 async def rotate_connected_app_secret(
     app_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Replace the client secret. The old one stops working immediately."""
@@ -190,7 +196,8 @@ async def rotate_connected_app_secret(
 @router.delete("/apps/{app_id}")
 async def delete_connected_app(
     app_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     app = await _get_app_or_404(db, app_id)
@@ -215,7 +222,7 @@ async def delete_connected_app(
 
 async def require_signed_in_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> User:
     """The user behind a Bambuddy login token. API keys are refused.
 
@@ -242,7 +249,7 @@ async def _app_for_authorize(db: AsyncSession, client_id: str, redirect_uri: str
 async def authorize_info(
     client_id: str = Query(..., max_length=64),
     redirect_uri: str = Query(..., max_length=500),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     user: User = Depends(require_signed_in_user),
 ):
     """What the consent screen shows. Validates the request before the page acts on it."""
@@ -258,7 +265,7 @@ async def authorize_info(
 @router.post("/authorize", response_model=ConnectAuthorizeResponse)
 async def authorize(
     data: ConnectAuthorizeRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     user: User = Depends(require_signed_in_user),
 ):
     """Issue a code for the signed-in user and record their consent."""
@@ -280,33 +287,32 @@ async def authorize(
         db.add(ConnectedAppGrant(app_id=app.id, user_id=user.id))
 
     code = secrets.token_urlsafe(32)
-    db.add(
-        AuthEphemeralToken.new_connect_code(
+    # Read before the commit: a rollback below expires what this session loaded,
+    # and reading it then raises in async SQLAlchemy.
+    username, user_id, app_id, redirect_uri = user.username, user.id, app.id, app.redirect_uri
+
+    def new_code() -> AuthEphemeralToken:
+        return AuthEphemeralToken.new_connect_code(
             code_hash=_hash_code(code),
-            username=user.username,
-            app_id=app.id,
+            username=username,
+            app_id=app_id,
             code_challenge=data.code_challenge,
             expires_at=now + CODE_TTL,
+            # When the session that consents began (core/auth.session_dated)
+            **session_dated(username),
         )
-    )
+
+    db.add(new_code())
     try:
         await db.commit()
     except IntegrityError:
         # Two tabs consenting at once both inserted the grant; the other one won.
         await db.rollback()
-        db.add(
-            AuthEphemeralToken.new_connect_code(
-                code_hash=_hash_code(code),
-                username=user.username,
-                app_id=app.id,
-                code_challenge=data.code_challenge,
-                expires_at=now + CODE_TTL,
-            )
-        )
+        db.add(new_code())
         await db.commit()
 
-    logger.info("Connected app %s: code issued for user %s", app.id, user.id)
-    return ConnectAuthorizeResponse(code=code, redirect_uri=app.redirect_uri)
+    logger.info("Connected app %s: code issued for user %s", app_id, user_id)
+    return ConnectAuthorizeResponse(code=code, redirect_uri=redirect_uri)
 
 
 # --------------------------------------------------------------------------
@@ -322,7 +328,7 @@ def _token_error(status_code: int, error: str) -> HTTPException:
 async def exchange_code(
     request: Request,
     data: ConnectTokenRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Swap a code for the user's identity and permissions.
 
@@ -370,13 +376,15 @@ async def exchange_code(
             AuthEphemeralToken.provider_id == app.id,
             AuthEphemeralToken.expires_at > now,
         )
-        .returning(AuthEphemeralToken.username, AuthEphemeralToken.nonce)
+        .returning(AuthEphemeralToken.username, AuthEphemeralToken.nonce, AuthEphemeralToken.created_at)
     )
     row = consumed.one_or_none()
     await db.commit()
     if row is None:
         raise await fail(400, "invalid_grant", "unknown, expired, reused or foreign code")
-    username, code_challenge = row
+    username, code_challenge, minted_at = row
+    if await token_outlived_its_session(db, username, minted_at):
+        raise await fail(400, "invalid_grant", "code from before the user's current session")
 
     if not hmac.compare_digest(app.redirect_uri, data.redirect_uri):
         raise await fail(400, "invalid_grant", "callback URL mismatch")

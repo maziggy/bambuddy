@@ -250,7 +250,7 @@ async def test_the_import_refuses_before_it_drops_anything(tmp_path):
         patch("backend.app.core.database._create_engine", new=create_engine),
         pytest.raises(BackupSchemaIncompatible),
     ):
-        await settings_module._import_sqlite_to_postgres(path, "postgresql+asyncpg://test/test")
+        await settings_module._import_sqlite_to_postgres(path)
 
     assert executed == [], f"SQL ran against the destination before the refusal: {executed}"
     create_engine.assert_not_called()
@@ -272,7 +272,7 @@ async def test_a_missing_defaulted_column_is_inserted_with_its_default(tmp_path)
 
     engine, executed = _mock_engine()
     with patch("backend.app.core.database._create_engine", new=MagicMock(return_value=engine)):
-        await settings_module._import_sqlite_to_postgres(path, "postgresql+asyncpg://test/test")
+        await settings_module._import_sqlite_to_postgres(path)
 
     inserts = [(sql, params) for sql, params in executed if sql.startswith("INSERT INTO cost_centers")]
     assert inserts, f"no INSERT was emitted: {[sql[:60] for sql, _ in executed]}"
@@ -304,3 +304,40 @@ def test_the_manifest_is_read(tmp_path):
     (tmp_path / "manifest.json").write_text('{"format": 1, "app_version": "1.2.7"}')
 
     assert _read_backup_manifest(tmp_path)["app_version"] == "1.2.7"
+
+
+@pytest.mark.asyncio
+async def test_an_empty_required_timestamp_is_filled_with_utc_now(tmp_path):
+    """DB-C4: every stored timestamp is naive UTC, but an empty required one
+    in an old backup was filled with the host's local time -- on a Berlin host
+    1-2 h in the future. The host here is 14 h ahead of UTC."""
+    import os
+    import time
+    from datetime import datetime, timezone
+
+    path = _source(
+        tmp_path,
+        "CREATE TABLE cost_centers (id INTEGER PRIMARY KEY, code TEXT, name TEXT, created_at TEXT, updated_at TEXT)",
+        ["INSERT INTO cost_centers (id, code, name, created_at, updated_at) VALUES (1, 'abc', 'Lab', NULL, NULL)"],
+    )
+    from backend.app.api.routes import settings as settings_module
+
+    before = os.environ.get("TZ")
+    os.environ["TZ"] = "Pacific/Kiritimati"
+    time.tzset()
+    try:
+        engine, executed = _mock_engine()
+        with patch("backend.app.core.database._create_engine", new=MagicMock(return_value=engine)):
+            await settings_module._import_sqlite_to_postgres(path)
+    finally:
+        # Back to the zone the process had, whatever it was.
+        if before is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = before
+        time.tzset()
+
+    params = next(p for sql, p in executed if sql.startswith("INSERT INTO cost_centers"))[0]
+    utc_now = datetime.now(timezone.utc).replace(tzinfo=None)
+    assert params["created_at"].tzinfo is None
+    assert abs((params["created_at"] - utc_now).total_seconds()) < 120

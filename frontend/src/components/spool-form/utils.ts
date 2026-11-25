@@ -1,8 +1,10 @@
 import { api } from '../../api/client';
-import type { SlicerSetting, LocalPreset, BuiltinFilament } from '../../api/client';
+import type { SlicerSetting, LocalPreset, BuiltinFilament, SpoolKProfileInput } from '../../api/client';
 import { installedNozzleDiameters } from '../../utils/amsHelpers';
+import { filamentIdToSettingId, settingIdToFilamentId } from '../../utils/filamentIds';
+import { parseCompatiblePrinters } from '../../utils/slicerPrinterMatch';
 import type { CalibrationProfile, ColorPreset, FilamentOption } from './types';
-import { KNOWN_VARIANTS, DEFAULT_BRANDS, RECENT_COLORS_KEY, MAX_RECENT_COLORS, STANDARD_NOZZLE_DIAMETERS } from './constants';
+import { KNOWN_VARIANTS, DEFAULT_BRANDS, RECENT_COLORS_KEY, LAST_SPOOL_KEY, LAST_SPOOL_SPOOLMAN_KEY, MAX_RECENT_COLORS, STANDARD_NOZZLE_DIAMETERS } from './constants';
 
 /**
  * Fetch a printer's K-profiles across every nozzle it actually has installed
@@ -63,25 +65,27 @@ export async function fetchPrinterCalibrations(
   return calibrations;
 }
 
-// Fallback filament presets when cloud is not available
+// Fallback filament presets when cloud is not available. Each code is the
+// filament id Bambu gives that name (the table in backend/app/api/routes/cloud.py).
+// Most of them used to be wrong -- Bambu PLA-CF was filed under GFS00, which is
+// Support W, and the slot it configured would now come out as support (#3559).
 const FALLBACK_PRESETS: FilamentOption[] = [
-  { code: 'GFL00', name: 'Bambu PLA Basic', displayName: 'Bambu PLA Basic', isCustom: false, allCodes: ['GFL00'], source: 'builtin' },
-  { code: 'GFL01', name: 'Bambu PLA Matte', displayName: 'Bambu PLA Matte', isCustom: false, allCodes: ['GFL01'], source: 'builtin' },
-  { code: 'GFL05', name: 'Generic PLA', displayName: 'Generic PLA', isCustom: false, allCodes: ['GFL05'], source: 'builtin' },
+  { code: 'GFA00', name: 'Bambu PLA Basic', displayName: 'Bambu PLA Basic', isCustom: false, allCodes: ['GFA00'], source: 'builtin' },
+  { code: 'GFA01', name: 'Bambu PLA Matte', displayName: 'Bambu PLA Matte', isCustom: false, allCodes: ['GFA01'], source: 'builtin' },
+  { code: 'GFL99', name: 'Generic PLA', displayName: 'Generic PLA', isCustom: false, allCodes: ['GFL99'], source: 'builtin' },
   { code: 'GFG00', name: 'Bambu PETG Basic', displayName: 'Bambu PETG Basic', isCustom: false, allCodes: ['GFG00'], source: 'builtin' },
-  { code: 'GFG05', name: 'Generic PETG', displayName: 'Generic PETG', isCustom: false, allCodes: ['GFG05'], source: 'builtin' },
-  { code: 'GFB00', name: 'Bambu ABS Basic', displayName: 'Bambu ABS Basic', isCustom: false, allCodes: ['GFB00'], source: 'builtin' },
-  { code: 'GFB05', name: 'Generic ABS', displayName: 'Generic ABS', isCustom: false, allCodes: ['GFB05'], source: 'builtin' },
-  { code: 'GFA00', name: 'Bambu ASA Basic', displayName: 'Bambu ASA Basic', isCustom: false, allCodes: ['GFA00'], source: 'builtin' },
-  { code: 'GFU00', name: 'Bambu TPU 95A', displayName: 'Bambu TPU 95A', isCustom: false, allCodes: ['GFU00'], source: 'builtin' },
-  { code: 'GFU05', name: 'Generic TPU', displayName: 'Generic TPU', isCustom: false, allCodes: ['GFU05'], source: 'builtin' },
-  { code: 'GFC00', name: 'Bambu PC Basic', displayName: 'Bambu PC Basic', isCustom: false, allCodes: ['GFC00'], source: 'builtin' },
-  { code: 'GFN00', name: 'Bambu PA Basic', displayName: 'Bambu PA Basic', isCustom: false, allCodes: ['GFN00'], source: 'builtin' },
-  { code: 'GFN05', name: 'Generic PA', displayName: 'Generic PA', isCustom: false, allCodes: ['GFN05'], source: 'builtin' },
-  { code: 'GFS00', name: 'Bambu PLA-CF', displayName: 'Bambu PLA-CF', isCustom: false, allCodes: ['GFS00'], source: 'builtin' },
-  { code: 'GFT00', name: 'Bambu PETG-CF', displayName: 'Bambu PETG-CF', isCustom: false, allCodes: ['GFT00'], source: 'builtin' },
-  { code: 'GFNC0', name: 'Bambu PA-CF', displayName: 'Bambu PA-CF', isCustom: false, allCodes: ['GFNC0'], source: 'builtin' },
-  { code: 'GFV00', name: 'Bambu PVA', displayName: 'Bambu PVA', isCustom: false, allCodes: ['GFV00'], source: 'builtin' },
+  { code: 'GFG99', name: 'Generic PETG', displayName: 'Generic PETG', isCustom: false, allCodes: ['GFG99'], source: 'builtin' },
+  { code: 'GFB00', name: 'Bambu ABS', displayName: 'Bambu ABS', isCustom: false, allCodes: ['GFB00'], source: 'builtin' },
+  { code: 'GFB99', name: 'Generic ABS', displayName: 'Generic ABS', isCustom: false, allCodes: ['GFB99'], source: 'builtin' },
+  { code: 'GFB01', name: 'Bambu ASA', displayName: 'Bambu ASA', isCustom: false, allCodes: ['GFB01'], source: 'builtin' },
+  { code: 'GFU01', name: 'Bambu TPU 95A', displayName: 'Bambu TPU 95A', isCustom: false, allCodes: ['GFU01'], source: 'builtin' },
+  { code: 'GFU99', name: 'Generic TPU', displayName: 'Generic TPU', isCustom: false, allCodes: ['GFU99'], source: 'builtin' },
+  { code: 'GFC00', name: 'Bambu PC', displayName: 'Bambu PC', isCustom: false, allCodes: ['GFC00'], source: 'builtin' },
+  { code: 'GFN99', name: 'Generic PA', displayName: 'Generic PA', isCustom: false, allCodes: ['GFN99'], source: 'builtin' },
+  { code: 'GFA50', name: 'Bambu PLA-CF', displayName: 'Bambu PLA-CF', isCustom: false, allCodes: ['GFA50'], source: 'builtin' },
+  { code: 'GFG50', name: 'Bambu PETG-CF', displayName: 'Bambu PETG-CF', isCustom: false, allCodes: ['GFG50'], source: 'builtin' },
+  { code: 'GFN03', name: 'Bambu PA-CF', displayName: 'Bambu PA-CF', isCustom: false, allCodes: ['GFN03'], source: 'builtin' },
+  { code: 'GFS04', name: 'Bambu PVA', displayName: 'Bambu PVA', isCustom: false, allCodes: ['GFS04'], source: 'builtin' },
 ];
 
 // Parse a slicer preset name to extract brand, material, and variant
@@ -203,6 +207,7 @@ function buildLocalFilamentOptions(localPresets: LocalPreset[]): FilamentOption[
     const code = String(preset.id);
     const legacyCode = preset.filament_type || code;
     const allCodes = Array.from(new Set([code, legacyCode]));
+    const compatiblePrinters = parseCompatiblePrinters(preset.compatible_printers);
     return {
       code,
       name: preset.name,
@@ -210,6 +215,7 @@ function buildLocalFilamentOptions(localPresets: LocalPreset[]): FilamentOption[
       isCustom: false,
       allCodes,
       source: 'local',
+      ...(compatiblePrinters ? { compatiblePrinters } : {}),
     };
   });
   return options.sort((a, b) => a.displayName.localeCompare(b.displayName));
@@ -282,9 +288,7 @@ export function buildFilamentOptions(
   const builtinOptions: FilamentOption[] = [];
   if (builtinFilaments && builtinFilaments.length > 0) {
     for (const bf of builtinFilaments) {
-      const settingId = bf.filament_id.startsWith('GF')
-        ? 'GFS' + bf.filament_id.slice(2)
-        : bf.filament_id;
+      const settingId = filamentIdToSettingId(bf.filament_id);
       if (cloudCodes.has(bf.filament_id) || cloudCodes.has(settingId)) continue;
       builtinOptions.push({
         code: bf.filament_id,
@@ -391,20 +395,14 @@ export function saveRecentColor(color: ColorPreset, currentRecent: ColorPreset[]
 // Spools store ``slicer_filament`` as a setting_id like "GFSG98_09" (the "_NN"
 // suffix is the variant, the "S" infix marks it as a setting_id); printer
 // K-profiles store ``filament_id`` as "GFG98" (bare). Both shapes need
-// normalising before comparison.
+// normalising before comparison. The rule and its exceptions (SUNLU, a few
+// P1/X1 presets, #3387) live in ``utils/filamentIds``.
 //
-// This is the inverse of the filament_id→setting_id mapping at
-// ``buildFilamentOptions`` ("GFS" + filament_id.slice(2)), so a round-trip
-// stays consistent. Non-Bambu IDs (numeric local-preset IDs, Orca UUIDs)
-// are returned unchanged uppercase — they won't match any K-profile's
-// filament_id and the caller falls through to name-based matching.
+// Non-Bambu IDs (numeric local-preset IDs, Orca UUIDs) are returned unchanged
+// uppercase — they won't match any K-profile's filament_id and the caller
+// falls through to name-based matching.
 export function toFilamentId(id: string | null | undefined): string {
-  if (!id) return '';
-  // Drop "_NN" variant suffix.
-  let s = id.split('_')[0];
-  // Strip the "S" infix in "GFS..." so "GFSG98" → "GFG98".
-  if (/^GFS/i.test(s)) s = s.slice(0, 2) + s.slice(3);
-  return s.toUpperCase();
+  return settingIdToFilamentId((id || '').toUpperCase());
 }
 
 // "GFx99" identifiers (GFL99, GFG99, GFB99, ...) are Bambu's *generic* filament
@@ -463,6 +461,70 @@ export function genericFilamentIdMatchesMaterial(id: string, material: string): 
  */
 export function hotendKey(printerId: number, extruder: number, diameter: string): string {
   return `${printerId}:${extruder}:${diameter}`;
+}
+
+/**
+ * K profiles picked for a new spool, plus its product's profile default
+ * (#1326) for every hotend nothing was picked for. For a page that saves a
+ * new spool's K profiles without showing the default: the save replaces the
+ * whole list, so the default the create applied would otherwise be lost. A
+ * failed lookup returns the picks alone.
+ */
+export async function withProductDefaultKProfiles(
+  picked: SpoolKProfileInput[],
+  product: { brand: string; material: string; subtype: string; color_name: string },
+): Promise<SpoolKProfileInput[]> {
+  const keyOf = (k: SpoolKProfileInput) =>
+    hotendKey(k.printer_id, k.extruder ?? 0, (k.nozzle_diameter || '').trim() || '0.4');
+  let resolved: Awaited<ReturnType<typeof api.resolveProfileDefault>>;
+  try {
+    resolved = await api.resolveProfileDefault({
+      brand: product.brand.trim(),
+      material: product.material.trim(),
+      subtype: product.subtype.trim(),
+      color_name: product.color_name.trim(),
+    });
+  } catch {
+    return picked;
+  }
+  const taken = new Set(picked.map(keyOf));
+  const merged = [...picked];
+  for (const k of resolved?.k_profiles ?? []) {
+    if (taken.has(keyOf(k))) continue;
+    merged.push(k);
+    taken.add(keyOf(k));
+  }
+  return merged;
+}
+
+/**
+ * The Printers tab's selection, one entry per hotend, from stored K profiles:
+ * a spool's, or a profile default's. The stored row carries everything the
+ * picker needs to show the selection before the printer answers, so an
+ * offline printer still renders what was chosen for it. Rows without a
+ * calibration slot are skipped -- there is nothing on the printer to select.
+ */
+export function selectionFromKProfiles(rows: SpoolKProfileInput[]): Map<string, CalibrationProfile> {
+  const chosen = new Map<string, CalibrationProfile>();
+  for (const p of rows) {
+    if (p.cali_idx === null || p.cali_idx === undefined) continue;
+    const diameter = (p.nozzle_diameter || '').trim() || '0.4';
+    const extruder = p.extruder ?? 0;
+    chosen.set(hotendKey(p.printer_id, extruder, diameter), {
+      cali_idx: p.cali_idx,
+      filament_id: '',
+      setting_id: p.setting_id || '',
+      name: p.name || '',
+      k_value: p.k_value,
+      n_coef: 0,
+      extruder_id: extruder,
+      nozzle_diameter: diameter,
+      // Stored as the bare flow code; the picker re-derives its label
+      // from the same field it reads off a live profile.
+      nozzle_id: p.nozzle_type || '',
+    });
+  }
+  return chosen;
 }
 
 /**
@@ -547,4 +609,122 @@ export function isMatchingCalibration(
   }
 
   return true;
+}
+
+// Last created spool (#3619). Only the fields that describe the product and
+// where it lives are carried; colour, note, usage, RFID/tag data, drying date,
+// material number, threshold and supplier article numbers are per-spool.
+export interface LastSpool {
+  brand?: string;
+  material?: string;
+  subtype?: string;
+  slicer_filament?: string;
+  slicer_filament_name?: string;
+  label_weight?: number;
+  core_weight?: number;
+  core_weight_catalog_id?: number | null;
+  location_id?: number | null;
+  cost_per_kg?: number | null;
+  category?: string;
+  supplier_ids?: number[];
+  // The preset was put there by a profile default, not chosen: the next product's default may replace it.
+  preset_from_default?: boolean;
+}
+
+export type LastSpoolMode = 'builtin' | 'spoolman';
+
+const lastSpoolKey = (mode: LastSpoolMode) => (mode === 'spoolman' ? LAST_SPOOL_SPOOLMAN_KEY : LAST_SPOOL_KEY);
+
+const isId = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v > 0;
+
+/** Reads the remembered spool; every field is type-checked, anything else is ignored. */
+export function loadLastSpool(mode: LastSpoolMode): LastSpool | null {
+  try {
+    const raw = localStorage.getItem(lastSpoolKey(mode));
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    const o = parsed as Record<string, unknown>;
+    if (o.v !== 1) return null;
+    const out: LastSpool = {};
+    for (const key of ['brand', 'material', 'subtype', 'slicer_filament', 'slicer_filament_name', 'category'] as const) {
+      const value = o[key];
+      if (typeof value === 'string' && value.trim()) out[key] = value;
+    }
+    if (typeof o.label_weight === 'number' && Number.isFinite(o.label_weight) && o.label_weight > 0) {
+      out.label_weight = o.label_weight;
+    }
+    if (typeof o.core_weight === 'number' && Number.isFinite(o.core_weight) && o.core_weight >= 0) {
+      out.core_weight = o.core_weight;
+    }
+    if (typeof o.cost_per_kg === 'number' && Number.isFinite(o.cost_per_kg) && o.cost_per_kg >= 0) {
+      out.cost_per_kg = o.cost_per_kg;
+    }
+    if (isId(o.core_weight_catalog_id)) out.core_weight_catalog_id = o.core_weight_catalog_id;
+    if (isId(o.location_id)) out.location_id = o.location_id;
+    if (o.preset_from_default === true) out.preset_from_default = true;
+    if (Array.isArray(o.supplier_ids)) {
+      const ids = o.supplier_ids.filter(isId);
+      if (ids.length > 0) out.supplier_ids = Array.from(new Set(ids));
+    }
+    return Object.keys(out).length > 0 ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Remembers a just-created spool for the next create form. Never throws. */
+export function saveLastSpool(mode: LastSpoolMode, data: LastSpool): void {
+  try {
+    const payload: Record<string, unknown> = {
+      v: 1,
+      brand: data.brand ?? '',
+      material: data.material ?? '',
+      subtype: data.subtype ?? '',
+      slicer_filament: data.slicer_filament ?? '',
+      slicer_filament_name: data.slicer_filament_name ?? '',
+      label_weight: data.label_weight ?? null,
+      core_weight: data.core_weight ?? null,
+      core_weight_catalog_id: data.core_weight_catalog_id ?? null,
+      location_id: data.location_id ?? null,
+      cost_per_kg: data.cost_per_kg ?? null,
+      category: data.category ?? '',
+      supplier_ids: data.supplier_ids ?? [],
+      preset_from_default: data.preset_from_default === true,
+    };
+    localStorage.setItem(lastSpoolKey(mode), JSON.stringify(payload));
+  } catch {
+    // Storage unavailable: the form just starts empty next time.
+  }
+}
+
+// Split a dropdown's options into the ones the catalog/presets pair with the
+// other field's current value and everything else (#1905). Suggestions are only
+// a sort order — nothing is ever hidden, so an unusual-but-real combination
+// (Elegoo ASA) stays one click away. `key` lets non-string options (#3619) be
+// matched by a text key.
+export function splitSuggested<T = string>(
+  options: T[],
+  suggested: string[],
+  key: (option: T) => string = (o) => String(o),
+): { top: T[]; rest: T[] } {
+  if (suggested.length === 0) return { top: [], rest: options };
+  const keys = new Set(suggested.map(s => s.toLowerCase()));
+  return {
+    top: options.filter(o => keys.has(key(o).toLowerCase())),
+    rest: options.filter(o => !keys.has(key(o).toLowerCase())),
+  };
+}
+
+// Catalog entries whose name starts with the brand, or one of its aliases (see
+// brandAliases), as a whole word, e.g. brand "Polymaker" → "PolyMaker - Cardboard"
+// and "PolyTerra PLA - Cardboard", brand "PolyTerra" → "PolyTerra PLA - Cardboard"
+// and "PolyMaker - Cardboard" (#3619). Returns the matching names (case-insensitive).
+export function brandSuggestedNames(names: string[], brand: string, aliases: string[] = []): string[] {
+  const prefixes = [brand, ...aliases].map(p => p.trim().toLowerCase()).filter(Boolean);
+  if (!brand.trim()) return [];
+  return names.filter(n => {
+    const l = n.trim().toLowerCase();
+    return prefixes.some(b => l.startsWith(b) && (l.length === b.length || !/[a-z0-9]/.test(l[b.length])));
+  });
 }

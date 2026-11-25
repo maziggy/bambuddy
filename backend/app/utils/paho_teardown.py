@@ -33,6 +33,25 @@ _RETIRE_SLOW_SECONDS = 5.0
 _CALLBACKS = ("on_connect", "on_disconnect", "on_subscribe", "on_message")
 
 
+def discard_queued_publishes(client) -> int | None:
+    """Empty paho's outbox; returns how many publishes it held.
+
+    On a reconnect of the same client paho re-sends every QoS 1 publish still
+    waiting for its PUBACK, right after ``on_connect`` returns. Bambu printers
+    often never PUBACK (#1164), so that can be a ``stop`` from hours ago
+    cancelling the print running now (#3454). Uses paho 2.x internals
+    (``_out_messages`` under ``_out_message_mutex``; the reconnect has already
+    reset the in-flight count), pinned by test_mqtt_reconnect_replay_3454.py.
+    Returns None when paho no longer has them."""
+    try:
+        with client._out_message_mutex:
+            held = len(client._out_messages)
+            client._out_messages.clear()
+    except AttributeError:
+        return None
+    return held
+
+
 def retire_paho_client(client, label: str) -> None:
     """Shut *client* down on a thread of its own and return immediately.
 
@@ -61,6 +80,10 @@ def retire_paho_client(client, label: str) -> None:
 
     def _teardown() -> None:
         started = time.monotonic()
+        # A zombie whose handshake finishes after this would otherwise send its
+        # old outbox on the revived session; with on_connect cleared above,
+        # nothing else empties it (#3454).
+        discard_queued_publishes(client)
         try:
             client.disconnect()
         except Exception:

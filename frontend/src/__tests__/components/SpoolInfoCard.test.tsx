@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { render } from '../utils';
 import { SpoolInfoCard, UnknownTagCard } from '../../components/spoolbuddy/SpoolInfoCard';
-import type { MatchedSpool } from '../../hooks/useSpoolBuddyState';
+import type { MatchedSpool, UnknownTagData } from '../../hooks/useSpoolBuddyState';
 
 const mockUpdateSpoolWeight = vi.fn();
 
@@ -161,5 +161,50 @@ describe('UnknownTagCard', () => {
     expect(btn).toBeInTheDocument();
     fireEvent.click(btn);
     expect(onAdd).toHaveBeenCalledTimes(1);
+  });
+
+  describe('with data decoded from a Bambu tag (#2685)', () => {
+    const tagData: UnknownTagData = {
+    material: 'PETG',
+    subtype: 'Translucent',
+    color_name: 'Translucent Pink',
+    rgba: 'F9C1BD80',
+    extra_colors: null,
+    effect_type: null,
+    brand: 'Bambu Lab',
+    label_weight: 1000,
+    slicer_filament: 'GFG01',
+    slicer_filament_name: 'Bambu PETG Translucent',
+    nozzle_temp_min: 230,
+    nozzle_temp_max: 260,
+    core_weight: 250,
+    core_weight_catalog_id: null,
+    variant_id: null,
+    diameter: 1.75,
+    drying_temp: null,
+    drying_time: null,
+  };
+
+    it('shows the spool the tag describes, still marked as a new tag', () => {
+      render(<UnknownTagCard tagUid="3CBDBD05" scaleWeight={null} tagData={tagData} />);
+
+      expect(screen.getByText('Bambu Lab PETG Translucent')).toBeInTheDocument();
+      expect(screen.getByText('Translucent Pink')).toBeInTheDocument();
+      expect(screen.getByText(/New Tag Detected/)).toBeInTheDocument();
+      expect(screen.getByText('3CBDBD05')).toBeInTheDocument();
+    });
+
+    it("estimates the filament with the tag's empty-spool weight", () => {
+      render(<UnknownTagCard tagUid="3CBDBD05" scaleWeight={1200} tagData={{ ...tagData, core_weight: 216 }} />);
+
+      expect(screen.getByText(/~984g filament/)).toBeInTheDocument();
+    });
+
+    it('keeps the plain new-tag card without tag data', () => {
+      render(<UnknownTagCard tagUid="3CBDBD05" scaleWeight={null} tagData={null} />);
+
+      expect(screen.getByText('New Tag Detected')).toBeInTheDocument();
+      expect(screen.queryByText('Bambu Lab PETG Translucent')).toBeNull();
+    });
   });
 });

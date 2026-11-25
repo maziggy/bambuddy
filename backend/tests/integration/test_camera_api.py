@@ -676,25 +676,14 @@ class TestCameraAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_delete_calibration_printer_not_found(self, async_client: AsyncClient):
-        """Verify 404 when deleting calibration for non-existent printer."""
-        response = await async_client.delete("/api/v1/printers/99999/camera/plate-detection/calibrate")
-
-        assert response.status_code == 404
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_delete_calibration_success(self, async_client: AsyncClient, printer_factory):
-        """Verify delete calibration returns proper structure."""
+    async def test_the_legacy_delete_all_calibration_route_is_gone(self, async_client: AsyncClient, printer_factory):
+        """References are deleted one at a time (DELETE .../references/{index});
+        the old delete-everything route had no caller left."""
         printer = await printer_factory()
 
-        with patch("backend.app.services.plate_detection.is_plate_detection_available", return_value=True):
-            response = await async_client.delete(f"/api/v1/printers/{printer.id}/camera/plate-detection/calibrate")
+        response = await async_client.delete(f"/api/v1/printers/{printer.id}/camera/plate-detection/calibrate")
 
-        assert response.status_code == 200
-        result = response.json()
-        assert "success" in result
-        assert "message" in result
+        assert response.status_code == 405
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -837,3 +826,25 @@ class TestCameraStreamPoolHygiene:
                 f"camera_stream re-introduced a get_db-held session via parameter {name!r} — "
                 "it would stay open for the entire stream (issue #2572)"
             )
+
+    @pytest.mark.parametrize(
+        "route",
+        [
+            "test_camera",
+            "diagnose_camera_route",
+            "test_external_camera",
+            "check_plate_empty",
+            "calibrate_plate_detection",
+        ],
+    )
+    def test_capturing_routes_do_not_hold_a_get_db_session(self, route):
+        """RC-C10: these capture, diagnose or run OpenCV for 10-30 s after one
+        printer lookup; a ``Depends(get_db)`` session pinned a pooled
+        connection idle-in-transaction for all of it."""
+        import inspect
+
+        from backend.app.api.routes import camera
+
+        for name, param in inspect.signature(getattr(camera, route)).parameters.items():
+            dependency = getattr(param.default, "dependency", None)
+            assert dependency is not camera.get_db, f"{route} holds a get_db session via {name!r} (RC-C10)"

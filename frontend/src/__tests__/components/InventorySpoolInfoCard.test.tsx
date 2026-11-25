@@ -119,4 +119,22 @@ describe('InventorySpoolInfoCard', () => {
     fireEvent.click(screen.getByText(/unassign/i));
     expect(onUnassign).toHaveBeenCalledTimes(1);
   });
+
+  // SM-C8: the SpoolBuddy card hid Cost/kg for a Spoolman spool priced only by
+  // its filament, which prints off it are charged.
+  it.each([
+    [{ cost_per_kg: null, effective_cost_per_kg: 24 }, '24.00/kg'],
+    [{ cost_per_kg: 0, effective_cost_per_kg: 24 }, '24.00/kg'],
+    [{ cost_per_kg: 30, effective_cost_per_kg: 30 }, '30.00/kg'],
+  ])('shows the rate prints are charged (%o)', (prices, shown) => {
+    render(
+      <InventorySpoolInfoCard
+        spool={{ ...mockSpool, ...prices }}
+        liveScaleWeight={null}
+        onAssignToAms={vi.fn()}
+        isAssigned={false}
+      />
+    );
+    expect(screen.getByText(shown)).toBeInTheDocument();
+  });
 });

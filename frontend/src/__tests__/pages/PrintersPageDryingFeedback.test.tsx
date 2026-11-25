@@ -177,8 +177,9 @@ describe('PrintersPage - AMS drying feedback (#2533)', () => {
     });
     await user.click(screen.getAllByTitle('Stop Drying')[0]);
 
+    // Sent, not "stopped": the AMS reports the end of the cycle later.
     await waitFor(() => {
-      expect(mockShowToast).toHaveBeenCalledWith('Drying stopped', 'success');
+      expect(mockShowToast).toHaveBeenCalledWith('Stop command sent', 'success');
     });
   });
 

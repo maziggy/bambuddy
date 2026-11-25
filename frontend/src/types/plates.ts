@@ -2,6 +2,8 @@ export interface PlateFilament {
   slot_id: number;
   type: string;
   color: string;
+  // The slicer preset (GFA01, ...); names the product line for colour names
+  tray_info_idx?: string;
   used_grams: number;
   used_meters: number;
   // True when this AMS slot is consumed by the picked plate. False

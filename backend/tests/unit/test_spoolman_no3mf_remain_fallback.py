@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from backend.app.models import active_print_spoolman  # noqa: F401  (registers its table)
 from backend.app.services.spoolman_tracking import (
     _snapshot_tray_remain,
     store_print_data,
@@ -238,7 +239,7 @@ class TestStorePrintDataNo3mf:
         db = AsyncMock()
         queue_item = SimpleNamespace(ams_mapping=None, plate_id=None)
         queue_result = MagicMock()
-        queue_result.scalar_one_or_none.return_value = queue_item
+        queue_result.scalars.return_value.first.return_value = queue_item
         delete_result = MagicMock()
         db.execute = AsyncMock(side_effect=[queue_result, delete_result])
         db.add = MagicMock()
@@ -536,6 +537,191 @@ class TestPartialUsageRemainDelta:
             await _report_partial_usage(printer_id=1, tracking=tracking)
 
         client.use_spool.assert_awaited_once_with(7, 50.0)
+
+
+class TestPartialUsageCost:
+    """A failed or stopped print's charges are priced as they are made, so the
+    run is logged with its own cost, as in the built-in inventory."""
+
+    @pytest.mark.asyncio
+    async def test_the_remain_delta_charge_is_priced(self):
+        from backend.app.services.spoolman_tracking import _PrintCost, _report_partial_usage
+
+        tracking = SimpleNamespace(
+            archive_id=99,
+            filament_usage=None,
+            layer_usage=None,
+            filament_properties=None,
+            ams_trays={"0": {"tray_uuid": "AAAA"}},
+            slot_to_tray=None,
+            tray_remain_start={"0-0": {"remain": 90, "tray_uuid": "AAAA"}},
+        )
+        client = AsyncMock()
+        # 20 for the 1000 g spool: 0.02 a gram.
+        client.get_spool = AsyncMock(
+            return_value={"id": 7, "price": 20.0, "initial_weight": 1000.0, "filament": {"weight": 1000.0}}
+        )
+        client.use_spool = AsyncMock()
+        printer_manager = MagicMock()
+        printer_manager.get_status.return_value = SimpleNamespace(
+            raw_data={"ams": [{"id": 0, "tray": [{"id": 0, "tray_uuid": "AAAA", "remain": 70}]}]},
+            layer_num=42,
+            total_layers=100,
+        )
+        cost = _PrintCost()
+
+        with (
+            patch("backend.app.api.routes.settings.get_setting", AsyncMock(return_value="true")),
+            patch(
+                "backend.app.services.spoolman_tracking._get_spoolman_client_with_fallback",
+                AsyncMock(return_value=client),
+            ),
+            patch("backend.app.services.spoolman_tracking._get_printer_serial", AsyncMock(return_value="serial")),
+            patch(
+                "backend.app.services.spoolman_tracking._resolve_spool_id_via_slot_assignment",
+                AsyncMock(return_value=7),
+            ),
+            patch("backend.app.services.printer_manager.printer_manager", printer_manager),
+        ):
+            await _report_partial_usage(printer_id=1, tracking=tracking, cost_out=cost)
+
+        assert round(cost.cost, 2) == 4.0
+
+    @pytest.mark.asyncio
+    async def test_cleanup_returns_the_runs_cost(self, db_session, printer_factory, archive_factory):
+        from backend.app.models.active_print_spoolman import ActivePrintSpoolman
+        from backend.app.services.spoolman_tracking import cleanup_tracking
+
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, status="printing", with_run=False)
+        db_session.add(ActivePrintSpoolman(printer_id=printer.id, archive_id=archive.id, ams_trays={}))
+        await db_session.commit()
+
+        async def _charge(printer_id, tracking, last_layer_num=None, last_progress=None, cost_out=None):
+            cost_out.add(50.0, {"price": 20.0, "initial_weight": 1000.0}, "Slot 1")
+
+        with patch("backend.app.services.spoolman_tracking._report_partial_usage", side_effect=_charge):
+            run_cost = await cleanup_tracking(printer.id, archive.id, db_session, last_progress=50)
+
+        assert run_cost == 1.0
+
+    @pytest.mark.asyncio
+    async def test_a_charged_spool_without_a_price_is_costed_at_the_default(
+        self, db_session, printer_factory, archive_factory
+    ):
+        """20 g at 60/kg plus 30 g off an unpriced spool at the 25/kg default,
+        as the built-in inventory prices it."""
+        from backend.app.models.active_print_spoolman import ActivePrintSpoolman
+        from backend.app.services.spoolman_tracking import cleanup_tracking
+
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, status="printing", with_run=False)
+        db_session.add(ActivePrintSpoolman(printer_id=printer.id, archive_id=archive.id, ams_trays={}))
+        await db_session.commit()
+
+        async def _charge(printer_id, tracking, last_layer_num=None, last_progress=None, cost_out=None):
+            cost_out.add(20.0, {"price": 60.0, "initial_weight": 1000.0}, "Slot 1")
+            cost_out.add(30.0, {"price": None}, "Slot 2")
+
+        with patch("backend.app.services.spoolman_tracking._report_partial_usage", side_effect=_charge):
+            assert await cleanup_tracking(printer.id, archive.id, db_session) == 1.95
+
+    @pytest.mark.asyncio
+    async def test_cleanup_without_a_priced_spool_reports_no_cost(self, db_session, printer_factory, archive_factory):
+        from backend.app.models.active_print_spoolman import ActivePrintSpoolman
+        from backend.app.services.spoolman_tracking import cleanup_tracking
+
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, status="printing", with_run=False)
+        db_session.add(ActivePrintSpoolman(printer_id=printer.id, archive_id=archive.id, ams_trays={}))
+        await db_session.commit()
+
+        with patch("backend.app.services.spoolman_tracking._report_partial_usage", AsyncMock()):
+            assert await cleanup_tracking(printer.id, archive.id, db_session) is None
+
+
+class TestPartialUsageTraySplit:
+    """A single-filament print that ran out and switched to the AMS backup
+    spool before failing charges each spool its share, as a completed print
+    and the built-in inventory do. All of it went to the tray that ran out."""
+
+    @pytest.mark.asyncio
+    async def test_the_partial_grams_are_split_at_the_tray_change(self):
+        from backend.app.services.spoolman_tracking import _report_partial_usage
+
+        tracking = SimpleNamespace(
+            archive_id=99,
+            filament_usage=[{"slot_id": 1, "used_g": 200.0}],
+            layer_usage=None,
+            filament_properties=None,
+            ams_trays={"0": {"tray_uuid": "A" * 32}, "1": {"tray_uuid": "B" * 32}},
+            slot_to_tray=[0],
+            tray_remain_start=None,
+        )
+        spools = {"A" * 32: {"id": 7}, "B" * 32: {"id": 8}}
+        client = AsyncMock()
+        client.find_spool_by_tag = AsyncMock(side_effect=lambda tag, *a, **k: spools.get(tag))
+        client.use_spool = AsyncMock()
+        printer_manager = MagicMock()
+        printer_manager.get_status.return_value = SimpleNamespace(
+            raw_data={},
+            layer_num=100,
+            total_layers=200,
+            tray_change_log=[(0, 1), (1, 51)],
+        )
+
+        with (
+            patch("backend.app.api.routes.settings.get_setting", AsyncMock(return_value="true")),
+            patch(
+                "backend.app.services.spoolman_tracking._get_spoolman_client_with_fallback",
+                AsyncMock(return_value=client),
+            ),
+            patch("backend.app.services.spoolman_tracking._get_printer_serial", AsyncMock(return_value="serial")),
+            patch("backend.app.services.printer_manager.printer_manager", printer_manager),
+        ):
+            await _report_partial_usage(printer_id=1, tracking=tracking)
+
+        charged = {call.args[0]: call.args[1] for call in client.use_spool.await_args_list}
+        # 100 g by layer 100 of 200, the switch at layer 51: half each.
+        assert charged == {7: 50.0, 8: 50.0}
+
+    @pytest.mark.asyncio
+    async def test_a_stop_layer_below_a_logged_switch_never_charges_more_than_was_used(self):
+        """The stop layer estimated from progress (60) can trail the logged
+        switch (80); the split must not exceed the partial grams."""
+        from backend.app.services.spoolman_tracking import _report_partial_usage
+
+        tracking = SimpleNamespace(
+            archive_id=99,
+            filament_usage=[{"slot_id": 1, "used_g": 200.0}],
+            layer_usage=None,
+            filament_properties=None,
+            ams_trays={"0": {"tray_uuid": "A" * 32}, "1": {"tray_uuid": "B" * 32}},
+            slot_to_tray=[0],
+            tray_remain_start=None,
+        )
+        spools = {"A" * 32: {"id": 7}, "B" * 32: {"id": 8}}
+        client = AsyncMock()
+        client.find_spool_by_tag = AsyncMock(side_effect=lambda tag, *a, **k: spools.get(tag))
+        client.use_spool = AsyncMock()
+        printer_manager = MagicMock()
+        printer_manager.get_status.return_value = SimpleNamespace(
+            raw_data={}, layer_num=0, total_layers=200, tray_change_log=[(0, 0), (1, 80)]
+        )
+
+        with (
+            patch("backend.app.api.routes.settings.get_setting", AsyncMock(return_value="true")),
+            patch(
+                "backend.app.services.spoolman_tracking._get_spoolman_client_with_fallback",
+                AsyncMock(return_value=client),
+            ),
+            patch("backend.app.services.spoolman_tracking._get_printer_serial", AsyncMock(return_value="serial")),
+            patch("backend.app.services.printer_manager.printer_manager", printer_manager),
+        ):
+            await _report_partial_usage(printer_id=1, tracking=tracking, last_progress=30)
+
+        # Layer 60 of 200 from 30 %: 60 g used, never more.
+        assert round(sum(call.args[1] for call in client.use_spool.await_args_list), 2) <= 60.0
 
 
 class _AsyncCtx:

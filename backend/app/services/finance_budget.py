@@ -2,16 +2,20 @@
 
 import calendar
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.finance import BudgetReservation, CostCenter, CostCenterMember, WalletTransaction
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
+
+if TYPE_CHECKING:
+    from backend.app.core.auth import ApiKeyActor
 
 
 async def is_billing_enabled(db: AsyncSession) -> bool:
@@ -154,7 +158,7 @@ async def validate_print_budget(
     *,
     cost_center_id: int | None,
     estimated_cost: float | None,
-    current_user: User | None,
+    current_user: "User | ApiKeyActor | None",
     quantity: int = 1,
     exclude_queue_item_id: int | None = None,
     exclude_reservation_source_type: str | None = None,
@@ -167,7 +171,9 @@ async def validate_print_budget(
     if cost_center_id is None:
         raise HTTPException(status_code=400, detail="Cost center is required when billing is enabled")
 
-    if estimated_cost is None or estimated_cost <= 0:
+    # 0 is an estimate: a reprint mapped only to spools priced 0 costs
+    # nothing and is charged nothing (#3580). No estimate is None.
+    if estimated_cost is None or estimated_cost < 0:
         raise HTTPException(status_code=400, detail="Estimated cost is required for cost center prints")
 
     center = await db.scalar(select(CostCenter).where(CostCenter.id == cost_center_id).with_for_update())
@@ -277,9 +283,19 @@ async def release_budget_reservation(
     print_archive_id: int | None = None,
     status: str = "released",
 ) -> int:
+    """By the archive, the reservations of its queue items that are over: one
+    still pending or printing is another print's (another plate of it)."""
     conditions = [BudgetReservation.status == "active"]
     if print_archive_id is not None:
         conditions.append(BudgetReservation.print_archive_id == print_archive_id)
+        conditions.append(
+            or_(
+                BudgetReservation.source_type != "print_queue",
+                BudgetReservation.source_id.not_in(
+                    select(PrintQueueItem.id).where(PrintQueueItem.status.in_(("pending", "printing")))
+                ),
+            )
+        )
     else:
         conditions.extend(
             [

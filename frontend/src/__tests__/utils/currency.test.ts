@@ -38,6 +38,14 @@ describe('getCurrencySymbol', () => {
     expect(getCurrencySymbol('PHP')).toBe('₱');
   });
 
+  it('returns E£ for EGP', () => {
+    expect(getCurrencySymbol('EGP')).toBe('E£');
+  });
+
+  it('returns RD$ for DOP', () => {
+    expect(getCurrencySymbol('DOP')).toBe('RD$');
+  });
+
   it('returns the code itself for unknown currencies', () => {
     expect(getCurrencySymbol('XYZ')).toBe('XYZ');
   });
@@ -51,6 +59,14 @@ describe('getCurrencySymbol', () => {
 describe('SUPPORTED_CURRENCIES', () => {
   it('contains INR', () => {
     expect(SUPPORTED_CURRENCIES.find((c) => c.code === 'INR')).toBeDefined();
+  });
+
+  it('contains EGP', () => {
+    expect(SUPPORTED_CURRENCIES.find((c) => c.code === 'EGP')).toBeDefined();
+  });
+
+  it('contains DOP', () => {
+    expect(SUPPORTED_CURRENCIES.find((c) => c.code === 'DOP')).toEqual({ code: 'DOP', label: 'DOP (RD$)' });
   });
 
   it('contains MYR', () => {
@@ -69,7 +85,7 @@ describe('SUPPORTED_CURRENCIES', () => {
     expect(SUPPORTED_CURRENCIES.find((c) => c.code === 'PHP')).toEqual({ code: 'PHP', label: 'PHP (₱)' });
   });
 
-  it('has 32 entries', () => {
-    expect(SUPPORTED_CURRENCIES).toHaveLength(32);
+  it('has 34 entries', () => {
+    expect(SUPPORTED_CURRENCIES).toHaveLength(34);
   });
 });

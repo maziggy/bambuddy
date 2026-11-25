@@ -1,6 +1,8 @@
 # Claude
 .claude/
 CLAUDE.md
+CLAUDE.local.md
+.mcp.json
 
 # macOS
 .DS_Store
@@ -14,6 +16,7 @@ __pycache__/
 *.so
 venv/
 .venv/
+.typecheck-venv/
 env/
 .env
 docker-compose.override.yml
@@ -49,6 +52,7 @@ firmware/
 
 # Screenshots (development - root folder only)
 /screenshots/
+output/playwright/
 
 # Logs
 *.log

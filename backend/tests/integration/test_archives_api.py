@@ -112,6 +112,35 @@ class TestArchivesAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_upload_archives_bulk_numbers_each_outcome_by_its_file(
+        self, async_client: AsyncClient, archive_factory, printer_factory
+    ):
+        """Two files of the same name in one batch, the second failing: the
+        upload dialog matched outcomes to its rows by name, so both rows took
+        the first one's success. Each outcome now says which file it was."""
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, print_name="Benchy")
+        archive_print_mock = AsyncMock(side_effect=[archive, None])
+
+        files = [
+            ("files", ("Benchy.3mf", b"PK\x03\x04fake3mf", "application/octet-stream")),
+            ("files", ("Benchy.3mf", b"PK\x03\x04fake3mf", "application/octet-stream")),
+            ("files", ("notes.txt", b"hello", "text/plain")),
+        ]
+
+        with patch(
+            "backend.app.api.routes.archives.ArchiveService.archive_print",
+            archive_print_mock,
+        ):
+            response = await async_client.post("/api/v1/archives/upload-bulk", files=files)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert [(r["index"], r["id"]) for r in body["results"]] == [(0, archive.id)]
+        assert [e["index"] for e in body["errors"]] == [1, 2]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_upload_archives_bulk_defaults_prefer_filename_for_name_false(
         self, async_client: AsyncClient, archive_factory, printer_factory
     ):
@@ -781,8 +810,8 @@ class TestArchivesAPI:
         self, async_client: AsyncClient, archive_factory, printer_factory, db_session
     ):
         """#1820: a print that archived without its 3MF has no filament figure
-        and no way to recover one — rescan needs a file this archive does not
-        have. The edit is the only route, so it has to reach the log entry too:
+        and no way to recover one — the figure is read from a 3MF this archive
+        does not have. The edit is the only route, so it has to reach the log entry too:
         the Projects roll-up and the Prometheus counter sum PrintLogEntry, not
         the archive.
         """

@@ -112,4 +112,16 @@ describe('GcodeToolpathViewer sizing', () => {
     expect(pane.className).toContain('flex-1');
     expect(pane.contains(canvas())).toBe(true);
   });
+
+  it('clips the canvas to its pane so a stale width cannot reach the page (#3371)', () => {
+    const { container } = render(
+      <GcodeToolpathViewer gcodeUrl="/api/v1/archives/224/gcode" className="flex-1 min-h-0" />,
+    );
+
+    // The canvas width lags the container by one observer round. Unclipped, the
+    // overflow gave `<main>` a scrollbar, which narrowed the container, which
+    // shrank the canvas, which removed the scrollbar -- forever, on lg+ screens.
+    const pane = container.firstElementChild as HTMLElement;
+    expect(pane.className.split(/\s+/)).toContain('overflow-hidden');
+  });
 });

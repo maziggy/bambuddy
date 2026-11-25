@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field, field_validator
 
+from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
 from backend.app.schemas.supplier import SpoolSupplierResponse
 
 # Visual variant applied to a spool's swatch — purely cosmetic, does not
@@ -92,6 +93,23 @@ def normalize_effect_type(value: str | None) -> str | None:
     return canonical
 
 
+def effect_type_from_subtype(subtype: str | None) -> str | None:
+    """The swatch effect a subtype names ("Silk", "Wood", "Dual Color"), or None.
+
+    "Silk+" is the same finish as "Silk" with a plus on the product name, so the
+    trailing sign is dropped on a second attempt. A subtype that names no
+    effect (Basic, Tough, CF) gives None rather than a guessed overlay.
+    """
+    if not subtype:
+        return None
+    for candidate in (subtype, subtype.rstrip("+")):
+        try:
+            return normalize_effect_type(candidate)
+        except ValueError:
+            continue
+    return None
+
+
 def naive_utc(value: datetime | None) -> datetime | None:
     """Store a datetime the way Bambuddy's naive ``DateTime`` columns hold it: UTC.
 
@@ -166,7 +184,10 @@ class SpoolBase(BaseModel):
 
 
 class SpoolCreate(SpoolBase):
-    pass
+    # Never negative from a client; more than the label is possible (print
+    # tracking of a mis-labelled spool). Here, not on SpoolBase: a response
+    # must still serialise a value stored before there was a bound.
+    weight_used: float = Field(default=0, ge=0)
 
 
 class SpoolBulkCreate(BaseModel):
@@ -174,7 +195,8 @@ class SpoolBulkCreate(BaseModel):
     quantity: int = Field(default=1, ge=1, le=100)
 
 
-class SpoolUpdate(BaseModel):
+class SpoolUpdate(IgnoresNullForRequiredColumns):
+    __orm_table__ = "spool"
     material: str | None = None
     subtype: str | None = None
     color_name: str | None = None
@@ -196,7 +218,7 @@ class SpoolUpdate(BaseModel):
     label_weight: int | None = None
     core_weight: int | None = None
     core_weight_catalog_id: int | None = None
-    weight_used: float | None = None
+    weight_used: float | None = Field(default=None, ge=0)
     slicer_filament: str | None = None
     slicer_filament_name: str | None = None
     nozzle_temp_min: int | None = None
@@ -332,6 +354,9 @@ class SpoolAssignmentCreate(BaseModel):
     printer_id: int
     ams_id: int
     tray_id: int
+    # The spool also leaves any other slot it is assigned to, in the same
+    # transaction (#1574): a scanned spool is the one in the user's hand.
+    move: bool = False
 
 
 class SpoolAssignmentResponse(BaseModel):
@@ -348,6 +373,7 @@ class SpoolAssignmentResponse(BaseModel):
     configured: bool = False
     pending_config: bool = False  # True when slot was empty at assign time; will configure on insert
     ams_label: str | None = None  # User-defined friendly name for the AMS unit
+    printer_model: str | None = None  # e.g. "H3C": labels its AMS 3H slots "3H-n" and its external inputs "Ext-n"
 
     class Config:
         from_attributes = True

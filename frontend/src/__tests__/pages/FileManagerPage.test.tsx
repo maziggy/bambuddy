@@ -12,6 +12,14 @@ import { setAuthToken } from '../../api/client';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 
+// The page reads its settings from /settings, or from /settings/ui-flags for a
+// user who may not read /settings, as in the permission tests below.
+const settingsHandlers = (body: Record<string, unknown>) => [
+  http.get('/api/v1/settings/', () => HttpResponse.json(body)),
+  http.get('/api/v1/settings/ui-flags', () => HttpResponse.json(body)),
+  http.get('/api/v1/settings/ui-preferences', () => HttpResponse.json({})),
+];
+
 // Only the protocol-handler launch is stubbed — it would navigate the jsdom
 // window. Everything else in the module is a pure predicate, so keep the real
 // implementations: isSliceableFilename decides which rows even offer the
@@ -289,6 +297,19 @@ describe('FileManagerPage', () => {
       await waitFor(() => {
         expect(screen.getByText('Upload')).toBeInTheDocument();
       });
+    });
+
+    it('wraps the header buttons onto more lines instead of running off a narrow screen (#3295)', async () => {
+      // Up to nine controls sit in this row. Without wrapping they pushed
+      // the whole page sideways on a phone. jsdom does no layout, so this
+      // pins the classes that let the row wrap, and next to the title take
+      // only the room left over rather than squeezing the title.
+      render(<FileManagerPage />);
+
+      const upload = await screen.findByRole('button', { name: /upload/i });
+      const row = upload.parentElement as HTMLElement;
+      expect(row).toContainElement(screen.getByRole('button', { name: /new folder/i }));
+      expect(row.className.split(/\s+/)).toEqual(expect.arrayContaining(['flex-wrap', 'min-w-0', 'sm:justify-end', 'sm:flex-1']));
     });
   });
 
@@ -1048,7 +1069,7 @@ describe('FileManagerPage', () => {
 
       // A second one makes it one job for either file.
       await user.click(root.getByText('Cube'));
-      expect(await within(toolbar()).findByRole('button', { name: 'Print (2 alternatives)' })).toBeInTheDocument();
+      expect(await within(toolbar()).findByRole('button', { name: 'Print (2 files)' })).toBeInTheDocument();
     });
 
     it('offers Combine to 3MF for STLs ticked across columns', async () => {
@@ -1304,6 +1325,173 @@ describe('FileManagerPage', () => {
       await waitFor(() => {
         expect(screen.queryByRole('button', { name: /^Print$/ })).not.toBeInTheDocument();
       });
+    });
+
+    // #3462: an explicit multi-selection may mean several jobs, so the dialog
+    // offers the choice; a version group is by definition alternatives.
+    it('lets a multi-selection become alternatives or separate jobs (#3462)', async () => {
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+      await waitFor(() => expect(screen.getByText('Benchy')).toBeInTheDocument());
+
+      await user.click(screen.getByText('Benchy').closest('div[class*="cursor-pointer"]') as HTMLElement);
+      await user.click(screen.getByText('Cube').closest('div[class*="cursor-pointer"]') as HTMLElement);
+
+      await user.click(await screen.findByRole('button', { name: 'Print (2 files)' }));
+
+      const group = await screen.findByRole('radiogroup', { name: 'What the selected files become' });
+      expect(within(group).getByRole('radio', { name: /Alternatives/ })).toBeInTheDocument();
+      expect(within(group).getByRole('radio', { name: /Separate jobs/ })).toBeInTheDocument();
+    });
+
+    // #3471 review: a run closed after a refusal must not queue the files that
+    // went through a second time when Print is pressed again.
+    it('drops the queued files from the selection when a partly queued run is closed', async () => {
+      const posted: Array<Record<string, unknown>> = [];
+      server.use(
+        http.get('/api/v1/library/files/:id/plates', ({ params }) =>
+          HttpResponse.json({ file_id: Number(params.id), filename: 'x', plates: [], is_multi_plate: false })
+        ),
+        http.post('/api/v1/queue/', async ({ request }) => {
+          const body = (await request.json()) as Record<string, unknown>;
+          posted.push(body);
+          return posted.length === 2
+            ? HttpResponse.json({ detail: 'refused' }, { status: 400 })
+            : HttpResponse.json({ id: posted.length, status: 'pending' });
+        })
+      );
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+      await waitFor(() => expect(screen.getByText('Benchy')).toBeInTheDocument());
+
+      await user.click(screen.getByText('Benchy').closest('div[class*="cursor-pointer"]') as HTMLElement);
+      await user.click(screen.getByText('Cube').closest('div[class*="cursor-pointer"]') as HTMLElement);
+      await user.click(await screen.findByRole('button', { name: 'Print (2 files)' }));
+      await user.click(await screen.findByRole('radio', { name: /Separate jobs/ }));
+      await user.click(await screen.findByText('Test Printer'));
+      // The dialog's Print; with one file selected the toolbar has one too.
+      const print = () => screen.getAllByRole('button', { name: /^Print$/ }).at(-1) as HTMLElement;
+      await waitFor(() => expect(print()).toBeEnabled());
+      await user.click(print());
+      await screen.findByText(/Not queued: cube\.gcode\.3mf/);
+      expect(posted.map((b) => b.library_file_id)).toEqual([1, 3]);
+
+      await user.click(screen.getByRole('button', { name: 'Cancel' }));
+      await waitFor(() =>
+        expect(screen.queryByRole('radiogroup', { name: 'What the selected files become' })).not.toBeInTheDocument()
+      );
+
+      // Only cube is still selected, and its dialog is the rest of that run.
+      const toolbar = () => screen.getByText(/\d selected/).closest('div') as HTMLElement;
+      expect(within(toolbar()).getByText('1 selected')).toBeInTheDocument();
+      await user.click(within(toolbar()).getByRole('button', { name: /^Print$/ }));
+      await user.click(await screen.findByText('Test Printer'));
+      await waitFor(() => expect(print()).toBeEnabled());
+      await user.click(print());
+
+      await waitFor(() => expect(posted).toHaveLength(3));
+      expect(posted[2]).toMatchObject({ library_file_id: 3, printer_id: 1 });
+    });
+
+    // #3471 review: with the rest of a run selected, Print on another file's
+    // card shows that selection too, so it has to be the run's rest as well:
+    // a new run would queue again what a printer already has, and lose the
+    // printer, options and ASAP positions the run was submitted with.
+    it("resumes a partly queued run from another file's card Print", async () => {
+      const extra = [
+        { ...mockFiles[2], id: 5, filename: 'gear.gcode.3mf', file_path: '/library/gear.gcode.3mf', print_name: 'Gear' },
+        { ...mockFiles[2], id: 6, filename: 'nut.gcode.3mf', file_path: '/library/nut.gcode.3mf', print_name: 'Nut' },
+      ];
+      const posted: Array<Record<string, unknown>> = [];
+      server.use(
+        http.get('/api/v1/library/files', ({ request }) =>
+          HttpResponse.json(
+            new URL(request.url).searchParams.get('folder_id') ? filesForRequest(request) : [...mockFiles, ...extra]
+          )
+        ),
+        http.get('/api/v1/library/files/:id/plates', ({ params }) =>
+          HttpResponse.json({ file_id: Number(params.id), filename: 'x', plates: [], is_multi_plate: false })
+        ),
+        http.post('/api/v1/queue/', async ({ request }) => {
+          const body = (await request.json()) as Record<string, unknown>;
+          posted.push(body);
+          return posted.length === 2
+            ? HttpResponse.json({ detail: 'refused' }, { status: 400 })
+            : HttpResponse.json({ id: 100 + posted.length, status: 'pending' });
+        })
+      );
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+      await waitFor(() => expect(screen.getByText('Nut')).toBeInTheDocument());
+      const card = (name: string) => screen.getByText(name).closest('div[class*="cursor-pointer"]') as HTMLElement;
+
+      for (const name of ['Benchy', 'Cube', 'Gear']) await user.click(card(name));
+      await user.click(await screen.findByRole('button', { name: 'Print (3 files)' }));
+      await user.click(await screen.findByRole('radio', { name: /Separate jobs/ }));
+      // Gear before Cube: the queue order the run keeps.
+      await user.click((await screen.findAllByRole('button', { name: 'Move up' }))[2]);
+      await user.click(await screen.findByText('Test Printer'));
+      const print = () => screen.getAllByRole('button', { name: /^Print$/ }).at(-1) as HTMLElement;
+      await waitFor(() => expect(print()).toBeEnabled());
+      await user.click(print());
+      await screen.findByText(/Not queued: gear\.gcode\.3mf/);
+      await user.click(screen.getByRole('button', { name: 'Cancel' }));
+      await waitFor(() =>
+        expect(screen.queryByRole('radiogroup', { name: 'What the selected files become' })).not.toBeInTheDocument()
+      );
+
+      // Cube and Gear are still selected; Print from Nut's card menu.
+      const menuButtons = within(card('Nut')).getAllByRole('button');
+      await user.click(menuButtons[menuButtons.length - 1]);
+      await user.click(await screen.findByRole('button', { name: 'Print' }));
+
+      // The run's rest: no new choice of mode, and the run's printer is still
+      // picked, so Print goes straight on with the two files left.
+      await screen.findByText('gear.gcode.3mf');
+      expect(screen.queryByRole('radiogroup', { name: 'What the selected files become' })).not.toBeInTheDocument();
+      await waitFor(() => expect(print()).toBeEnabled());
+      await user.click(print());
+
+      await waitFor(() => expect(posted).toHaveLength(4));
+      // In the run's order, not the order the files were ticked in.
+      expect(posted.slice(2).map((b) => [b.library_file_id, b.printer_id])).toEqual([
+        [5, 1],
+        [3, 1],
+      ]);
+    });
+
+    it('shows a version group as alternatives only, without the choice (#3462)', async () => {
+      const user = userEvent.setup();
+      server.use(
+        http.get('/api/v1/library/files', ({ request }) =>
+          HttpResponse.json(
+            filesForRequest(request).map((f: { id: number }) =>
+              f.id === 1 || f.id === 3 ? { ...f, variant_group_id: 7 } : f
+            )
+          )
+        ),
+        http.get('/api/v1/library/variant-groups/7', () =>
+          HttpResponse.json({
+            id: 7,
+            name: 'Benchy',
+            members: [
+              { library_file_id: 1, filename: 'benchy.gcode.3mf', target_model: 'X1C', position: 0 },
+              { library_file_id: 3, filename: 'cube.gcode.3mf', target_model: 'P1S', position: 1 },
+            ],
+          })
+        )
+      );
+      render(<FileManagerPage />);
+      await waitFor(() => expect(screen.getByText('Benchy')).toBeInTheDocument());
+
+      // The two members are one card (#3628); its Print offers the whole group.
+      await user.click(screen.getByRole('button', { name: 'Actions for version group Benchy' }));
+      await user.click(await screen.findByRole('button', { name: 'Print all versions as one job' }));
+
+      // The dialog is the multi-file one (the archive name lists both files) ...
+      expect(await screen.findByText(/benchy\.gcode\.3mf \+1 more/)).toBeInTheDocument();
+      // ... but a group has no "separate jobs" choice.
+      expect(screen.queryByRole('radiogroup', { name: 'What the selected files become' })).not.toBeInTheDocument();
     });
   });
 
@@ -2047,7 +2235,7 @@ describe('FileManagerPage', () => {
         // about the handoff mechanics and the permission gate, not about which
         // slicer, so they run against OrcaSlicer. The Bambu Studio side is
         // covered by its own tests below.
-        http.get('/api/v1/settings/', () => HttpResponse.json({ preferred_slicer: 'orcaslicer' })),
+        ...settingsHandlers({ preferred_slicer: 'orcaslicer' }),
       );
     });
 
@@ -2086,7 +2274,7 @@ describe('FileManagerPage', () => {
 
     it('opens the in-app SliceModal when the slicer API is enabled', async () => {
       server.use(
-        http.get('/api/v1/settings/', () => HttpResponse.json({ use_slicer_api: true })),
+        ...settingsHandlers({ use_slicer_api: true }),
       );
       const user = userEvent.setup();
       render(<FileManagerPage />);
@@ -2109,7 +2297,7 @@ describe('FileManagerPage', () => {
     // worked. Nothing about STL was special; the card was just the shortest.
     it('keeps the first menu entry out of the card so it cannot be clipped (#2846)', async () => {
       server.use(
-        http.get('/api/v1/settings/', () => HttpResponse.json({ use_slicer_api: true })),
+        ...settingsHandlers({ use_slicer_api: true }),
       );
       const user = userEvent.setup();
       render(<FileManagerPage />);
@@ -2131,7 +2319,7 @@ describe('FileManagerPage', () => {
     // could only fail, with an error that blamed the file.
     it('hides the desktop handoff for an STL when the target is Bambu Studio', async () => {
       server.use(
-        http.get('/api/v1/settings/', () => HttpResponse.json({ preferred_slicer: 'bambu_studio' })),
+        ...settingsHandlers({ preferred_slicer: 'bambu_studio' }),
       );
       const user = userEvent.setup();
       render(<FileManagerPage />);
@@ -2147,9 +2335,7 @@ describe('FileManagerPage', () => {
       // preferred_slicer, which drives the sidecar -- decides whether an STL
       // can be handed over at all.
       server.use(
-        http.get('/api/v1/settings/', () =>
-          HttpResponse.json({ preferred_slicer: 'bambu_studio', open_in_slicer: 'orcaslicer' }),
-        ),
+        ...settingsHandlers({ preferred_slicer: 'bambu_studio', open_in_slicer: 'orcaslicer' }),
       );
       const user = userEvent.setup();
       render(<FileManagerPage />);
@@ -2168,9 +2354,7 @@ describe('FileManagerPage', () => {
       // The restriction is on the URL handoff, not on the file: the sidecar
       // slices an STL regardless of which desktop slicer is configured.
       server.use(
-        http.get('/api/v1/settings/', () =>
-          HttpResponse.json({ use_slicer_api: true, preferred_slicer: 'bambu_studio' }),
-        ),
+        ...settingsHandlers({ use_slicer_api: true, preferred_slicer: 'bambu_studio' }),
       );
       const user = userEvent.setup();
       render(<FileManagerPage />);
@@ -2220,7 +2404,7 @@ describe('FileManagerPage', () => {
     it('disables the Slice menu item without library:upload when the slicer API is enabled', async () => {
       mockAuthUser([]);
       server.use(
-        http.get('/api/v1/settings/', () => HttpResponse.json({ use_slicer_api: true })),
+        ...settingsHandlers({ use_slicer_api: true }),
       );
       const user = userEvent.setup();
       render(<FileManagerPage />);
@@ -2238,7 +2422,7 @@ describe('FileManagerPage', () => {
     it('enables the Slice menu item with library:upload when the slicer API is enabled', async () => {
       mockAuthUser(['library:upload']);
       server.use(
-        http.get('/api/v1/settings/', () => HttpResponse.json({ use_slicer_api: true })),
+        ...settingsHandlers({ use_slicer_api: true }),
       );
       const user = userEvent.setup();
       render(<FileManagerPage />);
@@ -2319,7 +2503,7 @@ describe('FileManagerPage', () => {
 
     it('slices from the list-view button into the in-app modal when the slicer API is enabled', async () => {
       server.use(
-        http.get('/api/v1/settings/', () => HttpResponse.json({ use_slicer_api: true })),
+        ...settingsHandlers({ use_slicer_api: true }),
       );
       const user = userEvent.setup();
       render(<FileManagerPage />);

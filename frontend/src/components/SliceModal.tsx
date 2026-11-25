@@ -1,4 +1,4 @@
-import { Cloud, CloudOff, Cog, Grid2x2, Loader2, RefreshCw, X } from 'lucide-react';
+import { Cloud, CloudOff, Cog, Grid2x2, Loader2, RefreshCw, Search, X } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -33,7 +33,9 @@ import {
   findPresetByName,
   pickDefault,
   pickFilamentForSlot,
+  listedRef,
   pickProcessDefault,
+  refValue,
   statesDifferentMaterial,
   type Slot,
 } from '../utils/slicePresetPicker';
@@ -45,6 +47,13 @@ import {
   printerProfileModel,
   printersOfModel,
 } from '../utils/sliceLoadedSpools';
+import {
+  defaultNozzleFlows,
+  extruderCount,
+  hasNozzleFlowChoice,
+  profileNozzleDiameter,
+  type NozzleFlowName,
+} from '../utils/sliceNozzleFlow';
 
 // The Slice dialog's two filters (#3172), remembered per browser. Off unless
 // the user turned them on.
@@ -84,7 +93,7 @@ interface SliceModalProps {
 function toRefValue(ref: PresetRef | null): string {
   // The HTML `<select>` value space is flat strings; encode source + id so
   // the same preset name can live in multiple tiers without collision.
-  return ref ? `${ref.source}:${ref.id}` : '';
+  return ref ? refValue(ref) : '';
 }
 
 function fromRefValue(raw: string): PresetRef | null {
@@ -95,6 +104,57 @@ function fromRefValue(raw: string): PresetRef | null {
   const id = raw.slice(idx + 1);
   if (source !== 'orca_cloud' && source !== 'cloud' && source !== 'local' && source !== 'standard') return null;
   return { source, id };
+}
+
+// Every preset group is listed in the order the slicer's bundled list already
+// uses (#3386): Bambu, Generic and other brands, each by name, with support
+// filaments after the real ones. The cloud tiers arrive in whatever order the
+// service returns, which reads as no order at all. Names compare without case
+// and with numbers by value, decimals included, so "0.08mm" sorts before
+// "0.2mm" and "PA6" before "PA12".
+const NAME_TEXT_ORDER = new Intl.Collator(undefined, { sensitivity: 'base' });
+const NAME_NUMBER = /(\d+(?:\.\d+)?)/;
+const SUPPORT_MATERIAL = /\b(support|pva|bvoh|hips)\b/i;
+
+// split() with a capture group puts the numbers at the odd indices.
+function compareNameParts(pa: string[], pb: string[]): number {
+  for (let i = 0; i < Math.min(pa.length, pb.length); i++) {
+    const d = i % 2 ? Number(pa[i]) - Number(pb[i]) : NAME_TEXT_ORDER.compare(pa[i], pb[i]);
+    if (d) return d;
+  }
+  return pa.length - pb.length;
+}
+
+function presetRank(name: string, slot: Slot): number {
+  const brand = /^bambu\b/i.test(name) ? 0 : /^generic\b/i.test(name) ? 1 : 2;
+  return (slot === 'filament' && SUPPORT_MATERIAL.test(name) ? 3 : 0) + brand;
+}
+
+function sortPresets(presets: UnifiedPreset[], slot: Slot): UnifiedPreset[] {
+  return presets
+    .map((p) => ({ p, rank: presetRank(p.name, slot), parts: p.name.split(NAME_NUMBER) }))
+    .sort(
+      (a, b) =>
+        a.rank - b.rank || compareNameParts(a.parts, b.parts) || NAME_TEXT_ORDER.compare(a.p.name, b.p.name),
+    )
+    .map(({ p }) => p);
+}
+
+// Every tier sorted once, for the dropdowns. The auto-picks keep the
+// listing's own order, so sorting never changes what is preselected.
+function sortListing(data: UnifiedPresetsResponse): UnifiedPresetsResponse {
+  const sortTier = (tier: UnifiedPresetsBySlot): UnifiedPresetsBySlot => ({
+    printer: sortPresets(tier.printer, 'printer'),
+    process: sortPresets(tier.process, 'process'),
+    filament: sortPresets(tier.filament, 'filament'),
+  });
+  return {
+    ...data,
+    local: sortTier(data.local),
+    orca_cloud: sortTier(data.orca_cloud),
+    cloud: sortTier(data.cloud),
+    standard: sortTier(data.standard),
+  };
 }
 
 // Inline spinner for the filament-requirements query. The backend runs a
@@ -469,6 +529,8 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
     }
   };
 
+  const sortedPresets = useMemo(() => presetsQuery.data && sortListing(presetsQuery.data), [presetsQuery.data]);
+
   // Canonical Bambu printer-model registry — drives the @BBL <code> name
   // fallback in slicerPrinterMatch for cloud / standard presets (#1325).
   // Long staleTime: the registry only changes across backend releases.
@@ -526,6 +588,36 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
     () => printersOfModel(loadedPrinters, printerProfileModel(selectedPrinterName, printerModels, printerParents)),
     [loadedPrinters, selectedPrinterName, printerModels, printerParents],
   );
+  // Nozzle flow (#3136): sliced with profiles, the slicer cuts for a Standard
+  // nozzle unless told otherwise, and a High Flow printer then warns that the
+  // file does not match it. The default is read from the first online printer
+  // of the model, by name, that reports its nozzles' flow at the profile's
+  // nozzle size.
+  const profileModel = useMemo(
+    () => printerProfileModel(selectedPrinterName, printerModels, printerParents),
+    [selectedPrinterName, printerModels, printerParents],
+  );
+  const profileDiameter = useMemo(() => {
+    if (!selectedPrinterName) return null;
+    const parent = Object.hasOwn(printerParents, selectedPrinterName) ? printerParents[selectedPrinterName] : null;
+    return profileNozzleDiameter(selectedPrinterName) ?? profileNozzleDiameter(parent);
+  }, [selectedPrinterName, printerParents]);
+  const nozzleExtruders = extruderCount(profileModel);
+  const showNozzleFlow = hasNozzleFlowChoice(profileModel) && !useEmbedded;
+  const flowFromPrinter = useMemo(
+    () => defaultNozzleFlows(spoolPrinters, profileModel, profileDiameter),
+    [spoolPrinters, profileModel, profileDiameter],
+  );
+  // The user's own pick; kept while it fits the profile's extruder count.
+  const [chosenNozzleFlows, setChosenNozzleFlows] = useState<NozzleFlowName[] | null>(null);
+  const chosenFits = chosenNozzleFlows != null && chosenNozzleFlows.length === nozzleExtruders;
+  const nozzleFlows: NozzleFlowName[] = chosenFits
+    ? chosenNozzleFlows
+    : (flowFromPrinter?.flows ?? Array<NozzleFlowName>(nozzleExtruders).fill('Standard'));
+  // Sent when the user picked it or a printer said it. Otherwise the backend
+  // reads it from the printers the caller may use, which this dialog may not
+  // see without printers:read, and slices for Standard when none says.
+  const sendNozzleFlows = showNozzleFlow && (chosenFits || flowFromPrinter != null);
   const filamentNameIndex = useMemo(
     () => (presetsQuery.data ? buildFilamentNameIndex(presetsQuery.data) : new Map()),
     [presetsQuery.data],
@@ -546,7 +638,7 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
   }, [onlyConnectedModels, loadedPrinters, printerModels, printerParents]);
   const filamentFilter = useMemo(() => {
     if (!onlyLoadedSpools || loadedFilamentRefs.size === 0) return null;
-    return (p: UnifiedPreset) => loadedFilamentRefs.has(`${p.source}:${p.id}`);
+    return (p: UnifiedPreset) => loadedFilamentRefs.has(toRefValue(p));
   }, [onlyLoadedSpools, loadedFilamentRefs]);
   // The preset listing with only the loaded spools' filaments, for the
   // auto-pick while that filter is on.
@@ -850,6 +942,7 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
       // them keeps the request identical to what older clients send.
       ...(autoOrient ? { auto_orient: true } : {}),
       ...(autoArrange ? { auto_arrange: true } : {}),
+      ...(sendNozzleFlows ? { nozzle_volume_type: nozzleFlows } : {}),
     };
   }
 
@@ -990,15 +1083,18 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
                     // Apply slot state. The filament list is right-padded from
                     // current state so a pipeline with fewer entries than the
                     // current source's slot count keeps the existing tail.
+                    // A pipeline saved with a stock Bambu Cloud preset gets
+                    // the Standard copy the dialog lists instead (#3386).
+                    const listed = (ref: PresetRef) => (presetsQuery.data ? listedRef(presetsQuery.data, ref) : ref);
                     explicitPrinter.current = true;
-                    setPrinterPreset(picked.printer_preset);
-                    setProcessPreset(picked.process_preset);
+                    setPrinterPreset(listed(picked.printer_preset));
+                    setProcessPreset(listed(picked.process_preset));
                     setBedType(picked.bed_type);
                     setFilamentPresets((current) => {
                       const next = current.length > 0 ? [...current] : picked.filament_presets.map(() => null);
                       for (let i = 0; i < next.length; i++) {
                         if (i < picked.filament_presets.length) {
-                          next[i] = picked.filament_presets[i];
+                          next[i] = listed(picked.filament_presets[i]);
                           // Applying a pipeline is as deliberate as picking
                           // from the dropdown, so the slots it fills are
                           // exempt from the material re-pick too.
@@ -1148,7 +1244,7 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
               <PresetDropdown
                 label={t('slice.printer')}
                 slot="printer"
-                data={presetsQuery.data}
+                data={sortedPresets ?? presetsQuery.data}
                 value={printerPreset}
                 onChange={(ref) => {
                   explicitPrinter.current = true;
@@ -1182,10 +1278,49 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
                   </span>
                 </label>
               )}
+              {showNozzleFlow && (
+                <div className="block" data-testid="slice-nozzle-flow">
+                  <div className="text-xs text-bambu-gray mb-1">{t('slice.nozzleFlow.label')}</div>
+                  <div className="flex flex-wrap gap-2">
+                    {nozzleFlows.map((flow, i) => (
+                      <label key={i} className="flex flex-1 min-w-[10rem] items-center gap-2 text-sm text-bambu-gray">
+                        {nozzleExtruders === 2 && (
+                          <span className="shrink-0">{i === 0 ? t('slice.nozzleFlow.left') : t('slice.nozzleFlow.right')}</span>
+                        )}
+                        <select
+                          value={flow}
+                          aria-label={
+                            nozzleExtruders === 2
+                              ? `${t('slice.nozzleFlow.label')}: ${i === 0 ? t('slice.nozzleFlow.left') : t('slice.nozzleFlow.right')}`
+                              : t('slice.nozzleFlow.label')
+                          }
+                          onChange={(e) => {
+                            const next = [...nozzleFlows];
+                            next[i] = e.target.value as NozzleFlowName;
+                            setChosenNozzleFlows(next);
+                          }}
+                          disabled={isEnqueuing}
+                          className="w-full px-3 py-2 rounded-md bg-bambu-dark border border-bambu-dark-tertiary text-white text-sm focus:outline-none focus:border-bambu-gray disabled:opacity-50"
+                        >
+                          <option value="Standard">{t('slice.nozzleFlow.standard')}</option>
+                          <option value="High Flow">{t('slice.nozzleFlow.highFlow')}</option>
+                        </select>
+                      </label>
+                    ))}
+                  </div>
+                  {!chosenFits && (
+                    <p className="text-xs text-bambu-gray/70 mt-1">
+                      {flowFromPrinter
+                        ? t('slice.nozzleFlow.fromPrinter', { name: flowFromPrinter.printerName })
+                        : t('slice.nozzleFlow.unknown')}
+                    </p>
+                  )}
+                </div>
+              )}
               <PresetDropdown
                 label={t('slice.process')}
                 slot="process"
-                data={presetsQuery.data}
+                data={sortedPresets ?? presetsQuery.data}
                 value={processPreset}
                 onChange={setProcessPreset}
                 disabled={isEnqueuing || useEmbedded}
@@ -1275,7 +1410,7 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
                       key={`filament-${idx}`}
                       label={label}
                       slot="filament"
-                      data={presetsQuery.data}
+                      data={sortedPresets ?? presetsQuery.data}
                       value={filamentPresets[idx] ?? null}
                       onChange={(ref) => {
                         explicitFilamentSlots.current.add(idx);
@@ -1560,21 +1695,23 @@ function CloudStatusBanner({
 }
 
 // Build-plate options offered in the SliceModal (#1337). Values are the
-// canonical strings the slicer's StaticPrintConfig validator accepts as
-// `curr_bed_type` — BambuStudio is the default sidecar, so this matches its
-// enum; OrcaSlicer accepts the same set with a Supertack alias that users
-// can target via the same dropdown if they re-import their presets.
+// `curr_bed_type` names in BambuStudio's and OrcaSlicer's enum
+// (s_keys_map_BedType); the slicer CLI slices any other name as Cool Plate
+// (#3359). Smooth PEI is High Temp Plate there, so it has no entry of its own.
 const BED_TYPE_OPTIONS: { value: string; labelKey: string; fallback: string }[] = [
   { value: 'Cool Plate', labelKey: 'slice.bedType.coolPlate', fallback: 'Cool Plate' },
   {
-    value: 'Cool Plate (SuperTack)',
+    value: 'Supertack Plate',
     labelKey: 'slice.bedType.coolPlateSuperTack',
     fallback: 'Cool Plate SuperTack',
   },
   { value: 'Engineering Plate', labelKey: 'slice.bedType.engineering', fallback: 'Engineering Plate' },
-  { value: 'High Temp Plate', labelKey: 'slice.bedType.highTemp', fallback: 'High Temp Plate' },
+  {
+    value: 'High Temp Plate',
+    labelKey: 'slice.bedType.highTemp',
+    fallback: 'Smooth PEI Plate / High Temp Plate',
+  },
   { value: 'Textured PEI Plate', labelKey: 'slice.bedType.texturedPEI', fallback: 'Textured PEI Plate' },
-  { value: 'Smooth PEI Plate', labelKey: 'slice.bedType.smoothPEI', fallback: 'Smooth PEI Plate' },
 ];
 
 function BedTypeDropdown({
@@ -1599,6 +1736,10 @@ function BedTypeDropdown({
         className="flex-1 min-w-0 px-3 py-2 rounded-md bg-bambu-dark border border-bambu-dark-tertiary text-white text-sm focus:outline-none focus:border-bambu-gray disabled:opacity-50"
       >
         <option value="">{t('slice.bedType.auto')}</option>
+        {/* A saved pipeline can hold a plate the list doesn't offer (saved
+            through the API). Shown as it is, so the select doesn't read
+            "Auto" while that plate is sent (#3359). */}
+        {value && !BED_TYPE_OPTIONS.some((opt) => opt.value === value) && <option value={value}>{value}</option>}
         {BED_TYPE_OPTIONS.map((opt) => (
           <option key={opt.value} value={opt.value}>
             {t(opt.labelKey, opt.fallback)}
@@ -1671,6 +1812,10 @@ function PresetDropdown({
   // The colour input needs its own id so the hex beside it can be a <label>
   // for it rather than for the preset <select> it sits next to.
   const colourId = `${selectId}-colour`;
+  const [searching, setSearching] = useState(false);
+  const [query, setQuery] = useState('');
+  const searchButton = useRef<HTMLButtonElement>(null);
+  const selectedRefValue = toRefValue(value);
 
   // Tier sections (imported → cloud → standard), plus — for a process /
   // filament slot with a selected printer — a trailing group of presets that
@@ -1749,27 +1894,54 @@ function PresetDropdown({
     return { sections: compatSections, otherEntries: other, filteredEntries: [] as UnifiedPreset[] };
   }, [data, slot, t, selectedPrinterName, compatIndex, allowed]);
 
+  // Search narrows what is listed, never what is chosen: every word must
+  // appear in the name, and the selected preset always stays (#3386). Every
+  // dropdown has it, so it is always where you look for it; the box opens from
+  // a button so a dialog full of filament rows stays compact. A query looks
+  // through the held-back groups too, which keep their labels.
+  const words = searching ? query.toLowerCase().split(/\s+/).filter(Boolean) : [];
+  const expanded = showAll || words.length > 0;
+
   // Other-printer presets are held back by default so the list shows what is
   // usable on the selected printer. Two things are never hidden: a preset whose
   // compatibility is merely *unknown* (it never reaches otherEntries), and the
   // one currently selected — a pipeline or an auto-pick can land on a
   // cross-printer preset, and dropping it from the options would blank the
-  // select and silently discard the choice.
-  const selectedRefValue = toRefValue(value);
+  // select and silently discard the choice. These groups mix tiers, so they
+  // are sorted once they are shown.
   const visibleOther = useMemo(() => {
-    if (showAll) return otherEntries;
-    return otherEntries.filter((p) => `${p.source}:${p.id}` === selectedRefValue);
-  }, [showAll, otherEntries, selectedRefValue]);
+    if (expanded) return sortPresets(otherEntries, slot);
+    return otherEntries.filter((p) => toRefValue(p) === selectedRefValue);
+  }, [expanded, otherEntries, slot, selectedRefValue]);
 
   const visibleFiltered = useMemo(() => {
-    if (showAll) return filteredEntries;
-    return filteredEntries.filter((p) => `${p.source}:${p.id}` === selectedRefValue);
-  }, [showAll, filteredEntries, selectedRefValue]);
+    if (expanded) return sortPresets(filteredEntries, slot);
+    return filteredEntries.filter((p) => toRefValue(p) === selectedRefValue);
+  }, [expanded, filteredEntries, slot, selectedRefValue]);
 
   const hiddenCount =
     otherEntries.length - visibleOther.length + filteredEntries.length - visibleFiltered.length;
   const totalEntries =
     sections.reduce((sum, s) => sum + s.entries.length, 0) + visibleOther.length + visibleFiltered.length;
+
+  const closeSearch = () => {
+    setSearching(false);
+    setQuery('');
+  };
+  const nameMatches = (p: UnifiedPreset) => words.every((w) => p.name.toLowerCase().includes(w));
+  const matches = (p: UnifiedPreset) => nameMatches(p) || toRefValue(p) === selectedRefValue;
+  const noMatches =
+    words.length > 0 &&
+    !sections.some((s) => s.entries.some(nameMatches)) &&
+    !visibleFiltered.some(nameMatches) &&
+    !visibleOther.some(nameMatches);
+  const shownSections = words.length
+    ? sections
+        .map((s) => ({ tierLabel: s.tierLabel, entries: s.entries.filter(matches) }))
+        .filter((s) => s.entries.length > 0)
+    : sections;
+  const shownFiltered = words.length ? visibleFiltered.filter(matches) : visibleFiltered;
+  const shownOther = words.length ? visibleOther.filter(matches) : visibleOther;
 
   return (
     // A plain wrapper rather than a <label> around everything: the "Show all"
@@ -1789,13 +1961,13 @@ function PresetDropdown({
           />
         )}
         <label htmlFor={selectId}>{label}</label>
-        {(hiddenCount > 0 || showAll) && (
-          <span className="ml-auto flex items-center gap-1.5 font-normal">
-            {hiddenCount > 0 && (
-              <span className="text-bambu-gray/60">
-                {t('slice.presetsHidden', '{{count}} hidden', { count: hiddenCount })}
-              </span>
-            )}
+        <span className="ml-auto flex items-center gap-1.5 font-normal">
+          {hiddenCount > 0 && (
+            <span className="text-bambu-gray/60">
+              {t('slice.presetsHidden', '{{count}} hidden', { count: hiddenCount })}
+            </span>
+          )}
+          {(hiddenCount > 0 || showAll) && (
             <button
               type="button"
               onClick={() => setShowAll((v) => !v)}
@@ -1806,13 +1978,49 @@ function PresetDropdown({
                 ? t('slice.showFewerPresets', 'Show fewer')
                 : t('slice.showAllPresets', 'Show all')}
             </button>
-          </span>
-        )}
+          )}
+          <button
+            ref={searchButton}
+            type="button"
+            onClick={() => (searching ? closeSearch() : setSearching(true))}
+            disabled={disabled}
+            aria-label={`${label}: ${searching ? t('slice.closeSearch', 'Close search') : t('common.search', 'Search')}`}
+            title={searching ? t('slice.closeSearch', 'Close search') : t('common.search', 'Search')}
+            className={`hover:text-white disabled:opacity-50 ${searching ? 'text-bambu-green' : ''}`}
+          >
+            <Search className="w-3.5 h-3.5" />
+          </button>
+        </span>
       </div>
+      {searching && (
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== 'Escape') return;
+            closeSearch();
+            // The input unmounts, which would leave focus on <body>.
+            searchButton.current?.focus();
+          }}
+          autoFocus
+          disabled={disabled}
+          placeholder={t('slice.searchPresets', 'Search presets...')}
+          aria-label={`${label}: ${t('slice.searchPresets', 'Search presets...')}`}
+          className="w-full px-3 py-1.5 mb-1 rounded-md bg-bambu-dark border border-bambu-dark-tertiary text-white text-sm placeholder:text-bambu-gray focus:outline-none focus:border-bambu-gray disabled:opacity-50"
+        />
+      )}
+      {/* Mounted with the search box and only its text changes, so screen
+          readers announce it when a query stops matching. */}
+      {searching && (
+        <p role="status" className={noMatches ? 'text-xs text-bambu-gray mb-1' : 'sr-only'}>
+          {noMatches ? t('slice.noMatchingPresets', 'No matching presets found.') : ''}
+        </p>
+      )}
       <div className="flex items-stretch gap-2">
       <select
         id={selectId}
-        value={toRefValue(value)}
+        value={selectedRefValue}
         onChange={(e) => onChange(fromRefValue(e.target.value))}
         disabled={disabled || totalEntries === 0}
         className="w-full px-3 py-2 rounded-md bg-bambu-dark border border-bambu-dark-tertiary text-white text-sm focus:outline-none focus:border-bambu-gray disabled:opacity-50"
@@ -1822,28 +2030,28 @@ function PresetDropdown({
             ? t('slice.noPresetsForSlot')
             : t('slice.selectPreset')}
         </option>
-        {sections.map((section) => (
+        {shownSections.map((section) => (
           <optgroup key={section.tierLabel} label={section.tierLabel}>
             {section.entries.map((p) => (
-              <option key={`${p.source}:${p.id}`} value={`${p.source}:${p.id}`}>
+              <option key={toRefValue(p)} value={toRefValue(p)}>
                 {p.name}
               </option>
             ))}
           </optgroup>
         ))}
-        {visibleFiltered.length > 0 && (
+        {shownFiltered.length > 0 && (
           <optgroup label={filteredLabel ?? t('slice.otherPrinters')}>
-            {visibleFiltered.map((p) => (
-              <option key={`${p.source}:${p.id}`} value={`${p.source}:${p.id}`}>
+            {shownFiltered.map((p) => (
+              <option key={toRefValue(p)} value={toRefValue(p)}>
                 {p.name}
               </option>
             ))}
           </optgroup>
         )}
-        {visibleOther.length > 0 && (
+        {shownOther.length > 0 && (
           <optgroup label={t('slice.otherPrinters')}>
-            {visibleOther.map((p) => (
-              <option key={`${p.source}:${p.id}`} value={`${p.source}:${p.id}`}>
+            {shownOther.map((p) => (
+              <option key={toRefValue(p)} value={toRefValue(p)}>
                 {p.name}
               </option>
             ))}

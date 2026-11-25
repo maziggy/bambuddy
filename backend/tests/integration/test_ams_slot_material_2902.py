@@ -312,10 +312,10 @@ class TestSpoolmanInventoryAssign:
 
         assert sent["tray_type"] == "PLA"
         assert sent["tray_info_idx"] == "GFL99"
-        # Exactly, not just "contains PLA+": the filament's own name is in this
-        # string too, so a substring check would pass even if the material had
-        # been reduced before it was built.
-        assert sent["tray_sub_brands"] == "eSUN PLA+ Cool White"
+        # Exactly, not just "contains PLA+", so a reduced material would show.
+        # The filament's name "Cool White" is its colour (#3561), which is not
+        # part of the sub-brand.
+        assert sent["tray_sub_brands"] == "eSUN PLA+"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -440,7 +440,7 @@ class TestSpoolmanLink:
 
         assert sent["tray_type"] == "PLA"
         assert sent["tray_info_idx"] == "GFL99"
-        assert sent["tray_sub_brands"] == "eSUN PLA+ Cool White"
+        assert sent["tray_sub_brands"] == "eSUN PLA+"  # "Cool White" is the colour (#3561)
         assert (sent["nozzle_temp_min"], sent["nozzle_temp_max"]) == (190, 230)
 
     @pytest.mark.asyncio

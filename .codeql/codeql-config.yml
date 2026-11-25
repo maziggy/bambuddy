@@ -3,6 +3,13 @@ name: "Bambuddy CodeQL Configuration"
 # Uses the default query suite with accepted-risk exclusions.
 # Each exclusion is reviewed and documented below.
 
+# static/ is the frontend build output (minified bundles of frontend/src and
+# its npm dependencies). frontend/src is scanned itself; the bundles only add
+# third-party code under a new hashed file name with every build, e.g.
+# three.js's Math.random() object ids reported as js/insecure-randomness.
+paths-ignore:
+  - static/
+
 query-filters:
   # ── Python Accepted Risk ─────────────────────────────────────
 
@@ -83,11 +90,12 @@ query-filters:
   - exclude:
       id: py/ldap-injection
 
-  # Incomplete URL substring sanitization: Only triggers in
-  # test assertions (test_cloud_auth.py) that verify the
-  # mocked HTTP client saw the right hostname
-  # (e.g. `"api.bambulab.cn" in captured_url`). URLs come
-  # from a mock's captured_urls list, not user input.
+  # Incomplete URL substring sanitization: Test assertions
+  # (test_cloud_auth.py and others) that verify the mocked HTTP
+  # client saw the right hostname (e.g. `"api.bambulab.cn" in
+  # captured_url`), and bambu_cloud.py looking for Cloudflare's
+  # challenge page in a response body. None of them decides
+  # where a request goes.
   - exclude:
       id: py/incomplete-url-substring-sanitization
 

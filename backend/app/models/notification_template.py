@@ -82,6 +82,12 @@ DEFAULT_TEMPLATES = [
         "body_template": "{printer}: {filename}\nThe print charge could not be recorded. The budget reservation was retained.\nArchive: {archive_id}",
     },
     {
+        "event_type": "filament_out_of_stock",
+        "name": "Filament Out of Stock",
+        "title_template": "Filament Out of Stock",
+        "body_template": "{job_name} waits for {filament}, and none is left in the inventory.",
+    },
+    {
         "event_type": "printer_offline",
         "name": "Printer Offline",
         "title_template": "Printer Offline",
@@ -97,7 +103,7 @@ DEFAULT_TEMPLATES = [
         "event_type": "ai_failure_detection",
         "name": "AI Failure Detection",
         "title_template": "Possible Print Failure Detected",
-        "body_template": "{printer}: {task_name}\nConfidence: {confidence}\nAction taken: {action}",
+        "body_template": "{printer}: {task_name}\nProvider: {provider}\nPrint quality: {print_quality}\nConfidence: {confidence}\nAction taken: {action}",
     },
     {
         "event_type": "plate_not_empty",
@@ -146,6 +152,17 @@ DEFAULT_TEMPLATES = [
         ),
     },
     {
+        "event_type": "ams_drying_not_heating",
+        "name": "Auto-Drying Not Heating",
+        "title_template": "Auto-Drying Suspended",
+        "body_template": (
+            "{printer} {ams_label}: stopped automatic drying. The printer accepted {cycles} drying commands "
+            "in a row, but each time the drying timer stood still and the unit did not heat. Clear the timer "
+            "with Stop on the printer card and check the AMS power; automatic drying resumes once humidity "
+            "is back at or below {threshold}%."
+        ),
+    },
+    {
         "event_type": "bed_cooled",
         "name": "Bed Cooled",
         "title_template": "Bed Cooled",
@@ -168,6 +185,12 @@ DEFAULT_TEMPLATES = [
         "name": "First Layer Complete",
         "title_template": "First Layer Complete",
         "body_template": "{printer}: {filename}\nLayer 1/{total_layers} done",
+    },
+    {
+        "event_type": "print_pause_upcoming",
+        "name": "Pause Coming Up",
+        "title_template": "Pause Coming Up",
+        "body_template": "{printer}: {filename}\nPauses in {time_to_pause} (about {eta}), at layer {layer}/{total_layers}",
     },
     {
         "event_type": "test",
@@ -222,13 +245,13 @@ DEFAULT_TEMPLATES = [
         "event_type": "user_created",
         "name": "Welcome Email",
         "title_template": "Welcome to {app_name}",
-        "body_template": "Welcome {username}!\n\nYour account has been created.\nUsername: {username}\nPassword: {password}\n\nLogin at: {login_url}",
+        "body_template": "Welcome {username}!\n\nYour {app_name} account has been created. Please change your password after your first login.\n\nLogin at: {login_url}\n\nYour login details:",
     },
     {
         "event_type": "password_reset",
         "name": "Password Reset",
         "title_template": "{app_name} - Password Reset",
-        "body_template": "Hello {username},\n\nYour password has been reset.\nNew Password: {password}\n\nLogin at: {login_url}",
+        "body_template": "Hello {username},\n\nA password reset was requested for your {app_name} account. If you did not request it, you can ignore this email: your password has not been changed.\n\nSet a new password with the link below (valid for 1 hour, usable once):",
     },
     # Inventory stock alert templates
     {

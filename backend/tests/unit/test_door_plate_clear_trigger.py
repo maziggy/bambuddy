@@ -237,6 +237,11 @@ async def test_identical_status_frames_still_reach_the_trigger(monkeypatch):
         subtask_name="job",
         subtask_id="task-1",
         gcode_file="job.gcode",
+        total_layers=0,
+        firmware_version=None,
+        developer_mode=None,
+        print_ams_mapping=None,
+        airduct_mode=None,
     )
 
     await main_module.on_printer_status_change(99, state)

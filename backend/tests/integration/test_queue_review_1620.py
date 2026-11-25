@@ -16,6 +16,7 @@ every way a job can be created or set going:
 from __future__ import annotations
 
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
@@ -132,7 +133,8 @@ class TestQueueing:
     async def test_library_add_to_queue_waits(self, async_client, setup, db_session):
         from backend.app.models.library import LibraryFile
 
-        rel_path = "archive/library/files/review_probe.gcode.3mf"
+        # Unique: the checkout's library folder is shared by every xdist worker.
+        rel_path = f"archive/library/files/review_probe_{uuid4().hex}.gcode.3mf"
         abs_path = Path(app_settings.base_dir) / rel_path
         abs_path.parent.mkdir(parents=True, exist_ok=True)
         abs_path.write_bytes(b"probe")
@@ -315,9 +317,16 @@ class TestApiKeys:
         item = await _queue(async_client, _auth(setup["student"]), setup["printer"].id, setup["archive"].id)
         key = await self._key(async_client, controller, can_control_printer=True)
 
+        # Someone else's job is not theirs to start at all
+        refused = await async_client.post(f"/api/v1/webhook/printer/{setup['printer'].id}/start", headers=key)
+        assert refused.status_code == 404
+        assert await _manual_start(item["id"]) is True
+
+        # Nor their own, while it waits for review
+        own = await _queue(async_client, _auth(controller), setup["printer"].id, setup["archive"].id)
         refused = await async_client.post(f"/api/v1/webhook/printer/{setup['printer'].id}/start", headers=key)
         assert refused.status_code == 403
-        assert await _manual_start(item["id"]) is True
+        assert await _manual_start(own["id"]) is True
 
         staff_key = await self._key(async_client, admin, can_control_printer=True)
         started = await async_client.post(f"/api/v1/webhook/printer/{setup['printer'].id}/start", headers=staff_key)

@@ -27,11 +27,19 @@ vi.mock('../../api/client', () => ({
     getBuiltinFilaments: vi.fn().mockResolvedValue([]),
     getPrinters: vi.fn().mockResolvedValue([]),
     getSpoolUsageHistory: vi.fn().mockResolvedValue([]),
+    getSpoolmanSpoolUsageHistory: vi.fn().mockResolvedValue([]),
     createSpool: vi.fn().mockResolvedValue({ id: 99 }),
     createSpoolmanInventorySpool: vi.fn().mockResolvedValue({ id: 88 }),
     updateSpool: vi.fn().mockResolvedValue({ id: 1 }),
     saveSpoolKProfiles: vi.fn().mockResolvedValue([]),
     getSpoolFilamentPresets: vi.fn().mockResolvedValue([]),
+    // 3D Filament Profiles (#2981): the form loads the spool's link, and
+    // its lookup section asks whether the user is connected.
+    getThreedfpSpoolLink: vi.fn().mockResolvedValue({ filament_id: null }),
+    setThreedfpSpoolLink: vi.fn().mockResolvedValue({ filament_id: null }),
+    threedfpStatus: vi.fn().mockResolvedValue({ connected: false, email: null }),
+    threedfpLookup: vi.fn().mockResolvedValue({ results: [] }),
+    threedfpGetFilament: vi.fn(),
     saveSpoolFilamentPresets: vi.fn().mockResolvedValue([]),
     getSpoolmanFilamentPresets: vi.fn().mockResolvedValue([]),
     saveSpoolmanFilamentPresets: vi.fn().mockResolvedValue([]),
@@ -44,6 +52,8 @@ vi.mock('../../api/client', () => ({
     }),
     getSpoolmanInventoryFilaments: vi.fn().mockResolvedValue([]),
     getAssignments: vi.fn().mockResolvedValue([]),
+    getSpools: vi.fn().mockResolvedValue([]),
+    linkTagToSpool: vi.fn().mockResolvedValue({ id: 73 }),
     getSpoolmanSlotAssignments: vi.fn().mockResolvedValue([]),
     unassignSpool: vi.fn().mockResolvedValue({}),
     unassignSpoolmanSlot: vi.fn().mockResolvedValue({}),
@@ -658,6 +668,25 @@ describe('SpoolFormModal Spoolman K-profile support', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("shows a Spoolman spool's own usage history (#3407)", async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={spoolmanSpool}
+        mode="edit"
+        currencySymbol="$"
+        spoolmanMode={true}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText('Edit Spool')).toBeInTheDocument());
+    openColorAndCostTab();
+
+    await waitFor(() => expect(api.getSpoolmanSpoolUsageHistory).toHaveBeenCalledWith(spoolmanSpool.id));
+    expect(api.getSpoolUsageHistory).not.toHaveBeenCalled();
   });
 
   it('shows the Printers tab for Spoolman spools in non-quickAdd mode', async () => {
@@ -1740,5 +1769,71 @@ describe('SpoolFormModal — per-spool tare in Spoolman mode (#2908)', () => {
     const payload = await copiedPayload({ ...spoolmanSpool, core_weight: 250, core_weight_is_inherited: true });
 
     expect(payload).not.toHaveProperty('core_weight');
+  });
+});
+
+describe('SpoolFormModal — Move Tag (#3658)', () => {
+  const tagged = {
+    ...existingSpool,
+    id: 61,
+    material: 'PETG',
+    rgba: '179CB0FF',
+    tag_uid: 'AABBCCDD11223344',
+    tray_uuid: 'AABBCCDDEEFF0011AABBCCDDEEFF0011',
+    tag_type: 'bambulab',
+    data_origin: 'rfid_linked',
+  } as InventorySpool;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.getSettings).mockResolvedValue({ spoolman_enabled: false } as never);
+  });
+
+  it('moves the tag, and the slot it holds, to the spool picked', async () => {
+    vi.mocked(api.getAssignments).mockResolvedValue([
+      { id: 1, spool_id: 61, printer_id: 3, ams_id: 0, tray_id: 1 },
+    ] as never);
+    vi.mocked(api.getSpools).mockResolvedValue([
+      tagged,
+      { ...tagged, id: 73, tag_uid: null, tray_uuid: null, tag_type: null, data_origin: null, weight_used: 175, archived_at: null },
+    ] as never);
+    const onClose = vi.fn();
+    render(<SpoolFormModal isOpen={true} onClose={onClose} spool={tagged} mode="edit" currencySymbol="$" />);
+
+    const trigger = await screen.findByRole('button', { name: 'Move Tag…' });
+    await waitFor(() => expect(trigger).toBeEnabled());
+    trigger.focus();
+    fireEvent.click(trigger);
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(trigger).toHaveFocus();
+    fireEvent.click(trigger);
+    expect(await screen.findByText(/already booked to #61 stays with #61/)).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('radio'));
+    fireEvent.click(screen.getByRole('button', { name: 'Move to #73' }));
+
+    await waitFor(() =>
+      expect(api.linkTagToSpool).toHaveBeenCalledWith(73, {
+        tag_uid: 'AABBCCDD11223344',
+        tray_uuid: 'AABBCCDDEEFF0011AABBCCDDEEFF0011',
+        tag_type: 'bambulab',
+        data_origin: 'rfid_linked',
+        move: true,
+        source_spool_id: 61,
+        printer_id: 3,
+        ams_id: 0,
+        tray_id: 1,
+      }),
+    );
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Move tag to another spool' })).toBeNull());
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
+  });
+
+  it('is not offered in Spoolman mode', async () => {
+    render(<SpoolFormModal isOpen={true} onClose={vi.fn()} spool={tagged} mode="edit" currencySymbol="$" spoolmanMode={true} />);
+
+    await screen.findByRole('button', { name: /clear rfid tag/i });
+    expect(screen.queryByRole('button', { name: 'Move Tag…' })).not.toBeInTheDocument();
   });
 });

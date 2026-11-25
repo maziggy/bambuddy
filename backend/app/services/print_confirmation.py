@@ -4,7 +4,7 @@ import logging
 from collections.abc import Mapping
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.archive import PrintArchive
@@ -100,7 +100,7 @@ def is_one_tap_request(query_params: Mapping[str, str]) -> bool:
     return (query_params.get(ONE_TAP_PARAM) or "") == "1"
 
 
-def stamp_verdict(archive: PrintArchive, source: str) -> None:
+def stamp_verdict(archive: PrintArchive | PrintLogEntry, source: str) -> None:
     """Record a verdict's provenance and the moment it landed (#1898).
 
     Both fields move together on every verdict write, which is what keeps the
@@ -112,7 +112,7 @@ def stamp_verdict(archive: PrintArchive, source: str) -> None:
     archive.user_verdict_at = datetime.now(timezone.utc)
 
 
-def retire_confirm_token(archive: PrintArchive) -> None:
+def retire_confirm_token(archive: PrintArchive | PrintLogEntry) -> None:
     """Spend the one-tap capability token without destroying it.
 
     The token is still single-use: once ``confirm_token_used_at`` is stamped,
@@ -129,79 +129,159 @@ def retire_confirm_token(archive: PrintArchive) -> None:
 VERDICTS = ("good", "reject")
 
 
-async def apply_outcome_verdict(db: AsyncSession, archive: PrintArchive, verdict: str, *, source: str) -> bool:
-    """Record a verdict on an archive that has not been answered yet.
+async def latest_run(db: AsyncSession, archive_id: int) -> PrintLogEntry | None:
+    """The archive's latest finished run by its start: the one its card shows."""
+    return await db.scalar(
+        select(PrintLogEntry)
+        .where(PrintLogEntry.archive_id == archive_id)
+        .order_by(PrintLogEntry.started_at.desc().nulls_last(), PrintLogEntry.id.desc())
+        .limit(1)
+    )
+
+
+async def run_of_archive(db: AsyncSession, archive_id: int, run_id: int) -> PrintLogEntry | None:
+    """The archive's finished run ``run_id``, or None when it is not one."""
+    return await db.scalar(
+        select(PrintLogEntry).where(PrintLogEntry.id == run_id, PrintLogEntry.archive_id == archive_id)
+    )
+
+
+async def record_verdict(
+    db: AsyncSession,
+    archive: PrintArchive,
+    verdict: str | None,
+    *,
+    source: str | None,
+    run: PrintLogEntry | None,
+) -> None:
+    """Write a verdict, or clear it (``verdict`` None), on the run it answers.
+
+    Plates of one archive are runs of their own, each with its own question,
+    so the verdict is the run's: its value, provenance and its one-tap token
+    spent. The archive shows its latest run's, so it takes the verdict when
+    ``run`` is that run, or when there is no run (a print logged before runs).
+    Clearing drops the provenance but leaves the tokens spent: they were used.
+    Deliberately does NOT commit.
+    """
+    holders: list[PrintArchive | PrintLogEntry] = []
+    if run is not None:
+        holders.append(run)
+    if run is None or (latest := await latest_run(db, archive.id)) is None or latest.id == run.id:
+        holders.append(archive)
+    for holder in holders:
+        holder.user_verdict = verdict
+        if verdict is None:
+            holder.user_verdict_source = None
+            holder.user_verdict_at = None
+        else:
+            stamp_verdict(holder, source or "api")
+            retire_confirm_token(holder)
+
+
+async def apply_outcome_verdict(
+    db: AsyncSession,
+    archive: PrintArchive,
+    verdict: str,
+    *,
+    source: str,
+    run: PrintLogEntry | None = None,
+) -> bool:
+    """Record a verdict on a print that has not been answered yet.
 
     For verdict paths that arrive with nobody looking at the archive, like the
-    Telegram reaction poller (#3046). It writes what every verdict write in
-    this module writes: the archive's user_verdict with its provenance stamp,
-    the same value mirrored onto the latest PrintLogEntry (verdict-aware
-    statistics read the log, the #1444 mirror), and the one-tap capability
-    token spent.
+    Telegram reaction poller (#3046). ``run`` is the run the prompt asked
+    about; without one, the archive's latest (a prompt sent before runs had
+    their own). Written by :func:`record_verdict`.
 
-    First verdict wins. An archive that already carries one is left exactly
-    as it is and False is returned, so a late reaction cannot flip a decision
+    First verdict wins. A print that already carries one is left exactly as
+    it is and False is returned, so a late reaction cannot flip a decision
     somebody made in the meantime. Deliberately does NOT commit.
     """
     if verdict not in VERDICTS:
         raise ValueError(f"Verdict must be one of {VERDICTS}, got {verdict!r}")
     if source not in VERDICT_SOURCES:
         raise ValueError(f"Verdict source must be one of {VERDICT_SOURCES}, got {source!r}")
-    if archive.user_verdict is not None:
+    if run is None:
+        if archive.user_verdict is not None:
+            return False
+        run = await latest_run(db, archive.id)
+    elif run.user_verdict is not None:
         return False
 
-    archive.user_verdict = verdict
-    stamp_verdict(archive, source)
-    retire_confirm_token(archive)
-
-    latest_entry = await db.scalar(
-        select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id).order_by(PrintLogEntry.id.desc()).limit(1)
-    )
-    if latest_entry is not None:
-        latest_entry.user_verdict = verdict
+    await record_verdict(db, archive, verdict, source=source, run=run)
     return True
 
 
+async def confirm_token_holder(db: AsyncSession, token: str) -> tuple[PrintArchive, PrintLogEntry | None] | None:
+    """The print a one-tap capability token asks about: the run it was minted
+    for, with its archive, or an archive's own token (minted before runs had
+    theirs, answering its latest run). None for a token nobody holds."""
+    if not token:
+        return None
+    run = await db.scalar(select(PrintLogEntry).where(PrintLogEntry.confirm_token == token))
+    if run is not None:
+        archive = await db.get(PrintArchive, run.archive_id) if run.archive_id is not None else None
+        return (archive, run) if archive is not None else None
+    archive = await db.scalar(select(PrintArchive).where(PrintArchive.confirm_token == token))
+    return (archive, None) if archive is not None else None
+
+
 async def resolve_pending_confirmation_as_good(db: AsyncSession, printer_id: int) -> int | None:
-    """Mark the printer's latest pending-confirmation archive as good.
+    """Mark the printer's latest print awaiting its verdict as good.
 
     Backs the opt-in ``confirm_default_good_on_plate_clear`` setting: releasing
     the build plate is the moment the operator moves on to the next job, so an
     unanswered outcome prompt can default to "good part" right there instead of
-    lingering as unconfirmed. Only the LATEST pending archive is resolved — the
+    lingering as unconfirmed. Only the LATEST pending one is resolved -- the
     plate release refers to the print that just came off the plate, not to
-    older unanswered prompts.
+    older unanswered prompts. Found by the run's printer: a plate of the
+    archive printed since on another printer moved the archive there. A run
+    logged before runs carried the opt-in asks, and is answered, as its
+    archive is.
 
-    Mirrors the verdict onto the latest PrintLogEntry (the #1444 mirror) and
-    retires the one-tap capability token. Deliberately does NOT commit — both
-    callers (the clear-plate route and the queue dispatcher) manage their own
-    transaction.
+    Retires the one-tap capability token (:func:`record_verdict`). Deliberately
+    does NOT commit -- both callers (the clear-plate route and the queue
+    dispatcher) manage their own transaction.
 
     Returns the resolved archive id, or None when nothing was pending.
     """
-    archive = await db.scalar(
-        select(PrintArchive)
+    run = await db.scalar(
+        select(PrintLogEntry)
+        .join(PrintArchive, PrintArchive.id == PrintLogEntry.archive_id)
         .where(
-            PrintArchive.printer_id == printer_id,
-            PrintArchive.status == "completed",
-            PrintArchive.confirm_requested.is_(True),
-            PrintArchive.user_verdict.is_(None),
+            PrintLogEntry.printer_id == printer_id,
+            PrintLogEntry.status == "completed",
+            PrintLogEntry.user_verdict.is_(None),
+            or_(
+                PrintLogEntry.confirm_requested.is_(True),
+                and_(
+                    PrintLogEntry.confirm_requested.is_(None),
+                    PrintArchive.confirm_requested.is_(True),
+                    PrintArchive.user_verdict.is_(None),
+                ),
+            ),
         )
-        .order_by(PrintArchive.id.desc())
+        .order_by(PrintLogEntry.started_at.desc().nulls_last(), PrintLogEntry.id.desc())
         .limit(1)
     )
+    archive = await db.get(PrintArchive, run.archive_id) if run is not None else None
     if archive is None:
-        return None
-
-    archive.user_verdict = "good"
-    stamp_verdict(archive, "plate_clear")
-    retire_confirm_token(archive)
-
-    latest_entry = await db.scalar(
-        select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id).order_by(PrintLogEntry.id.desc()).limit(1)
-    )
-    if latest_entry is not None:
-        latest_entry.user_verdict = "good"
+        # A printer with no such run logged: its archive, as before runs.
+        archive = await db.scalar(
+            select(PrintArchive)
+            .where(
+                PrintArchive.printer_id == printer_id,
+                PrintArchive.status == "completed",
+                PrintArchive.confirm_requested.is_(True),
+                PrintArchive.user_verdict.is_(None),
+            )
+            .order_by(PrintArchive.id.desc())
+            .limit(1)
+        )
+        if archive is None:
+            return None
+        run = await latest_run(db, archive.id)
+    await record_verdict(db, archive, "good", source="plate_clear", run=run)
 
     logger.info("[#1898] Plate clear defaulted archive %s to 'good' (printer %s)", archive.id, printer_id)
     return archive.id

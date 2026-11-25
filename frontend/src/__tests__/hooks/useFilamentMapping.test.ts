@@ -5,7 +5,7 @@
  * selected during slicing is used when multiple trays have identical filament.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import {
   buildAmsMapping,
@@ -15,8 +15,8 @@ import {
   useFilamentMapping,
 } from '../../hooks/useFilamentMapping';
 import { effectivePreferLowest } from '../../utils/amsHelpers';
-import { getColorName } from '../../utils/colors';
-import type { PrinterStatus } from '../../api/client';
+import { getColorName, setColorCatalog, __resetColorCatalogForTests } from '../../utils/colors';
+import type { FilamentPolicy, PrinterStatus } from '../../api/client';
 
 // Helper to create a minimal printer status with AMS data
 function createPrinterStatus(ams: PrinterStatus['ams'], vt_tray: PrinterStatus['vt_tray'] = []): PrinterStatus {
@@ -60,6 +60,17 @@ describe('buildLoadedFilaments', () => {
       globalTrayId: 1,
       trayInfoIdx: 'GFA01',
     });
+  });
+
+  it('tells AMS-HT by its unit id, not by a one-tray list', () => {
+    const status = createPrinterStatus([
+      { id: 1, tray: [{ id: 0, tray_type: 'PLA', tray_color: 'FF0000', tray_info_idx: 'GFA00' }] },
+      { id: 128, tray: [{ id: 0, tray_type: 'PETG', tray_color: '00FF00', tray_info_idx: 'GFG00' }] },
+    ] as PrinterStatus['ams']);
+
+    const result = buildLoadedFilaments(status);
+
+    expect(result.map(f => [f.globalTrayId, f.isHt])).toEqual([[4, false], [128, true]]);
   });
 
   it('includes tray_info_idx from AMS trays', () => {
@@ -1611,5 +1622,138 @@ describe('buildLoadedFilaments — naming a slot after its bound spool', () => {
     expect(slot.isExternal).toBe(true);
     expect(slot.spoolName).toBe('Devil Design PLA Basic');
     expect(slot.colorName).toBe('Orange');
+  });
+});
+
+describe('buildLoadedFilaments — a slot set on the printer screen (#3279)', () => {
+  afterEach(() => {
+    __resetColorCatalogForTests();
+  });
+
+  it("names the slot from its preset's range when the printer sends no sub-brand", () => {
+    __resetColorCatalogForTests();
+    setColorCatalog(
+      {},
+      {},
+      [
+        { hex: 'ff9016', name: 'Pumpkin Orange', material: 'PLA Basic' },
+        { hex: 'ff911a', name: 'Translucent Orange', material: 'PETG Translucent' },
+      ],
+      { GFG01: 'PETG Translucent' },
+    );
+    const status = createPrinterStatus(
+      [{ id: 0, tray: [{ id: 0, tray_type: 'PETG', tray_color: 'FF9017FF', tray_info_idx: 'GFG01' }] }],
+      [{ id: 254, tray_type: 'PETG', tray_color: 'FF9017FF', tray_info_idx: 'GFG01' }],
+    );
+
+    const names = buildLoadedFilaments(status).map((f) => f.colorName);
+
+    expect(names).toEqual(['Translucent Orange', 'Translucent Orange']);
+  });
+});
+
+describe('buildLoadedFilaments - H3C rack printer', () => {
+  // AMS 3H = unit 32 (type 6), slots at global trays 28-36; one external input
+  // per hotend, 247-255, and a single extruder.
+  const h3cStatus = (): PrinterStatus => {
+    const status = createPrinterStatus(
+      [{
+        id: 32,
+        ams_type: 6,
+        tray: [
+          { id: 0, tray_type: 'PLA', tray_color: 'DE4343FF', tray_info_idx: 'GFL99' },
+          { id: 6, tray_type: 'PETG', tray_color: 'F7D959FF', tray_info_idx: 'GFG99' },
+        ],
+      }] as unknown as PrinterStatus['ams'],
+      [247, 248, 249, 250, 251, 252, 253, 254, 255].map((id) => (
+        id === 250 ? { id, tray_type: 'TPU', tray_color: '000000FF' } : { id, tray_type: '' }
+      )) as PrinterStatus['vt_tray'],
+    );
+    (status as any).nozzles = [
+      { nozzle_type: 'hardened_steel', nozzle_diameter: '0.4' },
+      { nozzle_type: '', nozzle_diameter: '' },
+    ];
+    (status as any).ams_extruder_map = {};
+    return status;
+  };
+
+  it('numbers the AMS 3H slots 28 + slot and labels them 3H-n', () => {
+    const loaded = buildLoadedFilaments(h3cStatus());
+    const ams = loaded.filter((f) => !f.isExternal);
+    expect(ams.map((f) => [f.globalTrayId, f.label])).toEqual([[28, '3H-1'], [34, '3H-7']]);
+  });
+
+  it('does not read the nine external inputs as a dual-nozzle printer', () => {
+    const external = buildLoadedFilaments(h3cStatus()).find((f) => f.isExternal);
+    expect(external).toMatchObject({ globalTrayId: 250, trayId: 5, label: 'Ext-6' });
+    expect(external?.extruderId).toBeUndefined();
+  });
+
+  it('maps a filament to its AMS 3H slot', () => {
+    const reqs = { filaments: [{ slot_id: 1, type: 'PETG', color: '#F7D959', used_grams: 5 }] };
+    expect(computeAmsMapping(reqs, h3cStatus())).toEqual([34]);
+  });
+});
+
+// #3522: a user whose groups block a filament must never have it auto-picked.
+describe('filament rules (#3522)', () => {
+  const blockMatte: FilamentPolicy[] = [
+    { group: 'friends', mode: 'block', rules: [{ match: 'filament_id', value: 'GFG03' }] },
+  ];
+  // Two white PETG spools: the blocked one sits in the first slot, where every
+  // tie-break would otherwise land.
+  const twoWhitePetg = () =>
+    createPrinterStatus([
+      {
+        id: 0,
+        tray: [
+          { id: 0, tray_type: 'PETG', tray_color: 'FFFFFFFF', tray_info_idx: 'GFG03' },
+          { id: 1, tray_type: 'PETG', tray_color: 'FFFFFFFF', tray_info_idx: 'GFG99' },
+        ],
+      },
+    ] as PrinterStatus['ams']);
+  const whitePetg = { filaments: [{ slot_id: 1, type: 'PETG', color: '#FFFFFF', used_grams: 5 }] };
+
+  it('flags the trays the policies block', () => {
+    const loaded = buildLoadedFilaments(twoWhitePetg(), undefined, blockMatte);
+    expect(loaded.map((f) => f.blocked)).toEqual([true, undefined]);
+  });
+
+  it('flags nothing when the user is unrestricted', () => {
+    const loaded = buildLoadedFilaments(twoWhitePetg(), undefined, null);
+    expect(loaded.some((f) => 'blocked' in f)).toBe(false);
+  });
+
+  it('maps around a blocked tray', () => {
+    expect(computeAmsMapping(whitePetg, twoWhitePetg())).toEqual([0]);
+    expect(computeAmsMapping(whitePetg, twoWhitePetg(), false, undefined, blockMatte)).toEqual([1]);
+  });
+
+  it('skips a blocked tray even when it is the unique tray_info_idx match', () => {
+    const reqs = { filaments: [{ ...whitePetg.filaments[0], tray_info_idx: 'GFG03' }] };
+    const loaded = buildLoadedFilaments(twoWhitePetg(), undefined, blockMatte);
+    const [comparison] = buildFilamentComparison(reqs, loaded, {});
+    expect(comparison.loaded?.globalTrayId).toBe(1);
+  });
+
+  it('leaves no tray mapped when every candidate is blocked', () => {
+    const blockPetg: FilamentPolicy[] = [
+      { group: 'friends', mode: 'block', rules: [{ match: 'material', value: 'PETG' }] },
+    ];
+    expect(computeAmsMapping(whitePetg, twoWhitePetg(), false, undefined, blockPetg)).toEqual([-1]);
+  });
+
+  it('keeps a manual pick of a blocked tray as the user made it', () => {
+    const loaded = buildLoadedFilaments(twoWhitePetg(), undefined, blockMatte);
+    const [comparison] = buildFilamentComparison(whitePetg, loaded, { 1: 0 });
+    expect(comparison).toMatchObject({ isManual: true, loaded: { globalTrayId: 0, blocked: true } });
+  });
+
+  it('passes the policies through the hook', () => {
+    const { result } = renderHook(() =>
+      useFilamentMapping(whitePetg, twoWhitePetg(), {}, false, undefined, undefined, blockMatte),
+    );
+    expect(result.current.loadedFilaments.map((f) => !!f.blocked)).toEqual([true, false]);
+    expect(result.current.amsMapping).toEqual([1]);
   });
 });

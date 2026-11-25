@@ -3,6 +3,12 @@
 import pytest
 
 from backend.app.services.camera import get_camera_port, supports_rtsp
+from backend.app.services.firmware_check import API_KEY_TO_DEV_MODEL, MODEL_TO_API_KEY
+from backend.app.services.printer_manager import (
+    supports_airduct,
+    supports_chamber_heater,
+    supports_chamber_temp,
+)
 from backend.app.utils.printer_models import (
     CARBON_ROD_MODELS,
     LINEAR_RAIL_MODELS,
@@ -12,6 +18,7 @@ from backend.app.utils.printer_models import (
     has_external_storage,
     has_remote_storage_toggle,
     is_dual_nozzle_model,
+    is_nozzle_rack_model,
     normalize_printer_model,
     normalize_printer_model_id,
     supports_nozzle_flow_type,
@@ -173,6 +180,56 @@ class TestA2LModel:
         assert "N9" not in STEEL_ROD_MODELS
 
 
+class TestH3CModel:
+    """H3C printer support: recognition and printer control only.
+
+    Internal model code "N10" comes from BambuStudio 02.09.01.70's
+    ``resources/profiles/BBL/machine/Bambu Lab H3C.json``. The H3C has nine
+    tool heads, an active chamber heater (65 °C) and Wi-Fi only (no Ethernet).
+    BambuStudio models the nine tools as ONE extruder with nine nozzles, so the
+    H3C must stay out of the dual-nozzle and H2C nozzle-rack groups: both carry
+    wire-ID assumptions (0 = right / 1 = left, rack IDs 16-21) that do not
+    describe this printer.
+    """
+
+    def test_model_code_maps_to_display_name(self):
+        assert normalize_printer_model_id("N10") == "H3C"
+        assert normalize_printer_model("Bambu Lab H3C") == "H3C"
+
+    @pytest.mark.parametrize("model", ["H3C", "N10"])
+    def test_has_no_ethernet(self, model: str):
+        assert has_ethernet(model) is False
+
+    @pytest.mark.parametrize("model", ["H3C", "N10"])
+    def test_camera_uses_rtsp(self, model: str):
+        assert supports_rtsp(model) is True
+        assert get_camera_port(model) == 322
+
+    @pytest.mark.parametrize("model", ["H3C", "N10"])
+    def test_is_not_dual_nozzle_or_rack(self, model: str):
+        assert is_dual_nozzle_model(model) is False
+        assert is_nozzle_rack_model(model) is False
+
+    @pytest.mark.parametrize("model", ["H3C", "N10"])
+    def test_chamber_sensor_heater_and_airduct(self, model: str):
+        assert supports_chamber_temp(model) is True
+        assert supports_chamber_heater(model) is True
+        assert supports_airduct(model) is True
+
+    def test_rod_type_is_linear_rail(self):
+        """Guide rails on X/Y and Z lead screws, per Bambu's H3C XYZ lubrication guide.
+
+        Unknown (None) made maintenance fall back to "Clean Carbon Rods".
+        """
+        assert get_rod_type("H3C") == "linear_rail"
+        assert get_rod_type("N10") == "linear_rail"
+
+    def test_firmware_check_keys(self):
+        assert MODEL_TO_API_KEY["H3C"] == "h3c"
+        assert MODEL_TO_API_KEY["N10"] == "h3c"
+        assert API_KEY_TO_DEV_MODEL["h3c"] == "N10"
+
+
 class TestA1SeriesModelIds:
     """Regression guard for the A1-family internal-code → display-name map.
 
@@ -290,6 +347,11 @@ class TestHasRemoteStorageToggle:
 
     @pytest.mark.parametrize("model", ["P1S", "P1P", "p1s", "P1-S", "P1 S"])
     def test_p1_series_has_no_reachable_toggle(self, model: str):
+        assert has_remote_storage_toggle(model) is False
+
+    @pytest.mark.parametrize("model", ["A2L", "a2l", "N9"])
+    def test_a2l_has_no_reachable_toggle(self, model: str):
+        # #3499: no option on the printer or in either slicer.
         assert has_remote_storage_toggle(model) is False
 
     @pytest.mark.parametrize(

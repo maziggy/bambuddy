@@ -74,7 +74,8 @@ async def test_cap_log_names_file_and_size(caplog):
         patch.object(bambu_ftp, "BambuFTPClient", return_value=client),
         patch.object(bambu_ftp.asyncio, "wait_for", expire),
         caplog.at_level(logging.WARNING, logger=bambu_ftp.logger.name),
+        # A deadline that fitted the file's size is not retried (TO-C1).
+        pytest.raises(bambu_ftp.DownloadDeadlineExceeded),
     ):
-        result = await bambu_ftp.download_file_bytes_async(IP, "12345678", "/timelapse/a.avi", expected_size=75_647_046)
-    assert result is None
+        await bambu_ftp.download_file_bytes_async(IP, "12345678", "/timelapse/a.avi", expected_size=75_647_046)
     assert "/timelapse/a.avi (75647046 bytes) exceeded its 2955s cap" in caplog.text

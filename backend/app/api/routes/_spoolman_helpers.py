@@ -14,6 +14,7 @@ from typing import Any
 from typing_extensions import TypedDict
 
 from backend.app.api.routes._url_safety import assert_safe_lan_service_url
+from backend.app.utils.filament_finish import KNOWN_FINISHES, finishes
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,10 @@ class MappedSpoolFields(TypedDict):
     created_at: str | None  # None when Spoolman spool has no registered timestamp
     updated_at: str | None
     cost_per_kg: float | None
+    # What prints are charged per kg: the spool's own price, else its
+    # filament's catalogue price (SM-C8). Display only; the form edits
+    # cost_per_kg, so the catalogue price is never written onto the spool.
+    effective_cost_per_kg: float | None
     # Spoolman's native filament.article_number, surfaced as the internal
     # material number (#2870). Read-only in Spoolman mode — the number is
     # filament-level there and maintained in Spoolman itself.
@@ -105,6 +110,66 @@ def assert_safe_spoolman_url(url: str) -> None:
 # Six characters, or eight when the filament carries an alpha byte. The write
 # side stores eight only for genuinely translucent spools (#2912); rejecting
 # them here turned every clear spool into neutral grey on read.
+# Spoolman has no subtype or colour-name field, only the filament's name, so
+# both are read out of it. Finish phrases longest first, so "Dual Color" is
+# taken before anything inside it.
+_FINISH_PHRASES: tuple[tuple[str, ...], ...] = tuple(
+    sorted((tuple(f.split()) for f in KNOWN_FINISHES), key=len, reverse=True)
+)
+# Punctuation that only separates parts of a name: "Gold - Basic PLA".
+_NAME_PUNCT = "-\u2013\u2014,/|()[]:;"
+
+
+def split_spoolman_filament_name(material: str | None, name: str | None) -> tuple[str | None, str | None]:
+    """(subtype, colour name) from a Spoolman filament's name (#3561).
+
+    Bambuddy writes a filament as ``"<material> <subtype>"`` ("PLA Matte"), and
+    that is all this used to read: the material came off the front and the
+    rest was the subtype. Spoolman users name a filament after the product --
+    "Matte Scarlet Red", "Silk+ Baby Blue", "Gold - Basic PLA" -- and then the
+    whole name became the subtype and the colour was left unnamed.
+
+    The material is removed wherever it stands. The finishes Bambuddy knows
+    (``KNOWN_FINISHES``: Basic, Matte, Silk, ...) are the subtype, as written,
+    and the rest is the colour. A name with no finish keeps the old reading
+    when it starts with the material, so a subtype Bambuddy wrote that is no
+    finish ("PLA Engineering") still comes back as the subtype -- unless the
+    material already carries the finish ("PLA Matte" / "PLA Matte Grey"), where
+    what follows can only be the colour.
+    """
+    mat = (material or "").strip()
+    text = (name or "").strip()
+    starts_with_material = bool(mat) and bool(re.match(rf"{re.escape(mat)}(?![\w-])", text, flags=re.IGNORECASE))
+    if starts_with_material:
+        rest = text[len(mat) :]
+    elif mat:
+        rest = re.sub(rf"(?<![\w-]){re.escape(mat)}(?![\w-])", " ", text, count=1, flags=re.IGNORECASE)
+    else:
+        rest = text
+
+    tokens = [t.strip(_NAME_PUNCT) for t in rest.split()]
+    tokens = [t for t in tokens if t and any(ch.isalnum() for ch in t)]
+    finish_words: list[str] = []
+    colour_words: list[str] = []
+    i = 0
+    while i < len(tokens):
+        for phrase in _FINISH_PHRASES:
+            window = tokens[i : i + len(phrase)]
+            if tuple(t.lower().rstrip("+") for t in window) == phrase:
+                finish_words.extend(window)
+                i += len(phrase)
+                break
+        else:
+            colour_words.append(tokens[i])
+            i += 1
+
+    if finish_words:
+        return " ".join(finish_words), " ".join(colour_words) or None
+    if starts_with_material and not finishes(mat):
+        return rest.strip() or None, None
+    return None, " ".join(colour_words) or None
+
+
 _COLOR_HEX_RE = re.compile(r"^[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?$")
 _TAG_HEX_RE = re.compile(r"^[0-9A-F]+$")
 
@@ -238,6 +303,15 @@ def spoolman_price_weight(spool: dict) -> float:
 def spoolman_cost_per_kg(spool: dict) -> float | None:
     """The spool form's cost per kg for a Spoolman spool (#3194)."""
     return spoolman_price_to_cost_per_kg(spool.get("price"), spoolman_price_weight(spool))
+
+
+def _charged_cost_per_kg(spool: dict) -> float | None:
+    """The per-kg rate a print off this spool is charged at, from the same
+    function the charge uses, so the Inventory shows what prints cost."""
+    from backend.app.services.spoolman_tracking import _spool_cost_per_gram
+
+    per_gram = _spool_cost_per_gram(spool)
+    return round(per_gram * 1000.0, 4) if per_gram is not None else None
 
 
 def _extract_extra_str(extra: dict, key: str) -> str:
@@ -387,13 +461,10 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
         elif 8 <= len(uid) <= 30:
             tag_uid = tag_uid or uid
 
-    # Subtype = filament name with material prefix stripped
+    # Subtype and colour from the filament's name (#3561).
     material: str = (filament.get("material") or "").strip()
     filament_name: str = (filament.get("name") or "").strip()
-    if material and filament_name.upper().startswith(material.upper()):
-        subtype: str | None = filament_name[len(material) :].strip() or None
-    else:
-        subtype = filament_name or None
+    subtype, name_color = split_spoolman_filament_name(material, filament_name)
 
     # Colour: validate as 6- or 8-char hex; fall back to neutral grey for invalid
     # values. An 8-char value already carries its alpha, so appending the opaque
@@ -474,14 +545,16 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
     #   2. filament.color_name (forward-compat — picks up the value if a
     #      future Spoolman release adds the field, or if an admin populated
     #      it via a custom extra-field they registered themselves)
-    #   3. subtype (synth fallback so the inventory list isn't a sea of
+    #   3. the colour named in the filament's name ("Matte Scarlet Red" ->
+    #      "Scarlet Red", #3561). The user wrote it, so it counts as set.
+    #   4. subtype (synth fallback so the inventory list isn't a sea of
     #      "Unknown color" entries on installs with neither field set)
     #
     # color_name_is_synthesized = True only when we fell back to subtype.
     # The edit form uses it to leave the input blank, so the user doesn't
     # round-trip the synth value back as if they had set it.
     extra_color_name = _extract_extra_str(extra, "bambu_color_name") or None
-    stored_color_name = extra_color_name or (filament.get("color_name") or None)
+    stored_color_name = extra_color_name or (filament.get("color_name") or None) or name_color
     color_name: str | None = stored_color_name or subtype or None
     color_name_is_synthesized: bool = stored_color_name is None and color_name is not None
 
@@ -523,6 +596,9 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
         "note": spool.get("comment") or None,
         "added_full": None,
         "last_used": spool.get("last_used"),
+        # When the spool was first printed with; the stock forecast spreads
+        # its consumption from here (#3407).
+        "first_used": spool.get("first_used"),
         "last_dried_at": _extract_extra_str(extra, BAMBU_LAST_DRIED_AT_KEY) or None,
         "last_dried_temp": _last_dried_temp(extra),
         "last_dried_hours": _extract_extra_float(extra, BAMBU_LAST_DRIED_HOURS_KEY),
@@ -539,6 +615,7 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
         "updated_at": created_at,
         # Spoolman's spool price is what the whole spool cost (#3194).
         "cost_per_kg": spoolman_cost_per_kg(spool),
+        "effective_cost_per_kg": _charged_cost_per_kg(spool),
         # Spoolman's filament.article_number maps 1:1 onto the internal
         # material number (#2870): both identify the purchasable product.
         # Trimmed for the same reason the schema validator trims the internal

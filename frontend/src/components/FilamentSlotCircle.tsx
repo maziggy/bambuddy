@@ -13,6 +13,9 @@
  *                confirmed no spool (state 9/10), "reset" for slots where
  *                the user cleared the assignment but the firmware hasn't
  *                positively confirmed emptiness. Ignored when isEmpty is false.
+ *   pendingColor - Colour of a spool assigned in Bambuddy to a slot the
+ *                printer reports loaded but blank (#3434). Drawn with an amber
+ *                dashed border: assigned, not configured on the printer yet.
  *   slotNumber - 1-based slot number to display inside the circle. Accepts
  *                a string for non-numeric labels (e.g. "L" / "R" for the
  *                dual-nozzle external trays, where carrying a separate
@@ -24,6 +27,7 @@ interface FilamentSlotCircleProps {
   trayType?: string | null;
   isEmpty: boolean;
   emptyKind?: 'physical' | 'reset' | null;
+  pendingColor?: string | null;
   slotNumber: number | string;
 }
 
@@ -35,23 +39,26 @@ function isLightFilamentColor(hex: string): boolean {
   return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6;
 }
 
-export function FilamentSlotCircle({ trayColor, trayType, isEmpty, emptyKind, slotNumber }: FilamentSlotCircleProps) {
+export function FilamentSlotCircle({ trayColor, trayType, isEmpty, emptyKind, pendingColor, slotNumber }: FilamentSlotCircleProps) {
   // Reset slots get a quieter border than physical-empty so they read as
   // "cleared but possibly still has a spool the firmware hasn't confirmed
   // gone" rather than "definitely no spool".
   const emptyBorderColor = emptyKind === 'reset' ? '#3d3d3d' : '#666';
+  const pending = isEmpty && pendingColor ? pendingColor.slice(0, 6) : null;
+  const fill = pending ?? trayColor;
   return (
     <div
       className="w-3.5 h-3.5 rounded-full mx-auto mb-0.5 border-2 flex items-center justify-center"
+      data-pending-config={pending ? 'true' : undefined}
       style={{
-        backgroundColor: trayColor ? `#${trayColor}` : (trayType ? '#333' : 'transparent'),
-        borderColor: isEmpty ? emptyBorderColor : 'rgba(255,255,255,0.1)',
+        backgroundColor: fill ? `#${fill}` : (trayType ? '#333' : 'transparent'),
+        borderColor: pending ? '#f59e0b' : isEmpty ? emptyBorderColor : 'rgba(255,255,255,0.1)',
         borderStyle: isEmpty ? 'dashed' : 'solid',
       }}
     >
       <span
         className="text-[6px] font-bold leading-none select-none"
-        style={{ color: trayColor && isLightFilamentColor(trayColor) ? '#000' : '#fff' }}
+        style={{ color: fill && isLightFilamentColor(fill) ? '#000' : '#fff' }}
       >
         {slotNumber}
       </span>

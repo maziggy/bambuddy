@@ -10,9 +10,9 @@ gone in ten minutes, none printed on that printer.
 Two changes, pinned here:
 
 * An upload whose file never reached the printer (handshake refused, cool-off,
-  timeout, dropped connection) puts the item back in the queue. Failures that
-  would repeat on every retry -- a rejected access code, a full card -- still
-  fail it.
+  timeout, dropped connection, and since #3409 a refused card or access code)
+  puts the item back in the queue. A path problem, an unknown failure and an
+  upload too slow to finish still fail it.
 * The printer is out of dispatch for a backoff window, so nothing else is
   sent to it, and the item that was put back waits there with a reason.
 """
@@ -69,14 +69,16 @@ async def farm(tmp_path):
 
     counter = iter(range(1000))
 
-    async def add_item(*, printer_id: int | None = None, target_model: str | None = None) -> int:
+    async def add_item(
+        *, printer_id: int | None = None, target_model: str | None = None, filename: str | None = None
+    ) -> int:
         n = next(counter)
         async with session_maker() as db:
             archive_rel = Path("archives") / f"job-{n}.3mf"
             (base_dir / archive_rel).write_bytes(b"archive payload")
             archive = PrintArchive(
                 printer_id=printer_id,
-                filename=f"job-{n}.3mf",
+                filename=filename or f"job-{n}.3mf",
                 file_path=str(archive_rel),
                 file_size=15,
                 status="completed",
@@ -199,7 +201,14 @@ class TestOneFailedUpload:
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "kind",
-        [FtpFailureKind.HANDSHAKE, FtpFailureKind.COOLOFF, FtpFailureKind.TIMEOUT, FtpFailureKind.NETWORK],
+        [
+            FtpFailureKind.HANDSHAKE,
+            FtpFailureKind.COOLOFF,
+            FtpFailureKind.TIMEOUT,
+            FtpFailureKind.NETWORK,
+            FtpFailureKind.STORAGE,
+            FtpFailureKind.AUTH,
+        ],
     )
     async def test_a_file_that_never_arrived_keeps_the_item(self, farm, kind):
         item_id = await farm.add_item(printer_id=farm.ids.refusing)
@@ -220,16 +229,14 @@ class TestOneFailedUpload:
     @pytest.mark.parametrize(
         "failure",
         [
-            FtpFailure(FtpFailureKind.AUTH, "530 Login incorrect.", "530"),
-            FtpFailure(FtpFailureKind.STORAGE, "553 Could not create file.", "553"),
             FtpFailure(FtpFailureKind.NOT_FOUND, "550 Permission denied.", "550"),
             FtpFailure(FtpFailureKind.UNKNOWN, "500 what"),
             None,
         ],
-        ids=["auth", "storage", "not_found", "unknown", "unreported"],
+        ids=["not_found", "unknown", "unreported"],
     )
     async def test_a_failure_that_would_repeat_still_fails_the_item(self, farm, failure):
-        """Retrying a wrong access code or a full card every five minutes helps no one."""
+        """A 550 can be this one file's path, and an unknown failure says nothing about the printer."""
         item_id = await farm.add_item(printer_id=farm.ids.refusing)
 
         async def upload(*_args, **kwargs):
@@ -287,9 +294,10 @@ class TestTheQueueIsNotDrained:
     async def test_any_model_items_stop_going_to_the_refusing_printer(self, farm):
         """#3210's shape: "any P2S" items, one P2S refusing every upload.
 
-        Pass 1 sends one item to each printer; the refusing one keeps its item.
-        Pass 2 has the healthy printer busy printing and the refusing one in
-        backoff, so the rest wait instead of being fed to it one by one.
+        Pass 1 sends one item to each printer; the refusing one gives its item
+        back to the pool (#3409). Pass 2 has the healthy printer busy printing
+        and the refusing one in backoff, so the rest wait instead of being fed
+        to it one by one.
         """
         ids = [await farm.add_item(target_model="P2S") for _ in range(5)]
         upload = _upload_refused_by(REFUSING_IP, HANDSHAKE)
@@ -304,11 +312,9 @@ class TestTheQueueIsNotDrained:
         items = [await _item(farm, i) for i in ids]
         assert [i.status for i in items].count("failed") == 0, [(i.id, i.status, i.error_message) for i in items]
         assert [i.status for i in items].count("printing") == 1
-        held = [i for i in items if i.printer_id == farm.ids.refusing]
-        assert len(held) == 1, "exactly one item waits on the refusing printer"
-        assert held[0].status == "pending"
+        assert not [i for i in items if i.printer_id == farm.ids.refusing], "nothing waits on the refusing printer"
         waiting = [i for i in items if i.status == "pending" and i.printer_id is None]
-        assert len(waiting) == 3, "the rest stay unassigned, free for any printer that comes free"
+        assert len(waiting) == 4, "the rest stay unassigned, free for any printer that comes free"
 
     @pytest.mark.asyncio
     async def test_the_item_kept_on_the_printer_says_why(self, farm):
@@ -516,3 +522,236 @@ class TestA452IsAStorageReply:
     def test_a_socket_error_is_never_read_as_a_reply_code(self, tmp_path):
         failure = self._upload_raising(OSError("452 looks like a code but is not a reply"), tmp_path)
         assert failure.kind is FtpFailureKind.NETWORK
+
+
+# ---------------------------------------------------------------------------
+# #3409: a printer whose card refuses the file, or whose access code is wrong
+# ---------------------------------------------------------------------------
+STORAGE = FtpFailure(FtpFailureKind.STORAGE, "553 Could not create file.", "553")
+AUTH = FtpFailure(FtpFailureKind.AUTH, "530 Login incorrect.", "530")
+
+
+def _counting(upload):
+    """*upload*, counting the calls that reached the refusing printer."""
+    calls = []
+
+    async def _upload(ip_address, *args, **kwargs):
+        if ip_address == REFUSING_IP:
+            calls.append(ip_address)
+        return await upload(ip_address, *args, **kwargs)
+
+    _upload.calls = calls
+    return _upload
+
+
+class TestARefusedCard:
+    @pytest.mark.asyncio
+    async def test_jobs_pinned_to_the_printer_wait_instead_of_failing_one_by_one(self, farm):
+        """#3409's shape: an H2D with an unusable USB stick, seven jobs failed within an hour."""
+        ids = [await farm.add_item(printer_id=farm.ids.refusing) for _ in range(4)]
+        upload = _counting(_upload_refused_by(REFUSING_IP, STORAGE))
+        scheduler = PrintScheduler()
+
+        for _ in range(4):
+            async with _scheduler(farm, upload, scheduler=scheduler):
+                await scheduler.check_queue()
+
+        items = [await _item(farm, i) for i in ids]
+        assert [i.status for i in items] == ["pending"] * 4, [(i.id, i.status, i.error_message) for i in items]
+        assert len(upload.calls) == 1, "one refusal, then the printer is out of dispatch"
+        assert items[0].waiting_reason == (
+            "P2S-8 refused to store the file — check its SD card or USB drive. Bambuddy will retry automatically"
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_wrong_access_code_says_where_to_fix_it(self, farm):
+        item_id = await farm.add_item(printer_id=farm.ids.refusing)
+        upload = _upload_refused_by(REFUSING_IP, AUTH)
+        scheduler = PrintScheduler()
+
+        for _ in range(2):
+            async with _scheduler(farm, upload, scheduler=scheduler):
+                await scheduler.check_queue()
+
+        item = await _item(farm, item_id)
+        assert item.status == "pending"
+        assert "access code on the Printers page" in item.waiting_reason
+
+    @pytest.mark.asyncio
+    async def test_the_job_is_sent_once_the_card_is_back(self, farm):
+        item_id = await farm.add_item(printer_id=farm.ids.refusing)
+        scheduler = PrintScheduler()
+
+        async with _scheduler(farm, _upload_refused_by(REFUSING_IP, STORAGE), scheduler=scheduler):
+            await scheduler.check_queue()
+        _expire_backoff(scheduler, farm.ids.refusing)
+        async with _scheduler(farm, AsyncMock(return_value=True), scheduler=scheduler):
+            await scheduler.check_queue()
+
+        assert (await _item(farm, item_id)).status == "printing"
+        assert farm.ids.refusing not in scheduler._upload_refusal_kind
+
+
+class TestAnyModelJobsMoveOn:
+    @pytest.mark.asyncio
+    async def test_the_job_goes_to_another_printer_of_the_model(self, farm):
+        """ "Any H2D" means any: the refused job should not wait for the broken one."""
+        item_id = await farm.add_item(target_model="P2S")
+        upload = _upload_refused_by(REFUSING_IP, STORAGE)
+        scheduler = PrintScheduler()
+
+        # Only the refusing printer is free, so it gets the job and refuses it.
+        async with _scheduler(farm, upload, scheduler=scheduler, busy={farm.ids.healthy}):
+            await scheduler.check_queue()
+        item = await _item(farm, item_id)
+        assert item.status == "pending"
+        assert item.printer_id is None, "back in the pool, not waiting on the refusing printer"
+
+        # The healthy printer comes free.
+        async with _scheduler(farm, upload, scheduler=scheduler):
+            await scheduler.check_queue()
+        item = await _item(farm, item_id)
+        assert item.status == "printing"
+        assert item.printer_id == farm.ids.healthy
+
+    @pytest.mark.asyncio
+    async def test_what_the_job_carries_for_any_printer_stays(self, farm):
+        """Only the assignment goes; the next model assignment sorts out the rest, as for every model job."""
+        item_id = await farm.add_item(target_model="P2S")
+        async with farm.session_maker() as db:
+            row = await db.get(PrintQueueItem, item_id)
+            row.skip_filament_check = True
+            row.nozzle_rack_choice = '{"0": 1}'
+            row.nozzle_mapping = "[0, 1]"
+            await db.commit()
+
+        async with _scheduler(farm, _upload_refused_by(REFUSING_IP, STORAGE), busy={farm.ids.healthy}) as scheduler:
+            await scheduler.check_queue()
+
+        item = await _item(farm, item_id)
+        assert item.printer_id is None
+        assert item.skip_filament_check is True
+        assert item.nozzle_rack_choice == '{"0": 1}'
+        assert item.nozzle_mapping == "[0, 1]"
+
+    @pytest.mark.asyncio
+    async def test_the_released_job_says_why_rather_than_busy(self, farm):
+        """With the refusing printer in backoff, "Busy: P2S-8" would read as printing."""
+        item_id = await farm.add_item(target_model="P2S")
+        upload = _upload_refused_by(REFUSING_IP, STORAGE)
+        scheduler = PrintScheduler()
+        waiting = AsyncMock()
+
+        for _ in range(3):
+            async with _scheduler(farm, upload, scheduler=scheduler, busy={farm.ids.healthy}, waiting_notify=waiting):
+                await scheduler.check_queue()
+
+        item = await _item(farm, item_id)
+        assert item.waiting_reason == (
+            "P2S-8 refused to store the file — check its SD card or USB drive. Bambuddy will retry automatically"
+            " | Busy: P2S-9"
+        )
+        assert waiting.await_count == 1, "the refusal said it already; the row's reason adds nothing new"
+
+    @pytest.mark.asyncio
+    async def test_a_cancel_during_the_upload_is_not_undone(self, farm):
+        item_id = await farm.add_item(target_model="P2S")
+
+        async def upload(ip_address, *_args, **kwargs):
+            async with farm.session_maker() as other:
+                row = await other.get(PrintQueueItem, item_id)
+                row.status = "cancelled"
+                await other.commit()
+            kwargs["failure"].failure = STORAGE
+            return False
+
+        async with _scheduler(farm, upload, busy={farm.ids.healthy}) as scheduler:
+            await scheduler.check_queue()
+
+        item = await _item(farm, item_id)
+        assert item.status == "cancelled"
+        assert item.printer_id == farm.ids.refusing, "a cancelled row is left as the cancel wrote it"
+
+    @pytest.mark.asyncio
+    async def test_a_released_job_still_says_why_once(self, farm):
+        """Nothing waits on the printer to carry the notification, so the refusal sends it."""
+        await farm.add_item(target_model="P2S")
+        upload = _upload_refused_by(REFUSING_IP, STORAGE)
+        scheduler = PrintScheduler()
+        waiting = AsyncMock()
+
+        for _ in range(3):
+            async with _scheduler(farm, upload, scheduler=scheduler, busy={farm.ids.healthy}, waiting_notify=waiting):
+                await scheduler.check_queue()
+            _expire_backoff(scheduler, farm.ids.refusing)
+
+        assert waiting.await_count == 1
+        kwargs = waiting.await_args.kwargs
+        assert "SD card or USB drive" in kwargs["waiting_reason"]
+        assert kwargs["printer_id"] == farm.ids.refusing
+
+
+class TestNotifyingARun:
+    @pytest.mark.asyncio
+    async def test_a_run_that_turns_into_a_card_problem_says_so(self, farm):
+        """ "Will retry automatically" asks nothing of anyone; a refused card does."""
+        await farm.add_item(printer_id=farm.ids.refusing)
+        scheduler = PrintScheduler()
+        waiting = AsyncMock()
+
+        for failure in (HANDSHAKE, FtpFailure(FtpFailureKind.COOLOFF, "cooloff"), STORAGE, STORAGE):
+            async with _scheduler(
+                farm, _upload_refused_by(REFUSING_IP, failure), scheduler=scheduler, waiting_notify=waiting
+            ):
+                await scheduler.check_queue()
+            _expire_backoff(scheduler, farm.ids.refusing)
+
+        reasons = [c.kwargs["waiting_reason"] for c in waiting.await_args_list]
+        assert len(reasons) == 2, reasons
+        assert "not accepting files" in reasons[0]
+        assert "SD card or USB drive" in reasons[1]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("target_model", [None, "P2S"], ids=["pinned", "any_model"])
+    async def test_a_job_cancelled_during_the_upload_sends_none(self, farm, target_model):
+        item_id = await farm.add_item(
+            printer_id=farm.ids.refusing if target_model is None else None, target_model=target_model
+        )
+
+        async def upload(ip_address, *_args, **kwargs):
+            async with farm.session_maker() as other:
+                row = await other.get(PrintQueueItem, item_id)
+                row.status = "cancelled"
+                await other.commit()
+            kwargs["failure"].failure = STORAGE
+            return False
+
+        waiting = AsyncMock()
+        async with _scheduler(farm, upload, busy={farm.ids.healthy}, waiting_notify=waiting) as scheduler:
+            await scheduler.check_queue()
+
+        waiting.assert_not_awaited()
+        assert farm.ids.refusing in scheduler._upload_backoff, "the printer still refused"
+
+
+class TestAFileNameNoCardCanHold:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("target_model", [None, "P2S"], ids=["pinned", "any_model"])
+    async def test_its_553_fails_the_job_and_leaves_the_printer_in_service(self, farm, target_model):
+        """A ':' is refused by every card on every printer: waiting would block the queue for good."""
+        bad = await farm.add_item(
+            printer_id=farm.ids.refusing if target_model is None else None,
+            target_model=target_model,
+            filename="Bracket: v2.3mf",
+        )
+        upload = _upload_refused_by(REFUSING_IP, STORAGE)
+
+        async with _scheduler(farm, upload, busy={farm.ids.healthy}) as scheduler:
+            await scheduler.check_queue()
+
+        item = await _item(farm, bad)
+        assert item.status == "failed"
+        assert "Rename the file" in item.error_message
+        assert "contains invalid character: :" in item.error_message
+        scheduler.failed_notify.assert_awaited_once()
+        assert farm.ids.refusing not in scheduler._upload_backoff

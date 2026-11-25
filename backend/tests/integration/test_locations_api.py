@@ -187,3 +187,51 @@ async def test_locations_routes_require_auth_when_enabled(async_client: AsyncCli
     # DELETE /locations/{id} — write-gated
     delete_resp = await async_client.delete("/api/v1/inventory/locations/99999")
     assert delete_resp.status_code == 401, delete_resp.text
+
+
+async def _spoolman_mode(db_session):
+    from backend.app.models.settings import Settings
+
+    db_session.add(Settings(key="spoolman_enabled", value="true"))
+    db_session.add(Settings(key="spoolman_url", value="http://localhost:7912"))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.parametrize("spoolman", ["unreachable", "no client"])
+async def test_spoolman_mode_refuses_a_delete_it_cannot_count_for(async_client: AsyncClient, db_session, spoolman):
+    """SM-C13: the count fell back to the built-in table, which holds no
+    Spoolman spools, so a location Spoolman spools still use was deleted."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    await _spoolman_mode(db_session)
+    loc = (await async_client.post("/api/v1/inventory/locations", json={"name": "Shelf A"})).json()
+    client = MagicMock()
+    client.get_all_spools = AsyncMock(side_effect=ConnectionError("refused"))
+
+    with patch(
+        "backend.app.api.routes.inventory._ensure_spoolman_client",
+        AsyncMock(return_value=client if spoolman == "unreachable" else None),
+    ):
+        resp = await async_client.delete(f"/api/v1/inventory/locations/{loc['id']}")
+
+    assert resp.status_code == 503, resp.text
+    names = [row["name"] for row in (await async_client.get("/api/v1/inventory/locations")).json()]
+    assert "Shelf A" in names
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_spoolman_mode_deletes_a_location_no_spool_uses(async_client: AsyncClient, db_session):
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    await _spoolman_mode(db_session)
+    loc = (await async_client.post("/api/v1/inventory/locations", json={"name": "Shelf A"})).json()
+    client = MagicMock()
+    client.get_all_spools = AsyncMock(return_value=[{"id": 1, "location": "Shelf B"}])
+
+    with patch("backend.app.api.routes.inventory._ensure_spoolman_client", AsyncMock(return_value=client)):
+        resp = await async_client.delete(f"/api/v1/inventory/locations/{loc['id']}")
+
+    assert resp.status_code == 200, resp.text

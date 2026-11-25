@@ -81,6 +81,35 @@ describe('ColorCatalogProvider', () => {
     expect(getColorName('8344b0')).toBe('Purple');
   });
 
+  it('carries the Bambu colours through for nearest naming (#3279)', async () => {
+    server.use(
+      http.get('/api/v1/inventory/colors/map', () =>
+        HttpResponse.json({
+          colors: {},
+          by_material: {},
+          bambu: [
+            { hex: '5b6579', name: 'Blue Grey', material: 'PLA Basic' },
+            { hex: 'ff9016', name: 'Pumpkin Orange', material: 'PLA Basic' },
+            { hex: 'ff911a', name: 'Translucent Orange', material: 'PETG Translucent' },
+          ],
+          preset_materials: { GFG01: 'PETG Translucent' },
+        })
+      )
+    );
+
+    const Wrapper = createWrapper();
+    render(
+      <Wrapper>
+        <div data-testid="child">ok</div>
+      </Wrapper>
+    );
+
+    await waitFor(() => {
+      expect(getColorName('5A657BFF')).toBe('Blue Grey');
+    });
+    expect(getColorName('FF9017', '', 'GFG01')).toBe('Translucent Orange');
+  });
+
   it('carries the material-qualified names through to getColorName (#2875)', async () => {
     server.use(
       http.get('/api/v1/inventory/colors/map', () =>

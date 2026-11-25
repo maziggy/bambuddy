@@ -5,7 +5,7 @@ import asyncio
 import inspect
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -114,6 +114,27 @@ class TestPublishHandlerAdaptiveSerial:
         # Response body carries get_version with the client's serial as sn.
         assert b'"command": "get_version"' in all_bytes
         assert b'"sn": "01P00AABCDEFGHI"' in all_bytes
+
+    def test_a_virtual_h3c_reports_itself_as_an_h3c(self):
+        """#3442: the version response names the model the slicer expects."""
+        server = SimpleMQTTServer(
+            serial="32X99B391800001",
+            access_code="deadbeef",
+            cert_path=Path("/tmp/unused.crt"),  # nosec B108
+            key_path=Path("/tmp/unused.key"),  # nosec B108
+            model="N10",
+        )
+        server._client_serials["c1"] = server.serial
+        writer = MagicMock()
+        writer.write = MagicMock()
+        writer.drain = AsyncMock()
+
+        topic = "device/32X99B391800001/request"
+        payload = _build_publish_payload(topic, {"info": {"command": "get_version", "sequence_id": "7"}})
+        asyncio.run(server._handle_publish(0x30, payload, writer, "c1"))
+
+        all_bytes = b"".join(call.args[0] for call in writer.write.call_args_list)
+        assert b'"product_name": "H3C"' in all_bytes
 
     def test_handle_publish_ignores_non_request_topics(self):
         server = _make_server()
@@ -529,20 +550,22 @@ class TestAuthRateLimit:
         assert server._is_auth_rate_limited("10.0.0.1") is True
         assert server._is_auth_rate_limited("10.0.0.2") is False
 
-    def test_successful_auth_clears_failure_history(self, server):
-        """A successful auth must wipe the IP's prior-failures stash so the
-        user isn't penalised for typos that they ultimately corrected."""
+    def test_a_successful_auth_takes_back_only_its_own_attempt(self, server):
+        """Each attempt is counted before the code is checked; a success takes
+        back just that one. Wiping the earlier failures let a user with a code
+        of their own guess other users' personal codes four at a time between
+        their own sign-ins (#1430); typos simply age out of the window."""
         from backend.app.services.virtual_printer.mqtt_server import _AUTH_RATE_LIMIT_MAX_ATTEMPTS
 
         ip = "192.168.1.50"
-        # Build up failures one short of the cap.
         for _ in range(_AUTH_RATE_LIMIT_MAX_ATTEMPTS - 1):
             server._record_auth_failure(ip)
-        # Successful auth must clear them.
-        server._clear_auth_failures(ip)
-        # Now a subsequent failure starts the count over at 1 (well under cap).
+        # A good sign-in: counted ahead, then taken back.
         server._record_auth_failure(ip)
-        assert server._is_auth_rate_limited(ip) is False
+        server._release_auth_attempt(ip)
+        # The earlier failures still count: one more and the IP is out.
+        server._record_auth_failure(ip)
+        assert server._is_auth_rate_limited(ip) is True
 
 
 class TestPendingRequestRouting:
@@ -714,3 +737,132 @@ class TestHandleClientTCPKeepaliveTuning:
                 "a macOS sleep leaves the pre-sleep socket in _clients "
                 "for ~2 h until the default SO_KEEPALIVE probes fire."
             )
+
+
+class TestSlicerCommandsTheLogKeepsWhole:
+    """The publish log line stops at 100 characters, which cut every K-profile
+    command off before its tray_id: the field that says how BambuStudio numbers
+    an A2L or AMS-HT tray. Those few commands are logged whole; nothing they
+    carry is a credential."""
+
+    def _publish(self, caplog, command: dict):
+        import logging
+
+        server = _make_server()
+        server._client_serials["c1"] = server.serial
+        writer = MagicMock()
+        writer.write = MagicMock()
+        writer.drain = AsyncMock()
+        payload = _build_publish_payload("device/01P00AABCDEFGHI/request", {"print": command})
+        with caplog.at_level(logging.INFO, logger="backend.app.services.virtual_printer.mqtt_server"):
+            asyncio.run(server._handle_publish(0x30, payload, writer, "c1"))
+        return caplog.text
+
+    @pytest.mark.parametrize(
+        "command",
+        ["extrusion_cali_sel", "extrusion_cali_set", "ams_filament_setting", "ams_change_filament"],
+    )
+    def test_the_whole_command_is_logged(self, caplog, command):
+        body = {
+            "command": command,
+            "ams_id": 16,
+            "slot_id": 2,
+            "nozzle_diameter": "0.4",
+            "filament_id": "GFA00",
+            "setting_id": "GFSA00_25",
+            "tray_id": 26,
+        }
+
+        text = self._publish(caplog, body)
+
+        assert '"tray_id": 26' in text
+
+    def test_other_commands_keep_the_short_line(self, caplog):
+        text = self._publish(
+            caplog,
+            {"command": "project_file", "url": "ftp:///x.3mf", "param": "Metadata/plate_1.gcode" * 5, "tray_id": 26},
+        )
+
+        assert '"tray_id": 26' not in text
+
+
+def _client_writer(peer: str = "1.2.3.4") -> MagicMock:
+    writer = MagicMock()
+    writer.write = MagicMock()
+    writer.drain = AsyncMock()
+    writer.close = MagicMock()
+    writer.wait_closed = AsyncMock()
+    writer.get_extra_info = MagicMock(side_effect=lambda name: (peer, 12345) if name == "peername" else None)
+    return writer
+
+
+class TestNothingBeforeConnect:
+    """PUBLISH and SUBSCRIBE before a successful CONNECT reach nothing (V-U4)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("packet", "handler"),
+        [
+            (bytes([0x30, 0x05, 0x00, 0x01, ord("t"), ord("{"), ord("}")]), "_handle_publish"),
+            (bytes([0x82, 0x06, 0x00, 0x01, 0x00, 0x01, ord("t"), 0x00]), "_handle_subscribe"),
+        ],
+    )
+    async def test_a_packet_before_connect_is_dropped(self, packet, handler):
+        server = _make_server()
+        server._running = True
+        reader = asyncio.StreamReader()
+        connect = _build_connect_payload(keep_alive=60)
+        # The packet first, then a valid CONNECT and the same packet again:
+        # only the one after the CONNECT may reach the handler.
+        reader.feed_data(packet + bytes([0x10, len(connect)]) + connect + packet + bytes([0xE0, 0x00]))
+        reader.feed_eof()
+        server._send_status_report = AsyncMock()
+        handled = AsyncMock()
+
+        with patch.object(server, handler, handled):
+            await server._handle_client(reader, _client_writer())
+
+        assert handled.await_count == 1
+
+
+class TestARateLimitedAddress:
+    """The rate limit refuses the right access code too, through the real handler (V-W2)."""
+
+    @pytest.mark.asyncio
+    async def test_a_correct_connect_is_refused(self):
+        from backend.app.services.virtual_printer.mqtt_server import _AUTH_RATE_LIMIT_MAX_ATTEMPTS
+
+        server = _make_server()
+        server._running = True
+        for _ in range(_AUTH_RATE_LIMIT_MAX_ATTEMPTS):
+            server._record_auth_failure("1.2.3.4")
+        reader = asyncio.StreamReader()
+        connect = _build_connect_payload(keep_alive=60)
+        reader.feed_data(bytes([0x10, len(connect)]) + connect)
+        reader.feed_eof()
+        writer = _client_writer()
+        server._handle_connect = AsyncMock(return_value=(True, 60))
+
+        await server._handle_client(reader, writer)
+
+        server._handle_connect.assert_not_awaited()
+        writer.write.assert_called_once_with(bytes([0x20, 0x02, 0x00, 0x05]))
+        assert not server._clients
+
+    @pytest.mark.asyncio
+    async def test_another_address_still_connects(self):
+        from backend.app.services.virtual_printer.mqtt_server import _AUTH_RATE_LIMIT_MAX_ATTEMPTS
+
+        server = _make_server()
+        server._running = True
+        for _ in range(_AUTH_RATE_LIMIT_MAX_ATTEMPTS):
+            server._record_auth_failure("1.2.3.4")
+        reader = asyncio.StreamReader()
+        connect = _build_connect_payload(keep_alive=60)
+        reader.feed_data(bytes([0x10, len(connect)]) + connect)
+        reader.feed_eof()
+        server._handle_connect = AsyncMock(return_value=(True, 60))
+
+        await server._handle_client(reader, _client_writer(peer="5.6.7.8"))
+
+        server._handle_connect.assert_awaited_once()

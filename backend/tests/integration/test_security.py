@@ -452,15 +452,6 @@ class TestOIDCExchangeReplay:
     async def test_exchange_token_is_single_use(self, async_client: AsyncClient, db_session: AsyncSession):
         """The second call to /oidc/exchange with the same token returns 401."""
         exchange_token = secrets.token_urlsafe(32)
-        db_session.add(
-            AuthEphemeralToken(
-                token=exchange_token,
-                token_type="oidc_exchange",
-                username="oidc_replay_user",
-                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
-            )
-        )
-        await db_session.commit()
 
         # Seed the user so the exchange can resolve it
         from backend.app.core.auth import get_password_hash
@@ -477,6 +468,18 @@ class TestOIDCExchangeReplay:
                     )
                 )
                 await db.commit()
+
+        # Minted after the user exists, as the OIDC callback does (a token from
+        # before the user's session began is refused).
+        db_session.add(
+            AuthEphemeralToken(
+                token=exchange_token,
+                token_type="oidc_exchange",
+                username="oidc_replay_user",
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            )
+        )
+        await db_session.commit()
 
         first = await async_client.post("/api/v1/auth/oidc/exchange", json={"oidc_token": exchange_token})
         assert first.status_code == 200
@@ -1950,7 +1953,7 @@ class TestBackupKeyFiles:
         key_path = tmp_path / ".mfa_encryption_key"
         key_path.write_text("test-key-content")
 
-        zip_path, _filename = await create_backup_zip(output_path=tmp_path)
+        zip_path, _filename, _warnings = await create_backup_zip(output_path=tmp_path)
         try:
             with zipfile.ZipFile(zip_path) as zf:
                 names = zf.namelist()
@@ -1971,7 +1974,7 @@ class TestBackupKeyFiles:
         monkeypatch.setattr(app_settings, "base_dir", tmp_path)
         # No .mfa_encryption_key written — must not crash.
 
-        zip_path, _filename = await create_backup_zip(output_path=tmp_path)
+        zip_path, _filename, _warnings = await create_backup_zip(output_path=tmp_path)
         try:
             with zipfile.ZipFile(zip_path) as zf:
                 names = zf.namelist()
@@ -2014,6 +2017,7 @@ class TestBackupKeyFiles:
             patch("backend.app.core.database.close_all_connections", new_callable=AsyncMock),
             patch("backend.app.core.database.reinitialize_database", new_callable=AsyncMock),
             patch("backend.app.core.database.init_db", new_callable=AsyncMock),
+            patch("backend.app.core.database.invalidate_all_sessions", new_callable=AsyncMock),
         ):
             resp = await async_client.post(
                 "/api/v1/settings/restore",
@@ -2054,6 +2058,7 @@ class TestBackupKeyFiles:
             patch("backend.app.core.database.close_all_connections", new_callable=AsyncMock),
             patch("backend.app.core.database.reinitialize_database", new_callable=AsyncMock),
             patch("backend.app.core.database.init_db", new_callable=AsyncMock),
+            patch("backend.app.core.database.invalidate_all_sessions", new_callable=AsyncMock),
         ):
             resp = await async_client.post(
                 "/api/v1/settings/restore",
@@ -2175,6 +2180,7 @@ class TestBackupKeyFiles:
             patch("backend.app.core.database.close_all_connections", new_callable=AsyncMock),
             patch("backend.app.core.database.reinitialize_database", new_callable=AsyncMock),
             patch("backend.app.core.database.init_db", new_callable=AsyncMock),
+            patch("backend.app.core.database.invalidate_all_sessions", new_callable=AsyncMock),
         ):
             resp = await async_client.post(
                 "/api/v1/settings/restore",
@@ -2363,7 +2369,7 @@ class TestBackupKeyFiles:
         assert provider._client_secret_enc.startswith("fernet:")
 
         # 2. Create a backup ZIP (must include .mfa_encryption_key).
-        zip_path, _ = await create_backup_zip(output_path=tmp_path)
+        zip_path, *_ = await create_backup_zip(output_path=tmp_path)
         try:
             with zipfile.ZipFile(zip_path) as zf:
                 names = zf.namelist()
@@ -2388,6 +2394,7 @@ class TestBackupKeyFiles:
                 patch("backend.app.core.database.close_all_connections", new_callable=AsyncMock),
                 patch("backend.app.core.database.reinitialize_database", new_callable=AsyncMock),
                 patch("backend.app.core.database.init_db", new_callable=AsyncMock),
+                patch("backend.app.core.database.invalidate_all_sessions", new_callable=AsyncMock),
                 open(zip_path, "rb") as f,
             ):
                 resp = await async_client.post(

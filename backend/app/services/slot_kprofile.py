@@ -23,7 +23,8 @@ from backend.app.models.spool_k_profile import SpoolKProfile
 from backend.app.models.spoolman_k_profile import SpoolmanKProfile
 from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 from backend.app.services.inventory_mode import spoolman_owns_assignments
-from backend.app.services.spool_filament_preset import resolve_spool_preset, resolve_spoolman_preset
+from backend.app.services.spool_filament_preset import resolve_spool_preset, resolve_spoolman_preset_with_own
+from backend.app.utils.filament_ids import normalize_slicer_filament
 
 
 @dataclass(frozen=True)
@@ -166,20 +167,26 @@ async def find_slot_kprofile_for_extruder(
     if sm_profile is None:
         return None
 
-    # A Spoolman K row carries no preset of its own, but the spool can still
-    # have a per-model override stored locally -- that is the same table the
-    # Spoolman assign path writes. Without a model to key on there is nothing
-    # to resolve and the caller falls back to the tray's own tray_info_idx.
-    sm_filament_id = None
-    if printer_model:
-        sm_filament_id, _ = await resolve_spoolman_preset(
-            db,
-            spoolman_spool_id=sm_assignment.spoolman_spool_id,
-            printer_model=printer_model,
-            nozzle_diameter=nozzle_diameter,
-            fallback_filament=None,
-            fallback_name=None,
-        )
+    # A Spoolman K row carries no preset of its own: the spool's per-model
+    # override, stored locally (the table the Spoolman assign path writes),
+    # else the preset set on the spool in Spoolman. With neither the caller
+    # falls back to the tray's own tray_info_idx.
+    sm_preset, _ = await resolve_spoolman_preset_with_own(
+        db,
+        spoolman_spool_id=sm_assignment.spoolman_spool_id,
+        printer_model=printer_model,
+        nozzle_diameter=nozzle_diameter,
+    )
+    # As the assign path sends it: a filament id, not the stored setting-id
+    # form ("GFSL05_07"). Anything that needs the slicer's resolver (a local
+    # preset number, an Orca UUID, a cloud user preset) is left to the tray's
+    # own id, as before.
+    sm_filament_id = normalize_slicer_filament(sm_preset)[0] or None
+    if sm_filament_id and not (
+        sm_filament_id.startswith("GF")
+        or (sm_filament_id.startswith("P") and not sm_filament_id.startswith(("PFUS", "PFCN")))
+    ):
+        sm_filament_id = None
     return SlotKProfile(
         cali_idx=sm_profile.cali_idx,
         k_value=sm_profile.k_value,

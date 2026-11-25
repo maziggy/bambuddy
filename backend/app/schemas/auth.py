@@ -3,6 +3,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from backend.app.schemas.group import FilamentRuleSchema
+from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
+
 
 def _validate_password_complexity(v: str) -> str:
     """Enforce minimum password complexity (M-C).
@@ -61,7 +64,8 @@ class UserCreate(BaseModel):
         return v
 
 
-class UserUpdate(BaseModel):
+class UserUpdate(IgnoresNullForRequiredColumns):
+    __orm_table__ = "users"
     username: str | None = Field(default=None, max_length=150)
     password: str | None = Field(default=None, max_length=256)  # M-NEW-4: cap before pbkdf2
     email: str | None = Field(default=None, max_length=254)  # L-NEW-5: RFC 5321 max
@@ -77,6 +81,14 @@ class UserUpdate(BaseModel):
         return v
 
 
+class FilamentPolicyBrief(BaseModel):
+    """One restricted group's filament rules, as the print dialog applies them (#3522)."""
+
+    group: str
+    mode: Literal["allow", "block"]
+    rules: list[FilamentRuleSchema] = []
+
+
 class UserResponse(BaseModel):
     id: int
     username: str
@@ -87,6 +99,9 @@ class UserResponse(BaseModel):
     auth_source: str = "local"  # "local" or "ldap"
     groups: list[GroupBrief] = []
     permissions: list[str] = []  # All permissions from groups
+    # None: may print with every filament. Otherwise a filament is allowed when
+    # any of these policies allows it (#3522); the server enforces the same.
+    filament_policies: list[FilamentPolicyBrief] | None = None
     created_at: str
 
     class Config:
@@ -117,6 +132,21 @@ class LDAPSearchResultResponse(BaseModel):
     display_name: str | None = None
     dn: str
     already_provisioned: bool = False  # True if this username already exists as a BamBuddy user
+
+
+class LDAPTestRequest(BaseModel):
+    """The LDAP settings in the form, tested before they are saved.
+
+    A field left out uses the saved value; an empty bind password keeps the
+    saved one.
+    """
+
+    ldap_server_url: str | None = None
+    ldap_bind_dn: str | None = None
+    ldap_bind_password: str | None = None
+    ldap_search_base: str | None = None
+    ldap_user_filter: str | None = None
+    ldap_security: str | None = None
 
 
 class LDAPProvisionRequest(BaseModel):
@@ -195,6 +225,9 @@ class SMTPSettings(BaseModel):
 
 class TestSMTPRequest(BaseModel):
     test_recipient: str
+    # The settings in the form, tested before they are saved; left out, the
+    # saved ones. An empty password keeps the saved one.
+    smtp: SMTPSettings | None = None
 
 
 class TestSMTPResponse(BaseModel):
@@ -260,12 +293,6 @@ class TOTPDisableRequest(BaseModel):
 class BackupCodesResponse(BaseModel):
     backup_codes: list[str]
     message: str
-
-
-class EmailOTPEnableRequest(BaseModel):
-    """No body required — email is taken from the authenticated user's profile."""
-
-    pass
 
 
 class TwoFAVerifyRequest(BaseModel):
@@ -552,7 +579,8 @@ class OIDCProviderCreate(BaseModel):
         return self
 
 
-class OIDCProviderUpdate(BaseModel):
+class OIDCProviderUpdate(IgnoresNullForRequiredColumns):
+    __orm_table__ = "oidc_providers"
     name: str | None = Field(default=None, max_length=100)
     issuer_url: str | None = None
 

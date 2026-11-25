@@ -1,7 +1,9 @@
 import csv
 import io
-from datetime import datetime
-from typing import Any
+import re
+from collections.abc import Sequence
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +11,69 @@ from sqlalchemy.orm import selectinload
 
 from backend.app.core.printer_scope import PrinterScope
 from backend.app.models.archive import PrintArchive
+from backend.app.models.print_log import INCLUDE_OPEN_RUNS, PrintLogEntry
+
+if TYPE_CHECKING:
+    from backend.app.models.maintenance import MaintenanceLogEntry
+
+# A cell starting with one of these is read as a formula by spreadsheet apps,
+# including the full-width forms (＝ ＋ － ＠) some normalise to ASCII.
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "＝", "＋", "－", "＠")
+
+
+def _spreadsheet_text(value: Any) -> Any:
+    """A CSV cell as typed: text that starts like a formula gets a leading quote, so it stays text.
+
+    Leading whitespace is looked past (spreadsheets trim it on import), and a
+    value starting with a tab or line break is quoted too. Anything that isn't
+    text is left alone.
+    """
+    if not isinstance(value, str) or not value:
+        return value
+    if value[0] in "\t\r\n" or value.lstrip().startswith(_FORMULA_PREFIXES):
+        return f"'{value}"
+    return value
+
+
+def _xlsx_cell(ws: Any, row: int, column: int, value: Any) -> Any:
+    """Write a worksheet cell; text that starts with "=" is stored as text, not as a formula."""
+    cell = ws.cell(row=row, column=column, value=value)
+    if isinstance(value, str) and cell.data_type == "f":
+        cell.data_type = "s"
+    return cell
+
+
+# What one print of an archive has of its own (archive redesign): in the
+# export, its run's. Everything else is the file's, the archive's.
+_PER_PRINT_FIELDS = frozenset(
+    {
+        "status",
+        "quantity",
+        "printer_id",
+        "printer_name",
+        "plate_id",
+        "filament_type",
+        "filament_used_grams",
+        "cost",
+        "energy_kwh",
+        "energy_cost",
+        "wear_cost",
+        "failure_reason",
+        "user_verdict",
+        "duration_seconds",
+        "started_at",
+        "completed_at",
+    }
+)
+
+
+def _utc_iso(value: datetime | None) -> str:
+    """A stored (naive UTC) time as ISO 8601 with its zone."""
+    if value is None:
+        return ""
+    if value.tzinfo is not None:
+        value = value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value.replace(microsecond=0).isoformat() + "Z"
 
 
 class ExportService:
@@ -17,11 +82,14 @@ class ExportService:
     # Default fields to export
     DEFAULT_FIELDS = [
         "id",
+        "run_id",
         "print_name",
         "filename",
         "status",
         "quantity",
         "printer_id",
+        "printer_name",
+        "plate_id",
         "project_name",
         "filament_type",
         "filament_used_grams",
@@ -36,6 +104,8 @@ class ExportService:
         "tags",
         "notes",
         "failure_reason",
+        "user_verdict",
+        "duration_seconds",
         "started_at",
         "completed_at",
         "created_at",
@@ -44,6 +114,12 @@ class ExportService:
     # Field labels for headers
     FIELD_LABELS = {
         "id": "ID",
+        "run_id": "Print ID",
+        "printer_name": "Printer",
+        "plate_id": "Plate",
+        "user_verdict": "Outcome",
+        "duration_seconds": "Duration (s)",
+        "energy_kwh": "Energy (kWh)",
         "print_name": "Print Name",
         "filename": "Filename",
         "status": "Status",
@@ -70,6 +146,13 @@ class ExportService:
         "created_at": "Created At",
     }
 
+    @classmethod
+    def unknown_fields(cls, fields: list[str]) -> list[str]:
+        """The requested columns the export does not have: only its own
+        columns are exported, never other attributes of an archive (its
+        one-tap confirm token is a credential)."""
+        return [f for f in fields if f not in cls.FIELD_LABELS]
+
     def __init__(self, db: AsyncSession):
         self.db = db
 
@@ -86,48 +169,38 @@ class ExportService:
         visible_to_user_id: int | None = None,
         printer_scope: PrinterScope | None = None,
     ) -> tuple[bytes, str, str]:
-        """Export archives to CSV or Excel format.
+        """Export archives to CSV or Excel format, one row per print.
 
-        Args:
-            format: Export format ('csv' or 'xlsx')
-            fields: List of fields to include (None = all default fields)
-            printer_id: Filter by printer
-            project_id: Filter by project
-            status: Filter by status
-            date_from: Filter by start date
-            date_to: Filter by end date
-            search: Search filter
-            visible_to_user_id: Scope rows to those owned by this user (used
-                when the caller has ARCHIVES_READ_OWN but not _ALL).
+        An archive is a file, each print of it a run (archive redesign): a row
+        has the archive's file columns and one run's own (``_PER_PRINT_FIELDS``).
+        An archive printed before runs were logged is one row of its own
+        fields; one never printed, one row with empty print columns.
+
+        ``printer_id``, ``status`` and the dates pick prints (a run's start,
+        an archive without runs by when it was created); ``project_id``,
+        ``search`` and ``visible_to_user_id`` pick archives. A caller limited
+        to some printers gets only the prints on theirs.
 
         Returns:
             Tuple of (file_bytes, filename, content_type)
         """
-        # Build query. Soft-deleted archives (#1343) are excluded: this export
-        # is the list the user is looking at, saved to a file, and that list
-        # hides them — an export that silently contains rows the UI says are
-        # gone is worse than useless for reconciling anything (#2731).
+        # Soft-deleted archives (#1343) are excluded: this export is the list
+        # the user is looking at, saved to a file, and that list hides them —
+        # an export that silently contains rows the UI says are gone is worse
+        # than useless for reconciling anything (#2731).
         query = (
             select(PrintArchive)
-            .options(selectinload(PrintArchive.project))
+            .options(selectinload(PrintArchive.project), selectinload(PrintArchive.printer))
             .where(PrintArchive.deleted_at.is_(None))
             .order_by(PrintArchive.created_at.desc())
         )
-
-        # Apply filters
-        if printer_id:
-            query = query.where(PrintArchive.printer_id == printer_id)
         if project_id:
             query = query.where(PrintArchive.project_id == project_id)
-        if status:
-            query = query.where(PrintArchive.status == status)
-        if date_from:
-            query = query.where(PrintArchive.created_at >= date_from)
-        if date_to:
-            query = query.where(PrintArchive.created_at <= date_to)
         if visible_to_user_id is not None:
             query = query.where(PrintArchive.created_by_id == visible_to_user_id)
-        if printer_scope is not None and (clause := printer_scope.where(PrintArchive.printer_id)) is not None:
+        from backend.app.core.row_visibility import archive_scope_clause
+
+        if printer_scope is not None and (clause := archive_scope_clause(printer_scope)) is not None:
             query = query.where(clause)
         if search:
             like_pattern = f"%{search}%"
@@ -138,19 +211,55 @@ class ExportService:
                 | (PrintArchive.notes.ilike(like_pattern))
                 | (PrintArchive.designer.ilike(like_pattern))
             )
+        archives = list((await self.db.execute(query)).scalars().all())
 
-        # Execute query
-        result = await self.db.execute(query)
-        archives = list(result.scalars().all())
+        # Every archive's runs, a print running now included; the caller's
+        # only, when limited. By the archive query itself, not a list of its
+        # ids: a farm's archives outnumber what one statement may bind.
+        printed: set[int] = set()
+        runs: dict[int, list[PrintLogEntry]] = {}
+        if archives:
+            archive_ids = query.with_only_columns(PrintArchive.id).order_by(None)
+            all_runs = (
+                await self.db.scalars(
+                    select(PrintLogEntry)
+                    .where(PrintLogEntry.archive_id.in_(archive_ids))
+                    .order_by(PrintLogEntry.started_at.desc().nulls_last(), PrintLogEntry.id.desc())
+                    .execution_options(**{INCLUDE_OPEN_RUNS: True})
+                )
+            ).all()
+            for run in all_runs:
+                if run.archive_id is None:
+                    continue
+                printed.add(run.archive_id)
+                if printer_scope is None or printer_scope.allows(run.printer_id):
+                    runs.setdefault(run.archive_id, []).append(run)
 
-        # Determine fields to export
+        statuses = {s.strip() for s in status.split(",") if s.strip()} if status else set()
+
+        def picked(printer: int | None, row_status: str | None, when: datetime | None) -> bool:
+            if printer_id and printer != printer_id:
+                return False
+            if statuses and row_status not in statuses:
+                return False
+            if date_from and (when is None or when < date_from):
+                return False
+            return not (date_to and (when is None or when > date_to))
+
         export_fields = fields if fields else self.DEFAULT_FIELDS
-
-        # Convert to rows
         rows = []
         for archive in archives:
-            row = self._archive_to_row(archive, export_fields)
-            rows.append(row)
+            if archive.id in runs:
+                for run in runs[archive.id]:
+                    if picked(run.printer_id, run.status, run.started_at or run.created_at):
+                        rows.append(self._archive_to_row(archive, export_fields, run))
+            elif archive.id not in printed:
+                # Printed before runs were logged, or never: the archive's own.
+                if picked(archive.printer_id, archive.status, archive.created_at):
+                    rows.append(self._archive_to_row(archive, export_fields))
+            elif not (printer_id or status or date_from or date_to):
+                # Printed only on printers outside the caller's scope: the file.
+                rows.append(self._archive_to_row(archive, export_fields, hide_prints=True))
 
         # Generate headers
         headers = [self.FIELD_LABELS.get(f, f) for f in export_fields]
@@ -255,34 +364,90 @@ class ExportService:
 
         return file_bytes, filename, content_type
 
-    def _archive_to_row(self, archive: PrintArchive, fields: list[str]) -> list[Any]:
-        """Convert an archive to a row of values."""
+    def _archive_to_row(
+        self,
+        archive: PrintArchive,
+        fields: list[str],
+        run: PrintLogEntry | None = None,
+        *,
+        hide_prints: bool = False,
+    ) -> list[Any]:
+        """One row: the archive's file columns, and ``run``'s own (without a
+        run, the archive's, as it kept its print before runs; empty with
+        ``hide_prints``)."""
         row = []
         for field in fields:
             if field == "project_name":
                 value = archive.project.name if archive.project else None
-            elif field in ("started_at", "completed_at", "created_at"):
-                value = getattr(archive, field)
-                if value:
-                    value = value.isoformat()
+            elif field == "run_id":
+                value = run.id if run is not None else None
+            elif field in _PER_PRINT_FIELDS and hide_prints:
+                value = None
+            elif field in _PER_PRINT_FIELDS and run is not None:
+                value = getattr(run, field, None)
+                # Runs logged before they kept these share their archive's.
+                if field in ("filament_type", "quantity") and value is None:
+                    value = getattr(archive, field)
+            elif field == "printer_name":
+                value = archive.printer.name if archive.printer is not None else None
+            elif field == "duration_seconds":
+                started, completed = archive.started_at, archive.completed_at
+                value = (
+                    int((completed - started).total_seconds())
+                    if started and completed and completed > started
+                    else None
+                )
             else:
                 value = getattr(archive, field, None)
+            if isinstance(value, datetime):
+                value = value.isoformat()
             row.append(value)
         return row
+
+    MAINTENANCE_LOG_HEADERS = ["Performed at (UTC)", "Printer", "Task", "Performed by", "Print hours", "Comment"]
+
+    @classmethod
+    def export_maintenance_log(cls, entries: Sequence["MaintenanceLogEntry"], scope_label: str) -> tuple[bytes, str]:
+        """The maintenance log as CSV, and its file name.
+
+        ``scope_label`` names what the file holds (a printer's name, or
+        "all") in the file name. Text that people typed is written so that a
+        spreadsheet shows it as text, never runs it as a formula; the BOM makes
+        Excel read the file as UTF-8.
+        """
+        rows = [
+            [
+                _utc_iso(entry.performed_at),
+                _spreadsheet_text(entry.printer_name),
+                _spreadsheet_text(entry.maintenance_type_name),
+                _spreadsheet_text(entry.performed_by_username),
+                round(entry.hours_at_maintenance or 0.0, 1),
+                _spreadsheet_text(entry.notes),
+            ]
+            for entry in entries
+        ]
+        output = io.StringIO()
+        output.write("\ufeff")
+        writer = csv.writer(output)
+        writer.writerow(cls.MAINTENANCE_LOG_HEADERS)
+        writer.writerows(rows)
+        slug = re.sub(r"[^\w-]+", "_", scope_label, flags=re.UNICODE).strip("_") or "printer"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        return output.getvalue().encode("utf-8"), f"maintenance_log_{slug}_{timestamp}.csv"
 
     def _generate_csv(self, headers: list[str], rows: list[list]) -> bytes:
         """Generate CSV file content."""
         output = io.StringIO()
         writer = csv.writer(output)
         writer.writerow(headers)
-        writer.writerows(rows)
+        writer.writerows([[_spreadsheet_text(value) for value in row] for row in rows])
         return output.getvalue().encode("utf-8")
 
     def _generate_csv_simple(self, rows: list[list]) -> bytes:
         """Generate CSV file content from simple rows (no separate headers)."""
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerows(rows)
+        writer.writerows([[_spreadsheet_text(value) for value in row] for row in rows])
         return output.getvalue().encode("utf-8")
 
     def _generate_xlsx(self, headers: list[str], rows: list[list], fields: list[str]) -> bytes:
@@ -313,7 +478,7 @@ class ExportService:
         # Write data
         for row_idx, row in enumerate(rows, 2):
             for col_idx, value in enumerate(row, 1):
-                ws.cell(row=row_idx, column=col_idx, value=value)
+                _xlsx_cell(ws, row_idx, col_idx, value)
 
         # Auto-adjust column widths
         for col_idx, _field in enumerate(fields, 1):
@@ -348,7 +513,7 @@ class ExportService:
 
         for row_idx, row in enumerate(rows, 1):
             for col_idx, value in enumerate(row, 1):
-                cell = ws.cell(row=row_idx, column=col_idx, value=value)
+                cell = _xlsx_cell(ws, row_idx, col_idx, value)
                 # Bold section headers
                 if col_idx == 1 and value and isinstance(value, str) and value.endswith(":"):
                     cell.font = bold_font

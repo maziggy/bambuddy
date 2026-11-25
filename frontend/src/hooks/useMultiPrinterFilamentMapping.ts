@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useQueries } from '@tanstack/react-query';
 import { api } from '../api/client';
-import type { PrinterStatus, Printer } from '../api/client';
+import type { FilamentPolicy, PrinterStatus, Printer } from '../api/client';
 import {
   buildLoadedFilaments,
   computeAmsMapping,
@@ -33,6 +33,12 @@ export interface PerPrinterConfig {
   manualMappings: Record<number, number>;
   /** Whether this mapping was auto-configured */
   autoConfigured: boolean;
+  /**
+   * Slots whose tray the user picked in this printer's editor (#3711).
+   * `manualMappings` also holds the trays auto-configure filled in, which a
+   * forced colour must not be traded for.
+   */
+  pickedSlots?: number[];
 }
 
 /**
@@ -133,8 +139,9 @@ function computeMatchDetails(
       }
     }
 
-    // Auto-match with nozzle-aware filtering
-    let candidates = loadedFilaments.filter((f) => !usedTrayIds.has(f.globalTrayId));
+    // Auto-match with nozzle-aware filtering. A tray the user's groups block
+    // is never auto-picked (#3522).
+    let candidates = loadedFilaments.filter((f) => !usedTrayIds.has(f.globalTrayId) && !f.blocked);
     if (req.nozzle_id != null) {
       const nozzleFiltered = candidates.filter((f) => f.extruderId === req.nozzle_id);
       if (nozzleFiltered.length > 0) {
@@ -204,10 +211,11 @@ function computeMappingWithOverrides(
   manualMappings: Record<number, number>,
   preferLowest?: boolean,
   inventoryByTrayId?: Map<number, number>,
+  policies?: FilamentPolicy[] | null,
 ): number[] | undefined {
   if (!filamentReqs?.filaments || filamentReqs.filaments.length === 0) return undefined;
 
-  const loadedFilaments = buildLoadedFilaments(printerStatus);
+  const loadedFilaments = buildLoadedFilaments(printerStatus, undefined, policies);
   if (loadedFilaments.length === 0) return undefined;
 
   const usedTrayIds = new Set<number>(Object.values(manualMappings));
@@ -222,8 +230,9 @@ function computeMappingWithOverrides(
       continue;
     }
 
-    // Auto-match with nozzle-aware filtering
-    let candidates = loadedFilaments.filter((f) => !usedTrayIds.has(f.globalTrayId));
+    // Auto-match with nozzle-aware filtering. A tray the user's groups block
+    // is never auto-picked (#3522).
+    let candidates = loadedFilaments.filter((f) => !usedTrayIds.has(f.globalTrayId) && !f.blocked);
     if (req.nozzle_id != null) {
       const nozzleFiltered = candidates.filter((f) => f.extruderId === req.nozzle_id);
       if (nozzleFiltered.length > 0) {
@@ -310,6 +319,8 @@ export function useMultiPrinterFilamentMapping(
    * then empty anyway.
    */
   defaultMappingsPrinterId?: number | null,
+  /** The signed-in user's filament rules (#3522), from `useFilamentPolicies` */
+  policies?: FilamentPolicy[] | null,
 ): UseMultiPrinterFilamentMappingResult {
   // Fetch printer status for all selected printers in parallel
   const statusQueries = useQueries({
@@ -329,7 +340,7 @@ export function useMultiPrinterFilamentMapping(
       const printer = printers?.find((p) => p.id === printerId);
       const printerName = printer?.name || `Printer ${printerId}`;
 
-      const loadedFilaments = buildLoadedFilaments(printerStatus);
+      const loadedFilaments = buildLoadedFilaments(printerStatus, undefined, policies);
       const config = perPrinterConfigs[printerId] || DEFAULT_PRINTER_CONFIG;
       const inventoryByTrayId = inventoryByTrayIdPerPrinter?.get(printerId);
       // Per-printer gate (#1766): two printers in the same dispatch can have
@@ -338,7 +349,7 @@ export function useMultiPrinterFilamentMapping(
       const printerPreferLowest = effectivePreferLowest(preferLowest, printerStatus?.ams_filament_backup);
 
       // Compute auto mapping for this printer
-      const autoMapping = computeAmsMapping(filamentReqs, printerStatus, printerPreferLowest, inventoryByTrayId);
+      const autoMapping = computeAmsMapping(filamentReqs, printerStatus, printerPreferLowest, inventoryByTrayId, policies);
 
       // Which manual overrides apply to THIS printer.
       //
@@ -368,7 +379,9 @@ export function useMultiPrinterFilamentMapping(
           : {};
 
       // Compute final mapping with overrides
-      const finalMapping = computeMappingWithOverrides(filamentReqs, printerStatus, effectiveMappings, printerPreferLowest, inventoryByTrayId);
+      const finalMapping = computeMappingWithOverrides(
+        filamentReqs, printerStatus, effectiveMappings, printerPreferLowest, inventoryByTrayId, policies,
+      );
 
       // Compute match details
       const matchDetails = computeMatchDetails(
@@ -396,7 +409,7 @@ export function useMultiPrinterFilamentMapping(
         inventoryByTrayId,
       };
     });
-  }, [selectedPrinterIds, statusQueries, printers, filamentReqs, perPrinterConfigs, defaultMappings, preferLowest, inventoryByTrayIdPerPrinter, defaultMappingsPrinterId]);
+  }, [selectedPrinterIds, statusQueries, printers, filamentReqs, perPrinterConfigs, defaultMappings, preferLowest, inventoryByTrayIdPerPrinter, defaultMappingsPrinterId, policies]);
 
   const isLoading = statusQueries.some((q) => q.isLoading);
 
@@ -422,6 +435,7 @@ export function useMultiPrinterFilamentMapping(
       result.status,
       effectivePreferLowest(preferLowest, result.status?.ams_filament_backup),
       inventoryByTrayIdPerPrinter?.get(printerId),
+      policies,
     );
     if (!autoMapping) return;
 
@@ -437,6 +451,7 @@ export function useMultiPrinterFilamentMapping(
       useDefault: false,
       manualMappings,
       autoConfigured: true,
+      pickedSlots: [],
     });
   };
 

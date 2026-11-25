@@ -22,6 +22,12 @@ from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 logger = logging.getLogger(__name__)
 
+# How far back a new certificate's validity starts. A certificate valid from
+# the second it was made is refused, as not valid yet, by a client whose clock
+# is behind; the slicer then reports only "-1" when binding. The printer
+# certificate is made anew at every start, so this hit right after a restart.
+CLOCK_SKEW_ALLOWANCE = timedelta(days=1)
+
 # Default serial number for virtual printer (matches SSDP/MQTT config)
 DEFAULT_SERIAL = "00M09A391800001"
 
@@ -72,67 +78,6 @@ class CertificateService:
         self.ca_key_path = ca_dir / "bbl_ca.key"
         self.cert_path = cert_dir / "virtual_printer.crt"
         self.key_path = cert_dir / "virtual_printer.key"
-
-    def ensure_certificates(self) -> tuple[Path, Path]:
-        """Ensure certificates exist, generate if needed.
-
-        Returns:
-            Tuple of (cert_path, key_path)
-        """
-        if self.cert_path.exists() and self.key_path.exists():
-            if self._cert_matches_current_ca():
-                logger.debug("Using existing virtual printer certificates")
-                return self.cert_path, self.key_path
-            logger.warning(
-                "Existing per-VP certificate's issuer doesn't match the current CA "
-                "(likely a CA rotation since the cert was signed). Regenerating "
-                "to keep the slicer's imported CA in sync with the served chain."
-            )
-        return self.generate_certificates()
-
-    def _cert_matches_current_ca(self) -> bool:
-        """Check whether the on-disk per-VP cert was signed by the current CA.
-
-        Slicers that import the shared CA validate the per-VP cert against it.
-        If the CA has been rotated since the per-VP cert was signed, the chain
-        is broken even though both files exist on disk. ``ensure_certificates``
-        uses this to decide whether to regenerate.
-
-        Uses real signature verification — every CA generated before the
-        common name carried a per-install suffix is literally
-        "CN=Virtual Printer CA", so on those installs a DN-only compare would
-        incorrectly return True even after rotation.
-        """
-        try:
-            if not self.ca_cert_path.exists():
-                # No CA yet — let generate_certificates create one and the
-                # matching per-VP chain.
-                return False
-            cert_pem = self.cert_path.read_bytes()
-            cert = x509.load_pem_x509_certificate(cert_pem)
-            ca_pem = self.ca_cert_path.read_bytes()
-            ca_cert = x509.load_pem_x509_certificate(ca_pem)
-            from cryptography.exceptions import InvalidSignature
-            from cryptography.hazmat.primitives.asymmetric import padding
-
-            try:
-                ca_cert.public_key().verify(
-                    cert.signature,
-                    cert.tbs_certificate_bytes,
-                    padding.PKCS1v15(),
-                    cert.signature_hash_algorithm,
-                )
-                return True
-            except InvalidSignature:
-                return False
-        except (OSError, ValueError) as e:
-            logger.debug("CA-match probe failed for %s: %s", self.cert_path, e)
-            return False
-        except Exception as e:
-            # Any unexpected exception during verification → treat as mismatch
-            # and regenerate. Safer than reusing a cert we can't validate.
-            logger.debug("CA-match verification failed for %s: %s", self.cert_path, e)
-            return False
 
     def _load_existing_ca(self) -> tuple[rsa.RSAPrivateKey, x509.Certificate] | None:
         """Try to load existing CA certificate and key.
@@ -252,7 +197,7 @@ class CertificateService:
             .issuer_name(ca_name)
             .public_key(ca_key.public_key())
             .serial_number(x509.random_serial_number())
-            .not_valid_before(now)
+            .not_valid_before(now - CLOCK_SKEW_ALLOWANCE)
             .not_valid_after(now + timedelta(days=7300))  # 20 years
             .add_extension(
                 x509.BasicConstraints(ca=True, path_length=0),
@@ -360,7 +305,8 @@ class CertificateService:
             .issuer_name(issuer)
             .public_key(printer_key.public_key())
             .serial_number(x509.random_serial_number())
-            .not_valid_before(now)
+            # Never before its CA's own start: a fresh CA is backdated as much.
+            .not_valid_before(max(now - CLOCK_SKEW_ALLOWANCE, ca_cert.not_valid_before_utc))
             .not_valid_after(now + timedelta(days=3650))  # 10 years
             .add_extension(
                 x509.BasicConstraints(ca=False, path_length=None),
@@ -458,24 +404,3 @@ class CertificateService:
             if path.exists():
                 path.unlink()
         logger.info("Deleted printer certificate (CA preserved)")
-
-    def delete_certificates(self, include_ca: bool = False) -> None:
-        """Delete existing certificates.
-
-        Args:
-            include_ca: If True, also delete CA certificate and key.
-                       If False (default), only delete printer certificate.
-        """
-        # Always delete printer certificate
-        for path in [self.cert_path, self.key_path]:
-            if path.exists():
-                path.unlink()
-
-        # Only delete CA if explicitly requested
-        if include_ca:
-            for path in [self.ca_cert_path, self.ca_key_path]:
-                if path.exists():
-                    path.unlink()
-            logger.info("Deleted all certificates including CA")
-        else:
-            logger.info("Deleted printer certificate (CA preserved)")

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -12,6 +12,7 @@ import {
   type LocalPreset,
   type SlicerSetting,
   type SpoolCatalogEntry,
+  type SpoolKProfileInput,
 } from '../../api/client';
 import { getCurrencySymbol } from '../../utils/currency';
 import { getSwatchStyle, resolveSpoolColorName } from '../../utils/colors';
@@ -51,9 +52,12 @@ import {
   parsePresetName,
   saveRecentColor,
   withCurrentValue,
+  withProductDefaultKProfiles,
 } from '../../components/spool-form/utils';
 import { MATERIALS } from '../../components/spool-form/constants';
 import { NumberInput } from '../../components/NumberInput';
+import { useUiSettings } from '../../hooks/useUiSettings';
+import { useKioskDevice } from '../../hooks/useKioskDevice';
 
 type Tab = 'existing' | 'new' | 'replace';
 type WriteStatus = 'idle' | 'selected' | 'writing' | 'success' | 'error';
@@ -102,19 +106,26 @@ export function SpoolBuddyWriteTagPage() {
     enabled: spoolmanModeReady,
   });
 
-  const { data: devices = [] } = useQuery({
-    queryKey: ['spoolbuddy-devices'],
-    queryFn: () => spoolbuddyApi.getDevices(),
-    refetchInterval: 5000,
-  });
+  // The write goes to this kiosk's device, not the first one registered,
+  // which may be an old reader long offline (#3504).
+  const { device, devices, chooseDevice } = useKioskDevice(5000);
 
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
-  });
+  const { data: settings } = useUiSettings();
 
-  const device = devices[0];
+  // The layout's state follows the same device (useKioskDevice).
   const deviceOnline = sbState.deviceOnline;
+  // Only when there is a real choice: another device besides this one online.
+  const showDevicePicker = devices.length > 1 && devices.some((d) => d.online && d.device_id !== device?.device_id);
+  // Tag events from every reader reach every kiosk; only this device's count.
+  const deviceIdRef = useRef(device?.device_id);
+  useEffect(() => {
+    deviceIdRef.current = device?.device_id;
+  }, [device?.device_id]);
+  const fromOtherDevice = useCallback(
+    (detail: { device_id?: string } | null | undefined) =>
+      !!deviceIdRef.current && !!detail?.device_id && detail.device_id !== deviceIdRef.current,
+    [],
+  );
   const currencySymbol = getCurrencySymbol(settings?.currency || 'USD');
 
   // Filter spools based on tab
@@ -126,7 +137,10 @@ export function SpoolBuddyWriteTagPage() {
     void colorCatalogVersion;
     let list: InventorySpool[];
     if (activeTab === 'existing') {
-      list = spools.filter(s => !s.tag_uid && !s.archived_at);
+      // Not a spool linked by its AMS tray UUID either: that is its tag, and
+      // in Spoolman a sticker would replace it (SM-C5). The two tabs are
+      // each other's complement.
+      list = spools.filter(s => !s.tag_uid && !s.tray_uuid && !s.archived_at);
     } else if (activeTab === 'replace') {
       list = spools.filter(s => (s.tag_uid || s.tray_uuid) && !s.archived_at);
     } else {
@@ -152,28 +166,37 @@ export function SpoolBuddyWriteTagPage() {
   // Listen for tag events
   const handleUnknownTag = useCallback((e: Event) => {
     const detail = (e as CustomEvent).detail;
-    const sak = detail.sak ?? detail.data?.sak;
+    if (fromOtherDevice(detail)) return;
+    const sak = detail.sak;
     if (sak === 0x00) {
       setTagOnReader(true);
-      setTagUid(detail.tag_uid ?? detail.data?.tag_uid ?? null);
+      setTagUid(detail.tag_uid ?? null);
     }
-  }, []);
+  }, [fromOtherDevice]);
+
+  // A tag seen on another device is not on this one's reader.
+  useEffect(() => {
+    setTagOnReader(false);
+    setTagUid(null);
+  }, [device?.device_id]);
 
   const handleTagMatched = useCallback((e: Event) => {
     const detail = (e as CustomEvent).detail;
+    if (fromOtherDevice(detail)) return;
     // Tag is on the reader — could be used for replace flow
     setTagOnReader(true);
-    setTagUid(detail.tag_uid ?? detail.data?.tag_uid ?? null);
-  }, []);
+    setTagUid(detail.tag_uid ?? null);
+  }, [fromOtherDevice]);
 
-  const handleTagRemoved = useCallback(() => {
+  const handleTagRemoved = useCallback((e: Event) => {
+    if (fromOtherDevice((e as CustomEvent).detail)) return;
     setTagOnReader(false);
     setTagUid(null);
-  }, []);
+  }, [fromOtherDevice]);
 
   const handleTagWritten = useCallback((e: Event) => {
     const detail = (e as CustomEvent).detail;
-    if (detail.spool_id === selectedSpool?.id || detail.data?.spool_id === selectedSpool?.id) {
+    if (detail.spool_id === selectedSpool?.id) {
       setWriteStatus('success');
       setWriteMessage(t('spoolbuddy.writeTag.writeSuccess', 'Tag written successfully!'));
       refetchSpools();
@@ -187,13 +210,30 @@ export function SpoolBuddyWriteTagPage() {
 
   const handleWriteFailed = useCallback((e: Event) => {
     const detail = (e as CustomEvent).detail;
-    if (detail.spool_id === selectedSpool?.id || detail.data?.spool_id === selectedSpool?.id) {
+    if (detail.spool_id === selectedSpool?.id) {
       setWriteStatus('error');
-      setWriteMessage(detail.message ?? detail.data?.message ?? t('spoolbuddy.writeTag.writeFailed', 'Write failed'));
+      setWriteMessage(detail.message ?? t('spoolbuddy.writeTag.writeFailed', 'Write failed'));
     }
   }, [selectedSpool, t]);
 
+  const handleLinkFailed = useCallback((e: Event) => {
+    const detail = (e as CustomEvent).detail;
+    if (detail.spool_id === selectedSpool?.id) {
+      const reason = detail.reason;
+      setWriteStatus('error');
+      setWriteMessage(
+        reason === 'spoolman_not_configured'
+          ? t('spoolbuddy.writeTag.linkFailedSpoolmanNotConfigured')
+          : reason === 'spool_not_found'
+            ? t('spoolbuddy.writeTag.linkFailedSpoolNotFound')
+            : t('spoolbuddy.writeTag.linkFailedSpoolman'),
+      );
+      refetchSpools();
+    }
+  }, [selectedSpool, t, refetchSpools]);
+
   useEffect(() => {
+    window.addEventListener('spoolbuddy-tag-link-failed', handleLinkFailed);
     window.addEventListener('spoolbuddy-unknown-tag', handleUnknownTag);
     window.addEventListener('spoolbuddy-tag-matched', handleTagMatched);
     window.addEventListener('spoolbuddy-tag-removed', handleTagRemoved);
@@ -205,8 +245,9 @@ export function SpoolBuddyWriteTagPage() {
       window.removeEventListener('spoolbuddy-tag-removed', handleTagRemoved);
       window.removeEventListener('spoolbuddy-tag-written', handleTagWritten);
       window.removeEventListener('spoolbuddy-tag-write-failed', handleWriteFailed);
+      window.removeEventListener('spoolbuddy-tag-link-failed', handleLinkFailed);
     };
-  }, [handleUnknownTag, handleTagMatched, handleTagRemoved, handleTagWritten, handleWriteFailed]);
+  }, [handleUnknownTag, handleTagMatched, handleTagRemoved, handleTagWritten, handleWriteFailed, handleLinkFailed]);
 
   // Clear selection when switching tabs
   useEffect(() => {
@@ -227,9 +268,17 @@ export function SpoolBuddyWriteTagPage() {
           showToast(w, 'warning');
         }
       }
-    } catch {
+    } catch (err) {
       setWriteStatus('error');
-      setWriteMessage(t('spoolbuddy.writeTag.queueFailed', 'Failed to queue write command'));
+      const status = (err as { status?: number } | null)?.status;
+      setWriteMessage(
+        status === 503
+          ? t('spoolbuddy.writeTag.spoolmanUnavailable')
+          : status === 409
+            // A Bambu spool linked by its tray ID in Spoolman (SM-C5).
+            ? t('spoolbuddy.writeTag.linkedToAms')
+            : t('spoolbuddy.writeTag.queueFailed', 'Failed to queue write command'),
+      );
     }
   };
 
@@ -364,6 +413,23 @@ export function SpoolBuddyWriteTagPage() {
 
         {/* Right panel — NFC status + write action */}
         <div className="w-[340px] flex flex-col items-center justify-center p-6 shrink-0">
+          {showDevicePicker && (
+            <label className="w-full mb-4 text-sm text-white/60">
+              {t('spoolbuddy.writeTag.writeWith')}
+              <select
+                value={device?.device_id ?? ''}
+                onChange={(e) => chooseDevice(e.target.value)}
+                disabled={writeStatus === 'writing'}
+                className="mt-1 w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white"
+              >
+                {devices.map((d) => (
+                  <option key={d.device_id} value={d.device_id}>
+                    {d.online ? d.hostname : t('spoolbuddy.writeTag.deviceOfflineOption', { name: d.hostname })}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <NfcStatusPanel
             writeStatus={writeStatus}
             writeMessage={writeMessage}
@@ -463,10 +529,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
     queryFn: () =>
       spoolmanMode ? api.getSpoolmanInventorySpools(true) : api.getSpools(true),
   });
-  const { data: settingsForForm } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
-  });
+  const { data: settingsForForm } = useUiSettings();
 
   const [viewMode, setViewMode] = useState<NewSpoolViewMode>('simple');
   const [activeSubTab, setActiveSubTab] = useState<NewSpoolSubTab>('filament');
@@ -690,16 +753,12 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
 
   const saveKProfiles = async (spoolId: number) => {
     const save = spoolmanMode ? api.saveSpoolmanKProfiles : api.saveSpoolKProfiles;
-    if (selectedProfiles.size === 0) {
-      try {
-        await save(spoolId, []);
-      } catch {
-        // ignore
-      }
-      return;
-    }
+    // Only ever a spool just created: nothing picked leaves it with what the
+    // create gave it, the product's profile default (#1326). Saving the empty
+    // list would clear that.
+    if (selectedProfiles.size === 0) return;
 
-    const profiles = [];
+    let profiles: SpoolKProfileInput[] = [];
     for (const key of selectedProfiles) {
       const [printerIdStr, caliIdxStr, extruderStr] = key.split(':');
       const printerId = parseInt(printerIdStr);
@@ -730,6 +789,9 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
     }
 
     if (profiles.length > 0) {
+      // The save replaces the spool's whole list, and this page never shows
+      // the product's profile default the create applied (#1326).
+      profiles = await withProductDefaultKProfiles(profiles, formData);
       await save(spoolId, profiles);
     }
   };
@@ -743,7 +805,9 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
       return;
     }
 
-    const presetName = selectedPresetOption?.displayName || presetInputValue || null;
+    const presetName = formData.slicer_filament
+      ? selectedPresetOption?.displayName || presetInputValue || null
+      : null;
     const payload: Record<string, unknown> = {
       material: formData.material,
       subtype: formData.subtype || null,
@@ -1012,7 +1076,6 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
         ) : (
           <PAProfileSection
             formData={formData}
-            updateField={updateField}
             printersWithCalibrations={printersWithCalibrations}
             selectedProfiles={selectedProfiles}
             setSelectedProfiles={setSelectedProfiles}

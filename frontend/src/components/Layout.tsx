@@ -7,6 +7,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
 import { InstallAppButton } from './InstallAppButton';
 import { SwitchbarPopover } from './SwitchbarPopover';
+import { CameraLauncher } from './CameraLauncher';
 import { useQuery, useQueries } from '@tanstack/react-query';
 import { api, supportApi, pendingUploadsApi, type Permission } from '../api/client';
 import { getIconByName } from './IconPicker';
@@ -23,8 +24,11 @@ import { parseUTCDate } from '../utils/date';
 import { Button } from './Button';
 import { BugReportBubble } from './BugReportBubble';
 import { AnnouncementsPanel } from './AnnouncementsPanel';
+import { AccountMenu } from './AccountMenu';
+import { LanguageMenu } from './LanguageMenu';
 import { AnnouncementBanner } from './AnnouncementBanner';
 import { useAnnouncements } from '../hooks/useAnnouncements';
+import { plateCheckFailureText } from '../utils/plateCheck';
 import {
   getHiddenSidebarSystemItemIds,
   getSidebarOrder,
@@ -33,6 +37,7 @@ import {
   saveSidebarOrder,
   SIDEBAR_LAYOUT_CHANGED_EVENT,
 } from '../utils/sidebarLayout';
+import { ScrollableModalOverlay } from './ScrollableModalOverlay';
 
 
 interface NavItem {
@@ -96,6 +101,9 @@ export function Layout() {
   // floating disc shows that itself; the compact header's button and the
   // debug-logging banner need telling.
   const [bugReportLogging, setBugReportLogging] = useState(false);
+  // The camera list (#2737), also opened with the C key: from the Printers row
+  // of the sidebar, or from the compact header when the sidebar is a drawer.
+  const [cameraListOpen, setCameraListOpen] = useState(false);
 
   // Theme toggle: mode → icon and tooltip
   const ThemeIcon = { dark: Sun, light: Monitor, system: Moon }[mode];
@@ -133,6 +141,8 @@ export function Layout() {
   // Post-print outcome confirmation (#1898): archive waiting for a verdict,
   // set by the print_confirm_request WebSocket event.
   const [confirmOutcomeArchiveId, setConfirmOutcomeArchiveId] = useState<number | null>(null);
+  // The run the prompt asks about (a plate of the archive), when it names one.
+  const [confirmOutcomeRunId, setConfirmOutcomeRunId] = useState<number | null>(null);
 
   // Check for updates
   const { data: versionInfo } = useQuery({
@@ -240,6 +250,8 @@ export function Layout() {
   const { data: externalLinks } = useQuery({
     queryKey: ['external-links'],
     queryFn: api.getExternalLinks,
+    // Like the queue badge: apps behind the links report counts.
+    refetchInterval: 30_000,
   });
 
   // Fetch smart plugs to check for switchbar items
@@ -488,6 +500,26 @@ export function Layout() {
     return () => window.removeEventListener('plate-not-empty', handlePlateNotEmpty);
   }, [hasPermission]);
 
+  // A plate check that could not run (no camera image, ...) does not hold the
+  // print, but it is not an empty plate either: say so to those who can act.
+  useEffect(() => {
+    const handlePlateCheckFailed = (event: Event) => {
+      if (!hasPermission('printers:control')) {
+        return;
+      }
+      const detail = (event as CustomEvent).detail ?? {};
+      showToast(
+        t('printers.plateDetection.couldNotRun', {
+          printer: detail.printer_name ?? '',
+          reason: plateCheckFailureText(t, detail.reason),
+        }),
+        'warning',
+      );
+    };
+    window.addEventListener('plate-check-failed', handlePlateCheckFailed);
+    return () => window.removeEventListener('plate-check-failed', handlePlateCheckFailed);
+  }, [hasPermission, showToast, t]);
+
   // A completed print asked for its outcome verdict (#1898). Same CustomEvent
   // relay as plate-not-empty, and gated the same way: the PATCH route decides
   // who may record a verdict, so a user who cannot should not be handed a
@@ -501,6 +533,7 @@ export function Layout() {
       const detail = (event as CustomEvent).detail;
       if (typeof detail?.archive_id === 'number') {
         setConfirmOutcomeArchiveId(detail.archive_id);
+        setConfirmOutcomeRunId(typeof detail.run_id === 'number' ? detail.run_id : null);
       }
     };
     window.addEventListener('print-confirm-request', handleConfirmRequest);
@@ -519,8 +552,11 @@ export function Layout() {
     if (!confirmId || !/^\d+$/.test(confirmId)) {
       return;
     }
+    const runId = params.get('run');
     setConfirmOutcomeArchiveId(Number(confirmId));
+    setConfirmOutcomeRunId(runId && /^\d+$/.test(runId) ? Number(runId) : null);
     params.delete('confirm');
+    params.delete('run');
     const rest = params.toString();
     navigate({ pathname: location.pathname, search: rest ? `?${rest}` : '' }, { replace: true });
   }, [location.pathname, location.search, navigate]);
@@ -564,6 +600,11 @@ export function Layout() {
           e.preventDefault();
           setShowShortcuts(true);
           break;
+        case 'c':
+        case 'C':
+          e.preventDefault();
+          setCameraListOpen(open => !open);
+          break;
         case 'Escape':
           setShowShortcuts(false);
           break;
@@ -584,7 +625,7 @@ export function Layout() {
           <button
             onClick={() => setMobileDrawerOpen(true)}
             className="p-2 -ml-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors"
-            aria-label="Open menu"
+            aria-label={t('layout.openMenu')}
           >
             <Menu className="w-6 h-6 text-white" />
           </button>
@@ -593,10 +634,14 @@ export function Layout() {
             alt="Bambuddy"
             className="h-8 ml-3"
           />
+          {/* A camera from any page (#2737), beside the bug report. */}
+          <div className="ml-auto">
+            <CameraLauncher placement="down" open={cameraListOpen} onOpenChange={setCameraListOpen} />
+          </div>
           {/* Bug report — the compact-layout home of the floating bubble. */}
           <button
             onClick={() => setBugReportOpen(true)}
-            className={`ml-auto p-2 -mr-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors ${
+            className={`p-2 -mr-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors ${
               bugReportLogging ? 'text-amber-500' : 'text-red-500'
             }`}
             title={bugReportLogging ? t('bugReport.resumeReport') : t('bugReport.title')}
@@ -644,6 +689,29 @@ export function Layout() {
                 if (!link) return null;
 
                 const LinkIcon = link.custom_icon ? null : getIconByName(link.icon);
+                // A count the app behind the link reports (Bambuddy Orders' To do).
+                const linkBadge = link.badge_count ?? 0;
+                const linkIcon = (
+                  <div className="relative">
+                    {link.custom_icon ? (
+                      <img
+                        src={api.getExternalLinkIconUrl(link.id)}
+                        alt=""
+                        className="w-5 h-5 flex-shrink-0"
+                      />
+                    ) : (
+                      LinkIcon && <LinkIcon className="w-5 h-5 flex-shrink-0" />
+                    )}
+                    {linkBadge > 0 && (
+                      <span
+                        data-testid={`external-link-badge-${link.id}`}
+                        className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center text-[10px] font-bold rounded-full bg-yellow-500 text-black"
+                      >
+                        {linkBadge > 99 ? '99+' : linkBadge}
+                      </span>
+                    )}
+                  </div>
+                );
                 return (
                   <li key={id}>
                     {link.open_in_new_tab ? (
@@ -654,15 +722,7 @@ export function Layout() {
                         className={`flex items-center ${isSidebarCompact || sidebarExpanded ? 'gap-3 px-4' : 'justify-center px-2'} py-3 rounded-lg transition-colors group text-bambu-gray-light hover:bg-bambu-dark-tertiary hover:text-white`}
                         title={!isSidebarCompact && !sidebarExpanded ? link.name : undefined}
                       >
-                        {link.custom_icon ? (
-                          <img
-                            src={api.getExternalLinkIconUrl(link.id)}
-                            alt=""
-                            className="w-5 h-5 flex-shrink-0"
-                          />
-                        ) : (
-                          LinkIcon && <LinkIcon className="w-5 h-5 flex-shrink-0" />
-                        )}
+                        {linkIcon}
                         {(isSidebarCompact || sidebarExpanded) && <span>{link.name}</span>}
                       </a>
                     ) : (
@@ -677,15 +737,7 @@ export function Layout() {
                         }
                         title={!isSidebarCompact && !sidebarExpanded ? link.name : undefined}
                       >
-                        {link.custom_icon ? (
-                          <img
-                            src={api.getExternalLinkIconUrl(link.id)}
-                            alt=""
-                            className="w-5 h-5 flex-shrink-0"
-                          />
-                        ) : (
-                          LinkIcon && <LinkIcon className="w-5 h-5 flex-shrink-0" />
-                        )}
+                        {linkIcon}
                         {(isSidebarCompact || sidebarExpanded) && <span>{link.name}</span>}
                       </NavLink>
                     )}
@@ -698,13 +750,37 @@ export function Layout() {
 
                 const { to, icon: Icon, labelKey } = navItem;
                 const showQueueBadge = id === 'queue' && pendingQueueCount > 0;
-                const showArchiveBadge = id === 'archives' && pendingUploadsCount > 0;
-                const badgeCount = showQueueBadge ? pendingQueueCount : showArchiveBadge ? pendingUploadsCount : 0;
-                const showBadge = showQueueBadge || showArchiveBadge;
+                // Review-mode uploads wait on the File Manager page.
+                const showUploadsBadge = id === 'files' && pendingUploadsCount > 0;
+                const badgeCount = showQueueBadge ? pendingQueueCount : showUploadsBadge ? pendingUploadsCount : 0;
+                const showBadge = showQueueBadge || showUploadsBadge;
                 const showClearPlateDot = id === 'printers' && needsClearPlate;
 
+                const expanded = isSidebarCompact || sidebarExpanded;
+                // The camera list from any page (#2737), on the row of the page
+                // the cameras belong to. The drawer's copy is not the one the C
+                // key opens: in the compact layout that is the header's.
+                const cameraLauncher = id === 'printers' && (
+                  // Collapsed, the row is 48px wide and the nav clips anything
+                  // past it: a 16px corner button, shown on hover or focus.
+                  <div
+                    className={`absolute ${
+                      expanded
+                        ? 'right-2 top-1/2 -translate-y-1/2'
+                        : `right-0 top-0.5 ${cameraListOpen ? '' : 'opacity-0 group-hover/printers:opacity-100 focus-within:opacity-100'}`
+                    }`}
+                  >
+                    <CameraLauncher
+                      placement="side"
+                      size={expanded ? 'sm' : 'xs'}
+                      onAccent={location.pathname === '/'}
+                      {...(isSidebarCompact ? {} : { open: cameraListOpen, onOpenChange: setCameraListOpen })}
+                    />
+                  </div>
+                );
+
                 return (
-                  <li key={id}>
+                  <li key={id} className={id === 'printers' ? 'relative group/printers' : undefined}>
                     <NavLink
                       to={to}
                       className={({ isActive }) =>
@@ -723,7 +799,7 @@ export function Layout() {
                         )}
                         {showBadge && (
                           <span className={`absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center text-[10px] font-bold rounded-full ${
-                            showArchiveBadge ? 'bg-blue-500 text-white' : 'bg-yellow-500 text-black'
+                            showUploadsBadge ? 'bg-blue-500 text-white' : 'bg-yellow-500 text-black'
                           }`}>
                             {badgeCount > 99 ? '99+' : badgeCount}
                           </span>
@@ -731,6 +807,7 @@ export function Layout() {
                       </div>
                       {(isSidebarCompact || sidebarExpanded) && <span>{t(labelKey)}</span>}
                     </NavLink>
+                    {cameraLauncher}
                   </li>
                 );
               }
@@ -759,7 +836,7 @@ export function Layout() {
             <div className="flex flex-col gap-2">
               {/* Top row: icons. 32px each with no gap so seven fit the 239px
                   of an expanded sidebar -- announcements, System, GitHub,
-                  shortcuts, theme, password, logout -- without wrapping. */}
+                  shortcuts, theme, account, logout -- without wrapping. */}
               <div className="flex items-center justify-center flex-wrap [&>a]:p-1.5 [&>button]:p-1.5 [&>span]:p-1.5 [&>div>button]:p-1.5">
                 {hasSwitchbarPlugs && (
                   <div className="relative">
@@ -811,7 +888,7 @@ export function Layout() {
                 ) : (
                   <span
                     className="p-2 rounded-lg text-bambu-gray/50 cursor-not-allowed"
-                    title="You do not have permission to view system information"
+                    title={t('layout.noPermissionSystemInfo')}
                   >
                     <Info className="w-5 h-5" />
                   </span>
@@ -840,15 +917,11 @@ export function Layout() {
                 >
                   <ThemeIcon className="w-5 h-5" />
                 </button>
+                {/* Auth off: no account menu, so the language gets its own button (#3623). */}
+                {!authEnabled && <LanguageMenu />}
                 {authEnabled && user && (
                   <>
-                    <button
-                      onClick={() => setShowChangePasswordModal(true)}
-                      className="p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"
-                      title={t('changePassword.title')}
-                    >
-                      <Key className="w-5 h-5" />
-                    </button>
+                    <AccountMenu username={user.username} onChangePassword={() => setShowChangePasswordModal(true)} />
                     <button
                       onClick={logout}
                       className="p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"
@@ -933,7 +1006,7 @@ export function Layout() {
               ) : (
                 <span
                   className="p-2 rounded-lg text-bambu-gray/50 cursor-not-allowed"
-                  title="You do not have permission to view system information"
+                  title={t('layout.noPermissionSystemInfo')}
                 >
                   <Info className="w-5 h-5" />
                 </span>
@@ -962,15 +1035,11 @@ export function Layout() {
               >
                 <ThemeIcon className="w-5 h-5" />
               </button>
+              {/* Auth off: no account menu, so the language gets its own button (#3623). */}
+              {!authEnabled && <LanguageMenu />}
               {authEnabled && user && (
                 <>
-                  <button
-                    onClick={() => setShowChangePasswordModal(true)}
-                    className="p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"
-                    title={t('changePassword.title')}
-                  >
-                    <Key className="w-5 h-5" />
-                  </button>
+                  <AccountMenu username={user.username} onChangePassword={() => setShowChangePasswordModal(true)} />
                   <button
                     onClick={logout}
                     className="p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"
@@ -1003,7 +1072,7 @@ export function Layout() {
                 )}
               </span>
               {/* A run started from the bug-report panel ends at that panel's
-                  Stop & Submit button, so send the user back there rather than
+                  Stop Logging button, so send the user back there rather than
                   to the System page's raw toggle, which would drop the logs
                   and the description they already wrote (#2847). */}
               {bugReportLogging && (
@@ -1085,7 +1154,11 @@ export function Layout() {
       <UnknownSpoolModal
         prompt={unknownSpool.prompt}
         isPending={unknownSpool.isPending}
+        canLink={unknownSpool.canLink}
+        canAdd={unknownSpool.canAdd}
+        adding={unknownSpool.adding}
         onConfirm={unknownSpool.confirm}
+        onLink={unknownSpool.link}
         onCancel={unknownSpool.cancel}
       />
 
@@ -1145,14 +1218,15 @@ export function Layout() {
       {canConfirmOutcome && confirmOutcomeArchiveId !== null && (
         <ConfirmOutcomeDialog
           archiveId={confirmOutcomeArchiveId}
+          runId={confirmOutcomeRunId}
           onClose={() => setConfirmOutcomeArchiveId(null)}
         />
       )}
 
       {/* Change Password Modal */}
       {showChangePasswordModal && (
-        <div
-          className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+        <ScrollableModalOverlay
+          className="bg-black/70"
           onClick={() => {
             setShowChangePasswordModal(false);
             setChangePasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
@@ -1291,7 +1365,7 @@ export function Layout() {
               </div>
             </CardContent>
           </Card>
-        </div>
+        </ScrollableModalOverlay>
       )}
       {/* The panel always mounts here, at the Layout root. It must not move
           into the header alongside its compact-layout trigger: the header is

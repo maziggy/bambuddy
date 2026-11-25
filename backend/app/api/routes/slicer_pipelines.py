@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.printer_scope import ensure_printers_exist
 from backend.app.models.slicer_pipeline import SlicerPipeline
 from backend.app.models.user import User
 from backend.app.schemas.slicer import PresetRef
@@ -65,7 +66,7 @@ def _to_response(row: SlicerPipeline) -> SlicerPipelineResponse:
 @router.get("/", response_model=SlicerPipelineListResponse)
 async def list_pipelines(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PIPELINES_READ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """List all pipelines, newest first. Soft-deleted rows are hidden."""
     result = await db.execute(
@@ -79,7 +80,7 @@ async def list_pipelines(
 async def create_pipeline(
     data: SlicerPipelineCreate,
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.PIPELINES_WRITE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Create a new pipeline."""
     row = SlicerPipeline(
@@ -103,7 +104,7 @@ async def create_pipeline(
 async def get_pipeline(
     pipeline_id: int,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PIPELINES_READ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Read one pipeline by id."""
     result = await db.execute(
@@ -123,7 +124,7 @@ async def update_pipeline(
     pipeline_id: int,
     data: SlicerPipelineUpdate,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PIPELINES_WRITE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Update a pipeline. Only fields present in the payload are written."""
     result = await db.execute(
@@ -165,6 +166,7 @@ async def update_pipeline(
         if data.target_printer_id == 0:
             row.target_printer_id = None
         else:
+            await ensure_printers_exist(db, [data.target_printer_id])
             row.target_printer_id = data.target_printer_id
     # PR C — class targeting + fanout strategy. Empty string from the frontend
     # also clears the class (radio toggled away).
@@ -182,7 +184,7 @@ async def update_pipeline(
 async def delete_pipeline(
     pipeline_id: int,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PIPELINES_WRITE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Soft-delete a pipeline (sets is_deleted=True so PR B+ run history can
     still resolve pipeline metadata)."""

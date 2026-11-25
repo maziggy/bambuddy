@@ -19,7 +19,7 @@ import {
   Square,
   StickyNote,
 } from 'lucide-react';
-import { api } from '../api/client';
+import { api, ApiError } from '../api/client';
 import type { KProfile, KProfileCreate, KProfileDelete, Permission } from '../api/client';
 import {
   buildFilamentPresetOptions,
@@ -32,6 +32,7 @@ import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useCancellableTimeout } from '../hooks/useCancellableTimeout';
+import { kprofileWriteToast, writeUnconfirmed } from '../utils/kprofileWrite';
 
 interface KProfileCardProps {
   profile: KProfile;
@@ -93,6 +94,7 @@ const extractFilamentName = (profileName: string) => {
 };
 
 function KProfileCard({ profile, onEdit, onCopy, selectionMode, isSelected, onToggleSelect, note }: KProfileCardProps) {
+  const { t } = useTranslation();
   const flowType = getFlowTypeLabel(profile.nozzle_id);
   const diameter = profile.nozzle_diameter;
 
@@ -127,10 +129,10 @@ function KProfileCard({ profile, onEdit, onCopy, selectionMode, isSelected, onTo
             {truncateK(profile.k_value)}
           </span>
           <span className="text-white text-sm truncate flex-1" title={profile.name}>
-            {profile.name || 'Unnamed'}
+            {profile.name || t('kProfilesView.unnamed')}
           </span>
           {note && (
-            <span title="Has note">
+            <span title={t('kProfilesView.hasNote')}>
               <StickyNote className="w-3 h-3 text-yellow-500" />
             </span>
           )}
@@ -140,7 +142,7 @@ function KProfileCard({ profile, onEdit, onCopy, selectionMode, isSelected, onTo
         </div>
         {note && (
           <div className="text-xs mt-0.5 truncate text-yellow-500/70" title={note}>
-            Note: {note.length > 50 ? note.substring(0, 50) + '...' : note}
+            {t('kProfilesView.notePrefix', { note: note.length > 50 ? note.substring(0, 50) + '...' : note })}
           </div>
         )}
       </button>
@@ -151,7 +153,7 @@ function KProfileCard({ profile, onEdit, onCopy, selectionMode, isSelected, onTo
             onCopy();
           }}
           className="text-bambu-gray hover:text-white transition-colors p-1"
-          title="Copy profile"
+          title={t('kProfilesView.copyProfile')}
         >
           <Copy className="w-4 h-4" />
         </button>
@@ -269,7 +271,8 @@ function KProfileModal({
     },
     onSuccess: (result, variables) => {
       console.log('[KProfile] Save success:', result);
-      showToast(t('kProfiles.toast.profileSaved'));
+      const toast = kprofileWriteToast(result, 'kProfiles.toast.profileSaved');
+      showToast(t(toast.key), toast.type);
       // Save note if it changed (including clearing it)
       if (onSaveNote && note !== initialNote) {
         let profileKey: string;
@@ -310,7 +313,8 @@ function KProfileModal({
     },
     onSuccess: (result) => {
       console.log('[KProfile] Delete success:', result);
-      showToast(t('kProfiles.toast.profileDeleted'));
+      const toast = kprofileWriteToast(result, 'kProfiles.toast.profileDeleted');
+      showToast(t(toast.key), toast.type);
       // Show syncing indicator while printer processes the command
       setIsSyncing(true);
       // Add longer delay for delete - printer needs more time to process
@@ -423,8 +427,9 @@ function KProfileModal({
     console.log(`[KProfile] Saving ${batchPayload.length} profiles in batch:`, batchPayload);
 
     try {
-      await api.setKProfilesBatch(printerId, batchPayload);
-      showToast(t('kProfiles.toast.profilesSaved', { count: selectedExtruders.length }));
+      const result = await api.setKProfilesBatch(printerId, batchPayload);
+      const toast = kprofileWriteToast(result, 'kProfiles.toast.profilesSaved');
+      showToast(t(toast.key, { count: selectedExtruders.length }), toast.type);
       // Save note for new batch profiles
       if (onSaveNote && note) {
         const profileKey = `name_${name}_${resolvedFilamentId}`;
@@ -927,6 +932,9 @@ export function KProfilesView() {
 
   // Check if error is due to printer not being connected
   const isOfflineError = kprofilesError?.message?.includes('not connected');
+  // Any other failed read, mostly a printer that didn't answer (504): not a
+  // printer without profiles, so no "Create first profile" (#3404).
+  const isNoAnswerError = kprofilesError instanceof ApiError && kprofilesError.status === 504;
 
   // Auto-select first connected printer
   useEffect(() => {
@@ -1139,11 +1147,12 @@ export function KProfilesView() {
 
         // Import profiles one by one
         let imported = 0;
+        let unconfirmed = 0;
         for (const p of data.profiles) {
           if (!p.name || !p.k_value || !p.filament_id) continue;
 
           try {
-            await api.setKProfile(selectedPrinter!, {
+            const result = await api.setKProfile(selectedPrinter!, {
               name: p.name,
               k_value: parseFloat(p.k_value).toFixed(6),
               filament_id: p.filament_id,
@@ -1156,6 +1165,7 @@ export function KProfilesView() {
               slot_id: 0, // Always create new
             });
             imported++;
+            if (writeUnconfirmed(result)) unconfirmed++;
             // Small delay between imports
             await new Promise(resolve => setTimeout(resolve, 500));
           } catch (err) {
@@ -1164,6 +1174,7 @@ export function KProfilesView() {
         }
 
         showToast(t('kProfiles.toast.importedProfiles', { count: imported, total: data.profiles.length }));
+        if (unconfirmed > 0) showToast(t('kProfiles.toast.writesUnconfirmed', { count: unconfirmed }), 'warning');
         refetchProfiles();
       } catch (err) {
         console.error('Import error:', err);
@@ -1203,9 +1214,10 @@ export function KProfilesView() {
     setBulkDeleteInProgress(true);
 
     let deleted = 0;
+    let unconfirmed = 0;
     for (const profile of profilesToDelete) {
       try {
-        await api.deleteKProfile(selectedPrinter!, {
+        const result = await api.deleteKProfile(selectedPrinter!, {
           slot_id: profile.slot_id,
           extruder_id: profile.extruder_id,
           nozzle_id: profile.nozzle_id,
@@ -1214,6 +1226,7 @@ export function KProfilesView() {
           setting_id: profile.setting_id,
         });
         deleted++;
+        if (writeUnconfirmed(result)) unconfirmed++;
         // Small delay between deletes
         await new Promise(resolve => setTimeout(resolve, 300));
       } catch (err) {
@@ -1222,6 +1235,7 @@ export function KProfilesView() {
     }
 
     showToast(t('kProfiles.toast.profilesDeleted', { count: deleted }));
+    if (unconfirmed > 0) showToast(t('kProfiles.toast.writesUnconfirmed', { count: unconfirmed }), 'warning');
     setBulkDeleteInProgress(false);
     setShowBulkDeleteConfirm(false);
     setSelectionMode(false);
@@ -1498,6 +1512,20 @@ export function KProfilesView() {
             <h3 className="text-lg font-semibold text-white mb-2">{t('kProfiles.printerOffline')}</h3>
             <p className="text-bambu-gray mb-4">
               {t('kProfiles.printerOfflineDesc')}
+            </p>
+            <Button variant="secondary" onClick={() => refetchProfiles()}>
+              <RefreshCw className="w-4 h-4" />
+              {t('common.refresh')}
+            </Button>
+          </CardContent>
+        </Card>
+      ) : kprofilesError ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <AlertCircle className="w-12 h-12 text-amber-700 dark:text-amber-400 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-white mb-2">{t('kProfiles.readFailed')}</h3>
+            <p className="text-bambu-gray mb-4">
+              {isNoAnswerError ? t('kProfiles.noAnswerDesc') : kprofilesError.message}
             </p>
             <Button variant="secondary" onClick={() => refetchProfiles()}>
               <RefreshCw className="w-4 h-4" />

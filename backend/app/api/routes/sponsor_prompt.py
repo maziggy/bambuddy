@@ -27,7 +27,7 @@ def _user_id(current_user: User | None) -> int | None:
 @router.get("/check", response_model=SponsorPromptCheckResponse)
 async def check_sponsor_prompt(
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Return the next eligible sponsor-toast trigger, or `{show: false}`."""
     trigger = await service.evaluate(db, _user_id(current_user))
@@ -47,7 +47,7 @@ async def check_sponsor_prompt(
 async def dismiss_sponsor_prompt(
     data: SponsorPromptDismissRequest,
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Anchor the 14-day cooldown and record the milestone as shown."""
     await service.dismiss(db, _user_id(current_user), data.milestone)

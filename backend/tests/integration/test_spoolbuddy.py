@@ -552,12 +552,13 @@ class TestNfcEndpoints:
 
         assert resp.status_code == 200
         # merge_spool_extra was called twice:
-        #   1. clear tag from spool A (id=11) — set tag to ""
+        #   1. clear tag from spool A (id=11) — JSON-encoded "", as Spoolman
+        #      refuses a bare "" (#3312)
         #   2. set tag on spool B (id=22) — set tag to "DEADBEEF" (JSON-encoded)
         assert mock_client.merge_spool_extra.await_count == 2
         clear_call, bind_call = mock_client.merge_spool_extra.await_args_list
         assert clear_call.args[0] == 11
-        assert clear_call.args[1] == {"tag": ""}
+        assert clear_call.args[1] == {"tag": _json.dumps("")}
         assert bind_call.args[0] == 22
         assert bind_call.args[1] == {"tag": '"DEADBEEF"'}
 
@@ -646,12 +647,12 @@ class TestNfcEndpoints:
     # matches one by that exact UID saves the tray UUID read from the same tag.
     TRAY = "9E0B0717BEE94D7887EB1D8DFD1A14F3"
 
-    async def _scan(self, async_client: AsyncClient, tag_uid: str, tray_uuid: str | None):
+    async def _scan(self, async_client: AsyncClient, tag_uid: str, tray_uuid: str | None, sak: int | None = None):
         with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
             mock_ws.broadcast = AsyncMock()
             resp = await async_client.post(
                 f"{API}/nfc/tag-scanned",
-                json={"device_id": "sb-1", "tag_uid": tag_uid, "tray_uuid": tray_uuid},
+                json={"device_id": "sb-1", "tag_uid": tag_uid, "tray_uuid": tray_uuid, "sak": sak},
             )
         assert resp.status_code == 200
         return resp.json()
@@ -708,6 +709,36 @@ class TestNfcEndpoints:
         await self._scan(async_client, "AABB1122", self.TRAY)
 
         assert await self._tray_uuid_of(db_session, spool.id) == other
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_full_uid_scan_saves_full_uid_over_cascade_level_1_link(
+        self, async_client: AsyncClient, spool_factory, db_session
+    ):
+        """A spool linked from a level-1 read (#3258) gets the full UID on its first full scan."""
+        from sqlalchemy import select
+
+        spool_id = (await spool_factory(tag_uid="8804ECE6")).id
+
+        data = await self._scan(async_client, "04ECE673D32A81", None)
+
+        assert data["spool_id"] == spool_id
+        db_session.expire_all()
+        stored = (await db_session.execute(select(Spool.tag_uid).where(Spool.id == spool_id))).scalar_one()
+        assert stored == "04ECE673D32A81"
+        # A daemon not updated yet still finds it.
+        assert (await self._scan(async_client, "8804ECE6", None))["spool_id"] == spool_id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_complete_uid_beginning_with_88_is_no_cascade_level_1_read(
+        self, async_client: AsyncClient, spool_factory
+    ):
+        """An old daemon's level-1 read comes with SAK 0x04; a 4-byte clone card's 88 UID with 0x08 (#3258)."""
+        spool_id = (await spool_factory(tag_uid="04ECE673D32A81")).id
+
+        assert (await self._scan(async_client, "8804ECE6", None, sak=0x04))["spool_id"] == spool_id
+        assert (await self._scan(async_client, "8804ECE6", None, sak=0x08))["matched"] is False
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -929,6 +960,68 @@ class TestWriteTagEndpoints:
         assert spool_data["data_origin"] == "opentag3d"
         assert spool_data["encode_time"] is not None
 
+    async def _write_result(self, async_client: AsyncClient, device_id: str, spool_id: int, tag_uid: str):
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            resp = await async_client.post(
+                f"{API}/nfc/write-result",
+                json={"device_id": device_id, "spool_id": spool_id, "tag_uid": tag_uid, "success": True},
+            )
+        assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_written_tag_moves_from_the_spool_that_had_it(
+        self, async_client: AsyncClient, db_session: AsyncSession, device_factory, spool_factory
+    ):
+        """#3505: the tag now holds spool B's data, so spool A gives it up;
+        before, both kept the UID and a scan found A."""
+        device = await device_factory(device_id="sb-move", pending_command="write_tag")
+        spool_a = await spool_factory(tag_uid="04AABB11223344", tag_type="ntag")
+        spool_b = await spool_factory(tag_uid=None)
+
+        # The daemon reports the UID in any case; the stored one is upper case.
+        await self._write_result(async_client, device.device_id, spool_b.id, "04aabb11223344")
+
+        await db_session.refresh(spool_a)
+        await db_session.refresh(spool_b)
+        assert spool_a.tag_uid is None
+        assert spool_b.tag_uid == "04AABB11223344"
+        # A scan of the tag now finds B.
+        lookup = await async_client.get("/api/v1/inventory/spools/by-tag", params={"tag_uid": "04AABB11223344"})
+        assert lookup.status_code == 200
+        assert lookup.json()["id"] == spool_b.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_an_archived_spool_gives_up_the_written_tag(
+        self, async_client: AsyncClient, db_session: AsyncSession, device_factory, spool_factory
+    ):
+        device = await device_factory(device_id="sb-move-arch", pending_command="write_tag")
+        archived = await spool_factory(tag_uid="04AABB11223355", archived_at=datetime.now(timezone.utc))
+        spool = await spool_factory(tag_uid=None)
+
+        await self._write_result(async_client, device.device_id, spool.id, "04AABB11223355")
+
+        await db_session.refresh(archived)
+        assert archived.tag_uid is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_writing_a_spool_its_own_tag_again_keeps_it(
+        self, async_client: AsyncClient, db_session: AsyncSession, device_factory, spool_factory, caplog
+    ):
+        device = await device_factory(device_id="sb-rewrite", pending_command="write_tag")
+        spool = await spool_factory(tag_uid="04AABB11223366", tag_type="ntag")
+
+        with caplog.at_level("INFO", logger="backend.app.api.routes.spoolbuddy"):
+            await self._write_result(async_client, device.device_id, spool.id, "04AABB11223366")
+
+        await db_session.refresh(spool)
+        assert spool.tag_uid == "04AABB11223366"
+        # Nothing moved: the spool is not reported as giving the tag to itself.
+        assert "moved from spool" not in caplog.text
+
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_write_result_failure_broadcasts_error(
@@ -1050,17 +1143,21 @@ class TestWriteTagEndpoints:
         payload = hb.json()["pending_write_payload"]
         ndef_bytes = bytes.fromhex(payload["ndef_data_hex"])
 
-        # CC bytes
-        assert ndef_bytes[:4] == bytes([0xE1, 0x10, 0x12, 0x00])
-        # TLV type
-        assert ndef_bytes[4] == 0x03
+        # The data area starts with the NDEF TLV, no CC copy (#3500)
+        assert ndef_bytes[0] == 0x03
         # NDEF record: TNF=MIME, type=application/opentag3d
-        assert ndef_bytes[6] == 0xD2
-        assert ndef_bytes[9:30] == b"application/opentag3d"
+        assert ndef_bytes[2] == 0xD2
+        assert ndef_bytes[5:26] == b"application/opentag3d"
         # Terminator
         assert ndef_bytes[-1] == 0xFE
         # Total size fits NTAG213
         assert len(ndef_bytes) <= 144
+
+        # OpenTag3D 2.004 beside it, for a tag with room for it (#3500)
+        v2 = bytes.fromhex(payload["ndef_v2_hex"])
+        assert v2[5:26] == b"application/opentag3d"
+        assert int.from_bytes(v2[26:28], "big") == 2004
+        assert v2[26 + 0x0C : 26 + 0x15] == b"Polymaker"
 
 
 # ============================================================================
@@ -1381,94 +1478,6 @@ class TestUpdateEndpoints:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_report_update_status_updating(self, async_client: AsyncClient, device_factory):
-        await device_factory(device_id="sb-upd-st", pending_command="update", update_status="pending")
-
-        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
-            mock_ws.broadcast = AsyncMock()
-            resp = await async_client.post(
-                f"{API}/devices/sb-upd-st/update-status",
-                json={"status": "updating", "message": "Fetching latest code..."},
-            )
-
-        assert resp.status_code == 200
-        mock_ws.broadcast.assert_called_once()
-        msg = mock_ws.broadcast.call_args[0][0]
-        assert msg["type"] == "spoolbuddy_update"
-        assert msg["update_status"] == "updating"
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_report_update_status_complete_clears_command(self, async_client: AsyncClient, device_factory):
-        await device_factory(device_id="sb-upd-done", pending_command="update", update_status="updating")
-
-        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
-            mock_ws.broadcast = AsyncMock()
-            await async_client.post(
-                f"{API}/devices/sb-upd-done/update-status",
-                json={"status": "complete", "message": "Update complete, restarting..."},
-            )
-
-        # Heartbeat should have no pending command
-        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
-            mock_ws.broadcast = AsyncMock()
-            hb = await async_client.post(
-                f"{API}/devices/sb-upd-done/heartbeat",
-                json={"nfc_ok": True, "scale_ok": True, "uptime_s": 10},
-            )
-
-        assert hb.json()["pending_command"] is None
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_report_update_status_error(self, async_client: AsyncClient, device_factory):
-        await device_factory(device_id="sb-upd-err", pending_command="update", update_status="updating")
-
-        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
-            mock_ws.broadcast = AsyncMock()
-            resp = await async_client.post(
-                f"{API}/devices/sb-upd-err/update-status",
-                json={"status": "error", "message": "git fetch failed: network unreachable"},
-            )
-
-        assert resp.status_code == 200
-        msg = mock_ws.broadcast.call_args[0][0]
-        assert msg["update_status"] == "error"
-        assert "git fetch failed" in msg["update_message"]
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_report_update_status_unknown_device_404(self, async_client: AsyncClient):
-        resp = await async_client.post(
-            f"{API}/devices/ghost/update-status",
-            json={"status": "updating", "message": "test"},
-        )
-        assert resp.status_code == 404
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_report_update_status_invalid_status_422(self, async_client: AsyncClient, device_factory):
-        """Arbitrary status strings must be rejected with 422 (H2: UpdateStatusRequest validation)."""
-        await device_factory(device_id="sb-upd-inv")
-        resp = await async_client.post(
-            f"{API}/devices/sb-upd-inv/update-status",
-            json={"status": "hacked", "message": "injected"},
-        )
-        assert resp.status_code == 422
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_report_update_status_oversized_message_422(self, async_client: AsyncClient, device_factory):
-        """Message exceeding 255 chars must be rejected with 422 (H2/M4)."""
-        await device_factory(device_id="sb-upd-big")
-        resp = await async_client.post(
-            f"{API}/devices/sb-upd-big/update-status",
-            json={"status": "updating", "message": "x" * 256},
-        )
-        assert resp.status_code == 422
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
     async def test_ssh_public_key_error_does_not_leak_exception_text(self, async_client: AsyncClient):
         """SSH public-key 500 must not expose raw exception details (M3)."""
         from backend.app.services.spoolbuddy_ssh import get_public_key
@@ -1758,6 +1767,25 @@ class TestUpdateSpoolWeightSpoolman:
         # remaining = max(0, 750 - 196) = 554 → weight_used = 1000 - 554 = 446
         assert data["weight_used"] == pytest.approx(446.0)
         mock_client.update_spool.assert_called_once_with(spool_id=42, remaining_weight=pytest.approx(554.0))
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_spoolman_mode_announces_the_weight(self, async_client: AsyncClient, spoolman_settings):
+        """WU-9: other open Inventory tabs refresh only on inventory_changed."""
+        sm_spool = _spoolman_spool_fixture(42, spool_weight=196.0, filament_weight=1000.0)
+        mock_client = _mock_spoolman_client()
+        mock_client.get_spool = AsyncMock(return_value=sm_spool)
+        mock_client.update_spool = AsyncMock(return_value=sm_spool)
+
+        with (
+            patch("backend.app.services.spoolman.get_spoolman_client", AsyncMock(return_value=mock_client)),
+            patch("backend.app.services.spoolman.init_spoolman_client", AsyncMock(return_value=mock_client)),
+            patch("backend.app.api.routes.spoolbuddy.ws_manager") as ws,
+        ):
+            ws.broadcast = AsyncMock()
+            await async_client.post(f"{API}/scale/update-spool-weight", json={"spool_id": 42, "weight_grams": 750})
+
+        assert {"type": "inventory_changed"} in [c.args[0] for c in ws.broadcast.call_args_list]
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -2153,7 +2181,7 @@ def _full_spoolman_spool(spool_id: int) -> dict:
 
 
 class TestNfcWriteTagSpoolman:
-    """nfc/write-tag falls back to Spoolman when local DB has no matching spool."""
+    """nfc/write-tag encodes the Spoolman spool in Spoolman mode."""
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -2218,13 +2246,14 @@ class TestNfcWriteTagSpoolman:
         assert payload["data_origin"] == "spoolman"
         assert payload["spool_id"] == 88
         assert "ndef_data_hex" in payload
+        assert int.from_bytes(bytes.fromhex(payload["ndef_v2_hex"])[26:28], "big") == 2004
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_404_when_neither_local_nor_spoolman(
+    async def test_404_when_spoolman_has_no_such_spool(
         self, async_client: AsyncClient, device_factory, spoolman_settings
     ):
-        """404 returned when spool is missing from both local DB and Spoolman."""
+        """404 returned when the spool is missing from Spoolman."""
         await device_factory(device_id="sb-miss")
         mock_client = _mock_spoolman_client()
         mock_client.get_spool = AsyncMock(side_effect=SpoolmanNotFoundError("Spool 9999 not found"))
@@ -2245,6 +2274,34 @@ class TestNfcWriteTagSpoolman:
             )
 
         assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_spoolman_spool_wins_over_a_leftover_built_in_spool(
+        self, async_client: AsyncClient, device_factory, db_session, spool_factory, spoolman_settings
+    ):
+        """Built-in spools are kept after switching to Spoolman; one with the
+        same id as the Spoolman spool must not be the one written to the tag."""
+        import json as _json
+
+        leftover = await spool_factory(material="PETG")
+        device = await device_factory(device_id="sb-leftover")
+        mock_client = _mock_spoolman_client()
+        mock_client.get_spool = AsyncMock(return_value=_full_spoolman_spool(leftover.id))
+
+        with (
+            patch("backend.app.services.spoolman.get_spoolman_client", AsyncMock(return_value=mock_client)),
+            patch("backend.app.services.spoolman.init_spoolman_client", AsyncMock(return_value=mock_client)),
+        ):
+            resp = await async_client.post(
+                f"{API}/nfc/write-tag",
+                json={"device_id": "sb-leftover", "spool_id": leftover.id},
+            )
+
+        assert resp.status_code == 200, resp.text
+        mock_client.get_spool.assert_called_once_with(leftover.id)
+        await db_session.refresh(device)
+        assert _json.loads(device.pending_write_payload)["data_origin"] == "spoolman"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -2502,6 +2559,7 @@ class TestNfcWriteResultSpoolmanSecurityFixes:
         # Failure broadcast fires so the UI can show the error
         msg = mock_ws.broadcast.call_args[0][0]
         assert msg["type"] == "spoolbuddy_tag_link_failed"
+        assert msg["reason"] == "spoolman_link_failed"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -2548,6 +2606,7 @@ class TestNfcWriteResultSpoolmanSecurityFixes:
         msg = mock_ws.broadcast.call_args[0][0]
         assert msg["type"] == "spoolbuddy_tag_link_failed"
         assert msg["spool_id"] == 55
+        assert msg["reason"] == "spoolman_link_failed"
 
 
 class TestNfcWriteResultOrphanedSpool:
@@ -2590,6 +2649,7 @@ class TestNfcWriteResultOrphanedSpool:
         broadcast_calls = mock_ws.broadcast.call_args_list
         link_failed = [c[0][0] for c in broadcast_calls if c[0][0].get("type") == "spoolbuddy_tag_link_failed"]
         assert len(link_failed) >= 1
+        assert link_failed[0]["reason"] == "spool_not_found"
 
 
 class TestNfcWriteResultInputValidation:
@@ -2795,6 +2855,7 @@ class TestNfcWriteResultExceptionScrubbing:
         assert msg["type"] == "spoolbuddy_tag_link_failed"
         # Generic message — no internal exception details leaked
         assert msg["message"] == "Spoolman link failed", f"Expected generic message but got: {msg['message']!r}"
+        assert msg["reason"] == "spoolman_link_failed"
         assert "connection refused" not in str(msg), f"Exception text must not appear in WS message: {msg}"
         assert "192.168.1" not in str(msg), f"Internal IP must not appear in WS message: {msg}"
 

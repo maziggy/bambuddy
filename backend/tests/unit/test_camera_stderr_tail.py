@@ -199,7 +199,7 @@ async def test_the_stream_generator_owns_then_releases_the_collector(monkeypatch
             self.pid = 88042
             self.returncode = None
             self.stdout = _FrameThenBlock()
-            self.stderr = _Reader([b"Stream #0:0: Video: h264\n"])
+            self.stderr = _Reader([b"Input #0, rtsp, from 'rtsp://x':\n", b"Stream #0:0: Video: h264\n"])
 
         def terminate(self) -> None:
             self.returncode = 0

@@ -40,6 +40,9 @@ print-complete callbacks can share one answer.
 INTERNAL_JOB_NAMES = frozenset(
     {
         "auto_cali_for_user",
+        # A1, A1 Mini, P1 and A2L report their built-in calibration under this
+        # bare name, with no /usr/ path (support bundles, A1 firmware 01.08).
+        "auto_cali_for_user_param",
         "auto_pa_line_calib_mode",
         "pa_line_calib_mode",
         "pa_pattern_calib_mode",

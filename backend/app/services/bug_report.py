@@ -9,6 +9,9 @@ from backend.app.core.config import BUG_REPORT_RELAY_URL
 from backend.app.core.database import async_session
 from backend.app.models.bug_report import BugReport
 
+# The reporter's email goes to the relay with the report (it is how the report
+# gets answered) and is not kept in bug_reports: nothing reads that table.
+
 logger = logging.getLogger(__name__)
 
 # Rate limiting: max 5 reports per hour
@@ -68,7 +71,6 @@ async def submit_report(
                 async with async_session() as db:
                     report = BugReport(
                         description=description,
-                        reporter_email=reporter_email,
                         status="failed",
                         error_message=error_msg,
                     )
@@ -86,7 +88,6 @@ async def submit_report(
         async with async_session() as db:
             report = BugReport(
                 description=description,
-                reporter_email=reporter_email,
                 status="failed",
                 error_message="Failed to reach bug report relay",
             )
@@ -104,7 +105,6 @@ async def submit_report(
         async with async_session() as db:
             report = BugReport(
                 description=description,
-                reporter_email=reporter_email,
                 status="failed",
                 error_message=relay_data.get("message", "Relay returned failure"),
             )
@@ -125,7 +125,6 @@ async def submit_report(
     async with async_session() as db:
         report = BugReport(
             description=description,
-            reporter_email=reporter_email,
             github_issue_number=issue_number,
             github_issue_url=issue_url,
             status="submitted",

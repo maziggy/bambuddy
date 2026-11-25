@@ -24,11 +24,12 @@ Resolver outcomes:
 
 The resolver is async because the GFS / PFUS / PFCN branches need cloud
 authentication and the local-preset branch reads ``LocalPreset`` from the
-DB. Pass ``current_user=None`` to skip cloud auth (the on_ams_change
-replay path uses this); cloud-prefix presets then fall back to a static
-``normalize_slicer_filament`` parse, which is correct when the slot was
-already configured by an earlier authenticated assign and the printer's
-calibration table preserves the real filament_id.
+DB. ``current_user=None`` reads the shared cloud sign-in, the one used with
+login off. With login on that one is usually empty, so a caller without a
+user of its own (tag auto-assign, the Spoolman link) gets no cloud lookup, and
+cloud-prefix presets fall back to a static ``normalize_slicer_filament``
+parse. API-key assigns and the replay on insert pass the key's owner or the
+assigning user instead (#3519).
 """
 
 from __future__ import annotations
@@ -43,12 +44,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.permissions import Permission
 from backend.app.models.user import User
+from backend.app.utils.filament_finish import different_finish
 from backend.app.utils.filament_ids import (
     GENERIC_FILAMENT_IDS,
+    GENERIC_IDS_REPLACED_ON_REUSE,
     filament_id_to_setting_id,
     normalize_slicer_filament,
+    orca_to_bambu_filament_id,
+    setting_id_to_filament_id,
 )
 from backend.app.utils.filament_types import is_material_name
+from backend.app.utils.slicer_strings import first_slicer_string
 
 logger = logging.getLogger(__name__)
 
@@ -82,10 +88,16 @@ _MAX_INHERITS_DEPTH = 5
 
 
 def _content_filament_id(content: dict) -> str:
+    """A profile's filament_id as the printer knows it.
+
+    One copied from an OrcaSlicer system preset is Orca's own id ("OFMUWNkp"),
+    which the printer cannot resolve; it is translated with Orca's own table,
+    and one the table does not know reads as none, so the lookup goes on to
+    the parents (#3387)."""
     raw = content.get("filament_id")
     if isinstance(raw, list):
         raw = raw[0] if raw else None
-    return raw.strip() if isinstance(raw, str) else ""
+    return orca_to_bambu_filament_id(raw.strip()) if isinstance(raw, str) else ""
 
 
 def _catalog_filament_id(preset_name: str) -> str:
@@ -105,6 +117,25 @@ def _catalog_filament_id(preset_name: str) -> str:
         if fname.lower() == base:
             return fid
     return ""
+
+
+def realign_builtin_filament_id(tray_info_idx: str, slicer_filament_name: str | None) -> str:
+    """The builtin id whose name is ``slicer_filament_name`` when ``tray_info_idx`` names another builtin.
+
+    No network. A resolution that landed on the wrong builtin (cloud detail
+    said PLA Basic, the spool is labelled PLA Matte) is realigned to the name;
+    anything else comes back unchanged.
+    """
+    if not tray_info_idx or not slicer_filament_name:
+        return tray_info_idx
+    from backend.app.api.routes.cloud import _BUILTIN_FILAMENT_NAMES
+
+    expected_name = _BUILTIN_FILAMENT_NAMES.get(tray_info_idx, "")
+    if expected_name and expected_name != slicer_filament_name:
+        for fid, fname in _BUILTIN_FILAMENT_NAMES.items():
+            if fname == slicer_filament_name:
+                return fid
+    return tray_info_idx
 
 
 async def lookup_orca_filament_id(
@@ -229,7 +260,8 @@ def _preset_filament_type(raw: object) -> str | None:
     """Read a slicer preset's ``filament_type`` field.
 
     Bambu Studio and OrcaSlicer both store it as a one-element array
-    (``["PLA"]``); some hand-written and older profiles store a bare string.
+    (``["PLA"]``); some hand-written and older profiles store a bare string,
+    and Orca Cloud can return it INI-quoted (``'"PLA"'``, #3380).
     ``orca_profiles._extract_filament_fields`` accepts both and this has to
     agree with it, since that is what fills ``LocalPreset.filament_type``.
 
@@ -240,11 +272,42 @@ def _preset_filament_type(raw: object) -> str | None:
     ``filament_type`` is a product line, which is the case this whole module
     exists to keep out of an AMS slot.
     """
-    if isinstance(raw, list):
-        raw = raw[0] if raw else None
-    if isinstance(raw, str) and raw.strip():
-        return raw.strip()
-    return None
+    return first_slicer_string(raw)
+
+
+def reusable_slot_filament_id(
+    current_tray_info_idx: str | None,
+    current_tray_type: str | None,
+    current_tray_sub_brands: str | None,
+    tray_type: str,
+    spool_text: str,
+) -> str:
+    """The slot's own filament id, when a spool without a preset may keep it.
+
+    A spool whose preset is empty or unresolvable would otherwise get the
+    generic id for its material, which turns a genuine Bambu PLA Basic into
+    Generic PLA. When the slot already holds a specific filament id of the same
+    type, keeping it is closer. Shared by both inventory modes (#3433): the
+    Spoolman route went straight to the generic id.
+
+    Not kept: a generic id, a cloud user preset (PFUS/PFCN), a material name
+    left in that field by a Bambuddy from before #2902, another type, and
+    another finish when both name one (a Silk spool does not take a Matte id).
+    ``spool_text`` is the spool's material and subtype.
+    """
+    current = (current_tray_info_idx or "").strip()
+    if (
+        current
+        and current not in GENERIC_IDS_REPLACED_ON_REUSE
+        and not current.startswith("PFUS")
+        and not current.startswith("PFCN")
+        and not is_material_name(current)
+        and current_tray_type
+        and current_tray_type.upper() == tray_type.upper()
+        and not different_finish(spool_text, current_tray_sub_brands)
+    ):
+        return current
+    return ""
 
 
 async def resolve_slicer_filament(
@@ -363,21 +426,54 @@ async def resolve_slicer_filament(
                     own_filament_id = detail.get("filament_id") or (
                         cloud_setting.get("filament_id") if isinstance(cloud_setting, dict) else None
                     )
-                    if own_filament_id:
+                    # An official preset's id comes from its full setting_id
+                    # (#3387). The detail read above is the suffix-free base's,
+                    # and for some bases that is another filament: "GFSA05" is
+                    # Bambu PLA Matte @BBL X1, while "GFSA05_07" -- and the
+                    # bare id Bambuddy builds from GFA05 -- is Bambu PLA Silk.
+                    # Its type and name only count when it is the same filament.
+                    # A spool named after that very preset is the exception: it
+                    # was picked as Bambu's legacy bare preset ("Bambu TPU 95A
+                    # @BBL X1C", "GFSU00" -> GFU01), not built by Bambuddy, and
+                    # Bambu's own id is then the right one.
+                    official = setting_id_to_filament_id(sf) if base_sf.startswith("GFS") else ""
+                    detail_name = detail.get("name")
+                    if (
+                        official
+                        and own_filament_id
+                        and isinstance(detail_name, str)
+                        and detail_name.strip()
+                        and detail_name.strip() == (slicer_filament_name or "").strip()
+                    ):
+                        official = own_filament_id
+                    if official:
+                        tray_info_idx = official
+                        if own_filament_id and own_filament_id != official:
+                            type_override = None
+                        else:
+                            cloud_name = detail.get("name", "")
+                            if cloud_name:
+                                sub_brand_override = cloud_name.split("@")[0].strip()
+                    elif own_filament_id:
                         tray_info_idx = own_filament_id
                         cloud_name = detail.get("name", "")
                         if cloud_name:
                             sub_brand_override = cloud_name.replace(r"@.*$", "").split("@")[0].strip()
                     elif detail.get("base_id"):
-                        bid = detail["base_id"].split("_")[0]
-                        if bid.startswith("GFS") and len(bid) >= 5:
-                            tray_info_idx = f"GF{bid[3:]}"
-                        else:
-                            tray_info_idx = bid
+                        tray_info_idx = setting_id_to_filament_id(detail["base_id"])
                 finally:
                     await cloud.close()
             elif cloud is not None:
                 await cloud.close()
+            elif not base_sf.startswith("GFS"):
+                # A custom preset has no static form; without a sign-in the slot
+                # falls back to a generic filament, which nothing else reports
+                # (#3519). An official GFS one parses fine without the cloud.
+                logger.warning(
+                    "Slicer-filament resolve: custom preset %r not looked up, no Bambu Cloud sign-in "
+                    "for this caller; the slot may get a generic filament",
+                    sf,
+                )
         except Exception as e:
             logger.warning("Slicer-filament resolve: cloud lookup failed for %r: %s", sf, e)
 
@@ -433,15 +529,10 @@ async def resolve_slicer_filament(
     # when the current resolution lands on a builtin with a different name
     # (e.g. cloud detail returned PLA Basic but the spool was labelled PLA Matte).
     if tray_info_idx and slicer_filament_name:
-        from backend.app.api.routes.cloud import _BUILTIN_FILAMENT_NAMES
-
-        expected_name = _BUILTIN_FILAMENT_NAMES.get(tray_info_idx, "")
-        if expected_name and expected_name != slicer_filament_name:
-            for fid, fname in _BUILTIN_FILAMENT_NAMES.items():
-                if fname == slicer_filament_name:
-                    tray_info_idx = fid
-                    setting_id = filament_id_to_setting_id(fid)
-                    break
+        realigned = realign_builtin_filament_id(tray_info_idx, slicer_filament_name)
+        if realigned != tray_info_idx:
+            tray_info_idx = realigned
+            setting_id = filament_id_to_setting_id(realigned)
 
     # Defend against tray_info_idx values the slicer cannot resolve. Three
     # shapes leak through and must be discarded so the caller's generic-
@@ -455,10 +546,9 @@ async def resolve_slicer_filament(
     #      by the slicer as tray_info_idx (the printer's calibration table
     #      indexes by filament_id, and a PFUS isn't one). This normally gets
     #      realigned to a P-prefix local id via the caller's printer_kp
-    #      lookup, but on the replay path in main.py.on_ams_change
-    #      current_user=None skips cloud auth and leaves the raw PFUS in
-    #      tray_info_idx — overwriting the correctly-configured slot from
-    #      the original assign.
+    #      lookup, but a caller with no cloud sign-in (see the module
+    #      docstring) gets no cloud lookup and would leave the raw PFUS in
+    #      tray_info_idx — overwriting a correctly-configured slot.
     #   3. PFCN-prefix cloud shared / partner presets (e.g. Polymaker's
     #      "(Custom)" H2D variants, #1648) — same shape problem as PFUS.
     #   4. Orca Cloud profile UUIDs, when the branch above could not reach the

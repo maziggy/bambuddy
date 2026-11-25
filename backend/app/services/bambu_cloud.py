@@ -260,6 +260,42 @@ class BambuCloudAuthError(BambuCloudError):
     pass
 
 
+def _cloud_json(response: httpx.Response):
+    """The response's JSON body, or a BambuCloudError when it is not JSON (a
+    Cloudflare challenge or an edge error page): an answer from Bambu Cloud
+    that it could not use, like any other failed request."""
+    try:
+        return response.json()
+    except ValueError:
+        raise BambuCloudError(
+            f"Unexpected response from Bambu Cloud (HTTP {response.status_code})", status_code=response.status_code
+        ) from None
+
+
+# The preset types in the cloud's listing, under the names it uses for them.
+_SLICER_SETTING_TYPES = ("filament", "printer", "print")
+
+
+def _slicer_settings_listing(data: object) -> dict:
+    """The cloud's preset listing with every type a dict and its ``private``
+    and ``public`` lists always lists of dicts (#3593).
+
+    The cloud sends ``null`` for a type, or for one of its lists, when the
+    account has nothing there. Every caller reads the listing as nested dicts,
+    so a null here took down the Slice dialog's preset list for an account
+    with no presets of one type.
+    """
+    listing = dict(data) if isinstance(data, dict) else {}
+    for key in _SLICER_SETTING_TYPES:
+        section = listing.get(key)
+        section = dict(section) if isinstance(section, dict) else {}
+        for tier in ("private", "public"):
+            entries = section.get(tier)
+            section[tier] = [e for e in entries if isinstance(e, dict)] if isinstance(entries, list) else []
+        listing[key] = section
+    return listing
+
+
 _shared_http_client: httpx.AsyncClient | None = None
 
 
@@ -539,7 +575,8 @@ class BambuCloudService:
 
         except Exception as e:
             logger.error("Login request failed: %s", e)
-            raise BambuCloudAuthError(f"Login request failed: {e}")
+            # The request never got an answer: not a refused login.
+            raise BambuCloudError(f"Login request failed: {e}")
 
     async def verify_code(self, email: str, code: str) -> dict:
         """
@@ -576,7 +613,8 @@ class BambuCloudService:
 
         except Exception as e:
             logger.error("Email verification failed: %s", e)
-            raise BambuCloudAuthError(f"Verification failed: {e}")
+            # The request never got an answer: not a refused code.
+            raise BambuCloudError(f"Verification failed: {e}")
 
     async def _fetch_csrf_token(self, web_origin: str) -> str | None:
         """Seed the ``bbl_csrf_token`` cookie and return its value (#2696).
@@ -764,12 +802,6 @@ class BambuCloudService:
         self.access_token = access_token
         self.token_expiry = None
 
-    def logout(self):
-        """Clear authentication state."""
-        self.access_token = None
-        self.refresh_token = None
-        self.token_expiry = None
-
     async def get_user_profile(self) -> dict:
         """Get user profile information."""
         if not self.is_authenticated:
@@ -781,9 +813,23 @@ class BambuCloudService:
             )
 
             if response.status_code == 200:
-                return response.json()
+                return _cloud_json(response)
 
-            raise BambuCloudError(f"Failed to get profile: {response.status_code}")
+            # Only Bambu's own answer judges the token: JSON, or no body at all
+            # (how it refuses a wrong token here). A Cloudflare block or an
+            # edge or proxy page says nothing about it, so it carries no
+            # status to judge by.
+            cf_message = _detect_cloudflare_challenge(response)
+            if cf_message:
+                raise BambuCloudError(cf_message)
+            if response.content:
+                try:
+                    response.json()
+                except ValueError:
+                    raise BambuCloudError(
+                        f"Unexpected response from Bambu Cloud (HTTP {response.status_code})"
+                    ) from None
+            raise BambuCloudError(f"Failed to get profile: {response.status_code}", status_code=response.status_code)
 
         except httpx.RequestError as e:
             raise BambuCloudError(f"Request failed: {e}")
@@ -809,11 +855,12 @@ class BambuCloudService:
                 params={"version": version},
             )
 
-            data = response.json()
+            data = _cloud_json(response)
 
-            await self._note_response(response)
+            if await self._note_response(response):
+                raise BambuCloudAuthError("Bambu Cloud session expired")
             if response.status_code == 200:
-                return data
+                return _slicer_settings_listing(data)
 
             raise BambuCloudError(f"Failed to get settings: {response.status_code}")
 
@@ -832,9 +879,10 @@ class BambuCloudService:
                 params={"version": _SLICER_API_VERSION},
             )
 
-            await self._note_response(response)
+            if await self._note_response(response):
+                raise BambuCloudAuthError("Bambu Cloud session expired")
             if response.status_code == 200:
-                return response.json()
+                return _cloud_json(response)
 
             # Include body so a future contract change is self-diagnostic from logs.
             body = (response.text or "")[:200]
@@ -884,9 +932,10 @@ class BambuCloudService:
                 f"{self.base_url}/v1/iot-service/api/slicer/setting", headers=self._get_headers(), json=payload
             )
 
-            data = response.json()
+            data = _cloud_json(response)
 
-            await self._note_response(response)
+            if await self._note_response(response):
+                raise BambuCloudAuthError("Bambu Cloud session expired")
             if response.status_code in (200, 201):
                 return data
 
@@ -970,9 +1019,10 @@ class BambuCloudService:
                 f"{self.base_url}/v1/iot-service/api/slicer/setting", headers=self._get_headers(), json=payload
             )
 
-            data = response.json()
+            data = _cloud_json(response)
 
-            await self._note_response(response)
+            if await self._note_response(response):
+                raise BambuCloudAuthError("Bambu Cloud session expired")
             if response.status_code == 200:
                 return data
 
@@ -1002,11 +1052,12 @@ class BambuCloudService:
                 params={"version": _SLICER_API_VERSION},
             )
 
-            await self._note_response(response)
+            if await self._note_response(response):
+                raise BambuCloudAuthError("Bambu Cloud session expired")
             if response.status_code in (200, 204):
                 return {"success": True, "message": "Setting deleted"}
 
-            data = response.json() if response.content else {}
+            data = _cloud_json(response) if response.content else {}
             error_msg = data.get("message") or data.get("error") or f"HTTP {response.status_code}"
             raise BambuCloudError(f"Failed to delete setting: {error_msg}")
 
@@ -1023,9 +1074,10 @@ class BambuCloudService:
                 f"{self.base_url}/v1/iot-service/api/user/bind", headers=self._get_headers()
             )
 
-            await self._note_response(response)
+            if await self._note_response(response):
+                raise BambuCloudAuthError("Bambu Cloud session expired")
             if response.status_code == 200:
-                return response.json()
+                return _cloud_json(response)
 
             raise BambuCloudError(f"Failed to get devices: {response.status_code}")
 
@@ -1052,9 +1104,10 @@ class BambuCloudService:
                 params={"device_id": device_id},
             )
 
-            await self._note_response(response)
+            if await self._note_response(response):
+                raise BambuCloudAuthError("Bambu Cloud session expired")
             if response.status_code == 200:
-                data = response.json()
+                data = _cloud_json(response)
                 # API wraps response in 'data' field
                 return data.get("data", data)
 

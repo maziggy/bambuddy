@@ -8,20 +8,34 @@ from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 from backend.app.services.bambu_mqtt import PrinterState
 from backend.app.services.inventory_mode import spoolman_owns_assignments
 from backend.app.services.notification_service import notification_service
-from backend.app.services.printer_manager import printer_manager
+from backend.app.services.printer_manager import printer_manager, printer_tray_layout
+from backend.app.utils.tray_ids import (
+    EXTERNAL_DEPUTY_ID,
+    RACK_EXTERNAL_IDS,
+    AmsType,
+    TrayLayout,
+    decode_wire_slot,
+    external_hotend,
+)
 
 
-def _global_tray_from_assignment(ams_id: int, tray_id: int) -> int:
+def _global_tray_from_assignment(ams_id: int, tray_id: int, layout: TrayLayout | None = None) -> int:
     """Convert an assignment tuple to Bambuddy global tray ID."""
-    if ams_id in (254, 255):
-        return 254 + tray_id
-    if ams_id >= 128:
-        return ams_id
-    return ams_id * 4 + tray_id
+    if ams_id == EXTERNAL_DEPUTY_ID:
+        # Older records keep the left external spool as its own ams_id.
+        return EXTERNAL_DEPUTY_ID + tray_id
+    return (layout or TrayLayout()).tray_from_slot_key(ams_id, tray_id)
 
 
-def _slot_label_from_global_tray(global_tray_id: int) -> str:
+def _slot_label_from_global_tray(global_tray_id: int, layout: TrayLayout | None = None) -> str:
     """Return a human-readable slot label from a global tray ID."""
+    layout = layout or TrayLayout()
+    if (layout.rack and layout.is_external(global_tray_id)) or (
+        RACK_EXTERNAL_IDS.start <= global_tray_id < EXTERNAL_DEPUTY_ID
+    ):
+        # One external input per hotend, numbered like Bambu Studio's "Ext-n".
+        # 247-253 are only ever such inputs, so they read so without a layout.
+        return f"Ext-{external_hotend(global_tray_id) + 1}"
     if global_tray_id == 254:
         return "Ext-L"
     if global_tray_id == 255:
@@ -31,8 +45,12 @@ def _slot_label_from_global_tray(global_tray_id: int) -> str:
     # 24-27 = A2L AMS-Lite (normalised unit 6); see a2l-am-unit-16.
     if 24 <= global_tray_id <= 27:
         return f"Lite-{(global_tray_id % 4) + 1}"
-    ams_id = global_tray_id // 4
-    tray_id = global_tray_id % 4
+    ams_id, tray_id = layout.slot_key(global_tray_id)
+    kind = layout.ams_type(ams_id)
+    if kind == AmsType.ZMULTI_A:
+        return f"3H-{tray_id + 1}"
+    if kind == AmsType.ZMULTI_B:
+        return f"B-{tray_id + 1}"
     return f"{chr(65 + ams_id)}{tray_id + 1}"
 
 
@@ -43,6 +61,7 @@ def _tray_profile_and_color_for_global_id(state: PrinterState | None, global_tra
 
     ams_raw = state.raw_data.get("ams", {})
     ams_units = ams_raw.get("ams", []) if isinstance(ams_raw, dict) else ams_raw if isinstance(ams_raw, list) else []
+    layout = TrayLayout.from_state(state)
 
     vt_trays = state.raw_data.get("vt_tray", [])
     if not isinstance(vt_trays, list):
@@ -67,8 +86,7 @@ def _tray_profile_and_color_for_global_id(state: PrinterState | None, global_tra
             if not isinstance(tray, dict):
                 continue
             tray_id = int(tray.get("id", -1))
-            candidate = ams_id if ams_id >= 128 else (ams_id * 4 + tray_id)
-            if candidate == global_tray_id:
+            if layout.global_tray_id(ams_id, tray_id) == global_tray_id:
                 profile = tray.get("tray_sub_brands") or tray.get("tray_type") or "Unknown"
                 color = tray.get("tray_color") or "Unknown"
                 return (profile, color)
@@ -76,37 +94,13 @@ def _tray_profile_and_color_for_global_id(state: PrinterState | None, global_tra
     return ("Unknown", "Unknown")
 
 
-def _decode_mqtt_mapping_to_global_trays(mapping_raw: object) -> list[int]:
+def _decode_mqtt_mapping_to_global_trays(mapping_raw: object, layout: TrayLayout | None = None) -> list[int]:
     """Decode printer MQTT mapping values into Bambuddy global tray IDs."""
     if not isinstance(mapping_raw, list) or not mapping_raw:
         return []
 
-    decoded: list[int] = []
-    for value in mapping_raw:
-        try:
-            if isinstance(value, int):
-                encoded = value
-            elif isinstance(value, str):
-                encoded = int(value, 10)
-            else:
-                continue
-        except ValueError:
-            continue
-
-        if encoded >= 65535:
-            continue
-
-        ams_hw_id = (encoded >> 8) & 0xFF
-        slot = encoded & 0xFF
-
-        if 0 <= ams_hw_id <= 3:
-            decoded.append(ams_hw_id * 4 + (slot & 0x03))
-        elif 128 <= ams_hw_id <= 135:
-            decoded.append(ams_hw_id)
-        elif ams_hw_id in (254, 255):
-            decoded.append(255 if slot == 255 else 254)
-
-    return decoded
+    decoded = (decode_wire_slot(value, layout) for value in mapping_raw)
+    return [tray for tray in decoded if tray is not None]
 
 
 async def notify_missing_spool_assignments_on_print_start(
@@ -120,7 +114,8 @@ async def notify_missing_spool_assignments_on_print_start(
         [value for value in explicit_mapping if isinstance(value, int)] if isinstance(explicit_mapping, list) else []
     )
     raw_mapping = data.get("raw_data", {}).get("mapping") if isinstance(data.get("raw_data"), dict) else None
-    decoded_values = _decode_mqtt_mapping_to_global_trays(raw_mapping)
+    layout = printer_tray_layout(printer_id, printer_manager)
+    decoded_values = _decode_mqtt_mapping_to_global_trays(raw_mapping, layout)
     mapping_values = explicit_values if explicit_values else decoded_values
 
     used_global_trays = {value for value in mapping_values if value >= 0}
@@ -146,7 +141,7 @@ async def notify_missing_spool_assignments_on_print_start(
             # precisely to catch that tray.
             table = SpoolmanSlotAssignment if await spoolman_owns_assignments(db) else SpoolAssignment
             rows = (await db.execute(table.__table__.select().where(table.printer_id == printer_id))).fetchall()
-            assigned_global_trays = {_global_tray_from_assignment(row.ams_id, row.tray_id) for row in rows}
+            assigned_global_trays = {_global_tray_from_assignment(row.ams_id, row.tray_id, layout) for row in rows}
 
             missing_global = sorted(used_global_trays - assigned_global_trays)
             if not missing_global:
@@ -165,12 +160,13 @@ async def _send_missing_assignment_notification(
 ) -> None:
     """Describe the unassigned trays and push them to the UI and the providers."""
     state = printer_manager.get_status(printer_id)
+    layout = TrayLayout.from_state(state)
     missing_slots = []
     for global_id in missing_global:
         profile, color = _tray_profile_and_color_for_global_id(state, global_id)
         missing_slots.append(
             {
-                "slot": _slot_label_from_global_tray(global_id),
+                "slot": _slot_label_from_global_tray(global_id, layout),
                 "profile": profile,
                 "color": color,
             }

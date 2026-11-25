@@ -36,7 +36,7 @@ def item():
 
 @pytest.fixture
 def archive():
-    return SimpleNamespace(bed_temperature=60)
+    return SimpleNamespace(file_path=None, bed_temperature=60)
 
 
 def _make_printer(model: str, printer_id: int = 7):
@@ -417,7 +417,7 @@ async def test_no_bed_temperature_but_chamber_needed_heats_bed_to_configured_tem
     """
     db = AsyncMock()
     client = _make_client()
-    bare_archive = SimpleNamespace(bed_temperature=None)
+    bare_archive = SimpleNamespace(file_path=None, bed_temperature=None)
 
     with (
         patch.object(scheduler, "_get_bool_setting", AsyncMock(return_value=True)),
@@ -449,7 +449,7 @@ async def test_no_bed_temperature_and_no_chamber_target_still_skips(scheduler, i
     """
     db = AsyncMock()
     client = _make_client()
-    bare_archive = SimpleNamespace(bed_temperature=None)
+    bare_archive = SimpleNamespace(file_path=None, bed_temperature=None)
 
     with (
         patch.object(scheduler, "_get_bool_setting", AsyncMock(return_value=True)),
@@ -531,7 +531,8 @@ async def test_lost_client_skips_silently(scheduler, item, archive):
 
 
 @pytest.mark.asyncio
-async def test_h2d_flips_airduct_to_heating_before_m141(scheduler, item, archive):
+@pytest.mark.parametrize("model", ["H2D", "H2D Pro"])  # an H2D Pro is stored as "H2D Pro" (#3335)
+async def test_h2d_flips_airduct_to_heating_before_m141(scheduler, item, archive, model):
     """H-series + X2D have a cooling/heating airduct flap that DEFAULTS to
     cooling. If we energise M141 without first flipping to heating, the
     chamber fan actively extracts the heat we're trying to put in and the
@@ -552,13 +553,36 @@ async def test_h2d_flips_airduct_to_heating_before_m141(scheduler, item, archive
     ):
         pm.get_client.return_value = client
         pm.get_status.return_value = _make_state(60.0, 46.0, trays=["ABS"])
-        await scheduler._preheat_and_soak(db, item, _make_printer("H2D"), archive)
+        await scheduler._preheat_and_soak(db, item, _make_printer(model), archive)
 
     client.set_airduct_mode.assert_called_once_with("heating")
     client.set_chamber_temperature.assert_called_once_with(45)
     # Airduct heating must precede M141 — the heater enabling first while the
     # flap is still in cooling mode wastes minutes of fan-vs-heater tug-of-war.
     assert call_order == [("airduct", "heating"), ("chamber", 45)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("model", ["X1E", "C13"])
+async def test_x1e_heats_the_chamber_without_an_airduct(scheduler, item, archive, model):
+    """The X1E has a chamber heater (to 60 °C) but no airduct flap: M141 fires,
+    set_airduct does not."""
+    db = AsyncMock()
+    client = _make_client()
+
+    with (
+        patch.object(scheduler, "_get_bool_setting", AsyncMock(return_value=True)),
+        patch.object(scheduler, "_get_int_setting", _ints(preheat_soak_seconds=0)),
+        patch.object(scheduler, "_get_setting", AsyncMock(return_value=None)),
+        patch("backend.app.services.print_scheduler.printer_manager") as pm,
+        patch("backend.app.services.print_scheduler.asyncio.sleep", AsyncMock()),
+    ):
+        pm.get_client.return_value = client
+        pm.get_status.return_value = _make_state(60.0, 46.0, trays=["ABS"])
+        await scheduler._preheat_and_soak(db, item, _make_printer(model), archive)
+
+    client.set_chamber_temperature.assert_called_once_with(45)
+    client.set_airduct_mode.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -668,7 +692,8 @@ async def test_h2d_chamber_heat_switches_airduct_to_heating(scheduler, item, arc
 
 
 @pytest.mark.asyncio
-async def test_h2d_chamber_zero_switches_airduct_to_cooling(scheduler, item, archive):
+@pytest.mark.parametrize("model", ["H2D", "H2D Pro"])
+async def test_h2d_chamber_zero_switches_airduct_to_cooling(scheduler, item, archive, model):
     """H2D running a PLA print (chamber_target derives 0) on an airduct
     previously left in heating mode (from a prior ABS run) must switch
     back to cooling. Otherwise PLA prints inherit ABS's closed-flap recirc
@@ -686,7 +711,7 @@ async def test_h2d_chamber_zero_switches_airduct_to_cooling(scheduler, item, arc
         pm.get_client.return_value = client
         # Currently in heating (mode 1). PLA loaded → derived target 0.
         pm.get_status.return_value = _make_state(60.0, 30.0, trays=["PLA"], airduct_mode=1)
-        await scheduler._preheat_and_soak(db, item, _make_printer("H2D"), archive)
+        await scheduler._preheat_and_soak(db, item, _make_printer(model), archive)
 
     client.set_airduct_mode.assert_called_once_with("cooling")
     client.set_chamber_temperature.assert_not_called()

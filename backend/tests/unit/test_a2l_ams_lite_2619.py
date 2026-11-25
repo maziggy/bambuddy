@@ -251,12 +251,14 @@ class TestOutboundTranslation:
         assert p["filaments"][0]["tray_id"] == 66  # 26 (normalised) -> 66 (physical)
 
     def test_load_filament_target_and_ams(self):
+        """BambuStudio (command_ams_change_filament): for a unit id of 16 or
+        more the target is the unit id itself, not a global tray."""
         client = _wired(_client())
         assert client.ams_load_filament(tray_id=26)
         p = _last_payload(client)
         assert p["ams_id"] == A2L_LITE_PHYSICAL_AMS_ID
         assert p["slot_id"] == 2
-        assert p["target"] == 66
+        assert p["target"] == A2L_LITE_PHYSICAL_AMS_ID
 
     def test_unload_uses_physical_ams(self):
         client = _wired(_client())

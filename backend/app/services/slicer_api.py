@@ -408,17 +408,6 @@ class SlicerApiService:
     async def __aexit__(self, *_: object) -> None:
         await self.close()
 
-    async def health(self) -> dict:
-        """GET /health — used to surface a clear "sidecar offline" error before
-        accepting a slice request from the user."""
-        try:
-            response = await self._client.get(f"{self.base_url}/health", timeout=10.0)
-        except httpx.RequestError as exc:
-            raise SlicerApiUnavailableError(f"Slicer sidecar unreachable: {_transport_error_reason(exc)}") from exc
-        if response.status_code >= 400:
-            raise SlicerApiUnavailableError(f"Slicer sidecar /health returned {response.status_code}")
-        return response.json()
-
     async def resolve_profile(self, profile_json: str, category: str) -> "ResolvedProfile":
         """POST /profiles/resolve — flatten a preset's ``inherits:`` chain.
 
@@ -643,6 +632,8 @@ class SlicerApiService:
         orient: bool = False,
         request_id: str | None = None,
         on_progress: Callable[[dict], None] | None = None,
+        filament_map: list[int] | None = None,
+        nozzle_volume_type: list[str] | None = None,
     ) -> SliceResult:
         """POST /slice with model + printer/process/filament profiles.
 
@@ -675,6 +666,21 @@ class SlicerApiService:
         dispatch polls ``GET /slice/progress/{request_id}`` in parallel
         to drive the live-progress toast.
 
+        ``filament_map``: on a dual-nozzle printer, the 1-based extruder each
+        filament prints from, in the same order as ``filament_profile_jsons``.
+        Sent as the sidecar's ``filamentMap`` field, which it passes to the CLI
+        as ``--filament-map`` in Manual mode. The CLI ignores the same value
+        anywhere else. ``None`` or empty sends nothing, so the request is
+        byte-identical to one made before this parameter existed, and a
+        sidecar too old to know the field slices exactly as before.
+
+        ``nozzle_volume_type``: the nozzle flow per slicer extruder,
+        ``Standard`` or ``High Flow`` (#3136). Sent as the sidecar's
+        ``nozzleVolumeType`` field, which it passes to the CLI as
+        ``--nozzle-volume-type``; without it the CLI slices every extruder for
+        a Standard nozzle. ``None`` or empty sends nothing, and a sidecar too
+        old to know the field slices for Standard as before.
+
         Raises:
             SlicerInputError: 4xx from sidecar (caller-supplied input is bad).
             SlicerApiUnavailableError: connection error or 5xx from sidecar.
@@ -703,6 +709,10 @@ class SlicerApiService:
         _add_layout_flags(data, arrange=arrange, orient=orient)
         if request_id is not None:
             data["requestId"] = request_id
+        if filament_map:
+            data["filamentMap"] = ",".join(str(extruder) for extruder in filament_map)
+        if nozzle_volume_type:
+            data["nozzleVolumeType"] = ",".join(nozzle_volume_type)
 
         # When the caller supplied a request_id, kick off a parallel
         # poller that reads the sidecar's --pipe-fed progress endpoint

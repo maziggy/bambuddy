@@ -177,7 +177,7 @@ async def get_logs(
     limit: int = Query(200, ge=1, le=1000, description="Maximum number of entries to return"),
     level: str | None = Query(None, description="Filter by log level (DEBUG, INFO, WARNING, ERROR)"),
     search: str | None = Query(None, description="Search in message or logger name"),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Get recent application log entries with optional filtering."""
     entries, total_lines = read_log_entries(limit=limit, level_filter=level, search=search)
@@ -222,21 +222,20 @@ def _sanitize_path(path: str) -> str:
 
 
 def _detect_docker_network_mode() -> str:
-    """Detect Docker network mode by checking for host-level interfaces.
+    """The container's network mode as the connection diagnostic reads it:
+    "host", "bridge", "macvlan", "ipvlan", "ipvlan_l3", or "unknown".
 
-    In host mode the container shares the host network namespace, so Docker
-    infrastructure interfaces (docker0, br-*, veth*) are visible.  In bridge
-    mode the container is isolated and only sees its own veth (named eth0).
+    This used to be its own copy of the diagnostic's first rule only, so it
+    called a macvlan container bridge (#3417). Shells out to ``ip``: call it
+    off the event loop.
     """
-    try:
-        import socket
+    from backend.app.services.discovery import detect_container_runtime
+    from backend.app.services.printer_diagnostic import _detect_container_network_mode
 
-        for _idx, name in socket.if_nameindex():
-            if name.startswith(("docker", "br-", "veth", "virbr")):
-                return "host"
+    try:
+        return _detect_container_network_mode(detect_container_runtime()) or "unknown"
     except Exception:
-        pass
-    return "bridge"
+        return "unknown"
 
 
 def _mask_subnet(subnet: str) -> str:
@@ -710,23 +709,6 @@ async def _collect_github_backup_info(db: AsyncSession) -> dict:
     }
 
 
-async def _check_url_reachable(url: str, timeout: float = 2.0) -> bool | None:
-    """Single HEAD/GET ping with a short timeout. Returns None if URL is empty."""
-    if not url or not url.strip():
-        return None
-    try:
-        import httpx
-
-        async with httpx.AsyncClient(timeout=timeout, verify=False) as client:  # nosec B501 — local sidecars often use self-signed; this is a reachability/health probe only, no secrets are sent
-            r = await client.get(url, follow_redirects=False)
-            # Anything that returned a status code counts as reachable, even 404
-            # (the API server is up, just the path was wrong) — separates network
-            # failure from configuration mistakes for the user.
-            return r.status_code is not None
-    except Exception:
-        return False
-
-
 async def _fetch_slicer_health(url: str, timeout: float = 2.0) -> dict | None:
     """Fetch ``/health`` from a slicer sidecar and extract the CLI version.
 
@@ -745,7 +727,7 @@ async def _fetch_slicer_health(url: str, timeout: float = 2.0) -> dict | None:
     try:
         import httpx
 
-        async with httpx.AsyncClient(timeout=timeout, verify=False) as client:  # nosec B501 — local sidecars often use self-signed; this is a reachability/health probe only, no secrets are sent
+        async with httpx.AsyncClient(timeout=timeout, verify=False) as client:  # nosec B501  # local sidecars often use self-signed; this is a reachability/health probe only, no secrets are sent
             r = await client.get(health_url, follow_redirects=False)
             if r.status_code != 200:
                 return {"reachable": True, "version": None}
@@ -900,7 +882,7 @@ async def _collect_support_info() -> dict:
             info["docker"] = {
                 "container_memory_limit_bytes": mem_limit,
                 "container_memory_limit_formatted": _format_bytes(mem_limit) if mem_limit else None,
-                "network_mode_hint": _detect_docker_network_mode(),
+                "network_mode_hint": await asyncio.to_thread(_detect_docker_network_mode),
             }
         except Exception:
             logger.debug("Failed to collect Docker info", exc_info=True)
@@ -1433,7 +1415,7 @@ def _redact_raw_push_status(raw: dict) -> dict:
         info_list = net.get("info")
         if isinstance(info_list, list):
             net["info"] = [
-                ({**entry, "ip": "0.0.0.0"} if isinstance(entry, dict) and "ip" in entry else entry)  # nosec B104 - redaction sentinel, not a bind address
+                ({**entry, "ip": "0.0.0.0"} if isinstance(entry, dict) and "ip" in entry else entry)  # nosec B104  # redaction sentinel, not a bind address
                 for entry in info_list
             ]
 
@@ -1492,7 +1474,7 @@ async def _get_recent_sanitized_logs(max_lines: int = 200) -> str:
 
 @router.get("/bundle")
 async def generate_support_bundle(
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Generate a support bundle ZIP file for issue reporting."""
     # Check if debug logging is enabled and collect sensitive values for redaction

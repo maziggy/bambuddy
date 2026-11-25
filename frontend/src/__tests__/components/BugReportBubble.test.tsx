@@ -173,11 +173,8 @@ describe('BugReportBubble', () => {
       expect(screen.queryByTestId('bug-report-step-reproduce')).toBeInTheDocument();
     });
 
-    // Find and click the Stop & Submit button
-    const stopBtn = screen.getAllByRole('button').find(
-      (b) => b.className.includes('bg-red-500') && !b.className.includes('rounded-full')
-    );
-    if (stopBtn) await user.click(stopBtn);
+    await user.click(screen.getByRole('button', { name: 'Stop Logging' }));
+    await user.click(await screen.findByRole('button', { name: 'Submit' }));
 
     await waitFor(
       () => {
@@ -215,10 +212,8 @@ describe('BugReportBubble', () => {
       expect(screen.queryByTestId('bug-report-step-reproduce')).toBeInTheDocument();
     });
 
-    const stopBtn = screen.getAllByRole('button').find(
-      (b) => b.className.includes('bg-red-500') && !b.className.includes('rounded-full')
-    );
-    if (stopBtn) await user.click(stopBtn);
+    await user.click(screen.getByRole('button', { name: 'Stop Logging' }));
+    await user.click(await screen.findByRole('button', { name: 'Submit' }));
 
     await waitFor(
       () => {
@@ -372,7 +367,7 @@ describe('BugReportBubble', () => {
       await closePanel(user);
 
       // Closing is not cancelling: the log level only comes back down when the
-      // user presses Stop & Submit.
+      // user presses Stop Logging.
       expect(stopCalls).toBe(0);
 
       // The disc carries the run's colour, so a closed panel still says a
@@ -383,10 +378,8 @@ describe('BugReportBubble', () => {
       await user.click(disc);
       expect(screen.getByTestId('bug-report-step-reproduce')).toBeInTheDocument();
 
-      const stopBtn = screen.getAllByRole('button').find(
-        (b) => b.className.includes('bg-red-500') && !b.className.includes('rounded-full')
-      );
-      if (stopBtn) await user.click(stopBtn);
+      await user.click(screen.getByRole('button', { name: 'Stop Logging' }));
+      await user.click(await screen.findByRole('button', { name: 'Submit' }));
 
       await waitFor(() => expect(submitted).not.toBeNull());
       expect(submitted!.description).toBe('Queue page freezes');
@@ -465,6 +458,151 @@ describe('BugReportBubble', () => {
       // to be filed, and nobody is here to see it happen.
       expect(submitCalls).toBe(0);
       expect(screen.getByRole('button').className).toContain('bg-red-500');
+    });
+  });
+
+  describe('stopping holds the report for review (#3363)', () => {
+    afterEach(() => {
+      vi.mocked(localStorage.getItem).mockReset();
+    });
+
+    /** Counts the calls and records what was submitted. */
+    const setupRun = (submitResult: Record<string, unknown> = { success: true, message: 'ok', issue_number: 9 }) => {
+      const calls = { stop: 0, submit: 0, submitted: null as { debug_logs?: string } | null };
+      server.use(
+        http.post('*/bug-report/start-logging', () => HttpResponse.json({ started: true, was_debug: false })),
+        http.post('*/bug-report/stop-logging', () => {
+          calls.stop += 1;
+          return HttpResponse.json({ logs: 'line one\nline two\nline three\n' });
+        }),
+        http.post('*/bug-report/submit', async ({ request }) => {
+          calls.submit += 1;
+          calls.submitted = (await request.json()) as { debug_logs?: string };
+          return HttpResponse.json(submitResult);
+        }),
+      );
+      return calls;
+    };
+
+    const startAndStop = async (user: ReturnType<typeof userEvent.setup>) => {
+      await user.click(screen.getByRole('button'));
+      await user.type(getDescriptionTextarea(), 'Archive links do nothing');
+      await user.click(screen.getByRole('button', { name: 'Start Debug Logging' }));
+      await user.click(await screen.findByRole('button', { name: 'Stop Logging' }));
+      await screen.findByTestId('bug-report-review');
+    };
+
+    it('stops logging without filing anything and says what would be sent', async () => {
+      const user = userEvent.setup();
+      const calls = setupRun();
+      render(<BugReportBubble />);
+
+      await startAndStop(user);
+
+      expect(calls.stop).toBe(1);
+      expect(calls.submit).toBe(0);
+      expect(screen.getByText(/public issue on GitHub/)).toBeInTheDocument();
+      expect(screen.getByText('Log lines collected: 3')).toBeInTheDocument();
+    });
+
+    it('submits the held logs from the review', async () => {
+      const user = userEvent.setup();
+      const calls = setupRun();
+      render(<BugReportBubble />);
+
+      await startAndStop(user);
+      await user.click(screen.getByRole('button', { name: 'Submit' }));
+
+      await screen.findByText('Your bug report has been submitted.');
+      expect(calls.submit).toBe(1);
+      expect(calls.submitted!.debug_logs).toBe('line one\nline two\nline three\n');
+      expect(calls.stop).toBe(1);
+    });
+
+    it('discarding sends nothing and starts over', async () => {
+      const user = userEvent.setup();
+      const calls = setupRun();
+      render(<BugReportBubble />);
+
+      await startAndStop(user);
+      await user.click(screen.getByRole('button', { name: 'Discard' }));
+
+      await waitFor(() => expect(screen.queryByTestId('bug-report-review')).not.toBeInTheDocument());
+      await user.click(screen.getByRole('button'));
+      expect(getDescriptionTextarea().value).toBe('');
+      expect(calls.submit).toBe(0);
+    });
+
+    it('keeps the review through a close', async () => {
+      const user = userEvent.setup();
+      const calls = setupRun();
+      render(<BugReportBubble />);
+
+      await startAndStop(user);
+      const closeButton = screen.getAllByRole('button').find((b) => b.querySelector('.lucide-x'));
+      await user.click(closeButton!);
+      await waitFor(() => expect(screen.queryByTestId('bug-report-review')).not.toBeInTheDocument());
+
+      await user.click(screen.getByRole('button'));
+      expect(screen.getByTestId('bug-report-review')).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Submit' }));
+      await waitFor(() => expect(calls.submit).toBe(1));
+      expect(calls.submitted!.debug_logs).toBe('line one\nline two\nline three\n');
+    });
+
+    it('a failed send goes back to the review, logs kept', async () => {
+      const user = userEvent.setup();
+      const calls = setupRun({ success: false, message: 'Relay not available' });
+      render(<BugReportBubble />);
+
+      await startAndStop(user);
+      await user.click(screen.getByRole('button', { name: 'Submit' }));
+      await screen.findByText(/Relay not available/);
+      await user.click(screen.getByRole('button', { name: 'Submit' }));
+
+      expect(await screen.findByTestId('bug-report-review')).toBeInTheDocument();
+      expect(calls.submit).toBe(1);
+      expect(calls.stop).toBe(1);
+    });
+
+    it('a failed send closed and reopened comes back on the review, logs kept', async () => {
+      const user = userEvent.setup();
+      const calls = setupRun({ success: false, message: 'Relay not available' });
+      render(<BugReportBubble />);
+
+      await startAndStop(user);
+      await user.click(screen.getByRole('button', { name: 'Submit' }));
+      await screen.findByText(/Relay not available/);
+      await user.click(screen.getByRole('button', { name: 'Close' }));
+      await waitFor(() => expect(screen.queryByText(/Relay not available/)).not.toBeInTheDocument());
+
+      await user.click(screen.getByRole('button'));
+      expect(screen.getByTestId('bug-report-review')).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Submit' }));
+      await waitFor(() => expect(calls.submit).toBe(2));
+      expect(calls.submitted!.debug_logs).toBe('line one\nline two\nline three\n');
+    });
+
+    it('the 5-minute cap stops logging and waits for the user', async () => {
+      const calls = setupRun();
+      const startedAt = Date.now() - 299_000;
+      vi.mocked(localStorage.getItem).mockImplementation((key: string) =>
+        key === 'bambuddy-bug-report-session'
+          ? JSON.stringify({ description: 'left running', email: '', wasDebug: false, startedAt })
+          : null
+      );
+      server.use(
+        http.get('*/support/debug-logging', () =>
+          HttpResponse.json({ enabled: true, enabled_at: new Date(startedAt).toISOString(), duration_seconds: 299 })
+        ),
+      );
+
+      render(<BugReportBubble />);
+
+      // The cap opens the panel on the review rather than filing behind the user.
+      expect(await screen.findByTestId('bug-report-review', {}, { timeout: 5000 })).toBeInTheDocument();
+      expect(calls.stop).toBe(1);
+      expect(calls.submit).toBe(0);
     });
   });
 });

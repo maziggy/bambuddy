@@ -9,10 +9,11 @@ const h = vi.hoisted(() => ({
   theme: {
     value: {
       progressInTitle: false,
+      tabDisplay: 'percentage',
       resolvedMode: 'dark',
       darkAccent: 'green',
       lightAccent: 'green',
-    } as { progressInTitle: boolean; resolvedMode: string; darkAccent: string; lightAccent: string },
+    } as { progressInTitle: boolean; tabDisplay: 'percentage' | 'time'; resolvedMode: string; darkAccent: string; lightAccent: string },
   },
   getPrinters: vi.fn(),
   getPrinterStatus: vi.fn(),
@@ -118,7 +119,7 @@ describe('usePrintProgressTitle effect', () => {
   });
 
   it('is inert while the pref is off — never touches the tab title', async () => {
-    h.theme.value = { progressInTitle: false, resolvedMode: 'dark', darkAccent: 'green', lightAccent: 'green' };
+    h.theme.value = { progressInTitle: false, tabDisplay: 'percentage', resolvedMode: 'dark', darkAccent: 'green', lightAccent: 'green' };
     document.title = 'Something Else';
 
     renderHook(() => usePrintProgressTitle(), { wrapper: wrapper() });
@@ -130,7 +131,7 @@ describe('usePrintProgressTitle effect', () => {
   });
 
   it('shows the active print percentage in the title and swaps the favicon', async () => {
-    h.theme.value = { progressInTitle: true, resolvedMode: 'dark', darkAccent: 'green', lightAccent: 'green' };
+    h.theme.value = { progressInTitle: true, tabDisplay: 'percentage', resolvedMode: 'dark', darkAccent: 'green', lightAccent: 'green' };
     h.getPrinters.mockResolvedValue([{ id: 1 }]);
     h.getPrinterStatus.mockResolvedValue({ state: 'RUNNING', progress: 42, remaining_time: 600 });
 
@@ -140,8 +141,42 @@ describe('usePrintProgressTitle effect', () => {
     expect(faviconHref()).toBe(RING_URL);
   });
 
+  it('shows the soonest print remaining time without changing the favicon ring', async () => {
+    h.theme.value = { progressInTitle: true, tabDisplay: 'time', resolvedMode: 'dark', darkAccent: 'green', lightAccent: 'green' };
+    h.getPrinters.mockResolvedValue([{ id: 1 }, { id: 2 }]);
+    h.getPrinterStatus.mockImplementation((id: number) => Promise.resolve(
+      id === 1 ? running(95, 600) : running(23, 86)
+    ));
+
+    renderHook(() => usePrintProgressTitle(), { wrapper: wrapper() });
+
+    await waitFor(() => expect(document.title).toBe('1h 26m · Bambuddy'));
+    expect(faviconHref()).toBe(RING_URL);
+  });
+
+  it('uses the same duration formatting as the Printers page', async () => {
+    h.theme.value = { progressInTitle: true, tabDisplay: 'time', resolvedMode: 'dark', darkAccent: 'green', lightAccent: 'green' };
+    h.getPrinters.mockResolvedValue([{ id: 1 }]);
+    h.getPrinterStatus.mockResolvedValue(running(98, 5));
+
+    renderHook(() => usePrintProgressTitle(), { wrapper: wrapper() });
+
+    await waitFor(() => expect(document.title).toBe('5m · Bambuddy'));
+  });
+
+  it.each([null, 0, -1, Number.POSITIVE_INFINITY])('falls back to percentage for an unknown ETA (%s)', async (remaining) => {
+    h.theme.value = { progressInTitle: true, tabDisplay: 'time', resolvedMode: 'dark', darkAccent: 'green', lightAccent: 'green' };
+    h.getPrinters.mockResolvedValue([{ id: 1 }]);
+    h.getPrinterStatus.mockResolvedValue(running(23, remaining));
+
+    renderHook(() => usePrintProgressTitle(), { wrapper: wrapper() });
+
+    await waitFor(() => expect(document.title).toBe('23% · Bambuddy'));
+    expect(faviconHref()).toBe(RING_URL);
+  });
+
   it('restores the original title and favicon when the pref is switched off', async () => {
-    h.theme.value = { progressInTitle: true, resolvedMode: 'dark', darkAccent: 'green', lightAccent: 'green' };
+    h.theme.value = { progressInTitle: true, tabDisplay: 'percentage', resolvedMode: 'dark', darkAccent: 'green', lightAccent: 'green' };
     h.getPrinters.mockResolvedValue([{ id: 1 }]);
     h.getPrinterStatus.mockResolvedValue({ state: 'RUNNING', progress: 42, remaining_time: 600 });
 

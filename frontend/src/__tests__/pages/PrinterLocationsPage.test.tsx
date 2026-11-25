@@ -20,17 +20,14 @@ const permissions = { granted: ['printers:read', 'printers:update'] as string[] 
 const mockUseAuth = {
   user: { id: 1, username: 'operator', permissions: [] as string[] },
   authEnabled: true,
-  requiresSetup: false,
   loading: false,
   isAdmin: false,
   login: vi.fn(),
   loginWithToken: vi.fn(),
   logout: vi.fn(),
-  refreshUser: vi.fn(),
   refreshAuth: vi.fn(),
   hasPermission: vi.fn((permission: string) => permissions.granted.includes(permission)),
   hasAnyPermission: vi.fn(() => true),
-  hasAllPermissions: vi.fn(() => true),
   canModify: vi.fn(() => true),
 };
 

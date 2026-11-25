@@ -26,10 +26,9 @@ exists). Here we just expose state so the frontend can render accordingly.
 from __future__ import annotations
 
 import logging
+import tomllib
 from pathlib import Path
 from typing import Literal, TypedDict
-
-import tomllib
 
 log = logging.getLogger(__name__)
 

@@ -264,3 +264,42 @@ class TestUsbDevicePaths:
             path_cls.return_value.__str__.return_value = "/dev/video7"
             assert _safe_usb_device_path("/dev/video7") == "/dev/video7"
         path_cls.assert_called_once_with("/dev/video7")
+
+
+class TestTheSameHostsSpelledOtherwise:
+    """A trailing dot is the same host to every resolver, and the metadata
+    endpoints outside the link-local range are still metadata endpoints."""
+
+    @pytest.mark.parametrize(
+        "host",
+        [
+            "127.0.0.1.",
+            "169.254.169.254.",
+            "localhost.",
+            "metadata.google.internal.",
+            "metadata.goog",
+            "100.100.100.200",
+            "[fd00:ec2::254]",
+            "169\u3002254\u3002169\u3002254",
+            "\uff11\uff12\uff17.\uff10.\uff10.\uff11",
+            "\u24dcetadata.google.internal",
+            "[fd00:ec2::254%251]",
+            "[fd00:ec2::254%1]",
+            "metadata",
+            "instance-data",
+            "instance-data.ec2.internal",
+            "metadata.tencentyun.com",
+            "[fd00:42::42]",
+            "[fd00:c1::a9fe:a9fe]",
+            "[fd20:ce::254]",
+            "[fd00:a9fe:a9fe::1]",
+            "[fd00:ec2::23]",
+            "api.metadata.cloud.ibm.com",
+        ],
+    )
+    def test_is_refused(self, host):
+        assert _sanitize_camera_url(f"http://{host}/snap.jpg", HTTP_SCHEMES) is None
+
+    @pytest.mark.parametrize("host", ["192.168.1.50.", "camera.lan.", "100.64.0.9", "xn--kamera-kche-dlb.lan"])
+    def test_a_lan_camera_still_passes(self, host):
+        assert _sanitize_camera_url(f"http://{host}/snap.jpg", HTTP_SCHEMES) is not None

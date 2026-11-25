@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import re
 import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
@@ -13,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes.spoolman_inventory import _clear_stale_tag_links
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -37,13 +39,26 @@ from backend.app.schemas.spoolbuddy import (
     TagRemovedRequest,
     TagScannedRequest,
     UpdateSpoolWeightRequest,
-    UpdateStatusRequest,
     WriteTagRequest,
     WriteTagResultRequest,
 )
-from backend.app.services.spool_tag_matcher import get_spool_by_tag
+from backend.app.services.bambu_tag_blocks import spool_prefill_from_tag
+from backend.app.services.color_catalog_lookup import resolve_brand_color
+from backend.app.services.ndef_tag_decoder import decode_ndef_tag
+from backend.app.services.spool_tag_matcher import (
+    begins_with_cascade_level_1,
+    cascade_level_1_uid,
+    cascade_level_1_uid_start,
+    get_spool_by_tag,
+    warn_cascade_level_1_ambiguous,
+)
 from backend.app.services.spoolman import SpoolmanClientError, SpoolmanNotFoundError, SpoolmanUnavailableError
-from backend.app.utils.tag_normalization import is_bambu_tray_uuid, normalize_tag_uid, normalize_tray_uuid
+from backend.app.utils.tag_normalization import (
+    is_bambu_tray_uuid,
+    normalize_hex,
+    normalize_tag_uid,
+    normalize_tray_uuid,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +83,19 @@ async def _translate_spoolbuddy_errors():
         raise HTTPException(status_code=502, detail="Spoolman rejected the request") from exc
     except SpoolmanUnavailableError as exc:
         raise HTTPException(status_code=503, detail="Spoolman server is not reachable") from exc
+
+
+async def _spoolman_mode(db: AsyncSession) -> bool:
+    """Spoolman mode as every SpoolBuddy screen reads it: switched on, with a URL.
+
+    Distinct from having a usable client: a URL the SSRF guard refuses leaves the
+    mode on but no client, and the spools are still Spoolman's.
+    """
+    from backend.app.api.routes.settings import get_setting
+
+    enabled = await get_setting(db, "spoolman_enabled")
+    url = await get_setting(db, "spoolman_url")
+    return bool(enabled) and enabled.lower() == "true" and bool((url or "").strip())
 
 
 async def _get_spoolman_client_or_none(db: AsyncSession):
@@ -179,7 +207,7 @@ def _should_broadcast_online(device_id: str, force: bool = False) -> bool:
 @router.post("/devices/register", response_model=DeviceResponse)
 async def register_device(
     req: DeviceRegisterRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Register or re-register a SpoolBuddy device."""
@@ -250,7 +278,7 @@ async def register_device(
 
 @router.get("/devices", response_model=list[DeviceResponse])
 async def list_devices(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ):
     """List all registered SpoolBuddy devices."""
@@ -262,7 +290,7 @@ async def list_devices(
 @router.delete("/devices/{device_id}")
 async def unregister_device(
     device_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_DELETE),
 ):
     """Unregister a SpoolBuddy device. The daemon can re-register via heartbeat later."""
@@ -283,7 +311,7 @@ async def unregister_device(
 async def device_heartbeat(
     device_id: str,
     req: HeartbeatRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Daemon heartbeat — updates status and returns pending commands."""
@@ -425,10 +453,134 @@ async def _backfill_spoolman_tray_uuid(client, sm_spool: dict, tag_uid: str, tra
         logger.exception("SpoolBuddy: could not store tray_uuid %s on Spoolman spool %d", tray_uuid, spool_id)
 
 
+def _spoolman_native_tag_uids(sm_spool: dict) -> set[str]:
+    """The UIDs a Spoolman spool holds as native tags (Spoolman 0.27+)."""
+    uids = {normalize_hex(t.get("uid")) for t in sm_spool.get("tags") or [] if isinstance(t, dict)}
+    uids.discard("")
+    return uids
+
+
+def _spoolman_extra_tag_uid(sm_spool: dict) -> str:
+    """The tag UID in a Spoolman spool's extra.tag, which holds it JSON-encoded; empty when none."""
+    extra = sm_spool.get("extra")
+    raw_tag = extra.get("tag") if isinstance(extra, dict) else None
+    return normalize_hex(raw_tag) if isinstance(raw_tag, str) else ""
+
+
+def _spoolman_tag_links(sm_spool: dict) -> set[str]:
+    """Every UID a Spoolman spool is linked by: its native tags and extra.tag."""
+    return _spoolman_native_tag_uids(sm_spool) | ({_spoolman_extra_tag_uid(sm_spool)} - {""})
+
+
+def _spoolman_spool_by_cascade_level_1(spools: list[dict], tag_uid: str, sak: int | None = None) -> dict | None:
+    """Match a tag UID and a Spoolman link stored from the tag's cascade level 1, either way round.
+
+    The Spoolman counterpart of the built-in inventory's fallback in
+    get_spool_by_tag (#3258), with the same rules. A full 7- or 10-byte read
+    finds the active spool linked as 88 + the UID's first three bytes, as a
+    native tag or in extra.tag. A level-1 read from a daemon not updated yet
+    finds the active spool linked by the 7-byte UID it begins. Three bytes can
+    begin more than one tag, so only a single fitting spool is matched.
+    """
+    level1_uid = cascade_level_1_uid(tag_uid)
+    uid_start = cascade_level_1_uid_start(tag_uid, sak)
+    if not level1_uid and not uid_start:
+        return None
+
+    matches: list[dict] = []
+    for sm_spool in spools:
+        if not isinstance(sm_spool, dict) or sm_spool.get("archived"):
+            continue
+        links = _spoolman_tag_links(sm_spool)
+        if level1_uid in links or (
+            uid_start is not None and any(begins_with_cascade_level_1(uid, uid_start) for uid in links)
+        ):
+            matches.append(sm_spool)
+
+    if len(matches) == 1:
+        logger.info(
+            "Matched Spoolman spool %s by cascade level 1 of tag %s: links %s",
+            matches[0].get("id"),
+            normalize_hex(tag_uid),
+            sorted(_spoolman_tag_links(matches[0])),
+        )
+        return matches[0]
+    if len(matches) > 1:
+        warn_cascade_level_1_ambiguous(normalize_hex(tag_uid), [sm_spool.get("id") for sm_spool in matches])
+    return None
+
+
+async def _upgrade_spoolman_cascade_level_1_link(client, sm_spool: dict, full_uid: str, level1_uid: str) -> None:
+    """Move a Spoolman spool's tag link stored from cascade level 1 over to the full UID (#3258).
+
+    The scan has linked the full UID as a native tag already (add_native_tags).
+    An extra.tag holding the 88 form is rewritten to the full UID, and the 88
+    native tag is unlinked once the spool is linked by the full UID, natively
+    or in extra.tag, so the spool is never left without a link.
+
+    Best-effort: a write Spoolman refuses or fails is logged and the scan keeps
+    its match. Whatever is left of the 88 form stays on the spool, and the next
+    full scan of the tag comes here again and finishes the move.
+    """
+    spool_id = sm_spool.get("id")
+    if not isinstance(spool_id, int):
+        return
+    changed = False
+
+    if _spoolman_extra_tag_uid(sm_spool) == level1_uid:
+        try:
+            await client.merge_spool_extra(spool_id, {"tag": json.dumps(full_uid)})
+            changed = True
+            logger.info(
+                "SpoolBuddy: extra.tag %s of Spoolman spool %d rewritten to the full UID %s",
+                level1_uid,
+                spool_id,
+                full_uid,
+            )
+        except Exception as exc:
+            logger.warning(
+                "SpoolBuddy: could not rewrite extra.tag %s of Spoolman spool %d to %s, trying again on the next scan: %s",
+                level1_uid,
+                spool_id,
+                full_uid,
+                exc,
+            )
+
+    if level1_uid in _spoolman_native_tag_uids(sm_spool):
+        try:
+            current = await client.get_spool(spool_id)
+            if full_uid in _spoolman_tag_links(current):
+                await client.unlink_native_tag(spool_id, level1_uid)
+                changed = True
+                logger.info(
+                    "SpoolBuddy: native tag %s unlinked from Spoolman spool %d, now linked by the full UID %s",
+                    level1_uid,
+                    spool_id,
+                    full_uid,
+                )
+            else:
+                logger.info(
+                    "SpoolBuddy: Spoolman spool %d keeps native tag %s until the full UID %s is linked",
+                    spool_id,
+                    level1_uid,
+                    full_uid,
+                )
+        except Exception as exc:
+            logger.warning(
+                "SpoolBuddy: could not unlink native tag %s from Spoolman spool %d, trying again on the next scan: %s",
+                level1_uid,
+                spool_id,
+                exc,
+            )
+
+    if changed:
+        await ws_manager.broadcast({"type": "inventory_changed"})
+
+
 @router.post("/nfc/tag-scanned")
 async def nfc_tag_scanned(
     req: TagScannedRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """RPi reports NFC tag detected — lookup spool and broadcast.
@@ -458,10 +610,19 @@ async def nfc_tag_scanned(
         )
         tray_uuid = None
 
-    # _get_spoolman_client_or_none returns a usable client when spoolman_enabled
-    # is true (and the URL passes the SSRF guard), None otherwise — so its
-    # return value doubles as the mode discriminator.
+    # A usable client when Spoolman is on and its URL passes the SSRF guard.
+    # With the mode on but no usable client the spools are still Spoolman's,
+    # and the built-in table must not answer.
     client = await _get_spoolman_client_or_none(db)
+    if client is None and await _spoolman_mode(db):
+        await ws_manager.broadcast(
+            {
+                "type": "spoolman_unavailable",
+                "device_id": req.device_id,
+                "context": "nfc_tag_scanned",
+            }
+        )
+        return {"status": "ok", "matched": False, "spool_id": None}
 
     if client is not None:
         # Spoolman mode — exclusive lookup, no local-DB fallback.
@@ -486,13 +647,24 @@ async def nfc_tag_scanned(
                         cached_spools = await client.get_spools()
                     sm_spool = await client.find_spool_by_tag(uid, cached_spools=cached_spools)
 
+            # Last, a link stored from the tag's cascade level 1 (#3258), as
+            # get_spool_by_tag falls back to in the built-in inventory.
+            level1_read = cascade_level_1_uid_start(req.tag_uid, req.sak) is not None
+            level1_read_match = False
+            if sm_spool is None and (level1_read or cascade_level_1_uid(req.tag_uid)):
+                if cached_spools is None:
+                    cached_spools = await client.get_spools()
+                sm_spool = _spoolman_spool_by_cascade_level_1(cached_spools, req.tag_uid, req.sak)
+                level1_read_match = level1_read and sm_spool is not None
+
             if sm_spool is not None:
                 # What this scan read becomes a native tag of the spool: a spool found
                 # through extra.tag moves over on its first scan, and a Bambu spool
-                # collects the chip UID of each side as it is read.
-                await client.add_native_tags(
-                    sm_spool, [tray_uuid, req.tag_uid], "bambu" if tray_uuid else None, retry_refused=True
-                )
+                # collects the chip UID of each side as it is read. A level-1 read
+                # that matched through the fallback is not one: 88 + three bytes can
+                # begin more than one tag, and the spool is linked by the full UID.
+                scanned_uids = [tray_uuid] if level1_read_match else [tray_uuid, req.tag_uid]
+                await client.add_native_tags(sm_spool, scanned_uids, "bambu" if tray_uuid else None, retry_refused=True)
                 mapped = _map_spoolman_spool(sm_spool)
                 await ws_manager.broadcast(
                     {
@@ -523,6 +695,13 @@ async def nfc_tag_scanned(
                     }
                 )
                 logger.info("SpoolBuddy tag matched (Spoolman): %s -> spool %d", req.tag_uid, mapped["id"])
+                # A full read of a spool still linked by the 88 form, matched by the
+                # fallback or exactly after an earlier move stopped half-way.
+                level1_uid = cascade_level_1_uid(req.tag_uid)
+                if level1_uid and level1_uid in _spoolman_tag_links(sm_spool):
+                    await _upgrade_spoolman_cascade_level_1_link(
+                        client, sm_spool, normalize_hex(req.tag_uid), level1_uid
+                    )
                 if tray_uuid:
                     await _backfill_spoolman_tray_uuid(client, sm_spool, req.tag_uid, tray_uuid)
                 return {"status": "ok", "matched": True, "spool_id": mapped["id"]}
@@ -567,7 +746,7 @@ async def nfc_tag_scanned(
             return {"status": "ok", "matched": False, "spool_id": None}
     else:
         # Local mode — exclusive lookup, no Spoolman fallback.
-        spool = await get_spool_by_tag(db, req.tag_uid, tray_uuid or "")
+        spool = await get_spool_by_tag(db, req.tag_uid, tray_uuid or "", req.sak)
         if spool:
             await ws_manager.broadcast(
                 {
@@ -598,6 +777,43 @@ async def nfc_tag_scanned(
                 await _backfill_local_tray_uuid(db, spool, req.tag_uid, tray_uuid)
             return {"status": "ok", "matched": True, "spool_id": spool.id}
 
+    # What the tag itself says about the roll, so the kiosk's Quick Add can
+    # create the spool AMS sync would have created, not a blank PLA (#2685)
+    tag_data = None
+    tag_format = None
+    if req.raw_blocks:
+        try:
+            tag_data = await spool_prefill_from_tag(db, req.raw_blocks)
+        except Exception:
+            logger.warning("Could not decode Bambu tag blocks for %s", req.tag_uid, exc_info=True)
+        if tag_data is not None:
+            tag_format = "bambu"
+    elif req.ndef_hex:
+        # An NTAG's NDEF message: OpenTag3D, OpenSpool, FilaMan System (#3657)
+        try:
+            ndef_tag = decode_ndef_tag(bytes.fromhex(req.ndef_hex), req.tag_uid)
+        except Exception:
+            logger.warning("Could not decode the NDEF data of %s", req.tag_uid, exc_info=True)
+            ndef_tag = None
+        if ndef_tag is not None:
+            tag_format = ndef_tag.tag_format
+            tag_data = ndef_tag.prefill or None
+        if tag_data is not None and not tag_data["color_name"]:
+            # A tag without a colour name may still match a catalogue row
+            try:
+                color = await resolve_brand_color(
+                    db, tag_data["brand"], tag_data["rgba"], tag_data["material"], tag_data["subtype"]
+                )
+            except Exception:
+                logger.warning("Colour catalogue lookup failed for %s", req.tag_uid, exc_info=True)
+                color = None
+            if color is not None:
+                tag_data["color_name"] = color.name
+                if not tag_data["extra_colors"]:
+                    tag_data["extra_colors"] = color.extra_colors
+                if not tag_data["effect_type"]:
+                    tag_data["effect_type"] = color.effect_type
+
     await ws_manager.broadcast(
         {
             "type": "spoolbuddy_unknown_tag",
@@ -606,18 +822,23 @@ async def nfc_tag_scanned(
             "tray_uuid": tray_uuid,
             "sak": req.sak,
             "tag_type": req.tag_type,
+            "tag_data": tag_data,
+            "tag_format": tag_format,
         }
     )
     logger.info(
-        "SpoolBuddy unknown tag: uid=%s (len=%d), tray_uuid=%s (len=%d), type=%s, sak=%s",
+        "SpoolBuddy unknown tag: uid=%s (len=%d), tray_uuid=%s (len=%d), type=%s, sak=%s, format=%s",
         req.tag_uid,
         len(req.tag_uid or ""),
         tray_uuid,
         len(tray_uuid or ""),
         req.tag_type,
         req.sak,
+        tag_format,
     )
-    return {"status": "ok", "matched": False, "spool_id": None}
+    # The prefill goes back to the client too, so one with its own screen
+    # (ESPoolBuddy, SpoolmanScale) can show what the tag says (#3657)
+    return {"status": "ok", "matched": False, "spool_id": None, "tag_data": tag_data, "tag_format": tag_format}
 
 
 @router.post("/nfc/tag-removed")
@@ -639,12 +860,22 @@ async def nfc_tag_removed(
 @router.post("/nfc/write-tag")
 async def nfc_write_tag(
     req: WriteTagRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
-    """Queue an NFC tag write command for a SpoolBuddy device."""
+    """Queue an NFC tag write command for a SpoolBuddy device.
+
+    The spool comes from the inventory in use: Spoolman when it is enabled,
+    otherwise Bambuddy's own. Built-in spools are kept after switching to
+    Spoolman, so one with the same id must not stand in for the Spoolman spool.
+    """
     from backend.app.models.spool import Spool
-    from backend.app.services.opentag3d import encode_opentag3d, encode_opentag3d_from_mapped
+    from backend.app.services.opentag3d import (
+        encode_opentag3d,
+        encode_opentag3d_from_mapped,
+        encode_opentag3d_v2,
+        encode_opentag3d_v2_from_mapped,
+    )
 
     # Find the device first (required regardless of spool source)
     result = await db.execute(select(SpoolBuddyDevice).where(SpoolBuddyDevice.device_id == req.device_id))
@@ -652,21 +883,20 @@ async def nfc_write_tag(
     if not device:
         raise HTTPException(status_code=404, detail="Device not registered")
 
-    # Try local DB first
-    result = await db.execute(select(Spool).where(Spool.id == req.spool_id))
-    spool = result.scalar_one_or_none()
+    sm_client = await _get_spoolman_client_or_none(db)
+    if sm_client is None and await _spoolman_mode(db):
+        raise HTTPException(status_code=503, detail="Spoolman is unavailable")
 
     nfc_warnings: list[str] = []
-    if spool:
+    if sm_client is None:
+        spool = (await db.execute(select(Spool).where(Spool.id == req.spool_id))).scalar_one_or_none()
+        if spool is None:
+            raise HTTPException(status_code=404, detail="Spool not found")
         ndef_data = encode_opentag3d(spool)
+        ndef_v2 = encode_opentag3d_v2(spool)
         data_origin = "local"
     else:
-        # Local DB miss — fall back to Spoolman when enabled
         from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool
-
-        sm_client = await _get_spoolman_client_or_none(db)
-        if sm_client is None:
-            raise HTTPException(status_code=404, detail="Spool not found")
 
         async with _translate_spoolbuddy_errors():
             sm_spool = await sm_client.get_spool(req.spool_id)
@@ -683,19 +913,37 @@ async def nfc_write_tag(
                 detail="Spoolman spool has no material set — cannot encode NFC tag",
             )
 
+        # A Bambu spool created from the AMS is linked by its tray UUID in
+        # extra.tag; a sticker would replace it there, and the next AMS sync,
+        # no longer finding the spool, would create a duplicate (SM-C5). Not
+        # when Spoolman also keeps that UUID as a native tag (0.27+): the sync
+        # finds the spool by it first, and the sticker leaves it alone.
+        from backend.app.api.routes._spoolman_helpers import _extract_extra_str
+
+        extra_tag = _extract_extra_str(sm_spool.get("extra") or {}, "tag").strip().upper()
+        native_uids = {str(t.get("uid", "")).upper() for t in sm_spool.get("tags") or [] if isinstance(t, dict)}
+        if re.fullmatch(r"[0-9A-F]{32}", extra_tag) and extra_tag not in native_uids:
+            raise HTTPException(
+                status_code=409,
+                detail="This spool is linked to its Bambu RFID tag through the AMS; "
+                "a sticker would replace that link in Spoolman",
+            )
+
         ndef_data = encode_opentag3d_from_mapped(mapped)
+        ndef_v2 = encode_opentag3d_v2_from_mapped(mapped)
         data_origin = "spoolman"
 
         # Warn when fields that drive NFC content are absent in Spoolman.
-        # color_name specifically must check the raw filament field, not the
-        # mapped value — _map_spoolman_spool falls back to the filament's
-        # subtype when color_name is unset (so LinkSpoolModal stops showing
-        # "Unknown color"), but the NFC tag should still warn when Spoolman
-        # has no genuine color_name on file. Without this, the fallback
-        # silently masks a real missing-data condition.
-        raw_filament: dict = sm_spool.get("filament") or {}
-        if not raw_filament.get("color_name"):
-            nfc_warnings.append("color_name not set in Spoolman — tag encodes empty color name")
+        # The colour name is read the way the tag gets it: from the spool's
+        # extra (where Bambuddy keeps it -- Spoolman's filament has no such
+        # field, so checking that warned on every spool, SM-C6), else the
+        # subtype stands in for it.
+        if mapped.get("color_name") is None:
+            nfc_warnings.append("color_name not set in Spoolman — tag encodes an empty color name")
+        elif mapped.get("color_name_is_synthesized"):
+            nfc_warnings.append(
+                f"color_name not set in Spoolman — tag encodes the subtype ({mapped['color_name']}) as its color name"
+            )
         if not mapped.get("nozzle_temp_min"):
             nfc_warnings.append("nozzle_temp_min not set in Spoolman — tag encodes 0 °C")
         if not mapped.get("subtype"):
@@ -717,7 +965,12 @@ async def nfc_write_tag(
     device.pending_write_payload = json.dumps(
         {
             "spool_id": req.spool_id,
+            # OpenTag3D v1, which fits every NTAG; what a reader that knows
+            # nothing else writes.
             "ndef_data_hex": ndef_data.hex(),
+            # OpenTag3D 2.004, for a tag with room for it (NTAG215/216). The
+            # daemon picks by the tag's size (#3500).
+            "ndef_v2_hex": ndef_v2.hex(),
             "data_origin": data_origin,
         }
     )
@@ -740,7 +993,7 @@ async def nfc_write_tag(
 @router.post("/nfc/write-result")
 async def nfc_write_result(
     req: WriteTagResultRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Handle NFC tag write result from SpoolBuddy daemon."""
@@ -776,6 +1029,7 @@ async def nfc_write_result(
                         "spool_id": req.spool_id,
                         "tag_uid": req.tag_uid,
                         "message": "Spoolman not configured",
+                        "reason": "spoolman_not_configured",
                     }
                 )
                 raise HTTPException(
@@ -790,28 +1044,13 @@ async def nfc_write_result(
                 # one Spoolman spool, otherwise find_spool_by_tag returns
                 # whichever spool comes first in the cached list (usually the
                 # older one) and the dashboard shows the wrong spool when the
-                # tag is scanned. Before binding the new owner, clear the tag
-                # from any other spool that currently has it. Best-effort:
-                # cleanup failure does not block the write itself, but the
-                # warning surfaces in logs so a stale duplicate can be tracked
-                # down manually.
+                # tag is scanned. Before binding the new owner, clear extra.tag
+                # on every other spool that holds it -- JSON-encoded, as Spoolman
+                # refuses a bare "" (#3312). Best-effort: cleanup failure does
+                # not block the write itself; each failed spool is logged.
                 try:
-                    cached_spools = await sm_client.get_spools()
-                    duplicate = await sm_client.find_spool_by_tag(req.tag_uid, cached_spools=cached_spools)
-                    if duplicate is not None and duplicate.get("id") != req.spool_id:
-                        await sm_client.merge_spool_extra(int(duplicate["id"]), {"tag": ""})
-                        logger.info(
-                            "Spoolman: cleared tag %s from previous holder spool %d before binding to spool %d",
-                            req.tag_uid,
-                            duplicate["id"],
-                            req.spool_id,
-                        )
-                except (SpoolmanNotFoundError, SpoolmanUnavailableError, SpoolmanClientError) as cleanup_exc:
-                    logger.warning(
-                        "Spoolman: failed to clear duplicate tag %s before binding to spool %d (proceeding anyway): %s",
-                        req.tag_uid,
-                        req.spool_id,
-                        cleanup_exc,
+                    await _clear_stale_tag_links(
+                        sm_client, tag=req.tag_uid, keep_spool_id=req.spool_id, log_context="SpoolBuddy tag write"
                     )
                 except Exception:
                     logger.exception(
@@ -876,6 +1115,10 @@ async def nfc_write_result(
                 # fall through to broadcast + raise 502 below
 
             await db.commit()
+            # The tag moved between Spoolman spools, or the stale holders were
+            # cleared before a link that then failed: either way pages open
+            # elsewhere hold a tag -> spool map that changed (#3402).
+            await ws_manager.broadcast({"type": "inventory_changed"})
             if _tag_link_ok:
                 await ws_manager.broadcast(
                     {
@@ -895,6 +1138,7 @@ async def nfc_write_result(
                         # Generic message — full exception (may contain internal URLs/hostnames)
                         # is logged server-side only to prevent information leakage via WebSocket.
                         "message": "Spoolman link failed",
+                        "reason": "spoolman_link_failed",
                     }
                 )
                 raise HTTPException(
@@ -919,11 +1163,22 @@ async def nfc_write_result(
                         "device_id": req.device_id,
                         "spool_id": req.spool_id,
                         "message": "Spool not found",
+                        "reason": "spool_not_found",
                     }
                 )
                 return {"status": "ok", "linked": False, "message": "Spool not found"}
 
-            spool.tag_uid = req.tag_uid.upper()
+            # The tag now holds this spool's data, so it moves here from any
+            # other spool that had it, as in the Spoolman branch above.
+            # Otherwise two spools share the UID and a scan finds the old one
+            # (#3505). Archived spools give it up as well, as link-tag does.
+            tag_uid = req.tag_uid.upper()
+            previous = await db.execute(select(Spool).where(func.upper(Spool.tag_uid) == tag_uid, Spool.id != spool.id))
+            for holder in previous.scalars().all():
+                holder.tag_uid = None
+                logger.info("Tag %s moved from spool %d to spool %d", tag_uid, holder.id, spool.id)
+
+            spool.tag_uid = tag_uid
             spool.tag_type = "ntag"
             spool.data_origin = "opentag3d"
             spool.encode_time = datetime.now(timezone.utc)
@@ -956,7 +1211,7 @@ async def nfc_write_result(
 @router.post("/devices/{device_id}/cancel-write")
 async def cancel_write(
     device_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Cancel a pending write-tag command."""
@@ -998,7 +1253,7 @@ async def scale_reading(
 @router.post("/scale/update-spool-weight")
 async def update_spool_weight(
     req: UpdateSpoolWeightRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Update spool's used weight from scale reading.
@@ -1015,6 +1270,8 @@ async def update_spool_weight(
     from backend.app.models.spool import Spool
 
     sm_client = await _get_spoolman_client_or_none(db)
+    if sm_client is None and await _spoolman_mode(db):
+        raise HTTPException(status_code=503, detail="Spoolman is unavailable")
 
     if sm_client is None:
         # Local mode — exclusive update, no Spoolman fallback.
@@ -1027,7 +1284,11 @@ async def update_spool_weight(
         spool.weight_used = max(0, spool.label_weight - net_filament)
         spool.last_scale_weight = req.weight_grams
         spool.last_weighed_at = datetime.now(timezone.utc)
+        # A measured figure, which the AMS remain% sync must not overwrite
+        # (as a hand-set one, see update_spool).
+        spool.weight_locked = True
         await db.commit()
+        await ws_manager.broadcast({"type": "inventory_changed"})
         logger.info(
             "SpoolBuddy updated spool %d weight: %.1fg on scale, %.1fg used",
             spool.id,
@@ -1056,6 +1317,7 @@ async def update_spool_weight(
 
     async with _translate_spoolbuddy_errors():
         await sm_client.update_spool(spool_id=req.spool_id, remaining_weight=remaining_weight)
+    await ws_manager.broadcast({"type": "inventory_changed"})
 
     weight_used = max(0.0, label_weight - remaining_weight)
     logger.info(
@@ -1077,7 +1339,7 @@ async def update_spool_weight(
 @router.post("/devices/{device_id}/calibration/tare")
 async def tare_scale(
     device_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Set pending tare command for the device to pick up."""
@@ -1095,7 +1357,7 @@ async def tare_scale(
 async def set_tare_offset(
     device_id: str,
     req: SetTareRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Store tare offset reported by the daemon after executing a tare."""
@@ -1119,7 +1381,7 @@ async def set_tare_offset(
 async def set_calibration_factor(
     device_id: str,
     req: SetCalibrationFactorRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Calculate and store calibration factor from a known weight."""
@@ -1156,7 +1418,7 @@ async def set_calibration_factor(
 @router.get("/devices/{device_id}/calibration", response_model=CalibrationResponse)
 async def get_calibration(
     device_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ):
     """Get current calibration values for a device."""
@@ -1177,7 +1439,7 @@ async def get_calibration(
 @router.get("/devices/{device_id}/display")
 async def get_display_settings(
     device_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Read current display brightness and screen blank timeout for a device.
@@ -1200,7 +1462,7 @@ async def get_display_settings(
 async def update_display_settings(
     device_id: str,
     req: DisplaySettingsRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Update display brightness and screen blank timeout for a device."""
@@ -1226,7 +1488,7 @@ async def update_display_settings(
 async def queue_system_config_update(
     device_id: str,
     req: SystemConfigRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Queue update of SpoolBuddy .env config on the device."""
@@ -1263,7 +1525,7 @@ VALID_SYSTEM_COMMANDS = {"reboot", "shutdown", "restart_daemon", "restart_browse
 async def queue_system_command(
     device_id: str,
     req: SystemCommandRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     # Aligns with the rest of the kiosk-scoped device routes (calibration,
     # display, cancel-write, command-result — all INVENTORY_UPDATE). The
     # previous SETTINGS_UPDATE gate locked operators out of the QuickMenu's
@@ -1299,7 +1561,7 @@ async def queue_system_command(
 async def system_command_result(
     device_id: str,
     req: SystemCommandResultRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Receive completion status for queued system command from daemon."""
@@ -1340,8 +1602,8 @@ async def system_command_result(
 async def queue_diagnostic(
     device_id: str,
     diagnostic: str,
-    db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Queue a hardware diagnostic to run on the SpoolBuddy device.
 
@@ -1372,7 +1634,7 @@ async def queue_diagnostic(
 async def get_diagnostic_result(
     device_id: str,
     diagnostic: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ):
     """Get the latest diagnostic result for a device.
@@ -1402,7 +1664,7 @@ async def get_diagnostic_result(
 async def report_diagnostic_result(
     device_id: str,
     req: DiagnosticResultRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Report diagnostic result from SpoolBuddy device."""
@@ -1434,7 +1696,7 @@ async def report_diagnostic_result(
 @router.get("/devices/{device_id}/update-check")
 async def check_daemon_update(
     device_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ):
     """Check if the SpoolBuddy daemon needs updating to match the Bambuddy backend version."""
@@ -1459,7 +1721,7 @@ async def check_daemon_update(
 async def trigger_daemon_update(
     device_id: str,
     req: dict | None = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     # Aligns with the rest of the kiosk-scoped device routes (calibration,
     # display, cancel-write, system/command — all INVENTORY_UPDATE).
     # SETTINGS_UPDATE is on the API-key deny-list, which blocks the Update
@@ -1530,41 +1792,6 @@ async def get_ssh_public_key(
     except Exception as e:
         logger.error("Failed to get SSH public key: %s", e)
         raise HTTPException(status_code=500, detail="Failed to retrieve SSH public key") from e
-
-
-@router.post("/devices/{device_id}/update-status")
-async def report_update_status(
-    device_id: str,
-    req: UpdateStatusRequest,
-    db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
-):
-    """Daemon reports update progress back to the backend."""
-    result = await db.execute(select(SpoolBuddyDevice).where(SpoolBuddyDevice.device_id == device_id))
-    device = result.scalar_one_or_none()
-    if not device:
-        raise HTTPException(status_code=404, detail="Device not registered")
-
-    device.update_status = req.status
-    device.update_message = req.message
-    # Only "complete" clears pending_command here. "error" leaves it set so the user can retry
-    # via the UI. The SSH service's own _update_progress clears on both "complete" and "error"
-    # because it owns the full update lifecycle end-to-end.
-    if req.status == "complete":
-        device.pending_command = None
-    await db.commit()
-
-    logger.info("SpoolBuddy %s: update status=%s msg=%s", device_id, req.status, req.message)
-    await ws_manager.broadcast(
-        {
-            "type": "spoolbuddy_update",
-            "device_id": device_id,
-            "update_status": req.status,
-            "update_message": req.message,
-        }
-    )
-
-    return {"status": "ok"}
 
 
 # --- Background watchdog ---

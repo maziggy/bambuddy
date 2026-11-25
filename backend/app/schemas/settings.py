@@ -34,6 +34,12 @@ LAN_SERVICE_URL_SETTINGS = ("ha_url", "obico_ml_url", "orcaslicer_api_url", "bam
 _COMPOSE_DIR_ALLOWED = re.compile(r"^[\w \-./\\:~]+$", re.UNICODE)
 _COMPOSE_DIR_MAX_LEN = 512
 
+# "Loaded filament first" maximum wait in hours (#3587): the default and the
+# accepted range, shared by the schema, the settings read-back and the scheduler.
+QUEUE_MAX_WAIT_HOURS_DEFAULT = 48
+QUEUE_MAX_WAIT_HOURS_MIN = 1
+QUEUE_MAX_WAIT_HOURS_MAX = 8760
+
 
 class AppSettings(BaseModel):
     """Application settings schema."""
@@ -125,6 +131,11 @@ class AppSettings(BaseModel):
     # Bed cooled notification threshold
     bed_cooled_threshold: float = Field(
         default=35.0, description="Bed temperature threshold for cooled notification (°C)"
+    )
+
+    # Heads-up before a pause the slicer put into the print (#2984)
+    pause_warning_minutes: int = Field(
+        default=5, description="Minutes before a pause to send the pause-coming-up notification"
     )
 
     # AMS threshold settings for humidity and temperature coloring
@@ -233,15 +244,14 @@ class AppSettings(BaseModel):
     )
 
     # Virtual Printer
-    virtual_printer_enabled: bool = Field(default=False, description="Enable virtual printer for slicer uploads")
-    virtual_printer_access_code: str = Field(default="", description="Access code for virtual printer authentication")
-    virtual_printer_mode: str = Field(
-        default="archive",
-        description="Mode: 'archive' (archive now), 'review' (pending review), 'queue' (add to print queue), or 'proxy' (relay to real printer)",
-    )
     virtual_printer_archive_name_source: str = Field(
         default="metadata",
         description="Source for the archive's display name on virtual-printer uploads: 'metadata' uses the 3MF's embedded print_name (default, matches Bambu's behavior), 'filename' uses the filename Bambu Studio sent over FTP (lets users rename via the slicer's 'send to printer' dialog).",
+    )
+    virtual_printer_connect_instructions: str = Field(
+        default="",
+        max_length=4000,
+        description="Markdown the Connect slicer page shows every user above their virtual printers (#3602), e.g. 'connect to the VPN first'. Empty: none.",
     )
 
     # Dark mode theme settings
@@ -270,6 +280,9 @@ class AppSettings(BaseModel):
     mqtt_password: str = Field(default="", description="MQTT password for authentication (optional)")
     mqtt_topic_prefix: str = Field(default="bambuddy", description="Topic prefix for all published messages")
     mqtt_use_tls: bool = Field(default=False, description="Use TLS/SSL encryption for MQTT connection")
+    panda_breath_enabled: bool = Field(
+        default=False, description="Follow BIQU Panda Breath heaters on the MQTT broker above (#1466)"
+    )
 
     # External URL for notifications
     external_url: str = Field(
@@ -297,10 +310,6 @@ class AppSettings(BaseModel):
     )
 
     # File Manager / Library settings
-    library_archive_mode: str = Field(
-        default="ask",
-        description="When printing from File Manager, create archive entry: 'always', 'never', or 'ask'",
-    )
     library_disk_warning_gb: float = Field(
         default=5.0,
         description="Show warning when free disk space falls below this threshold (GB)",
@@ -424,6 +433,14 @@ class AppSettings(BaseModel):
         default=True,
         description="Enable user email notifications for print job events (requires Advanced Authentication)",
     )
+    notification_submitter_email_enabled: bool = Field(
+        default=False,
+        description=(
+            "Fill {submitted_by_email} in print notifications with the email of the user who sent the job. "
+            "Off, it stays empty: anyone who can edit templates or providers could otherwise send "
+            "every submitter's email to a server of their choosing."
+        ),
+    )
 
     # Default print options. bed_levelling / flow_cali / nozzle_offset_cali are
     # tri-state (off/on/auto), defaulting to "auto" per BambuStudio.
@@ -476,6 +493,32 @@ class AppSettings(BaseModel):
         default=False,
         description="Immediately stop printer jobs that start without Bambuddy authorization",
     )
+    # The charging policy (#3581): what a print's wallet charge is made of,
+    # for completed prints and for failed or cancelled ones. The defaults are
+    # the charge as it was before: the filament alone, proportional for a
+    # print that did not finish.
+    billing_completed_energy: bool = Field(
+        default=False, description="Add a completed print's energy cost to its wallet charge"
+    )
+    billing_completed_wear: bool = Field(
+        default=False, description="Add a completed print's printer wear cost to its wallet charge"
+    )
+    # A plain string on the way out, like energy_price_source: a stray value
+    # reads as "proportional" where charges are made. Writes are checked in
+    # AppSettingsUpdate.
+    billing_failed_filament: str = Field(
+        default="proportional",
+        description=(
+            "Filament charged for a failed or cancelled print: 'proportional' to what it used, "
+            "'full' for the whole print, 'none'"
+        ),
+    )
+    billing_failed_energy: bool = Field(
+        default=False, description="Add a failed or cancelled print's energy cost to its wallet charge"
+    )
+    billing_failed_wear: bool = Field(
+        default=False, description="Add a failed or cancelled print's printer wear cost to its wallet charge"
+    )
     finance_budget_reset_day: int = Field(
         default=1,
         ge=1,
@@ -505,6 +548,36 @@ class AppSettings(BaseModel):
     queue_shortest_first: bool = Field(
         default=False,
         description="Shortest Job First — scheduler prioritizes shorter print jobs over longer ones",
+    )
+    queue_loaded_filament_first: bool = Field(
+        default=False,
+        description=(
+            "Skip a queued job whose filament is not loaded on its printer instead of holding it, "
+            "so jobs behind it that fit can run first (#3587)"
+        ),
+    )
+    queue_max_wait_hours: int | None = Field(
+        default=QUEUE_MAX_WAIT_HOURS_DEFAULT,
+        ge=QUEUE_MAX_WAIT_HOURS_MIN,
+        le=QUEUE_MAX_WAIT_HOURS_MAX,
+        description=(
+            "With loaded-filament-first: hours after which a skipped job gets priority and its printer is "
+            "kept free for it. null = no limit (#3587)"
+        ),
+    )
+    filament_override_inventory: bool = Field(
+        default=False,
+        description=(
+            "Offer built-in inventory colours in the print dialog's filament override and hint at "
+            "out-of-stock filament in waiting reasons (#3590). Install-wide, off by default."
+        ),
+    )
+    model_dispatch_order: Literal["fewest_hours", "most_hours", "least_recently_used", "priority"] = Field(
+        default="fewest_hours",
+        description=(
+            "Which printer an 'Any model' job takes when several can run it (#2915): the one with the fewest "
+            "print hours, the most, the one idle the longest, or the first by the printers' own priority."
+        ),
     )
     queue_max_concurrent_uploads: int = Field(
         default=4,
@@ -685,6 +758,29 @@ class AppSettings(BaseModel):
         description="JSON array of printer IDs to monitor (empty = all connected printers)",
     )
 
+    # OctoEverywhere AI failure detection
+    octoeverywhere_enabled: bool = Field(default=False, description="Enable OctoEverywhere AI print failure detection")
+    octoeverywhere_api_key: str = Field(default="", description="OctoEverywhere Gadget API key")
+    octoeverywhere_api_key_configured: bool = Field(
+        default=False, description="Whether an OctoEverywhere Gadget API key is saved"
+    )
+    octoeverywhere_poll_interval: int = Field(
+        default=20, ge=5, le=30, description="Seconds between inspections, subject to the server's minimum interval"
+    )
+    octoeverywhere_confidence: str = Field(
+        default="medium",
+        description=(
+            "Confidence OctoEverywhere needs before suggesting a warning or pause: lowest, low, medium, high, "
+            "or highest (API levels 1-5). Lower reports sooner with more false positives."
+        ),
+    )
+    octoeverywhere_action: str = Field(
+        default="notify", description="Action on failure: notify, pause, or pause_and_off"
+    )
+    octoeverywhere_enabled_printers: str = Field(
+        default="", description="JSON array of printer IDs to monitor (empty = all connected printers)"
+    )
+
     # Inventory forecasting
     forecast_global_lead_time_days: int = Field(
         default=0,
@@ -767,13 +863,15 @@ class AppSettingsUpdate(BaseModel):
     language: str | None = None
     notification_language: str | None = None
     bed_cooled_threshold: float | None = None
+    pause_warning_minutes: int | None = Field(default=None, ge=1, le=120)
     ams_humidity_good: int | None = None
     ams_humidity_fair: int | None = None
     ams_temp_good: float | None = None
     ams_temp_fair: float | None = None
     ams_temp_alarm: float | None = None
-    ams_history_retention_days: int | None = None
-    printer_sensor_history_retention_days: int | None = None
+    # At least a day: 0 or less put the cleanup cutoff at now and deleted all history daily.
+    ams_history_retention_days: int | None = Field(default=None, ge=1)
+    printer_sensor_history_retention_days: int | None = Field(default=None, ge=1)
     queue_drying_enabled: bool | None = None
     queue_drying_block: bool | None = None
     ambient_drying_enabled: bool | None = None
@@ -786,10 +884,8 @@ class AppSettingsUpdate(BaseModel):
     time_format: str | None = None
     default_printer_id: int | None = None
     pipeline_max_copies: int | None = None
-    virtual_printer_enabled: bool | None = None
-    virtual_printer_access_code: str | None = None
-    virtual_printer_mode: str | None = None
     virtual_printer_archive_name_source: str | None = None
+    virtual_printer_connect_instructions: str | None = Field(default=None, max_length=4000)
     dark_style: str | None = None
     dark_background: str | None = None
     dark_accent: str | None = None
@@ -807,18 +903,19 @@ class AppSettingsUpdate(BaseModel):
     mqtt_password: str | None = None
     mqtt_topic_prefix: str | None = None
     mqtt_use_tls: bool | None = None
+    panda_breath_enabled: bool | None = None
     external_url: str | None = None
     docker_compose_dir: str | None = None
     ha_enabled: bool | None = None
     ha_url: str | None = None
     ha_token: str | None = None
-    library_archive_mode: str | None = None
     library_disk_warning_gb: float | None = None
     camera_view_mode: str | None = None
     camera_light_mode: Literal["off", "all", "selected"] | None = None
     # Capped by camera_light.MAX_DELAY_SECONDS: the finish photo's budget
     # has no more to spare.
     camera_light_delay: float | None = Field(default=None, ge=0, le=5)
+    model_dispatch_order: Literal["fewest_hours", "most_hours", "least_recently_used", "priority"] | None = None
     preferred_slicer: str | None = None
     open_in_slicer: str | None = None
     slice_engine: str | None = None
@@ -831,6 +928,7 @@ class AppSettingsUpdate(BaseModel):
     low_stock_threshold: float | None = Field(default=None, ge=0.1, le=99.9)
     session_max_hours: int | None = Field(default=None, ge=1, le=720)
     user_notifications_enabled: bool | None = None
+    notification_submitter_email_enabled: bool | None = None
     default_bed_levelling: TriState | None = None
     default_flow_cali: TriState | None = None
     default_vibration_cali: bool | None = None
@@ -844,11 +942,19 @@ class AppSettingsUpdate(BaseModel):
     stagger_interval_minutes: int | None = Field(default=None, ge=1, le=60)
     billing_enabled: bool | None = None
     printer_kill_switch_enabled: bool | None = None
+    billing_completed_energy: bool | None = None
+    billing_completed_wear: bool | None = None
+    billing_failed_filament: Literal["proportional", "full", "none"] | None = None
+    billing_failed_energy: bool | None = None
+    billing_failed_wear: bool | None = None
     finance_budget_reset_day: int | None = Field(default=None, ge=1, le=31)
     finance_budget_reset_timezone: str | None = None
     require_plate_clear: bool | None = None
     plate_clear_trigger: str | None = None
     queue_shortest_first: bool | None = None
+    queue_loaded_filament_first: bool | None = None
+    queue_max_wait_hours: int | None = Field(default=None, ge=QUEUE_MAX_WAIT_HOURS_MIN, le=QUEUE_MAX_WAIT_HOURS_MAX)
+    filament_override_inventory: bool | None = None
     queue_max_concurrent_uploads: int | None = Field(default=None, ge=1, le=16)
     preheat_enabled: bool | None = None
     preheat_filament_targets: str | None = None
@@ -885,6 +991,14 @@ class AppSettingsUpdate(BaseModel):
     obico_action: str | None = None
     obico_poll_interval: int | None = Field(default=None, ge=5, le=120)
     obico_enabled_printers: str | None = None
+    octoeverywhere_enabled: bool | None = None
+    octoeverywhere_api_key: str | None = None
+    # Unset fields default to None; the settings route rejects an explicit null
+    # for numeric settings before it can be stored.
+    octoeverywhere_poll_interval: int | None = Field(default=None, ge=5, le=30)
+    octoeverywhere_confidence: str | None = None
+    octoeverywhere_action: str | None = None
+    octoeverywhere_enabled_printers: str | None = None
     default_sidebar_order: str | None = None
     forecast_global_lead_time_days: int | None = Field(default=None, ge=0)
     location_sensor_poll_interval: int | None = Field(default=None, ge=60, le=3600)
@@ -991,17 +1105,27 @@ class AppSettingsUpdate(BaseModel):
             raise ValueError("ldap_group_mapping must be a JSON object mapping LDAP group DNs to BamBuddy group names")
         return v
 
-    @field_validator("obico_enabled_printers")
+    @field_validator("octoeverywhere_api_key")
     @classmethod
-    def validate_obico_enabled_printers(cls, v: str | None) -> str | None:
+    def validate_octoeverywhere_api_key(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if any(ord(char) < 33 or ord(char) > 126 for char in v):
+            raise ValueError("octoeverywhere_api_key must contain only printable ASCII characters without spaces")
+        return v
+
+    @field_validator("obico_enabled_printers", "octoeverywhere_enabled_printers")
+    @classmethod
+    def validate_obico_enabled_printers(cls, v: str | None, info: ValidationInfo) -> str | None:
         if v is None or v == "":
             return v
         try:
             parsed = json.loads(v)
         except json.JSONDecodeError:
-            raise ValueError("obico_enabled_printers must be valid JSON or empty")
-        if not isinstance(parsed, list) or not all(isinstance(item, int) for item in parsed):
-            raise ValueError("obico_enabled_printers must be a JSON array of printer IDs (integers)")
+            raise ValueError(f"{info.field_name} must be valid JSON or empty")
+        if not isinstance(parsed, list) or not all(type(item) is int and item > 0 for item in parsed):
+            raise ValueError(f"{info.field_name} must be a JSON array of printer IDs (positive integers)")
         return v
 
     @field_validator("bambuddy_internal_url")
@@ -1071,20 +1195,29 @@ class AppSettingsUpdate(BaseModel):
 
     @field_validator("obico_sensitivity")
     @classmethod
-    def validate_obico_sensitivity(cls, v: str | None) -> str | None:
+    def validate_obico_sensitivity(cls, v: str | None, info: ValidationInfo) -> str | None:
         if v is None:
             return v
         if v not in ("low", "medium", "high"):
-            raise ValueError("obico_sensitivity must be 'low', 'medium', or 'high'")
+            raise ValueError(f"{info.field_name} must be 'low', 'medium', or 'high'")
         return v
 
-    @field_validator("obico_action")
+    @field_validator("octoeverywhere_confidence")
     @classmethod
-    def validate_obico_action(cls, v: str | None) -> str | None:
+    def validate_octoeverywhere_confidence(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if v not in ("lowest", "low", "medium", "high", "highest"):
+            raise ValueError("octoeverywhere_confidence must be 'lowest', 'low', 'medium', 'high', or 'highest'")
+        return v
+
+    @field_validator("obico_action", "octoeverywhere_action")
+    @classmethod
+    def validate_obico_action(cls, v: str | None, info: ValidationInfo) -> str | None:
         if v is None:
             return v
         if v not in ("notify", "pause", "pause_and_off"):
-            raise ValueError("obico_action must be 'notify', 'pause', or 'pause_and_off'")
+            raise ValueError(f"{info.field_name} must be 'notify', 'pause', or 'pause_and_off'")
         return v
 
     @field_validator("default_sidebar_order")
@@ -1110,3 +1243,24 @@ class AppSettingsUpdate(BaseModel):
         if not isinstance(order, list) or not all(isinstance(item, str) for item in order):
             raise ValueError("sidebar order must be an array of strings")
         return v
+
+
+# Settings that decide who can sign in or where credential material goes: a
+# directory server that hands out groups, local sign-in, the session length,
+# the address password-reset and welcome links point at, the metrics
+# endpoint's token, the folder full backups (every password hash) are
+# written to, and whether print notifications carry the submitter's email. Admin-only to change (routes/settings.update_settings, and a
+# GitHub restore by a non-admin skips them); the settings permissions keep
+# everything else.
+ADMIN_ONLY_SETTING_KEYS = frozenset(
+    {key for key in AppSettingsUpdate.model_fields if key.startswith("ldap_")}
+    | {
+        "local_login_enabled",
+        "session_max_hours",
+        "external_url",
+        "prometheus_enabled",
+        "prometheus_token",
+        "local_backup_path",
+        "notification_submitter_email_enabled",
+    }
+)

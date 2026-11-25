@@ -70,6 +70,18 @@ describe('invalidateArchiveAndProjectViews', () => {
 
     await invalidateArchiveAndProjectViews({ invalidateQueries } as unknown as QueryClient);
 
-    expect(settled).toBe(6);
+    expect(settled).toBe(9); // the list, the archive page and calendar (3), the project views (5)
+  });
+});
+
+// Archive redesign P4: an edit or delete also shows on the archive's page
+// (its archive and prints) and in the calendar's prints.
+describe('invalidateArchiveAndProjectViews and the archive page', () => {
+  it("refreshes the archive page's archive and prints and the calendar", async () => {
+    const { client, invalidateQueries } = mockClient();
+
+    await invalidateArchiveAndProjectViews(client);
+
+    expect(keysFrom(invalidateQueries)).toEqual(expect.arrayContaining(['archive', 'archive-runs', 'calendar-runs']));
   });
 });

@@ -75,7 +75,7 @@ class TestRestartRecovery:
         the case on demand instead."""
         from backend.app.main import _restore_printable_objects
 
-        state = MagicMock(subtask_id=subtask_id)
+        state = MagicMock(subtask_id=subtask_id, subtask_name="job", gcode_file="", current_print="")
         db = _db(MagicMock())
 
         with (

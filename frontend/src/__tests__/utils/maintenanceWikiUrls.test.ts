@@ -65,6 +65,17 @@ describe('getMaintenanceWikiUrl', () => {
     });
   });
 
+  describe('P1 belt tension (#3302)', () => {
+    // Bambu Lab's belt page covers X1 and P1 ("X1/P1 Series Belt tensioning
+    // procedure"); there is no P1 page of its own. The link went to the P1
+    // series' general maintenance recommendations instead.
+    it.each(['P1S', 'P1P', 'P1 S'])('%s links to the X1/P1 belt tensioning page', (model) => {
+      expect(getMaintenanceWikiUrl('Check Belt Tension', model)).toBe(
+        'https://wiki.bambulab.com/en/x1/maintenance/belt-tension',
+      );
+    });
+  });
+
   describe('regression: other families untouched', () => {
     it('X1C belt tension unchanged', () => {
       expect(getMaintenanceWikiUrl('Check Belt Tension', 'X1C')).toBe(
@@ -110,6 +121,22 @@ describe('getMaintenanceWikiUrl', () => {
     it('returns null for empty model', () => {
       expect(getMaintenanceWikiUrl('Lubricate Steel Rods', null)).toBeNull();
       expect(getMaintenanceWikiUrl('Lubricate Steel Rods', '')).toBeNull();
+    });
+  });
+
+  describe('H3C', () => {
+    it('links belt tension to the H3C guide', () => {
+      expect(getMaintenanceWikiUrl('Check Belt Tension', 'H3C')).toBe(
+        'https://wiki.bambulab.com/en/h3c/maintenance/belt_tension',
+      );
+      expect(getMaintenanceWikiUrl('Check Belt Tension', 'N10')).toBe(
+        'https://wiki.bambulab.com/en/h3c/maintenance/belt_tension',
+      );
+    });
+
+    it('does not take the H2 or carbon-rod pages', () => {
+      expect(getMaintenanceWikiUrl('Clean Carbon Rods', 'H3C')).toBeNull();
+      expect(getMaintenanceWikiUrl('Lubricate Linear Rails', 'H3C')).toBeNull();
     });
   });
 });

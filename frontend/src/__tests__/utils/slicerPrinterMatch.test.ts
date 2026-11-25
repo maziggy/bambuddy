@@ -4,6 +4,10 @@ import {
   matchesPrinterModelSuffix,
   presetCompatibility,
   EMPTY_COMPATIBILITY_INDEX,
+  extractPresetModel,
+  parseCompatiblePrinters,
+  presetNozzleSize,
+  printerPresetName,
 } from '../../utils/slicerPrinterMatch';
 
 const X1C = 'Bambu Lab X1 Carbon 0.4 nozzle';
@@ -630,5 +634,54 @@ describe('presetCompatibility — printer preset saved under a name of its own (
     expect(
       presetCompatibility({ name: '0.16mm Balanced Quality @BBL H2D' }, 'process', 'constructor', index),
     ).toBe('unknown');
+  });
+});
+
+describe('third-party nozzle size spellings (#3731)', () => {
+  const A1_02 = 'Bambu Lab A1 0.2 nozzle';
+  const A1_04 = 'Bambu Lab A1 0.4 nozzle';
+  const forms = [
+    'Elegoo PLA Matte @BBL A1 0.2',
+    'Elegoo PLA Matte @BBL A1 0.2mm',
+    'Elegoo PLA Matte @BBL A1 0.2 nozzle',
+    'Elegoo PLA Matte @BBL A1 0.2 Nozzle',
+    'Elegoo PLA Matte @BBL A1 0.2mm nozzle',
+    'Elegoo PLA Matte @BBL A1 0.2mm Nozzle',
+    'Elegoo PLA Matte @BBL A1 0.2 nozzle (foo-bar)',
+    'Elegoo PLA Matte @Bambu Lab A1 0.2mm nozzle',
+  ];
+
+  it.each(forms)('reads the model and size of "%s"', (name) => {
+    expect(extractPresetModel(name, PRINTER_MODELS)).toBe('A1');
+    expect(presetNozzleSize(name)).toBe('0.2');
+  });
+
+  it.each(forms)('matches "%s" to the A1 0.2 and not the A1 0.4', (name) => {
+    const index = buildCompatibilityIndex(PRINTER_MODELS);
+    expect(presetCompatibility({ name }, 'filament', A1_02, index)).toBe('match');
+    expect(presetCompatibility({ name }, 'filament', A1_04, index)).toBe('mismatch');
+  });
+
+  it('never cuts a model name that ends in a number', () => {
+    expect(extractPresetModel('PLA @BBL Q 2', {})).toBe('Q 2');
+    expect(presetNozzleSize('PLA @BBL Q 2')).toBeNull();
+    expect(extractPresetModel('PLA @BBL A1 mini', {})).toBe('A1 mini');
+    expect(presetNozzleSize('PLA @BBL X1C')).toBeNull();
+  });
+});
+
+describe('printerPresetName and parseCompatiblePrinters (#3731)', () => {
+  it('builds the slicer printer preset name from a model code and size', () => {
+    expect(printerPresetName('X1C', '0.2', PRINTER_MODELS)).toBe('Bambu Lab X1 Carbon 0.2 nozzle');
+    expect(printerPresetName('A1', '0.4', PRINTER_MODELS)).toBe('Bambu Lab A1 0.4 nozzle');
+    expect(printerPresetName('Q9', '0.4', PRINTER_MODELS)).toBeNull();
+  });
+
+  it('parses the stored JSON list and gives up on anything else', () => {
+    expect(parseCompatiblePrinters('["Bambu Lab A1 0.2 nozzle", 3]')).toEqual(['Bambu Lab A1 0.2 nozzle']);
+    expect(parseCompatiblePrinters('[]')).toBeNull();
+    expect(parseCompatiblePrinters('not json')).toBeNull();
+    expect(parseCompatiblePrinters('{"a": 1}')).toBeNull();
+    expect(parseCompatiblePrinters(null)).toBeNull();
   });
 });

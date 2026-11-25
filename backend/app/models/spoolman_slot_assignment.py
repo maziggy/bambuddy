@@ -5,6 +5,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
 
+AMS_ID_CHECK = "(ams_id >= 0 AND ams_id <= 7) OR ams_id = 32 OR (ams_id >= 128 AND ams_id <= 191) OR ams_id = 255"
+# Slots 0-3; 4-8 only on the AMS 3H (32) and among an H3C's external inputs (255).
+TRAY_ID_CHECK = "tray_id >= 0 AND (tray_id <= 3 OR (ams_id IN (32, 255) AND tray_id <= 8))"
+
 
 class SpoolmanSlotAssignment(Base):
     """Assignment of a Spoolman spool to a specific AMS slot on a printer.
@@ -27,15 +31,12 @@ class SpoolmanSlotAssignment(Base):
 
     __table_args__ = (
         UniqueConstraint("printer_id", "ams_id", "tray_id", name="uq_slot_assignment"),
-        # 0-7: standard AMS units. 128-191: AMS-HT (each unit uses ams_id 128+,
-        # single tray). 255: external / VT tray. Matches the value range the
-        # internal `spool_assignment` table accepts. See #1274 — H2C with
-        # AMS-HT on the left nozzle reports ams_id=128.
-        CheckConstraint(
-            "(ams_id >= 0 AND ams_id <= 7) OR (ams_id >= 128 AND ams_id <= 191) OR ams_id = 255",
-            name="ck_ams_id_range",
-        ),
-        CheckConstraint("tray_id >= 0 AND tray_id <= 3", name="ck_tray_id_range"),
+        # 0-7: standard AMS units. 32: the H3C's AMS 3H. 128-191: AMS-HT (each
+        # unit uses ams_id 128+, single tray). 255: external / VT tray. Matches
+        # the value range the internal `spool_assignment` table accepts. See
+        # #1274 — H2C with AMS-HT on the left nozzle reports ams_id=128.
+        CheckConstraint(AMS_ID_CHECK, name="ck_ams_id_range"),
+        CheckConstraint(TRAY_ID_CHECK, name="ck_tray_id_range"),
     )
 
 

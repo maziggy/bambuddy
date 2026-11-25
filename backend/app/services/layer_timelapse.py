@@ -4,6 +4,7 @@ Captures a frame on each layer change and stitches them into a video on print co
 """
 
 import asyncio
+import contextlib
 import logging
 import shutil
 import time
@@ -14,7 +15,7 @@ from pathlib import Path
 from backend.app.core.config import settings
 from backend.app.services.camera import apply_camera_rotation
 from backend.app.services.external_camera import capture_frame
-from backend.app.utils.ffmpeg_output import NO_FFMPEG_OUTPUT, summarize_ffmpeg_stderr
+from backend.app.utils.ffmpeg_output import NO_FFMPEG_OUTPUT, X264_BOUNDED_ARGS, summarize_ffmpeg_stderr
 
 logger = logging.getLogger(__name__)
 
@@ -23,12 +24,34 @@ _active_sessions: dict[int, "TimelapseSession"] = {}
 
 # Sessions whose frames are being stitched right now: {printer_id: session_id}.
 # on_print_complete removes the session from _active_sessions *before* handing
-# frames_dir to ffmpeg, so for the length of a stitch (up to 300s) nothing in
-# _active_sessions marks that directory as in use. Without this second registry
-# the only thing standing between an in-progress stitch and
-# cleanup_orphaned_timelapse_sessions() is the age margin — whose default is
-# exactly the stitch timeout, so there is no headroom at all.
-_finalizing_sessions: dict[int, str] = {}
+# frames_dir to ffmpeg, so for the length of a stitch (up to an hour, see
+# _stitch_timeout) nothing in _active_sessions marks that directory as in use.
+# Without this second registry the only thing standing between an in-progress
+# stitch and cleanup_orphaned_timelapse_sessions() is the age margin, which is
+# far shorter than a long stitch.
+# A set per printer: a short print can finish while a long one still stitches.
+_finalizing_sessions: dict[int, set[str]] = {}
+
+# Stitch deadline: a libx264 encode of every frame takes about this long per
+# frame on a Raspberry Pi, never less than 5 minutes and never more than an
+# hour. A flat 300 s lost the timelapse of any print with more than a few
+# hundred layers on slow hardware.
+_STITCH_SECONDS_PER_FRAME = 0.5
+_STITCH_MIN_SECONDS = 300.0
+_STITCH_MAX_SECONDS = 3600.0
+
+# Frames larger than 1080p (counted in pixels, so a portrait camera keeps its
+# shape) are scaled down to it; both sides are made even, as yuv420p requires.
+STITCH_SCALE_FILTER = "scale=w='if(gt(iw*ih,2073600),trunc(iw*sqrt(2073600/(iw*ih))/2)*2,trunc(iw/2)*2)':h=-2"
+
+# A stitch that fails keeps its frames, marked with this file, so the video can
+# still be made from them; the orphan janitor leaves them for this long.
+KEPT_FRAMES_MARKER = "STITCH_FAILED"
+KEEP_FAILED_FRAMES_SECONDS = 24 * 60 * 60
+
+
+def _stitch_timeout(frame_count: int) -> float:
+    return min(max(_STITCH_MIN_SECONDS, frame_count * _STITCH_SECONDS_PER_FRAME), _STITCH_MAX_SECONDS)
 
 
 def get_ffmpeg_path() -> str | None:
@@ -58,6 +81,10 @@ class TimelapseSession:
     frame_count: int = 0
     session_id: str = field(default_factory=lambda: datetime.now().strftime("%Y%m%d_%H%M%S"))
     frames_dir: Path = field(init=False)
+    # Set once ffmpeg has been started on the frames: only a stitch that got
+    # that far and failed keeps them. Without ffmpeg, or without frames, there
+    # is nothing a later attempt could do differently.
+    ffmpeg_ran: bool = field(default=False, init=False)
 
     def __post_init__(self):
         self.frames_dir = settings.base_dir / "timelapse_frames" / str(self.printer_id) / self.session_id
@@ -168,6 +195,8 @@ class TimelapseSession:
             "0",
             "-i",
             str(concat_file),
+            "-vf",
+            STITCH_SCALE_FILTER,
             "-c:v",
             "libx264",
             "-pix_fmt",
@@ -176,9 +205,16 @@ class TimelapseSession:
             "medium",
             "-crf",
             "23",
+            # Bounded memory; see X264_BOUNDED_ARGS (#3292).
+            *X264_BOUNDED_ARGS,
             str(output_path),
         ]
 
+        process = None
+        timeout = _STITCH_MIN_SECONDS
+        # Marked before ffmpeg starts, so a restart in the middle of a stitch
+        # (which can now run an hour) keeps the frames too.
+        self.mark_kept("The timelapse was being stitched when Bambuddy stopped.")
         try:
             process = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -186,24 +222,66 @@ class TimelapseSession:
                 stderr=asyncio.subprocess.PIPE,
                 cwd=str(self.frames_dir),  # Run in frames dir so relative paths work
             )
+            self.ffmpeg_ran = True
 
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=300)
+            timeout = _stitch_timeout(len(frame_files))
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
 
             if process.returncode != 0:
                 logger.error("ffmpeg timelapse stitch failed: %s", summarize_ffmpeg_stderr(stderr) or NO_FFMPEG_OUTPUT)
+                output_path.unlink(missing_ok=True)
                 return False
 
             logger.info("Created timelapse video: %s (%s frames)", output_path, self.frame_count)
             return True
 
         except TimeoutError:
-            logger.error("Timelapse stitching timed out")
-            if process:
-                process.kill()
+            logger.error("Timelapse stitching timed out after %.0f s (%s frames)", timeout, len(frame_files))
+            output_path.unlink(missing_ok=True)
             return False
         except Exception as e:
             logger.error("Timelapse stitch failed: %s", e)
+            output_path.unlink(missing_ok=True)
             return False
+        except asyncio.CancelledError:
+            # A stitch cut short leaves a truncated file behind; not a video.
+            output_path.unlink(missing_ok=True)
+            raise
+        finally:
+            # However the stitch ends -- its deadline, an error, or the task
+            # being cancelled -- an ffmpeg it started does not keep running and
+            # holding memory (#3292).
+            if process is not None and process.returncode is None:
+                with contextlib.suppress(ProcessLookupError):
+                    process.kill()
+                try:
+                    await asyncio.wait_for(process.wait(), 10)
+                except TimeoutError:
+                    logger.warning("ffmpeg did not exit after the timelapse stitch was killed")
+
+    def mark_kept(self, reason: str) -> bool:
+        """Mark the frames to be kept for KEEP_FAILED_FRAMES_SECONDS."""
+        try:
+            marker = self.frames_dir / KEPT_FRAMES_MARKER  # SEC-PATH-OK: this module's constant filename
+            marker.write_text(
+                f"{reason}\nThese frames are kept for 24 hours. To make the video from them, run in this folder:\n"
+                f'ffmpeg -f concat -safe 0 -i frames.txt -vf "{STITCH_SCALE_FILTER}" -c:v libx264 -pix_fmt yuv420p -threads 2 timelapse.mp4\n'
+            )
+            return True
+        except OSError as e:
+            logger.warning("Could not mark timelapse frames as kept: %s", e)
+            return False
+
+    def keep_frames(self) -> None:
+        """Keep the frames of a failed stitch for a day instead of deleting them."""
+        if self.mark_kept("The timelapse could not be stitched."):
+            logger.warning(
+                "Timelapse frames for printer %s kept for 24 hours at %s (stitching failed)",
+                self.printer_id,
+                self.frames_dir,
+            )
+        else:
+            self.cleanup()
 
     def cleanup(self):
         """Remove temporary frames directory."""
@@ -280,39 +358,52 @@ async def on_print_complete(printer_id: int) -> Path | None:
     Returns:
         Path to stitched video, or None if no session or stitching failed
     """
-    session = _active_sessions.pop(printer_id, None)
+    session = _active_sessions.get(printer_id)
     if not session:
         return None
 
-    if session.frame_count == 0:
-        logger.info("No timelapse frames captured for printer %s", printer_id)
-        session.cleanup()
-        return None
-
-    # Create output path in parent of frames dir
-    output_path = session.frames_dir.parent / f"timelapse_{session.session_id}.mp4"
-
-    # The session is already out of _active_sessions, so mark it finalizing for
-    # the length of the stitch — otherwise a sweep running now sees a frames
-    # directory that matches no session and whose mtime is the last layer's
-    # write, which on a tall print's final layer is easily older than the age
-    # margin, and deletes ffmpeg's input from under it.
-    _finalizing_sessions[printer_id] = session.session_id
+    # Marked finalizing for the length of the stitch, and before it leaves
+    # _active_sessions (the janitor runs in a thread) — otherwise a sweep sees
+    # a frames directory that matches no session and whose mtime is the last
+    # layer's write, which on a tall print's final layer is easily older than
+    # the age margin, and deletes ffmpeg's input from under it.
+    _finalizing_sessions.setdefault(printer_id, set()).add(session.session_id)
+    _active_sessions.pop(printer_id, None)
     try:
+        if session.frame_count == 0:
+            logger.info("No timelapse frames captured for printer %s", printer_id)
+            session.cleanup()
+            return None
+
+        # Create output path in parent of frames dir
+        output_path = session.frames_dir.parent / f"timelapse_{session.session_id}.mp4"
         success = await session.stitch(output_path)
         if success:
             # Cleanup frames after successful stitch
             session.cleanup()
             return output_path
-        else:
-            session.cleanup()
-            return None
+        _keep_or_clean(session)
+        return None
     except Exception as e:
         logger.error("Timelapse completion failed: %s", e)
-        session.cleanup()
+        _keep_or_clean(session)
         return None
     finally:
-        _finalizing_sessions.pop(printer_id, None)
+        finalizing = _finalizing_sessions.get(printer_id)
+        if finalizing is not None:
+            finalizing.discard(session.session_id)
+            if not finalizing:
+                _finalizing_sessions.pop(printer_id, None)
+
+
+def _keep_or_clean(session: "TimelapseSession") -> None:
+    """After a failed stitch: keep the frames if ffmpeg ran on them (a slow
+    encode, an ffmpeg error), so the video can still be made; delete them if it
+    never could (no ffmpeg, no frames)."""
+    if session.ffmpeg_ran:
+        session.keep_frames()
+    else:
+        session.cleanup()
 
 
 def cancel_session(printer_id: int):
@@ -325,11 +416,6 @@ def cancel_session(printer_id: int):
     if session:
         session.cleanup()
         logger.info("Cancelled timelapse session for printer %s", printer_id)
-
-
-def get_active_sessions() -> dict[int, TimelapseSession]:
-    """Get all active timelapse sessions."""
-    return _active_sessions.copy()
 
 
 def cleanup_orphaned_timelapse_sessions(min_age_seconds: float = 300) -> int:
@@ -356,13 +442,15 @@ def cleanup_orphaned_timelapse_sessions(min_age_seconds: float = 300) -> int:
     * `_active_sessions` covers a session that is still capturing.
     * `_finalizing_sessions` covers the stitch window. on_print_complete drops
       the session from `_active_sessions` before handing frames_dir to ffmpeg,
-      so without this the directory matches no session for up to 300s while
-      being actively read.
+      so without this the directory matches no session for up to an hour
+      (`_stitch_timeout`) while being actively read.
     * `min_age_seconds` covers the remaining gap - a session in the middle of
       being created, and the stitched `.mp4` between ffmpeg finishing it and
       the caller attaching and unlinking it. Both are freshly written, so the
-      margin has real headroom there; it did NOT have any for the stitch
-      window, whose length is bounded by the same 300s.
+      margin has real headroom there; it has none for the stitch window.
+
+    Frames a failed stitch kept (`KEPT_FRAMES_MARKER`) stay for
+    `KEEP_FAILED_FRAMES_SECONDS`, counted from the marker.
 
     Returns the number of orphaned directories/files removed.
     """
@@ -381,10 +469,8 @@ def cleanup_orphaned_timelapse_sessions(min_age_seconds: float = 300) -> int:
             continue
 
         active_session = _active_sessions.get(printer_id)
-        in_use_session_ids = {
-            active_session.session_id if active_session else None,
-            _finalizing_sessions.get(printer_id),
-        } - {None}
+        in_use_session_ids = {active_session.session_id if active_session else None} - {None}
+        in_use_session_ids |= _finalizing_sessions.get(printer_id, set())
 
         for entry in printer_dir.iterdir():
             # Frame dirs are named "<session_id>/"; stitched-but-not-yet-
@@ -402,6 +488,9 @@ def cleanup_orphaned_timelapse_sessions(min_age_seconds: float = 300) -> int:
                 continue
             try:
                 if now - entry.stat().st_mtime < min_age_seconds:
+                    continue
+                marker = entry / KEPT_FRAMES_MARKER if entry.is_dir() else None
+                if marker is not None and marker.exists() and now - marker.stat().st_mtime < KEEP_FAILED_FRAMES_SECONDS:
                     continue
             except OSError:
                 continue

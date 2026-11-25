@@ -1,7 +1,9 @@
 /**
  * A running print's cost is an estimate until completion re-prices it from
  * the spools that actually fed it (#3261). The card says so; a finished
- * print's cost is shown as final.
+ * print's cost is shown as final. A run that failed or was cancelled leaves
+ * one full print's grams and cost on the archive, and the card says that
+ * the run's own figures are in the Print Log (#3318).
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -50,7 +52,27 @@ const archives = [
     completed_at: '2026-10-07T11:00:00Z',
     cost: 10.94,
   },
+  {
+    ...baseArchive,
+    id: 3,
+    filename: 'failed.gcode.3mf',
+    print_name: 'Failed',
+    status: 'failed',
+    completed_at: '2026-10-07T10:02:00Z',
+    cost: 20.22,
+  },
+  {
+    ...baseArchive,
+    id: 4,
+    filename: 'cancelled.gcode.3mf',
+    print_name: 'Cancelled',
+    status: 'cancelled',
+    completed_at: '2026-10-07T10:05:00Z',
+    cost: 5.5,
+  },
 ];
+
+const FULL_PRINT = 'One full print of this file. What this run used is in the Print Log';
 
 describe('ArchivesPage cost estimate (#3261)', () => {
   beforeEach(() => {
@@ -76,9 +98,11 @@ describe('ArchivesPage cost estimate (#3261)', () => {
     render(<ArchivesPage />);
 
     await waitFor(() => {
-      expect(screen.getAllByTestId('archive-cost')).toHaveLength(2);
+      expect(screen.getAllByTestId('archive-cost')).toHaveLength(4);
     });
-    const [running, finished] = screen.getAllByTestId('archive-cost');
+    const costs = screen.getAllByTestId('archive-cost');
+    const running = costs.find((el) => el.textContent?.endsWith('7.80'))!;
+    const finished = costs.find((el) => el.textContent?.endsWith('10.94'))!;
 
     expect(running.textContent).toMatch(/^~.*7\.80$/);
     expect(running).toHaveAttribute('title', 'Estimate — the final cost is set when the print finishes');
@@ -86,5 +110,27 @@ describe('ArchivesPage cost estimate (#3261)', () => {
     expect(finished.textContent).not.toContain('~');
     expect(finished.textContent).toMatch(/10\.94$/);
     expect(finished).not.toHaveAttribute('title');
+  });
+
+  it('says a failed or cancelled run shows one full print, not what the run used (#3318)', async () => {
+    render(<ArchivesPage />);
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('archive-cost')).toHaveLength(4);
+    });
+    const costs = screen.getAllByTestId('archive-cost');
+    const grams = screen.getAllByTestId('archive-grams');
+    const byCost = (value: string) => costs.findIndex((el) => el.textContent?.endsWith(value));
+
+    for (const value of ['20.22', '5.50']) {
+      const i = byCost(value);
+      expect(costs[i].textContent).not.toContain('~');
+      expect(costs[i]).toHaveAttribute('title', FULL_PRINT);
+      expect(grams[i]).toHaveAttribute('title', FULL_PRINT);
+    }
+    for (const value of ['7.80', '10.94']) {
+      expect(costs[byCost(value)]).not.toHaveAttribute('title', FULL_PRINT);
+      expect(grams[byCost(value)]).not.toHaveAttribute('title');
+    }
   });
 });

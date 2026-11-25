@@ -44,3 +44,28 @@ export function resolveArchiveSlicerAmsMapping(
 
   return saved.mapping;
 }
+
+/**
+ * The slicer's saved pick for the print being set up, if it applies to `printerId`.
+ *
+ * A virtual printer's queue job prints a File Manager file and has no archive
+ * until it prints, so while editing one its own kept pick (`slicer_ams_mapping`,
+ * for the job's printer) is the one. Otherwise the archive's, as
+ * `resolveArchiveSlicerAmsMapping`; a library file without a job has none.
+ */
+export function resolveSlicerAmsMapping({
+  queueItem,
+  isLibraryFile,
+  archiveExtraData,
+  printerId,
+}: {
+  queueItem?: { printer_id: number | null; slicer_ams_mapping?: number[] | null } | null;
+  isLibraryFile: boolean;
+  archiveExtraData: Record<string, unknown> | null | undefined;
+  printerId: number | null | undefined;
+}): number[] | undefined {
+  if (queueItem?.slicer_ams_mapping?.length && printerId != null && queueItem.printer_id === printerId) {
+    return queueItem.slicer_ams_mapping;
+  }
+  return isLibraryFile ? undefined : resolveArchiveSlicerAmsMapping(archiveExtraData, printerId);
+}

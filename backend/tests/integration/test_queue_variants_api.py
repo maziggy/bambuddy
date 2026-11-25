@@ -164,6 +164,34 @@ class TestQueueWithVariants:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_the_same_model_in_another_case_is_the_same_printers(
+        self, async_client, db_session, sliced_file_factory, printer_factory
+    ):
+        """Matched without regard to case, as the scheduler matches (Q-U8)."""
+        await printer_factory(model="H2S")
+        a = await sliced_file_factory("H2S")
+        b = await sliced_file_factory("h2s")
+
+        r = await _queue_variants(async_client, a.id, b.id)
+        assert r.status_code == 400
+        assert "different printers" in r.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_candidate_takes_the_printers_spelling(
+        self, async_client, db_session, sliced_file_factory, printer_factory
+    ):
+        await printer_factory(model="H2S")
+        await printer_factory(model="X1C")
+        a = await sliced_file_factory("h2s")
+        b = await sliced_file_factory("X1C")
+
+        r = await _queue_variants(async_client, a.id, b.id)
+        assert r.status_code == 200, r.text
+        assert [v.target_model for v in await _variants_of(db_session, r.json()["id"])] == ["H2S", "X1C"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_rejects_the_same_file_twice(self, async_client, sliced_file_factory, printer_factory):
         await printer_factory(model="H2S")
         f = await sliced_file_factory("H2S")

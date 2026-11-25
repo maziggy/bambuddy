@@ -153,7 +153,7 @@ async def test_end_to_end_the_pla_job_skips_preheat_entirely(scheduler):
     """
     db = AsyncMock()
     client = _make_client()
-    archive = SimpleNamespace(bed_temperature=None)
+    archive = SimpleNamespace(file_path=None, bed_temperature=None)
 
     with (
         patch.object(scheduler, "_get_bool_setting", AsyncMock(return_value=True)),
@@ -184,7 +184,7 @@ async def test_end_to_end_a_mapped_asa_job_still_heats_the_bed_to_drive_the_cham
     chamber-heating bed temperature."""
     db = AsyncMock()
     client = _make_client()
-    archive = SimpleNamespace(bed_temperature=None)
+    archive = SimpleNamespace(file_path=None, bed_temperature=None)
     mapping = json.dumps([-1, -1, -1, ASA_TRAY])
 
     with (

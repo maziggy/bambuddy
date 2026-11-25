@@ -15,7 +15,7 @@ import pytest
 class TestTimelapseSessionManagement:
     """Tests for timelapse session lifecycle."""
 
-    def test_start_session_creates_new_session(self):
+    def test_start_session_creates_new_session(self, tmp_path):
         """Verify start_session creates and registers a new session."""
         from backend.app.services.layer_timelapse import (
             _active_sessions,
@@ -28,7 +28,7 @@ class TestTimelapseSessionManagement:
         _active_sessions.clear()
 
         with patch("backend.app.services.layer_timelapse.settings") as mock_settings:
-            mock_settings.base_dir = Path("/tmp/test_bambuddy")
+            mock_settings.base_dir = tmp_path
 
             session = start_session(
                 printer_id=1,
@@ -52,7 +52,7 @@ class TestTimelapseSessionManagement:
             # Cleanup
             cancel_session(1)
 
-    def test_start_session_cancels_existing(self):
+    def test_start_session_cancels_existing(self, tmp_path):
         """Verify starting a new session cancels any existing session."""
         from backend.app.services.layer_timelapse import (
             _active_sessions,
@@ -64,7 +64,7 @@ class TestTimelapseSessionManagement:
         _active_sessions.clear()
 
         with patch("backend.app.services.layer_timelapse.settings") as mock_settings:
-            mock_settings.base_dir = Path("/tmp/test_bambuddy")
+            mock_settings.base_dir = tmp_path
 
             # Start first session
             session1 = start_session(1, 100, "http://cam1/", "mjpeg")
@@ -96,7 +96,7 @@ class TestTimelapseSessionManagement:
         result = get_session(999)
         assert result is None
 
-    def test_cancel_session_removes_and_cleans_up(self):
+    def test_cancel_session_removes_and_cleans_up(self, tmp_path):
         """Verify cancel_session removes session and cleans up."""
         from backend.app.services.layer_timelapse import (
             _active_sessions,
@@ -108,7 +108,7 @@ class TestTimelapseSessionManagement:
         _active_sessions.clear()
 
         with patch("backend.app.services.layer_timelapse.settings") as mock_settings:
-            mock_settings.base_dir = Path("/tmp/test_bambuddy")
+            mock_settings.base_dir = tmp_path
 
             session = start_session(1, 100, "http://cam/", "mjpeg")
 
@@ -135,14 +135,14 @@ class TestTimelapseSessionManagement:
 class TestTimelapseSession:
     """Tests for TimelapseSession class."""
 
-    def test_session_id_format(self):
+    def test_session_id_format(self, tmp_path):
         """Verify session ID follows expected datetime format."""
         from backend.app.services.layer_timelapse import TimelapseSession, _active_sessions
 
         _active_sessions.clear()
 
         with patch("backend.app.services.layer_timelapse.settings") as mock_settings:
-            mock_settings.base_dir = Path("/tmp/test_bambuddy")
+            mock_settings.base_dir = tmp_path
 
             session = TimelapseSession(
                 printer_id=1,
@@ -184,12 +184,12 @@ class TestLayerChangeLogic:
     """Tests for layer change capture logic."""
 
     @pytest.mark.asyncio
-    async def test_capture_layer_only_on_increase(self):
+    async def test_capture_layer_only_on_increase(self, tmp_path):
         """Verify frames are only captured when layer increases."""
         from backend.app.services.layer_timelapse import TimelapseSession
 
         with patch("backend.app.services.layer_timelapse.settings") as mock_settings:
-            mock_settings.base_dir = Path("/tmp/test")
+            mock_settings.base_dir = tmp_path
 
             with patch.object(Path, "mkdir"):
                 session = TimelapseSession(1, 100, "http://test/", "mjpeg")
@@ -224,12 +224,12 @@ class TestLayerChangeLogic:
                         assert session.frame_count == 2
 
     @pytest.mark.asyncio
-    async def test_capture_layer_handles_failed_capture(self):
+    async def test_capture_layer_handles_failed_capture(self, tmp_path):
         """Verify failed capture returns False but updates layer."""
         from backend.app.services.layer_timelapse import TimelapseSession
 
         with patch("backend.app.services.layer_timelapse.settings") as mock_settings:
-            mock_settings.base_dir = Path("/tmp/test")
+            mock_settings.base_dir = tmp_path
 
             with patch.object(Path, "mkdir"):
                 session = TimelapseSession(1, 100, "http://test/", "mjpeg")
@@ -344,7 +344,7 @@ class TestOnLayerChange:
     """Tests for the on_layer_change callback."""
 
     @pytest.mark.asyncio
-    async def test_on_layer_change_captures_when_session_exists(self):
+    async def test_on_layer_change_captures_when_session_exists(self, tmp_path):
         """Verify on_layer_change triggers capture when session exists."""
         from backend.app.services.layer_timelapse import (
             _active_sessions,
@@ -356,7 +356,7 @@ class TestOnLayerChange:
         _active_sessions.clear()
 
         with patch("backend.app.services.layer_timelapse.settings") as mock_settings:
-            mock_settings.base_dir = Path("/tmp/test")
+            mock_settings.base_dir = tmp_path
 
             with patch.object(Path, "mkdir"):
                 session = start_session(1, 100, "http://test/", "mjpeg")
@@ -379,39 +379,6 @@ class TestOnLayerChange:
 
         # Should not raise
         await on_layer_change(999, 10)
-
-
-class TestGetActiveSessions:
-    """Tests for get_active_sessions."""
-
-    def test_get_active_sessions_returns_copy(self):
-        """Verify get_active_sessions returns a copy, not the original dict."""
-        from backend.app.services.layer_timelapse import (
-            _active_sessions,
-            cancel_session,
-            get_active_sessions,
-            start_session,
-        )
-
-        _active_sessions.clear()
-
-        with patch("backend.app.services.layer_timelapse.settings") as mock_settings:
-            mock_settings.base_dir = Path("/tmp/test")
-
-            with patch.object(Path, "mkdir"):
-                start_session(1, 100, "http://test/", "mjpeg")
-
-                sessions = get_active_sessions()
-
-                # Should be a copy
-                assert sessions is not _active_sessions
-                assert 1 in sessions
-
-                # Modifying copy shouldn't affect original
-                sessions.clear()
-                assert 1 in _active_sessions
-
-                cancel_session(1)
 
 
 class TestCleanupOrphanedTimelapseSessions:
@@ -554,7 +521,7 @@ class TestCleanupOrphanedTimelapseSessions:
 
             # Exactly the state on_print_complete is in while ffmpeg runs.
             _active_sessions.pop(1, None)
-            _finalizing_sessions[1] = session.session_id
+            _finalizing_sessions[1] = {session.session_id}
 
             removed = cleanup_orphaned_timelapse_sessions(min_age_seconds=300)
 

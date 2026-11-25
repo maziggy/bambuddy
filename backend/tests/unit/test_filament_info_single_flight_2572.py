@@ -57,8 +57,8 @@ async def test_concurrent_misses_share_one_cloud_call():
     assert cloud.calls == 1, "the two concurrent misses did not coalesce"
     assert leader_info == {"name": "PLA Matte", "k": 0.021}
     assert follower_info == leader_info
-    assert cloud_mod._filament_cache["GFSA00"] == leader_info
-    assert "GFSA00" not in cloud_mod._filament_inflight  # cleaned up
+    assert cloud_mod._filament_cache[(None, "GFSA00")] == leader_info
+    assert (None, "GFSA00") not in cloud_mod._filament_inflight  # cleaned up
 
 
 @pytest.mark.asyncio
@@ -66,7 +66,7 @@ async def test_cache_hit_skips_cloud_entirely():
     gate = asyncio.Event()
     gate.set()
     cloud = _FakeCloud(gate)
-    cloud_mod._filament_cache["GFSA00"] = {"name": "cached", "k": None}
+    cloud_mod._filament_cache[(None, "GFSA00")] = {"name": "cached", "k": None}
 
     info = await _resolve_cloud_filament("GFSA00", cloud)
 
@@ -83,5 +83,5 @@ async def test_failed_fetch_returns_none_and_leaves_no_inflight():
     info = await _resolve_cloud_filament("GFSA00", cloud)
 
     assert info is None
-    assert "GFSA00" not in cloud_mod._filament_cache
-    assert "GFSA00" not in cloud_mod._filament_inflight
+    assert (None, "GFSA00") not in cloud_mod._filament_cache
+    assert (None, "GFSA00") not in cloud_mod._filament_inflight

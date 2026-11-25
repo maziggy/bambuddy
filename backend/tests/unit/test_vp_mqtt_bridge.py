@@ -714,6 +714,43 @@ class TestPushStatusCache:
         await bridge.stop()
 
     @pytest.mark.asyncio
+    async def test_an_unplugged_ams_leaves_the_slicer_cache(self):
+        """#3356: the printer card drops an AMS the printer reports unplugged;
+        the slicer must not go on seeing it. Shapes from an X1C capture: unit 1
+        comes with ams_exist_bits "2", and with the AMS unplugged every push
+        carries an empty unit list and "0"."""
+        server = _make_server()
+        bridge = _make_bridge(server)
+        await bridge.start()
+
+        def push(units, bits):
+            bridge._on_printer_raw(
+                f"device/{H2D_SERIAL}/report",
+                json.dumps(
+                    {
+                        "print": {
+                            "command": "push_status",
+                            "ams": {
+                                "ams": units,
+                                "ams_exist_bits": bits,
+                                "tray_exist_bits": "0",
+                                "power_on_flag": False,
+                            },
+                        }
+                    }
+                ).encode(),
+            )
+
+        push([{"id": "1", "tray": [{"id": "0", "tray_type": "PLA"}]}], "2")
+        await asyncio.sleep(0.01)
+        push([], "0")
+        await asyncio.sleep(0.01)
+
+        assert bridge.get_latest_print_state()["ams"]["ams"] == []
+
+        await bridge.stop()
+
+    @pytest.mark.asyncio
     async def test_tray_exist_bits_clears_empty_slots_in_slicer_cache(self):
         """#1726 (reported by @needo37): the bridge cache forwards the real
         printer's raw AMS payload to the slicer. Without the empty-slot

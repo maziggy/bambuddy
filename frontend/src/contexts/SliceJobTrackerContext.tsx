@@ -27,7 +27,6 @@ interface TrackedJob {
 
 interface SliceJobTrackerContextValue {
   trackJob: (id: number, kind: 'libraryFile' | 'archive', sourceName: string) => void;
-  activeJobs: TrackedJob[];
 }
 
 const SliceJobTrackerContext = createContext<SliceJobTrackerContextValue | null>(null);
@@ -290,7 +289,7 @@ export function SliceJobTrackerProvider({ children }: { children: ReactNode }) {
   }, [activeJobs.length, renderProgressToast]);
 
   return (
-    <SliceJobTrackerContext.Provider value={{ trackJob, activeJobs }}>
+    <SliceJobTrackerContext.Provider value={{ trackJob }}>
       {children}
       {sliceError && (
         <AlertModal

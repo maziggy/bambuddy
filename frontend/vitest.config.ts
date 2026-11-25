@@ -3,7 +3,9 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 
 export default defineConfig({
-  plugins: [react()],
+  // Locale files are plain string tables (no JSX) and some exceed Babel's
+  // 500 KB pretty-print limit, which printed a "[BABEL] Note" per file.
+  plugins: [react({ exclude: [/\/node_modules\//, /\/i18n\/locales\//] })],
   test: {
     globals: true,
     environment: 'jsdom',
@@ -14,6 +16,9 @@ export default defineConfig({
     },
     setupFiles: ['./src/__tests__/setup.ts'],
     testTimeout: 10000,
+    // Console output only from failing tests (Docker, test_frontend.sh and
+    // plain runs alike); pass --silent=false to see a passing test's logs.
+    silent: 'passed-only',
     include: ['src/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
     exclude: ['node_modules', 'dist'],
     coverage: {

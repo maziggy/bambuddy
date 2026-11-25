@@ -2,14 +2,18 @@
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes.settings import get_setting
 from backend.app.core.auth import ApiKeyActor, RequestActor, RequestPrinterScope, RequirePermissionIfAuthEnabled
+from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.core.printer_scope import PrinterScope
 from backend.app.models.user import User
 from backend.app.services.obico_detection import obico_detection_service, pop_frame
+from backend.app.services.secret_fields import SECRET_PLACEHOLDER, same_value
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +22,8 @@ router = APIRouter(prefix="/obico", tags=["obico"])
 
 class TestConnectionRequest(BaseModel):
     url: str
-    # Omitted entirely = test with the saved token; "" = test with no token.
+    # Omitted entirely or the placeholder = test with the saved token (against
+    # the saved URL only); "" = test with no token.
     token: str | None = None
 
 
@@ -78,16 +83,18 @@ async def get_printer_status(
 @router.post("/test-connection")
 async def test_connection(
     req: TestConnectionRequest,
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Ping the Obico ML API health endpoint and check the token. Returns ok + raw body."""
     if not req.url:
         return {"ok": False, "status_code": None, "body": None, "error": "URL is empty", "auth_ok": None}
     token = req.token
-    if token is None:
-        # Field omitted entirely — test what the service actually uses.
-        settings = await obico_detection_service._load_settings()
-        token = settings.get("ml_token") or ""
+    if token is None or token == SECRET_PLACEHOLDER:
+        # The saved token, which only goes to the saved URL.
+        if not same_value(req.url, await get_setting(db, "obico_ml_url")):
+            raise HTTPException(status_code=400, detail="Enter the token again: the URL changed")
+        token = await get_setting(db, "obico_ml_token") or ""
     return await obico_detection_service.test_connection(req.url, token)
 
 

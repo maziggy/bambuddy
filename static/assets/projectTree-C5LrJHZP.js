@@ -1,0 +1,1 @@
+function e(e,t){if(t===void 0)return e;let n=new Set([t]),r=!0;for(;r;){r=!1;for(let t of e)t.parent_id!==null&&n.has(t.parent_id)&&!n.has(t.id)&&(n.add(t.id),r=!0)}return e.filter(e=>!n.has(e.id))}function t(e,t){return e.filter(e=>e.status!==`archived`||e.id===t)}export{e as n,t};

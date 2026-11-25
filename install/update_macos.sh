@@ -287,6 +287,13 @@ fi
 
 create_backup
 
+# The code needs Python 3.11+. An install whose venv is older has not started
+# since then anyway; say so before stopping anything rather than half-update it.
+VENV_PY="$(dirname "$VENV_PIP")/python"
+if [ -x "$VENV_PY" ] && ! "$VENV_PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)'; then
+  die "Bambuddy needs Python 3.11 or newer, but this install's environment uses $("$VENV_PY" -c 'import platform; print(platform.python_version())'). Nothing has been changed. How to move it to Python 3.11: https://wiki.bambuddy.cool/reference/troubleshooting/#bambuddy-needs-python-311-or-newer"
+fi
+
 log "Stopping service: $SERVICE_NAME"
 launchctl unload "$PLIST_PATH"
 SERVICE_STOPPED=1
@@ -295,11 +302,15 @@ log "Updating code to origin/$BRANCH"
 git reset --hard "origin/$BRANCH"
 CODE_UPDATED=1
 
-if [ -x "$VENV_PIP" ] && [ -f requirements.txt ]; then
-  log "Updating Python dependencies"
-  "$VENV_PIP" install -r requirements.txt
+# requirements.lock holds the exact, tested versions; requirements.txt only
+# their lower bounds (kept as the fallback for a checkout without the lock).
+REQUIREMENTS=requirements.lock
+[ -f "$REQUIREMENTS" ] || REQUIREMENTS=requirements.txt
+if [ -x "$VENV_PIP" ] && [ -f "$REQUIREMENTS" ]; then
+  log "Updating Python dependencies ($REQUIREMENTS)"
+  "$VENV_PIP" install -r "$REQUIREMENTS"
 else
-  warn "Skipping Python dependency update (venv pip or requirements.txt missing)."
+  warn "Skipping Python dependency update (venv pip or requirements file missing)."
 fi
 
 if [ -f "$FRONTEND_DIR/package.json" ]; then

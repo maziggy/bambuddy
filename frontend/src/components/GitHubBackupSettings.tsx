@@ -20,7 +20,7 @@ import {
   RotateCcw,
   FolderArchive,
 } from 'lucide-react';
-import { api } from '../api/client';
+import { api, ApiError } from '../api/client';
 import type {
   GitHubBackupConfig,
   GitHubBackupConfigCreate,
@@ -58,12 +58,14 @@ interface StatusBadgeProps {
 }
 
 function StatusBadge({ status }: StatusBadgeProps) {
+  const { t } = useTranslation();
   if (!status) return null;
 
   const styles: Record<string, string> = {
     success: 'bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400',
     failed: 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400',
     skipped: 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400',
+    warning: 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400',
     running: 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400',
   };
 
@@ -71,13 +73,14 @@ function StatusBadge({ status }: StatusBadgeProps) {
     success: <CheckCircle className="w-3 h-3" />,
     failed: <XCircle className="w-3 h-3" />,
     skipped: <SkipForward className="w-3 h-3" />,
+    warning: <AlertTriangle className="w-3 h-3" />,
     running: <Loader2 className="w-3 h-3 animate-spin" />,
   };
 
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${styles[status] || 'bg-gray-500/20 text-gray-400'}`}>
       {icons[status]}
-      {status.charAt(0).toUpperCase() + status.slice(1)}
+      {t(`githubBackup.status.${status}`, { defaultValue: status.charAt(0).toUpperCase() + status.slice(1) })}
     </span>
   );
 }
@@ -146,7 +149,7 @@ export function GitHubBackupSettings() {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { t } = useTranslation();
-  const { hasPermission } = useAuth();
+  const { hasPermission, isAdmin } = useAuth();
 
   // All three restore endpoints are gated on GITHUB_RESTORE server-side, so a
   // user without it gets a 403 the moment the modal opens its preview. Hide the
@@ -184,6 +187,7 @@ export function GitHubBackupSettings() {
 
   // Scheduled local backup state
   const [deleteConfirmFile, setDeleteConfirmFile] = useState<string | null>(null);
+  const [showClearLogsConfirm, setShowClearLogsConfirm] = useState(false);
   const [restoreConfirmFile, setRestoreConfirmFile] = useState<string | null>(null);
   const [localBackupPath, setLocalBackupPath] = useState('');
 
@@ -221,7 +225,9 @@ export function GitHubBackupSettings() {
   const triggerLocalBackupMutation = useMutation({
     mutationFn: api.triggerLocalBackup,
     onSuccess: (data) => {
-      if (data.success) {
+      if (data.success && data.missing_files) {
+        showToast(t('backup.backupMissingFiles', { count: data.missing_files }), 'warning');
+      } else if (data.success) {
         showToast(t('backup.scheduledBackupComplete'));
       } else {
         showToast(data.message, 'error');
@@ -235,11 +241,22 @@ export function GitHubBackupSettings() {
 
   const deleteLocalBackupMutation = useMutation({
     mutationFn: (filename: string) => api.deleteLocalBackup(filename),
-    onSuccess: () => {
+    onSuccess: (data) => {
       refetchLocalBackups();
       setDeleteConfirmFile(null);
+      // A refused delete answers 200 with success false.
+      if (!data.success) showToast(data.message, 'error');
+    },
+    onError: (error: Error) => {
+      setDeleteConfirmFile(null);
+      showToast(error.message, 'error');
     },
   });
+
+  // A backup and a restore never run at the same time; the API answers 409
+  // with which one is running.
+  const busyMessage = (code: string | null | undefined) =>
+    code === 'restore_running' ? t('backup.restoreRunning') : code === 'backup_running' ? t('backup.restoreBlockedByBackup') : null;
 
   const restoreLocalBackupMutation = useMutation({
     mutationFn: async (filename: string) => {
@@ -263,9 +280,10 @@ export function GitHubBackupSettings() {
     onError: (e) => {
       setIsRestoring(false);
       setOperationStatus('');
-      const msg = e instanceof Error ? e.message : t('backup.failedToRestore');
+      const busy = e instanceof ApiError && e.status === 409 ? busyMessage(e.code) : null;
+      const msg = busy ?? (e instanceof Error ? e.message : t('backup.failedToRestore'));
       setRestoreResult({ success: false, message: msg });
-      showToast(msg, 'error');
+      showToast(msg, busy ? 'warning' : 'error');
     },
   });
 
@@ -1029,7 +1047,7 @@ export function GitHubBackupSettings() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => clearLogsMutation.mutate()}
+                  onClick={() => setShowClearLogsConfirm(true)}
                   disabled={clearLogsMutation.isPending}
                 >
                   <Trash2 className="w-4 h-4" />
@@ -1105,17 +1123,20 @@ export function GitHubBackupSettings() {
                 <p className="text-sm text-bambu-gray">
                   {t('backup.completeBackupZip')}
                 </p>
+                {/* A full backup holds every password hash and 2FA secret. */}
+                {!isAdmin && <p className="text-xs text-bambu-gray mt-1">{t('settings.adminOnlySetting')}</p>}
               </div>
               <Button
                 variant="secondary"
                 size="sm"
-                disabled={isExporting || isRestoring}
+                disabled={isExporting || isRestoring || !isAdmin || localBackupStatus?.is_running}
+                title={localBackupStatus?.is_running ? t('backup.backupAlreadyRunning') : undefined}
                 onClick={async () => {
                   setIsExporting(true);
                   setOperationStatus(t('backup.preparingBackup'));
                   try {
                     setOperationStatus(t('backup.creatingArchive'));
-                    const { blob, filename } = await api.exportBackup();
+                    const { blob, filename, missingFiles } = await api.exportBackup();
                     setOperationStatus(t('backup.downloadingFile'));
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
@@ -1123,9 +1144,17 @@ export function GitHubBackupSettings() {
                     a.download = filename;
                     a.click();
                     URL.revokeObjectURL(url);
-                    showToast(t('backup.backupDownloaded'));
+                    if (missingFiles > 0) {
+                      showToast(t('backup.backupMissingFiles', { count: missingFiles }), 'warning');
+                    } else {
+                      showToast(t('backup.backupDownloaded'));
+                    }
                   } catch (e) {
-                    showToast(t('backup.failedToCreateBackup', { message: e instanceof Error ? e.message : 'Unknown error' }), 'error');
+                    if (e instanceof ApiError && e.status === 409) {
+                      showToast(e.code === 'restore_running' ? t('backup.restoreRunning') : t('backup.backupAlreadyRunning'), 'warning');
+                    } else {
+                      showToast(t('backup.failedToCreateBackup', { message: e instanceof Error ? e.message : t('common.unknownError') }), 'error');
+                    }
                   } finally {
                     setIsExporting(false);
                     setOperationStatus('');
@@ -1165,7 +1194,8 @@ export function GitHubBackupSettings() {
               <Button
                 variant="secondary"
                 size="sm"
-                disabled={isRestoring || isExporting}
+                disabled={isRestoring || isExporting || !isAdmin}
+                title={!isAdmin ? t('settings.adminOnlySetting') : undefined}
                 onClick={() => fileInputRef.current?.click()}
               >
                 <Upload className="w-4 h-4" />
@@ -1229,7 +1259,7 @@ export function GitHubBackupSettings() {
                     queryClient.invalidateQueries({ queryKey: ['settings'] });
                     showToast(t('backup.settingsSaved'));
                   } catch (e) {
-                    showToast(t('backup.failedToSave', { message: e instanceof Error ? e.message : 'Unknown error' }), 'error');
+                    showToast(t('backup.failedToSave', { message: e instanceof Error ? e.message : t('common.unknownError') }), 'error');
                   }
                   refetchLocalStatus();
                 }}
@@ -1255,7 +1285,7 @@ export function GitHubBackupSettings() {
                           await api.updateSettings({ local_backup_schedule: e.target.value });
                           showToast(t('backup.settingsSaved'));
                         } catch (e) {
-                          showToast(t('backup.failedToSave', { message: e instanceof Error ? e.message : 'Unknown error' }), 'error');
+                          showToast(t('backup.failedToSave', { message: e instanceof Error ? e.message : t('common.unknownError') }), 'error');
                         }
                         refetchLocalStatus();
                       }}
@@ -1277,7 +1307,7 @@ export function GitHubBackupSettings() {
                             await api.updateSettings({ local_backup_time: e.target.value });
                             showToast(t('backup.settingsSaved'));
                           } catch (err) {
-                            showToast(t('backup.failedToSave', { message: err instanceof Error ? err.message : 'Unknown error' }), 'error');
+                            showToast(t('backup.failedToSave', { message: err instanceof Error ? err.message : t('common.unknownError') }), 'error');
                           }
                           refetchLocalStatus();
                         }}
@@ -1299,7 +1329,7 @@ export function GitHubBackupSettings() {
                           await api.updateSettings({ local_backup_retention: val });
                           showToast(t('backup.settingsSaved'));
                         } catch (e) {
-                          showToast(t('backup.failedToSave', { message: e instanceof Error ? e.message : 'Unknown error' }), 'error');
+                          showToast(t('backup.failedToSave', { message: e instanceof Error ? e.message : t('common.unknownError') }), 'error');
                         }
                         refetchLocalStatus();
                       }}
@@ -1316,13 +1346,16 @@ export function GitHubBackupSettings() {
                     type="text"
                     value={localBackupPath}
                     onChange={(e) => setLocalBackupPath(e.target.value)}
-                    className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                    disabled={!isAdmin}
+                    title={!isAdmin ? t('settings.adminOnlySetting') : undefined}
+                    className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none disabled:opacity-50"
                     onBlur={async () => {
+                      if (!isAdmin) return;
                       try {
                         await api.updateSettings({ local_backup_path: localBackupPath });
                         showToast(t('backup.settingsSaved'));
                       } catch (err) {
-                        showToast(t('backup.failedToSave', { message: err instanceof Error ? err.message : 'Unknown error' }), 'error');
+                        showToast(t('backup.failedToSave', { message: err instanceof Error ? err.message : t('common.unknownError') }), 'error');
                       }
                       refetchLocalStatus();
                       refetchLocalBackups();
@@ -1401,6 +1434,11 @@ export function GitHubBackupSettings() {
                         <span>{formatRelativeTime(localBackupStatus.last_backup_at)}</span>
                       </div>
                     )}
+                    {localBackupStatus?.last_status === 'warning' && (
+                      <div className="text-yellow-700 dark:text-yellow-400 mt-1">
+                        {t('backup.backupMissingFiles', { count: localBackupStatus.last_missing_files })}
+                      </div>
+                    )}
                     {localBackupStatus?.next_run && (
                       <div className="text-bambu-gray mt-1">
                         <span>{t('backup.nextBackup')}: </span>
@@ -1437,6 +1475,8 @@ export function GitHubBackupSettings() {
                             </span>
                           </div>
                           <div className="flex items-center gap-1 flex-shrink-0">
+                            {isAdmin && (
+                            <>
                             <button
                               className="text-bambu-gray hover:text-bambu-green p-1"
                               title={t('backup.download')}
@@ -1463,6 +1503,8 @@ export function GitHubBackupSettings() {
                             >
                               <RotateCcw className="w-3.5 h-3.5" />
                             </button>
+                            </>
+                            )}
                             <button
                               className="text-bambu-gray hover:text-red-600 dark:hover:text-red-400 p-1"
                               onClick={() => setDeleteConfirmFile(file.filename)}
@@ -1489,6 +1531,20 @@ export function GitHubBackupSettings() {
 
       {/* Restore from the Git backup repository (#2656) */}
       {showGitRestore && <GitHubRestoreModal onClose={() => setShowGitRestore(false)} />}
+
+      {showClearLogsConfirm && (
+        <ConfirmModal
+          title={t('backup.clearHistoryConfirmTitle')}
+          message={t('backup.clearHistoryConfirmMessage')}
+          confirmText={t('backup.clear')}
+          variant="danger"
+          onConfirm={() => {
+            setShowClearLogsConfirm(false);
+            clearLogsMutation.mutate();
+          }}
+          onCancel={() => setShowClearLogsConfirm(false)}
+        />
+      )}
 
       {/* Delete Backup Confirmation Modal */}
       {deleteConfirmFile && (
@@ -1528,9 +1584,12 @@ export function GitHubBackupSettings() {
             try {
               setOperationStatus(t('backup.uploadingFile'));
               const result = await api.importBackup(restoreFile);
-              setRestoreResult(result);
+              const busy = result.success ? null : busyMessage(result.code);
+              setRestoreResult(busy ? { success: false, message: busy } : result);
               if (result.success) {
                 showToast(t('backup.backupRestoredRestart'), 'success');
+              } else if (busy) {
+                showToast(busy, 'warning');
               } else {
                 showToast(result.message || t('backup.failedToRestore'), 'error');
               }

@@ -12,6 +12,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
+# Their rows refer to printer 1.
+pytestmark = pytest.mark.usefixtures("printer_1")
+
 
 @pytest.fixture
 def data_dirs(monkeypatch, tmp_path):

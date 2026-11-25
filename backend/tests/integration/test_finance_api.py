@@ -385,6 +385,72 @@ class TestFinanceAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    @pytest.mark.parametrize("account", ["personal", "shared", "private"])
+    async def test_partial_deposit_and_withdrawal_limits(self, async_client, auth_headers, db_session, account):
+        user = await self._create_user_via_api(async_client, auth_headers, "repayment")
+        finance = "/api/v1/finance"
+        wallet = f"{finance}/users/{user['id']}"
+        center = await async_client.post(f"{finance}/cost-centers", json={"name": "Studio"}, headers=auth_headers)
+        assert center.status_code == 200
+        center_id = center.json()["id"]
+        charge = await async_client.post(
+            f"{finance}/transactions/manual",
+            json={"user_id": user["id"], "cost_center_id": center_id, "amount": 10},
+            headers=auth_headers,
+        )
+        assert charge.status_code == 200
+
+        if account != "shared":
+            # Move the charge to the wallet, leaving the user's private cost center at zero.
+            moved = await async_client.patch(
+                f"{finance}/transactions/{charge.json()['id']}", json={"cost_center_id": None}, headers=auth_headers
+            )
+            assert moved.status_code == 200
+        if account == "private":
+            center_id = await db_session.scalar(
+                select(CostCenter.id).where(CostCenter.owner_user_id == user["id"], CostCenter.is_private.is_(True))
+            )
+            assert center_id is not None
+        target = {} if account == "personal" else {"cost_center_id": center_id}
+
+        async def assert_balances(expected):
+            if account != "shared":
+                response = await async_client.get(f"{wallet}/balance", headers=auth_headers)
+                assert response.status_code == 200
+                assert response.json()["balance"] == expected
+            if account != "personal":
+                response = await async_client.get(f"{finance}/cost-centers/{center_id}", headers=auth_headers)
+                assert response.status_code == 200
+                # The private center excludes the unassigned charge of 10.
+                assert response.json()["total_balance"] == (expected + 10 if account == "private" else expected)
+
+        async def deposit(amount, expected):
+            response = await async_client.post(
+                f"{wallet}/deposit", json={**target, "amount": amount}, headers=auth_headers
+            )
+            assert response.status_code == 200, response.text
+            assert response.json()["balance"]["balance"] == expected
+
+        async def refuse_withdrawal(amount):
+            response = await async_client.post(
+                f"{wallet}/withdraw", json={**target, "amount": amount}, headers=auth_headers
+            )
+            assert response.status_code == 400
+            detail = "Insufficient cost center balance" if account == "shared" else "Insufficient balance"
+            assert response.json()["detail"] == f"{detail} for withdrawal"
+
+        await assert_balances(-10)
+        await deposit(4, -6)
+        await assert_balances(-6)
+        await refuse_withdrawal(1)
+        await assert_balances(-6)
+        await deposit(10, 4)
+        await assert_balances(4)
+        await refuse_withdrawal(5)
+        await assert_balances(4)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_wallet_adjustments_and_transaction_ledger_rebuild(
         self,
         async_client: AsyncClient,

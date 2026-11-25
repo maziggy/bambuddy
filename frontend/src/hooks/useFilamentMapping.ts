@@ -9,10 +9,14 @@ import {
   findNearestSimilar,
   formatSlotLabel,
   getGlobalTrayId,
+  isAmsHtUnit,
   preferLowestSortKey,
   compareSortKeys,
+  rackExternalLabel,
 } from '../utils/amsHelpers';
-import type { PrinterStatus, SlotSpoolIdentity } from '../api/client';
+import { externalSlotIndex, trayLayoutOf } from '../utils/trayIds';
+import { markBlocked } from '../utils/filamentScope';
+import type { FilamentPolicy, PrinterStatus, SlotSpoolIdentity } from '../api/client';
 
 /** Global-tray-id → the identity of the spool Bambuddy has bound to that slot. */
 export type SlotSpoolIdentities = Map<number, SlotSpoolIdentity>;
@@ -43,10 +47,14 @@ function spoolDisplayName(identity: SlotSpoolIdentity | undefined): string | nul
  * `slotSpools` is optional and display-only: it renames slots after their
  * bound spool without touching `type`, `color` or `trayInfoIdx`, so matching
  * and the dispatcher keep drawing on the printer's own telemetry.
+ *
+ * `policies` are the signed-in user's filament rules (#3522): trays they don't
+ * allow come back with `blocked` set.
  */
 export function buildLoadedFilaments(
   printerStatus: PrinterStatus | undefined,
   slotSpools?: SlotSpoolIdentities,
+  policies?: FilamentPolicy[] | null,
 ): LoadedFilament[] {
   const filaments: LoadedFilament[] = [];
   const amsExtruderMap = printerStatus?.ams_extruder_map;
@@ -59,28 +67,30 @@ export function buildLoadedFilaments(
   // dual-nozzle hardware exposes multiple external feeds) each independently
   // imply dual-nozzle — keep them as fallbacks for any firmware rev that
   // surfaces one signal but not the other. (#1257)
+  // A rack printer (H3C) has nine external inputs but one extruder.
+  const rackExternals = trayLayoutOf(printerStatus?.ams, printerStatus?.vt_tray).rack;
   const hasDualNozzle =
     Boolean(printerStatus?.nozzles?.[1]?.nozzle_diameter)
     || (amsExtruderMap && Object.keys(amsExtruderMap).length > 0)
-    || (printerStatus?.vt_tray?.length ?? 0) > 1;
+    || ((printerStatus?.vt_tray?.length ?? 0) > 1 && !rackExternals);
 
   // Add filaments from all AMS units (regular and HT)
   printerStatus?.ams?.forEach((amsUnit) => {
-    const isHt = amsUnit.tray.length === 1; // AMS-HT has single tray
+    const isHt = isAmsHtUnit(amsUnit.id);
     amsUnit.tray.forEach((tray) => {
       if (tray.tray_type) {
         const color = normalizeColor(tray.tray_color);
-        const globalTrayId = getGlobalTrayId(amsUnit.id, tray.id, false);
+        const globalTrayId = getGlobalTrayId(amsUnit.id, tray.id, false, amsUnit.ams_type);
         const identity = slotSpools?.get(globalTrayId);
         filaments.push({
           type: tray.tray_type,
           color,
-          colorName: identity?.color_name?.trim() || getColorName(color, tray.tray_sub_brands),
+          colorName: identity?.color_name?.trim() || getColorName(color, tray.tray_sub_brands, tray.tray_info_idx),
           amsId: amsUnit.id,
           trayId: tray.id,
           isHt,
           isExternal: false,
-          label: formatSlotLabel(amsUnit.id, tray.id, isHt, false),
+          label: formatSlotLabel(amsUnit.id, tray.id, isHt, false, amsUnit.ams_type),
           globalTrayId,
           trayInfoIdx: tray.tray_info_idx || '',
           traySubBrands: tray.tray_sub_brands || '',
@@ -100,19 +110,19 @@ export function buildLoadedFilaments(
     if (extTray.tray_type) {
       const color = normalizeColor(extTray.tray_color);
       const trayId = extTray.id ?? 254;
-      const hasDualExternal = (printerStatus?.vt_tray?.length ?? 0) > 1;
+      const hasDualExternal = (printerStatus?.vt_tray?.length ?? 0) > 1 && !rackExternals;
       // The external holder's global tray id IS the tray id (254 / 255), which
       // is how the backend keys it too — see `_ams_key_to_global`.
       const identity = slotSpools?.get(trayId);
       filaments.push({
         type: extTray.tray_type,
         color,
-        colorName: identity?.color_name?.trim() || getColorName(color, extTray.tray_sub_brands),
+        colorName: identity?.color_name?.trim() || getColorName(color, extTray.tray_sub_brands, extTray.tray_info_idx),
         amsId: -1,
-        trayId: trayId - 254,
+        trayId: externalSlotIndex(trayId),
         isHt: false,
         isExternal: true,
-        label: hasDualExternal ? (trayId === 254 ? 'Ext-L' : 'Ext-R') : 'External',
+        label: rackExternals ? rackExternalLabel(trayId) : hasDualExternal ? (trayId === 254 ? 'Ext-L' : 'Ext-R') : 'External',
         globalTrayId: trayId,
         trayInfoIdx: extTray.tray_info_idx || '',
         traySubBrands: extTray.tray_sub_brands || '',
@@ -126,7 +136,7 @@ export function buildLoadedFilaments(
     }
   }
 
-  return filaments;
+  return markBlocked(filaments, policies);
 }
 
 /**
@@ -143,6 +153,7 @@ export function buildLoadedFilaments(
  *
  * @param filamentReqs - Required filaments from the 3MF file
  * @param printerStatus - Current printer status with AMS information
+ * @param policies - The signed-in user's filament rules (#3522); blocked trays are never picked
  * @returns AMS mapping array or undefined if no mapping needed
  */
 export function computeAmsMapping(
@@ -150,8 +161,9 @@ export function computeAmsMapping(
   printerStatus: PrinterStatus | undefined,
   preferLowest?: boolean,
   inventoryByTrayId?: Map<number, number>,
+  policies?: FilamentPolicy[] | null,
 ): number[] | undefined {
-  const loadedFilaments = buildLoadedFilaments(printerStatus);
+  const loadedFilaments = buildLoadedFilaments(printerStatus, undefined, policies);
   if (loadedFilaments.length === 0) return undefined;
 
   // FTS routes any AMS slot to any extruder, so per-nozzle slot restriction
@@ -200,6 +212,8 @@ export interface LoadedFilament {
   /** The bound spool's subtype ("PLA Silk", "Multicolor"), which decides
    *  whether the swatch renders its stops as a conic sweep. */
   spoolSubtype?: string;
+  /** The signed-in user's groups may not use this filament (#3522): never auto-picked, greyed out in the picker */
+  blocked?: boolean;
 }
 
 /**
@@ -264,10 +278,11 @@ interface UseFilamentMappingResult {
 export function useLoadedFilaments(
   printerStatus: PrinterStatus | undefined,
   slotSpools?: SlotSpoolIdentities,
+  policies?: FilamentPolicy[] | null,
 ): LoadedFilament[] {
   return useMemo(() => {
-    return buildLoadedFilaments(printerStatus, slotSpools);
-  }, [printerStatus, slotSpools]);
+    return buildLoadedFilaments(printerStatus, slotSpools, policies);
+  }, [printerStatus, slotSpools, policies]);
 }
 
 /**
@@ -352,8 +367,10 @@ export function buildFilamentComparison(
     // IMPORTANT: Exclude trays that are already assigned (manually or auto)
     const reqTrayInfoIdx = req.tray_info_idx || '';
 
-    // Get available trays (not already used)
-    let available = loadedFilaments.filter((f) => !usedTrayIds.has(f.globalTrayId));
+    // Get available trays (not already used). A tray the user's groups block is
+    // never auto-picked (#3522); a manual pick of one is kept above as theirs,
+    // and the scheduler re-picks it at dispatch.
+    let available = loadedFilaments.filter((f) => !usedTrayIds.has(f.globalTrayId) && !f.blocked);
 
     // Nozzle-aware filtering: restrict to trays on the correct nozzle.
     // This is a hard filter — cross-nozzle assignment causes print failures.
@@ -514,8 +531,10 @@ export function useFilamentMapping(
   preferLowest?: boolean,
   inventoryByTrayId?: Map<number, number>,
   slotSpools?: SlotSpoolIdentities,
+  /** The signed-in user's filament rules (#3522), from `useFilamentPolicies` */
+  policies?: FilamentPolicy[] | null,
 ): UseFilamentMappingResult {
-  const loadedFilaments = useLoadedFilaments(printerStatus, slotSpools);
+  const loadedFilaments = useLoadedFilaments(printerStatus, slotSpools, policies);
 
   // FTS routes any AMS slot to any extruder, so per-nozzle slot restriction
   // doesn't apply when it's installed (#1162).

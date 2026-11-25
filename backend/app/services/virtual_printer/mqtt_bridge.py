@@ -44,7 +44,7 @@ import os
 import socket
 from typing import TYPE_CHECKING
 
-from backend.app.services.bambu_mqtt import apply_tray_exist_bits
+from backend.app.services.bambu_mqtt import apply_tray_exist_bits, unit_reported_absent
 from backend.app.services.virtual_printer._debug import append_event, dump_wire
 
 if TYPE_CHECKING:
@@ -210,7 +210,8 @@ def _merge_ams_dict(prev_ams: dict, new_ams: dict) -> dict:
       - Shallow-merge top-level scalars: keys in ``new`` win; keys only
         in ``prev`` are preserved.
       - For the ``ams`` array (list of units): match by ``id``. Units
-        only in ``prev`` survive. Units in ``new`` overlay onto their
+        only in ``prev`` survive unless ``ams_exist_bits`` reports them
+        unplugged. Units in ``new`` overlay onto their
         ``prev`` counterpart; same recursion applies to each unit's
         ``tray`` array by tray ``id``.
     """
@@ -277,9 +278,11 @@ def _merge_ams_dict(prev_ams: dict, new_ams: dict) -> dict:
         merged_units.append(merged_unit)
         if uid is not None:
             seen_ids.add(uid)
-    # Preserve prev units not mentioned in the incremental.
+    # Preserve prev units not mentioned in the incremental, unless the push's
+    # ams_exist_bits say the unit was unplugged; the printer card drops it on
+    # the same rule, so the slicer and Bambuddy agree (#3356).
     for uid, prev_unit in prev_by_id.items():
-        if uid not in seen_ids:
+        if uid not in seen_ids and not unit_reported_absent(uid, new_units, new_ams.get("ams_exist_bits")):
             merged_units.append(prev_unit)
     merged["ams"] = merged_units
     return merged

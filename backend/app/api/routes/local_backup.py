@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter, Path
 from fastapi.responses import FileResponse, JSONResponse
 
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.auth import RequireAdminIfAuthEnabled, RequirePermissionIfAuthEnabled
 from backend.app.core.permissions import Permission
 from backend.app.models.user import User
 from backend.app.services.local_backup import local_backup_service
@@ -74,6 +74,7 @@ async def list_backups(
 @router.get("/backups/{filename}/download")
 async def download_backup(
     filename: str = Path(..., description="Backup filename to download"),
+    _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_BACKUP),
 ):
     """Download a specific backup file."""
@@ -91,6 +92,7 @@ async def download_backup(
 @router.post("/backups/{filename}/restore")
 async def restore_backup(
     filename: str = Path(..., description="Backup filename to restore"),
+    _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_RESTORE),
 ):
     """Restore from a scheduled backup file on the server."""

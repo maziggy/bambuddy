@@ -71,4 +71,27 @@ describe('SystemHealthPanel', () => {
       'https://wiki.bambuddy.cool/reference/troubleshooting/#wrong-access-code',
     );
   });
+
+  it('leaves out the sample line when there is none', () => {
+    renderPanel({
+      ...BASE,
+      log_available: true,
+      findings: [
+        {
+          signature_id: 'ftp-auth-rejected',
+          severity: 'error',
+          category: 'layer8',
+          wiki_anchor: 'wrong-access-code',
+          count: 4,
+          first_seen: '2026-05-22 09:00:00,000',
+          last_seen: '2026-05-22 10:00:00,000',
+          sample: '',
+        },
+      ],
+      summary: { total: 1, layer8: 1, environment: 0, bug: 0 },
+    });
+
+    expect(screen.getByText('Printer rejected the access code')).toBeInTheDocument();
+    expect(document.querySelector('.font-mono')).toBeNull();
+  });
 });

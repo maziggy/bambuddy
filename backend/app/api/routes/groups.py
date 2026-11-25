@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 
 from backend.app.core.auth import RequireAdminIfAuthEnabled, RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
+from backend.app.core.filament_scope import clean_rules
 from backend.app.core.permissions import (
     ALL_PERMISSIONS,
     PERMISSION_CATEGORIES,
@@ -16,7 +17,7 @@ from backend.app.core.printer_scope import group_location_names, group_printer_i
 from backend.app.core.websocket import ws_manager
 from backend.app.models.group import Group, group_locations, group_printers
 from backend.app.models.printer import Printer
-from backend.app.models.user import User
+from backend.app.models.user import ADMIN_GROUP_NAME, User
 from backend.app.schemas.group import (
     GroupCreate,
     GroupDetailResponse,
@@ -39,6 +40,8 @@ _PERMISSION_LABEL_OVERRIDES: dict[Permission, str] = {
     Permission.USERS_READ_SLIM: "List User Names (id + username only)",
     # "Start Unreviewed Queue" says nothing about what happens without it (#1620)
     Permission.QUEUE_START_UNREVIEWED: "Print Without Review (else jobs wait for someone to start them)",
+    # "Auth Threedfp" would say nothing to anyone (#2981)
+    Permission.THREEDFP_AUTH: "Connect 3D Filament Profiles and look up filaments",
 }
 
 
@@ -142,6 +145,40 @@ async def _apply_printer_scope(
     return changed
 
 
+def _apply_filament_scope(
+    group: Group,
+    restrict_filaments: bool | None,
+    filament_rule_mode: str | None,
+    filament_rules: list | None,
+) -> None:
+    """Store a group's filament scope (#3522).
+
+    The Administrators group can't be restricted: admins may use every
+    filament regardless, so the setting would only mislead.
+    """
+    if restrict_filaments is not None and restrict_filaments != bool(group.restrict_filaments):
+        if restrict_filaments and group.name == ADMIN_GROUP_NAME:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Administrators can always use every filament",
+            )
+        group.restrict_filaments = restrict_filaments
+    if filament_rule_mode is not None and filament_rule_mode != (group.filament_rule_mode or "block"):
+        group.filament_rule_mode = filament_rule_mode
+    if filament_rules is not None:
+        cleaned = clean_rules(filament_rules)
+        if cleaned != (group.filament_rules or []):
+            group.filament_rules = cleaned
+
+
+def _filament_fields(group: Group) -> dict:
+    return {
+        "restrict_filaments": bool(group.restrict_filaments),
+        "filament_rule_mode": group.filament_rule_mode or "block",
+        "filament_rules": clean_rules(group.filament_rules),
+    }
+
+
 def _group_response(group: Group, printer_ids: list[int], locations: list[str], user_count: int) -> GroupResponse:
     return GroupResponse(
         id=group.id,
@@ -152,6 +189,7 @@ def _group_response(group: Group, printer_ids: list[int], locations: list[str], 
         restrict_printers=bool(group.restrict_printers),
         printer_ids=printer_ids,
         locations=locations,
+        **_filament_fields(group),
         user_count=user_count,
         created_at=group.created_at,
         updated_at=group.updated_at,
@@ -181,7 +219,7 @@ async def list_permissions(
 @router.get("/", response_model=list[GroupResponse])
 async def list_groups(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GROUPS_READ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """List all groups."""
     result = await db.execute(select(Group).options(selectinload(Group.users)).order_by(Group.name))
@@ -202,7 +240,7 @@ async def create_group(
     group_data: GroupCreate,
     _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GROUPS_CREATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Create a new group."""
     # Check if group name already exists
@@ -227,10 +265,15 @@ async def create_group(
         permissions=group_data.permissions,
         is_system=False,  # User-created groups are not system groups
         restrict_printers=False,
+        restrict_filaments=False,
+        filament_rule_mode="block",
     )
     db.add(group)
     await db.flush()
     await _apply_printer_scope(db, group, group_data.restrict_printers, group_data.printer_ids, group_data.locations)
+    _apply_filament_scope(
+        group, group_data.restrict_filaments, group_data.filament_rule_mode, group_data.filament_rules
+    )
     await db.commit()
     await db.refresh(group)
 
@@ -241,7 +284,7 @@ async def create_group(
 async def get_group(
     group_id: int,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GROUPS_READ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Get a group by ID with user list. Read-only — gated on
     ``GROUPS_READ`` only."""
@@ -262,6 +305,7 @@ async def get_group(
         restrict_printers=bool(group.restrict_printers),
         printer_ids=await group_printer_ids(db, group.id),
         locations=await group_location_names(db, group.id),
+        **_filament_fields(group),
         user_count=len(group.users),
         created_at=group.created_at,
         updated_at=group.updated_at,
@@ -275,7 +319,7 @@ async def update_group(
     group_data: GroupUpdate,
     _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GROUPS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Update a group."""
     result = await db.execute(select(Group).where(Group.id == group_id).options(selectinload(Group.users)))
@@ -328,10 +372,15 @@ async def update_group(
     scope_changed = await _apply_printer_scope(
         db, group, group_data.restrict_printers, group_data.printer_ids, group_data.locations
     )
+    _apply_filament_scope(
+        group, group_data.restrict_filaments, group_data.filament_rule_mode, group_data.filament_rules
+    )
 
     await db.commit()
     await db.refresh(group)
-    if scope_changed:
+    if scope_changed or group_data.permissions is not None:
+        # Printers, or websocket:connect itself (a socket of a user who lost it
+        # is closed)
         await ws_manager.refresh_printer_scopes()
 
     return _group_response(
@@ -344,7 +393,7 @@ async def delete_group(
     group_id: int,
     _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GROUPS_DELETE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Delete a group (non-system groups only)."""
     result = await db.execute(select(Group).where(Group.id == group_id))
@@ -361,14 +410,13 @@ async def delete_group(
             detail="Cannot delete system groups",
         )
 
-    restricted = bool(group.restrict_printers)
     # SQLite doesn't enforce the FK cascade
     await db.execute(delete(group_printers).where(group_printers.c.group_id == group_id))
     await db.execute(delete(group_locations).where(group_locations.c.group_id == group_id))
     await db.delete(group)
     await db.commit()
-    if restricted:
-        await ws_manager.refresh_printer_scopes()
+    # Its members may lose printers, or websocket:connect itself
+    await ws_manager.refresh_printer_scopes()
 
 
 @router.post("/{group_id}/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -377,7 +425,7 @@ async def add_user_to_group(
     user_id: int,
     _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GROUPS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Add a user to a group."""
     # Get group with users
@@ -406,9 +454,11 @@ async def add_user_to_group(
         )
 
     group.users.append(user)
+    # The legacy role follows Administrators membership (#3533).
+    if group.name == ADMIN_GROUP_NAME:
+        user.role = "admin"
     await db.commit()
-    if group.restrict_printers:
-        await ws_manager.refresh_printer_scopes()
+    await ws_manager.refresh_printer_scopes()
 
 
 @router.delete("/{group_id}/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -417,7 +467,7 @@ async def remove_user_from_group(
     user_id: int,
     _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GROUPS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Remove a user from a group."""
     # Get group with users
@@ -445,7 +495,18 @@ async def remove_user_from_group(
             detail="User is not in this group",
         )
 
+    if group.name == ADMIN_GROUP_NAME:
+        # Leaving Administrators takes the admin rights with it, so the role
+        # follows (#3533) -- unless that leaves no active admin.
+        from backend.app.api.routes.users import _other_active_admins
+
+        if user.is_active and not await _other_active_admins(db, user.id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot remove admin rights from the last admin user",
+            )
+        user.role = "user"
     group.users.remove(user)
     await db.commit()
-    if group.restrict_printers:
-        await ws_manager.refresh_printer_scopes()
+    # They may lose printers, or websocket:connect itself
+    await ws_manager.refresh_printer_scopes()

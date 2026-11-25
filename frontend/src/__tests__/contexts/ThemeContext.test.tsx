@@ -62,8 +62,39 @@ function wrapper({ children }: { children: ReactNode }) {
 
 describe('ThemeContext', () => {
   beforeEach(() => {
+    // The global test setup uses no-op localStorage mocks. Give this
+    // suite a real in-memory store to verify persistence across mounts.
+    const storage = new Map<string, string>();
+    vi.mocked(localStorage.getItem).mockImplementation((key) => storage.get(key) ?? null);
+    vi.mocked(localStorage.setItem).mockImplementation((key, value) => { storage.set(key, value); });
+    vi.mocked(localStorage.removeItem).mockImplementation((key) => { storage.delete(key); });
+    vi.mocked(localStorage.clear).mockImplementation(() => { storage.clear(); });
     localStorage.clear();
     document.documentElement.className = '';
+  });
+
+  describe('browser tab display preference', () => {
+    it('defaults to percentage and persists the selected mode locally', () => {
+      mockMatchMedia(false);
+      const { result } = renderHook(() => useTheme(), { wrapper });
+
+      expect(result.current.tabDisplay).toBe('percentage');
+      act(() => result.current.setTabDisplay('time'));
+      expect(result.current.tabDisplay).toBe('time');
+      expect(localStorage.getItem('tab-display')).toBe('time');
+    });
+
+    it('loads a stored choice and ignores invalid stored values', () => {
+      mockMatchMedia(false);
+      localStorage.setItem('tab-display', 'time');
+      const first = renderHook(() => useTheme(), { wrapper });
+      expect(first.result.current.tabDisplay).toBe('time');
+      first.unmount();
+
+      localStorage.setItem('tab-display', 'invalid');
+      const second = renderHook(() => useTheme(), { wrapper });
+      expect(second.result.current.tabDisplay).toBe('percentage');
+    });
   });
 
   describe('systemPreference initialization', () => {

@@ -107,6 +107,7 @@ interface HarnessProps {
   onPresets?: (next: Map<string, PresetChoice>) => void;
   onProfiles?: (next: Map<string, CalibrationProfile>) => void;
   slicerFilament?: string;
+  options?: FilamentOption[];
 }
 
 /**
@@ -120,6 +121,7 @@ function Harness({
   onPresets,
   onProfiles,
   slicerFilament = 'GFSA00',
+  options = OPTIONS,
 }: HarnessProps) {
   const [modelPresets, setModelPresets] = React.useState(presets);
   const [selectedProfiles, setSelectedProfiles] = React.useState(profiles);
@@ -136,7 +138,7 @@ function Harness({
     <PrinterProfilesSection
       formData={{ ...defaultFormData, material: 'PLA', brand: 'Bambu', slicer_filament: slicerFilament }}
       printersWithCalibrations={printers}
-      filamentOptions={OPTIONS}
+      filamentOptions={options}
       modelPresets={modelPresets}
       setModelPresets={setModelPresets}
       selectedProfiles={selectedProfiles}
@@ -410,6 +412,54 @@ describe('PrinterProfilesSection — presets offered per model', () => {
     const names = screen.getAllByRole('option').map(o => o.textContent ?? '');
     expect(names.some(n => n.includes('eSUN'))).toBe(true);
     expect(names.some(n => n.includes('Bambu PLA Basic'))).toBe(false);
+  });
+});
+
+describe('PrinterProfilesSection — third-party presets (#3731)', () => {
+  function local(code: string, name: string, compatiblePrinters?: string[]): FilamentOption {
+    return { code, name, displayName: name, isCustom: false, allCodes: [code], source: 'local', compatiblePrinters };
+  }
+  function namesIn(model: string, diameter: string): string[] {
+    const names = openPicker(presetPicker(model, diameter)).map(o => o.textContent ?? '');
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+    return names;
+  }
+
+  it('offers an imported preset on the rows its compatible_printers names, whatever its name says', () => {
+    const options = [
+      ...OPTIONS,
+      local('77', 'Elegoo PLA Matte @BBL A1 0.2mm nozzle', ['Bambu Lab X1 Carbon 0.2 nozzle']),
+    ];
+    render(<Harness options={options} />);
+    fireEvent.click(modelRow('X1C'));
+
+    expect(namesIn('X1C', '0.2').some(n => n.includes('Elegoo PLA Matte'))).toBe(true);
+    expect(namesIn('X1C', '0.4').some(n => n.includes('Elegoo PLA Matte'))).toBe(false);
+    fireEvent.click(modelRow('H2C'));
+    expect(namesIn('H2C', '0.2').some(n => n.includes('Elegoo PLA Matte'))).toBe(false);
+  });
+
+  it('reads the model from a name that spells the size "0.2mm nozzle"', () => {
+    const options = [...OPTIONS, local('78', 'Elegoo PLA Matte @BBL H2C 0.2mm nozzle')];
+    render(<Harness options={options} />);
+
+    expect(namesIn('H2C', '0.2').some(n => n.includes('Elegoo PLA Matte'))).toBe(true);
+    fireEvent.click(modelRow('X1C'));
+    expect(namesIn('X1C', '0.2').some(n => n.includes('Elegoo PLA Matte'))).toBe(false);
+  });
+
+  it('auto-match takes a "0.2mm nozzle" variant for the 0.2 row', () => {
+    const options = [
+      ...OPTIONS,
+      local('79', 'Bambu PLA Basic @BBL X1C 0.2mm nozzle'),
+    ];
+    let latest: Map<string, PresetChoice> = new Map();
+    render(<Harness options={options} onPresets={next => { latest = next; }} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /auto-match/i }));
+
+    expect(latest.get(presetKey('X1C', '0.2'))?.code).toBe('79');
+    expect(latest.get(presetKey('X1C', '0.4'))?.code).toBe('GFSA00');
   });
 });
 

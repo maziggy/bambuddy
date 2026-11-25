@@ -937,6 +937,7 @@ def notification_provider_factory(db_session):
             "on_print_progress": False,
             "on_print_missing_spool_assignment": False,
             "on_billing_charge_failed": True,
+            "on_filament_out_of_stock": False,
             "on_printer_offline": False,
             "on_printer_error": False,
             "on_filament_low": False,

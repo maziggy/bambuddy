@@ -625,4 +625,63 @@ describe('AuthContext', () => {
       expect(getAuthToken()).toBe('valid-token');
     });
   });
+
+  describe('admin-only user and group writes (#3729)', () => {
+    const adminOnly = [
+      'users:create', 'users:update', 'users:delete',
+      'groups:create', 'groups:update', 'groups:delete',
+    ] as Permission[];
+
+    beforeEach(() => {
+      setAuthToken('valid-token', 'persistent');
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false })
+        )
+      );
+    });
+
+    afterEach(() => {
+      setAuthToken(null);
+      localStorage.removeItem('auth_token');
+    });
+
+    function meWith(isAdmin: boolean) {
+      server.use(
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({
+            id: 2,
+            username: 'manager',
+            is_active: true,
+            is_admin: isAdmin,
+            permissions: [...adminOnly, 'users:read', 'groups:read'],
+            groups: [],
+          })
+        )
+      );
+    }
+
+    it('denies them to a non-admin who holds them, keeping the read permissions', async () => {
+      meWith(false);
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => expect(result.current.user).not.toBeNull());
+
+      for (const perm of adminOnly) {
+        expect(result.current.hasPermission(perm)).toBe(false);
+      }
+      expect(result.current.hasAnyPermission('users:create', 'groups:delete')).toBe(false);
+      expect(result.current.hasPermission('users:read')).toBe(true);
+      expect(result.current.hasAnyPermission('users:create', 'groups:read')).toBe(true);
+    });
+
+    it('grants them to an admin', async () => {
+      meWith(true);
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => expect(result.current.user).not.toBeNull());
+
+      for (const perm of adminOnly) {
+        expect(result.current.hasPermission(perm)).toBe(true);
+      }
+    });
+  });
 });

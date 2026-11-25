@@ -416,6 +416,30 @@ export interface OverlayStatus {
 }
 
 // Printer types
+
+// Built-in inventory entries offered as filament overrides (#3590).
+/** One inventory entry (type + colour + variant). */
+export interface InventoryFilament {
+  type: string;
+  /** "#RRGGBB" */
+  color: string;
+  /** Specific Bambu variant id, '' when the spool's preset resolves to none. */
+  tray_info_idx: string;
+  subtype: string;
+  color_name: string;
+  rgba: string | null;
+  extra_colors: string | null;
+  effect_type: string | null;
+  spool_count: number;
+  remaining_grams: number;
+}
+
+export interface InventoryFilamentsResponse {
+  /** False in Spoolman mode, where there is no built-in inventory. */
+  inventory_available: boolean;
+  filaments: InventoryFilament[];
+}
+
 // Printer locations (groups) and their appearance (#2962). `id` is null for a
 // location only printers carry, with no row of its own yet.
 export interface PrinterLocation {
@@ -1686,6 +1710,8 @@ export interface AppSettings {
   require_plate_clear: boolean;
   // Shortest job first scheduling
   queue_shortest_first: boolean;
+  // Offer the built-in inventory's colours in the print dialog's filament override (#3590).
+  filament_override_inventory: boolean;
   // Which printer an any-model job takes when several can run it (#2915).
   model_dispatch_order: ModelDispatchOrder;
   // How many printers the queue may upload to at once (#2555). 1 restores the
@@ -3455,6 +3481,7 @@ export interface NotificationProvider {
   on_plate_clear_required: boolean;
   // Post-print outcome confirmation (#1898)
   on_print_confirm_request: boolean;
+  on_filament_out_of_stock: boolean;
   telegram_verdict_mode: TelegramVerdictMode;
   // Bed cooled
   on_bed_cooled: boolean;
@@ -3526,6 +3553,7 @@ export interface NotificationProviderCreate {
   on_plate_clear_required?: boolean;
   // Post-print outcome confirmation (#1898)
   on_print_confirm_request?: boolean;
+  on_filament_out_of_stock?: boolean;
   telegram_verdict_mode?: TelegramVerdictMode;
   // Bed cooled
   on_bed_cooled?: boolean;
@@ -3590,6 +3618,7 @@ export interface NotificationProviderUpdate {
   on_plate_clear_required?: boolean;
   // Post-print outcome confirmation (#1898)
   on_print_confirm_request?: boolean;
+  on_filament_out_of_stock?: boolean;
   telegram_verdict_mode?: TelegramVerdictMode;
   // Bed cooled
   on_bed_cooled?: boolean;
@@ -4916,6 +4945,14 @@ export type Permission =
   | 'pipelines:read' | 'pipelines:write' | 'pipelines:run'
   | 'websocket:connect';
 
+// Permissions the backend only honours for admins (#3729): the user and group
+// write routes also require admin status, since a non-admin holding them could
+// otherwise make themselves admin. Granting them to another group does nothing.
+export const ADMIN_ONLY_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission>([
+  'users:create', 'users:update', 'users:delete',
+  'groups:create', 'groups:update', 'groups:delete',
+]);
+
 // Group types
 export interface GroupBrief {
   id: number;
@@ -5697,6 +5734,8 @@ export const api = {
     if (location) params.set('location', location);
     return request<Array<{ type: string; color: string; tray_info_idx: string; tray_sub_brands: string; extruder_id: number | null }>>(`/printers/available-filaments?${params}`);
   },
+  // Built-in inventory grouped by type + colour (+ variant) for the override picker (#3590).
+  getInventoryFilaments: () => request<InventoryFilamentsResponse>('/printers/inventory-filaments'),
   getPrinterLocations: () => request<PrinterLocation[]>('/printer-locations/'),
   createPrinterLocation: (data: { name: string; icon?: string | null; color?: string | null }) =>
     request<PrinterLocation>('/printer-locations/', { method: 'POST', body: JSON.stringify(data) }),
@@ -8471,6 +8510,7 @@ export const api = {
     scope?: 'internal' | 'external',
     recursive = false,
     tagIds: number[] = [],
+    withVariantMembers = false,
   ) => {
     const params = new URLSearchParams();
     if (folderId !== undefined && folderId !== null) {
@@ -8493,6 +8533,9 @@ export const api = {
     for (const tagId of tagIds) {
       params.append('tag_ids', String(tagId));
     }
+    // Also list the members of the groups in the result that sit in other
+    // folders or outside the filter, flagged `variant_elsewhere` (#3628).
+    if (withVariantMembers) params.set('with_variant_members', 'true');
     return request<LibraryFileListItem[]>(`/library/files?${params}`);
   },
   getLibraryFolderReadme: (folderId: number) =>
@@ -8538,6 +8581,11 @@ export const api = {
     }),
   getVariantGroup: (groupId: number) =>
     request<VariantGroup>(`/library/variant-groups/${groupId}`),
+  // Ungroup: the files themselves are kept.
+  deleteVariantGroup: (groupId: number) =>
+    request<void>(`/library/variant-groups/${groupId}`, { method: 'DELETE' }),
+  removeVariantGroupMember: (groupId: number, fileId: number) =>
+    request<void>(`/library/variant-groups/${groupId}/members/${fileId}`, { method: 'DELETE' }),
 
   getLibraryFile: (id: number) => request<LibraryFile>(`/library/files/${id}`),
   uploadLibraryFile: async (
@@ -9334,6 +9382,16 @@ export interface LibraryFileListItem {
   // matching rows on screen. 0 when the file is not grouped.
   variant_group_id?: number | null;
   variant_count?: number;
+  // Only with `with_variant_members=true` (#3628): the group's name and this
+  // file's place in it, whether the caller may change the group (ungroup it,
+  // take a version out; false when the server would refuse), whether the file
+  // was appended from outside the listing's folder or filter, and the folder
+  // it sits in then.
+  variant_group_name?: string | null;
+  variant_position?: number | null;
+  variant_group_editable?: boolean | null;
+  variant_elsewhere?: boolean;
+  folder_name?: string | null;
   // Metadata indicators (#3077). Optional for the same reason as `tags`: older
   // mocks construct list items without them. Read sites default to falsy.
   external_url?: string | null;

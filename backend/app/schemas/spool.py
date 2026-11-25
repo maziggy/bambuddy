@@ -93,6 +93,23 @@ def normalize_effect_type(value: str | None) -> str | None:
     return canonical
 
 
+def effect_type_from_subtype(subtype: str | None) -> str | None:
+    """The swatch effect a subtype names ("Silk", "Wood", "Dual Color"), or None.
+
+    "Silk+" is the same finish as "Silk" with a plus on the product name, so the
+    trailing sign is dropped on a second attempt. A subtype that names no
+    effect (Basic, Tough, CF) gives None rather than a guessed overlay.
+    """
+    if not subtype:
+        return None
+    for candidate in (subtype, subtype.rstrip("+")):
+        try:
+            return normalize_effect_type(candidate)
+        except ValueError:
+            continue
+    return None
+
+
 def naive_utc(value: datetime | None) -> datetime | None:
     """Store a datetime the way Bambuddy's naive ``DateTime`` columns hold it: UTC.
 

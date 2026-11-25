@@ -3375,6 +3375,7 @@ export default {
       prefix: "Discovery prefix",
       prefixHint: "Home Assistant's default is homeassistant. Change it only if you changed it there.",
       prefixConflict: "The discovery prefix must differ from the topic prefix.",
+      prefixWildcard: "The discovery prefix cannot contain + or #.",
     },
     // Prometheus
     prometheusMetrics: 'Prometheus Metrics',

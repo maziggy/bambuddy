@@ -3353,6 +3353,7 @@ export default {
       prefix: "Erkennungs-Präfix",
       prefixHint: "Der Standard von Home Assistant ist homeassistant. Nur ändern, wenn er dort geändert wurde.",
       prefixConflict: "Das Erkennungs-Präfix muss sich vom Topic-Präfix unterscheiden.",
+      prefixWildcard: "Das Erkennungs-Präfix darf weder + noch # enthalten.",
     },
     // Prometheus
     prometheusMetrics: 'Prometheus-Metriken',

@@ -3356,6 +3356,7 @@ export default {
       prefix: "Keşif öneki",
       prefixHint: "Home Assistant'ın varsayılanı homeassistant'tır. Yalnızca orada değiştirdiyseniz değiştirin.",
       prefixConflict: "Keşif öneki, konu önekinden farklı olmalıdır.",
+      prefixWildcard: "Keşif öneki + veya # içeremez.",
     },
     // Prometheus
     prometheusMetrics: 'Prometheus Metrikleri',

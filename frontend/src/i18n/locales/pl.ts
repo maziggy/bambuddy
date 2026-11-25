@@ -3375,6 +3375,7 @@ export default {
       prefix: "Prefiks wykrywania",
       prefixHint: "Domyślna wartość w Home Assistant to homeassistant. Zmień ją tylko wtedy, gdy została zmieniona także tam.",
       prefixConflict: "Prefiks wykrywania musi różnić się od prefiksu tematów.",
+      prefixWildcard: "Prefiks wykrywania nie może zawierać + ani #.",
     },
     // Prometheus
     prometheusMetrics: 'Metryki Prometheus',

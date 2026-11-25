@@ -3405,6 +3405,7 @@ export default {
       prefix: "Upptäcktsprefix",
       prefixHint: "Standardvärdet i Home Assistant är homeassistant. Ändra det bara om du har ändrat det där.",
       prefixConflict: "Upptäcktsprefixet måste skilja sig från ämnesprefixet.",
+      prefixWildcard: "Upptäcktsprefixet får inte innehålla + eller #.",
     },
     // Prometheus
     prometheusMetrics: 'Prometheus-mätvärden',

@@ -3209,6 +3209,7 @@ export default {
       prefix: "검색 접두사",
       prefixHint: "Home Assistant의 기본값은 homeassistant입니다. Home Assistant에서 변경한 경우에만 바꾸세요.",
       prefixConflict: "검색 접두사는 토픽 접두사와 달라야 합니다.",
+      prefixWildcard: "검색 접두사에는 + 또는 #를 사용할 수 없습니다.",
     },
     prometheusMetrics: 'Prometheus 메트릭',
     prometheusEndpointDescription: 'Prometheus/Grafana 모니터링을 위해 <code>/api/v1/metrics</code>에서 프린터 메트릭을 노출합니다.',

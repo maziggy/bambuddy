@@ -3352,6 +3352,7 @@ export default {
       prefix: "検出プレフィックス",
       prefixHint: "Home Assistant の既定値は homeassistant です。Home Assistant 側で変更した場合のみ変更してください。",
       prefixConflict: "検出プレフィックスはトピックプレフィックスと異なる必要があります。",
+      prefixWildcard: "検出プレフィックスに + や # は使用できません。",
     },
     // Prometheus
     prometheusMetrics: 'Prometheusメトリクス',

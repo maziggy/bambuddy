@@ -844,9 +844,13 @@ export function SettingsPage() {
   // The backend refuses a save with both prefixes equal (#3724); say why next to the field.
   const trimMqttPrefix = (value: string | undefined, fallback: string) =>
     (value ?? '').trim().replace(/^\/+|\/+$/g, '') || fallback;
-  const mqttPrefixConflict =
-    trimMqttPrefix(localSettings?.mqtt_topic_prefix, 'bambuddy') ===
-    trimMqttPrefix(localSettings?.mqtt_ha_discovery_prefix, 'homeassistant');
+  const mqttDiscoveryPrefix = trimMqttPrefix(localSettings?.mqtt_ha_discovery_prefix, 'homeassistant');
+  const mqttPrefixConflict = trimMqttPrefix(localSettings?.mqtt_topic_prefix, 'bambuddy') === mqttDiscoveryPrefix;
+  const mqttPrefixWildcard = /[+#]/.test(mqttDiscoveryPrefix);
+  // What the backend would refuse to save: a wildcard always, equal prefixes only with discovery on.
+  const mqttDiscoveryInvalid =
+    mqttPrefixWildcard ||
+    (localSettings?.mqtt_enabled === true && localSettings?.mqtt_ha_discovery_enabled === true && mqttPrefixConflict);
   const pandaBreathOn = activeTab === 'network' && settings?.mqtt_enabled === true && settings?.panda_breath_enabled === true;
   const { data: pandaBreathStatus } = useQuery({
     queryKey: ['panda-breath-status'],
@@ -1416,6 +1420,13 @@ export function SettingsPage() {
       return;
     }
 
+    // The backend refuses these (#3724), and the page sends every field: one
+    // save refused would take the user's other edits down with it. The hint
+    // under the discovery prefix says what to fix; saving resumes once it is.
+    if (mqttDiscoveryInvalid) {
+      return;
+    }
+
     // Don't queue more saves while one is in progress
     if (isSavingRef.current) {
       return;
@@ -1564,7 +1575,7 @@ export function SettingsPage() {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [localSettings, settings, updateMutation, authEnabled, hasPermission, showToast, t]);
+  }, [localSettings, settings, updateMutation, authEnabled, hasPermission, showToast, t, mqttDiscoveryInvalid]);
 
   const secretsPendingReentry =
     settings && localSettings ? secretsToReenter(settings, localSettings, settingsSecretDestinations(settings)) : [];
@@ -3684,8 +3695,10 @@ export function SettingsPage() {
                           placeholder="homeassistant"
                           className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                         />
-                        {mqttPrefixConflict ? (
-                          <p role="alert" className="text-xs text-red-400 mt-1">{t('settings.haDiscovery.prefixConflict')}</p>
+                        {mqttPrefixWildcard || mqttPrefixConflict ? (
+                          <p role="alert" className="text-xs text-red-400 mt-1">
+                            {t(mqttPrefixWildcard ? 'settings.haDiscovery.prefixWildcard' : 'settings.haDiscovery.prefixConflict')}
+                          </p>
                         ) : (
                           <p className="text-xs text-bambu-gray mt-1">{t('settings.haDiscovery.prefixHint')}</p>
                         )}

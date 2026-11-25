@@ -3355,6 +3355,7 @@ export default {
       prefix: "Prefijo de descubrimiento",
       prefixHint: "El valor por defecto de Home Assistant es homeassistant. Cámbialo solo si lo cambiaste allí.",
       prefixConflict: "El prefijo de descubrimiento debe ser distinto del prefijo de topic.",
+      prefixWildcard: "El prefijo de descubrimiento no puede contener + ni #.",
     },
     // Prometheus
     prometheusMetrics: 'Métricas de Prometheus',

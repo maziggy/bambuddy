@@ -553,6 +553,8 @@ class TestSettingsAPI:
         assert result["mqtt_ha_discovery_enabled"] is True
         assert result["mqtt_ha_discovery_prefix"] == "ha"
 
+    _DISCOVERY_ON = {"mqtt_enabled": True, "mqtt_ha_discovery_enabled": True}
+
     @pytest.mark.asyncio
     @pytest.mark.integration
     @pytest.mark.parametrize(
@@ -565,10 +567,10 @@ class TestSettingsAPI:
             {"mqtt_topic_prefix": "printers", "mqtt_ha_discovery_prefix": "printers"},
         ],
     )
-    async def test_a_topic_prefix_equal_to_the_discovery_prefix_is_refused(
+    async def test_a_topic_prefix_equal_to_the_discovery_prefix_is_refused_with_discovery_on(
         self, async_client: AsyncClient, db_session, update
     ):
-        response = await async_client.put("/api/v1/settings/", json=update)
+        response = await async_client.put("/api/v1/settings/", json={**self._DISCOVERY_ON, **update})
 
         assert response.status_code == 400
         assert "discovery prefix" in response.json()["detail"]
@@ -577,12 +579,49 @@ class TestSettingsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    @pytest.mark.parametrize(
+        "update",
+        [
+            {"mqtt_topic_prefix": "homeassistant"},
+            {"mqtt_enabled": True, "mqtt_topic_prefix": "homeassistant"},
+            # The switch on, but the relay off: nothing is published.
+            {"mqtt_ha_discovery_enabled": True, "mqtt_topic_prefix": "homeassistant"},
+        ],
+    )
+    async def test_equal_prefixes_are_saved_while_discovery_is_off(self, async_client: AsyncClient, db_session, update):
+        """An install already using "homeassistant" as its topic prefix keeps saving its settings."""
+        response = await async_client.put("/api/v1/settings/", json=update)
+
+        assert response.status_code == 200
+        assert await get_setting(db_session, "mqtt_topic_prefix") == "homeassistant"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_turning_discovery_on_with_equal_prefixes_is_refused(self, async_client: AsyncClient):
+        await async_client.put("/api/v1/settings/", json={"mqtt_enabled": True, "mqtt_topic_prefix": "homeassistant"})
+
+        response = await async_client.put("/api/v1/settings/", json={"mqtt_ha_discovery_enabled": True})
+
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_a_prefix_is_checked_against_the_stored_one(self, async_client: AsyncClient):
-        await async_client.put("/api/v1/settings/", json={"mqtt_topic_prefix": "printers"})
+        await async_client.put("/api/v1/settings/", json={**self._DISCOVERY_ON, "mqtt_topic_prefix": "printers"})
 
         response = await async_client.put("/api/v1/settings/", json={"mqtt_ha_discovery_prefix": "printers"})
 
         assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("prefix", ["home+assistant", "homeassistant/#", "+"])
+    async def test_a_discovery_prefix_with_a_wildcard_is_refused(self, async_client: AsyncClient, db_session, prefix):
+        response = await async_client.put("/api/v1/settings/", json={"mqtt_ha_discovery_prefix": prefix})
+
+        assert response.status_code == 400
+        assert "+ or #" in response.json()["detail"]
+        assert await get_setting(db_session, "mqtt_ha_discovery_prefix") is None
 
     # ========================================================================
     # Camera settings tests

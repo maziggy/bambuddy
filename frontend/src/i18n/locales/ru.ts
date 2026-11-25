@@ -3213,6 +3213,7 @@ export default {
       prefix: "Префикс обнаружения",
       prefixHint: "По умолчанию в Home Assistant используется homeassistant. Меняйте, только если изменили его там.",
       prefixConflict: "Префикс обнаружения должен отличаться от префикса топиков.",
+      prefixWildcard: "Префикс обнаружения не может содержать + или #.",
     },
     prometheusMetrics: "Метрики Prometheus",
     prometheusEndpointDescription: "Публиковать метрики принтеров по адресу <code>/api/v1/metrics</code> для мониторинга в Prometheus/Grafana.",

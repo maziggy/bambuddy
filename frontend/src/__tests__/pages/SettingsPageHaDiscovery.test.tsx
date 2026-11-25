@@ -110,6 +110,29 @@ describe('SettingsPage: Home Assistant discovery', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('The discovery prefix must differ from the topic prefix.');
   });
 
+  it('warns about a wildcard in the discovery prefix', async () => {
+    serve({ mqtt_ha_discovery_enabled: true, mqtt_ha_discovery_prefix: 'home+assistant' });
+    await openNetwork();
+
+    expect(screen.getByRole('alert')).toHaveTextContent('The discovery prefix cannot contain + or #.');
+  });
+
+  it('does not save while the discovery prefix is refused, and saves once it is fixed', async () => {
+    serve({ mqtt_ha_discovery_enabled: true });
+    const user = await openNetwork();
+    const field = screen.getByLabelText('Discovery prefix');
+
+    await user.clear(field);
+    await user.type(field, 'bambuddy');
+    await new Promise((resolve) => setTimeout(resolve, 900));
+    expect(saves).toEqual([]);
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+
+    await user.type(field, '-ha');
+    await waitFor(() => expect(saves.length).toBeGreaterThan(0), { timeout: 3000 });
+    expect(saves.at(-1)).toMatchObject({ mqtt_ha_discovery_prefix: 'bambuddy-ha' });
+  });
+
   it('shows no warning for different prefixes', async () => {
     serve({ mqtt_ha_discovery_enabled: true });
     await openNetwork();

@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from backend.app.services import mqtt_ha_discovery as ha_discovery
 from backend.app.services.bambu_mqtt import PrinterState
@@ -182,7 +183,13 @@ class TestPublish:
 
     @pytest.mark.parametrize(
         ("model", "chamber", "door"),
-        [("P1S", False, False), ("X1C", True, True), ("A1 Mini", False, False), ("H2D", True, True)],
+        [
+            ("P1S", False, False),
+            ("X1C", True, True),
+            ("A1 Mini", False, False),
+            ("H2D", True, True),
+            ("H3C", True, False),
+        ],
     )
     async def test_chamber_and_door_only_on_models_that_have_them(self, relay, model, chamber, door):
         await _send(relay, _state(), model=model)
@@ -259,16 +266,34 @@ class TestResend:
         relay._on_connect(client, None, {}, 0)
 
         subscribed = [topic for topic, _qos in client.subscribe.call_args.args[0]]
-        assert subscribed == ["homeassistant/status", "homeassistant/device/+/config"]
+        assert subscribed == ["homeassistant/device/+/config", "homeassistant/status"]
         assert _configs(relay) == sent
 
-    async def test_a_connect_without_discovery_subscribes_to_nothing(self, relay):
+    async def test_a_connect_without_discovery_only_sweeps_for_a_while(self, relay):
+        """Configs left from before discovery was turned off are cleared, then
+        the relay stops receiving other integrations' configs."""
         relay.ha_discovery_enabled = False
         client = MagicMock()
+        relay.client = client
 
-        relay._on_connect(client, None, {}, 0)
+        with patch("backend.app.services.mqtt_relay.threading.Timer") as timer:
+            relay._on_connect(client, None, {}, 0)
 
-        client.subscribe.assert_not_called()
+        subscribed = [topic for topic, _qos in client.subscribe.call_args.args[0]]
+        assert subscribed == ["homeassistant/device/+/config"]
+        delay, end_sweep = timer.call_args.args
+        assert delay == relay.SWEEP_SECONDS
+        end_sweep(*timer.call_args.kwargs["args"])
+        client.unsubscribe.assert_called_once_with(["homeassistant/device/+/config"])
+
+    async def test_the_birth_message_is_ignored_with_discovery_off(self, relay):
+        await _send(relay, _state())
+        relay.ha_discovery_enabled = False
+        relay._publish.reset_mock()
+
+        relay._on_message(None, None, SimpleNamespace(topic="homeassistant/status", payload=b"online"))
+
+        relay._publish.assert_not_called()
 
     async def test_a_custom_discovery_prefix_is_used_throughout(self, relay):
         relay.ha_discovery_prefix = "ha"
@@ -376,6 +401,110 @@ class TestClear:
         relay._publish_clear.assert_not_called()
 
 
+def _retained(relay, topic: str, state_topic: str = STATUS_TOPIC):
+    """A retained discovery config arriving over the subscription."""
+    payload = json.dumps({"state_topic": state_topic}).encode()
+    relay._on_message(None, None, SimpleNamespace(topic=topic, payload=payload))
+
+
+class TestBrokerOutage:
+    """What changed while the broker was unreachable is cleared once it is back."""
+
+    async def test_a_printer_deleted_offline_is_not_announced_again(self, relay):
+        await _send(relay, _state([_ams(0)]))
+        relay.connected = False
+        relay._publish_clear.return_value = None
+
+        await relay.on_printer_removed("SERIAL1")
+        relay.connected = True
+        relay._publish.reset_mock()
+        relay._on_connect(MagicMock(), None, {}, 0)
+
+        assert _config_topics(relay) == []
+
+    async def test_a_config_whose_printer_is_gone_is_cleared(self, relay):
+        relay._loop = MagicMock()
+        relay._loop.is_closed.return_value = False
+        with patch("backend.app.services.mqtt_relay.asyncio.run_coroutine_threadsafe") as run:
+            _retained(relay, PRINTER_TOPIC)
+        coroutine = run.call_args.args[0]
+
+        with patch.object(relay, "_printer_exists", AsyncMock(return_value=False)):
+            await coroutine
+
+        assert _cleared(relay) == {PRINTER_TOPIC}
+
+    async def test_a_config_whose_printer_exists_is_kept(self, relay):
+        with patch.object(relay, "_printer_exists", AsyncMock(return_value=True)):
+            await relay._clear_if_orphaned(PRINTER_TOPIC, "SERIAL1")
+
+        relay._publish_clear.assert_not_called()
+
+    async def test_a_failed_lookup_keeps_the_config(self, relay):
+        with patch.object(relay, "_printer_exists", AsyncMock(return_value=None)):
+            await relay._clear_if_orphaned(PRINTER_TOPIC, "SERIAL1")
+
+        relay._publish_clear.assert_not_called()
+
+    async def test_the_printer_is_looked_up_in_the_database(self, relay, db_session):
+        from backend.app.models.printer import Printer
+
+        db_session.add(Printer(name="P", serial_number="SERIAL1", ip_address="10.0.0.1", access_code="12345678"))
+        await db_session.commit()
+
+        # A session of its own, as the relay opens one: closing it must not close the fixture's.
+        sessions = async_sessionmaker(db_session.bind, expire_on_commit=False)
+        with patch("backend.app.core.database.async_session", sessions):
+            assert await relay._printer_exists(" serial1 ") is True
+            assert await relay._printer_exists("SERIAL2") is False
+        assert db_session.is_active
+
+    async def test_our_own_configs_are_not_looked_up(self, relay):
+        await _send(relay, _state())
+        relay._loop = MagicMock()
+        relay._loop.is_closed.return_value = False
+
+        with patch("backend.app.services.mqtt_relay.asyncio.run_coroutine_threadsafe") as run:
+            _retained(relay, PRINTER_TOPIC)
+
+        run.assert_not_called()
+
+    async def test_a_config_left_after_turning_discovery_off_is_cleared(self, relay):
+        """Turned off while the broker was down, or before a restart."""
+        relay.ha_discovery_enabled = False
+
+        _retained(relay, PRINTER_TOPIC)
+
+        assert _cleared(relay) == {PRINTER_TOPIC}
+
+    async def test_another_instances_config_is_left_alone_with_discovery_off(self, relay):
+        relay.ha_discovery_enabled = False
+
+        _retained(relay, "homeassistant/device/bambuddy_SERIAL9/config", "other/printers/SERIAL9/status")
+
+        relay._publish_clear.assert_not_called()
+
+    async def test_configs_under_an_old_prefix_are_swept_on_the_next_connect(self, relay):
+        relay._stale_scopes.add(("ha", "bambuddy"))
+        client = MagicMock()
+        relay.client = client
+
+        with patch("backend.app.services.mqtt_relay.threading.Timer"):
+            relay._on_connect(client, None, {}, 0)
+        _retained(relay, "ha/device/bambuddy_SERIAL1/config")
+
+        subscribed = [topic for topic, _qos in client.subscribe.call_args.args[0]]
+        assert "ha/device/+/config" in subscribed
+        assert _cleared(relay) == {"ha/device/bambuddy_SERIAL1/config"}
+
+    async def test_configs_under_the_current_prefixes_are_not_swept(self, relay):
+        await _send(relay, _state())
+
+        _retained(relay, PRINTER_TOPIC)
+
+        relay._publish_clear.assert_not_called()
+
+
 def _settings(**overrides) -> dict:
     return {
         "mqtt_enabled": True,
@@ -436,6 +565,36 @@ class TestConfigure:
             "ha/device/bambuddy_SERIAL1/config"
         ]
 
+    async def test_a_prefix_change_with_the_broker_down_is_swept_later(self, configured):
+        await _send(configured, _state())
+        configured.connected = False
+
+        await configured.configure(_settings(mqtt_ha_discovery_prefix="ha"))
+
+        assert ("homeassistant", "bambuddy") in configured._stale_scopes
+
+    async def test_old_prefixes_survive_a_restart(self, configured, db_session):
+        """Changed while the broker was down, and Bambuddy restarted before it came back."""
+        sessions = async_sessionmaker(db_session.bind, expire_on_commit=False)
+        with patch("backend.app.core.database.async_session", sessions):
+            await _send(configured, _state())
+            configured.connected = False
+            await configured.configure(_settings(mqtt_ha_discovery_prefix="ha"))
+
+            restarted = MQTTRelayService()
+            assert await restarted._load_stale_scopes() == {("homeassistant", "bambuddy")}
+
+            # Back to the old prefixes: they are kept, and the prefix left now is swept instead.
+            await configured.configure(_settings())
+            assert await MQTTRelayService()._load_stale_scopes() == {("ha", "bambuddy")}
+
+    async def test_going_back_to_old_prefixes_keeps_their_configs(self, configured):
+        configured._stale_scopes.add(("homeassistant", "bambuddy"))
+
+        await configured.configure(_settings())
+
+        assert configured._stale_scopes == set()
+
     async def test_the_ams_is_cleared_before_its_printer(self, configured):
         await _send(configured, _state([_ams(0)]))
 
@@ -468,6 +627,69 @@ class TestTopics:
         assert ha_discovery.belongs_to_printer("bambuddy_SERIAL1_ams_0", "SERIAL1")
         assert not ha_discovery.belongs_to_printer("bambuddy_SERIAL10", "SERIAL1")
         assert not ha_discovery.belongs_to_printer("bambuddy_SERIAL10_ams_0", "SERIAL1")
+
+    @pytest.mark.parametrize(
+        ("unit", "model"),
+        [
+            ({"id": 0, "module_type": "ams"}, "AMS"),
+            ({"id": 0, "module_type": "ams_f1"}, "AMS Lite"),
+            ({"id": 0, "ams_type": 2}, "AMS Lite"),
+            ({"id": 0, "ams_type": 5}, "AMS Lite"),
+            ({"id": 0, "module_type": "n3f"}, "AMS 2 Pro"),
+            ({"id": 128, "is_ams_ht": True}, "AMS HT"),
+            ({"id": 32, "module_type": "n10a"}, "AMS 3H"),
+            ({"id": 32, "ams_type": 6}, "AMS 3H"),
+            ({"id": 0}, "AMS"),
+            ({"id": 0, "ams_type": 99}, "AMS"),
+        ],
+    )
+    def test_the_ams_model(self, unit, model):
+        assert ha_discovery.ams_model(unit) == model
+
+    def test_an_ams_lite_has_no_humidity_or_temperature(self):
+        config = ha_discovery.build_ams_config(
+            topic_prefix="bambuddy",
+            serial="S",
+            printer_name="A1",
+            unit={"id": 0, "module_type": "ams_f1", "tray": [{"id": 0}]},
+        )
+
+        assert set(config["components"]) == {"slot_1"}
+        assert config["device"]["model"] == "AMS Lite"
+
+    def test_an_ams_with_nothing_to_show_is_not_announced(self):
+        snapshot = {
+            "ams": [
+                {"id": 0, "module_type": "ams_f1", "tray": []},
+                {"id": 1, "module_type": "ams_f1", "tray": [{"id": 0}]},
+            ]
+        }
+
+        configs = ha_discovery.build_configs(
+            discovery_prefix="homeassistant",
+            topic_prefix="bambuddy",
+            serial="S",
+            name="A1",
+            model="A1",
+            snapshot=snapshot,
+            temperatures={},
+        )
+
+        assert set(configs) == {
+            "homeassistant/device/bambuddy_S/config",
+            "homeassistant/device/bambuddy_S_ams_1/config",
+        }
+
+    @pytest.mark.parametrize("module", ["n3f", "n3s"])
+    def test_only_units_with_a_dryer_count_drying_down(self, module):
+        config = ha_discovery.build_ams_config(
+            topic_prefix="b", serial="S", printer_name="P", unit={"id": 0, "module_type": module}
+        )
+
+        assert "drying_time" in config["components"]
+
+    def test_the_ams_3h_is_named_as_the_printer_names_it(self):
+        assert ha_discovery.ams_unit_name({"id": 32, "module_type": "n10a"}) == "AMS 3H"
 
     def test_an_ams_ht_is_numbered_from_one(self):
         assert ha_discovery.ams_unit_name({"id": 128, "is_ams_ht": True}) == "AMS HT 1"

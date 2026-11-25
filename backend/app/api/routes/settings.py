@@ -527,18 +527,33 @@ async def update_settings(
     }
     mqtt_updated = bool(mqtt_keys & set(update_data.keys()))
 
-    # Printer status under Home Assistant's own discovery topics would be read
-    # as broken discovery messages (#3724). Checked against what will be stored,
-    # whichever of the two this save changes, and whether discovery is on or not.
-    if {"mqtt_topic_prefix", "mqtt_ha_discovery_prefix"} & set(update_data.keys()):
+    # Home Assistant discovery (#3724). Checked against what will be stored,
+    # whichever of these this save changes: the page sends every field on each save.
+    discovery_keys = {"mqtt_enabled", "mqtt_topic_prefix", "mqtt_ha_discovery_enabled", "mqtt_ha_discovery_prefix"}
+    if discovery_keys & set(update_data.keys()):
         from backend.app.services.mqtt_ha_discovery import DEFAULT_DISCOVERY_PREFIX, normalize_prefix
 
         async def _effective(key: str) -> str:
-            return str(update_data[key]) if key in update_data else (await get_setting(db, key) or "")
+            if key in update_data:
+                value = update_data[key]
+                return ("true" if value else "false") if isinstance(value, bool) else str(value)
+            return await get_setting(db, key) or ""
 
-        topic_prefix = normalize_prefix(await _effective("mqtt_topic_prefix"), "bambuddy")
         discovery_prefix = normalize_prefix(await _effective("mqtt_ha_discovery_prefix"), DEFAULT_DISCOVERY_PREFIX)
-        if topic_prefix == discovery_prefix:
+        # MQTT wildcards: the relay could neither publish under it nor subscribe to it.
+        if "+" in discovery_prefix or "#" in discovery_prefix:
+            raise HTTPException(
+                status_code=400,
+                detail="The Home Assistant discovery prefix cannot contain + or #.",
+            )
+        # Printer status under Home Assistant's own discovery topics would be read
+        # as broken discovery messages. Only while discovery will be on: an install
+        # whose topic prefix is already "homeassistant" must still save its settings.
+        discovery_on = (
+            await _effective("mqtt_enabled") == "true" and await _effective("mqtt_ha_discovery_enabled") == "true"
+        )
+        topic_prefix = normalize_prefix(await _effective("mqtt_topic_prefix"), "bambuddy")
+        if discovery_on and topic_prefix == discovery_prefix:
             raise HTTPException(
                 status_code=400,
                 detail="The MQTT topic prefix must differ from the Home Assistant discovery prefix.",

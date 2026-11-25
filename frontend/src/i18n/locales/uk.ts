@@ -3370,6 +3370,7 @@ export default {
       prefix: "Префікс виявлення",
       prefixHint: "Типове значення в Home Assistant — homeassistant. Змінюйте лише тоді, коли змінили його там.",
       prefixConflict: "Префікс виявлення має відрізнятися від префікса топіків.",
+      prefixWildcard: "Префікс виявлення не може містити + або #.",
     },
     // Prometheus
     prometheusMetrics: "Prometheus Метрики",

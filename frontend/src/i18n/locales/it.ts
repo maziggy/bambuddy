@@ -3297,6 +3297,7 @@ export default {
       prefix: "Prefisso di rilevamento",
       prefixHint: "Il valore predefinito di Home Assistant è homeassistant. Cambialo solo se lo hai cambiato lì.",
       prefixConflict: "Il prefisso di rilevamento deve essere diverso dal prefisso dei topic.",
+      prefixWildcard: "Il prefisso di rilevamento non può contenere + o #.",
     },
     prometheusMetrics: 'Metriche Prometheus',
     prometheusEndpointDescription: 'Esponi metriche stampante su <code>/api/v1/metrics</code> per monitoraggio Prometheus/Grafana.',

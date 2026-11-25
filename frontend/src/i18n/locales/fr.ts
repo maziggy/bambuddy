@@ -3298,6 +3298,7 @@ export default {
       prefix: "Préfixe de découverte",
       prefixHint: "La valeur par défaut de Home Assistant est homeassistant. Ne la modifiez que si vous l'avez changée là-bas.",
       prefixConflict: "Le préfixe de découverte doit être différent du préfixe de topic.",
+      prefixWildcard: "Le préfixe de découverte ne peut pas contenir + ni #.",
     },
     prometheusMetrics: 'Métriques Prometheus',
     prometheusEndpointDescription: 'Exposer les métriques imprimante sur <code>/api/v1/metrics</code> pour la surveillance Prometheus/Grafana.',

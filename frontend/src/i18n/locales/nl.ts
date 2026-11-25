@@ -3373,6 +3373,7 @@ export default {
       prefix: "Detectieprefix",
       prefixHint: "De standaard van Home Assistant is homeassistant. Wijzig dit alleen als je het daar hebt aangepast.",
       prefixConflict: "De detectieprefix moet verschillen van de topicprefix.",
+      prefixWildcard: "De detectieprefix mag geen + of # bevatten.",
     },
     // Prometheus
     prometheusMetrics: 'Prometheus-metrics',

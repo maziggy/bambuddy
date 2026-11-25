@@ -3342,6 +3342,7 @@ export default {
       prefix: "探索前綴",
       prefixHint: "Home Assistant 的預設值為 homeassistant。只有在那邊修改過時才需要變更。",
       prefixConflict: "探索前綴必須與主題前綴不同。",
+      prefixWildcard: "探索前綴不能包含 + 或 #。",
     },
     prometheusMetrics: 'Prometheus 指標',
     prometheusEndpointDescription: '在 <code>/api/v1/metrics</code> 公開印表機指標，用於Prometheus/Grafana監控。',

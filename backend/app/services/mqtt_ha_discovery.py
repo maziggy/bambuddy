@@ -12,6 +12,7 @@ the relay's job (``mqtt_relay.py``).
 import re
 
 from backend.app.core.config import APP_VERSION
+from backend.app.utils.tray_ids import AmsType
 
 DEFAULT_DISCOVERY_PREFIX = "homeassistant"
 
@@ -37,14 +38,27 @@ _STATES = {
 }
 _SPEED_LEVELS = {1: "silent", 2: "standard", 3: "sport", 4: "ludicrous"}
 
-# Models with a door sensor (home_flag bit 23). Elsewhere door_open is always
-# False, and a door that never opens is worse than no entity.
+# Models with a door sensor (home_flag bit 23), as PrinterState.door_open names
+# them. Elsewhere door_open is always False, and a door that never opens is
+# worse than no entity.
 _DOOR_SENSOR_MODELS = {"X1", "X1C", "X1E", "X2D", "P2S"}
-_DOOR_SENSOR_MODEL_PREFIXES = ("H2", "H3")
+_DOOR_SENSOR_MODEL_PREFIXES = ("H2",)
 
-_AMS_MODELS = {"ams": "AMS", "n3f": "AMS 2 Pro", "n3s": "AMS HT"}
+# The unit's model, from its AMS type (bits 0-3 of ``info``, see utils/tray_ids)
+# or, for a payload without one, from the module name get_version reports.
+_AMS_MODELS_BY_TYPE = {
+    AmsType.AMS: "AMS",
+    AmsType.AMS_LITE: "AMS Lite",
+    AmsType.N3F: "AMS 2 Pro",
+    AmsType.N3S: "AMS HT",
+    AmsType.AMS_LITE_MIXED: "AMS Lite",
+    AmsType.ZMULTI_A: "AMS 3H",
+}
+_AMS_MODELS_BY_MODULE = {"ams": "AMS", "ams_f1": "AMS Lite", "n3f": "AMS 2 Pro", "n3s": "AMS HT", "n10a": "AMS 3H"}
 # Units with a dryer: only they count a drying time down.
-_AMS_DRYER_MODULES = {"n3f", "n3s"}
+_AMS_DRYER_MODELS = {"AMS 2 Pro", "AMS HT"}
+# The AMS Lite has no humidity or temperature sensor.
+_AMS_WITHOUT_SENSORS = {"AMS Lite"}
 
 
 def normalize_prefix(prefix: str | None, default: str = "") -> str:
@@ -412,11 +426,27 @@ def build_printer_config(
 
 
 def ams_unit_name(unit: dict) -> str:
-    """ "AMS 1", "AMS HT 1": the unit's number as the printer and the slicer count it."""
+    """The unit as the printer and the slicer count it: AMS 1, AMS HT 1, or AMS 3H."""
     ams_id = int(unit.get("id", 0))
     if unit.get("is_ams_ht"):
         return f"AMS HT {ams_id - 127}"
+    if ams_model(unit) == "AMS 3H":
+        # The H3C's one rack unit, reported as unit 32.
+        return "AMS 3H"
     return f"AMS {ams_id + 1}"
+
+
+def ams_model(unit: dict) -> str:
+    """The unit's model as Bambu Lab names it: "AMS", "AMS Lite", "AMS 2 Pro", "AMS HT", "AMS 3H"."""
+    if unit.get("is_ams_ht"):
+        return "AMS HT"
+    module = str(unit.get("module_type") or "").lower()
+    if module in _AMS_MODELS_BY_MODULE:
+        return _AMS_MODELS_BY_MODULE[module]
+    try:
+        return _AMS_MODELS_BY_TYPE.get(AmsType(int(unit.get("ams_type", AmsType.AMS))), "AMS")
+    except (TypeError, ValueError):
+        return "AMS"
 
 
 def build_ams_config(*, topic_prefix: str, serial: str, printer_name: str, unit: dict) -> dict:
@@ -428,7 +458,7 @@ def build_ams_config(*, topic_prefix: str, serial: str, printer_name: str, unit:
     device_id = ams_device_id(serial, ams_id)
     shared = _shared(topic_prefix, serial)
     status_topic = shared["state_topic"]
-    module = str(unit.get("module_type") or "").lower()
+    model = ams_model(unit)
     unit_expression = (
         f"{{% set a = (value_json.ams or []) | selectattr('id', 'eq', {ams_id}) | first | default({{}}) %}}"
     )
@@ -438,7 +468,7 @@ def build_ams_config(*, topic_prefix: str, serial: str, printer_name: str, unit:
         # With the printer's name: two printers each have an "AMS 1".
         "name": f"{printer_name} {ams_unit_name(unit)}",
         "manufacturer": "Bambu Lab",
-        "model": "AMS HT" if unit.get("is_ams_ht") else _AMS_MODELS.get(module, "AMS"),
+        "model": model,
         "via_device": printer_device_id(serial),
     }
     if unit.get("serial_number"):
@@ -446,29 +476,31 @@ def build_ams_config(*, topic_prefix: str, serial: str, printer_name: str, unit:
     if unit.get("sw_ver"):
         device["sw_version"] = unit["sw_ver"]
 
-    components = dict(
-        [
-            _sensor(
-                device_id,
-                "humidity",
-                "Humidity",
-                f"{unit_expression}{{{{ a.get('humidity') }}}}",
-                device_class="humidity",
-                unit_of_measurement="%",
-                state_class="measurement",
-            ),
-            _sensor(
-                device_id,
-                "temperature",
-                "Temperature",
-                f"{unit_expression}{{{{ a.get('temp') }}}}",
-                device_class="temperature",
-                unit_of_measurement="°C",
-                state_class="measurement",
-            ),
-        ]
-    )
-    if unit.get("is_ams_ht") or module in _AMS_DRYER_MODULES:
+    components: dict = {}
+    if model not in _AMS_WITHOUT_SENSORS:
+        components = dict(
+            [
+                _sensor(
+                    device_id,
+                    "humidity",
+                    "Humidity",
+                    f"{unit_expression}{{{{ a.get('humidity') }}}}",
+                    device_class="humidity",
+                    unit_of_measurement="%",
+                    state_class="measurement",
+                ),
+                _sensor(
+                    device_id,
+                    "temperature",
+                    "Temperature",
+                    f"{unit_expression}{{{{ a.get('temp') }}}}",
+                    device_class="temperature",
+                    unit_of_measurement="°C",
+                    state_class="measurement",
+                ),
+            ]
+        )
+    if model in _AMS_DRYER_MODELS:
         key, config = _sensor(
             device_id,
             "drying_time",
@@ -523,6 +555,10 @@ def build_configs(
         )
     }
     for unit in snapshot.get("ams") or []:
-        topic = discovery_topic(discovery_prefix, ams_device_id(serial, int(unit.get("id", 0))))
-        configs[topic] = build_ams_config(topic_prefix=topic_prefix, serial=serial, printer_name=name, unit=unit)
+        config = build_ams_config(topic_prefix=topic_prefix, serial=serial, printer_name=name, unit=unit)
+        # Home Assistant refuses a device without components: an AMS Lite has
+        # no sensors of its own, and reports no slots before its first full push.
+        if config["components"]:
+            topic = discovery_topic(discovery_prefix, ams_device_id(serial, int(unit.get("id", 0))))
+            configs[topic] = config
     return configs

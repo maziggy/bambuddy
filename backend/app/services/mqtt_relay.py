@@ -23,6 +23,9 @@ logger = logging.getLogger(__name__)
 
 # Fields the printer status topic takes from the same dict the REST status and the
 # WebSocket send, so a subscriber reads them in the shape it already knows (#3401).
+# Internal setting: the prefixes whose discovery configs are still to be swept (#3724).
+STALE_SCOPES_SETTING = "mqtt_ha_discovery_stale_scopes"
+
 _STATUS_FIELDS_FROM_STATE = ("door_open", "active_extruder", "tray_now", "ams", "vt_tray", "hms_errors")
 
 
@@ -57,6 +60,12 @@ class MQTTRelayService:
         # of them after a restart: what to clear when discovery is turned off.
         self._discovery_seen: set[str] = set()
         self._discovery_signatures: dict[str, tuple] = {}  # printer serial -> what its configs were built from
+        # (discovery prefix, topic prefix) pairs whose configs must go: published
+        # under prefixes that are no longer in use, possibly while the broker was
+        # unreachable. Swept on every connect, and kept in the settings table so
+        # a restart before the broker is back does not forget them.
+        self._stale_scopes: set[tuple[str, str]] = set()
+        self._stale_scopes_loaded = False
 
     async def configure(self, settings: dict) -> bool:
         """Configure MQTT connection from settings.
@@ -80,11 +89,23 @@ class MQTTRelayService:
 
         # What Home Assistant was told so far is wrong from here on: clear it
         # over the connection that is still up, before the prefixes change.
-        if self.ha_discovery_enabled and (
-            not discovery_enabled or discovery_prefix != self.ha_discovery_prefix or topic_prefix != self.topic_prefix
-        ):
+        if not self._stale_scopes_loaded:
+            self._stale_scopes |= await self._load_stale_scopes()
+            self._stale_scopes_loaded = True
+        stale_before = set(self._stale_scopes)
+        old_scope = (self.ha_discovery_prefix, self.topic_prefix)
+        if self.ha_discovery_enabled and (not discovery_enabled or (discovery_prefix, topic_prefix) != old_scope):
             await self._clear_discovery()
+            # The clear above reaches nothing while the broker is down: sweep
+            # the old prefixes once it is back.
+            self._stale_scopes.add(old_scope)
+        # Back to prefixes used before: what is there now is ours to keep.
+        if discovery_enabled:
+            self._stale_scopes.discard((discovery_prefix, topic_prefix))
+        if self._stale_scopes != stale_before:
+            await self._save_stale_scopes()
 
+        self._loop = asyncio.get_running_loop()
         self.enabled = enabled
         self.ha_discovery_enabled = discovery_enabled
         self.ha_discovery_prefix = discovery_prefix
@@ -231,18 +252,10 @@ class MQTTRelayService:
             logger.info("MQTT relay connected successfully")
             # Publish online status
             self._publish_status("online")
+            # Here rather than once after connecting: paho reconnects on its
+            # own, and a broker that restarted has lost the subscriptions.
+            self._subscribe_discovery(client)
             if self.ha_discovery_enabled:
-                # Here rather than once after connecting: paho reconnects on its
-                # own, and a broker that restarted has lost both subscriptions.
-                try:
-                    client.subscribe(
-                        [
-                            (f"{self.ha_discovery_prefix}/status", 1),
-                            (f"{self.ha_discovery_prefix}/device/+/config", 1),
-                        ]
-                    )
-                except Exception as e:
-                    logger.debug("MQTT discovery subscribe error: %s", e)
                 self._resend_discovery()
         else:
             self.connected = False
@@ -318,36 +331,176 @@ class MQTTRelayService:
             logger.debug("MQTT publish error: %s", e)
             return None
 
-    def _on_message(self, client: mqtt.Client, userdata: Any, message: mqtt.MQTTMessage):
-        """Home Assistant's birth message, and our own retained discovery configs."""
+    # How long a prefix that is only swept stays subscribed: long enough for the
+    # broker to send its retained configs.
+    SWEEP_SECONDS = 10.0
+
+    def _sweep_scopes(self) -> set[tuple[str, str]]:
+        """The (discovery prefix, topic prefix) pairs whose configs of ours must go."""
+        scopes = set(self._stale_scopes)
         if not self.ha_discovery_enabled:
+            # Turned off, possibly while the broker was down or before a restart.
+            scopes.add((self.ha_discovery_prefix, self.topic_prefix))
+        return scopes
+
+    def _subscribe_discovery(self, client: mqtt.Client):
+        """Subscribe to what discovery reads, and to the configs to sweep.
+
+        A prefix that is only swept is unsubscribed again after a while: with
+        discovery off there is no reason to keep receiving every device config
+        other integrations keep on the broker.
+        """
+        active = {self.ha_discovery_prefix} if self.ha_discovery_enabled else set()
+        sweep_only = {prefix for prefix, _ in self._sweep_scopes()} - active
+        topics = [(f"{prefix}/device/+/config", 1) for prefix in sorted(active | sweep_only)]
+        if self.ha_discovery_enabled:
+            topics.append((f"{self.ha_discovery_prefix}/status", 1))
+        if not topics:
             return
         try:
+            client.subscribe(topics)
+        except Exception as e:
+            logger.debug("MQTT discovery subscribe error: %s", e)
+            return
+        if sweep_only:
+            timer = threading.Timer(
+                self.SWEEP_SECONDS,
+                self._end_sweep,
+                args=(client, [f"{prefix}/device/+/config" for prefix in sorted(sweep_only)]),
+            )
+            timer.daemon = True
+            timer.start()
+
+    def _end_sweep(self, client: mqtt.Client, topics: list[str]):
+        if client is not self.client:
+            return
+        active = f"{self.ha_discovery_prefix}/device/+/config" if self.ha_discovery_enabled else None
+        topics = [topic for topic in topics if topic != active]
+        try:
+            if topics:
+                client.unsubscribe(topics)
+        except Exception as e:
+            logger.debug("MQTT discovery unsubscribe error: %s", e)
+
+    def _on_message(self, client: mqtt.Client, userdata: Any, message: mqtt.MQTTMessage):
+        """Home Assistant's birth message, and retained discovery configs of ours."""
+        try:
             topic = message.topic
-            if topic == f"{self.ha_discovery_prefix}/status":
+            if self.ha_discovery_enabled and topic == f"{self.ha_discovery_prefix}/status":
                 # Home Assistant (re)started and has forgotten every device.
                 if message.payload.decode("utf-8", errors="replace").strip() == "online":
                     self._resend_discovery()
                 return
-            if ha_discovery.device_id_from_topic(self.ha_discovery_prefix, topic) is None:
+            if not topic.endswith("/config") or "/device/" not in topic:
+                return
+            discovery_prefix = topic[: topic.rindex("/device/")]
+            if ha_discovery.device_id_from_topic(discovery_prefix, topic) is None:
                 return
             if not message.payload:
                 with self._discovery_lock:
                     self._discovery_seen.discard(topic)
                 return
             config = json.loads(message.payload)
-            # Ours, not another Bambuddy's on the same broker: it reads our topics.
+            # Whose it is, from what it reads: <topic prefix>/printers/<serial>/status.
+            # Another Bambuddy on the same broker reads other topics.
             state_topic = config.get("state_topic") if isinstance(config, dict) else None
-            if isinstance(state_topic, str) and state_topic.startswith(f"{self.topic_prefix}/printers/"):
+            if (
+                not isinstance(state_topic, str)
+                or not state_topic.endswith("/status")
+                or "/printers/" not in state_topic
+            ):
+                return
+            topic_prefix, serial = state_topic[: -len("/status")].rsplit("/printers/", 1)
+            if not serial or "/" in serial:
+                return
+
+            if (discovery_prefix, topic_prefix) in self._sweep_scopes():
+                self._publish_clear(topic)
                 with self._discovery_lock:
-                    self._discovery_seen.add(topic)
-                    if topic not in self._discovery_sent:
-                        # Left from before a restart, and its printer may have
-                        # been announced already: have the next status compare
-                        # again, so an AMS that went meanwhile is cleared.
-                        self._discovery_signatures.clear()
+                    self._discovery_seen.discard(topic)
+                return
+            if not self.ha_discovery_enabled or (discovery_prefix, topic_prefix) != (
+                self.ha_discovery_prefix,
+                self.topic_prefix,
+            ):
+                return
+            with self._discovery_lock:
+                self._discovery_seen.add(topic)
+                if topic in self._discovery_sent:
+                    return
+                # Left from before a restart, and its printer may have been
+                # announced already: have the next status compare again, so an
+                # AMS that went meanwhile is cleared.
+                self._discovery_signatures.clear()
+            # Possibly a printer deleted while the broker was unreachable, which
+            # no status will ever come for: ask the database.
+            if self._loop is not None and not self._loop.is_closed():
+                asyncio.run_coroutine_threadsafe(self._clear_if_orphaned(topic, serial), self._loop)
         except Exception as e:
             logger.debug("MQTT discovery message ignored: %s", e)
+
+    @staticmethod
+    async def _load_stale_scopes() -> set[tuple[str, str]]:
+        try:
+            from sqlalchemy import select
+
+            from backend.app.core import database
+            from backend.app.models.settings import Settings
+
+            async with database.async_session() as db:
+                value = await db.scalar(select(Settings.value).where(Settings.key == STALE_SCOPES_SETTING))
+            pairs = json.loads(value) if value else []
+            return {
+                (str(pair[0]), str(pair[1]))
+                for pair in pairs
+                if isinstance(pair, list) and len(pair) == 2 and all(isinstance(p, str) for p in pair)
+            }
+        except Exception as e:
+            logger.debug("Could not read the stale Home Assistant discovery prefixes: %s", e)
+            return set()
+
+    async def _save_stale_scopes(self):
+        try:
+            from backend.app.core import database
+            from backend.app.core.db_dialect import upsert_setting
+            from backend.app.models.settings import Settings
+
+            async with database.async_session() as db:
+                await upsert_setting(db, Settings, STALE_SCOPES_SETTING, json.dumps(sorted(self._stale_scopes)))
+                await db.commit()
+        except Exception as e:
+            logger.debug("Could not store the stale Home Assistant discovery prefixes: %s", e)
+
+    @staticmethod
+    async def _printer_exists(serial: str) -> bool | None:
+        """Whether a printer with this serial is in the database; None if it can't be told."""
+        try:
+            from sqlalchemy import func, select
+
+            from backend.app.core import database
+            from backend.app.models.printer import Printer
+
+            async with database.async_session() as db:
+                count = await db.scalar(
+                    select(func.count())
+                    .select_from(Printer)
+                    .where(func.upper(func.trim(Printer.serial_number)) == serial.strip().upper())
+                )
+            return bool(count)
+        except Exception as e:
+            logger.debug("Could not look up printer %s: %s", serial, e)
+            return None
+
+    async def _clear_if_orphaned(self, topic: str, serial: str):
+        """Clear a retained config of ours whose printer is not in the database."""
+        if await self._printer_exists(serial) is not False:
+            return
+        with self._discovery_lock:
+            if topic in self._discovery_sent:
+                return
+            self._discovery_seen.discard(topic)
+        logger.info("Removing Home Assistant discovery config of deleted printer %s", serial)
+        self._publish_clear(topic)
 
     def _resend_discovery(self):
         """Publish every discovery config again, as it was last published."""
@@ -424,6 +577,7 @@ class MQTTRelayService:
                     unit.get("id"),
                     unit.get("is_ams_ht"),
                     unit.get("module_type"),
+                    unit.get("ams_type"),
                     unit.get("serial_number"),
                     unit.get("sw_ver"),
                     tuple(tray.get("id") for tray in unit.get("tray") or []),
@@ -468,8 +622,13 @@ class MQTTRelayService:
             self._publish_clear(topic)
 
     async def on_printer_removed(self, printer_serial: str):
-        """A printer was deleted: remove it and its AMS units from Home Assistant."""
-        if not self.ha_discovery_enabled or not self.connected:
+        """A printer was deleted: remove it and its AMS units from Home Assistant.
+
+        With the broker unreachable this only forgets them, so a reconnect does
+        not announce them again; their retained configs are cleared once the
+        broker is back, when they arrive over the subscription (_on_message).
+        """
+        if not self.ha_discovery_enabled:
             return
         await self._clear_discovery(printer_serial)
 

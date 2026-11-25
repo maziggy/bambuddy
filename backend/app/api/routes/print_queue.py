@@ -26,6 +26,7 @@ from backend.app.core.auth import (
     RequirePermissionIfAuthEnabled,
     RequirePrinterPermissionIfAuthEnabled,
     may_start_queue_item,
+    require_clear_plate_permission,
     require_ownership_permission,
 )
 from backend.app.core.config import settings
@@ -475,6 +476,21 @@ def _effective_clears_plate(item: PrintQueueItem) -> bool:
     if item.status == "pending" and "variants" not in inspect(item).unloaded and item.variants:
         return all(bool(v.clears_plate) for v in item.variants)
     return bool(item.clears_plate)
+
+
+def _switches_clears_plate_on(item: PrintQueueItem, update_data: dict) -> bool:
+    """Whether an edit turns a job's plate clearing on (#3576).
+
+    Only that needs printers:clear_plate. The value the job already has, sent
+    again by an edit that changes something else, grants nothing new; a job
+    with alternatives has it when every alternative does, as
+    ``_apply_clears_plate_update`` reads it.
+    """
+    if update_data.get("clears_plate") is not True:
+        return False
+    if item.variants:
+        return not all(bool(v.clears_plate) for v in item.variants)
+    return not item.clears_plate
 
 
 def _apply_clears_plate_update(item: PrintQueueItem, update_data: dict) -> None:
@@ -1362,6 +1378,22 @@ async def add_to_queue(
         except InvalidFilenameError as e:
             raise HTTPException(400, str(e)) from e
 
+    # Switching plate clearing on takes printers:clear_plate (#3576). A value
+    # the job would inherit anyway (its file's, its archive's) does not: the
+    # print dialog sends each alternative's own flag back as it is.
+    if variant_specs:
+        switches_clears_plate_on = any(
+            (data.clears_plate if data.clears_plate is not None else spec.clears_plate)
+            and not variant_file.clears_plate
+            for spec, variant_file, _model in variant_specs
+        )
+    elif library_file:
+        switches_clears_plate_on = bool(data.clears_plate) and not library_file.clears_plate
+    else:
+        switches_clears_plate_on = bool(data.clears_plate) and not (archive is not None and archive.clears_plate)
+    if switches_clears_plate_on:
+        require_clear_plate_permission(actor)
+
     # Cross-model safety gate (#2578): a G-code 3MF sliced for one model must
     # not be queued for dispatch to an incompatible model. The UI can no longer
     # produce such rows, but API-created rows must be rejected here too — the
@@ -1771,6 +1803,17 @@ async def bulk_update_queue_items(
         .options(selectinload(PrintQueueItem.variants))
     )
     items = [item for item in result.scalars().all() if printer_scope.allows(item.printer_id)]
+
+    # Switching plate clearing on takes printers:clear_plate (#3576). Checked
+    # for the whole request before any row changes, on the rows it may change.
+    if any(
+        item.status == "pending"
+        and item.dispatching_at is None
+        and (can_modify_all or (user is not None and item.created_by_id == user.id))
+        and _switches_clears_plate_on(item, update_data)
+        for item in items
+    ):
+        require_clear_plate_permission(actor)
 
     updated_count = 0
     skipped_count = 0
@@ -2706,6 +2749,9 @@ async def update_queue_item(
         raise HTTPException(403, _AWAITING_REVIEW)
     if _releases_model_job(item, update_data):
         ensure_model_target_allowed(user, printer_scope)
+    # Switching plate clearing on takes printers:clear_plate (#3576)
+    if _switches_clears_plate_on(item, update_data):
+        require_clear_plate_permission(actor)
 
     # Normalize target_model if being updated (see add_to_queue for why the
     # code map has to run first).

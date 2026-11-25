@@ -2371,6 +2371,21 @@ async def get_request_actor(
 RequestActor = Depends(get_request_actor)
 
 
+def require_clear_plate_permission(actor: User | ApiKeyActor | None) -> None:
+    """Refuse switching ``clears_plate`` on without printers:clear_plate (#3576).
+
+    A file or job that clears its own plate skips the plate-clear confirmation,
+    so marking one takes the permission that confirms a cleared plate. ``actor``
+    is the route's ``RequestActor``: None is auth off, and an API key answers
+    with what its scope flags and its owner allow.
+    """
+    if actor is not None and not actor.has_permission(Permission.PRINTERS_CLEAR_PLATE.value):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Setting clears_plate requires {Permission.PRINTERS_CLEAR_PLATE.value}",
+        )
+
+
 async def actor_still_exists(db: AsyncSession, actor: User | ApiKeyActor | None) -> bool:
     """Whether the user a request started as still exists.
 

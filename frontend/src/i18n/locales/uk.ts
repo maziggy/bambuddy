@@ -5986,6 +5986,11 @@ export default {
     allMaterials: "Усі матеріали",
     filterByBrand: "Фільтрувати за брендом...",
     showArchived: "Показати архівні",
+    lastUsed: {
+      hint: 'Значення з останньої котушки ({{name}})',
+      hintPlain: 'Значення з останньої котушки',
+      clear: 'Очистити',
+    },
     quickAdd: "Швидке додавання (запас)",
     quantity: "Кількість",
     stock: "Запас",
@@ -6062,6 +6067,11 @@ export default {
     showLess: "Показувати менше",
     showAll: "Показати все",
     noColorsFound: "Жоден колір не відповідає вашому запиту",
+    catalogColors: {
+      showAll: "Показати всі кольори",
+      showMatching: "Показати лише відповідні",
+      allBrand: "Усі кольори {{brand}}",
+    },
     noResults: "Збігів не знайдено",
     // Multi-color gradient + visual effect (#1154)
     extraColorsLabel: "Додаткові кольори",

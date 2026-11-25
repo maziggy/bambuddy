@@ -5734,6 +5734,11 @@ export default {
     allMaterials: '모든 재료',
     filterByBrand: '브랜드로 필터...',
     showArchived: '보관된 항목 표시',
+    lastUsed: {
+      hint: '마지막 스풀 값으로 시작했습니다({{name}})',
+      hintPlain: '마지막 스풀 값으로 시작했습니다',
+      clear: '지우기',
+    },
     quickAdd: '빠른 추가 (재고)',
     quantity: '수량',
     stock: '재고',
@@ -5807,6 +5812,11 @@ export default {
     showLess: '간략히 보기',
     showAll: '모두 보기',
     noColorsFound: '검색과 일치하는 색상 없음',
+    catalogColors: {
+      showAll: '모든 색상 표시',
+      showMatching: '일치하는 색상만 표시',
+      allBrand: '{{brand}} 모든 색상',
+    },
     noResults: '일치하는 항목 없음',
     extraColorsLabel: '추가 색상',
     extraColorsPlaceholder: 'EC984C,#6CD4BC,A66EB9,D87694',

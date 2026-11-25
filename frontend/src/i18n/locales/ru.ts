@@ -5725,6 +5725,11 @@ export default {
     allMaterials: "Все материалы",
     filterByBrand: "Фильтр по бренду…",
     showArchived: "Показывать архивные",
+    lastUsed: {
+      hint: 'Значения из последней катушки ({{name}})',
+      hintPlain: 'Значения из последней катушки',
+      clear: 'Очистить',
+    },
     quickAdd: "Быстрое добавление",
     quantity: "Количество",
     stock: "На складе",
@@ -5798,6 +5803,11 @@ export default {
     showLess: "Показать меньше",
     showAll: "Показать все",
     noColorsFound: "Нет цветов, соответствующих запросу",
+    catalogColors: {
+      showAll: "Показать все цвета",
+      showMatching: "Показать только подходящие",
+      allBrand: "Все цвета {{brand}}",
+    },
     noResults: "Совпадений не найдено",
     extraColorsLabel: "Дополнительные цвета",
     extraColorsPlaceholder: "EC984C,#6CD4BC,A66EB9,D87694",

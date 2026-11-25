@@ -37,6 +37,7 @@ EVENT_NAMES = {
     "ai_failure_detection": "AI Failure Detection",
     "plate_not_empty": "Plate Not Empty",
     "plate_clear_required": "Plate Clear Required",
+    "filament_out_of_stock": "Filament Out of Stock",
     "print_confirm_request": "Print Outcome Confirmation",
     "print_missing_spool_assignment": "Missing Spool Assignment",
     "bed_cooled": "Bed Cooled",

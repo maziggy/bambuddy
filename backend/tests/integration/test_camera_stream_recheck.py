@@ -141,6 +141,25 @@ async def test_a_disabled_keys_stream_ends(admin, printer, db_session):
     assert await _ended(stream)
 
 
+async def test_a_stream_opened_with_a_header_key_ends_when_the_key_is_disabled(
+    async_client: AsyncClient, admin, printer
+):
+    """#3707: a key sent as X-API-Key opens the stream; disabling it ends it."""
+    login = await async_client.post("/api/v1/auth/login", json={"username": "camadmin", "password": "AdminPass1!"})
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    created = await async_client.post(
+        "/api/v1/api-keys/", headers=headers, json={"name": "cam", "can_read_status": True}
+    )
+    key = created.json()
+    opener = await auth.require_camera_stream_token_if_auth_enabled()(printer, None, None, key["key"])
+    stream = await _open(printer, opener)
+
+    changed = await async_client.patch(f"/api/v1/api-keys/{key['id']}", headers=headers, json={"enabled": False})
+    assert changed.status_code == 200, changed.text
+
+    assert await _ended(stream)
+
+
 async def test_a_revoked_cam_wall_tokens_stream_ends(admin, printer, db_session):
     from backend.app.services.long_lived_tokens import create_token
 

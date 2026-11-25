@@ -8529,6 +8529,7 @@ export const api = {
     scope?: 'internal' | 'external',
     recursive = false,
     tagIds: number[] = [],
+    withVariantMembers = false,
   ) => {
     const params = new URLSearchParams();
     if (folderId !== undefined && folderId !== null) {
@@ -8551,6 +8552,9 @@ export const api = {
     for (const tagId of tagIds) {
       params.append('tag_ids', String(tagId));
     }
+    // Also list the members of the groups in the result that sit in other
+    // folders or outside the filter, flagged `variant_elsewhere` (#3628).
+    if (withVariantMembers) params.set('with_variant_members', 'true');
     return request<LibraryFileListItem[]>(`/library/files?${params}`);
   },
   getLibraryFolderReadme: (folderId: number) =>
@@ -8596,6 +8600,11 @@ export const api = {
     }),
   getVariantGroup: (groupId: number) =>
     request<VariantGroup>(`/library/variant-groups/${groupId}`),
+  // Ungroup: the files themselves are kept.
+  deleteVariantGroup: (groupId: number) =>
+    request<void>(`/library/variant-groups/${groupId}`, { method: 'DELETE' }),
+  removeVariantGroupMember: (groupId: number, fileId: number) =>
+    request<void>(`/library/variant-groups/${groupId}/members/${fileId}`, { method: 'DELETE' }),
 
   getLibraryFile: (id: number) => request<LibraryFile>(`/library/files/${id}`),
   uploadLibraryFile: async (
@@ -9392,6 +9401,16 @@ export interface LibraryFileListItem {
   // matching rows on screen. 0 when the file is not grouped.
   variant_group_id?: number | null;
   variant_count?: number;
+  // Only with `with_variant_members=true` (#3628): the group's name and this
+  // file's place in it, whether the caller may change the group (ungroup it,
+  // take a version out; false when the server would refuse), whether the file
+  // was appended from outside the listing's folder or filter, and the folder
+  // it sits in then.
+  variant_group_name?: string | null;
+  variant_position?: number | null;
+  variant_group_editable?: boolean | null;
+  variant_elsewhere?: boolean;
+  folder_name?: string | null;
   // Metadata indicators (#3077). Optional for the same reason as `tags`: older
   // mocks construct list items without them. Read sites default to falsy.
   external_url?: string | null;

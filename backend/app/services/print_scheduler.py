@@ -79,6 +79,7 @@ from backend.app.services.finance_budget import (
     validate_print_budget,
 )
 from backend.app.services.ha_sensor_manager import ha_sensor_manager
+from backend.app.services.inventory_stock import StockEntry, inventory_stock, stock_in
 from backend.app.services.mqtt_relay import mqtt_relay
 from backend.app.services.notification_service import notification_service
 from backend.app.services.print_cost_estimate import estimate_queue_source_cost
@@ -101,7 +102,7 @@ from backend.app.services.spool_assignment_notifications import (
 from backend.app.utils.ams_drying import is_countdown_parked
 from backend.app.utils.ams_humidity import ams_humidity_percent
 from backend.app.utils.archive_paths import archive_photos_dir
-from backend.app.utils.color_utils import perceptual_color_distance
+from backend.app.utils.color_utils import color6_key, perceptual_color_distance
 from backend.app.utils.filament_types import canonical_filament_type
 from backend.app.utils.filename import InvalidFilenameError, derive_remote_filename, validate_print_filename
 from backend.app.utils.library_paths import move_library_photos
@@ -762,7 +763,15 @@ def _is_tray_id(value: object) -> bool:
 # Prefix of the waiting_reason `_block_on_unmatched_filament` writes when it
 # stages an item (#2799). The manual_start branch clears every other reason on
 # a staged item (#3074); this one is the reason it was staged, so it stays.
+# A job held on its own printer names it: "A1 Left needs PLA Lava Red" (#3590).
+# A job released to the pool has no printer and keeps the bare "Needs ...".
 _UNMATCHED_HOLD_PREFIX = "Needs "
+_UNMATCHED_HOLD_VERB = " needs "
+
+# Appended to a forced filament in a waiting reason when the built-in inventory
+# knows the filament and has no spool of it left (#3590). Stable text, no grams,
+# so the reason does not change from pass to pass.
+_NO_STOCK_SUFFIX = " \u2013 none left in inventory"
 
 
 def held_by_scheduler(item: PrintQueueItem) -> bool:
@@ -795,9 +804,26 @@ _SHORT_FILAMENT_NEED = "more filament"
 _SHORT_HOLD_RECHECK_SECONDS = 120
 
 
-def _is_unmatched_hold_reason(reason: str | None) -> bool:
-    """True for the reason the unmatched-filament hold wrote when it staged the item."""
-    return bool(reason) and reason.startswith(_UNMATCHED_HOLD_PREFIX)
+def _unmatched_hold_reason(printer_name: str, wanted: str) -> str:
+    """The reason the unmatched-filament hold writes; ``printer_name`` is empty for a job no printer holds."""
+    name = printer_name.strip()
+    return f"{name}{_UNMATCHED_HOLD_VERB}{wanted}" if name else f"{_UNMATCHED_HOLD_PREFIX}{wanted}"
+
+
+def _is_unmatched_hold_reason(reason: str | None, printer_name: str = "") -> bool:
+    """True for the reason the unmatched-filament hold wrote when it staged the item.
+
+    ``printer_name`` is the name of the printer the item is on. The form naming
+    a printer is recognised only as that printer's own "<name> needs ": other
+    reasons hold the word too, such as the filament scope hold "This file needs
+    a filament ..." (#3522), and those are cleared on a staged item (#3074).
+    """
+    if not reason:
+        return False
+    if reason.startswith(_UNMATCHED_HOLD_PREFIX):
+        return True
+    name = printer_name.strip()
+    return bool(name) and reason.startswith(f"{name}{_UNMATCHED_HOLD_VERB}")
 
 
 def _filament_overrides_of(item: PrintQueueItem) -> list:
@@ -861,7 +887,8 @@ def _forced_override_requirements(item: PrintQueueItem) -> list[dict]:
     """The item's force_color_match overrides as filament requirements (#3280).
 
     What ``_build_override_direct_mapping`` matches when the 3MF cannot be
-    read, so the checks after it judge the same list.
+    read, so the checks after it judge the same list. Each keeps the colour
+    name its override came with, so a held job names the colour here too (#3590).
     """
     overrides = _filament_overrides_of(item)
     return [
@@ -869,6 +896,7 @@ def _forced_override_requirements(item: PrintQueueItem) -> list[dict]:
             "slot_id": o.get("slot_id"),
             "type": o.get("type", ""),
             "color": o.get("color", ""),
+            "color_name": o.get("color_name") or "",
             "tray_info_idx": o.get("tray_info_idx", ""),
             "force_color_match": True,
         }
@@ -1318,7 +1346,8 @@ def _wrong_nozzle_label(printer_name: str, status, sliced_nozzle: float | None) 
 
 
 def _describe_filament(entry: dict, nozzle_key: str) -> str:
-    """One-line "PETG #000000 (left nozzle)" for an error message (#2771).
+    """One-line "PETG #000000 (left nozzle)" for an error message (#2771), or
+    "PETG Black (left nozzle)" when the entry names its colour.
 
     Shared by the required and loaded sides, which name their extruder
     differently: a 3MF requirement carries ``nozzle_id``, a loaded tray carries
@@ -1327,8 +1356,11 @@ def _describe_filament(entry: dict, nozzle_key: str) -> str:
     naming a nozzle would be noise.
     """
     parts = [(entry.get("type") or "filament").upper()]
-    if entry.get("color"):
-        parts.append(str(entry["color"]))
+    # The name the user picked the colour by, when the entry has one: "Lava
+    # Red" says which spool to load, "#ED2F2E" does not (#3590).
+    color = entry.get("color_name") or entry.get("color")
+    if color:
+        parts.append(str(color))
     nozzle = entry.get(nozzle_key)
     if nozzle == 0:
         parts.append("(right nozzle)")
@@ -1746,6 +1778,12 @@ class PrintScheduler:
         # with the requirement memo, so a rule changed between passes applies
         # on the next one.
         self._filament_scope_memo: dict[int, FilamentScope] = {}
+        # Inventory stock for this pass (#3590), read lazily by `_stock_entries`;
+        # a one-tuple so "not read yet" and "unknown" (None) differ.
+        self._stock_memo: tuple[list[StockEntry] | None] | None = None
+        # Install-wide opt-in (#3590): when False the whole inventory hint
+        # (stock read, suffix, out-of-stock event) is skipped. Set per pass.
+        self._inventory_hints: bool = False
         # When each "any model" job held for low filament last looked for
         # another printer (#3137), by queue item id.
         self._short_hold_checked_at: dict[int, float] = {}
@@ -1968,6 +2006,7 @@ class PrintScheduler:
         self._filament_req_memo.clear()
         self._unmatched_memo.clear()
         self._filament_scope_memo.clear()
+        self._stock_memo = None
         async with async_session() as db:
             # Check if shortest-job-first scheduling is enabled
             sjf_enabled = await self._get_bool_setting(db, "queue_shortest_first")
@@ -1985,6 +2024,8 @@ class PrintScheduler:
                 if filament_first
                 else None
             )
+            # Read once per pass; the inventory hints are off unless enabled (#3590).
+            self._inventory_hints = await self._get_bool_setting(db, "filament_override_inventory")
 
             # Get all pending items in the one order the queue page shows them
             # in (#3200). The first eligible item takes a printer, so this order
@@ -2452,7 +2493,8 @@ class PrintScheduler:
                     # reason was written at staging and is why the item waits:
                     # it names the filament to load (#2799). Pressing start
                     # clears manual_start, and the branches below overwrite it.
-                    keep = item.waiting_reason if _is_unmatched_hold_reason(item.waiting_reason) else None
+                    held_on = pinned_printers.get(item.printer_id, ("", ""))[0] if item.printer_id else ""
+                    keep = item.waiting_reason if _is_unmatched_hold_reason(item.waiting_reason, held_on) else None
                     await hold_item(item, keep)
                     skip_reasons["manual_start"] = skip_reasons.get("manual_start", 0) + 1
                     continue
@@ -2803,6 +2845,8 @@ class PrintScheduler:
                     printer_id = None
                     chosen: _ModelCandidate | None = None
                     per_model_reasons: list[tuple[str | None, str]] = []
+                    # Forced filaments the inventory has none left of (#3590).
+                    out_of_stock: list[str] = []
                     # Candidates that cleared the cross-model gate below. The
                     # smart-plug wake step may only consider these — waking a
                     # printer for a file that can never legally run on it is
@@ -2894,6 +2938,7 @@ class PrintScheduler:
                                 refused_uploads={pid: self._upload_refusal_kind.get(pid) for pid in backoff_printers},
                                 sliced_nozzle=candidate.sliced_nozzle,
                                 short_is_missing=filament_first,
+                                out_of_stock=out_of_stock,
                             )
                             # "Only if the previous print succeeded" is about the
                             # printer the job lands on: one whose last print failed
@@ -2974,6 +3019,7 @@ class PrintScheduler:
 
                     # Loaded filament first (#3587): a job waiting on filament says
                     # when it gets priority, and past that keeps one printer free.
+                    # Also what the item said before this pass touched it (#3590).
                     reason_before = item.waiting_reason
                     filament_wait = (
                         filament_first
@@ -3020,6 +3066,23 @@ class PrintScheduler:
                                 waiting_reason=waiting_reason,
                                 db=db,
                             )
+                        # Once per job, when the reason first names a filament
+                        # the inventory has none left of (#3590).
+                        if (
+                            waiting_reason
+                            and out_of_stock
+                            and _NO_STOCK_SUFFIX in waiting_reason
+                            and _NO_STOCK_SUFFIX not in (previous_reason or "")
+                        ):
+                            try:
+                                await notification_service.on_filament_out_of_stock(
+                                    job_name=await self._get_job_name(db, item),
+                                    target_model=_candidate_model_label(candidates) or item.target_model,
+                                    filament=", ".join(out_of_stock),
+                                    db=db,
+                                )
+                            except Exception as e:
+                                logger.debug("Out-of-stock notification failed for item %s: %s", item.id, e)
 
                     if filament_wait and has_priority:
                         reserved = await self._reservable_printer_for_model(
@@ -3167,7 +3230,7 @@ class PrintScheduler:
                         # The assignment made above is released with the hold —
                         # this item asked for a model, not this printer.
                         if not filament_first and await self._block_on_unmatched_filament(
-                            db, item, release_assignment=True
+                            db, item, release_assignment=True, previous_reason=reason_before
                         ):
                             continue
 
@@ -4041,6 +4104,7 @@ class PrintScheduler:
         refused_uploads: Mapping[int, FtpFailureKind | None] | None = None,
         sliced_nozzle: float | None = None,
         short_is_missing: bool = False,
+        out_of_stock: list[str] | None = None,
     ) -> tuple[int | None, str | None]:
         """Find an idle, connected printer matching the model with compatible filaments.
 
@@ -4080,6 +4144,8 @@ class PrintScheduler:
                               is treated like one missing the filament: named in the
                               reason and never returned as the fallback, so the job
                               waits for a refill instead of being staged there.
+            out_of_stock: Out parameter (#3590). Receives the bare text of each forced
+                          filament the reason marks with ``_NO_STOCK_SUFFIX``.
 
         Returns:
             Tuple of (printer_id, waiting_reason):
@@ -4112,6 +4178,21 @@ class PrintScheduler:
         # every eligible printer is (#3137).
         short_fallback: int | None = None
 
+        # Forced override(s) behind each missing-colour text, so the no-stock
+        # suffix lands on the exact entry of the exact override (#3590).
+        entry_overrides: dict[str, list[dict]] = {}
+
+        def note_entry(text: str, override: dict) -> None:
+            known = entry_overrides.setdefault(text, [])
+            if not any(o is override for o in known):
+                known.append(override)
+
+        def missing_forced(printer_id: int) -> list[str]:
+            pairs = self._missing_force_color_pairs(printer_id, force_overrides)
+            for text, override in pairs:
+                note_entry(text, override)
+            return [text for text, _ in pairs]
+
         for printer in printers:
             # #3536: the pick ignored the nozzle, so a job sliced for 0.6 mm went to a
             # 0.4 mm printer and the #1899 guard then failed it in _start_print instead
@@ -4132,7 +4213,7 @@ class PrintScheduler:
                 # report it as a color mismatch rather than plain "Busy" so the user
                 # knows the job needs a filament change, not just to wait for availability.
                 if force_overrides and not pref_overrides:
-                    missing_colors = self._get_missing_force_color_slots(printer.id, force_overrides)
+                    missing_colors = missing_forced(printer.id)
                     if missing_colors:
                         printers_missing_filament.append((printer.name, missing_colors))
                         continue
@@ -4148,7 +4229,9 @@ class PrintScheduler:
                 # (#2876). It is also the printer the smart-plug step will now
                 # decline to switch on, and "Offline:" on its own would leave
                 # that decision looking like nothing happening at all.
-                shortfall = self._cached_filament_shortfall(printer.id, required_filament_types, filament_overrides)
+                shortfall = self._cached_filament_shortfall(
+                    printer.id, required_filament_types, filament_overrides, note_entry
+                )
                 if shortfall:
                     printers_missing_filament.append((printer.name, shortfall))
                 elif wakeable_ids is not None and printer.id not in wakeable_ids:
@@ -4163,7 +4246,7 @@ class PrintScheduler:
                 # color-mismatch reason rather than plain "Busy" so the user understands
                 # that the job is waiting for a filament change, not just printer availability.
                 if force_overrides and not pref_overrides:
-                    missing_colors = self._get_missing_force_color_slots(printer.id, force_overrides)
+                    missing_colors = missing_forced(printer.id)
                     if missing_colors:
                         printers_missing_filament.append((printer.name, missing_colors))
                         logger.debug(
@@ -4183,14 +4266,16 @@ class PrintScheduler:
                     # When force_overrides are present, enrich missing entries with color info
                     # so the "Waiting on" message includes "TYPE (color)" instead of just "TYPE"
                     if force_overrides:
-                        force_color_map = {
-                            (o.get("type") or "").upper(): o.get("color_name") or o.get("color", "?")
-                            for o in force_overrides
-                        }
-                        missing_enriched = [
-                            f"{t} ({force_color_map[t_upper]})" if (t_upper := t.upper()) in force_color_map else t
-                            for t in missing
-                        ]
+                        force_color_map = {(o.get("type") or "").upper(): o for o in force_overrides}
+                        missing_enriched = []
+                        for t in missing:
+                            forced = force_color_map.get(t.upper())
+                            if forced is None:
+                                missing_enriched.append(t)
+                                continue
+                            text = f"{t} ({forced.get('color_name') or forced.get('color', '?')})"
+                            note_entry(text, forced)
+                            missing_enriched.append(text)
                         printers_missing_filament.append((printer.name, missing_enriched))
                     else:
                         printers_missing_filament.append((printer.name, missing))
@@ -4199,7 +4284,7 @@ class PrintScheduler:
 
             # Force color match: ALL flagged slots must have an exact type+color match
             if force_overrides:
-                missing_colors = self._get_missing_force_color_slots(printer.id, force_overrides)
+                missing_colors = missing_forced(printer.id)
                 if missing_colors:
                     printers_missing_filament.append((printer.name, missing_colors))
                     logger.debug(
@@ -4312,6 +4397,7 @@ class PrintScheduler:
                 if not printers_busy and not printers_offline and not printers_refused:
                     if colour_missing:
                         all_missing = sorted({c for _, cols in colour_missing for c in cols})
+                        all_missing = await self._mark_out_of_stock(db, all_missing, entry_overrides, out_of_stock)
                         no_match = f"No matching material/color. Waiting on {', '.join(all_missing)}"
                         if short_only:
                             no_match += f" | {_waiting_clause(short_only)}"
@@ -4321,6 +4407,11 @@ class PrintScheduler:
                     reasons.append(_waiting_clause(short_only))
                 # else: fall through — the self-resolving entries are appended below
             else:
+                if force_overrides:
+                    printers_missing_filament = [
+                        (name, await self._mark_out_of_stock(db, missing, entry_overrides, out_of_stock))
+                        for name, missing in printers_missing_filament
+                    ]
                 reasons.append(_waiting_clause(printers_missing_filament))
         reasons.extend(printers_refused)
         if printers_busy:
@@ -4334,6 +4425,76 @@ class PrintScheduler:
             reasons.append(f"Offline, no Auto On smart plug: {', '.join(printers_offline_no_plug)}")
 
         return None, " | ".join(reasons) if reasons else f"No available {model} printers{location_suffix}"
+
+    async def _mark_out_of_stock(
+        self,
+        db: AsyncSession,
+        entries: list[str],
+        entry_overrides: Mapping[str, list[dict]],
+        out_of_stock: list[str] | None = None,
+    ) -> list[str]:
+        """Add ``_NO_STOCK_SUFFIX`` to the entries naming a forced filament the inventory has none of (#3590).
+
+        ``entry_overrides`` maps an entry's text to the forced override(s) that
+        wrote it, so the suffix goes to the exact entry and the matcher is not
+        repeated. An entry several overrides share (same label) is marked only
+        when none of them has stock. Entries without an override, unknown stock
+        (Spoolman, never stocked, an error) and any stock left stay as they were.
+        """
+        if not self._inventory_hints or not entries or not entry_overrides:
+            return entries
+        folded = {text.casefold(): overrides for text, overrides in entry_overrides.items()}
+        marked: list[str] = []
+        for entry in entries:
+            overrides = entry_overrides.get(entry) or folded.get(entry.casefold())
+            if overrides and all(
+                [
+                    await self._no_stock_left(
+                        db, o.get("type") or "", o.get("color") or "", o.get("tray_info_idx") or ""
+                    )
+                    for o in overrides
+                ]
+            ):
+                if out_of_stock is not None and entry not in out_of_stock:
+                    out_of_stock.append(entry)
+                marked.append(f"{entry}{_NO_STOCK_SUFFIX}")
+                continue
+            marked.append(entry)
+        return marked
+
+    async def _stock_entries(self, db: AsyncSession) -> list[StockEntry] | None:
+        """The inventory's stock, read at most once per pass and only when a forced colour is missing (#3590).
+
+        None = unknown (Spoolman, or the read failed). The read runs in a
+        savepoint so a failure cannot poison the pass's session.
+        """
+        if self._stock_memo is None:
+            entries: list[StockEntry] | None = None
+            try:
+                async with db.begin_nested():
+                    entries = await inventory_stock(
+                        db, include_archived=True, collapse_idx=False
+                    )  # per-variant (#3590)
+            except Exception as e:
+                logger.warning("Inventory stock lookup failed: %s", e)
+            self._stock_memo = (entries,)
+        return self._stock_memo[0]
+
+    async def _no_stock_left(self, db: AsyncSession, o_type: str, color: str, tray_info_idx: str) -> bool:
+        """True when the inventory knew this filament and has no spool of it left (#3590).
+
+        Unknown is not zero: Spoolman mode, a failed read, and a filament the
+        inventory never held all read as "don't know".
+        """
+        # Gate lives here and in `_mark_out_of_stock` only (#3590): the scheduler
+        # is the single caller, so the notification service is not gated again.
+        if not self._inventory_hints:
+            return False
+        entries = await self._stock_entries(db)
+        if entries is None:
+            return False
+        stock = stock_in(entries, o_type, color, tray_info_idx)
+        return stock is not None and stock[0] == 0
 
     @staticmethod
     def _is_busy_only(waiting_reason: str) -> bool:
@@ -4349,7 +4510,13 @@ class PrintScheduler:
     def _get_missing_force_color_slots(
         self, printer_id: int, force_overrides: list[dict], raw_data: dict | None = None
     ) -> list[str]:
-        """Return descriptive strings for force_color_match slots not satisfied by the printer.
+        """The texts of ``_missing_force_color_pairs`` (see there)."""
+        return [text for text, _ in self._missing_force_color_pairs(printer_id, force_overrides, raw_data)]
+
+    def _missing_force_color_pairs(
+        self, printer_id: int, force_overrides: list[dict], raw_data: dict | None = None
+    ) -> list[tuple[str, dict]]:
+        """Return (text, override) for force_color_match slots not satisfied by the printer.
 
         Each entry in ``force_overrides`` must have ``type`` and ``color`` fields and is expected
         to carry ``force_color_match: True``.  The printer must have **every** such slot loaded
@@ -4364,12 +4531,15 @@ class PrintScheduler:
         setups are unaffected.
 
         Returns:
-            List of ``"TYPE (color)"`` strings for unmatched slots (empty list means all match).
+            List of ``("TYPE (color)", override)`` pairs for unmatched slots (empty list means all match);
+            the override is the exact one that wrote the text (#3590).
         """
         if raw_data is None:
             status = printer_manager.get_status(printer_id)
             if not status:
-                return [f"{o.get('type', '?')} ({o.get('color_name') or o.get('color', '?')})" for o in force_overrides]
+                return [
+                    (f"{o.get('type', '?')} ({o.get('color_name') or o.get('color', '?')})", o) for o in force_overrides
+                ]
             raw_data = status.raw_data
 
         # Build loaded (type, colour, tray_info_idx) triples from AMS and external spool.
@@ -4394,7 +4564,7 @@ class PrintScheduler:
         taken: set[int] = set()
         for o in sorted(force_overrides, key=lambda o: not o.get("tray_info_idx")):
             o_type = canonical_filament_type(o.get("type") or "")
-            o_color = (o.get("color") or "").replace("#", "").lower()[:6]
+            o_color = color6_key(o.get("color"))
             o_idx = o.get("tray_info_idx") or ""
             fits = [
                 i
@@ -4409,7 +4579,7 @@ class PrintScheduler:
                 taken.add(pick)
             else:
                 color_label = o.get("color_name") or o.get("color", "?")
-                missing.append(f"{o_type} ({color_label})")
+                missing.append((f"{o_type} ({color_label})", o))
         return missing
 
     def _get_missing_filament_types(
@@ -4526,6 +4696,7 @@ class PrintScheduler:
         printer_id: int,
         required_types: list[str] | None,
         filament_overrides: list[dict] | None,
+        note_entry: Callable[[str, dict], None] | None = None,
     ) -> list[str]:
         """What a switched-off printer's last known filament cannot provide (#2876).
 
@@ -4544,6 +4715,9 @@ class PrintScheduler:
         returns nothing to report and the printer is treated as it was before.
         A farm restarted while its printers were off must not conclude that
         none of them can print.
+
+        ``note_entry`` registers each forced-colour text with its override, so
+        an off printer gets the same no-stock suffix as a live one (#3590).
         """
         if not required_types and not filament_overrides:
             return []
@@ -4560,18 +4734,26 @@ class PrintScheduler:
             if missing:
                 # Same enrichment the live path applies: a bare "PLA" is not
                 # much help when what is missing is a particular PLA.
-                force_color_map = {
-                    (o.get("type") or "").upper(): o.get("color_name") or o.get("color", "?") for o in force_overrides
-                }
-                return [
-                    f"{t} ({force_color_map[t_upper]})" if (t_upper := t.upper()) in force_color_map else t
-                    for t in missing
-                ]
+                force_map = {(o.get("type") or "").upper(): o for o in force_overrides}
+                texts: list[str] = []
+                for t in missing:
+                    forced = force_map.get(t.upper())
+                    if forced is None:
+                        texts.append(t)
+                        continue
+                    text = f"{t} ({forced.get('color_name') or forced.get('color', '?')})"
+                    if note_entry:
+                        note_entry(text, forced)
+                    texts.append(text)
+                return texts
 
         if force_overrides:
-            missing_colors = self._get_missing_force_color_slots(printer_id, force_overrides, raw_data)
-            if missing_colors:
-                return missing_colors
+            pairs = self._missing_force_color_pairs(printer_id, force_overrides, raw_data)
+            if pairs:
+                if note_entry:
+                    for text, override in pairs:
+                        note_entry(text, override)
+                return [text for text, _ in pairs]
 
         # Preference overrides read as a preference but the matcher treats zero
         # matches as a skip, so a printer with none of the wanted colours is
@@ -5685,6 +5867,8 @@ class PrintScheduler:
                     override = override_map[req["slot_id"]]
                     req["type"] = override["type"]
                     req["color"] = override["color"]
+                    # Messages name the colour as the override does (#3590).
+                    req["color_name"] = override.get("color_name") or ""
                     # A manual/preference override SWAPS the slot's filament, so the
                     # 3MF's original tray_info_idx now points at the old spool and must
                     # be cleared — matching then falls back to type+colour. A
@@ -5884,9 +6068,7 @@ class PrintScheduler:
 
     def _normalize_color_for_compare(self, color: str | None) -> str:
         """Normalize color for comparison (lowercase, no hash)."""
-        if not color:
-            return ""
-        return color.replace("#", "").lower()[:6]
+        return color6_key(color)
 
     def _color_distance(self, color1: str | None, color2: str | None) -> float | None:
         """Perceptual (CIEDE2000) distance, or None when either colour is unusable.
@@ -10107,6 +10289,7 @@ class PrintScheduler:
         db: AsyncSession,
         item: PrintQueueItem,
         release_assignment: bool = False,
+        previous_reason: str | None = None,
     ) -> bool:
         """Promote to manual_start when a slot the plate prints has no tray (#2799).
 
@@ -10137,6 +10320,10 @@ class PrintScheduler:
         printer choice before the gates run. Holding an "any P2S" job would
         otherwise pin it to the one P2S that could not run it.
 
+        ``previous_reason`` is the reason the item carried before this pass touched
+        it (the model path clears it on assignment); the out-of-stock event fires
+        only when it did not already name the shortage (#3590).
+
         Returns True when this dispatch attempt was blocked.
         """
         unmatched = await self._unmatched_filament(db, item)
@@ -10147,11 +10334,28 @@ class PrintScheduler:
             # model-based one), as does dispatch.
             return False
 
-        wanted = _describe_unmatched(unmatched)
+        # A forced colour the inventory has none left of says so (#3590).
+        out_of_stock: list[str] = []
+        parts: list[str] = []
+        for r in unmatched:
+            text = _describe_filament(r, "nozzle_id")
+            if r.get("force_color_match") and await self._no_stock_left(
+                db, r.get("type") or "", r.get("color") or "", r.get("tray_info_idx") or ""
+            ):
+                out_of_stock.append(text)
+                text = f"{text}{_NO_STOCK_SUFFIX}"
+            parts.append(text)
+        wanted = ", ".join(parts)
         held_by = item.printer_id  # set: _unmatched_filament returns [] without one
+        if previous_reason is None:
+            previous_reason = item.waiting_reason
         item.manual_start = True
         # Human-readable: this renders on the queue row.
-        item.waiting_reason = f"{_UNMATCHED_HOLD_PREFIX}{wanted}"
+        # It names the printer to load the filament on, unless the job goes back
+        # to the pool below and no printer holds it any more (#3590).
+        printer = await self._get_printer(db, held_by) if held_by is not None else None
+        name = None if release_assignment or printer is None else printer.name
+        item.waiting_reason = _unmatched_hold_reason(name if isinstance(name, str) else "", wanted)
         if release_assignment:
             # "Any P2S" means any, so the job returns to the pool rather than
             # waiting on the printer that could not take it. The mapping goes
@@ -10165,7 +10369,6 @@ class PrintScheduler:
         await db.commit()
 
         job_name = await self._get_job_name(db, item)
-        printer = await self._get_printer(db, held_by) if held_by is not None else None
         logger.info(
             "Queue item %s blocked — printer %s has nothing loaded for %s; promoted to manual_start",
             item.id,
@@ -10183,6 +10386,17 @@ class PrintScheduler:
             )
         except Exception as e:
             logger.debug("filament_missing notification failed for item %s: %s", item.id, e)
+        if out_of_stock and _NO_STOCK_SUFFIX not in (previous_reason or ""):
+            try:
+                await notification_service.on_filament_out_of_stock(
+                    job_name=job_name,
+                    target_model=(printer.model if printer else "") or "",
+                    filament=", ".join(out_of_stock),
+                    db=db,
+                    printer_id=None if release_assignment else held_by,
+                )
+            except Exception as e:
+                logger.debug("Out-of-stock notification failed for item %s: %s", item.id, e)
         return True
 
     @staticmethod

@@ -188,6 +188,9 @@ class NotificationProvider(Base):
     )  # Job skipped (previous print failed)
     on_queue_job_failed: Mapped[bool | None] = mapped_column(Boolean, default=True)  # Job failed to start
     on_queue_completed: Mapped[bool | None] = mapped_column(Boolean, default=False)  # All pending jobs finished
+    # A queued job waits for a forced colour with none left in the inventory (#3590).
+    # Off by default: nothing new arrives on upgrade; on_queue_job_waiting carries the text.
+    on_filament_out_of_stock: Mapped[bool | None] = mapped_column(Boolean, default=False, server_default=false())
 
     # Quiet hours (do not disturb)
     quiet_hours_enabled: Mapped[bool | None] = mapped_column(Boolean, default=False)

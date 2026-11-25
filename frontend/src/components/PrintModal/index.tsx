@@ -2,7 +2,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import { AlertCircle, AlertTriangle, Eraser, Layers, Loader2, Pencil, Printer, ThumbsUp, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { CostCenterSummary, PrintQueueItemCreate, PrintQueueItemUpdate, SlotMaterial } from '../../api/client';
+import type { CostCenterSummary, PrintQueueItemCreate, PrintQueueItemUpdate, SlotMaterial, UiSettings } from '../../api/client';
 import { api } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
 import { Card, CardContent } from '../Card';
@@ -27,7 +27,8 @@ import { toDateTimeLocalValue, parseUTCDate } from '../../utils/date';
 import { isPlaceholderDate, effectivePreferLowest, filamentTypesCompatible } from '../../utils/amsHelpers';
 import { resolveSlicerAmsMapping } from './archiveAmsMapping';
 import { FilamentMapping } from './FilamentMapping';
-import { FilamentOverride } from './FilamentOverride';
+import { FilamentOverride, type FilamentOverrideEntry } from './FilamentOverride';
+import { findStoredMatch } from './inventoryMatch';
 import { PlateSelector } from './PlateSelector';
 import { PrinterSelector } from './PrinterSelector';
 import { PrintOptionsPanel } from './PrintOptions';
@@ -74,7 +75,7 @@ function isSameFilament(a: { type: string; color: string }, b: { type: string; c
  */
 function withFilamentOverrides(
   reqs: FilamentReqsData | undefined,
-  overrides: Record<number, { type: string; color: string }>,
+  overrides: Record<number, FilamentOverrideEntry>,
 ): FilamentReqsData | undefined {
   const isSwap = (f: FilamentReqsData['filaments'][number]) => {
     const override = overrides[f.slot_id];
@@ -351,11 +352,17 @@ export function PrintModal({
   const [estimatedCostsByPlate, setEstimatedCostsByPlate] = useState<Record<number, number | null>>({});
 
   // Filament overrides for model-based assignment: slot_id -> {type, color}
-  const [filamentOverrides, setFilamentOverrides] = useState<Record<number, { type: string; color: string }>>(() => {
+  const [filamentOverrides, setFilamentOverrides] = useState<Record<number, FilamentOverrideEntry>>(() => {
     if (mode === 'edit-queue-item' && queueItem?.filament_overrides) {
-      const overrides: Record<number, { type: string; color: string }> = {};
+      const overrides: Record<number, FilamentOverrideEntry> = {};
       for (const o of queueItem.filament_overrides) {
-        overrides[o.slot_id] = { type: o.type, color: o.color };
+        // The variant id and the colour name are kept so an inventory pick survives an edit (#3590).
+        overrides[o.slot_id] = {
+          type: o.type,
+          color: o.color,
+          ...(o.tray_info_idx ? { tray_info_idx: o.tray_info_idx } : {}),
+          ...(o.color_name ? { colorName: o.color_name } : {}),
+        };
       }
       return overrides;
     }
@@ -373,6 +380,20 @@ export function PrintModal({
     }
     return {};
   });
+
+  // Slots whose force-colour tick was set by an inventory pick, not by the user (#3590).
+  const autoForcedSlots = useRef<Set<number>>(new Set());
+  const handleForceColorMatchChange = (slotId: number, value: boolean, auto?: boolean) => {
+    // A manual change takes the slot over; an automatic one is remembered.
+    if (auto) autoForcedSlots.current.add(slotId);
+    else autoForcedSlots.current.delete(slotId);
+    setForceColorMatch((prev) => ({ ...prev, [slotId]: value }));
+  };
+  // Reset / switch to a loaded row: untick again, unless the user touched the box since.
+  const releaseAutoForceColor = (slotId: number) => {
+    if (!autoForcedSlots.current.delete(slotId)) return;
+    setForceColorMatch((prev) => ({ ...prev, [slotId]: false }));
+  };
 
   // Track initial values for clearing mappings on change (edit mode only)
   const [initialPrinterIds] = useState(() => (mode === 'edit-queue-item' && queueItem?.printer_id ? [queueItem.printer_id] : []));
@@ -706,6 +727,52 @@ export function PrintModal({
 
   const effectiveAvailableFilaments = isCrossModel ? crossModelFilaments : availableFilaments;
 
+  // Built-in inventory, offered next to the loaded filaments as override choices
+  // with a stock hint (#3590). Only while the install-wide setting is on: off
+  // (the default) the dialog is as before, with no request and loaded rows only.
+  // Spoolman mode answers inventory_available=false and the picker then shows
+  // "Loaded now" only. The list is the inventory's stock, so the route also
+  // asks for inventory:read: without it nothing is requested or offered.
+  const spoolmanMode = !!settings?.spoolman_enabled;
+  const canReadInventory = hasPermission('inventory:read');
+  const inventoryEnabled = !!settings?.filament_override_inventory && !spoolmanMode && canReadInventory;
+  const { data: inventoryFilamentsData } = useQuery({
+    queryKey: ['inventory-filaments'],
+    queryFn: () => api.getInventoryFilaments(),
+    enabled: assignmentMode === 'model' && inventoryEnabled,
+  });
+  const inventoryFilaments = useMemo(
+    () => (inventoryEnabled && inventoryFilamentsData?.inventory_available ? inventoryFilamentsData.filaments : []),
+    [inventoryEnabled, inventoryFilamentsData],
+  );
+
+  // The switch lives here at the maintainer's request (#3590); the Settings card
+  // is the other way in. Optimistic, so the list reacts at once; both settings
+  // caches (full and ui-only) follow, and a reopened dialog reads the saved value.
+  const canChangeSettings = hasPermission('settings:update');
+  const inventoryColoursMutation = useMutation({
+    mutationFn: (value: boolean) => api.updateSettings({ filament_override_inventory: value }),
+    onMutate: async (value) => {
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: ['settings'] }),
+        queryClient.cancelQueries({ queryKey: ['ui-settings'] }),
+      ]);
+      const previous = (['settings', 'ui-settings'] as const).map((key) => [key, queryClient.getQueryData<UiSettings>([key])] as const);
+      for (const [key, data] of previous) {
+        if (data) queryClient.setQueryData<UiSettings>([key], { ...data, filament_override_inventory: value });
+      }
+      return { previous };
+    },
+    onError: (_err, _value, context) => {
+      for (const [key, data] of context?.previous ?? []) queryClient.setQueryData([key], data);
+      showToast(t('errors.saveFailed', 'Failed to save changes'), 'error');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+      queryClient.invalidateQueries({ queryKey: ['ui-settings'] });
+    },
+  });
+
   // Only fetch printer status when single printer selected (for filament mapping)
   const { data: printerStatus, isLoading: printerStatusLoading } = useQuery({
     queryKey: ['printer-status', effectivePrinterId],
@@ -998,6 +1065,7 @@ export function PrintModal({
     if (mode !== 'edit-queue-item' || prevTargetModel !== null) {
       setFilamentOverrides({});
       setForceColorMatch({});
+      autoForcedSlots.current.clear();
     }
   }, [targetModel, selectedPlate, prevTargetModel, prevPlateForOverrides, mode]);
 
@@ -1415,20 +1483,31 @@ export function PrintModal({
 
           // Include slot if user changed the filament OR force_color_match is enabled
           if (userOverride || isForceColor) {
-            const variant = storedVariantFor(req.slot_id, effectiveType, effectiveColor);
+            // An inventory pick carries its own variant; otherwise a stored matching one is kept.
+            const variant = userOverride?.tray_info_idx
+              ? { tray_info_idx: userOverride.tray_info_idx }
+              : userOverride?.fromInventory
+                ? {}
+                : storedVariantFor(req.slot_id, effectiveType, effectiveColor);
             // A slot left as sliced keeps its own preset; a swapped one only a stored matching one.
             const preset = variant.tray_info_idx ?? (userOverride ? undefined : req.tray_info_idx);
-            const colorName = getColorName(effectiveColor, productLineOf(preset, effectiveType, filamentNameByIdx));
+            // An inventory pick is saved under the entry's own colour name, a stored
+            // override under the one it came with; otherwise the hex is named (#3590).
+            const colorName = userOverride?.colorName || getColorName(effectiveColor, productLineOf(preset, effectiveType, filamentNameByIdx));
             entries.push({ slot_id: req.slot_id, type: effectiveType, color: effectiveColor, color_name: colorName, ...variant, force_color_match: isForceColor });
           }
         }
       } else {
         // Fallback: no filament requirements data — only include explicit user overrides
-        for (const [slotId, { type, color }] of Object.entries(filamentOverrides)) {
+        for (const [slotId, { type, color, tray_info_idx, fromInventory, colorName: ownName }] of Object.entries(filamentOverrides)) {
           const id = parseInt(slotId, 10);
           const isForceColor = forceColorMatch[id] ?? false;
-          const variant = storedVariantFor(id, type, color);
-          const colorName = getColorName(color, productLineOf(variant.tray_info_idx, type, filamentNameByIdx));
+          const variant = tray_info_idx
+            ? { tray_info_idx }
+            : fromInventory
+              ? {}
+              : storedVariantFor(id, type, color);
+          const colorName = ownName || getColorName(color, productLineOf(variant.tray_info_idx, type, filamentNameByIdx));
           entries.push({ slot_id: id, type, color, color_name: colorName, ...variant, force_color_match: isForceColor });
         }
       }
@@ -2220,8 +2299,43 @@ export function PrintModal({
     assignmentMode === 'model'
     && !isSeparateJobs
     && (isCrossModel || !!targetModel)
-    && !!effectiveAvailableFilaments
-    && effectiveAvailableFilaments.length > 0;
+    && (((effectiveAvailableFilaments?.length ?? 0) > 0) || (inventoryEnabled && inventoryFilaments.length > 0));
+
+  // Only once the settings are known: before that the box would flash unchecked and enabled
+  // (and show up for a Spoolman install). Not for a user who may not read the
+  // inventory: the box would offer colours the dialog cannot list for them.
+  const inventoryOption = !settings || spoolmanMode || !canReadInventory
+    ? undefined
+    : {
+        checked: inventoryEnabled,
+        disabled: !canChangeSettings || inventoryColoursMutation.isPending,
+        title: canChangeSettings
+          ? undefined
+          : t('printModal.showInventoryColoursNoPermission', 'Only users who may change settings can switch this.'),
+        onChange: (value: boolean) => inventoryColoursMutation.mutate(value),
+      };
+
+  // Total grams needed per inventory entry: every selected plate x its copies,
+  // over all slots that picked the same entry, so two slots (or plates) drawing
+  // on one stock are warned about together (#3590).
+  const inventoryDemand: Record<string, number> = {};
+  if (showFilamentOverride) {
+    const sources: Array<{ reqs: FilamentReqsData | undefined; copies: number }> = isMultiPlateSelection
+      ? selectedPlateIds.map((plateId) => ({ reqs: perPlateReqs.get(plateId), copies: quantityForPlate(plateId) }))
+      : [{ reqs: effectiveFilamentReqs, copies: effectiveQuantity }];
+    for (const { reqs, copies } of sources) {
+      for (const req of reqs?.filaments ?? []) {
+        const picked = filamentOverrides[req.slot_id];
+        if (!picked) continue;
+        // By design a loaded row counts against its matching inventory entry too:
+        // the loaded spool is part of that stock (#3590). A stored variant matches exactly.
+        const entry = findStoredMatch(inventoryFilaments, picked);
+        if (!entry) continue;
+        const key = `${entry.type}|${entry.color}|${entry.tray_info_idx}`;
+        inventoryDemand[key] = (inventoryDemand[key] ?? 0) + req.used_grams * copies;
+      }
+    }
+  }
 
   // Dual-nozzle gate for the Nozzle Offset Calibration toggle (#1682).
   // Mirrors backend `DUAL_NOZZLE_MODELS` so model-based assignment can show
@@ -2432,13 +2546,17 @@ export function PrintModal({
             {showFilamentOverride && !isMultiPlateSelection && effectiveFilamentReqs && (
               <FilamentOverride
                 filamentReqs={effectiveFilamentReqs}
-                availableFilaments={effectiveAvailableFilaments!}
+                availableFilaments={effectiveAvailableFilaments ?? []}
+                inventoryFilaments={inventoryFilaments}
+                quantity={effectiveQuantity}
+                inventoryDemand={inventoryDemand}
+                inventoryEnabled={inventoryEnabled}
+                inventoryOption={inventoryOption}
                 overrides={filamentOverrides}
                 onChange={setFilamentOverrides}
                 forceColorMatch={forceColorMatch}
-                onForceColorMatchChange={(slotId, value) =>
-                  setForceColorMatch((prev) => ({ ...prev, [slotId]: value }))
-                }
+                onForceColorMatchChange={handleForceColorMatchChange}
+                onAutoForceColorRelease={releaseAutoForceColor}
               />
             )}
 
@@ -2449,23 +2567,30 @@ export function PrintModal({
                 plate's filaments, or nothing at all once the plates query was warm and
                 the whole-file query therefore never ran, which is why the section
                 vanished on the second open of the dialog (#2552). */}
-            {showFilamentOverride && isMultiPlateSelection && selectedPlateIds.map((plateId, idx) => {
+            {showFilamentOverride && isMultiPlateSelection && selectedPlateIds.map((plateId) => {
               const plate = plates.find((p) => p.index === plateId);
               const plateReqs = perPlateReqs.get(plateId);
               if (!plateReqs) return null;
+              // The checkbox and hint go in the first panel that actually renders.
+              const isFirstPanel = selectedPlateIds.find((id) => perPlateReqs.has(id)) === plateId;
               return (
                 <FilamentOverride
                   key={plateId}
                   plateLabel={plate?.name || t('printModal.plateN', 'Plate {{n}}', { n: plateId })}
-                  showHint={idx === 0}
+                  showHint={isFirstPanel}
                   filamentReqs={plateReqs}
-                  availableFilaments={availableFilaments!}
+                  // `?? []` is deliberate: the list can be undefined while the panel shows from inventory alone.
+                  availableFilaments={effectiveAvailableFilaments ?? []}
+                  inventoryFilaments={inventoryFilaments}
+                  quantity={quantityForPlate(plateId)}
+                  inventoryDemand={inventoryDemand}
+                  inventoryEnabled={inventoryEnabled}
+                  inventoryOption={inventoryOption}
                   overrides={filamentOverrides}
                   onChange={setFilamentOverrides}
                   forceColorMatch={forceColorMatch}
-                  onForceColorMatchChange={(slotId, value) =>
-                    setForceColorMatch((prev) => ({ ...prev, [slotId]: value }))
-                  }
+                  onForceColorMatchChange={handleForceColorMatchChange}
+                  onAutoForceColorRelease={releaseAutoForceColor}
                 />
               );
             })}
@@ -2562,9 +2687,7 @@ export function PrintModal({
                 currencySymbol={currencySymbol}
                 defaultCostPerKg={defaultCostPerKg}
                 forceColorMatch={forceColorMatch}
-                onForceColorMatchChange={(slotId, value) =>
-                  setForceColorMatch((prev) => ({ ...prev, [slotId]: value }))
-                }
+                onForceColorMatchChange={handleForceColorMatchChange}
                 archiveAmsMapping={archiveSlicerAmsMapping}
                 nozzleRackChoice={nozzleRackChoice}
                 onNozzleRackChoiceChange={setNozzleRackChoice}
@@ -2597,9 +2720,7 @@ export function PrintModal({
                   currencySymbol={currencySymbol}
                   defaultCostPerKg={defaultCostPerKg}
                   forceColorMatch={forceColorMatch}
-                  onForceColorMatchChange={(slotId, value) =>
-                    setForceColorMatch((prev) => ({ ...prev, [slotId]: value }))
-                  }
+                  onForceColorMatchChange={handleForceColorMatchChange}
                   archiveAmsMapping={archiveSlicerAmsMapping}
                   nozzleRackChoice={nozzleRackChoiceByPlate[plateId] ?? {}}
                   onNozzleRackChoiceChange={(choice) =>

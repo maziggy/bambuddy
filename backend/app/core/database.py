@@ -5819,6 +5819,10 @@ async def _run_migrations(conn):
     await _safe_execute(
         conn, "ALTER TABLE notification_providers ADD COLUMN on_print_confirm_request BOOLEAN DEFAULT TRUE"
     )
+    # A queued job waits for a forced colour with none left in the inventory (#3590).
+    await _safe_execute(
+        conn, "ALTER TABLE notification_providers ADD COLUMN on_filament_out_of_stock BOOLEAN DEFAULT FALSE"
+    )
     # The one-tap verdict route looks archives up by this token and runs with no
     # authentication, so an upgraded install needs the index too — without it
     # every tap, and every unauthenticated request carrying a bogus token, is a
@@ -6481,6 +6485,7 @@ _PG_COLUMNS_SET_FROM_MODEL = (
     ("notification_providers", "on_ams_drying_suspended"),
     ("notification_providers", "on_app_message"),
     ("notification_providers", "on_billing_charge_failed"),
+    ("notification_providers", "on_filament_out_of_stock"),
     ("notification_providers", "on_ha_sensor_alert"),
     ("notification_providers", "on_location_ha_sensor_alert"),
     ("notification_providers", "on_plate_clear_required"),

@@ -10,7 +10,15 @@ import type {
 import { hotendKey, isMatchingCalibration, presetKey } from './utils';
 import { STANDARD_NOZZLE_DIAMETERS } from './constants';
 import { PresetPicker } from './PresetPicker';
-import { extractPresetModel, matchesPrinterModelSuffix } from '../../utils/slicerPrinterMatch';
+import {
+  EMPTY_COMPATIBILITY_INDEX,
+  extractPresetModel,
+  isSameNozzleSize,
+  matchesPrinterModelSuffix,
+  presetCompatibility,
+  presetNozzleSize,
+  printerPresetName,
+} from '../../utils/slicerPrinterMatch';
 import { flowApplies, flowLabel, normaliseFlow } from '../../utils/nozzleFlow';
 import type { NozzleFlow } from '../../utils/nozzleFlow';
 
@@ -99,6 +107,14 @@ function columnsOf(
   return [{ extruder: 0, label: labels.single }];
 }
 
+/**
+ * The nozzle size a preset name carries: from its printer tag, or failing
+ * that a "0.6 nozzle" / "0.6mm nozzle" anywhere in a name without one.
+ */
+function nozzleSizeInName(name: string): string | null {
+  return presetNozzleSize(name) ?? name.match(/\b(\d+(?:\.\d+)?)\s*(?:mm\s*)?nozzle\b/i)?.[1] ?? null;
+}
+
 export function PrinterProfilesSection({
   formData,
   printersWithCalibrations,
@@ -165,7 +181,7 @@ export function PrinterProfilesSection({
   const active = groups.find(g => g.id === selectedGroupId) ?? groups[0];
 
   /**
-   * The presets worth offering for one model.
+   * The presets worth offering for one model and nozzle size.
    *
    * A preset name carries the model it belongs to ("@BBL H2C", "@Bambu Lab X1
    * Carbon", or just "X1C ..." at the front), and offering an X1C preset for an
@@ -178,18 +194,32 @@ export function PrinterProfilesSection({
    * what we cannot classify would hide most third-party profiles; and whatever
    * is currently selected, so an override already saved never silently
    * disappears from the control that shows it.
+   *
+   * An imported preset that lists its printers (`compatible_printers`) is
+   * judged by that list instead, for this row's model AND nozzle size, the
+   * way the slicer judges it (#3731). Its name may say nothing usable.
    */
-  const optionsForModel = useMemo(() => {
+  const optionsFor = useMemo(() => {
     const cache = new Map<string, FilamentOption[]>();
-    return (model: string, selected: string | undefined): FilamentOption[] => {
+    return (model: string, diameter: string, selected: string | undefined): FilamentOption[] => {
       if (!model) return filamentOptions;
-      let list = cache.get(model);
+      const cacheKey = presetKey(model, diameter);
+      let list = cache.get(cacheKey);
       if (!list) {
+        const fullName = printerPresetName(model, diameter, printerModels ?? {});
         list = filamentOptions.filter(option => {
+          if (option.compatiblePrinters && fullName) {
+            return presetCompatibility(
+              { name: option.name, compatible_printers: option.compatiblePrinters },
+              'filament',
+              fullName,
+              EMPTY_COMPATIBILITY_INDEX,
+            ) !== 'mismatch';
+          }
           const presetModel = extractPresetModel(option.name, printerModels ?? {});
           return !presetModel || matchesPrinterModelSuffix(presetModel, model);
         });
-        cache.set(model, list);
+        cache.set(cacheKey, list);
       }
       if (selected && !list.some(o => o.code === selected)) {
         const kept = filamentOptions.find(o => o.code === selected);
@@ -295,24 +325,24 @@ export function PrinterProfilesSection({
       const next = new Map(prev);
       for (const group of groups) {
         if (!group.model) continue;
-        // Only presets that name this model. An unclassifiable one stays in the
-        // list to be picked by hand but is never assigned for the user.
-        const candidates = optionsForModel(group.model, undefined).filter(
-          option =>
-            option.name.toLowerCase().startsWith(stem)
-            && extractPresetModel(option.name, printerModels ?? {}) !== null,
-        );
-        if (candidates.length === 0) continue;
-
         for (const diameter of group.diameters) {
+          // Only presets that name this model. An unclassifiable one stays in
+          // the list to be picked by hand but is never assigned for the user.
+          const candidates = optionsFor(group.model, diameter, undefined).filter(
+            option =>
+              option.name.toLowerCase().startsWith(stem)
+              && extractPresetModel(option.name, printerModels ?? {}) !== null,
+          );
           // Bambu names the size in the preset ("@BBL X1C 0.4 nozzle"), so
           // prefer the variant for this size and fall back to one that names
           // the model without a size. A size with neither is left inherited --
-          // an approximate preset is worse than the spool's own.
-          const sized = candidates.find(option =>
-            new RegExp(`\\b${diameter.replace('.', '\\.')}\\s*nozzle\\b`, 'i').test(option.name),
-          );
-          const unsized = candidates.find(option => !/\b[\d.]+\s*nozzle\b/i.test(option.name));
+          // an approximate preset is worse than the spool's own. The size is
+          // read with the slicer matcher's rules, so "0.2mm nozzle" counts.
+          const sized = candidates.find(option => {
+            const size = nozzleSizeInName(option.name);
+            return size !== null && isSameNozzleSize(size, diameter);
+          });
+          const unsized = candidates.find(option => nozzleSizeInName(option.name) === null);
           const match = sized ?? unsized;
           if (match) next.set(presetKey(group.model, diameter), { code: match.code, name: match.name });
         }
@@ -338,7 +368,7 @@ export function PrinterProfilesSection({
   const renderPresetRow = (model: string, diameter: string, inheritLabel: string) => {
     const key = presetKey(model, diameter);
     const chosen = modelPresets.get(key);
-    const options = optionsForModel(model, chosen?.code);
+    const options = optionsFor(model, diameter, chosen?.code);
     return (
       <div className="flex items-center gap-2">
         <div className="flex-1 min-w-0">

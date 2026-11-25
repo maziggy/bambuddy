@@ -146,13 +146,27 @@ function stripUserClonePrefix(name: string): string {
 // 0.4 printer preset, which DOES carry the suffix.
 const DEFAULT_NOZZLE = '0.4';
 
-// Strip a trailing "<size> nozzle" segment, returning the nozzle string
-// (e.g. "0.6") or null when absent. Used by both BBL-token and printer-
-// preset extractors so the suffix is parsed identically on both sides.
+// Nozzle sizes Bambu ships run 0.2 – 0.8. The range guard keeps a tag that
+// merely looks numeric ("PLA @2026") from being read as a nozzle and branded
+// incompatible with every printer.
+const MIN_NOZZLE_MM = 0.1;
+const MAX_NOZZLE_MM = 2.0;
+
+// Strip a trailing nozzle size, returning it (e.g. "0.6") or null when
+// absent. Used by both BBL-token and printer-preset extractors so the suffix
+// is parsed identically on both sides. Bambu writes "0.6 nozzle", but
+// third-party profiles also write "0.6mm nozzle", "0.6mm" or a bare "0.6"
+// (#3731); a model kept with the size still attached ("A1 0.2mm nozzle")
+// matched no printer and hid the preset. A bare number needs a decimal point
+// and every form must be a plausible nozzle size, so a model name ending in a
+// number is never cut.
 function takeNozzleSuffix(s: string): { stripped: string; nozzle: string | null } {
-  const m = s.match(/^(.*?)\s+([\d.]+)\s*nozzle\s*$/i);
-  if (!m) return { stripped: s.trim(), nozzle: null };
-  return { stripped: m[1].trim(), nozzle: m[2] };
+  const m = s.match(/^(.*?)\s+(\d+(?:\.\d+)?)\s*(mm)?\s*(nozzle)?\s*$/i);
+  if (m && (m[3] || m[4] || m[2].includes('.'))) {
+    const size = Number.parseFloat(m[2]);
+    if (size >= MIN_NOZZLE_MM && size <= MAX_NOZZLE_MM) return { stripped: m[1].trim(), nozzle: m[2] };
+  }
+  return { stripped: s.trim(), nozzle: null };
 }
 
 // Pull the model token and nozzle out of a "@BBL <token> [<size> nozzle]"
@@ -177,6 +191,54 @@ function extractPrinterPresetModel(printerPresetName: string): { model: string; 
   return stripped ? { model: stripped, nozzle } : null;
 }
 
+/**
+ * The nozzle size a preset name is tagged with ("@BBL A1 0.2 nozzle",
+ * "@BBL A1 0.2mm nozzle", "@0.2"), or null when it names none (#3731).
+ */
+export function presetNozzleSize(presetName: string): string | null {
+  return extractPrinterTag(presetName)?.nozzle ?? null;
+}
+
+/** True when two nozzle size strings are the same size ("0.20" and "0.2"). */
+export function isSameNozzleSize(a: string, b: string): boolean {
+  return sameNozzle(a, b);
+}
+
+/**
+ * The slicer's printer-preset name for a model and nozzle size, e.g. "X1C"
+ * and "0.4" give "Bambu Lab X1 Carbon 0.4 nozzle" -- the form a preset's
+ * `compatible_printers` lists. Null when the model registry hasn't loaded or
+ * doesn't know the model.
+ */
+export function printerPresetName(
+  model: string,
+  diameter: string,
+  printerModelsLongToShort: Record<string, string>,
+): string | null {
+  for (const [longName, shortCode] of Object.entries(printerModelsLongToShort)) {
+    if (shortCode === model) {
+      return `${longName.startsWith('Bambu Lab ') ? longName : `Bambu Lab ${longName}`} ${diameter} nozzle`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Parse `LocalPreset.compatible_printers`, a JSON array of printer-preset
+ * names. Null when missing or malformed, so the caller falls back to the name.
+ */
+export function parseCompatiblePrinters(raw: string | null | undefined): string[] | null {
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    const list = parsed.filter((s): s is string => typeof s === 'string');
+    return list.length > 0 ? list : null;
+  } catch {
+    return null;
+  }
+}
+
 // Trailing parenthetical the slicer appends to user-saved presets —
 // "… @Bambu Lab H2D 0.4 nozzle (Custom)". Dropped before the nozzle suffix
 // is parsed, or the tag would resolve to a nonsense model token and the
@@ -184,12 +246,6 @@ function extractPrinterPresetModel(printerPresetName: string): { model: string; 
 function stripTrailingParenthetical(s: string): string {
   return s.replace(/\s*\([^)]*\)\s*$/, '').trim();
 }
-
-// Nozzle sizes Bambu ships run 0.2 – 0.8. The range guard keeps a tag that
-// merely looks numeric ("PLA @2026") from being read as a nozzle and branded
-// incompatible with every printer.
-const MIN_NOZZLE_MM = 0.1;
-const MAX_NOZZLE_MM = 2.0;
 
 // Compare two nozzle strings numerically, so "0.20" and "0.2" are the same
 // size. Unparseable values never match — a size we can't read is not evidence.
@@ -381,12 +437,17 @@ export function extractPresetModel(
 ): string | null {
   const atIdx = name.indexOf('@');
   if (atIdx >= 0) {
-    const suffix = name.slice(atIdx + 1).trim();
-    const bblMatch = suffix.match(/^BBL\s+(.+?)(?:\s+[\d.]+\s*nozzle)?$/i);
-    if (bblMatch) return bblMatch[1].trim();
-    const longMatch = suffix.match(/^Bambu Lab\s+(.+?)(?:\s+[\d.]+\s*nozzle)?$/i);
+    // Same suffix rules as the slice dialog's matcher (#3731): a trailing
+    // "(Custom)"-style tag and any form of nozzle size are not the model.
+    const suffix = stripTrailingParenthetical(name.slice(atIdx + 1).trim());
+    const bblMatch = suffix.match(/^BBL\s+(.+)$/i);
+    if (bblMatch) {
+      const token = takeNozzleSuffix(bblMatch[1]).stripped;
+      if (token) return token;
+    }
+    const longMatch = suffix.match(/^Bambu Lab\s+(.+)$/i);
     if (longMatch) {
-      const longFragment = longMatch[1].trim();
+      const longFragment = takeNozzleSuffix(longMatch[1]).stripped;
       const fullKey = `Bambu Lab ${longFragment}`;
       if (printerModelsLongToShort[fullKey]) return printerModelsLongToShort[fullKey];
       const lower = fullKey.toLowerCase();

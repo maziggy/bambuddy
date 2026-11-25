@@ -4043,6 +4043,7 @@ export default {
       permissionsSelected: '已選 {{count}} 個',
       noResults: '沒有權限匹配您的搜尋',
       websocketHint: '即時更新所需。缺少此權限時，介面將回退到定期輪詢。',
+      adminOnlyHint: '僅對管理員生效，以防任何人將自己設為管理員。',
       printerAccess: '印表機存取',
       adminsSeeAllPrinters: '管理員一律可以看到所有印表機。',
       printerAccessAfterCreate: '建立群組後，請在 設定 → 身份驗證 → 印表機存取 中選擇其印表機。',

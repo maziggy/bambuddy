@@ -4043,6 +4043,7 @@ export default {
       permissionsSelected: '{{count}} selezionati',
       noResults: 'Nessun permesso corrisponde alla ricerca',
       websocketHint: "Necessario per gli aggiornamenti in tempo reale. Senza questo permesso, l'interfaccia ripiega sul polling periodico.",
+      adminOnlyHint: 'Ha effetto solo per gli amministratori, così nessuno può rendersi amministratore.',
       printerAccess: 'Accesso alle stampanti',
       adminsSeeAllPrinters: 'Gli amministratori vedono sempre tutte le stampanti.',
       printerAccessAfterCreate: 'Una volta creato il gruppo, scegli le sue stampanti in Impostazioni → Utenti → Accesso alle stampanti.',

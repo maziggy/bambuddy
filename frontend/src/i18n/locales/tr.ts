@@ -4059,6 +4059,7 @@ export default {
       permissionsSelected: '{{count}} seçildi',
       noResults: 'Aramanızla eşleşen izin yok',
       websocketHint: 'Canlı güncellemeler için gereklidir. Bu izin olmadan arayüz düzenli yoklamaya geri döner.',
+      adminOnlyHint: 'Yalnızca yöneticiler için geçerlidir; böylece kimse kendini yönetici yapamaz.',
       printerAccess: 'Yazıcı erişimi',
       adminsSeeAllPrinters: 'Yöneticiler her zaman tüm yazıcıları görür.',
       printerAccessAfterCreate: 'Grup oluşturulduktan sonra yazıcılarını Ayarlar → Kimlik Doğrulama → Yazıcı erişimi bölümünden seçin.',

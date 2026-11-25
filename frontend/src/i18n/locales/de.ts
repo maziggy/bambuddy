@@ -4056,6 +4056,7 @@ export default {
       permissionsSelected: '{{count}} ausgewählt',
       noResults: 'Keine Berechtigungen entsprechen Ihrer Suche',
       websocketHint: 'Erforderlich für Live-Aktualisierungen. Ohne diese Berechtigung greift die Oberfläche auf regelmäßiges Abrufen zurück.',
+      adminOnlyHint: 'Wirkt nur für Administratoren, damit sich niemand selbst zum Admin machen kann.',
       printerAccess: 'Druckerzugriff',
       adminsSeeAllPrinters: 'Administratoren sehen immer alle Drucker.',
       printerAccessAfterCreate: 'Sobald die Gruppe erstellt ist, wählen Sie ihre Drucker unter Einstellungen → Authentifizierung → Druckerzugriff.',

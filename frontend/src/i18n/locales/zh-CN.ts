@@ -4043,6 +4043,7 @@ export default {
       permissionsSelected: '已选 {{count}} 个',
       noResults: '没有权限匹配您的搜索',
       websocketHint: '实时更新所需。缺少此权限时，界面将回退到定期轮询。',
+      adminOnlyHint: '仅对管理员生效，以防任何人将自己设为管理员。',
       printerAccess: '打印机访问',
       adminsSeeAllPrinters: '管理员始终可以看到所有打印机。',
       printerAccessAfterCreate: '创建组后，请在 设置 → 身份验证 → 打印机访问 中选择其打印机。',

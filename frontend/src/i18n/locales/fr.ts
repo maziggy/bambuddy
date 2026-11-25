@@ -4044,6 +4044,7 @@ export default {
       permissionsSelected: '{{count}} sélectionnée(s)',
       noResults: 'Aucune permission ne correspond à votre recherche',
       websocketHint: "Requis pour les mises à jour en direct. Sans cette permission, l'interface bascule sur une actualisation périodique.",
+      adminOnlyHint: "Ne s'applique qu'aux administrateurs, afin que personne ne puisse se rendre administrateur.",
       printerAccess: 'Accès aux imprimantes',
       adminsSeeAllPrinters: 'Les administrateurs voient toujours toutes les imprimantes.',
       printerAccessAfterCreate: 'Une fois le groupe créé, choisissez ses imprimantes dans Paramètres → Authentification → Accès aux imprimantes.',

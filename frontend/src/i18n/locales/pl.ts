@@ -4088,6 +4088,7 @@ export default {
       permissionsSelected: 'Zaznaczone: {{count}}',
       noResults: 'Żadne uprawnienia nie pasują do wyszukiwania',
       websocketHint: 'Wymagane do aktualizacji na żywo. Bez tego interfejs przechodzi na okresowe odpytywanie.',
+      adminOnlyHint: 'Działa tylko dla administratorów, aby nikt nie mógł sam nadać sobie uprawnień administratora.',
       printerAccess: 'Dostęp do drukarek',
       adminsSeeAllPrinters: 'Administratorzy zawsze widzą wszystkie drukarki.',
       printerAccessAfterCreate: 'Po utworzeniu grupy wybierz jej drukarki w Ustawienia → Uwierzytelnianie → Dostęp do drukarek.',

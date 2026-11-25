@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { screen, waitFor, fireEvent } from '@testing-library/react';
+import { act, screen, waitFor, fireEvent } from '@testing-library/react';
 import { render } from '../utils';
 import { LabelTemplatePickerModal } from '../../components/LabelTemplatePickerModal';
 import { ApiError, api, setAuthToken } from '../../api/client';
@@ -281,19 +281,21 @@ describe('direct label printing in the labels dialog (#3612)', () => {
   });
 });
 
+function signIn(username: string, permissions: string[]) {
+  setAuthToken('test-token');
+  vi.mocked(api.getAuthStatus).mockResolvedValue({ auth_enabled: true, requires_setup: false } as never);
+  vi.mocked(api.getCurrentUser).mockResolvedValue({
+    id: 2,
+    username,
+    is_admin: false,
+    is_active: true,
+    permissions,
+  } as never);
+  vi.mocked(api.getUiSettings).mockResolvedValue({ label_printer_configured: true, label_printer_tape: '50' } as never);
+}
+
 describe('direct label printing for a user without settings:read (#3612)', () => {
-  beforeEach(() => {
-    setAuthToken('test-token');
-    vi.mocked(api.getAuthStatus).mockResolvedValue({ auth_enabled: true, requires_setup: false } as never);
-    vi.mocked(api.getCurrentUser).mockResolvedValue({
-      id: 2,
-      username: 'viewer',
-      is_admin: false,
-      is_active: true,
-      permissions: ['inventory:read'],
-    } as never);
-    vi.mocked(api.getUiSettings).mockResolvedValue({ label_printer_configured: true, label_printer_tape: '50' } as never);
-  });
+  beforeEach(() => signIn('operator', ['inventory:read', 'inventory:update']));
   afterEach(() => setAuthToken(null));
 
   it('reads the ui-flags settings and enables Print only for the matching tape', async () => {
@@ -338,5 +340,42 @@ describe('direct label printing for a user without settings:read (#3612)', () =>
     expect(screen.queryByTestId('label-direct-print-button')).not.toBeInTheDocument();
     expect(screen.queryByTestId('label-direct-hint')).not.toBeInTheDocument();
     expect(screen.getByTestId('label-print-button')).toBeEnabled();
+  });
+});
+
+describe('direct label printing needs inventory:update (#3612)', () => {
+  afterEach(() => setAuthToken(null));
+
+  // The settings are in once the query has answered and React has rendered.
+  async function settingsLoaded() {
+    await screen.findByTestId('label-print-button');
+    await waitFor(() => expect(api.getUiSettings).toHaveBeenCalled());
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
+
+  it('has no Print button with inventory:read only, and the download stays', async () => {
+    signIn('viewer', ['inventory:read']);
+    openModal();
+    await settingsLoaded();
+    expect(screen.queryByTestId('label-direct-print-button')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('label-direct-hint')).not.toBeInTheDocument();
+    pickTemplate('roll');
+    expect(screen.queryByTestId('label-direct-print-button')).not.toBeInTheDocument();
+    // Nothing goes to the printer, so the monochrome option is not locked on.
+    expect(screen.getByTestId('label-monochrome')).toBeEnabled();
+    expect(screen.getByTestId('label-print-button')).toBeEnabled();
+    expect(api.printLabelsToPrinter).not.toHaveBeenCalled();
+  });
+
+  it('has the Print button with inventory:update', async () => {
+    signIn('operator', ['inventory:read', 'inventory:update']);
+    acceptJob(1);
+    openModal();
+    await settingsLoaded();
+    pickTemplate('roll');
+    fireEvent.click(await screen.findByTestId('label-direct-print-button'));
+    await waitFor(() => expect(api.printLabelsToPrinter).toHaveBeenCalledTimes(1));
   });
 });

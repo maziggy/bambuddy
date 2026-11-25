@@ -57,7 +57,7 @@ BUSY_MESSAGE = "The label printer is busy or not taking data; try again in a mom
 def describe_error(exc: BaseException, config: LabelPrinterConfig, *, reveal_address: bool = False) -> tuple[int, str]:
     """(HTTP status, user-facing text) for a failed print. The printer's address is
     only named when ``reveal_address`` (the settings test, for those who may change
-    it): the print routes need only ``inventory:read`` and must not map the LAN."""
+    it): the print routes need only ``inventory:update`` and must not map the LAN."""
     if isinstance(exc, PrinterUnreachable):
         where = f" at {config.host}:{config.port}" if reveal_address else ""
         return 502, f"Label printer not reachable{where}"

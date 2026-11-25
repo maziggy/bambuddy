@@ -291,7 +291,7 @@ class TestPrintEndpoint:
             job = await print_and_wait(async_client, {"spool_ids": [spool.id], **ROLL})
         assert job["state"] == "failed" and job["printed"] == 0
         assert text in job["error"]
-        # The print route needs only inventory:read: it must not reveal the printer's address.
+        # The print route needs only inventory:update: it must not reveal the printer's address.
         assert "192.168.1.50" not in job["error"] and "9101" not in job["error"]
 
     @pytest.mark.asyncio
@@ -550,37 +550,100 @@ async def _user(async_client: AsyncClient, admin: str, username: str, permission
     return login.json()["access_token"]
 
 
+def _bearer(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
 @pytest.mark.integration
 class TestPermissions:
     @pytest.mark.asyncio
-    async def test_print_needs_inventory_read(self, async_client: AsyncClient, db_session, spool):
+    async def test_print_needs_inventory_update(self, async_client: AsyncClient, db_session, spool):
+        """Printing uses up tape, so read access is not enough; following the job is a read."""
         await configure(db_session)
         admin = await _admin(async_client, "lpadmin")
-        reader = await _user(async_client, admin, "lpreader", ["inventory:read"])
-        nobody = await _user(async_client, admin, "lpnobody", ["cost_centers:read_own"])
+        reader = _bearer(await _user(async_client, admin, "lpreader", ["inventory:read"]))
+        updater = _bearer(await _user(async_client, admin, "lpupdater1", ["inventory:update"]))
+        nobody = _bearer(await _user(async_client, admin, "lpnobody", ["cost_centers:read_own"]))
+        body = {"spool_ids": [spool.id], **ROLL}
+        driver = FakeDriver()
+        with patched(driver):
+            denied = await async_client.post(PRINT, json=body, headers=reader)
+            no_perm = await async_client.post(PRINT, json=body, headers=nobody)
+            anon = await async_client.post(PRINT, json=body)
+            assert denied.status_code == 403
+            assert no_perm.status_code == 403
+            assert anon.status_code in (401, 403)
+            assert driver.calls == []  # a refused print reaches no printer
+            ok = await async_client.post(PRINT, json=body, headers=updater)
+            assert ok.status_code == 202, ok.text
+            # The jobs route stays at inventory:read.
+            job_url = f"/api/v1/labels/print-jobs/{ok.json()['job_id']}"
+            got = await async_client.get(job_url, headers=reader)
+            job_no_perm = await async_client.get(job_url, headers=nobody)
+            anon_job = await async_client.get(job_url)
+            job = await wait_for_state(async_client, ok.json()["job_id"], {"done", "failed"}, reader)
+        assert got.status_code == 200, got.text
+        assert job_no_perm.status_code == 403
+        assert anon_job.status_code in (401, 403)
+        assert job["state"] == "done", job
+
+    @pytest.mark.asyncio
+    async def test_spoolman_print_needs_inventory_update(self, async_client: AsyncClient, db_session):
+        from backend.app.services.label_renderer import LabelData
+
+        await configure(db_session)
+        admin = await _admin(async_client, "lpadmin4")
+        reader = _bearer(await _user(async_client, admin, "lpreader4", ["inventory:read"]))
+        updater = _bearer(await _user(async_client, admin, "lpupdater4", ["inventory:update"]))
+        data = [LabelData(spool_id=7, name="S", material="PLA", brand="B", deeplink_url="http://x/7")]
+        url = "/api/v1/spoolman/labels/print"
+        body = {"spool_ids": [7], **ROLL}
+        with patched(FakeDriver()), patch("backend.app.api.routes.labels._spoolman_label_data", return_value=data):
+            denied = await async_client.post(url, json=body, headers=reader)
+            ok = await async_client.post(url, json=body, headers=updater)
+            assert denied.status_code == 403
+            assert ok.status_code == 202, ok.text
+            await wait_for_state(async_client, ok.json()["job_id"], {"done", "failed"}, reader)
+
+    @pytest.mark.asyncio
+    async def test_download_and_preview_stay_at_inventory_read(self, async_client: AsyncClient, db_session, spool):
+        await configure(db_session)
+        admin = await _admin(async_client, "lpadmin5")
+        reader = _bearer(await _user(async_client, admin, "lpreader5", ["inventory:read"]))
+        download = await async_client.post(
+            "/api/v1/inventory/labels", json={"spool_ids": [spool.id], **ROLL}, headers=reader
+        )
+        preview = await async_client.post(
+            "/api/v1/inventory/labels/preview", json={"spool_id": spool.id, **ROLL}, headers=reader
+        )
+        assert download.status_code == 200, download.text
+        assert download.headers["content-type"] == "application/pdf"
+        assert preview.status_code == 200, preview.text
+
+    @pytest.mark.asyncio
+    async def test_api_key_needs_the_inventory_scope_to_print(self, async_client: AsyncClient, db_session, spool):
+        """inventory:update is the Manage Inventory scope of an API key; a read-only key can't print."""
+        from backend.app.core.auth import generate_api_key
+        from backend.app.models.api_key import APIKey
+
+        await configure(db_session)
+        keys = {}
+        for scope in ("can_read_status", "can_manage_inventory"):
+            full_key, key_hash, key_prefix = generate_api_key()
+            flags = {"can_queue": False, "can_control_printer": False, "can_read_status": False}
+            flags.update(can_manage_inventory=False)
+            flags[scope] = True
+            db_session.add(APIKey(name=scope, key_hash=key_hash, key_prefix=key_prefix, enabled=True, **flags))
+            keys[scope] = {"X-API-Key": full_key}
+        db_session.add(Settings(key="auth_enabled", value="true"))
+        await db_session.commit()
         body = {"spool_ids": [spool.id], **ROLL}
         with patched(FakeDriver()):
-            ok = await async_client.post(
-                "/api/v1/inventory/labels/print", json=body, headers={"Authorization": f"Bearer {reader}"}
-            )
-            denied = await async_client.post(
-                "/api/v1/inventory/labels/print", json=body, headers={"Authorization": f"Bearer {nobody}"}
-            )
-            anon = await async_client.post("/api/v1/inventory/labels/print", json=body)
-            assert ok.status_code == 202, ok.text
+            denied = await async_client.post(PRINT, json=body, headers=keys["can_read_status"])
+            ok = await async_client.post(PRINT, json=body, headers=keys["can_manage_inventory"])
             assert denied.status_code == 403
-            assert anon.status_code in (401, 403)
-            # The jobs route needs inventory:read too.
-            job_url = f"/api/v1/labels/print-jobs/{ok.json()['job_id']}"
-            got = await async_client.get(job_url, headers={"Authorization": f"Bearer {reader}"})
-            no_perm = await async_client.get(job_url, headers={"Authorization": f"Bearer {nobody}"})
-            anon_job = await async_client.get(job_url)
-            await wait_for_state(
-                async_client, ok.json()["job_id"], {"done", "failed"}, {"Authorization": f"Bearer {reader}"}
-            )
-        assert got.status_code == 200, got.text
-        assert no_perm.status_code == 403
-        assert anon_job.status_code in (401, 403)
+            assert ok.status_code == 202, ok.text
+            await wait_for_state(async_client, ok.json()["job_id"], {"done", "failed"}, keys["can_read_status"])
 
     @pytest.mark.asyncio
     async def test_test_endpoint_needs_settings_update(self, async_client: AsyncClient, db_session):

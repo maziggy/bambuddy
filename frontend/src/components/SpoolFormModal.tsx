@@ -117,11 +117,13 @@ export function SpoolFormModal({
   const [quantity, setQuantity] = useState(1);
   const [showAssignModal, setShowAssignModal] = useState(false);
   // "Print label after saving" (#3612): remembered per device, offered only
-  // with a label printer set up.
+  // with a label printer set up and with inventory:update, which printing
+  // needs. The choice is remembered per device, not per user, so without the
+  // permission it is not followed either.
   const [autoPrintLabel, setAutoPrintLabel] = useState(loadAutoPrintLabel);
   const { data: labelSettings } = useUiSettings({ enabled: isOpen });
-  const labelPrinterConfigured = isLabelPrinterConfigured(labelSettings);
-  const printLabelsAfterSave = labelPrinterConfigured && autoPrintLabel && !isEditing;
+  const canPrintLabels = isLabelPrinterConfigured(labelSettings) && hasPermission('inventory:update');
+  const printLabelsAfterSave = canPrintLabels && autoPrintLabel && !isEditing;
 
   // One label per created spool (#3612). Not awaited by the create flow: the
   // dialog closes at once and the print job is followed by a module-level
@@ -1611,8 +1613,9 @@ export function SpoolFormModal({
           </div>
         )}
 
-        {/* Print a label per new spool (#3612); only with a label printer set up. */}
-        {!isEditing && labelPrinterConfigured && (
+        {/* Print a label per new spool (#3612); only with a label printer set up
+            and the permission to print. */}
+        {!isEditing && canPrintLabels && (
           <label className="flex items-center gap-2 px-4 py-2 border-b border-bambu-dark-tertiary flex-shrink-0 cursor-pointer">
             <input
               type="checkbox"

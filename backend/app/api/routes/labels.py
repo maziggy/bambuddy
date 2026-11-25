@@ -551,10 +551,11 @@ async def print_local_inventory_labels(
     body: LabelPrintRequest,
     request: Request,
     db: AsyncSession = Depends(get_db, scope="function"),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ) -> dict:
     """Queue labels for local spools on the configured label printer (#3612); poll
-    ``GET /labels/print-jobs/{job_id}`` for the outcome."""
+    ``GET /labels/print-jobs/{job_id}`` for the outcome. Needs ``inventory:update``,
+    not the download's ``inventory:read``: a print uses up tape."""
     config = await _printer_for(body, db)
     data_list = await _local_label_data(body.spool_ids, request, db)
     return _enqueue_print(body, data_list, config)
@@ -565,9 +566,10 @@ async def print_spoolman_labels(
     body: LabelPrintRequest,
     request: Request,
     db: AsyncSession = Depends(get_db, scope="function"),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ) -> dict:
-    """Queue labels for Spoolman spools on the configured label printer (#3612)."""
+    """Queue labels for Spoolman spools on the configured label printer (#3612).
+    Needs ``inventory:update``, like the local route."""
     config = await _printer_for(body, db)
     data_list = await _spoolman_label_data(body.spool_ids, request, db)
     return _enqueue_print(body, data_list, config)

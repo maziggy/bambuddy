@@ -413,7 +413,7 @@ export function LabelTemplatePickerModal({
   const { showToast } = useToast();
   const { hasPermission } = useAuth();
   // Saving, editing and deleting templates is inventory:update, like storage
-  // locations; anyone who can print can use them (#3296).
+  // locations; anyone who can download labels can use them (#3296).
   const canManageTemplates = hasPermission('inventory:update');
   const queryClient = useQueryClient();
   const [pending, setPending] = useState(false);
@@ -452,10 +452,12 @@ export function LabelTemplatePickerModal({
     staleTime: 0,
   });
   const savedTemplates = useMemo(() => savedQuery.data ?? [], [savedQuery.data]);
-  // Direct printing is offered only with a label printer set up (#3612).
+  // Direct printing is offered only with a label printer set up (#3612), and
+  // only with inventory:update: a print uses up tape, a download does not.
   // Spool labels only: a project label (#3655) is downloaded as before.
   const { data: appSettings } = useUiSettings({ enabled: isOpen && !project });
-  const printerConfigured = !project && isLabelPrinterConfigured(appSettings);
+  const printerConfigured =
+    !project && hasPermission('inventory:update') && isLabelPrinterConfigured(appSettings);
   // ui-flags sends the tape to every user; an older backend omits it, and the
   // server then checks the tape itself.
   const printerTape = printerConfigured ? appSettings?.label_printer_tape || null : null;
@@ -788,7 +790,14 @@ export function LabelTemplatePickerModal({
           )
         : null;
   const canDirectPrint =
-    !noSelection && !pending && !directPending && isRoll && roll !== null && tapeFits && capsProblem === null;
+    printerConfigured &&
+    !noSelection &&
+    !pending &&
+    !directPending &&
+    isRoll &&
+    roll !== null &&
+    tapeFits &&
+    capsProblem === null;
 
   function updatePrefs(change: Partial<LabelPrefs>) {
     setPrefs((prev) => {

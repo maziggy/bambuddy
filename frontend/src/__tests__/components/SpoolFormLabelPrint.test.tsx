@@ -1,14 +1,16 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, waitFor, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { act, screen, waitFor, fireEvent } from '@testing-library/react';
 import { render } from '../utils';
 import { SpoolFormModal } from '../../components/SpoolFormModal';
-import { api } from '../../api/client';
+import { api, setAuthToken } from '../../api/client';
 import type { InventorySpool } from '../../api/client';
 
 vi.mock('../../api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api/client')>()),
   api: {
     getSettings: vi.fn(),
+    getUiSettings: vi.fn(),
+    getCurrentUser: vi.fn(),
     getAuthStatus: vi.fn().mockResolvedValue({ auth_enabled: false }),
     getCloudStatus: vi.fn().mockResolvedValue({ is_authenticated: false }),
     getFilamentPresets: vi.fn().mockResolvedValue([]),
@@ -72,6 +74,7 @@ beforeEach(() => {
   vi.mocked(localStorage.getItem).mockImplementation((key) => store.get(key) ?? null);
   vi.mocked(localStorage.setItem).mockImplementation((key, value) => void store.set(key, String(value)));
   mApi.getSettings.mockResolvedValue(CONFIGURED);
+  mApi.getAuthStatus.mockResolvedValue({ auth_enabled: false });
   acceptJob(1);
 });
 
@@ -235,5 +238,57 @@ describe('"Print label after saving" in the Add spool dialog (#3612)', () => {
     const body = mApi.printLabelsToPrinter.mock.calls[0][1];
     expect(body).toMatchObject({ roll: { tape: '50', length_mm: 90 }, fields: ['material'] });
     expect(body).not.toHaveProperty('starting_position');
+  });
+});
+
+describe('"Print label after saving" needs inventory:update (#3612)', () => {
+  function signIn(permissions: string[]) {
+    setAuthToken('test-token');
+    mApi.getAuthStatus.mockResolvedValue({ auth_enabled: true, requires_setup: false });
+    mApi.getCurrentUser.mockResolvedValue({ id: 2, username: 'user', is_admin: false, is_active: true, permissions });
+    mApi.getUiSettings.mockResolvedValue({ label_printer_configured: true, label_printer_tape: '50' });
+  }
+  afterEach(() => setAuthToken(null));
+
+  // The settings are in once the query has answered and React has rendered.
+  async function settingsLoaded() {
+    await screen.findByText('Quick Add (Stock)');
+    await waitFor(() => expect(mApi.getUiSettings).toHaveBeenCalled());
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
+
+  it('is hidden without the permission', async () => {
+    signIn(['inventory:read', 'inventory:create']);
+    openCreate();
+    await settingsLoaded();
+    expect(screen.queryByTestId('auto-print-label')).not.toBeInTheDocument();
+  });
+
+  it('does not print for a choice remembered on this device without the permission', async () => {
+    // Left on by someone who may print, on the same browser.
+    store.set('bambuddy.autoPrintLabel', '1');
+    signIn(['inventory:read', 'inventory:create']);
+    openCreate();
+    await settingsLoaded();
+    expect(screen.queryByTestId('auto-print-label')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^Add Spool$/ }));
+    await waitFor(() => expect(mockShowToast).toHaveBeenCalledWith('Spool created', 'success'));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(mApi.printLabelsToPrinter).not.toHaveBeenCalled();
+    // The device's choice is left alone for those who may print.
+    expect(store.get('bambuddy.autoPrintLabel')).toBe('1');
+  });
+
+  it('is shown and prints with the permission', async () => {
+    store.set('bambuddy.autoPrintLabel', '1');
+    signIn(['inventory:read', 'inventory:create', 'inventory:update']);
+    openCreate();
+    expect(await screen.findByTestId('auto-print-label')).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: /^Add Spool$/ }));
+    await waitFor(() => expect(mApi.printLabelsToPrinter).toHaveBeenCalledTimes(1));
   });
 });

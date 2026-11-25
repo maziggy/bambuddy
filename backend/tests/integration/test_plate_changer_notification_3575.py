@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import AsyncClient
 
-from backend.app.models.notification_template import DEFAULT_TEMPLATES
+from backend.app.models.notification_template import DEFAULT_TEMPLATES, NotificationTemplate
 from backend.app.schemas.notification_template import EVENT_VARIABLES, SAMPLE_DATA
 from backend.app.services.notification_service import notification_service
 
@@ -76,6 +76,72 @@ class TestDispatch:
             await notification_service.on_plate_changer_empty(1, "Swap A1", 5, db_session)
 
         send.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+class TestCountUnknown:
+    """A count that could not be saved must not read as "all N plates used"."""
+
+    @pytest.fixture(autouse=True)
+    def _fresh_templates(self):
+        # The service keeps templates it has read; each test seeds its own.
+        notification_service.clear_template_cache()
+        yield
+        notification_service.clear_template_cache()
+
+    async def _send(self, db_session, **kwargs):
+        send = AsyncMock()
+        with patch.object(notification_service, "_send_to_providers", send):
+            await notification_service.on_plate_changer_empty(1, "Swap A1", 5, db_session, **kwargs)
+        assert send.await_count == 1
+        return send.await_args
+
+    async def _seed_template(self, db_session, body=None):
+        default = next(t for t in DEFAULT_TEMPLATES if t["event_type"] == "plate_changer_empty")
+        db_session.add(
+            NotificationTemplate(
+                event_type="plate_changer_empty",
+                name=default["name"],
+                title_template=default["title_template"],
+                body_template=body or default["body_template"],
+            )
+        )
+        await db_session.commit()
+
+    async def test_the_last_plate_keeps_the_template_text(self, notification_provider_factory, db_session):
+        await notification_provider_factory(name="Default")
+        await self._seed_template(db_session)
+
+        call = await self._send(db_session)
+
+        assert call.args[1] == "Plate Changer Empty"
+        assert call.args[2].startswith("Swap A1: all 5 plates used")
+
+    async def test_an_unsaved_count_has_its_own_text(self, notification_provider_factory, db_session):
+        await notification_provider_factory(name="Default")
+        await self._seed_template(db_session)
+
+        call = await self._send(db_session, count_unknown=True)
+
+        assert call.args[1] == "Plate Changer Empty"
+        assert call.args[2] == (
+            "Swap A1: the plate count could not be saved. Check the plate changer and reset the count "
+            "on the printer card. The queue sends this printer nothing until then."
+        )
+        assert "plates used" not in call.args[2]
+        assert call.args[4] == "plate_changer_empty"
+        assert call.kwargs["variables"]["capacity"] == "5"
+
+    async def test_an_edited_template_does_not_bring_the_used_up_text_back(
+        self, notification_provider_factory, db_session
+    ):
+        await notification_provider_factory(name="Default")
+        await self._seed_template(db_session, body="{printer} is out of plates ({capacity}), refill it")
+
+        assert (await self._send(db_session)).args[2] == "Swap A1 is out of plates (5), refill it"
+        unknown = (await self._send(db_session, count_unknown=True)).args[2]
+        assert unknown.startswith("Swap A1: the plate count could not be saved.")
+        assert "refill it" not in unknown
 
 
 class TestTemplate:

@@ -232,6 +232,7 @@ class TestEmptyEdge:
         notif.on_plate_changer_empty.assert_awaited_once()
         args = notif.on_plate_changer_empty.await_args.args
         assert args[:3] == (queued_print["printer"], "P", 5)
+        assert not notif.on_plate_changer_empty.await_args.kwargs.get("count_unknown")
 
     async def test_staying_above_zero_does_not_notify(self, test_engine, db_session, queued_print, changer_mocks):
         await _setup(db_session, queued_print["printer"], remaining=2, override=False)
@@ -423,6 +424,8 @@ class TestFailClosed:
         assert plate_changer.is_count_unknown(printer.id)
         assert await _remaining(db_session, printer.id) == 0  # survives a restart
         patched[1].on_plate_changer_empty.assert_awaited_once()
+        # Told apart from a used-up plate changer: this one may still be full.
+        assert patched[1].on_plate_changer_empty.await_args.kwargs == {"count_unknown": True}
         assert not plate_changer.is_count_pending(printer.id)
         scheduler = PrintScheduler()
         maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)

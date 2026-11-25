@@ -85,7 +85,10 @@ async def _fail_closed(printer_id: int) -> None:
             if row is None or row.plate_capacity is None:
                 return
             await ws_manager.send_printer_plates_changed(printer_id, 0, row.plate_capacity)
-            await notification_service.on_plate_changer_empty(printer_id, row.name, row.plate_capacity, db)
+            # Not the "all plates used" text: nobody knows how many are left.
+            await notification_service.on_plate_changer_empty(
+                printer_id, row.name, row.plate_capacity, db, count_unknown=True
+            )
     except Exception:
         logger.exception("plate changer empty notification failed for printer %s", printer_id)
 

@@ -3398,6 +3398,14 @@ export default {
     passwordOptional: 'Lösenord (valfritt)',
     topicPrefix: 'Ämnesprefix',
     topicPrefixHint: 'Ämnen kommer att vara: {{prefix}}/printers/<serial>/status, etc.',
+    // Home Assistant MQTT discovery (#3724)
+    haDiscovery: {
+      title: "Home Assistant-upptäckt",
+      hint: "Skrivare och AMS-enheter visas i Home Assistant som enheter med sensorer, utan YAML. Skrivskyddat: Home Assistant kan inte styra skrivaren den här vägen.",
+      prefix: "Upptäcktsprefix",
+      prefixHint: "Standardvärdet i Home Assistant är homeassistant. Ändra det bara om du har ändrat det där.",
+      prefixConflict: "Upptäcktsprefixet måste skilja sig från ämnesprefixet.",
+    },
     // Prometheus
     prometheusMetrics: 'Prometheus-mätvärden',
     prometheusEndpointDescription: 'Exponera skrivarmätvärden på <code>/api/v1/metrics</code> för Prometheus/Grafana-övervakning.',

@@ -3335,6 +3335,14 @@ export default {
     passwordOptional: '密碼（可選）',
     topicPrefix: '主題前綴',
     topicPrefixHint: '主題格式：{{prefix}}/printers/<serial>/status 等',
+    // Home Assistant MQTT discovery (#3724)
+    haDiscovery: {
+      title: "Home Assistant 自動探索",
+      hint: "印表機和 AMS 單元會以附帶感測器的裝置出現在 Home Assistant 中，無需撰寫 YAML。唯讀：Home Assistant 無法透過它控制印表機。",
+      prefix: "探索前綴",
+      prefixHint: "Home Assistant 的預設值為 homeassistant。只有在那邊修改過時才需要變更。",
+      prefixConflict: "探索前綴必須與主題前綴不同。",
+    },
     prometheusMetrics: 'Prometheus 指標',
     prometheusEndpointDescription: '在 <code>/api/v1/metrics</code> 公開印表機指標，用於Prometheus/Grafana監控。',
     bearerTokenOptional: 'Bearer權杖（可選）',

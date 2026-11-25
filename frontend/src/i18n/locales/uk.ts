@@ -3363,6 +3363,14 @@ export default {
     passwordOptional: "Пароль (необов’язково)",
     topicPrefix: "Префікс теми",
     topicPrefixHint: "Теми будуть: {{prefix}}/printers/<serial>/status тощо.",
+    // Home Assistant MQTT discovery (#3724)
+    haDiscovery: {
+      title: "Виявлення в Home Assistant",
+      hint: "Принтери та модулі AMS з'являються в Home Assistant як пристрої з датчиками, без YAML. Лише читання: керувати принтером із Home Assistant у такий спосіб не можна.",
+      prefix: "Префікс виявлення",
+      prefixHint: "Типове значення в Home Assistant — homeassistant. Змінюйте лише тоді, коли змінили його там.",
+      prefixConflict: "Префікс виявлення має відрізнятися від префікса топіків.",
+    },
     // Prometheus
     prometheusMetrics: "Prometheus Метрики",
     prometheusEndpointDescription: "Показати показники принтера на <code>/api/v1/metrics</code> для моніторингу Prometheus/Grafana.",

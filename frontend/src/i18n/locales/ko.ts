@@ -3202,6 +3202,14 @@ export default {
     passwordOptional: '비밀번호 (선택사항)',
     topicPrefix: '토픽 접두사',
     topicPrefixHint: '토픽은 다음과 같습니다: {{prefix}}/printers/<serial>/status 등',
+    // Home Assistant MQTT discovery (#3724)
+    haDiscovery: {
+      title: "Home Assistant 자동 검색",
+      hint: "프린터와 AMS 장치가 YAML 없이 센서가 있는 기기로 Home Assistant에 표시됩니다. 읽기 전용이므로 Home Assistant에서 프린터를 제어할 수는 없습니다.",
+      prefix: "검색 접두사",
+      prefixHint: "Home Assistant의 기본값은 homeassistant입니다. Home Assistant에서 변경한 경우에만 바꾸세요.",
+      prefixConflict: "검색 접두사는 토픽 접두사와 달라야 합니다.",
+    },
     prometheusMetrics: 'Prometheus 메트릭',
     prometheusEndpointDescription: 'Prometheus/Grafana 모니터링을 위해 <code>/api/v1/metrics</code>에서 프린터 메트릭을 노출합니다.',
     bearerTokenOptional: '베어러 토큰 (선택사항)',

@@ -841,6 +841,12 @@ export function SettingsPage() {
     refetchInterval: activeTab === 'network' ? 5000 : false, // Poll every 5s when on Network tab
   });
 
+  // The backend refuses a save with both prefixes equal (#3724); say why next to the field.
+  const trimMqttPrefix = (value: string | undefined, fallback: string) =>
+    (value ?? '').trim().replace(/^\/+|\/+$/g, '') || fallback;
+  const mqttPrefixConflict =
+    trimMqttPrefix(localSettings?.mqtt_topic_prefix, 'bambuddy') ===
+    trimMqttPrefix(localSettings?.mqtt_ha_discovery_prefix, 'homeassistant');
   const pandaBreathOn = activeTab === 'network' && settings?.mqtt_enabled === true && settings?.panda_breath_enabled === true;
   const { data: pandaBreathStatus } = useQuery({
     queryKey: ['panda-breath-status'],
@@ -1346,6 +1352,8 @@ export function SettingsPage() {
       baseline.mqtt_password !== localSettings.mqtt_password ||
       baseline.mqtt_topic_prefix !== localSettings.mqtt_topic_prefix ||
       baseline.mqtt_use_tls !== localSettings.mqtt_use_tls ||
+      baseline.mqtt_ha_discovery_enabled !== localSettings.mqtt_ha_discovery_enabled ||
+      baseline.mqtt_ha_discovery_prefix !== localSettings.mqtt_ha_discovery_prefix ||
       baseline.panda_breath_enabled !== localSettings.panda_breath_enabled ||
       baseline.external_url !== localSettings.external_url ||
       baseline.ha_enabled !== localSettings.ha_enabled ||
@@ -1486,6 +1494,8 @@ export function SettingsPage() {
         mqtt_password: localSettings.mqtt_password,
         mqtt_topic_prefix: localSettings.mqtt_topic_prefix,
         mqtt_use_tls: localSettings.mqtt_use_tls,
+        mqtt_ha_discovery_enabled: localSettings.mqtt_ha_discovery_enabled,
+        mqtt_ha_discovery_prefix: localSettings.mqtt_ha_discovery_prefix,
         panda_breath_enabled: localSettings.panda_breath_enabled,
         external_url: localSettings.external_url,
         ha_enabled: localSettings.ha_enabled,
@@ -3641,6 +3651,46 @@ export function SettingsPage() {
                     <p className="text-xs text-bambu-gray mt-1">
                       {t('settings.topicPrefixHint', { prefix: localSettings.mqtt_topic_prefix || 'bambuddy' })}
                     </p>
+                  </div>
+
+                  {/* Home Assistant MQTT discovery (#3724) */}
+                  <div className="pt-3 mt-3 border-t border-bambu-dark-tertiary space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-white text-sm">{t('settings.haDiscovery.title')}</p>
+                        <p className="text-xs text-bambu-gray">{t('settings.haDiscovery.hint')}</p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input
+                          type="checkbox"
+                          aria-label={t('settings.haDiscovery.title')}
+                          checked={localSettings.mqtt_ha_discovery_enabled ?? false}
+                          onChange={(e) => updateSetting('mqtt_ha_discovery_enabled', e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                      </label>
+                    </div>
+                    {localSettings.mqtt_ha_discovery_enabled && (
+                      <div>
+                        <label htmlFor="mqtt-ha-discovery-prefix" className="block text-sm text-bambu-gray mb-1">
+                          {t('settings.haDiscovery.prefix')}
+                        </label>
+                        <input
+                          id="mqtt-ha-discovery-prefix"
+                          type="text"
+                          value={localSettings.mqtt_ha_discovery_prefix ?? 'homeassistant'}
+                          onChange={(e) => updateSetting('mqtt_ha_discovery_prefix', e.target.value)}
+                          placeholder="homeassistant"
+                          className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                        />
+                        {mqttPrefixConflict ? (
+                          <p role="alert" className="text-xs text-red-400 mt-1">{t('settings.haDiscovery.prefixConflict')}</p>
+                        ) : (
+                          <p className="text-xs text-bambu-gray mt-1">{t('settings.haDiscovery.prefixHint')}</p>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Connection Info */}

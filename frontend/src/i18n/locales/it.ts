@@ -3290,6 +3290,14 @@ export default {
     passwordOptional: 'Password (opzionale)',
     topicPrefix: 'Prefisso topic',
     topicPrefixHint: 'I topic saranno: {{prefix}}/printers/<serial>/status, ecc.',
+    // Home Assistant MQTT discovery (#3724)
+    haDiscovery: {
+      title: "Rilevamento Home Assistant",
+      hint: "Le stampanti e le unità AMS compaiono in Home Assistant come dispositivi con sensori, senza YAML. Sola lettura: Home Assistant non può comandare la stampante in questo modo.",
+      prefix: "Prefisso di rilevamento",
+      prefixHint: "Il valore predefinito di Home Assistant è homeassistant. Cambialo solo se lo hai cambiato lì.",
+      prefixConflict: "Il prefisso di rilevamento deve essere diverso dal prefisso dei topic.",
+    },
     prometheusMetrics: 'Metriche Prometheus',
     prometheusEndpointDescription: 'Esponi metriche stampante su <code>/api/v1/metrics</code> per monitoraggio Prometheus/Grafana.',
     bearerTokenOptional: 'Token Bearer (opzionale)',

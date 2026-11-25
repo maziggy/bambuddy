@@ -530,6 +530,60 @@ class TestSettingsAPI:
         assert result["mqtt_topic_prefix"] == "bambuddy"
         assert result["mqtt_use_tls"] is False
 
+    # Home Assistant MQTT discovery (#3724)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_ha_discovery_is_off_with_the_default_prefix(self, async_client: AsyncClient):
+        result = (await async_client.get("/api/v1/settings/")).json()
+
+        assert result["mqtt_ha_discovery_enabled"] is False
+        assert result["mqtt_ha_discovery_prefix"] == "homeassistant"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_ha_discovery_settings_are_saved(self, async_client: AsyncClient):
+        response = await async_client.put(
+            "/api/v1/settings/",
+            json={"mqtt_ha_discovery_enabled": True, "mqtt_ha_discovery_prefix": "ha"},
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["mqtt_ha_discovery_enabled"] is True
+        assert result["mqtt_ha_discovery_prefix"] == "ha"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        "update",
+        [
+            {"mqtt_topic_prefix": "homeassistant"},
+            # Slashes and blanks around a prefix do not make it another one.
+            {"mqtt_topic_prefix": " homeassistant/ "},
+            {"mqtt_ha_discovery_prefix": "bambuddy"},
+            {"mqtt_topic_prefix": "printers", "mqtt_ha_discovery_prefix": "printers"},
+        ],
+    )
+    async def test_a_topic_prefix_equal_to_the_discovery_prefix_is_refused(
+        self, async_client: AsyncClient, db_session, update
+    ):
+        response = await async_client.put("/api/v1/settings/", json=update)
+
+        assert response.status_code == 400
+        assert "discovery prefix" in response.json()["detail"]
+        for key in update:
+            assert await get_setting(db_session, key) is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_prefix_is_checked_against_the_stored_one(self, async_client: AsyncClient):
+        await async_client.put("/api/v1/settings/", json={"mqtt_topic_prefix": "printers"})
+
+        response = await async_client.put("/api/v1/settings/", json={"mqtt_ha_discovery_prefix": "printers"})
+
+        assert response.status_code == 400
+
     # ========================================================================
     # Camera settings tests
     # ========================================================================

@@ -15,6 +15,7 @@ from typing import Any
 
 import paho.mqtt.client as mqtt
 
+from backend.app.services import mqtt_ha_discovery as ha_discovery
 from backend.app.utils.paho_teardown import retire_paho_client
 
 logger = logging.getLogger(__name__)
@@ -45,13 +46,49 @@ class MQTTRelayService:
         self._smart_plug_service = None  # Lazy import to avoid circular dependency
         self._settings: dict = {}  # Store settings for smart plug service
         self._disconnection_event: threading.Event | None = None
+        # Home Assistant MQTT discovery (#3724)
+        self.ha_discovery_enabled = False
+        self.ha_discovery_prefix = ha_discovery.DEFAULT_DISCOVERY_PREFIX
+        self._external_url = ""
+        # Guards the three below: the paho thread reads and writes them too.
+        self._discovery_lock = threading.Lock()
+        self._discovery_sent: dict[str, dict] = {}  # discovery topic -> the config published on it
+        # Our retained configs as the broker holds them, which is what is left
+        # of them after a restart: what to clear when discovery is turned off.
+        self._discovery_seen: set[str] = set()
+        self._discovery_signatures: dict[str, tuple] = {}  # printer serial -> what its configs were built from
 
     async def configure(self, settings: dict) -> bool:
         """Configure MQTT connection from settings.
 
         Returns True if connection was successful or MQTT is disabled.
         """
-        self.enabled = settings.get("mqtt_enabled", False)
+        enabled = settings.get("mqtt_enabled", False)
+        topic_prefix = settings.get("mqtt_topic_prefix", "bambuddy")
+        discovery_prefix = ha_discovery.normalize_prefix(
+            settings.get("mqtt_ha_discovery_prefix"), ha_discovery.DEFAULT_DISCOVERY_PREFIX
+        )
+        discovery_enabled = bool(enabled and settings.get("mqtt_ha_discovery_enabled", False))
+        if discovery_enabled and ha_discovery.normalize_prefix(topic_prefix) == discovery_prefix:
+            # The settings route refuses this; a restored or hand-edited value
+            # must not put printer status under Home Assistant's discovery topics.
+            logger.warning(
+                "Home Assistant discovery is off: the topic prefix and the discovery prefix are both %r",
+                discovery_prefix,
+            )
+            discovery_enabled = False
+
+        # What Home Assistant was told so far is wrong from here on: clear it
+        # over the connection that is still up, before the prefixes change.
+        if self.ha_discovery_enabled and (
+            not discovery_enabled or discovery_prefix != self.ha_discovery_prefix or topic_prefix != self.topic_prefix
+        ):
+            await self._clear_discovery()
+
+        self.enabled = enabled
+        self.ha_discovery_enabled = discovery_enabled
+        self.ha_discovery_prefix = discovery_prefix
+        self._external_url = (settings.get("external_url") or "").strip()
         self._settings = settings  # Store for smart plug service
         # Panda Breath heaters (#1466) use this broker too; it decides on its own
         # whether to connect, so it is told on every path below, including a
@@ -69,7 +106,7 @@ class MQTTRelayService:
         port = settings.get("mqtt_port", 1883)
         username = settings.get("mqtt_username", "")
         password = settings.get("mqtt_password", "")
-        self.topic_prefix = settings.get("mqtt_topic_prefix", "bambuddy")
+        self.topic_prefix = topic_prefix
         use_tls = settings.get("mqtt_use_tls", False)
 
         if not broker:
@@ -140,6 +177,7 @@ class MQTTRelayService:
             # Set up callbacks
             self.client.on_connect = self._on_connect
             self.client.on_disconnect = self._on_disconnect
+            self.client.on_message = self._on_message
 
             # Configure authentication
             if username:
@@ -193,6 +231,19 @@ class MQTTRelayService:
             logger.info("MQTT relay connected successfully")
             # Publish online status
             self._publish_status("online")
+            if self.ha_discovery_enabled:
+                # Here rather than once after connecting: paho reconnects on its
+                # own, and a broker that restarted has lost both subscriptions.
+                try:
+                    client.subscribe(
+                        [
+                            (f"{self.ha_discovery_prefix}/status", 1),
+                            (f"{self.ha_discovery_prefix}/device/+/config", 1),
+                        ]
+                    )
+                except Exception as e:
+                    logger.debug("MQTT discovery subscribe error: %s", e)
+                self._resend_discovery()
         else:
             self.connected = False
             logger.error("MQTT relay connection failed: %s", reason_code)
@@ -252,6 +303,176 @@ class MQTTRelayService:
         except Exception as e:
             logger.debug("MQTT publish error: %s", e)
 
+    # =========================================================================
+    # Home Assistant discovery (#3724)
+    # =========================================================================
+
+    def _publish_clear(self, topic: str):
+        """Remove a retained message: an empty retained payload on its topic."""
+        if not self.client or not self.connected:
+            return None
+        try:
+            with self._lock:
+                return self.client.publish(topic, b"", qos=1, retain=True)
+        except Exception as e:
+            logger.debug("MQTT publish error: %s", e)
+            return None
+
+    def _on_message(self, client: mqtt.Client, userdata: Any, message: mqtt.MQTTMessage):
+        """Home Assistant's birth message, and our own retained discovery configs."""
+        if not self.ha_discovery_enabled:
+            return
+        try:
+            topic = message.topic
+            if topic == f"{self.ha_discovery_prefix}/status":
+                # Home Assistant (re)started and has forgotten every device.
+                if message.payload.decode("utf-8", errors="replace").strip() == "online":
+                    self._resend_discovery()
+                return
+            if ha_discovery.device_id_from_topic(self.ha_discovery_prefix, topic) is None:
+                return
+            if not message.payload:
+                with self._discovery_lock:
+                    self._discovery_seen.discard(topic)
+                return
+            config = json.loads(message.payload)
+            # Ours, not another Bambuddy's on the same broker: it reads our topics.
+            state_topic = config.get("state_topic") if isinstance(config, dict) else None
+            if isinstance(state_topic, str) and state_topic.startswith(f"{self.topic_prefix}/printers/"):
+                with self._discovery_lock:
+                    self._discovery_seen.add(topic)
+                    if topic not in self._discovery_sent:
+                        # Left from before a restart, and its printer may have
+                        # been announced already: have the next status compare
+                        # again, so an AMS that went meanwhile is cleared.
+                        self._discovery_signatures.clear()
+        except Exception as e:
+            logger.debug("MQTT discovery message ignored: %s", e)
+
+    def _resend_discovery(self):
+        """Publish every discovery config again, as it was last published."""
+        with self._discovery_lock:
+            configs = list(self._discovery_sent.items())
+        for topic, config in configs:
+            self._publish(topic, config, retain=True)
+
+    async def _clear_discovery(self, printer_serial: str | None = None):
+        """Remove our discovery configs from the broker, so Home Assistant drops
+        the devices: all of them, or one printer's with its AMS units."""
+        prefix = self.ha_discovery_prefix
+        with self._discovery_lock:
+            topics = set(self._discovery_sent) | self._discovery_seen
+            if printer_serial is not None:
+                # Also when nothing is known of it: its config may be on the
+                # broker from before a restart, the subscription not answered yet.
+                topics.add(ha_discovery.discovery_topic(prefix, ha_discovery.printer_device_id(printer_serial)))
+                topics = {
+                    topic
+                    for topic in topics
+                    if ha_discovery.belongs_to_printer(
+                        ha_discovery.device_id_from_topic(prefix, topic) or "", printer_serial
+                    )
+                }
+                self._discovery_signatures.pop(printer_serial, None)
+            else:
+                self._discovery_signatures.clear()
+            for topic in topics:
+                self._discovery_sent.pop(topic, None)
+                self._discovery_seen.discard(topic)
+        # AMS units before their printer, so no device is left pointing at one that is gone.
+        pending = [self._publish_clear(topic) for topic in sorted(topics, key=len, reverse=True)]
+        pending = [info for info in pending if info is not None]
+        if not pending:
+            return
+
+        def wait():
+            # configure() disconnects right after this: let the broker have them first.
+            deadline = time.monotonic() + 2.0
+            for info in pending:
+                try:
+                    info.wait_for_publish(timeout=max(0.0, deadline - time.monotonic()))
+                except Exception:
+                    return
+
+        await asyncio.to_thread(wait)
+
+    async def _sync_discovery(
+        self,
+        printer_name: str,
+        printer_serial: str,
+        printer_model: str | None,
+        snapshot: dict,
+        temperatures: dict | None,
+    ):
+        """Publish a printer's discovery configs when they are new or have changed.
+
+        Called with every status: a rename, a firmware update and an AMS added
+        or removed all change what the configs are built from. An AMS that is
+        gone has its config cleared.
+        """
+        units = snapshot.get("ams") or []
+        signature = (
+            self.ha_discovery_prefix,
+            self.topic_prefix,
+            self._external_url,
+            printer_name,
+            printer_model,
+            snapshot.get("firmware_version"),
+            "nozzle_2" in (temperatures or {}),
+            tuple(
+                (
+                    unit.get("id"),
+                    unit.get("is_ams_ht"),
+                    unit.get("module_type"),
+                    unit.get("serial_number"),
+                    unit.get("sw_ver"),
+                    tuple(tray.get("id") for tray in unit.get("tray") or []),
+                )
+                for unit in units
+            ),
+            tuple(tray.get("id") for tray in snapshot.get("vt_tray") or []),
+        )
+        with self._discovery_lock:
+            if self._discovery_signatures.get(printer_serial) == signature:
+                return
+
+        configs = ha_discovery.build_configs(
+            discovery_prefix=self.ha_discovery_prefix,
+            topic_prefix=self.topic_prefix,
+            serial=printer_serial,
+            name=printer_name,
+            model=printer_model,
+            snapshot=snapshot,
+            temperatures=temperatures,
+            external_url=self._external_url or None,
+        )
+        with self._discovery_lock:
+            self._discovery_signatures[printer_serial] = signature
+            changed = {topic: config for topic, config in configs.items() if self._discovery_sent.get(topic) != config}
+            gone = [
+                topic
+                for topic in set(self._discovery_sent) | self._discovery_seen
+                if topic not in configs
+                and ha_discovery.belongs_to_printer(
+                    ha_discovery.device_id_from_topic(self.ha_discovery_prefix, topic) or "", printer_serial
+                )
+            ]
+            self._discovery_sent.update(changed)
+            for topic in gone:
+                self._discovery_sent.pop(topic, None)
+                self._discovery_seen.discard(topic)
+        # The printer first: its AMS units name it as their via_device.
+        for topic, config in changed.items():
+            self._publish(topic, config, retain=True)
+        for topic in gone:
+            self._publish_clear(topic)
+
+    async def on_printer_removed(self, printer_serial: str):
+        """A printer was deleted: remove it and its AMS units from Home Assistant."""
+        if not self.ha_discovery_enabled or not self.connected:
+            return
+        await self._clear_discovery(printer_serial)
+
     def get_status(self) -> dict:
         """Get current MQTT relay status for API."""
         return {
@@ -273,6 +494,7 @@ class MQTTRelayService:
         printer_name: str,
         printer_serial: str,
         awaiting_plate_clear: bool = False,
+        printer_model: str | None = None,
     ):
         """Publish printer status change (throttled to 1 update/sec per printer).
 
@@ -295,16 +517,21 @@ class MQTTRelayService:
 
         from backend.app.services.printer_manager import printer_state_to_dict
 
-        snapshot = printer_state_to_dict(state, printer_id)
+        snapshot = printer_state_to_dict(state, printer_id, printer_model)
 
         # Build status payload from PrinterState
         payload = {
             "printer_id": printer_id,
             "printer_name": printer_name,
             "printer_serial": printer_serial,
+            # For the device Home Assistant discovery describes (#3724).
+            "model": printer_model,
+            "firmware_version": snapshot["firmware_version"],
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "connected": state.connected,
             "state": state.state,
+            # What the printer is doing within that state, as the printer card names it.
+            "stg_cur_name": snapshot["stg_cur_name"],
             "progress": state.progress,
             "remaining_time": state.remaining_time,
             "layer_num": state.layer_num,
@@ -337,6 +564,14 @@ class MQTTRelayService:
             payload,
             retain=True,
         )
+
+        # Only once the printer has reported: before that its AMS units are not
+        # known, and Home Assistant would be told of a printer without any.
+        if self.ha_discovery_enabled and state.connected and state.state != "unknown":
+            try:
+                await self._sync_discovery(printer_name, printer_serial, printer_model, snapshot, state.temperatures)
+            except Exception as e:
+                logger.warning("Home Assistant discovery failed for printer %s: %s", printer_serial, e)
 
     async def on_plate_clear_state(
         self,

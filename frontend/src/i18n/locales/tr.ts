@@ -3349,6 +3349,14 @@ export default {
     passwordOptional: 'Parola (isteğe bağlı)',
     topicPrefix: 'Konu öneki',
     topicPrefixHint: 'Konular: {{prefix}}/printers/<serial>/status, vb. olacak',
+    // Home Assistant MQTT discovery (#3724)
+    haDiscovery: {
+      title: "Home Assistant keşfi",
+      hint: "Yazıcılar ve AMS üniteleri, YAML gerekmeden sensörleriyle birlikte Home Assistant'ta cihaz olarak görünür. Salt okunur: Home Assistant yazıcıyı bu yolla kontrol edemez.",
+      prefix: "Keşif öneki",
+      prefixHint: "Home Assistant'ın varsayılanı homeassistant'tır. Yalnızca orada değiştirdiyseniz değiştirin.",
+      prefixConflict: "Keşif öneki, konu önekinden farklı olmalıdır.",
+    },
     // Prometheus
     prometheusMetrics: 'Prometheus Metrikleri',
     prometheusEndpointDescription: 'Prometheus/Grafana izleme için yazıcı metriklerini <code>/api/v1/metrics</code> adresinde sun.',

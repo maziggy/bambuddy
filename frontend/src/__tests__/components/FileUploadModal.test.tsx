@@ -3,13 +3,14 @@
  * Tests file upload, drag-and-drop, ZIP/3MF/STL detection, and autoUpload mode.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { FileUploadModal } from '../../components/FileUploadModal';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
+import { setAuthToken } from '../../api/client';
 
 describe('FileUploadModal', () => {
   const defaultProps = {
@@ -709,5 +710,44 @@ describe('FileUploadModal clears-plate option (#3576)', () => {
     const url = await addAndUpload(new File(['x'], 'bundle.zip', { type: 'application/zip' }), false);
     expect(url.pathname).toBe('/api/v1/library/files/extract-zip');
     expect(url.searchParams.get('clears_plate')).not.toBe('true');
+  });
+});
+
+// A signed-in user who may do everything here except confirm a cleared plate.
+function signInWithoutClearPlate(permissions: string[] = []) {
+  setAuthToken('test-token', 'session');
+  server.use(
+    http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+    http.get('*/api/v1/auth/me', () =>
+      HttpResponse.json({ id: 7, username: 'helper', is_admin: false, permissions }),
+    ),
+  );
+}
+
+describe('FileUploadModal clears-plate option without printers:clear_plate (#3576)', () => {
+  afterEach(() => {
+    setAuthToken(null);
+  });
+
+  it('cannot be ticked and says why', async () => {
+    signInWithoutClearPlate(['library:upload']);
+    render(<FileUploadModal folderId={null} onClose={vi.fn()} onUploadComplete={vi.fn()} />);
+
+    const checkbox = screen.getByRole('checkbox', { name: /Files clear the plate automatically/i });
+    await waitFor(() => expect(checkbox).toBeDisabled());
+    expect(checkbox).not.toBeChecked();
+    expect(checkbox.closest('label')).toHaveAttribute('title', 'You do not have permission to control printers');
+  });
+
+  it('can be ticked with the permission', async () => {
+    signInWithoutClearPlate(['library:upload', 'printers:clear_plate']);
+    const user = userEvent.setup();
+    render(<FileUploadModal folderId={null} onClose={vi.fn()} onUploadComplete={vi.fn()} />);
+
+    const checkbox = screen.getByRole('checkbox', { name: /Files clear the plate automatically/i });
+    await new Promise((r) => setTimeout(r, 150));
+    expect(checkbox).toBeEnabled();
+    await user.click(checkbox);
+    expect(checkbox).toBeChecked();
   });
 });

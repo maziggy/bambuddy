@@ -7,7 +7,7 @@
  * falls back to each file's own flag.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse, delay } from 'msw';
@@ -23,6 +23,7 @@ import { AuthProvider } from '../../contexts/AuthContext';
 import { EmbeddedCameraProvider } from '../../contexts/EmbeddedCameraContext';
 import { server } from '../mocks/server';
 import { PrintModal } from '../../components/PrintModal';
+import { setAuthToken } from '../../api/client';
 import type { PrintQueueItem } from '../../api/client';
 
 type Body = Record<string, unknown>;
@@ -522,5 +523,81 @@ describe('PrintModal clears-plate pill with fresh cached details (#3576)', () =>
 
     await waitFor(() => expect(posted).toHaveLength(1));
     expect(posted[0].clears_plate ?? true).toBe(true);
+  });
+});
+
+// A signed-in user who may do everything here except confirm a cleared plate.
+function signInWithoutClearPlate(permissions: string[] = []) {
+  setAuthToken('test-token', 'session');
+  server.use(
+    http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+    http.get('*/api/v1/auth/me', () =>
+      HttpResponse.json({ id: 7, username: 'helper', is_admin: false, permissions }),
+    ),
+  );
+}
+
+describe('PrintModal clears-plate pill without printers:clear_plate (#3576)', () => {
+  beforeEach(() => {
+    posted = [];
+    patched = [];
+  });
+
+  afterEach(() => {
+    setAuthToken(null);
+  });
+
+  it('cannot be switched on for an unflagged file and says why', async () => {
+    mockBackend();
+    signInWithoutClearPlate(['queue:create', 'printers:read']);
+    renderCreate({ archiveId: 1 });
+
+    await waitFor(() => expect(pill()).toBeDisabled());
+    expect(pill()).toHaveAttribute('aria-pressed', 'false');
+    expect(pill()).toHaveAttribute('title', 'You do not have permission to control printers');
+  });
+
+  it('can switch a flagged archive off and back on', async () => {
+    mockBackend({ archiveClears: true });
+    signInWithoutClearPlate(['queue:create', 'printers:read']);
+    const user = userEvent.setup();
+    renderCreate({ archiveId: 1 });
+
+    await waitFor(() => expect(pill()).toHaveAttribute('aria-pressed', 'true'));
+    await new Promise((r) => setTimeout(r, 150));
+    await user.click(pill());
+    expect(pill()).toHaveAttribute('aria-pressed', 'false');
+    expect(pill()).toBeEnabled();
+    await user.click(pill());
+    expect(pill()).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('cannot be switched on when editing a job that does not have it', async () => {
+    mockBackend();
+    signInWithoutClearPlate(['queue:update_all', 'printers:read']);
+    render(<PrintModal mode="edit-queue-item" archiveId={1} archiveName="Benchy" queueItem={queueItem()} onClose={() => {}} />);
+
+    await waitFor(() => expect(pill()).toBeDisabled());
+  });
+
+  it('stays usable when editing a job that has it', async () => {
+    mockBackend();
+    signInWithoutClearPlate(['queue:update_all', 'printers:read']);
+    const user = userEvent.setup();
+    render(
+      <PrintModal
+        mode="edit-queue-item"
+        archiveId={1}
+        archiveName="Benchy"
+        queueItem={queueItem({ clears_plate: true })}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(pill()).toHaveAttribute('aria-pressed', 'true');
+    await new Promise((r) => setTimeout(r, 150));
+    await user.click(pill());
+    expect(pill()).toHaveAttribute('aria-pressed', 'false');
+    expect(pill()).toBeEnabled();
   });
 });

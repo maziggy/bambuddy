@@ -2,7 +2,7 @@
  * Tests for the LibraryFileDetailsModal component (#3077).
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
@@ -10,6 +10,7 @@ import { LibraryFileDetailsModal } from '../../components/LibraryFileDetailsModa
 import type { LibraryFileListItem } from '../../api/client';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
+import { setAuthToken } from '../../api/client';
 
 const listItem: LibraryFileListItem = {
   id: 7,
@@ -379,5 +380,53 @@ describe('LibraryFileDetailsModal', () => {
         expect(screen.queryByText('Photo 1 of 1')).not.toBeInTheDocument();
       });
     });
+  });
+});
+
+// A signed-in user who may do everything here except confirm a cleared plate.
+function signInWithoutClearPlate(permissions: string[] = []) {
+  setAuthToken('test-token', 'session');
+  server.use(
+    http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+    http.get('*/api/v1/auth/me', () =>
+      HttpResponse.json({ id: 7, username: 'helper', is_admin: false, permissions }),
+    ),
+  );
+}
+
+describe('LibraryFileDetailsModal clears-plate toggle without printers:clear_plate (#3576)', () => {
+  const toggle = () => screen.findByRole('checkbox', { name: /clears the plate automatically/i });
+
+  afterEach(() => {
+    setAuthToken(null);
+  });
+
+  it('cannot switch an unflagged file on and says why', async () => {
+    server.use(http.get('/api/v1/library/files/7', () => HttpResponse.json(details)));
+    signInWithoutClearPlate(['library:update_all']);
+    render(<LibraryFileDetailsModal file={listItem} canEdit onClose={vi.fn()} />);
+
+    const checkbox = await toggle();
+    await waitFor(() => expect(checkbox).toBeDisabled());
+    expect(checkbox).not.toBeChecked();
+    expect(checkbox.closest('label')).toHaveAttribute('title', 'You do not have permission to control printers');
+    // The rest of the form stays editable.
+    expect(await screen.findByDisplayValue('Print with brim')).toBeEnabled();
+  });
+
+  it('can switch a flagged file off and back on', async () => {
+    server.use(http.get('/api/v1/library/files/7', () => HttpResponse.json({ ...details, clears_plate: true })));
+    signInWithoutClearPlate(['library:update_all']);
+    const user = userEvent.setup();
+    render(<LibraryFileDetailsModal file={listItem} canEdit onClose={vi.fn()} />);
+
+    const checkbox = await toggle();
+    await waitFor(() => expect(checkbox).toBeChecked());
+    await new Promise((r) => setTimeout(r, 150));
+    await user.click(checkbox);
+    expect(checkbox).not.toBeChecked();
+    expect(checkbox).toBeEnabled();
+    await user.click(checkbox);
+    expect(checkbox).toBeChecked();
   });
 });

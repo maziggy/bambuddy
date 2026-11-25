@@ -573,6 +573,15 @@ export function PrintModal({
       ? printOptions.clears_plate
       : ((isLibraryFile ? libraryFileDetails : archiveDetails)?.clears_plate ?? printOptions.clears_plate);
   const clearsPlatePayload = clearsPlateDecided && !isMultiFile ? printOptions.clears_plate : undefined;
+  // Switching it on needs the permission that confirms a cleared plate. A job
+  // whose file, archive or stored value already has it can be switched off
+  // and back on (#3576).
+  const canSetClearsPlate = hasPermission('printers:clear_plate');
+  const clearsPlateInherited =
+    mode === 'edit-queue-item'
+      ? !!queueItem?.clears_plate
+      : !!(isLibraryFile ? libraryFileDetails : archiveDetails)?.clears_plate;
+  const clearsPlateLocked = !canSetClearsPlate && !clearsPlateInherited && !clearsPlateShown;
 
   // Get sliced_for_model from archive or library file
   const slicedForModel = archiveDetails?.sliced_for_model || libraryFileDetails?.sliced_for_model || null;
@@ -2476,6 +2485,7 @@ export function PrintModal({
                 }
                 onPlatesReadyChange={setCandidatePlatesReady}
                 clearsPlateByFile={candidateClearsPlate}
+                canSetClearsPlate={canSetClearsPlate}
                 onClearsPlateChange={
                   isSeparateJobs
                     ? undefined
@@ -2825,12 +2835,13 @@ export function PrintModal({
               <button
                 type="button"
                 aria-pressed={clearsPlateShown}
-                title={t('printModal.clearsPlateTitle')}
+                disabled={clearsPlateLocked}
+                title={clearsPlateLocked ? t('printers.permission.noControl') : t('printModal.clearsPlateTitle')}
                 onClick={() => {
                   setClearsPlateDecided(true);
                   setPrintOptions((prev) => ({ ...prev, clears_plate: !clearsPlateShown }));
                 }}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm transition-colors ${
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                   clearsPlateShown
                     ? 'bg-bambu-green/20 border-bambu-green text-bambu-green'
                     : 'bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:text-white'

@@ -26,6 +26,9 @@ interface VariantCandidatesProps {
    *  slice that ends with a push-off, and the printer that runs it is chosen
    *  later). Omitted, a flagged file only shows a read-only marker. */
   onClearsPlateChange?: (fileId: number, value: boolean) => void;
+  /** False without printers:clear_plate: a file that does not clear its plate
+   *  cannot be switched on, one that does can still be switched off (#3576). */
+  canSetClearsPlate?: boolean;
   /** Told whether every file's plate list has answered and every multi-plate
    *  file has a plate chosen; until then a submit would send no plate. */
   onPlatesReadyChange?: (ready: boolean) => void;
@@ -70,6 +73,7 @@ export function VariantCandidates({
   onPlateChange,
   clearsPlateByFile,
   onClearsPlateChange,
+  canSetClearsPlate = true,
   onPlatesReadyChange,
   readOnly = false,
   readOnlyNote,
@@ -77,6 +81,9 @@ export function VariantCandidates({
   help,
 }: VariantCandidatesProps) {
   const { t } = useTranslation();
+  // Without the permission a file that does not clear its plate stays off (#3576).
+  const clearsPlateLocked = (candidate: VariantCandidate) =>
+    !canSetClearsPlate && !candidate.clears_plate && !clearsPlateByFile?.[candidate.id];
 
   const plateQueries = useQueries({
     // Read-only mode shows a job that is already queued — its plates were
@@ -189,8 +196,14 @@ export function VariantCandidates({
 
               {!readOnly && onClearsPlateChange && (
                 <label
-                  className="flex items-center gap-1 text-xs text-bambu-gray shrink-0 cursor-pointer"
-                  title={t('printModal.variants.clearsPlateFor', { filename: candidate.filename })}
+                  className={`flex items-center gap-1 text-xs text-bambu-gray shrink-0 ${
+                    clearsPlateLocked(candidate) ? 'opacity-60' : 'cursor-pointer'
+                  }`}
+                  title={
+                    clearsPlateLocked(candidate)
+                      ? t('printers.permission.noControl')
+                      : t('printModal.variants.clearsPlateFor', { filename: candidate.filename })
+                  }
                 >
                   <input
                     type="checkbox"
@@ -198,6 +211,7 @@ export function VariantCandidates({
                     aria-label={t('printModal.variants.clearsPlateFor', { filename: candidate.filename })}
                     checked={clearsPlateByFile?.[candidate.id] ?? !!candidate.clears_plate}
                     onChange={(e) => onClearsPlateChange(candidate.id, e.target.checked)}
+                    disabled={clearsPlateLocked(candidate)}
                   />
                   <Eraser className="w-3 h-3" />
                   <span className="hidden sm:inline">{t('printModal.variants.clearsPlate')}</span>

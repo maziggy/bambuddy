@@ -120,3 +120,34 @@ describe('VariantCandidates', () => {
     expect(onPlateChange).toHaveBeenCalledWith(2, 2);
   });
 });
+
+describe('VariantCandidates clears-plate toggle without printers:clear_plate (#3576)', () => {
+  beforeEach(() => {
+    vi.mocked(api.getLibraryFilePlates).mockResolvedValue({
+      file_id: 1,
+      filename: 'x',
+      plates: [],
+      is_multi_plate: false,
+    });
+  });
+
+  const flaggedFirst: VariantCandidate[] = [{ ...CANDIDATES[0], clears_plate: true }, CANDIDATES[1]];
+
+  it('locks a file that does not clear its plate and leaves a flagged one', async () => {
+    setup({ candidates: flaggedFirst, onClearsPlateChange: vi.fn(), canSetClearsPlate: false });
+
+    const flagged = await screen.findByRole('checkbox', { name: 'Clears plate: bracket_h2s.gcode.3mf' });
+    const plain = screen.getByRole('checkbox', { name: 'Clears plate: bracket_h2c.gcode.3mf' });
+    expect(flagged).toBeChecked();
+    expect(flagged).toBeEnabled();
+    expect(plain).not.toBeChecked();
+    expect(plain).toBeDisabled();
+    expect(plain.closest('label')).toHaveAttribute('title', 'You do not have permission to control printers');
+  });
+
+  it('offers every toggle with the permission', async () => {
+    setup({ candidates: flaggedFirst, onClearsPlateChange: vi.fn() });
+
+    expect(await screen.findByRole('checkbox', { name: 'Clears plate: bracket_h2c.gcode.3mf' })).toBeEnabled();
+  });
+});

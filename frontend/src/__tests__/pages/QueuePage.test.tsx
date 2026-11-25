@@ -2386,6 +2386,35 @@ describe('QueuePage', () => {
       expect(captured.body!.clears_plate).toBe(false);
     });
 
+    it('cannot switch clears_plate on without printers:clear_plate (#3576)', async () => {
+      setAuthToken('test-token', 'session');
+      server.use(
+        http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+        http.get('*/api/v1/auth/me', () =>
+          HttpResponse.json({
+            id: 7,
+            username: 'helper',
+            is_admin: false,
+            permissions: ['queue:read_all', 'queue:update_all', 'queue:create', 'printers:read', 'printers:control'],
+          }),
+        ),
+      );
+      try {
+        const dialog = await openBulkEdit();
+
+        const row = within(dialog).getByText('Clears plate automatically').closest('div')!;
+        const on = within(row).getByText('On');
+        await waitFor(() => expect(on).toBeDisabled());
+        expect(on).toHaveAttribute('title', 'You do not have permission to control printers');
+        expect(within(row).getByText('Off')).toBeEnabled();
+        // Other options are not affected.
+        const timelapseRow = within(dialog).getByText('Timelapse').closest('div')!;
+        expect(within(timelapseRow).getByText('On')).toBeEnabled();
+      } finally {
+        setAuthToken(null);
+      }
+    });
+
     it('leaves clears_plate out of the PATCH while it stays on "no change" (#3576)', async () => {
       const captured = captureBulkPatch();
       const dialog = await openBulkEdit();

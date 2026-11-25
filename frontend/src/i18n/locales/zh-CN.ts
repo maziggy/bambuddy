@@ -5931,6 +5931,11 @@ export default {
     allMaterials: '所有材料',
     filterByBrand: '按品牌筛选...',
     showArchived: '显示已归档',
+    lastUsed: {
+      hint: '已沿用上一个耗材的数值（{{name}}）',
+      hintPlain: '已沿用上一个耗材的数值',
+      clear: '清除',
+    },
     quickAdd: '快速添加（库存）',
     quantity: '数量',
     stock: '库存',
@@ -6007,6 +6012,11 @@ export default {
     showLess: '显示更少',
     showAll: '显示全部',
     noColorsFound: '没有颜色匹配您的搜索',
+    catalogColors: {
+      showAll: '显示所有颜色',
+      showMatching: '仅显示匹配的颜色',
+      allBrand: '{{brand}} 的所有颜色',
+    },
     noResults: '未找到匹配项',
     // 多色渐变 + 视觉效果 (#1154)
     extraColorsLabel: '附加颜色',

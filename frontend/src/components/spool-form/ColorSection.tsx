@@ -6,6 +6,7 @@ import { QUICK_COLORS, ALL_COLORS } from './constants';
 import { FilamentSwatch } from '../FilamentSwatch';
 import { buildFilamentBackground, FILAMENT_EFFECT_OPTIONS } from '../filamentSwatchHelpers';
 import { getSwatchStyle } from '../../utils/colors';
+import { matchCatalogColors, allBrandCatalogColors } from './catalogColors';
 
 /** Parse user paste from 3dfilamentprofiles.com etc.: split on commas/whitespace,
  *  drop the leading `#`, accept 6/8-char hex, lowercase. Returns null when no
@@ -104,115 +105,44 @@ export function ColorSection({
     onColorUsed({ name, hex });
   };
 
-  // Filter catalog colors by the selected brand + material + subtype
-  // Brand matching is word-based: "mz - Bambu" matches "Bambu Lab" because both contain "Bambu"
-  // Material matching: try exact "PETG Basic" first, fall back to base material "PETG" prefix
-  const matchedCatalogColors = useMemo<CatalogDisplayColor[]>(() => {
-    if (catalogColors.length === 0) return [];
-    const brand = formData.brand?.trim();
-    const material = formData.material?.toLowerCase().trim();
-    const subtype = formData.subtype?.toLowerCase().trim();
-    if (!brand && !material) return [];
+  // This component is shared with the SpoolBuddy write-tag page, which gets the
+  // brand-aware matching and "Show all colours" below on purpose.
+  // Filter catalog colors by the selected brand + material + subtype (see catalogColors.ts)
+  const matchedCatalogColors = useMemo<CatalogDisplayColor[]>(
+    () => matchCatalogColors(catalogColors, formData.brand, formData.material, formData.subtype),
+    [catalogColors, formData.brand, formData.material, formData.subtype],
+  );
 
-    // Split brand into words (>= 2 chars) for word-based matching
-    const brandWords = brand
-      ? brand.toLowerCase().split(/[\s\-_]+/).filter(w => w.length >= 2)
-      : [];
-
-    const brandMatches = (manufacturer: string) => {
-      if (brandWords.length === 0) return true; // no brand filter
-      const mfrLower = manufacturer.toLowerCase();
-      // Any significant brand word found in manufacturer name
-      return brandWords.some(w => mfrLower.includes(w));
-    };
-
-    // If only brand is provided, return all colors for that manufacturer
-    if (brand && !material) {
-      const byBrand = catalogColors.filter(c => brandMatches(c.manufacturer));
-      if (byBrand.length > 0) {
-        return byBrand.map(c => ({
-          name: c.color_name,
-          hex: c.hex_color.replace('#', '').substring(0, 6),
-          manufacturer: c.manufacturer,
-          material: typeof c.material === 'string' ? c.material : undefined,
-          extra_colors: c.extra_colors ?? null,
-          effect_type: c.effect_type ?? null,
-        }));
-      }
-    }
-
-    // Build the combined material+subtype string to match catalog entries
-    const fullMaterial = material && subtype ? `${material} ${subtype}` : '';
-
-    // First pass: try exact fullMaterial match (e.g. "PETG Basic")
-    if (fullMaterial) {
-      const exact = catalogColors.filter(c =>
-        brandMatches(c.manufacturer) &&
-        c.material?.toLowerCase() === fullMaterial,
-      );
-      if (exact.length > 0) {
-        return exact.map(c => ({
-          name: c.color_name,
-          hex: c.hex_color.replace('#', '').substring(0, 6),
-          manufacturer: c.manufacturer,
-          material: typeof c.material === 'string' ? c.material : undefined,
-          extra_colors: c.extra_colors ?? null,
-          effect_type: c.effect_type ?? null,
-        }));
-      }
-      // Try without trailing "+" (e.g. "PLA Silk+" -> "PLA Silk")
-      const normalized = fullMaterial.replace(/\+$/, '');
-      if (normalized !== fullMaterial) {
-        const normMatch = catalogColors.filter(c =>
-          brandMatches(c.manufacturer) &&
-          c.material?.toLowerCase() === normalized,
-        );
-        if (normMatch.length > 0) {
-          return normMatch.map(c => ({
-            name: c.color_name,
-            hex: c.hex_color.replace('#', '').substring(0, 6),
-            manufacturer: c.manufacturer,
-            material: typeof c.material === 'string' ? c.material : undefined,
-          }));
-        }
-      }
-    }
-
-    // Second pass: match base material prefix (e.g. "PETG" matches "PETG Basic", "PETG-HF")
-    if (material) {
-      const byMaterial = catalogColors.filter(c =>
-        brandMatches(c.manufacturer) &&
-        (!c.material || c.material.toLowerCase().startsWith(material)),
-      );
-      if (byMaterial.length > 0) {
-        return byMaterial.map(c => ({
-          name: c.color_name,
-          hex: c.hex_color.replace('#', '').substring(0, 6),
-          manufacturer: c.manufacturer,
-          material: typeof c.material === 'string' ? c.material : undefined,
-          extra_colors: c.extra_colors ?? null,
-          effect_type: c.effect_type ?? null,
-        }));
-      }
-    }
-
-    return [];
-  }, [catalogColors, formData.brand, formData.material, formData.subtype]);
+  // #3619: "Show all colours" widens the list to every catalog colour of the brand
+  // (matching ones first). Only offered when that adds colours.
+  const [showAllCatalog, setShowAllCatalog] = useState(false);
+  const allBrandColors = useMemo<CatalogDisplayColor[]>(
+    () => allBrandCatalogColors(catalogColors, formData.brand, matchedCatalogColors),
+    [catalogColors, formData.brand, matchedCatalogColors],
+  );
+  const canShowAllCatalog = allBrandColors.length > matchedCatalogColors.length;
+  const showingAllCatalog = showAllCatalog && canShowAllCatalog;
+  const visibleCatalogColors = showingAllCatalog ? allBrandColors : matchedCatalogColors;
+  // A new product starts with its own colours again.
+  useEffect(() => {
+    setShowAllCatalog(false);
+  }, [formData.brand, formData.material]);
 
   const catalogSearchResults = useMemo<CatalogDisplayColor[]>(() => {
-    if (!colorSearch) return matchedCatalogColors;
-    if (matchedCatalogColors.length === 0) return [];
+    if (!colorSearch) return visibleCatalogColors;
+    if (visibleCatalogColors.length === 0) return [];
     const q = colorSearch.toLowerCase();
-    const matches = matchedCatalogColors.filter(c =>
+    const matches = visibleCatalogColors.filter(c =>
       c.name.toLowerCase().includes(q) ||
       (c.manufacturer?.toLowerCase().includes(q) ?? false) ||
       (c.material?.toLowerCase().includes(q) ?? false),
     );
     return matches;
-  }, [colorSearch, matchedCatalogColors]);
+  }, [colorSearch, visibleCatalogColors]);
 
-  // Only show catalog section if there are matched catalog colors
-  const showCatalogSection = matchedCatalogColors.length > 0;
+  // Show the catalog section for matched colours, or when the user asked for all of the
+  // brand's colours although none matches the material (#3619).
+  const showCatalogSection = matchedCatalogColors.length > 0 || showingAllCatalog;
 
   // Fallback hardcoded colors for search/expand
   const filteredFallbackColors = useMemo(() => {
@@ -322,13 +252,34 @@ export function ColorSection({
       {showCatalogSection ? (
         /* Catalog colors matching selected brand/material */
         <div className="space-y-1.5">
-          <span className="text-xs text-bambu-gray">
-            {colorSearch ? t('inventory.searchResults') : `${formData.brand}${formData.material ? ` ${formData.material}` : ''}`}
-          </span>
+          <div className="flex items-center justify-between text-xs text-bambu-gray">
+            <span>
+              {colorSearch
+                ? t('inventory.searchResults')
+                : showingAllCatalog
+                  ? t('inventory.catalogColors.allBrand', { brand: formData.brand.trim() })
+                  : `${formData.brand}${formData.material ? ` ${formData.material}` : ''}`}
+            </span>
+            {!colorSearch && canShowAllCatalog && (
+              <button
+                type="button"
+                onClick={() => setShowAllCatalog(!showAllCatalog)}
+                aria-expanded={showingAllCatalog}
+                className="flex items-center gap-1 hover:text-white transition-colors"
+                data-testid="catalog-colors-toggle"
+              >
+                {showAllCatalog ? (
+                  <>{matchedCatalogColors.length > 0 ? t('inventory.catalogColors.showMatching') : t('inventory.showLess')} <ChevronUp className="w-3 h-3" /></>
+                ) : (
+                  <>{t('inventory.catalogColors.showAll')} <ChevronDown className="w-3 h-3" /></>
+                )}
+              </button>
+            )}
+          </div>
           <div className="flex flex-wrap gap-1.5">
             {catalogSearchResults.map(color => (
               <button
-                key={`${color.hex}-${color.name}-${color.manufacturer ?? ''}`}
+                key={`${color.hex}-${color.name}-${color.manufacturer ?? ''}-${color.material ?? ''}`}
                 type="button"
                 onClick={() => selectColor(color.hex, color.name, color.extra_colors, color.effect_type)}
                 className={`w-6 h-6 rounded border-2 transition-all hover:scale-110 hover:z-20 relative group ${
@@ -365,17 +316,32 @@ export function ColorSection({
           <div className="flex items-center justify-between text-xs text-bambu-gray">
             <span>{colorSearch ? t('inventory.searchResults') : (showAllColors ? t('inventory.allColors') : t('inventory.commonColors'))}</span>
             {!colorSearch && (
-              <button
-                type="button"
-                onClick={() => setShowAllColors(!showAllColors)}
-                className="flex items-center gap-1 hover:text-white transition-colors"
-              >
-                {showAllColors ? (
-                  <>{t('inventory.showLess')} <ChevronUp className="w-3 h-3" /></>
-                ) : (
-                  <>{t('inventory.showAll')} <ChevronDown className="w-3 h-3" /></>
+              <span className="flex items-center gap-3">
+                {/* No colour matches the material, but the brand has catalog colours (#3619). */}
+                {canShowAllCatalog && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllCatalog(true)}
+                    aria-expanded={false}
+                    className="flex items-center gap-1 hover:text-white transition-colors"
+                    data-testid="catalog-colors-toggle"
+                  >
+                    {t('inventory.catalogColors.allBrand', { brand: formData.brand.trim() })} <ChevronDown className="w-3 h-3" />
+                  </button>
                 )}
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAllColors(!showAllColors)}
+                  aria-expanded={showAllColors}
+                  className="flex items-center gap-1 hover:text-white transition-colors"
+                >
+                  {showAllColors ? (
+                    <>{t('inventory.showLess')} <ChevronUp className="w-3 h-3" /></>
+                  ) : (
+                    <>{t('inventory.showAll')} <ChevronDown className="w-3 h-3" /></>
+                  )}
+                </button>
+              </span>
             )}
           </div>
           <div className="flex flex-wrap gap-1.5">

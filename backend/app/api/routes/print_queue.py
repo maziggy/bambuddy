@@ -2142,11 +2142,11 @@ async def update_batch(
         if not data.name.strip():
             raise HTTPException(400, "Batch name is required")
         batch.name = data.name.strip()[:255]
-    if data.project_id is not None:
+    if "project_id" in data.model_fields_set:
         batch.project_id = data.project_id
-    if data.due_date is not None:
+    if "due_date" in data.model_fields_set:
         batch.due_date = data.due_date
-    if data.notes is not None:
+    if "notes" in data.model_fields_set:
         batch.notes = data.notes
     if data.status is not None:
         batch.status = data.status

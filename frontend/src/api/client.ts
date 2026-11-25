@@ -1818,6 +1818,59 @@ export interface OrcaDevicePollResponse {
   user_id: string | null;
 }
 
+// 3D Filament Profiles (#2981): device-flow connection, filament lookup and
+// the 3DFP filament a spool is linked to.
+export interface ThreeDfpDeviceStartResponse {
+  user_code: string;
+  verification_uri: string;
+  verification_uri_complete: string;
+  interval: number;
+  expires_in: number;
+}
+
+export type ThreeDfpDevicePollStatus = OrcaDevicePollStatus;
+
+export interface ThreeDfpStatusResponse {
+  connected: boolean;
+  email: string | null;
+}
+
+export interface ThreeDfpAccount {
+  email: string | null;
+  plan: string | null;
+  active_scopes: string[];
+  quota: { limit: number | null; remaining: number | null; resets_at: string | null } | null;
+  upgrade_url: string | null;
+}
+
+export interface ThreeDfpStore {
+  region: string | null;
+  price: number | null;
+  currency: string | null;
+  availability: string | null;
+  updated_at: string | null;
+  url: string;
+}
+
+export interface ThreeDfpFilament {
+  id: number;
+  brand_name: string | null;
+  material: string | null;
+  material_type: string | null;
+  color: string | null;
+  rgb: string | null;
+  bambu_filament_id: string | null;
+  discontinued: boolean;
+  url: string | null;
+  nominal_weight: number | null;
+  spool_weight: number | null;
+  temp_min: number | null;
+  temp_max: number | null;
+  stores: ThreeDfpStore[];
+}
+
+export type ThreeDfpInventory = 'inventory' | 'spoolman';
+
 export interface OrcaAuthStatusResponse {
   connected: boolean;
   email: string | null;
@@ -4144,6 +4197,54 @@ export interface PreviewSpoolLabelRequest {
   fields: SpoolLabelField[];
 }
 
+// Mirror of backend.app.services.project_label_renderer.ProjectLabelField, in
+// print order (#3655).
+export const PROJECT_LABEL_FIELDS = [
+  'parent',
+  'name',
+  'note',
+  'parts',
+  'due_date',
+  'printed',
+  'color',
+  'qr',
+  'quantity',
+  'project_id',
+] as const;
+export type ProjectLabelField = (typeof PROJECT_LABEL_FIELDS)[number];
+// Mirror of DEFAULT_PROJECT_LABEL_FIELDS: what a bag label needs.
+export const DEFAULT_PROJECT_LABEL_FIELDS: ProjectLabelField[] = [
+  'name',
+  'note',
+  'due_date',
+  'color',
+  'qr',
+  'quantity',
+];
+
+// One project label: the project, and what was typed for this bag.
+export interface ProjectLabelItem {
+  project_id: number;
+  quantity?: number | null;
+  note?: string | null;
+}
+
+interface ProjectLabelOptions {
+  template: SpoolLabelRequestTemplate;
+  layout?: LabelSheetLayout | null;
+  monochrome?: boolean;
+  fields?: ProjectLabelField[] | null;
+}
+
+export interface PrintProjectLabelsRequest extends ProjectLabelOptions {
+  items: ProjectLabelItem[];
+  starting_position?: number;
+  format?: 'pdf' | 'png';
+  dpi?: 203 | 300 | 600;
+}
+
+export type PreviewProjectLabelRequest = ProjectLabelItem & ProjectLabelOptions;
+
 export interface InventorySpool {
   id: number;
   material: string;
@@ -4806,7 +4907,7 @@ export type Permission =
   | 'system:read'
   | 'settings:read' | 'settings:update' | 'settings:backup' | 'settings:restore'
   | 'github:backup' | 'github:restore'
-  | 'cloud:auth' | 'orca_cloud:auth'
+  | 'cloud:auth' | 'orca_cloud:auth' | 'threedfp:auth'
   | 'makerworld:view' | 'makerworld:import'
   | 'manyfold:view' | 'manyfold:import'
   | 'api_keys:read' | 'api_keys:create' | 'api_keys:update' | 'api_keys:delete'
@@ -6829,6 +6930,23 @@ export const api = {
     request<OrcaProfileListResponse>('/orca-cloud/profiles'),
   orcaCloudGetProfile: (id: string) =>
     request<OrcaProfileDetail>(`/orca-cloud/profiles/${id}`),
+  threedfpDeviceStart: () =>
+    request<ThreeDfpDeviceStartResponse>('/threedfp/device/start', { method: 'POST' }),
+  threedfpDevicePoll: () =>
+    request<{ status: ThreeDfpDevicePollStatus; connected: boolean }>('/threedfp/device/poll', { method: 'POST' }),
+  threedfpStatus: () => request<ThreeDfpStatusResponse>('/threedfp/status'),
+  threedfpAccount: () => request<ThreeDfpAccount>('/threedfp/account'),
+  threedfpDisconnect: () => request<{ success: boolean }>('/threedfp/disconnect', { method: 'POST' }),
+  threedfpLookup: (query: string) =>
+    request<{ results: ThreeDfpFilament[] }>(`/threedfp/lookup?q=${encodeURIComponent(query)}`),
+  threedfpGetFilament: (id: number) => request<ThreeDfpFilament>(`/threedfp/filaments/${id}`),
+  getThreedfpSpoolLink: (inventory: ThreeDfpInventory, spoolId: number) =>
+    request<{ filament_id: number | null }>(`/threedfp/spool-links/${inventory}/${spoolId}`),
+  setThreedfpSpoolLink: (inventory: ThreeDfpInventory, spoolId: number, filamentId: number | null) =>
+    request<{ filament_id: number | null }>(`/threedfp/spool-links/${inventory}/${spoolId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ filament_id: filamentId }),
+    }),
   getCloudSettings: (version = '02.04.00.70') =>
     request<SlicerSettingsResponse>(`/cloud/settings?version=${version}`),
   getBuiltinFilaments: () =>
@@ -7445,7 +7563,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  createSpoolFromSlot: (data: { printer_id: number; ams_id: number; tray_id: number }) =>
+  createSpoolFromSlot: (data: { printer_id: number; ams_id: number; tray_id: number; tag_uid?: string; tray_uuid?: string }) =>
     request<InventorySpool>(`/inventory/spools/from-slot`, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -7603,6 +7721,11 @@ export const api = {
     postForBlob('/inventory/labels/preview', data, signal),
   previewSpoolmanSpoolLabel: (data: PreviewSpoolLabelRequest, signal?: AbortSignal): Promise<Blob> =>
     postForBlob('/spoolman/labels/preview', data, signal),
+  // Project labels for the bag or box of a project's parts (#3655).
+  printProjectLabels: (data: PrintProjectLabelsRequest): Promise<Blob> =>
+    postForBlob('/projects/labels', data),
+  previewProjectLabel: (data: PreviewProjectLabelRequest, signal?: AbortSignal): Promise<Blob> =>
+    postForBlob('/projects/labels/preview', data, signal),
   getLabelTemplates: () => request<SavedLabelTemplate[]>('/label-templates'),
   createLabelTemplate: (data: { name: string; layout: LabelSheetLayout }) =>
     request<SavedLabelTemplate>('/label-templates', { method: 'POST', body: JSON.stringify(data) }),
@@ -7701,7 +7824,19 @@ export const api = {
     request<{ status: string }>('/inventory/colors/reset', { method: 'POST' }),
   searchColors: (manufacturer?: string, material?: string) =>
     request<ColorCatalogEntry[]>(`/inventory/colors/search?${manufacturer ? `manufacturer=${encodeURIComponent(manufacturer)}` : ''}${manufacturer && material ? '&' : ''}${material ? `material=${encodeURIComponent(material)}` : ''}`),
-  linkTagToSpool: (spoolId: number, data: { tag_uid?: string; tray_uuid?: string; tag_type?: string; data_origin?: string }) =>
+  // move: take the tag from the spool that has it instead of a 409. A slot:
+  // also assign the spool there, as an RFID match does (#3658).
+  linkTagToSpool: (spoolId: number, data: {
+    tag_uid?: string;
+    tray_uuid?: string;
+    tag_type?: string;
+    data_origin?: string;
+    move?: boolean;
+    source_spool_id?: number;
+    printer_id?: number;
+    ams_id?: number;
+    tray_id?: number;
+  }) =>
     request<InventorySpool>(`/inventory/spools/${spoolId}/link-tag`, {
       method: 'PATCH',
       body: JSON.stringify(data),

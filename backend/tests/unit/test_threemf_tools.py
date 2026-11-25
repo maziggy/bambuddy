@@ -42,6 +42,49 @@ def create_mock_3mf(slice_info_content: str) -> io.BytesIO:
 class TestParseGcodeLayerFilamentUsage:
     """Tests for parse_gcode_layer_filament_usage()."""
 
+    @pytest.mark.parametrize(
+        ("mode", "moves"),
+        [("M82", (100, 98, 200, 300)), ("M83", (100, -2, 102, 100)), ("", (100, -2, 102, 100))],
+    )
+    def test_equivalent_extrusion_at_each_layer(self, mode, moves):
+        gcode = f"""
+M620 S0A
+{mode}
+M73 L1
+G1 E{moves[0]}
+G1 E{moves[1]}
+M73 L2
+G1 E{moves[2]}
+M73 L3
+G1 E{moves[3]}
+"""
+        assert parse_gcode_layer_filament_usage(gcode) == {1: {0: 98}, 2: {0: 200}, 3: {0: 300}}
+
+    def test_extruder_position_across_modes_resets_and_tool_changes(self):
+        gcode = """
+M83
+G1 E10 ; before any slot is selected
+M620 S0
+M82
+G91 ; relative XYZ
+G1 E15
+G92 X0 ; keep E position
+G2 E17
+M73 L1
+G92 X0 E100
+G3 E103
+M620 S255
+G1 E110 ; unloaded
+M620 S1
+G0 E112
+M83
+G90 ; absolute XYZ
+G1 E4
+M82
+G1 E117
+"""
+        assert parse_gcode_layer_filament_usage(gcode) == {0: {0: 7}, 1: {0: 10, 1: 7}}
+
     def test_single_filament_single_layer(self):
         """Single filament extruding on one layer."""
         gcode = """

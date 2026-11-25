@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { ProjectsPage, ProjectModal } from '../../pages/ProjectsPage';
@@ -68,6 +68,18 @@ describe('ProjectsPage', () => {
         expect(screen.getByText('Functional Parts')).toBeInTheDocument();
         expect(screen.getByText('Art Collection')).toBeInTheDocument();
       });
+    });
+
+    it('opens the selected card’s label dialog without navigating', async () => {
+      const user = userEvent.setup();
+      const previousPath = window.location.pathname;
+      render(<ProjectsPage />);
+      const actions = await screen.findAllByRole('button', { name: 'Actions' });
+      await user.click(actions[1]);
+      await user.click(screen.getByRole('button', { name: 'Label' }));
+      const inputs = await screen.findByTestId('project-label-inputs');
+      expect(within(inputs).getByText('Art Collection')).toBeVisible();
+      expect(window.location.pathname).toBe(previousPath);
     });
 
     it('shows project descriptions', async () => {

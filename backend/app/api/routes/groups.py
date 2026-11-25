@@ -40,6 +40,8 @@ _PERMISSION_LABEL_OVERRIDES: dict[Permission, str] = {
     Permission.USERS_READ_SLIM: "List User Names (id + username only)",
     # "Start Unreviewed Queue" says nothing about what happens without it (#1620)
     Permission.QUEUE_START_UNREVIEWED: "Print Without Review (else jobs wait for someone to start them)",
+    # "Auth Threedfp" would say nothing to anyone (#2981)
+    Permission.THREEDFP_AUTH: "Connect 3D Filament Profiles and look up filaments",
 }
 
 

@@ -25,6 +25,7 @@ from contextlib import AsyncExitStack
 
 from sqlalchemy import select
 
+from backend.app.core.printer_scope import ALL_PRINTERS, PrinterScope
 from backend.app.core.websocket import ws_manager
 from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
@@ -45,6 +46,10 @@ def _live_tray(printer_id: int, ams_id: int, tray_id: int) -> dict | None:
     from backend.app.services.printer_manager import printer_manager
 
     state = printer_manager.get_status(printer_id)
+    return tray_from_state(state, ams_id, tray_id)
+
+
+def tray_from_state(state, ams_id: int, tray_id: int) -> dict | None:
     raw = getattr(state, "raw_data", None) if state is not None else None
     if not isinstance(raw, dict):
         return None
@@ -56,9 +61,9 @@ def _live_tray(printer_id: int, ams_id: int, tray_id: int) -> dict | None:
         return None
     units = raw.get("ams") or []
     if isinstance(units, dict):  # also stored as the push's {"ams": [...]}
-        units = units.get("ams") or []
+        units = [units] if "tray" in units else units.get("ams") or []
     for unit in units:
-        if not isinstance(unit, dict) or str(unit.get("id")) != str(ams_id):
+        if not isinstance(unit, dict) or str(unit.get("id", 0)) != str(ams_id):
             continue
         for tray in unit.get("tray") or []:
             if isinstance(tray, dict) and str(tray.get("id")) == str(tray_id):
@@ -99,7 +104,9 @@ async def _clear_fallback_tag(db, spool_id: int, vacated: list[Slot]) -> None:
         logger.warning("Could not clear the old slot's fallback tag from Spoolman spool %s: %s", spool_id, e)
 
 
-async def release_other_slots(inventory: str, spool_id: int, keep: Slot) -> list[Slot]:
+async def release_other_slots(
+    inventory: str, spool_id: int, keep: Slot, *, printer_scope: PrinterScope = ALL_PRINTERS
+) -> list[Slot]:
     """Unassign ``spool_id`` from every slot but ``keep``, where a tag was just read.
 
     Only acts while ``keep`` reports a tag and still holds the spool. A slot
@@ -116,9 +123,14 @@ async def release_other_slots(inventory: str, spool_id: int, keep: Slot) -> list
     model = SpoolAssignment if inventory == INTERNAL else SpoolmanSlotAssignment
     spool_col = SpoolAssignment.spool_id if inventory == INTERNAL else SpoolmanSlotAssignment.spoolman_spool_id
 
+    conditions = [spool_col == spool_id]
+    scope_clause = printer_scope.where_strict(model.printer_id)
+    if scope_clause is not None:
+        conditions.append(scope_clause)
+
     async def _holders() -> set[int]:
         async with async_session() as db:
-            rows = await db.execute(select(model.printer_id).where(spool_col == spool_id).distinct())
+            rows = await db.execute(select(model.printer_id).where(*conditions).distinct())
             return set(rows.scalars())
 
     # Spoolman slots have no printer lock to take, as a Spoolman move takes none.
@@ -130,12 +142,14 @@ async def release_other_slots(inventory: str, spool_id: int, keep: Slot) -> list
             for pid in sorted(locked):
                 await locks.enter_async_context(get_ams_assignment_lock(pid))
             async with async_session() as db:
-                rows = (await db.execute(select(model).where(spool_col == spool_id))).scalars().all()
+                rows = (await db.execute(select(model).where(*conditions))).scalars().all()
                 if inventory == INTERNAL and not {row.printer_id for row in rows} <= locked:
                     locked |= {row.printer_id for row in rows}
                     continue
                 if keep not in {(row.printer_id, row.ams_id, row.tray_id) for row in rows}:
                     # Reassigned since the read: whatever holds the slot now decides.
+                    return []
+                if inventory == INTERNAL and not (_tag_ids(_live_tray(*keep)) & tag):
                     return []
                 for row in rows:
                     slot = (row.printer_id, row.ams_id, row.tray_id)

@@ -45,10 +45,11 @@ from __future__ import annotations
 
 import io
 import unicodedata
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import qrcode
 from reportlab.lib.colors import Color, HexColor, black, white
@@ -362,9 +363,14 @@ def _truncate_to_width(c: rl_canvas.Canvas, text: str, font: str, size: float, m
     if _text_width(text, font, size) <= max_w:
         return text
     ell = "…"
-    while text and _text_width(text + ell, font, size) > max_w:
-        text = text[:-1]
-    return text + ell if text else ell
+    lo, hi = 0, len(text)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if _text_width(text[:mid] + ell, font, size) <= max_w:
+            lo = mid
+        else:
+            hi = mid - 1
+    return text[:lo] + ell
 
 
 def _is_wide(ch: str) -> bool:
@@ -626,6 +632,12 @@ def _draw_label_roomy(
 
 # ── Template entry points ────────────────────────────────────────────────────
 
+# Draws one label of any kind into the box (canvas, x, y, w, h, data,
+# monochrome, fields). ``None`` draws a spool label (``_draw_label``, looked up
+# when called); project labels (#3655) bring their own, and the templates,
+# sheets and pages are shared.
+DrawLabel = Callable[[rl_canvas.Canvas, float, float, float, float, Any, bool, frozenset[Any]], None]
+
 PageSize = Literal["a4", "letter"]
 
 _PAGE_SIZES: dict[str, tuple[float, float]] = {"a4": A4, "letter": letter}
@@ -728,19 +740,22 @@ def _template_title(template: Template) -> str:
 
 def _render_single_label_pdf(
     template: TemplateName,
-    data_list: list[LabelData],
+    data_list: Sequence[Any],
     monochrome: bool = False,
-    fields: frozenset[LabelField] = DEFAULT_LABEL_FIELDS,
+    fields: frozenset[Any] = DEFAULT_LABEL_FIELDS,
+    *,
+    draw: DrawLabel | None = None,
+    subject: str = "spool",
 ) -> bytes:
     w_mm, h_mm = label_size_mm(template)
     page_w, page_h = w_mm * mm, h_mm * mm
 
     buf = io.BytesIO()
     c = _new_canvas(buf, (page_w, page_h))
-    c.setTitle(f"Bambuddy spool labels ({template})")
+    c.setTitle(f"Bambuddy {subject} labels ({template})")
 
     for data in data_list:
-        _draw_label(c, 0, 0, page_w, page_h, data, monochrome, fields)
+        (draw or _draw_label)(c, 0, 0, page_w, page_h, data, monochrome, fields)
         c.showPage()
 
     c.save()
@@ -777,10 +792,13 @@ def sheet_page_count(template: Template, label_count: int, starting_position: in
 def _render_sheet_pdf(
     layout: SheetLayout,
     title: str,
-    data_list: list[LabelData],
+    data_list: Sequence[Any],
     monochrome: bool,
     starting_position: int,
-    fields: frozenset[LabelField] = DEFAULT_LABEL_FIELDS,
+    fields: frozenset[Any] = DEFAULT_LABEL_FIELDS,
+    *,
+    draw: DrawLabel | None = None,
+    subject: str = "spool",
 ) -> bytes:
     problem = layout.problem()
     if problem:
@@ -798,7 +816,7 @@ def _render_sheet_pdf(
 
     buf = io.BytesIO()
     c = _new_canvas(buf, page_size)
-    c.setTitle(f"Bambuddy spool labels ({title})")
+    c.setTitle(f"Bambuddy {subject} labels ({title})")
 
     per_page = layout.capacity
     if starting_position < 1 or starting_position > per_page:
@@ -816,7 +834,7 @@ def _render_sheet_pdf(
             col = slot_index % cols
             x = left_margin + col * (label_w + col_gap)
             y = page_h - top_margin - (row + 1) * label_h - row * row_gap
-            _draw_label(c, x, y, label_w, label_h, data, monochrome, fields)
+            (draw or _draw_label)(c, x, y, label_w, label_h, data, monochrome, fields)
         c.showPage()
         data_index += len(chunk)
         page_number += 1
@@ -827,11 +845,13 @@ def _render_sheet_pdf(
 
 def render_labels(
     template: Template,
-    data_list: list[LabelData],
+    data_list: Sequence[Any],
     *,
     monochrome: bool = False,
     starting_position: int = 1,
-    fields: frozenset[LabelField] = DEFAULT_LABEL_FIELDS,
+    fields: frozenset[Any] = DEFAULT_LABEL_FIELDS,
+    draw: DrawLabel | None = None,
+    subject: str = "spool",
 ) -> bytes:
     """Render ``data_list`` to a PDF using ``template``: a built-in template
     name, or a ``SheetLayout`` for a custom sheet (#3296). Returns bytes.
@@ -847,24 +867,34 @@ def render_labels(
     sheet template. Later pages always begin at the first slot.
 
     ``fields`` names the lines to print (#2981); see ``ALL_LABEL_FIELDS``.
+
+    ``draw`` draws one label and ``subject`` names them in the PDF title: a
+    spool label by default, a project label with the project renderer's
+    (#3655).
     """
+    kind = {"draw": draw, "subject": subject}
     if isinstance(template, SheetLayout):
-        return _render_sheet_pdf(template, _template_title(template), data_list, monochrome, starting_position, fields)
+        return _render_sheet_pdf(
+            template, _template_title(template), data_list, monochrome, starting_position, fields, **kind
+        )
     if template in _SHEET_TEMPLATES:
-        return _render_sheet_pdf(_SHEET_TEMPLATES[template], template, data_list, monochrome, starting_position, fields)
+        return _render_sheet_pdf(
+            _SHEET_TEMPLATES[template], template, data_list, monochrome, starting_position, fields, **kind
+        )
     if template in _SINGLE_LABEL_SIZES_MM:
         if starting_position != 1:
             raise ValueError("Starting position is only supported for sheet label templates")
-        return _render_single_label_pdf(template, data_list, monochrome, fields)
+        return _render_single_label_pdf(template, data_list, monochrome, fields, **kind)
     raise ValueError(f"Unknown label template: {template!r}")
 
 
 def render_label_preview_pdf(
     template: Template,
-    data: LabelData,
+    data: Any,
     *,
     monochrome: bool = False,
-    fields: frozenset[LabelField] = DEFAULT_LABEL_FIELDS,
+    fields: frozenset[Any] = DEFAULT_LABEL_FIELDS,
+    draw: DrawLabel | None = None,
 ) -> bytes:
     """One label of ``template`` on a page of its own size.
 
@@ -875,7 +905,7 @@ def render_label_preview_pdf(
     page_w, page_h = w_mm * mm, h_mm * mm
     buf = io.BytesIO()
     c = _new_canvas(buf, (page_w, page_h))
-    _draw_label(c, 0, 0, page_w, page_h, data, monochrome, fields)
+    (draw or _draw_label)(c, 0, 0, page_w, page_h, data, monochrome, fields)
     c.showPage()
     c.save()
     return buf.getvalue()
@@ -914,6 +944,7 @@ def pdf_to_pngs(pdf: bytes, dpi: int) -> list[bytes]:
 __all__ = [
     "ALL_LABEL_FIELDS",
     "DEFAULT_LABEL_FIELDS",
+    "DrawLabel",
     "LabelData",
     "LabelField",
     "PageSize",

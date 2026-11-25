@@ -56,12 +56,15 @@ def parse_gcode_layer_filament_usage(gcode_content: str) -> dict[int, dict[int, 
     G-code commands parsed:
         - M73 L<layer>: Layer change marker
         - M620 S<filament>: Filament/tool change (S255 = unload)
-        - G0/G1/G2/G3 E<amount>: Extrusion moves (relative E; retractions
-          are subtracted, so each layer holds the net length fed)
+        - M82/M83: Absolute or relative E coordinates (default: relative)
+        - G92 E<position>: Set the E coordinate without feeding filament
+        - G0/G1/G2/G3 E<amount>: Net length fed, including retractions
     """
     layer_filaments: dict[int, dict[int, float]] = {}
     current_layer = 0
     active_filament: int | None = None
+    relative_e = True
+    e_position = 0.0
     cumulative_extrusion: dict[int, float] = {}  # filament_id -> total mm
 
     for line in gcode_content.splitlines():
@@ -120,25 +123,26 @@ def parse_gcode_layer_filament_usage(gcode_content: str) -> dict[int, dict[int, 
                         except (ValueError, AttributeError):
                             pass  # Skip unparseable filament switch commands
 
-        # Extrusion moves: G0/G1/G2/G3 with E parameter
-        # Only G1 typically has extrusion, but check all for safety
-        elif cmd in ("G0", "G1", "G2", "G3"):
-            if active_filament is None:
-                continue
+        elif cmd in ("M82", "M83"):
+            relative_e = cmd == "M83"
+        elif cmd in ("G0", "G1", "G2", "G3", "G92"):
             for part in parts[1:]:
-                part_upper = part.upper()
-                if part_upper.startswith("E"):
-                    try:
-                        extrusion = float(part[1:])
-                        # Net sum, retractions included (#3317). Bambu G-code is
-                        # relative (M83): every retract is followed by an
-                        # un-retract of the same length, so counting only the
-                        # positive half added each pair to the total and put a
-                        # print 1.1-1.7x above the slicer's weight.
-                        current = cumulative_extrusion.get(active_filament, 0)
-                        cumulative_extrusion[active_filament] = current + extrusion
-                    except ValueError:
-                        pass  # Skip G-code lines with unparseable extrusion values
+                if not part.upper().startswith("E"):
+                    continue
+                try:
+                    e = float(part[1:])
+                except ValueError:
+                    continue
+                if cmd == "G92":
+                    e_position = e
+                    continue
+
+                # The E coordinate advances even when no spool is selected.
+                delta = e if relative_e else e - e_position
+                e_position = e_position + e if relative_e else e
+                if active_filament is not None:
+                    current = cumulative_extrusion.get(active_filament, 0)
+                    cumulative_extrusion[active_filament] = current + delta
 
     # Save final layer state
     if cumulative_extrusion:

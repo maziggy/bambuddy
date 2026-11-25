@@ -600,7 +600,7 @@ async def highest_spool_id_given_out(db: AsyncSession) -> int:
         return max(highest, seq or 0)
     sequence = (await db.execute(text("SELECT pg_get_serial_sequence('spool', 'id')"))).scalar()
     if sequence:
-        state = (await db.execute(text(f"SELECT last_value, is_called FROM {sequence}"))).first()  # noqa: S608  # nosec B608 -- name from pg_get_serial_sequence
+        state = (await db.execute(text(f"SELECT last_value, is_called FROM {sequence}"))).first()  # noqa: S608  # nosec B608  # name from pg_get_serial_sequence
         if state is not None:
             last_value, is_called = state
             highest = max(highest, last_value if is_called else last_value - 1)

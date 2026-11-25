@@ -82,6 +82,12 @@ DEFAULT_TEMPLATES = [
         "body_template": "{printer}: {filename}\nThe print charge could not be recorded. The budget reservation was retained.\nArchive: {archive_id}",
     },
     {
+        "event_type": "filament_out_of_stock",
+        "name": "Filament Out of Stock",
+        "title_template": "Filament Out of Stock",
+        "body_template": "{job_name} waits for {filament}, and none is left in the inventory.",
+    },
+    {
         "event_type": "printer_offline",
         "name": "Printer Offline",
         "title_template": "Printer Offline",

@@ -174,6 +174,7 @@ def _provider_to_dict(provider: NotificationProvider) -> dict:
         "on_queue_job_skipped": provider.on_queue_job_skipped,
         "on_queue_job_failed": provider.on_queue_job_failed,
         "on_queue_completed": provider.on_queue_completed,
+        "on_filament_out_of_stock": provider.on_filament_out_of_stock,
         # Quiet hours
         "quiet_hours_enabled": provider.quiet_hours_enabled,
         "quiet_hours_start": provider.quiet_hours_start,
@@ -328,6 +329,7 @@ async def create_notification_provider(
         on_queue_job_skipped=provider_data.on_queue_job_skipped,
         on_queue_job_failed=provider_data.on_queue_job_failed,
         on_queue_completed=provider_data.on_queue_completed,
+        on_filament_out_of_stock=provider_data.on_filament_out_of_stock,
         # Quiet hours
         quiet_hours_enabled=provider_data.quiet_hours_enabled,
         quiet_hours_start=provider_data.quiet_hours_start,

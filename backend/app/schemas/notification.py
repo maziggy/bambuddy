@@ -155,6 +155,10 @@ class NotificationProviderBase(BaseModel):
     on_queue_job_skipped: bool = Field(default=True, description="Notify when job is skipped")
     on_queue_job_failed: bool = Field(default=True, description="Notify when job fails to start")
     on_queue_completed: bool = Field(default=False, description="Notify when all queue jobs finish")
+    on_filament_out_of_stock: bool = Field(
+        default=False,
+        description="Notify when a queued job waits for a filament with none left in the inventory",
+    )
 
     # Quiet hours
     quiet_hours_enabled: bool = Field(default=False, description="Enable quiet hours")
@@ -267,6 +271,7 @@ class NotificationProviderUpdate(IgnoresNullForRequiredColumns):
     on_queue_job_skipped: bool | None = None
     on_queue_job_failed: bool | None = None
     on_queue_completed: bool | None = None
+    on_filament_out_of_stock: bool | None = None
 
     # Quiet hours
     quiet_hours_enabled: bool | None = None

@@ -178,6 +178,9 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
             {provider.on_filament_low && (
               <span className="px-2 py-0.5 bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-400 text-xs rounded">{t('notifications.lowFilament')}</span>
             )}
+            {provider.on_filament_out_of_stock && (
+              <span className="px-2 py-0.5 bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-400 text-xs rounded">{t('notifications.outOfStock')}</span>
+            )}
             {provider.on_maintenance_due && (
               <span className="px-2 py-0.5 bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 text-xs rounded">{t('notifications.maintenance')}</span>
             )}
@@ -663,6 +666,19 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                   <Toggle
                     checked={provider.on_queue_job_waiting ?? true}
                     onChange={(checked) => updateMutation.mutate({ on_queue_job_waiting: checked })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-white">{t('notifications.filamentOutOfStock')}</p>
+                    <p className="text-xs text-bambu-gray">{t('notifications.filamentOutOfStockDescription')}</p>
+                    {/* Sent by the scheduler only while the inventory-colours setting is on (#3590). */}
+                    <p className="text-xs text-bambu-gray">{t('notifications.filamentOutOfStockNeedsSetting')}</p>
+                  </div>
+                  <Toggle
+                    checked={provider.on_filament_out_of_stock ?? false}
+                    onChange={(checked) => updateMutation.mutate({ on_filament_out_of_stock: checked })}
                   />
                 </div>
 

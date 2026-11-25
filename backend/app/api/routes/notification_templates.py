@@ -38,6 +38,7 @@ EVENT_NAMES = {
     "plate_not_empty": "Plate Not Empty",
     "plate_clear_required": "Plate Clear Required",
     "plate_changer_empty": "Plate Changer Empty",
+    "filament_out_of_stock": "Filament Out of Stock",
     "print_confirm_request": "Print Outcome Confirmation",
     "print_missing_spool_assignment": "Missing Spool Assignment",
     "bed_cooled": "Bed Cooled",

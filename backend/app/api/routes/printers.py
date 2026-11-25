@@ -73,6 +73,7 @@ from backend.app.services.bambu_ftp import (
     list_files_result_async,
 )
 from backend.app.services.hms_actions import HMSAction
+from backend.app.services.inventory_stock import inventory_stock
 from backend.app.services.panda_breath import panda_breath_service
 from backend.app.services.pause_eta import next_pause
 from backend.app.services.plate_changer import clear_count_unknown
@@ -323,6 +324,42 @@ async def list_usb_cameras(
     # v4l2-ctl runs twice per device, with a 5 s timeout each.
     cameras = await asyncio.to_thread(external_camera.list_usb_cameras)
     return {"cameras": cameras}
+
+
+@router.get("/inventory-filaments")
+async def get_inventory_filaments(
+    _=RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE, Permission.INVENTORY_READ),
+    db: AsyncSession = Depends(get_db, scope="function"),
+):
+    """Built-in inventory stock per type + colour + variant, for the filament override (#3590).
+
+    It is the inventory's stock, so the caller needs ``inventory:read`` next to
+    ``queue:create`` (an API key: Queue and Read Status), like the inventory's
+    own read routes. Not printer-specific, so no printer scope applies. In
+    Spoolman mode there is no built-in stock: ``inventory_available`` is False
+    and the list empty.
+    """
+    entries = await inventory_stock(db)
+    if entries is None:
+        return {"inventory_available": False, "filaments": []}
+    return {
+        "inventory_available": True,
+        "filaments": [
+            {
+                "type": e.type,
+                "color": e.color,
+                "tray_info_idx": e.tray_info_idx,
+                "subtype": e.subtype,
+                "color_name": e.color_name,
+                "rgba": e.rgba,
+                "extra_colors": e.extra_colors,
+                "effect_type": e.effect_type,
+                "spool_count": e.spool_count,
+                "remaining_grams": e.remaining_grams,
+            }
+            for e in entries
+        ],
+    }
 
 
 @router.get("/available-filaments")

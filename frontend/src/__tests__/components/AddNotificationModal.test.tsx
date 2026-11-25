@@ -51,6 +51,7 @@ function buildProvider(overrides: Partial<NotificationProvider> = {}): Notificat
     on_plate_not_empty: true,
     on_plate_clear_required: false,
     on_plate_changer_empty: true,
+    on_filament_out_of_stock: false,
     on_bed_cooled: false,
     on_first_layer_complete: false,
     on_queue_job_added: false,
@@ -1255,5 +1256,39 @@ describe('AddNotificationModal — photo per event (#2877)', () => {
 
     await user.click(screen.getByRole('button', { name: /event settings/i }));
     expect(screen.getByText('No photo for: Progress')).toBeInTheDocument();
+  });
+});
+
+describe('AddNotificationModal — filament out of stock (#3590)', () => {
+  const findToggle = () =>
+    screen.getAllByRole('switch').find((sw) => sw.closest('div')?.textContent?.match(/filament out of stock/i))!;
+
+  it('renders the toggle off by default for a new value', async () => {
+    render(
+      <AddNotificationModal
+        provider={buildProvider({ on_filament_out_of_stock: undefined })}
+        onClose={() => undefined}
+      />,
+    );
+    await screen.findByDisplayValue('My ntfy');
+    expect(findToggle()).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('persists on_filament_out_of_stock on save', async () => {
+    let captured: unknown = null;
+    server.use(
+      http.patch('*/api/v1/notifications/1', async ({ request }) => {
+        captured = await request.json();
+        return HttpResponse.json({ id: 1 });
+      }),
+    );
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(<AddNotificationModal provider={buildProvider()} onClose={onClose} />);
+    await screen.findByDisplayValue('My ntfy');
+    await user.click(findToggle());
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect((captured as Record<string, unknown>).on_filament_out_of_stock).toBe(true);
   });
 });

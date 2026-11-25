@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from backend.app.models.spool import Spool
 from backend.app.models.spool_assignment import SpoolAssignment
-from backend.app.schemas.spool import normalize_effect_type
+from backend.app.schemas.spool import effect_type_from_subtype
 from backend.app.services import slot_unlink_grace, spool_swaps
 from backend.app.services.color_catalog_lookup import resolve_bambu_color
 from backend.app.services.slot_nozzle import resolve_slot_nozzle
@@ -147,16 +147,8 @@ async def resolve_tray_fields(db: AsyncSession, tray_data: dict) -> dict:
     # ("Wood", "Silk", "Dual Color" are values of both). A subtype that names
     # no effect -- Basic, Tough, CF -- leaves it NULL, which is the honest
     # answer rather than a guessed overlay.
-    # "Silk+" is the same finish as "Silk" with a plus on the product name, so
-    # the trailing sign is dropped on a second attempt rather than costing the
-    # roll its overlay.
-    if effect_type is None and subtype:
-        for candidate in (subtype, subtype.rstrip("+")):
-            try:
-                effect_type = normalize_effect_type(candidate)
-            except ValueError:
-                continue
-            break
+    if effect_type is None:
+        effect_type = effect_type_from_subtype(subtype)
 
     # Resolve slicer filament name from builtin table
     slicer_filament_name = None

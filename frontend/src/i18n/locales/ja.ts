@@ -8500,7 +8500,7 @@ export default {
       assignToAms: 'AMSに割り当て',
       syncWeight: '重量同期',
       addToInventory: 'インベントリに追加',
-      quickAddFromTag: 'Bambuタグから読み取った情報でこのスプールを追加します。後でBambuddyで編集できます。',
+      quickAddFromTag: 'タグから読み取った情報でこのスプールを追加します。後でBambuddyで編集できます。',
       assignToAmsTitle: 'AMSに割り当て',
       selectSlot: 'スロットを選択',
       assign: '割り当て',

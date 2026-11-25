@@ -20,9 +20,11 @@ export interface MatchedSpool {
   weight_used: number;
 }
 
-// What an unknown Bambu tag's own blocks say about the roll, resolved by the
-// backend the way AMS auto-creation resolves a tray (#2685). Quick Add creates
-// the spool from it. Absent for non-Bambu tags and older daemons.
+// What an unknown tag says about the roll, decoded by the backend: a Bambu
+// tag's blocks, resolved the way AMS auto-creation resolves a tray (#2685), or
+// an NTAG's OpenTag3D / OpenSpool record (#3657), where a field the tag leaves
+// out is null. Quick Add creates the spool from it. Absent when the tag says
+// nothing usable, and for older daemons.
 export interface UnknownTagData {
   material: string;
   subtype: string | null;
@@ -30,13 +32,13 @@ export interface UnknownTagData {
   rgba: string | null;
   extra_colors: string | null;
   effect_type: string | null;
-  brand: string;
-  label_weight: number;
+  brand: string | null;
+  label_weight: number | null;
   slicer_filament: string | null;
   slicer_filament_name: string | null;
   nozzle_temp_min: number | null;
   nozzle_temp_max: number | null;
-  core_weight: number;
+  core_weight: number | null;
   core_weight_catalog_id: number | null;
   variant_id: string | null;
   diameter: number | null;

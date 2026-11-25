@@ -8566,7 +8566,7 @@ export default {
       assignToAms: 'Aan AMS toewijzen',
       syncWeight: 'Gewicht synchroniseren',
       addToInventory: 'Aan voorraad toevoegen',
-      quickAddFromTag: 'Voegt deze spoel toe met de gegevens van de Bambu-tag. Je kunt ze later in Bambuddy aanpassen.',
+      quickAddFromTag: 'Voegt deze spoel toe met de gegevens van de tag. Je kunt ze later in Bambuddy aanpassen.',
       assignToAmsTitle: 'Aan AMS toewijzen',
       selectSlot: 'Selecteer een slot',
       assign: 'Toewijzen',

@@ -8568,7 +8568,7 @@ export default {
       assignToAms: 'Assign to AMS',
       syncWeight: 'Sync Weight',
       addToInventory: 'Add to Inventory',
-      quickAddFromTag: 'Adds this spool with the details read from its Bambu tag. You can edit them later in Bambuddy.',
+      quickAddFromTag: 'Adds this spool with the details read from its tag. You can edit them later in Bambuddy.',
       assignToAmsTitle: 'Assign to AMS',
       selectSlot: 'Select a slot',
       assign: 'Assign',

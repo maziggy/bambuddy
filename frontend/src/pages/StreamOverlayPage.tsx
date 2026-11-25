@@ -39,7 +39,7 @@ interface OverlayConfig {
   showChamber: boolean;
 }
 
-function formatPrintName(name: string | null, gcodeFile: string | null | undefined, t: (key: string, fallback: string, opts?: Record<string, unknown>) => string): string {
+function formatPrintName(name: string | null, gcodeFile: string | null | undefined, t: (key: string, fallback: string, opts: Record<string, unknown>) => string): string {
   if (!name) return '';
   if (!gcodeFile) return name;
   const match = gcodeFile.match(/plate_(\d+)\.gcode/);

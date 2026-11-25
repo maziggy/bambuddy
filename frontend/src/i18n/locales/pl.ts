@@ -8568,7 +8568,7 @@ export default {
       assignToAms: 'Przypisz do AMS',
       syncWeight: 'Synchronizuj wagę',
       addToInventory: 'Dodaj do magazynu',
-      quickAddFromTag: 'Dodaje tę szpulę z danymi odczytanymi z jej tagu Bambu. Możesz je później edytować w Bambuddy.',
+      quickAddFromTag: 'Dodaje tę szpulę z danymi odczytanymi z jej tagu. Możesz je później edytować w Bambuddy.',
       assignToAmsTitle: 'Przypisz do AMS',
       selectSlot: 'Wybierz slot',
       assign: 'Przypisz',

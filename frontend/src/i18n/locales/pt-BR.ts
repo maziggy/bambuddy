@@ -8502,7 +8502,7 @@ export default {
       assignToAms: 'Atribuir ao AMS',
       syncWeight: 'Sincronizar Peso',
       addToInventory: 'Adicionar ao Inventário',
-      quickAddFromTag: 'Adiciona este carretel com os dados lidos da etiqueta Bambu. Você pode editá-los depois no Bambuddy.',
+      quickAddFromTag: 'Adiciona este carretel com os dados lidos da etiqueta. Você pode editá-los depois no Bambuddy.',
       assignToAmsTitle: 'Atribuir ao AMS',
       selectSlot: 'Selecionar um slot',
       assign: 'Atribuir',

@@ -8597,7 +8597,7 @@ errors: {
       assignToAms: 'Tilldela till AMS',
       syncWeight: 'Synkronisera vikt',
       addToInventory: 'Lägg till i inventarium',
-      quickAddFromTag: 'Lägger till spolen med uppgifterna från dess Bambu-tagg. Du kan ändra dem senare i Bambuddy.',
+      quickAddFromTag: 'Lägger till spolen med uppgifterna från dess tagg. Du kan ändra dem senare i Bambuddy.',
       assignToAmsTitle: 'Tilldela till AMS',
       selectSlot: 'Välj ett fack',
       assign: 'Tilldela',

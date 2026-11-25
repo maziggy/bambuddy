@@ -8556,7 +8556,7 @@ export default {
       assignToAms: "Призначити AMS",
       syncWeight: "Синхронізувати вагу",
       addToInventory: "Додати в інвентар",
-      quickAddFromTag: 'Додає цю котушку з даними, зчитаними з її мітки Bambu. Пізніше їх можна змінити в Bambuddy.',
+      quickAddFromTag: 'Додає цю котушку з даними, зчитаними з її мітки. Пізніше їх можна змінити в Bambuddy.',
       assignToAmsTitle: "Призначити AMS",
       selectSlot: "Вибрати слот",
       assign: "Призначити",

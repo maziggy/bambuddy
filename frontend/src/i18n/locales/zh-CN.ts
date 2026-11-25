@@ -8500,7 +8500,7 @@ export default {
       assignToAms: '分配到 AMS',
       syncWeight: '同步重量',
       addToInventory: '添加到库存',
-      quickAddFromTag: '使用从 Bambu 标签读取的信息添加此料卷。之后可以在 Bambuddy 中编辑。',
+      quickAddFromTag: '使用从标签读取的信息添加此料卷。之后可以在 Bambuddy 中编辑。',
       assignToAmsTitle: '分配到 AMS',
       selectSlot: '选择槽位',
       assign: '分配',

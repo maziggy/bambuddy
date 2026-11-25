@@ -8503,7 +8503,7 @@ export default {
       assignToAms: 'Assigner à l\'AMS',
       syncWeight: 'Synchroniser le poids',
       addToInventory: 'Ajouter à l\'inventaire',
-      quickAddFromTag: 'Ajoute cette bobine avec les informations lues sur son étiquette Bambu. Vous pourrez les modifier plus tard dans Bambuddy.',
+      quickAddFromTag: 'Ajoute cette bobine avec les informations lues sur son étiquette. Vous pourrez les modifier plus tard dans Bambuddy.',
       assignToAmsTitle: 'Assigner à l\'AMS',
       selectSlot: 'Sélectionner un emplacement',
       assign: 'Assigner',

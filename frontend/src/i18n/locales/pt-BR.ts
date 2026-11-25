@@ -4043,6 +4043,7 @@ export default {
       permissionsSelected: '{{count}} selecionada(s)',
       noResults: 'Nenhuma permissão corresponde à sua pesquisa',
       websocketHint: 'Necessário para atualizações em tempo real. Sem esta permissão, a interface recorre à sondagem periódica.',
+      adminOnlyHint: 'Só tem efeito para administradores, para que ninguém possa se tornar administrador.',
       printerAccess: 'Acesso às impressoras',
       adminsSeeAllPrinters: 'Administradores sempre veem todas as impressoras.',
       printerAccessAfterCreate: 'Depois de criar o grupo, escolha as impressoras dele em Configurações → Autenticação → Acesso às impressoras.',

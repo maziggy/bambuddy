@@ -4088,6 +4088,7 @@ export default {
       permissionsSelected: '{{count}} selected',
       noResults: 'No permissions match your search',
       websocketHint: 'Required for live updates. Without it, the interface falls back to periodic polling.',
+      adminOnlyHint: 'Only takes effect for administrators, so that no one can make themselves admin.',
       printerAccess: 'Printer access',
       adminsSeeAllPrinters: 'Administrators always see every printer.',
       printerAccessAfterCreate: 'Once the group is created, choose its printers under Settings → Authentication → Printer access.',

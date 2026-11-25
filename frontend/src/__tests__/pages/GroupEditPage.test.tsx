@@ -112,6 +112,32 @@ describe('GroupEditPage', () => {
       expect(screen.getByText('Create Archives')).toBeInTheDocument();
     });
 
+    it('marks the user and group write permissions as admin-only (#3729)', async () => {
+      server.use(
+        http.get('/api/v1/groups/permissions', () =>
+          HttpResponse.json({
+            categories: [
+              {
+                name: 'Users',
+                permissions: [
+                  { value: 'users:read', label: 'Read Users' },
+                  { value: 'users:create', label: 'Create Users' },
+                ],
+              },
+            ],
+            all_permissions: ['users:read', 'users:create'],
+          })
+        )
+      );
+      render(<GroupEditPage />);
+
+      const create = await screen.findByText('Create Users');
+      const hint = /Only takes effect for administrators/;
+      expect(create.parentElement).toHaveTextContent(hint);
+      expect(screen.getByText('Read Users').parentElement).not.toHaveTextContent(hint);
+      expect(screen.getAllByText(hint)).toHaveLength(1);
+    });
+
     it('shows 0 selected initially', async () => {
       render(<GroupEditPage />);
 

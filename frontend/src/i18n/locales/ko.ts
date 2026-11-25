@@ -3885,6 +3885,7 @@ export default {
       permissionsSelected: '{{count}}개 선택됨',
       noResults: '검색과 일치하는 권한이 없습니다',
       websocketHint: '실시간 업데이트에 필요합니다. 이 권한이 없으면 인터페이스는 주기적 폴링으로 대체됩니다.',
+      adminOnlyHint: '누구도 스스로 관리자가 될 수 없도록 관리자에게만 적용됩니다.',
       printerAccess: '프린터 접근',
       adminsSeeAllPrinters: '관리자는 항상 모든 프린터를 볼 수 있습니다.',
       printerAccessAfterCreate: '그룹을 만든 후 설정 → 인증 → 프린터 접근에서 프린터를 선택하세요.',

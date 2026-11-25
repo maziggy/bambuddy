@@ -4118,6 +4118,7 @@ errors: {
       permissionsSelected: '{{count}} valda',
       noResults: 'Inga behörigheter matchar din sökning',
       websocketHint: 'Krävs för liveuppdateringar. Utan det faller gränssnittet tillbaka på periodisk avfrågning.',
+      adminOnlyHint: 'Gäller bara för administratörer, så att ingen kan göra sig själv till administratör.',
       printerAccess: 'Skrivaråtkomst',
       adminsSeeAllPrinters: 'Administratörer ser alltid alla skrivare.',
       printerAccessAfterCreate: 'När gruppen har skapats väljer du dess skrivare under Inställningar → Autentisering → Skrivaråtkomst.',

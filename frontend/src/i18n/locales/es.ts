@@ -4058,6 +4058,7 @@ export default {
       permissionsSelected: '{{count}} seleccionados',
       noResults: 'Ningún permiso coincide con su búsqueda',
       websocketHint: 'Necesario para las actualizaciones en vivo. Sin este permiso, la interfaz recurre al sondeo periódico.',
+      adminOnlyHint: 'Solo tiene efecto para administradores, para que nadie pueda convertirse en administrador.',
       printerAccess: 'Acceso a impresoras',
       adminsSeeAllPrinters: 'Los administradores siempre ven todas las impresoras.',
       printerAccessAfterCreate: 'Una vez creado el grupo, elija sus impresoras en Ajustes → Autenticación → Acceso a impresoras.',

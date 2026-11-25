@@ -4086,6 +4086,7 @@ export default {
       permissionsSelected: '{{count}} geselecteerd',
       noResults: 'Geen machtigingen komen overeen met je zoekopdracht',
       websocketHint: 'Vereist voor live-updates. Zonder dit valt de interface terug op periodieke polling.',
+      adminOnlyHint: 'Werkt alleen voor beheerders, zodat niemand zichzelf beheerder kan maken.',
       printerAccess: 'Printertoegang',
       adminsSeeAllPrinters: 'Beheerders zien altijd alle printers.',
       printerAccessAfterCreate: 'Kies na het aanmaken van de groep de printers onder Instellingen → Authenticatie → Printertoegang.',

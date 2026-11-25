@@ -4945,6 +4945,14 @@ export type Permission =
   | 'pipelines:read' | 'pipelines:write' | 'pipelines:run'
   | 'websocket:connect';
 
+// Permissions the backend only honours for admins (#3729): the user and group
+// write routes also require admin status, since a non-admin holding them could
+// otherwise make themselves admin. Granting them to another group does nothing.
+export const ADMIN_ONLY_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission>([
+  'users:create', 'users:update', 'users:delete',
+  'groups:create', 'groups:update', 'groups:delete',
+]);
+
 // Group types
 export interface GroupBrief {
   id: number;

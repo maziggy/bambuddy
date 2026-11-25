@@ -4056,6 +4056,7 @@ export default {
       permissionsSelected: '{{count}}件選択',
       noResults: '検索に一致する権限がありません',
       websocketHint: 'ライブ更新に必要です。この権限がないと、インターフェースは定期的なポーリングに切り替わります。',
+      adminOnlyHint: '誰も自分自身を管理者にできないよう、管理者にのみ有効です。',
       printerAccess: 'プリンターへのアクセス',
       adminsSeeAllPrinters: '管理者には常にすべてのプリンターが表示されます。',
       printerAccessAfterCreate: 'グループを作成したら、設定 → 認証 → プリンターへのアクセス でプリンターを選択してください。',

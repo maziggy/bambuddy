@@ -115,6 +115,20 @@ class TestTheUserTheEndpointExistsFor:
 
 
 @pytest.mark.integration
+class TestInventoryOverrideFlag3590:
+    @pytest.mark.asyncio
+    async def test_flag_is_readable_without_settings_read(self, async_client: AsyncClient, db_session):
+        admin = await _setup_admin(async_client, "flagadmin4")
+        op = await _create_operator(async_client, admin, username="flagop4", permissions=["cost_centers:read_own"])
+        headers = {"Authorization": f"Bearer {op}"}
+
+        assert (await async_client.get(FLAGS_URL, headers=headers)).json()["filament_override_inventory"] is False
+        db_session.add(Settings(key="filament_override_inventory", value="true"))
+        await db_session.commit()
+        assert (await async_client.get(FLAGS_URL, headers=headers)).json()["filament_override_inventory"] is True
+
+
+@pytest.mark.integration
 class TestTheBoundaryItDraws:
     """Signed in is required; settings:read is not."""
 
@@ -148,6 +162,7 @@ class TestWhatItExposes:
             "currency",
             "check_updates",
             "queue_shortest_first",
+            "filament_override_inventory",
             "use_slicer_api",
             "open_in_slicer",
             "preferred_slicer",

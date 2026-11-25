@@ -158,7 +158,7 @@ export function LabelSheetLayoutEditor({
       </p>
       {problem && (
         <p id={problemId} data-testid="label-sheet-problem" aria-live="polite" className="text-xs text-red-400">
-          {t(`inventory.labels.custom.problems.${problem.key}`, problem.fallback, problemParams)}
+          {t(`inventory.labels.custom.problems.${problem.key}`, problem.fallback, problemParams ?? {})}
         </p>
       )}
       {drawable && layout && <LabelSheetDiagram layout={layout} startingPosition={startingPosition} />}

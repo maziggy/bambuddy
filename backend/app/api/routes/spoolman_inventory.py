@@ -75,8 +75,10 @@ from backend.app.services.location_service import (
 from backend.app.services.printer_manager import PrinterManager, printer_manager
 from backend.app.services.slicer_filament_resolver import resolve_slicer_filament, reusable_slot_filament_id
 from backend.app.services.slot_filament_weight import (
+    SPOOLMAN,
     filament_weight,
     is_rfid_tray,
+    reads_as,
     spool_tags,
     tag_holder,
     tray_tags,
@@ -1878,17 +1880,10 @@ async def sync_spoolman_ams_weights(
 
         # The printer reports a slot weight as a truncated percentage: 965 g
         # of 1000 g, sent with the slot assignment, comes back as 96 %. When
-        # Spoolman's own figure already reads as that percentage it is the
-        # precise one, and 960 g would only lose the difference. The weight
-        # sent is in whole grams (559.6 g goes as 560 g, so 56 %), and a Bambu
-        # Lab spool's is capped at 1000 g.
+        # Spoolman's own figure already reads as that percentage, as it stands
+        # or as it was sent, it is the precise one (slot_filament_weight.reads_as).
         spoolman_remaining = _safe_optional_float(spool_dict.get("remaining_weight"))
-        sent = filament_weight(spoolman_net_weight(spool_dict), spoolman_remaining, rfid=is_rfid_tray(tray))
-        if (
-            spoolman_remaining is not None
-            and 0 <= spoolman_remaining <= label_weight
-            and int(spoolman_remaining * 100 // label_weight) == remain_val
-        ) or (sent is not None and sent.percent == remain_val):
+        if reads_as(label_weight, spoolman_remaining, remain_val, rfid=is_rfid_tray(tray)):
             logger.info(
                 "Spoolman AMS sync: spool %d keeps %s g, which already reads as remain=%d%%",
                 assignment.spoolman_spool_id,
@@ -2312,7 +2307,7 @@ async def assign_spoolman_slot(
                 then_weight=then_weight,
             )
             # This fill has its weight; the AMS sync doesn't send it again.
-            weight_handled((body.printer_id, body.ams_id, body.tray_id), body.spoolman_spool_id)
+            weight_handled((body.printer_id, body.ams_id, body.tray_id), (SPOOLMAN, body.spoolman_spool_id))
 
             if matching_kp and matching_kp.cali_idx is not None:
                 # Use printer-reported filament_id when available, otherwise

@@ -1277,3 +1277,34 @@ class TestAssignSendsTheSpoolsWeight:
     ):
         bare = {**SAMPLE_SPOOL, "remaining_weight": None}
         assert await self._assign(async_client, test_printer, mock_spoolman_client, spool=bare) is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_linking_the_trays_tag_to_a_spool_sends_its_weight(
+        self, async_client: AsyncClient, slot_settings, test_printer, mock_spoolman_client
+    ):
+        """Linking the slot's tag to a spool assigns it to the slot as well."""
+        from backend.app.services.slot_filament_weight import FilamentWeight
+
+        mock_spoolman_client.has_tag_api = AsyncMock(return_value=False)
+        mqtt_mock = MagicMock()
+        state = MagicMock()
+        state.raw_data = {
+            "ams": [{"id": 32, "tray": [{"id": 4, "tray_type": "PLA", "tray_uuid": self.BAMBU_TRAY_UUID}]}]
+        }
+        state.kprofiles = []
+        with (
+            patch("backend.app.api.routes.spoolman.get_spoolman_client", AsyncMock(return_value=mock_spoolman_client)),
+            patch("backend.app.api.routes.spoolman.printer_manager") as pm_mock,
+        ):
+            pm_mock.get_client = MagicMock(return_value=mqtt_mock)
+            pm_mock.get_status = MagicMock(return_value=state)
+            pm_mock.get_model = MagicMock(return_value="H3C")
+            response = await async_client.post(
+                "/api/v1/spoolman/spools/10/link",
+                json={"tray_uuid": self.BAMBU_TRAY_UUID, "printer_id": test_printer.id, "ams_id": 32, "tray_id": 4},
+            )
+
+        assert response.status_code == 200
+        then_weight = mqtt_mock.ams_set_filament_setting.call_args[1]["then_weight"]
+        assert then_weight == FilamentWeight(total=1000, remain=800, rfid=True)

@@ -59,6 +59,30 @@ async def test_the_sync_updates_a_locked_spool_and_releases_the_lock(
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+@pytest.mark.parametrize(
+    ("remain", "weight_used"),
+    [(55, 440.44), (56, 440.44), (50, 500)],
+    ids=["truncated", "sent-in-whole-grams", "lower"],
+)
+async def test_a_weight_that_already_reads_as_the_printers_percentage_is_kept(
+    async_client: AsyncClient, db_session, printer_factory, remain, weight_used
+):
+    """559.56 g left reads as 55 %, and as 56 % once sent to the slot as 560 g:
+    either way it is kept rather than rounded to the percentage's grams."""
+    spool_id = await _assigned_spool(db_session, printer_factory, locked=True)
+    spool = await db_session.get(Spool, spool_id)
+    spool.weight_used = 440.44
+    await db_session.commit()
+
+    response = await _sync(async_client, _printer("IDLE", remain=remain))
+
+    assert response.status_code == 200
+    await db_session.refresh(spool)
+    assert (spool.weight_used, spool.weight_locked) == (weight_used, False)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 @pytest.mark.parametrize("gcode_state", ["PREPARE", "RUNNING", "PAUSE"])
 async def test_a_printing_printers_spool_is_left_alone(
     async_client: AsyncClient, db_session, printer_factory, gcode_state

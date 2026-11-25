@@ -1794,6 +1794,10 @@ class BambuMQTTClient:
         # different nozzle sizes can't steal each other's response (#1748).
         # Value: {"nozzle": str, "event": asyncio.Event, "profiles": list | None}.
         self._sequence_id: int = 0
+        # Commands go out from the event loop and from paho's network thread (on
+        # connect, and a slot weight once its setting is accepted), so the
+        # counter is taken under a lock: see _next_sequence_id.
+        self._sequence_lock = threading.Lock()
         self._pending_kprofile_requests: dict[str, dict] = {}
         # The printer's calibration table, one bucket per nozzle diameter.
         #
@@ -6486,6 +6490,12 @@ class BambuMQTTClient:
             message = {"pushing": {"command": "pushall"}}
             self._client.publish(self.topic_publish, json.dumps(message), qos=1)
 
+    def _next_sequence_id(self) -> str:
+        """A sequence_id no other command from this client has had, as the printer echoes it."""
+        with self._sequence_lock:
+            self._sequence_id += 1
+            return str(self._sequence_id)
+
     def _probe_developer_mode(self):
         """Probe developer mode by sending an ams_filament_setting for the external slot.
 
@@ -6503,8 +6513,7 @@ class BambuMQTTClient:
             return
         self._dev_mode_probed = True
         self._dev_mode_probe_time = time.monotonic()
-        self._sequence_id += 1
-        seq = str(self._sequence_id)
+        seq = self._next_sequence_id()
         self._dev_mode_probe_seq = seq
 
         # Build probe command: re-send current external slot config (no-op on success)
@@ -6622,10 +6631,10 @@ class BambuMQTTClient:
     def _request_version(self):
         """Request firmware version info from printer."""
         if self._client:
-            self._sequence_id += 1
+            seq_id = self._next_sequence_id()
             message = {
                 "info": {
-                    "sequence_id": str(self._sequence_id),
+                    "sequence_id": seq_id,
                     "command": "get_version",
                 }
             }
@@ -6657,13 +6666,13 @@ class BambuMQTTClient:
         so we send a dummy request on connect to 'prime' the system.
         """
         if self._client:
-            self._sequence_id += 1
+            seq_id = self._next_sequence_id()
             command = {
                 "print": {
                     "command": "extrusion_cali_get",
                     "filament_id": "",
                     "nozzle_diameter": "0.4",
-                    "sequence_id": str(self._sequence_id),
+                    "sequence_id": seq_id,
                 }
             }
             logger.debug("[%s] Sending K-profile priming request", self.serial_number)
@@ -7169,7 +7178,7 @@ class BambuMQTTClient:
         if module_name == "auto_recovery_step_loss":
             return self._set_print_option("auto_recovery", enabled)
 
-        self._sequence_id += 1
+        seq_id = self._next_sequence_id()
 
         # Build the xcam control command (exact OrcaSlicer format)
         # Key findings from OrcaSlicer source:
@@ -7180,7 +7189,7 @@ class BambuMQTTClient:
         command = {
             "xcam": {
                 "command": "xcam_control_set",
-                "sequence_id": str(self._sequence_id),
+                "sequence_id": seq_id,
                 "module_name": module_name,
                 "control": enabled,
                 "enable": enabled,  # old protocol compatibility
@@ -7263,12 +7272,12 @@ class BambuMQTTClient:
         if not self._client or not self.state.connected:
             return False
 
-        self._sequence_id += 1
+        seq_id = self._next_sequence_id()
 
         command = {
             "print": {
                 "command": "print_option",
-                "sequence_id": str(self._sequence_id),
+                "sequence_id": seq_id,
                 option_name: enabled,
             }
         }
@@ -7344,12 +7353,12 @@ class BambuMQTTClient:
             logger.warning("[%s] No calibration options selected", self.serial_number)
             return False
 
-        self._sequence_id += 1
+        seq_id = self._next_sequence_id()
 
         command = {
             "print": {
                 "command": "calibration",
-                "sequence_id": str(self._sequence_id),
+                "sequence_id": seq_id,
                 "option": option,
             }
         }
@@ -7464,7 +7473,7 @@ class BambuMQTTClient:
         """
         if not self._client:
             return False
-        self._sequence_id += 1
+        seq_id = self._next_sequence_id()
         # A2L AMS-Lite: normalised id 6 -> physical 16 on the wire (the Lite does
         # not actually support drying, but keep the translation consistent). The
         # _drying_targets dict below stays keyed by the normalised id so the
@@ -7473,7 +7482,7 @@ class BambuMQTTClient:
         ams3h = self._rack_ams_type(ams_id) == AmsType.ZMULTI_A
         command = {
             "print": {
-                "sequence_id": str(self._sequence_id),
+                "sequence_id": seq_id,
                 "command": "ams_filament_drying",
                 "ams_id": wire_ams_id,
                 "temp": temp,
@@ -7718,8 +7727,7 @@ class BambuMQTTClient:
             # Register this attempt under its own sequence_id so a concurrent
             # request for a different nozzle size can't consume its response
             # (#1748) — the pending map is keyed by exactly the id we send.
-            self._sequence_id += 1
-            seq_id = str(self._sequence_id)
+            seq_id = self._next_sequence_id()
             request: dict = {"nozzle": nozzle_diameter, "event": asyncio.Event(), "profiles": None}
             self._pending_kprofile_requests[seq_id] = request
 
@@ -7839,8 +7847,7 @@ class BambuMQTTClient:
             logger.warning("[%s] Cannot set K-profile: not connected", self.serial_number)
             return None
 
-        self._sequence_id += 1
-        seq_id = str(self._sequence_id)
+        seq_id = self._next_sequence_id()
 
         # Build the filament entry - printer uses cali_idx for profile identification
         # For new profiles (slot_id=0), use cali_idx=-1 to tell printer to create new slot
@@ -7916,8 +7923,7 @@ class BambuMQTTClient:
 
         import random
 
-        self._sequence_id += 1
-        seq_id = str(self._sequence_id)
+        seq_id = self._next_sequence_id()
 
         filament_entries = []
         for p in profiles:
@@ -7993,8 +7999,7 @@ class BambuMQTTClient:
             logger.warning("[%s] Cannot delete K-profile: not connected", self.serial_number)
             return None
 
-        self._sequence_id += 1
-        seq_id = str(self._sequence_id)
+        seq_id = self._next_sequence_id()
 
         # Dual-nozzle K-profile delete uses the extruder_id/nozzle_id format;
         # single-nozzle printers (X1C/P1/A1/P2S/H2S) need the setting_id form.
@@ -8157,14 +8162,14 @@ class BambuMQTTClient:
             logger.warning("[%s] Invalid object IDs: %s", self.serial_number, e)
             return False
 
-        self._sequence_id += 1
-        command = {"print": {"sequence_id": str(self._sequence_id), "command": "skip_objects", "obj_list": obj_list}}
+        seq_id = self._next_sequence_id()
+        command = {"print": {"sequence_id": seq_id, "command": "skip_objects", "obj_list": obj_list}}
         self._client.publish(self.topic_publish, json.dumps(command), qos=1)
         logger.info("[%s] Sent skip_objects command: %s", self.serial_number, obj_list)
         sent_at = time.monotonic()
         for oid in obj_list:
             self._unconfirmed_skips.setdefault(oid, sent_at)
-        self._skip_commands[str(self._sequence_id)] = obj_list
+        self._skip_commands[seq_id] = obj_list
 
         # Track skipped objects in state
         for oid in obj_list:
@@ -8188,8 +8193,8 @@ class BambuMQTTClient:
             logger.warning("[%s] Cannot send G-code: not connected", self.serial_number)
             return False
 
-        self._sequence_id += 1
-        command = {"print": {"command": "gcode_line", "param": gcode, "sequence_id": str(self._sequence_id)}}
+        seq_id = self._next_sequence_id()
+        command = {"print": {"command": "gcode_line", "param": gcode, "sequence_id": seq_id}}
         # Use QoS 1 for reliable delivery (at least once)
         self._client.publish(self.topic_publish, json.dumps(command), qos=1)
         logger.debug("[%s] Sent G-code: %s...", self.serial_number, gcode[:50])
@@ -8319,16 +8324,12 @@ class BambuMQTTClient:
             logger.warning("[%s] Cannot set airduct mode: not connected", self.serial_number)
             return False
 
-        self._sequence_id += 1
+        seq_id = self._next_sequence_id()
         mode_id = 0 if mode == "cooling" else 1
-        command = {
-            "print": {"command": "set_airduct", "modeId": mode_id, "sequence_id": str(self._sequence_id), "submode": -1}
-        }
+        command = {"print": {"command": "set_airduct", "modeId": mode_id, "sequence_id": seq_id, "submode": -1}}
         # Use QoS 1 for reliable delivery
         self._client.publish(self.topic_publish, json.dumps(command), qos=1)
-        logger.info(
-            "[%s] Set airduct mode to %s (modeId=%s, seq=%s)", self.serial_number, mode, mode_id, self._sequence_id
-        )
+        logger.info("[%s] Set airduct mode to %s (modeId=%s, seq=%s)", self.serial_number, mode, mode_id, seq_id)
         return True
 
     def set_chamber_light(self, on: bool) -> bool:
@@ -8347,7 +8348,7 @@ class BambuMQTTClient:
         mode = "on" if on else "off"
         # Control both chamber lights (some printers like H2D have two)
         for led_node in ["chamber_light", "chamber_light2"]:
-            self._sequence_id += 1
+            seq_id = self._next_sequence_id()
             command = {
                 "system": {
                     "command": "ledctrl",
@@ -8357,11 +8358,11 @@ class BambuMQTTClient:
                     "led_off_time": 500,
                     "loop_times": 0,
                     "interval_time": 0,
-                    "sequence_id": str(self._sequence_id),
+                    "sequence_id": seq_id,
                 }
             }
             self._client.publish(self.topic_publish, json.dumps(command), qos=1)
-        logger.info("[%s] Set chamber lights %s (seq=%s)", self.serial_number, "on" if on else "off", self._sequence_id)
+        logger.info("[%s] Set chamber lights %s (seq=%s)", self.serial_number, "on" if on else "off", seq_id)
         return True
 
     def select_extruder(self, extruder: int) -> bool:
@@ -8385,10 +8386,8 @@ class BambuMQTTClient:
         # Command format captured from OrcaSlicer:
         # {"print": {"command": "select_extruder", "extruder_index": 0, "sequence_id": "..."}}
         # extruder_index: 0 = RIGHT, 1 = LEFT
-        self._sequence_id += 1
-        command = {
-            "print": {"command": "select_extruder", "extruder_index": extruder, "sequence_id": str(self._sequence_id)}
-        }
+        seq_id = self._next_sequence_id()
+        command = {"print": {"command": "select_extruder", "extruder_index": extruder, "sequence_id": seq_id}}
         self._client.publish(self.topic_publish, json.dumps(command), qos=1)
         logger.info(
             "[%s] Sent select_extruder command: extruder_index=%s (0=right, 1=left)", self.serial_number, extruder
@@ -8446,11 +8445,11 @@ class BambuMQTTClient:
             return False
         ams_id, slot, tray = rack
         on_head = self._rack_tray(self.state.tray_now)
-        self._sequence_id += 1
+        seq_id = self._next_sequence_id()
         command = {
             "print": {
                 "command": "ams_change_filament",
-                "sequence_id": str(self._sequence_id),
+                "sequence_id": seq_id,
                 "ams_id": ams_id,
                 "target": ams_id if load else 255,
                 "slot_id": slot if load else 255 - slot,
@@ -8521,7 +8520,7 @@ class BambuMQTTClient:
         #   - Ext-R on dual-nozzle H2D (tray_id=255): captured shape from
         #     BambuStudio uses slot_id=0 (extruder index, 0=right), and
         #     curr_temp/tar_temp = the actual right-nozzle temp.  See #891.
-        self._sequence_id += 1
+        seq_id = self._next_sequence_id()
         wire_target = tray_id
         if tray_id == 255:
             ams_id = 255
@@ -8546,7 +8545,7 @@ class BambuMQTTClient:
         command = {
             "print": {
                 "command": "ams_change_filament",
-                "sequence_id": str(self._sequence_id),
+                "sequence_id": seq_id,
                 "ams_id": ams_id,
                 "slot_id": slot_id,
                 "target": wire_target,
@@ -8659,11 +8658,11 @@ class BambuMQTTClient:
         if nozzle_temp < 180:
             nozzle_temp = 210  # Default to PLA temp if nozzle is cold
 
-        self._sequence_id += 1
+        seq_id = self._next_sequence_id()
         command = {
             "print": {
                 "command": "ams_change_filament",
-                "sequence_id": str(self._sequence_id),
+                "sequence_id": seq_id,
                 "ams_id": ams_id,
                 "slot_id": 255,  # 255 = unload marker
                 "target": 255,  # 255 = unload destination
@@ -8719,11 +8718,11 @@ class BambuMQTTClient:
         if not slots:
             logger.info("[%s] Unload all: no AMS 3H slot is loaded", self.serial_number)
             return 0
-        self._sequence_id += 1
+        seq_id = self._next_sequence_id()
         command = {
             "print": {
                 "command": "multi_slot_ams_change_filament",
-                "sequence_id": str(self._sequence_id),
+                "sequence_id": seq_id,
                 "is_load": False,
                 "request_array": [{"ams_id": ams_id, "slot_id": 255 - slot, "soft_temp": 0} for ams_id, slot in slots],
                 "soft_temp": 0,
@@ -8851,8 +8850,7 @@ class BambuMQTTClient:
         at all.
         """
         timeout = self._rfid_ack_timeout
-        self._sequence_id += 1
-        seq_id = str(self._sequence_id)
+        seq_id = self._next_sequence_id()
         command = {"print": {**print_command, "sequence_id": seq_id}}
         self._pending_rfid_acks[seq_id] = None
         try:
@@ -8949,8 +8947,7 @@ class BambuMQTTClient:
             # Bambu Studio sends the weight only once the printer has accepted
             # the setting (CtrlSetFilamentWeightAfter). The answer is matched
             # by its sequence_id, so this command gets one of its own.
-            self._sequence_id += 1
-            sequence_id = str(self._sequence_id)
+            sequence_id = self._next_sequence_id()
             now = time.monotonic()
             for seq in [s for s, pending in list(self._weights_after_setting.items()) if pending[3] <= now]:
                 self._weights_after_setting.pop(seq, None)
@@ -9043,11 +9040,11 @@ class BambuMQTTClient:
             return False
 
         mqtt_ams_id, _, slot_id = self._filament_setting_wire_ids(ams_id, tray_id)
-        self._sequence_id += 1
+        seq_id = self._next_sequence_id()
         command = {
             "print": {
                 "command": "set_filament_weight",
-                "sequence_id": str(self._sequence_id),
+                "sequence_id": seq_id,
                 "ams_id": mqtt_ams_id,
                 "slot_id": slot_id,
                 "total": weight.total,
@@ -9255,7 +9252,7 @@ class BambuMQTTClient:
         # Was reusing the previous command's id — harmless while nothing
         # correlated on it, but the printer echoes sequence_id back and the
         # K-profile write path now matches acks by it (#2718).
-        self._sequence_id += 1
+        seq_id = self._next_sequence_id()
 
         nozzle_id = f"HS00-{nozzle_diameter}"
 
@@ -9288,7 +9285,7 @@ class BambuMQTTClient:
                 "command": "extrusion_cali_set",
                 "filaments": [filament_entry],
                 "nozzle_diameter": nozzle_diameter,
-                "sequence_id": str(self._sequence_id),
+                "sequence_id": seq_id,
             }
         }
 

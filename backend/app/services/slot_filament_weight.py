@@ -1,16 +1,16 @@
-"""A slot's remaining weight on the printer, from Spoolman (``set_filament_weight``).
+"""A slot's remaining weight on the printer, from the inventory (``set_filament_weight``).
 
 Bambu Studio sets it from a slot's material dialog on the models whose printer
 profile declares ``support_filament_remain_edit`` (so far only the H3C): a total
 and a remaining weight in grams, which the printer then reports as the tray's
-``remain`` percentage. Bambuddy sends Spoolman's figures the same way when a
-Spoolman spool is assigned to a slot, instead of leaving the tray at
-``remain: -1``.
+``remain`` percentage. Bambuddy sends a spool's figures the same way when it is
+assigned to a slot, from the built-in inventory or from Spoolman, instead of
+leaving the tray at ``remain: -1``.
 
 The printer doesn't always keep the weight when the spool comes out: an
 untagged tray has come back as ``remain: -1``, and a Bambu Lab spool with the
 printer's own estimate. So each slot is remembered here: one seen empty, or
-just linked to a spool by the AMS sync, gets Spoolman's weight on its next
+just linked to a spool by the AMS sync, gets its spool's weight on its next
 fill, and so does one that reports no weight at all. Each fill gets it once, so
 a printer that refuses the command is not asked again on every push.
 
@@ -74,6 +74,38 @@ def filament_weight(total: object, remain: object, *, rfid: bool = False) -> Fil
     return FilamentWeight(total_g, remain_g, rfid)
 
 
+def inventory_weight(label_weight: object, weight_used: object, *, rfid: bool = False) -> FilamentWeight | None:
+    """The weight to send for a built-in inventory spool: its label weight, less what it has used."""
+    if isinstance(label_weight, bool) or not isinstance(label_weight, int | float):
+        return None
+    used = weight_used if isinstance(weight_used, int | float) and not isinstance(weight_used, bool) else 0
+    return filament_weight(label_weight, label_weight - used, rfid=rfid)
+
+
+def reads_as(total: object, remaining: object, remain_pct: int, *, rfid: bool = False) -> bool:
+    """Whether a spool of ``total`` g with ``remaining`` g left already shows as ``remain_pct`` on the printer.
+
+    The printer reports a slot's weight as a percentage it rounds down: 965 g of
+    a 1000 g spool, sent as the slot's weight, comes back as 96 %. A figure that
+    comes to the printer's percentage, as it stands or as Bambuddy sends it (in
+    whole grams, at most 1000 g for a Bambu Lab spool), is the precise one, and
+    replacing it with the percentage's grams would only lose the difference.
+    """
+    if (
+        not isinstance(total, int | float)
+        or not isinstance(remaining, int | float)
+        or isinstance(total, bool)
+        or isinstance(remaining, bool)
+        or not math.isfinite(total)
+        or not math.isfinite(remaining)
+    ):
+        return False
+    if total > 0 and 0 <= remaining <= total and int(remaining * 100 // total) == remain_pct:
+        return True
+    sent = filament_weight(total, remaining, rfid=rfid)
+    return sent is not None and sent.percent == remain_pct
+
+
 def is_rfid_tray(tray: Mapping[str, Any] | None) -> bool:
     """True when the AMS read a Bambu Lab RFID tag in this tray."""
     return isinstance(tray, Mapping) and is_bambu_tray_uuid(tray.get("tray_uuid"))
@@ -123,12 +155,19 @@ def tray_remain(tray: Mapping[str, Any] | None) -> int | None:
 
 Slot = tuple[int, int, int]  # (printer_id, ams_id, tray_id)
 
-# Slots whose next fill gets Spoolman's weight: seen empty, or just linked to a
-# spool by the AMS sync.
+# Which inventory a spool id belongs to: the two number their spools separately.
+INVENTORY = "inventory"
+SPOOLMAN = "spoolman"
+SpoolKey = tuple[str, int]  # (INVENTORY or SPOOLMAN, the spool's id there)
+
+# Slots whose next fill gets its spool's weight: seen empty, or just linked to
+# a spool by the AMS sync.
 _pending: set[Slot] = set()
 # The spool each slot's current fill has been given a weight for (or found to
 # have none to give).
-_handled: dict[Slot, int] = {}
+_handled: dict[Slot, SpoolKey] = {}
+# Spoolman could not be read for a slot weight, and has not answered since.
+_spoolman_down = False
 
 
 def mark_pending(slot: Slot) -> None:
@@ -137,15 +176,15 @@ def mark_pending(slot: Slot) -> None:
     _pending.add(slot)
 
 
-def weight_handled(slot: Slot, spool_id: int) -> None:
-    """The slot's current fill has had ``spool_id``'s weight (or has none to get)."""
-    _handled[slot] = spool_id
+def weight_handled(slot: Slot, spool: SpoolKey) -> None:
+    """The slot's current fill has had ``spool``'s weight (or has none to get)."""
+    _handled[slot] = spool
     _pending.discard(slot)
 
 
-def needs_weight(slot: Slot, spool_id: int, tray: Mapping[str, Any]) -> bool:
-    """Whether the filled ``slot``, assigned ``spool_id``, should be sent its weight now."""
-    if _handled.get(slot) == spool_id:
+def needs_weight(slot: Slot, spool: SpoolKey, tray: Mapping[str, Any]) -> bool:
+    """Whether the filled ``slot``, assigned ``spool``, should be sent its weight now."""
+    if _handled.get(slot) == spool:
         return False
     if slot in _pending:
         return True
@@ -153,7 +192,23 @@ def needs_weight(slot: Slot, spool_id: int, tray: Mapping[str, Any]) -> bool:
     return remain is not None and remain < 0
 
 
+def spoolman_failed() -> bool:
+    """Spoolman could not be read for a slot weight. True the first time, until it answers again."""
+    global _spoolman_down
+    first, _spoolman_down = not _spoolman_down, True
+    return first
+
+
+def spoolman_answered() -> bool:
+    """Spoolman answered a slot-weight read. True when it had failed before."""
+    global _spoolman_down
+    was_down, _spoolman_down = _spoolman_down, False
+    return was_down
+
+
 def reset() -> None:
-    """Forget every slot (tests)."""
+    """Forget every slot, and any Spoolman outage (tests)."""
+    global _spoolman_down
     _pending.clear()
     _handled.clear()
+    _spoolman_down = False

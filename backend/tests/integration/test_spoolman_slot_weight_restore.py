@@ -2,7 +2,7 @@
 
 The printer doesn't always keep a slot's weight when the spool comes out: an
 untagged tray has come back as ``remain: -1``, a Bambu Lab spool with the
-printer's own estimate. ``_sync_spoolman_slot_weights`` runs after every AMS
+printer's own estimate. ``_sync_slot_weights`` runs after every AMS
 change and sends Spoolman's figure to a slot seen empty, just linked to a
 spool, or reporting no weight, once per fill. A tray with an RFID tag gets it
 only when the tag is the assigned spool's.
@@ -52,7 +52,7 @@ async def assigned(db_session: AsyncSession, printer_factory):
 
 @pytest.fixture
 def printer_side():
-    """The printer's MQTT client and Spoolman, as _sync_spoolman_slot_weights reaches them."""
+    """The printer's MQTT client and Spoolman, as _sync_slot_weights reaches them."""
     mqtt = MagicMock()
     mqtt.model = "H3C"
     mqtt.ams_set_filament_weight = MagicMock(return_value=True)
@@ -68,9 +68,9 @@ def printer_side():
 
 
 async def _push(printer_id: int, ams_data: list, *, printing: bool = False) -> None:
-    from backend.app.main import _sync_spoolman_slot_weights
+    from backend.app.main import _sync_slot_weights
 
-    await _sync_spoolman_slot_weights(printer_id, ams_data, printing)
+    await _sync_slot_weights(printer_id, ams_data, printing)
 
 
 @pytest.mark.asyncio
@@ -193,14 +193,49 @@ async def test_not_on_a_model_without_weight_editing(async_client: AsyncClient, 
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_spoolman_unreachable_tries_again_on_the_next_push(async_client: AsyncClient, assigned, printer_side):
+    from backend.app.services.spoolman import SpoolmanUnavailableError
+
     mqtt, spoolman = printer_side
-    spoolman.get_spool = AsyncMock(side_effect=[RuntimeError("down"), SPOOL])
+    spoolman.get_spool = AsyncMock(side_effect=[SpoolmanUnavailableError("down"), SPOOL])
 
     await _push(assigned.id, _ams(remain=-1))
     mqtt.ams_set_filament_weight.assert_not_called()
 
     await _push(assigned.id, _ams(remain=-1))
     mqtt.ams_set_filament_weight.assert_called_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_an_outage_is_logged_once_until_spoolman_answers(
+    async_client: AsyncClient, assigned, printer_side, db_session: AsyncSession, caplog
+):
+    """Two slots due on every AMS change while Spoolman is down: one warning,
+    one read per change, and a warning again for the next outage."""
+    from backend.app.services.spoolman import SpoolmanUnavailableError
+
+    db_session.add(SpoolmanSlotAssignment(printer_id=assigned.id, ams_id=32, tray_id=5, spoolman_spool_id=12))
+    await db_session.commit()
+    mqtt, spoolman = printer_side
+    down = SpoolmanUnavailableError("Cannot reach Spoolman")
+    spoolman.get_spool = AsyncMock(side_effect=[down, down, SPOOL, {**SPOOL, "id": 12}, down])
+    two = [{"id": 32, "tray": [{"id": t, "exists": True, "tray_type": "PLA", "remain": -1} for t in (4, 5)]}]
+    caplog.set_level("INFO", logger="backend.app.main")
+
+    def outage_warnings() -> int:
+        return sum("Spoolman is unreachable" in r.message for r in caplog.records if r.levelname == "WARNING")
+
+    await _push(assigned.id, two)
+    await _push(assigned.id, two)
+    assert (outage_warnings(), spoolman.get_spool.await_count) == (1, 2)
+
+    await _push(assigned.id, two)
+    assert mqtt.ams_set_filament_weight.call_count == 2
+    assert "Spoolman answers again" in caplog.text
+
+    await _push(assigned.id, EMPTY)
+    await _push(assigned.id, _ams(remain=-1))
+    assert outage_warnings() == 2
 
 
 @pytest.mark.asyncio

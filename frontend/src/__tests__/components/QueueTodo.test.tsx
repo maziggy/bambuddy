@@ -275,16 +275,25 @@ describe('QueueTodoList', () => {
     expect(screen.getByTitle(long)).toBeInTheDocument();
   });
 
-  it('shows the heading when asked and no queue link on /queue', () => {
+  it('has no heading of its own and no queue link on /queue', () => {
     rtlRender(
       <QueryClientProvider client={new QueryClient()}>
         <MemoryRouter initialEntries={['/queue']}>
-          <ToastProvider><QueueTodoList todo={todo} heading /></ToastProvider>
+          <ToastProvider><QueueTodoList todo={todo} /></ToastProvider>
         </MemoryRouter>
       </QueryClientProvider>,
     );
-    expect(screen.getByRole('heading', { name: 'To do', level: 2 })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 2 })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Open queue' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open queue' })).toBeNull();
+  });
+
+  it('offers "Open queue" as a button when the page passes onOpenQueue', () => {
+    const onOpenQueue = vi.fn();
+    render(<QueueTodoList todo={todo} onOpenQueue={onOpenQueue} />);
+    expect(screen.queryByRole('link', { name: 'Open queue' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Open queue' }));
+    expect(onOpenQueue).toHaveBeenCalledTimes(1);
   });
 });
 

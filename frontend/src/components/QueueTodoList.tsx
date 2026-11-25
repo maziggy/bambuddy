@@ -26,10 +26,11 @@ const KIND_TEXT_KEY: Record<QueueTodoKind, string> = {
   power_on_failed: 'queueTodo.kind.powerOnFailed',
 };
 
-function EntryRow({ group, entry, onNavigate, onStart, startPending }: {
+function EntryRow({ group, entry, onNavigate, onOpenQueue, onStart, startPending }: {
   group: QueueTodoGroup;
   entry: QueueTodoEntry;
   onNavigate?: () => void;
+  onOpenQueue?: () => void;
   onStart: (id: number) => void;
   startPending: boolean;
 }) {
@@ -121,6 +122,12 @@ function EntryRow({ group, entry, onNavigate, onStart, startPending }: {
         {t('queueTodo.openPrinter')}
       </Link>
     );
+  } else if (onOpenQueue) {
+    action = (
+      <button type="button" onClick={onOpenQueue} className="text-sm text-bambu-green hover:underline">
+        {t('queueTodo.openQueue')}
+      </button>
+    );
   } else if (pathname !== '/queue') {
     action = (
       <Link to="/queue" onClick={onNavigate} className="text-sm text-bambu-green hover:underline">
@@ -193,21 +200,20 @@ interface QueueTodoListProps {
   todo: QueueTodo | undefined;
   // Closes a surrounding panel when a link is followed.
   onNavigate?: () => void;
-  // Small "To do" heading above the list (queue page).
-  heading?: boolean;
+  // Queue page: shows the Queue tab. "Open queue" is then a button instead of a link.
+  onOpenQueue?: () => void;
   // Lifts the filament confirmations above a surrounding panel.
   overlayZIndex?: string;
 }
 
 // Everything the queue waits on, grouped by printer. Renders nothing when empty (#3615).
-export function QueueTodoList({ todo, onNavigate, heading = false, overlayZIndex }: QueueTodoListProps) {
+export function QueueTodoList({ todo, onNavigate, onOpenQueue, overlayZIndex }: QueueTodoListProps) {
   const { t } = useTranslation();
   const { startMutation, modals } = useStartQueueItem(overlayZIndex);
   if (!todo || todo.count === 0 || todo.groups.length === 0) return null;
   return (
-    <div className={`space-y-3 min-w-0 ${heading ? 'mb-4' : ''}`} data-testid="queue-todo-list">
+    <div className="space-y-3 min-w-0" data-testid="queue-todo-list">
       {modals}
-      {heading && <h2 className="text-sm font-semibold text-bambu-gray-light">{t('queueTodo.title')}</h2>}
       {todo.groups.filter((group) => group.entries.length > 0).map((group) => (
         <section
           key={group.printer_id ?? `model-${group.target_model}`}
@@ -225,6 +231,7 @@ export function QueueTodoList({ todo, onNavigate, heading = false, overlayZIndex
                 group={group}
                 entry={entry}
                 onNavigate={onNavigate}
+                onOpenQueue={onOpenQueue}
                 onStart={(id) => startMutation.mutate({ id })}
                 startPending={startMutation.isPending}
               />

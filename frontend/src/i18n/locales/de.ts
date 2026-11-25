@@ -9720,6 +9720,7 @@ export default {
   // "To do" list of what the queue waits on (#3615)
   queueTodo: {
     title: "Zu erledigen",
+    empty: "Nichts zu erledigen. Die Warteschlange wartet auf niemanden.",
     badgeLabel: "Zu erledigen: {{count}}",
     anyModel: "Beliebiger {{model}}",
     jobCount_one: "{{count}} Auftrag",

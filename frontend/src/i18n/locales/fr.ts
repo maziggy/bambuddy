@@ -9706,6 +9706,7 @@ export default {
   // "To do" list of what the queue waits on (#3615)
   queueTodo: {
     title: "À faire",
+    empty: "Rien à faire. La file d'attente n'attend personne.",
     badgeLabel: "À faire : {{count}}",
     anyModel: "N'importe quelle {{model}}",
     jobCount_one: "{{count}} tâche",

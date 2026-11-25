@@ -9719,6 +9719,7 @@ export default {
   // "To do" list of what the queue waits on (#3615)
   queueTodo: {
     title: "やること",
+    empty: "やることはありません。キューは誰の操作も待っていません。",
     badgeLabel: "やること: {{count}}",
     anyModel: "任意の{{model}}",
     jobCount_one: "{{count}} 件のジョブ",

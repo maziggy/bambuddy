@@ -9343,6 +9343,7 @@ export default {
   // "To do" list of what the queue waits on (#3615)
   queueTodo: {
     title: "할 일",
+    empty: "할 일이 없습니다. 대기열이 사용자의 조치를 기다리고 있지 않습니다.",
     badgeLabel: "할 일: {{count}}",
     anyModel: "임의의 {{model}}",
     jobCount_one: "작업 {{count}}개",

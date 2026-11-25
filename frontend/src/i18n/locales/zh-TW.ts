@@ -9703,6 +9703,7 @@ export default {
   // "To do" list of what the queue waits on (#3615)
   queueTodo: {
     title: "待辦",
+    empty: "沒有待辦事項。佇列不需要任何人處理。",
     badgeLabel: "待辦：{{count}}",
     anyModel: "任意 {{model}}",
     jobCount_one: "{{count}} 個工作",

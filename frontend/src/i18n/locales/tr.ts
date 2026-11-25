@@ -9647,6 +9647,7 @@ export default {
   // "To do" list of what the queue waits on (#3615)
   queueTodo: {
     title: "Yapılacaklar",
+    empty: "Yapılacak bir şey yok. Kuyruk kimseyi beklemiyor.",
     badgeLabel: "Yapılacaklar: {{count}}",
     anyModel: "Herhangi bir {{model}}",
     jobCount_one: "{{count}} iş",

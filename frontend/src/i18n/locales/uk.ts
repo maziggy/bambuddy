@@ -9761,6 +9761,7 @@ export default {
   // "To do" list of what the queue waits on (#3615)
   queueTodo: {
     title: "До виконання",
+    empty: "Немає завдань. Черга ні на кого не чекає.",
     badgeLabel: "До виконання: {{count}}",
     anyModel: "Будь-який {{model}}",
     jobCount_one: "Завдання: {{count}}",

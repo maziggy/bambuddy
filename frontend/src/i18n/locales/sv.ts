@@ -9802,6 +9802,7 @@ errors: {
   // "To do" list of what the queue waits on (#3615)
   queueTodo: {
     title: "Att göra",
+    empty: "Inget att göra. Kön väntar inte på någon.",
     badgeLabel: "Att göra: {{count}}",
     anyModel: "Valfri {{model}}",
     jobCount_one: "{{count}} jobb",

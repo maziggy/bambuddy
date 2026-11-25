@@ -9773,6 +9773,7 @@ export default {
   // "To do" list of what the queue waits on (#3615)
   queueTodo: {
     title: "To do",
+    empty: "Nothing to do. The queue is not waiting on anyone.",
     badgeLabel: "To do: {{count}}",
     anyModel: "Any {{model}}",
     jobCount_one: "{{count}} job",

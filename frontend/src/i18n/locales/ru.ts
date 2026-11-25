@@ -9325,6 +9325,7 @@ export default {
   // "To do" list of what the queue waits on (#3615)
   queueTodo: {
     title: "К выполнению",
+    empty: "Нет задач. Очередь никого не ждёт.",
     badgeLabel: "К выполнению: {{count}}",
     anyModel: "Любой {{model}}",
     jobCount_one: "Задания: {{count}}",

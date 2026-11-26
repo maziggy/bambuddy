@@ -216,6 +216,7 @@ class APIClient:
         sak: int | None = None,
         tag_type: str | None = None,
         raw_blocks: dict[str, str] | None = None,
+        ndef_hex: str | None = None,
     ) -> dict | None:
         return await self._post(
             "/nfc/tag-scanned",
@@ -226,6 +227,7 @@ class APIClient:
                 "sak": sak,
                 "tag_type": tag_type,
                 "raw_blocks": raw_blocks,
+                "ndef_hex": ndef_hex,
             },
         )
 

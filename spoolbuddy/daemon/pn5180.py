@@ -80,6 +80,16 @@ CASCADE_TAG = 0x88
 SAK_UID_INCOMPLETE = 0x04
 
 
+def _crc_a(data: bytes) -> bytes:
+    """ISO 14443-3 CRC_A of *data*, low byte first, as a tag sends it."""
+    crc = 0x6363
+    for byte in data:
+        byte ^= crc & 0xFF
+        byte = (byte ^ (byte << 4)) & 0xFF
+        crc = (crc >> 8) ^ (byte << 8) ^ (byte << 3) ^ (byte >> 4)
+    return bytes([crc & 0xFF, (crc >> 8) & 0xFF])
+
+
 def hkdf_derive_keys(uid: bytes) -> bytes:
     """Derive 96 bytes of MIFARE key material (16 sectors * 6 bytes each).
 
@@ -432,10 +442,12 @@ class PN5180:
 
         return self.read_data(16)
 
-    def ntag_read_pages(self, start_page: int, num_pages: int) -> bytes | None:
+    def ntag_read_pages(self, start_page: int, num_pages: int, quiet: bool = False) -> bytes | None:
         """Read NTAG pages (4 bytes each). No authentication required.
 
         Uses NTAG READ command (0x30) which returns 4 pages (16 bytes) at a time.
+        With *quiet*, a READ with no answer or a bad CRC is logged at debug
+        level, for a caller that retries it.
         """
         # One-time setup: Crypto1 off, TX CRC on, RX CRC off, IDLE→TRANSCEIVE
         self.write_reg_and(0x00, 0xFFFFFFBF)  # Crypto1 off
@@ -465,7 +477,9 @@ class PN5180:
             rx_status = self.read_reg(0x13)
             rx_len = rx_status & 0x1FF
             if rx_len < 16:
-                logger.warning(
+                # quiet: the caller expects this and retries (#3657)
+                logger.log(
+                    logging.DEBUG if quiet else logging.WARNING,
                     "NTAG read page %d: rx_len=%d (expected >=16), rx_status=0x%08X",
                     start_page + pages_read,
                     rx_len,
@@ -473,7 +487,20 @@ class PN5180:
                 )
                 return None
 
-            data = self.read_data(16)
+            # With RX CRC off the tag's CRC_A follows the 16 bytes; a reply
+            # that carries it must match it, or the bytes are not the tag's
+            if rx_len >= 18:
+                reply = self.read_data(18)
+                if _crc_a(reply[:16]) != reply[16:18]:
+                    logger.log(
+                        logging.DEBUG if quiet else logging.WARNING,
+                        "NTAG read page %d: CRC mismatch",
+                        start_page + pages_read,
+                    )
+                    return None
+                data = reply[:16]
+            else:
+                data = self.read_data(16)
             pages_to_copy = min(4, num_pages - pages_read)
             result.extend(data[: pages_to_copy * 4])
             pages_read += 4

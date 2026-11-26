@@ -235,6 +235,17 @@ class TestTagScanned:
 
         _, payload = api._post.await_args.args
         assert payload["raw_blocks"] is None
+        assert payload["ndef_hex"] is None
+
+    @pytest.mark.asyncio
+    async def test_sends_ndef_hex(self, api):
+        """An NTAG's data area goes to the backend to decode (#3657)."""
+        api._post = AsyncMock(return_value={"status": "ok"})
+
+        await api.tag_scanned("sb-1", "04A1B2C3D4E5F6", sak=0, tag_type="ntag", ndef_hex="0300")
+
+        _, payload = api._post.await_args.args
+        assert payload["ndef_hex"] == "0300"
 
 
 class TestRejectedRequests:

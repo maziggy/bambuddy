@@ -1696,7 +1696,64 @@ async def get_project_timeline(
         )
     )
 
-    # Get archives and add events, the ones the project's archive list shows
+    # One event per print run (#3673). An archive collects every print of its
+    # file as runs, and its own status and times follow the latest one, so one
+    # event per archive went quiet while a project kept printing the same file.
+    # Runs the user rejected are left out, as the project stats leave them out
+    # of the good parts. The limit counts runs, so a long series still shows its
+    # latest prints.
+    visible_runs = visible_row_clauses(
+        PrintArchive, printer_scope, actor, Permission.ARCHIVES_READ_ALL, Permission.ARCHIVES_READ_OWN, by_runs=True
+    )
+    if visible_runs is not None:
+        run_query = (
+            select(PrintLogEntry, PrintArchive.print_name)
+            .join(PrintArchive, PrintArchive.id == PrintLogEntry.archive_id)
+            .where(
+                PrintArchive.project_id == project_id,
+                _LIVE_ARCHIVE,
+                *visible_runs,
+                PrintLogEntry.status.in_(("completed", "failed")),
+                _NOT_REJECTED,
+            )
+            .order_by(
+                func.coalesce(PrintLogEntry.completed_at, PrintLogEntry.created_at).desc(), PrintLogEntry.id.desc()
+            )
+            .limit(limit)
+        )
+        # Only the runs printed on the caller's printers, of the archives they see
+        run_scope = printer_scope.where(PrintLogEntry.printer_id)
+        if run_scope is not None:
+            run_query = run_query.where(run_scope)
+        for run, archive_name in (await db.execute(run_query)).all():
+            name = run.print_name or archive_name
+            if run.status == "completed":
+                events.append(
+                    TimelineEvent(
+                        event_type="print_completed",
+                        timestamp=run.completed_at or run.created_at,
+                        title="Print completed",
+                        description=name,
+                        metadata={
+                            "archive_id": run.archive_id,
+                            "print_time_hours": round((run.duration_seconds or 0) / 3600, 2),
+                            "filament_grams": round(run.filament_used_grams or 0, 1),
+                        },
+                    )
+                )
+            else:
+                events.append(
+                    TimelineEvent(
+                        event_type="print_failed",
+                        timestamp=run.completed_at or run.created_at,
+                        title="Print failed",
+                        description=name,
+                        metadata={"archive_id": run.archive_id},
+                    )
+                )
+
+    # Archives from before the print log have no runs: they keep one event,
+    # the ones the project's archive list shows
     visible_archives = visible_row_clauses(
         PrintArchive, printer_scope, actor, Permission.ARCHIVES_READ_ALL, Permission.ARCHIVES_READ_OWN
     )
@@ -1704,7 +1761,12 @@ async def get_project_timeline(
     if visible_archives is not None:
         archive_query = (
             select(PrintArchive)
-            .where(PrintArchive.project_id == project_id, _LIVE_ARCHIVE, *visible_archives)
+            .where(
+                PrintArchive.project_id == project_id,
+                _LIVE_ARCHIVE,
+                *visible_archives,
+                ~select(PrintLogEntry.id).where(PrintLogEntry.archive_id == PrintArchive.id).exists(),
+            )
             .order_by(PrintArchive.created_at.desc())
             .limit(limit)
         )

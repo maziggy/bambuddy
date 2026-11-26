@@ -79,6 +79,43 @@ async def test_so_does_the_other_one(async_client: AsyncClient, shared):
     assert await _lists(async_client, shared["second"], shared["project"]) == ([archive], [job], [archive], [job])
 
 
+async def test_the_timeline_shows_a_user_only_the_runs_of_their_own_archives(
+    async_client: AsyncClient, shared, db_session
+):
+    """Every print of an archive is its own timeline event (#3673): a user who may
+    read only their own archives gets the prints of theirs, however many, and none
+    of the other user's."""
+    from datetime import datetime
+
+    from backend.app.models.archive import PrintArchive
+    from backend.app.models.print_log import PrintLogEntry
+
+    for who, day in (("first", 12), ("second", 13), ("first", 14), ("second", 15)):
+        archive_id, _ = shared["rows"][who]
+        printer_id = (await db_session.get(PrintArchive, archive_id)).printer_id
+        done = datetime(2026, 11, day, 14, 0)
+        db_session.add(
+            PrintLogEntry(
+                archive_id=archive_id, printer_id=printer_id, status="completed", started_at=done, completed_at=done
+            )
+        )
+    await db_session.commit()
+
+    async def prints(headers: dict) -> list[tuple[int, str]]:
+        response = await async_client.get(f"/api/v1/projects/{shared['project']}/timeline", headers=headers)
+        assert response.status_code == 200, response.text
+        return sorted(
+            (e["metadata"]["archive_id"], e["timestamp"][:10])
+            for e in response.json()
+            if e["event_type"] == "print_completed" and e["timestamp"].startswith("2026-11-1")
+        )
+
+    first, _ = shared["rows"]["first"]
+    second, _ = shared["rows"]["second"]
+    assert await prints(shared["first"]) == [(first, "2026-11-12"), (first, "2026-11-14")]
+    assert await prints(shared["second"]) == [(second, "2026-11-13"), (second, "2026-11-15")]
+
+
 async def test_an_admin_sees_every_row(async_client: AsyncClient, shared):
     archives = sorted(a for a, _ in shared["rows"].values())
     jobs = sorted(j for _, j in shared["rows"].values())

@@ -1110,3 +1110,42 @@ class TestProjectTimeline:
 
         full = events(await async_client.get(f"/api/v1/projects/{project_id}/timeline", headers=_auth(admin)))
         assert {("print_completed", "Theirs done"), ("queued", "Theirs queued")} <= full
+
+    async def test_timeline_shows_only_the_runs_on_their_printers(
+        self, async_client, printer_factory, archive_factory, db_session
+    ):
+        """A file printed on the member's printer and again on another one: the
+        timeline tells its print there, not the one on the other printer (#3673)."""
+        from datetime import datetime
+
+        from backend.app.models.print_log import PrintLogEntry
+        from backend.app.models.project import Project
+
+        a, b = await printer_factory(name="A"), await printer_factory(name="B")
+        project = Project(name="Series")
+        db_session.add(project)
+        await db_session.commit()
+        project_id = project.id
+        archive = await archive_factory(b.id, project_id=project_id, print_name="Housing", with_run=False)
+        for printer, day in ((a, 12), (b, 13)):
+            done = datetime(2026, 11, day, 14, 0)
+            db_session.add(
+                PrintLogEntry(
+                    archive_id=archive.id, printer_id=printer.id, status="completed", started_at=done, completed_at=done
+                )
+            )
+        await db_session.commit()
+
+        admin = await _admin_token(async_client)
+        perms = await _group(async_client, admin, "perms_runs", permissions=[*TEAM_PERMISSIONS, "projects:read"])
+        team = await _group(async_client, admin, "team_runs", printer_ids=[a.id])
+        jwt, _ = await _user(async_client, admin, "runs_member", [perms, team])
+
+        def prints(response) -> list[str]:
+            assert response.status_code == 200, response.text
+            return [e["timestamp"][:10] for e in response.json() if e["event_type"] == "print_completed"]
+
+        member = await async_client.get(f"/api/v1/projects/{project_id}/timeline", headers=_auth(jwt))
+        assert prints(member) == ["2026-11-12"]
+        full = await async_client.get(f"/api/v1/projects/{project_id}/timeline", headers=_auth(admin))
+        assert prints(full) == ["2026-11-13", "2026-11-12"]

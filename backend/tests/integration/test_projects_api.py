@@ -2257,3 +2257,138 @@ class TestTimelineQueueItems:
         (queued,) = [e for e in await self._timeline(async_client, project_id) if e["event_type"] == "queued"]
 
         assert queued["description"] == "bracket_h2s.3mf"
+
+
+class TestTimelineRuns:
+    """The timeline has one event per print run, not one per archive (#3673).
+
+    An archive collects every print of its file as runs, and its own status and
+    times follow the latest one. With one event per archive, a project that kept
+    printing the same file showed nothing new once the file had been printed
+    the first time.
+    """
+
+    @staticmethod
+    async def _timeline(async_client: AsyncClient, project_id: int, **params) -> list[dict]:
+        response = await async_client.get(f"/api/v1/projects/{project_id}/timeline", params=params)
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    @staticmethod
+    async def _project(db_session) -> int:
+        from backend.app.models.project import Project
+
+        project = Project(name="Series")
+        db_session.add(project)
+        await db_session.commit()
+        return project.id
+
+    @staticmethod
+    async def _run(db_session, archive, status: str, completed_at, **extra) -> None:
+        from backend.app.models.print_log import PrintLogEntry
+
+        db_session.add(
+            PrintLogEntry(
+                archive_id=archive.id,
+                printer_id=archive.printer_id,
+                print_name=archive.print_name,
+                status=status,
+                started_at=completed_at,
+                completed_at=completed_at,
+                **extra,
+            )
+        )
+        await db_session.commit()
+
+    @staticmethod
+    def _prints(events: list[dict]) -> list[dict]:
+        return [e for e in events if e["event_type"] in ("print_completed", "print_failed")]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_every_run_of_one_archive_is_an_event(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        from datetime import datetime, timedelta
+
+        project_id = await self._project(db_session)
+        printer = await printer_factory()
+        start = datetime(2026, 11, 12, 14, 0)
+        # The archive's own status follows its latest run: printing again now.
+        archive = await archive_factory(
+            printer.id, project_id=project_id, print_name="Housing", status="printing", with_run=False
+        )
+        await self._run(db_session, archive, "completed", start, duration_seconds=7200, filament_used_grams=150.0)
+        await self._run(db_session, archive, "failed", start + timedelta(days=1))
+        await self._run(db_session, archive, "completed", start + timedelta(days=2))
+        await self._run(db_session, archive, "printing", None)
+
+        prints = self._prints(await self._timeline(async_client, project_id))
+
+        assert [(e["event_type"], e["timestamp"][:10]) for e in prints] == [
+            ("print_completed", "2026-11-14"),
+            ("print_failed", "2026-11-13"),
+            ("print_completed", "2026-11-12"),
+        ]
+        assert {e["description"] for e in prints} == {"Housing"}
+        assert {e["metadata"]["archive_id"] for e in prints} == {archive.id}
+        assert prints[-1]["metadata"]["print_time_hours"] == 2.0
+        assert prints[-1]["metadata"]["filament_grams"] == 150.0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_rejected_run_is_left_out(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """As the project stats leave a rejected run out of the good parts."""
+        from datetime import datetime, timedelta
+
+        project_id = await self._project(db_session)
+        printer = await printer_factory()
+        start = datetime(2026, 11, 12, 14, 0)
+        archive = await archive_factory(printer.id, project_id=project_id, print_name="Housing", with_run=False)
+        await self._run(db_session, archive, "completed", start, user_verdict="accept")
+        await self._run(db_session, archive, "completed", start + timedelta(days=1), user_verdict="reject")
+        await self._run(db_session, archive, "completed", start + timedelta(days=2))
+
+        prints = self._prints(await self._timeline(async_client, project_id))
+
+        assert [e["timestamp"][:10] for e in prints] == ["2026-11-14", "2026-11-12"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_the_limit_counts_runs(self, async_client: AsyncClient, archive_factory, printer_factory, db_session):
+        """A long series of one file still shows its latest prints."""
+        from datetime import datetime, timedelta, timezone
+
+        project_id = await self._project(db_session)
+        printer = await printer_factory()
+        # after the project's own creation event, so that one is not among the latest
+        start = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=1)
+        archive = await archive_factory(printer.id, project_id=project_id, print_name="Housing", with_run=False)
+        for day in range(5):
+            await self._run(db_session, archive, "completed", start + timedelta(days=day))
+
+        events = await self._timeline(async_client, project_id, limit=3)
+
+        assert [e["timestamp"][:10] for e in events] == [
+            (start + timedelta(days=day)).date().isoformat() for day in (4, 3, 2)
+        ]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_an_archive_without_runs_keeps_its_one_event(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        project_id = await self._project(db_session)
+        printer = await printer_factory()
+        await archive_factory(printer.id, project_id=project_id, print_name="Old print", with_run=False)
+        await archive_factory(printer.id, project_id=project_id, print_name="New print")
+
+        prints = self._prints(await self._timeline(async_client, project_id))
+
+        # one each: the archive without runs by itself, the other by its one run
+        assert sorted((e["event_type"], e["description"]) for e in prints) == [
+            ("print_completed", "New print"),
+            ("print_completed", "Old print"),
+        ]

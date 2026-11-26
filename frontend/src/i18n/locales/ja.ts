@@ -3368,6 +3368,15 @@ export default {
     passwordOptional: 'パスワード（オプション）',
     topicPrefix: 'トピックプレフィックス',
     topicPrefixHint: 'トピック形式: {{prefix}}/printers/<serial>/status 等',
+    // Home Assistant MQTT discovery (#3724)
+    haDiscovery: {
+      title: "Home Assistant 自動検出",
+      hint: "プリンターと AMS ユニットが、YAML なしでセンサー付きのデバイスとして Home Assistant に表示されます。読み取り専用のため、Home Assistant からプリンターを操作することはできません。",
+      prefix: "検出プレフィックス",
+      prefixHint: "Home Assistant の既定値は homeassistant です。Home Assistant 側で変更した場合のみ変更してください。",
+      prefixConflict: "検出プレフィックスはトピックプレフィックスと異なる必要があります。",
+      prefixWildcard: "検出プレフィックスに + や # は使用できません。",
+    },
     // Prometheus
     prometheusMetrics: 'Prometheusメトリクス',
     prometheusEndpointDescription: 'Prometheus/Grafanaモニタリング用に<code>/api/v1/metrics</code>でプリンターメトリクスを公開。',

@@ -1635,6 +1635,9 @@ export interface AppSettings {
   mqtt_password: string;
   mqtt_topic_prefix: string;
   mqtt_use_tls: boolean;
+  // Home Assistant MQTT discovery for the relay (#3724)
+  mqtt_ha_discovery_enabled: boolean;
+  mqtt_ha_discovery_prefix: string;
   // BIQU Panda Breath heaters on the same broker (#1466)
   panda_breath_enabled: boolean;
   // External URL for notifications

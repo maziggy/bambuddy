@@ -103,6 +103,9 @@ _MQTT_SETTING_KEYS = {
     "mqtt_password",
     "mqtt_topic_prefix",
     "mqtt_use_tls",
+    "mqtt_ha_discovery_enabled",
+    "mqtt_ha_discovery_prefix",
+    "external_url",
     "panda_breath_enabled",
 }
 
@@ -2427,6 +2430,9 @@ class GitHubRestoreService:
                     "mqtt_password": stored.get("mqtt_password") or "",
                     "mqtt_topic_prefix": stored.get("mqtt_topic_prefix") or "bambuddy",
                     "mqtt_use_tls": (stored.get("mqtt_use_tls") or "false") == "true",
+                    "mqtt_ha_discovery_enabled": (stored.get("mqtt_ha_discovery_enabled") or "false") == "true",
+                    "mqtt_ha_discovery_prefix": stored.get("mqtt_ha_discovery_prefix") or "homeassistant",
+                    "external_url": stored.get("external_url") or "",
                     "panda_breath_enabled": (stored.get("panda_breath_enabled") or "false") == "true",
                 }
             )

@@ -3,24 +3,28 @@
 Two sources, neither parsed from ``waiting_reason`` text: the printers' live
 state (plate to clear, sensor interlock, failed power-on) and the jobs' own
 state (staged for a manual start, plus the structured filament holds the
-scheduler records next to the words it writes). This module holds the shared
-records and the pure part of the list; the route gathers the inputs.
+scheduler records next to the words it writes). A plate changer with no plate
+left (#3575) is printer state too. This module holds the shared records and
+the pure part of the list; the route gathers the inputs.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 KIND_PLATE_CLEAR = "plate_clear"
+KIND_PLATE_CHANGER_EMPTY = "plate_changer_empty"
 KIND_SENSOR_INTERLOCK = "sensor_interlock"
 KIND_POWER_ON_FAILED = "power_on_failed"
 KIND_LOAD_FILAMENT = "load_filament"
 KIND_START_STAGED = "start_staged"
 
-# Order of the entries inside one group.
+# Order of the entries inside one group: what keeps the printer from taking
+# any job first, then the filament, then the jobs that only wait for a start.
 _KIND_ORDER = (
     KIND_PLATE_CLEAR,
+    KIND_PLATE_CHANGER_EMPTY,
     KIND_SENSOR_INTERLOCK,
     KIND_POWER_ON_FAILED,
     KIND_LOAD_FILAMENT,
@@ -29,11 +33,32 @@ _KIND_ORDER = (
 
 
 @dataclass(frozen=True)
+class ShortTray:
+    """A tray whose spool has too little filament for the job (#3137).
+
+    ``ams_id`` and ``tray_id`` name the slot as the inventory stores it;
+    ``remaining_grams`` is None when the amount is not known.
+    """
+
+    ams_id: int
+    tray_id: int
+    remaining_grams: float | None = None
+
+
+@dataclass(frozen=True)
 class TodoFilament:
     """One filament a job waits for. ``color`` is "#RRGGBB" or empty.
 
     ``nozzle`` is the extruder a dual-nozzle file wants it on, as the waiting
     text names it: 0 the right nozzle, 1 the left, None when the file names none.
+
+    ``no_stock`` marks a filament no spool in the inventory has left (#3590).
+
+    ``short`` marks a filament that is loaded but in too little amount (#3137):
+    it is not missing, a spool holds less than the job needs. ``short_trays``
+    name the tray of that spool and ``required_grams`` is what the job prints
+    of the filament. None of the three takes part in equality, so a list of
+    filaments compares as it did before they existed.
     """
 
     type: str
@@ -41,6 +66,9 @@ class TodoFilament:
     color_name: str = ""
     no_stock: bool = False
     nozzle: int | None = None
+    short: bool = field(default=False, compare=False)
+    short_trays: tuple[ShortTray, ...] = field(default=(), compare=False)
+    required_grams: float | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
@@ -112,7 +140,25 @@ def _sorted(filaments: Iterable[TodoFilament]) -> tuple[TodoFilament, ...]:
 
 
 def _fil_key(filaments: Iterable[TodoFilament]) -> tuple:
-    return tuple((f.type, f.color, f.nozzle) for f in _sorted(filaments))
+    # A short spool and a missing one of the same filament are two things to do.
+    return tuple((f.type, f.color, f.nozzle, f.short) for f in _sorted(filaments))
+
+
+def _most_needed(base: tuple[TodoFilament, ...], more: tuple[TodoFilament, ...]) -> tuple[TodoFilament, ...]:
+    """``base`` with the larger ``required_grams`` of ``more`` (the same filaments, in the same order)."""
+    if len(base) != len(more):
+        return base
+    merged = []
+    for a, b in zip(base, more, strict=True):
+        if a.short and b.short and b.required_grams is not None and (a.required_grams or 0) < b.required_grams:
+            a = replace(a, required_grams=b.required_grams)
+        merged.append(a)
+    return tuple(merged)
+
+
+def _without_trays(filaments: Iterable[TodoFilament]) -> tuple[TodoFilament, ...]:
+    """The filaments without the tray of a short spool, which belongs to one printer."""
+    return tuple(replace(f, short_trays=()) if f.short_trays else f for f in filaments)
 
 
 def build_todo(
@@ -122,12 +168,14 @@ def build_todo(
     plate_clear_ids: Iterable[int],
     interlock: Mapping[int, str],
     power_failed_ids: Iterable[int],
+    plate_changer_empty: Mapping[int, int | None] | None = None,
 ) -> dict:
     """The response of GET /queue/todo.
 
     ``jobs`` are the visible pending jobs in queue order; ``printers`` maps the
     visible printer ids to their names. Printer entries need a waiting job
-    that could go to that printer.
+    that could go to that printer. ``plate_changer_empty`` maps the printers
+    whose plate changer has no plate left to their capacity (#3575).
     """
     groups: dict[tuple, _Group] = {}
     index_of = {job.id: i for i, job in enumerate(jobs)}
@@ -143,9 +191,19 @@ def build_todo(
         return group
 
     def add(group: _Group, kind: str, subkey: tuple, job: TodoJob, **extra) -> None:
-        entry = group.entries.setdefault(
-            (kind, subkey), {"kind": kind, "jobs": [], "detail": None, "printers": [], **extra}
-        )
+        entry = group.entries.get((kind, subkey))
+        if entry is None:
+            entry = group.entries[(kind, subkey)] = {
+                "kind": kind,
+                "jobs": [],
+                "detail": None,
+                "printers": [],
+                "plate_capacity": None,
+                **extra,
+            }
+        elif "_filaments" in extra:
+            # Another job waits for the same spool: the entry names the most any of them needs.
+            entry["_filaments"] = _most_needed(entry["_filaments"], extra["_filaments"])
         if all(j["id"] != job.id for j in entry["jobs"]):
             entry["jobs"].append(
                 {"id": job.id, "name": job.name, "can_start": kind == KIND_START_STAGED and job.can_start}
@@ -154,6 +212,7 @@ def build_todo(
     # Printer-state entries, one per printer, listing the jobs that could go there.
     printer_kinds: list[tuple[str, int, str | None]] = []
     printer_kinds += [(KIND_PLATE_CLEAR, pid, None) for pid in plate_clear_ids]
+    printer_kinds += [(KIND_PLATE_CHANGER_EMPTY, pid, None) for pid in (plate_changer_empty or {})]
     printer_kinds += [(KIND_SENSOR_INTERLOCK, pid, reason) for pid, reason in interlock.items()]
     printer_kinds += [(KIND_POWER_ON_FAILED, pid, None) for pid in power_failed_ids]
     for kind, pid, detail in printer_kinds:
@@ -166,6 +225,8 @@ def build_todo(
         for job in waiting:
             add(group, kind, (), job)
         group.entries[(kind, ())]["detail"] = detail or None
+        if kind == KIND_PLATE_CHANGER_EMPTY:
+            group.entries[(kind, ())]["plate_capacity"] = (plate_changer_empty or {}).get(pid)
 
     for job in jobs:
         index = index_of[job.id]
@@ -194,7 +255,8 @@ def build_todo(
                         KIND_LOAD_FILAMENT,
                         (key, tuple(sorted(ids))),
                         job,
-                        _filaments=fils,
+                        # The tray of a short spool is named for one printer only.
+                        _filaments=fils if len(ids) == 1 else _without_trays(fils),
                         printers=[{"id": pid, "name": printers[pid]} for pid in sorted(ids)],
                     )
             else:
@@ -227,6 +289,12 @@ def build_todo(
                         "color_name": f.color_name,
                         "no_stock": f.no_stock,
                         "nozzle": f.nozzle,
+                        "short": f.short,
+                        "short_trays": [
+                            {"ams_id": t.ams_id, "tray_id": t.tray_id, "remaining_grams": t.remaining_grams}
+                            for t in f.short_trays
+                        ],
+                        "required_grams": f.required_grams,
                     }
                     for f in fils
                 ]

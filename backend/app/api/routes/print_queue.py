@@ -917,7 +917,11 @@ async def queue_todo(
 ):
     """What the waiting queue needs a person for, grouped by printer (#3615)."""
     from backend.app.api.routes.settings import get_setting, setting_is_true
-    from backend.app.services.print_scheduler import _could_take_printer, scheduler as _scheduler
+    from backend.app.services.print_scheduler import (
+        _could_take_printer,
+        plate_changer_reads_empty,
+        scheduler as _scheduler,
+    )
 
     user, can_read_all = auth_result
     query = (
@@ -941,7 +945,15 @@ async def queue_todo(
     items = list((await db.execute(query)).scalars().all())
 
     # Printers the caller may see, read once.
-    printer_query = select(Printer.id, Printer.name, Printer.model, Printer.location, Printer.is_active)
+    printer_query = select(
+        Printer.id,
+        Printer.name,
+        Printer.model,
+        Printer.location,
+        Printer.is_active,
+        Printer.plate_capacity,
+        Printer.plates_remaining,
+    )
     if (clause := printer_scope.where_strict(Printer.id)) is not None:
         printer_query = printer_query.where(clause)
     printer_rows = (await db.execute(printer_query)).all()
@@ -999,6 +1011,12 @@ async def queue_todo(
         for pid in printer_names
         if plate_clear.applies(pid, require_plate_clear) and printer_manager.is_awaiting_plate_clear(pid)
     ]
+    # Plate changers with no plate left (#3575), by capacity: a refill resets the count to it.
+    plate_changer_empty = {
+        row.id: row.plate_capacity
+        for row in printer_rows
+        if row.plate_capacity is not None and plate_changer_reads_empty(row.id, row.plates_remaining)
+    }
     try:
         interlock = {
             pid: reason
@@ -1010,7 +1028,15 @@ async def queue_todo(
         interlock = {}
     power_failed = [pid for pid in _scheduler.power_on_failed_printers() if pid in printer_names]
 
-    return build_todo(jobs, printer_names, _scheduler.filament_holds_snapshot(), plate_ids, interlock, power_failed)
+    return build_todo(
+        jobs,
+        printer_names,
+        _scheduler.filament_holds_snapshot(),
+        plate_ids,
+        interlock,
+        power_failed,
+        plate_changer_empty,
+    )
 
 
 HISTORY_STATUSES = ("completed", "failed", "skipped", "cancelled")

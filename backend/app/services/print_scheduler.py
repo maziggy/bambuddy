@@ -10,7 +10,7 @@ import uuid
 import zipfile
 from collections import deque
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import cast
@@ -94,7 +94,7 @@ from backend.app.services.printer_manager import (
     supports_drying_while_printing,
 )
 from backend.app.services.queue_item_printer import drop_printer_resolved
-from backend.app.services.queue_todo import FilamentHold, TodoFilament, todo_filament_from_requirement
+from backend.app.services.queue_todo import FilamentHold, ShortTray, TodoFilament, todo_filament_from_requirement
 from backend.app.services.slot_nozzle import reports_two_nozzles
 from backend.app.services.smart_plug_manager import is_monitor_only, publish_plug_state, smart_plug_manager
 from backend.app.services.spool_assignment_notifications import (
@@ -142,6 +142,15 @@ def _plate_clear_holds(printer_id: int, require_plate_clear: bool) -> bool:
     overrides it (#2860).
     """
     return plate_clear.applies(printer_id, require_plate_clear) and printer_manager.is_awaiting_plate_clear(printer_id)
+
+
+def plate_changer_reads_empty(printer_id: int, plates_remaining: int | None) -> bool:
+    """Whether a plate changer counts as having no plate left (#3575).
+
+    No remaining count, or one whose count could not be booked, reads as empty:
+    the safe side. Shared by the queue pass and the "To do" list (#3615).
+    """
+    return plates_remaining is None or plates_remaining <= 0 or is_count_unknown(printer_id)
 
 
 def _ams_slot_label(ams_id: int, tray_id: int, layout: TrayLayout | None = None) -> str:
@@ -2102,7 +2111,10 @@ class PrintScheduler:
                         self._apply_filament_overrides(item, unmatched)
                     else:
                         unmatched = _forced_override_requirements(item)
-                filaments = [todo_filament_from_requirement(r) for r in unmatched]
+                filaments = [
+                    replace(todo_filament_from_requirement(r), no_stock=await self._forced_and_out_of_stock(db, r))
+                    for r in unmatched
+                ]
             self._record_hold(item.id, item.printer_id, item.target_model, filaments)
         except Exception as e:
             logger.debug("Queue item %s: filament hold not rebuilt: %s", item.id, e)
@@ -4420,6 +4432,14 @@ class PrintScheduler:
             # The structured form comes from the overrides behind the texts, not from parsing them (#3615).
             return [text for text, _ in pairs], [todo_filament_from_requirement(o) for _, o in pairs]
 
+        def flag_no_stock(names: set[str], marked: set[TodoFilament]) -> None:
+            # The filaments of the entries the text marks "none left", on the printers it lists them for (#3615).
+            if not marked:
+                return
+            for pid, pname in names_by_id.items():
+                if pname in names and pid in missing_todo:
+                    missing_todo[pid] = [replace(f, no_stock=True) if f in marked else f for f in missing_todo[pid]]
+
         for printer in printers:
             # #3536: the pick ignored the nozzle, so a job sliced for 0.6 mm went to a
             # 0.4 mm printer and the #1899 guard then failed it in _start_print instead
@@ -4640,9 +4660,13 @@ class PrintScheduler:
                 if not printers_busy and not printers_offline and not printers_refused and not printers_plate_empty:
                     if colour_missing:
                         all_missing = sorted({c for _, cols in colour_missing for c in cols})
+                        marked_todo: set[TodoFilament] = set()
+                        all_missing = await self._mark_out_of_stock(
+                            db, all_missing, entry_overrides, out_of_stock, marked_todo
+                        )
+                        flag_no_stock({n for n, _ in colour_missing}, marked_todo)
                         if holds_out is not None:
                             holds_out.update(missing_todo)
-                        all_missing = await self._mark_out_of_stock(db, all_missing, entry_overrides, out_of_stock)
                         no_match = f"No matching material/color. Waiting on {', '.join(all_missing)}"
                         if short_only:
                             no_match += f" | {_waiting_clause(short_only)}"
@@ -4653,10 +4677,17 @@ class PrintScheduler:
                 # else: fall through — the self-resolving entries are appended below
             else:
                 if force_overrides:
-                    printers_missing_filament = [
-                        (name, await self._mark_out_of_stock(db, missing, entry_overrides, out_of_stock))
-                        for name, missing in printers_missing_filament
-                    ]
+                    marked_list: list[tuple[str, list[str]]] = []
+                    for name, missing in printers_missing_filament:
+                        marked_todo = set()
+                        marked_list.append(
+                            (
+                                name,
+                                await self._mark_out_of_stock(db, missing, entry_overrides, out_of_stock, marked_todo),
+                            )
+                        )
+                        flag_no_stock({name}, marked_todo)
+                    printers_missing_filament = marked_list
                 reasons.append(_waiting_clause(printers_missing_filament))
                 if holds_out is not None:
                     holds_out.update(missing_todo)
@@ -4686,14 +4717,17 @@ class PrintScheduler:
         entries: list[str],
         entry_overrides: Mapping[str, list[dict]],
         out_of_stock: list[str] | None = None,
+        marked_out: set[TodoFilament] | None = None,
     ) -> list[str]:
         """Add ``_NO_STOCK_SUFFIX`` to the entries naming a forced filament the inventory has none of (#3590).
 
         ``entry_overrides`` maps an entry's text to the forced override(s) that
         wrote it, so the suffix goes to the exact entry and the matcher is not
         repeated. An entry several overrides share (same label) is marked only
-        when none of them has stock. Entries without an override, unknown stock
-        (Spoolman, never stocked, an error) and any stock left stay as they were.
+        when none of them has stock. ``marked_out`` receives the filaments of the
+        entries it marked, for the "To do" list (#3615). Entries without an
+        override, unknown stock (Spoolman, never stocked, an error) and any
+        stock left stay as they were.
         """
         if not self._inventory_hints or not entries or not entry_overrides:
             return entries
@@ -4711,6 +4745,8 @@ class PrintScheduler:
             ):
                 if out_of_stock is not None and entry not in out_of_stock:
                     out_of_stock.append(entry)
+                if marked_out is not None:
+                    marked_out.update(todo_filament_from_requirement(o) for o in overrides)
                 marked.append(f"{entry}{_NO_STOCK_SUFFIX}")
                 continue
             marked.append(entry)
@@ -4733,6 +4769,15 @@ class PrintScheduler:
                 logger.warning("Inventory stock lookup failed: %s", e)
             self._stock_memo = (entries,)
         return self._stock_memo[0]
+
+    async def _forced_and_out_of_stock(self, db: AsyncSession, requirement: Mapping) -> bool:
+        """Whether ``requirement`` forces its colour and the inventory has none of it left (#3590)."""
+        return bool(requirement.get("force_color_match")) and await self._no_stock_left(
+            db,
+            requirement.get("type") or "",
+            requirement.get("color") or "",
+            requirement.get("tray_info_idx") or "",
+        )
 
     async def _no_stock_left(self, db: AsyncSession, o_type: str, color: str, tray_info_idx: str) -> bool:
         """True when the inventory knew this filament and has no spool of it left (#3590).
@@ -6861,9 +6906,7 @@ class PrintScheduler:
         rows = result.all()
         self._plate_changer_ids = {pid for pid, _name, _remaining in rows}
         self._plate_changer_empty = {
-            pid: name or f"printer {pid}"
-            for pid, name, remaining in rows
-            if remaining is None or remaining <= 0 or is_count_unknown(pid)
+            pid: name or f"printer {pid}" for pid, name, remaining in rows if plate_changer_reads_empty(pid, remaining)
         }
 
     async def _plate_changer_blocks_dispatch(self, db: AsyncSession, printer_id: int) -> bool:
@@ -10509,7 +10552,12 @@ class PrintScheduler:
     async def _deficit_todo_filaments(
         self, db: AsyncSession, item: PrintQueueItem, deficit: list
     ) -> list[TodoFilament]:
-        """The short slots as structured filaments, coloured from the job's requirements (#3615)."""
+        """The short slots as structured filaments, coloured from the job's requirements (#3615).
+
+        Each is marked ``short`` and names its tray, what the spool has left and
+        what the job needs, so the "To do" list does not read as a filament that
+        is missing (#3137).
+        """
         by_slot: dict[int, dict] = {}
         try:
             required = await self._get_filament_requirements(db, item)
@@ -10519,7 +10567,15 @@ class PrintScheduler:
         except Exception as e:
             logger.debug("Queue item %s: deficit colours unavailable: %s", item.id, e)
         return [
-            todo_filament_from_requirement({**by_slot.get(d.slot_id, {}), "type": d.filament_type}) for d in deficit
+            replace(
+                todo_filament_from_requirement({**by_slot.get(d.slot_id, {}), "type": d.filament_type}),
+                short=True,
+                short_trays=(ShortTray(d.ams_id, d.tray_id, d.remaining_grams),)
+                if d.ams_id is not None and d.tray_id is not None
+                else (),
+                required_grams=d.required_grams,
+            )
+            for d in deficit
         ]
 
     def _find_color_substitutions(self, required: list[dict], mapping: list, loaded: list[dict]) -> list[dict]:
@@ -10725,14 +10781,19 @@ class PrintScheduler:
         # A forced colour the inventory has none left of says so (#3590).
         out_of_stock: list[str] = []
         parts: list[str] = []
+        # The same filaments, structured, with the same mark (#3615).
+        todo: list[TodoFilament] = []
         for r in unmatched:
             text = _describe_filament(r, "nozzle_id")
+            no_stock = False
             if r.get("force_color_match") and await self._no_stock_left(
                 db, r.get("type") or "", r.get("color") or "", r.get("tray_info_idx") or ""
             ):
                 out_of_stock.append(text)
                 text = f"{text}{_NO_STOCK_SUFFIX}"
+                no_stock = True
             parts.append(text)
+            todo.append(replace(todo_filament_from_requirement(r), no_stock=no_stock))
         wanted = ", ".join(parts)
         held_by = item.printer_id  # set: _unmatched_filament returns [] without one
         # Structured next to the text; a released model job is no printer's (#3615).
@@ -10740,7 +10801,7 @@ class PrintScheduler:
             item.id,
             None if release_assignment else held_by,
             item.target_model,
-            [todo_filament_from_requirement(r) for r in unmatched],
+            todo,
         )
         if previous_reason is None:
             previous_reason = item.waiting_reason

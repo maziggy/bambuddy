@@ -147,6 +147,7 @@ from backend.app.services.notify_live_activities import notify_live_activities
 from backend.app.services.notify_widgets import notify_widgets
 from backend.app.services.obico_detection import obico_detection_service
 from backend.app.services.octoeverywhere_detection import octoeverywhere_detection_service
+from backend.app.services.plate_changer import clear_count_pending, consume_auto_cleared_plate
 from backend.app.services.plug_energy import get_plug_energy as _get_plug_energy
 from backend.app.services.print_cost_estimate import plate_scoped_run_estimate as _plate_scoped_run_estimate
 from backend.app.services.print_scheduler import scheduler as print_scheduler
@@ -1423,6 +1424,7 @@ async def forget_printer(printer_id: int) -> None:
         bambu_ftp,
         kprofile_drift,
         layer_timelapse,
+        plate_changer,
         plate_clear,
         plate_detection,
         print_dispatch_context,
@@ -1489,6 +1491,7 @@ async def forget_printer(printer_id: int) -> None:
         marked.discard(printer_id)
 
     printer_manager.forget_printer(printer_id)
+    plate_changer.forget_printer(printer_id)
     printer_file_cache.forget_printer(printer_id)
     print_dispatch_context.clear(printer_id)
     kprofile_drift.forget_printer(printer_id, deleted=True)
@@ -9564,13 +9567,17 @@ async def on_print_complete(printer_id: int, data: dict):
     ends), so the AMS remain% weight sync can't charge it a second time while
     the usage tracker works (WU-3). Marked before the first await.
     """
+    from backend.app.services.plate_changer import clear_count_pending, mark_count_pending
     from backend.app.services.usage_tracker import done_completing, mark_completing
 
     mark_completing(printer_id)
+    # The plate count is booked in there (#3575): the queue waits for it.
+    mark_count_pending(printer_id)
     try:
         await _close_out_print(printer_id, data)
     finally:
         done_completing(printer_id)
+        clear_count_pending(printer_id)
 
 
 async def _close_out_print(printer_id: int, data: dict):
@@ -9664,6 +9671,29 @@ async def _close_out_print(printer_id: int, data: dict):
     _final_status = data.get("status", "completed")
     if _final_status in ("completed", "failed", "aborted", "cancelled"):
         printer_manager.set_awaiting_plate_clear(printer_id, True)
+    if _final_status == "completed":
+        # A plate changer spent a plate on a finish nobody has to clear (#3575).
+        # Counted here, before the queue row below leaves 'printing', so no queue
+        # pass can dispatch on the old count; prints started outside Bambuddy count too.
+        # Not for the printer's own calibration runs (pressure-advance line,
+        # levelling): they complete too but never use a plate (#3575). Same rule
+        # as the print-start skip; on any doubt the plate is counted (safe side).
+        _internal = False
+        try:
+            _fn, _sub = data.get("filename") or "", data.get("subtask_name") or ""
+            if is_internal_printer_job(_fn, _sub):
+                if _fn.startswith("/usr/"):
+                    _internal = True
+                else:
+                    async with async_session() as _db:
+                        _internal = not await _dispatched_by_bambuddy(_db, printer_id, _fn, _sub)
+        except Exception:
+            logger.exception("internal-job check failed for printer %s; counting the plate", printer_id)
+            _internal = False
+        if _internal:
+            clear_count_pending(printer_id)
+        else:
+            await consume_auto_cleared_plate(printer_id)
 
     # MQTT relay - publish print complete
     try:

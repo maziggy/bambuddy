@@ -588,6 +588,17 @@ export default {
       notCleared: '플레이트 미비움',
       inUse: '플레이트 사용 중'
     },
+    plateChanger: {
+      count: '플레이트 {{remaining}} / {{capacity}}',
+      countTitle: '플레이트 체인저에 남은 플레이트',
+      empty: '플레이트 체인저 비어 있음',
+      refill: '채움 / 비움 완료',
+      refillTitle: '플레이트 체인저를 채우고 수거함을 비웠습니다: 카운트를 {{capacity}}(으)로 초기화합니다',
+      refilledToast: '플레이트 체인저 카운트를 {{capacity}}(으)로 초기화했습니다',
+      refillFailed: '플레이트 체인저 카운트를 초기화하지 못했습니다',
+      refillConfirmTitle: '플레이트 체인저 카운트를 초기화할까요?',
+      refillConfirmMessage: '플레이트 체인저를 채우고 수거함을 비운 후에만 확인하세요. 카운트가 {{capacity}}(으)로 돌아가고 대기열이 이 프린터에 다시 작업을 보냅니다.',
+    },
     queue: {
       inQueue: '대기열에 {{count}}개',
       inQueue_plural: '대기열에 {{count}}개'
@@ -667,6 +678,11 @@ export default {
       requirePlateClearLabel: "플레이트 비움 확인 필요",
       requirePlateClearDefault: "설정 사용 ({{value}})",
       requirePlateClearHelp: "자동 플레이트 교체기처럼 스스로 플레이트를 비우는 프린터에서는 끄세요. 설정은 설정 > 워크플로우 > 큐 및 디스패치에 있습니다.",
+      plateCapacityLabel: '플레이트 체인저 용량',
+      plateCapacityPlaceholder: '끄기',
+      plateCapacityHelp: '누군가 플레이트 체인저를 다시 채우거나 수거함을 비워야 하기 전까지 이 프린터가 스스로 정리할 수 있는 출력 횟수입니다. 플레이트 확인이 필요 없는 출력이 성공할 때마다 플레이트 하나가 소모됩니다. 남은 플레이트가 없으면 프린터 카드에서 "채움 / 비움 완료"을(를) 누를 때까지 대기열은 이 프린터에 아무것도 보내지 않습니다. 비워 두거나 0을 입력하면 카운트를 끕니다.',
+      plateChangerShowCount: '프린터 카드에 플레이트 수 표시',
+      plateChangerShowCountHelp: '플레이트 체인저가 비어 있으면 카드에 항상 표시됩니다.',
       fromPrinterSettings: '프린터 설정에서',
       modelOptional: '모델 (선택사항)',
       saveChanges: '변경사항 저장',
@@ -1483,6 +1499,7 @@ export default {
     failed: {
       generic: '디스패치 실패',
       upload_failed: '프린터로 업로드 실패',
+      plate_changer_empty: '플레이트 체인저가 비어 있습니다. 작업은 대기열에 남습니다',
       start_command_failed: '프린터가 시작 명령을 거부했습니다',
     },
     dismiss: '닫기',
@@ -7398,6 +7415,9 @@ export default {
     plateNotEmptyDescription: '인쇄 전 개체 감지됨',
     plateClearRequired: '플레이트 비움 확인 필요',
     plateClearRequiredDescription: '인쇄 완료, 대기열이 플레이트 확인을 기다림',
+    plateChangerEmpty: '플레이트 체인저 비어 있음',
+    plateChangerEmptyDescription: '플레이트 체인저가 마지막 플레이트를 사용했습니다. 대기열이 이 프린터를 건너뜁니다',
+    plateChanger: '플레이트 체인저',
     filamentOutOfStock: '필라멘트 재고 소진',
     filamentOutOfStockDescription: '대기열의 작업이 재고가 없는 필라멘트를 기다리고 있습니다',
     filamentOutOfStockNeedsSetting: '"재고 색상 표시"이(가) 켜져 있는 동안에만 전송됩니다.',

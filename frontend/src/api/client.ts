@@ -511,6 +511,9 @@ export interface Printer {
   external_camera_snapshot_url: string | null;  // optional single-frame override (#1177)
   camera_rotation: number;  // 0, 90, 180, 270 degrees
   camera_light_auto: boolean;  // picked for the chamber light when camera_light_mode is 'selected' (#1655)
+  plate_capacity: number | null;  // plates the plate changer holds; null = no counting (#3575)
+  plate_changer_show_count: boolean;  // show the plate count on the printer card (#3575)
+  plates_remaining: number | null;  // plates left before a refill / bin emptying is due (#3575)
   plate_detection_enabled: boolean;  // Check plate before print
   plate_detection_roi?: PlateDetectionROI;  // ROI for plate detection
   wear_cost_per_hour: number | null;  // Wear cost per printing hour (#694)
@@ -874,6 +877,9 @@ export interface PrinterCreate {
   external_camera_snapshot_url?: string | null;
   camera_rotation?: number;
   camera_light_auto?: boolean;
+  plate_capacity?: number | null;
+  plates_remaining?: number | null;
+  plate_changer_show_count?: boolean;
   plate_detection_enabled?: boolean;
   plate_detection_roi?: PlateDetectionROI;
   wear_cost_per_hour?: number | null;
@@ -3479,6 +3485,7 @@ export interface NotificationProvider {
   // Build plate detection
   on_plate_not_empty: boolean;
   on_plate_clear_required: boolean;
+  on_plate_changer_empty: boolean;
   // Post-print outcome confirmation (#1898)
   on_print_confirm_request: boolean;
   on_filament_out_of_stock: boolean;
@@ -3551,6 +3558,7 @@ export interface NotificationProviderCreate {
   // Build plate detection
   on_plate_not_empty?: boolean;
   on_plate_clear_required?: boolean;
+  on_plate_changer_empty?: boolean;
   // Post-print outcome confirmation (#1898)
   on_print_confirm_request?: boolean;
   on_filament_out_of_stock?: boolean;
@@ -3616,6 +3624,7 @@ export interface NotificationProviderUpdate {
   // Build plate detection
   on_plate_not_empty?: boolean;
   on_plate_clear_required?: boolean;
+  on_plate_changer_empty?: boolean;
   // Post-print outcome confirmation (#1898)
   on_print_confirm_request?: boolean;
   on_filament_out_of_stock?: boolean;
@@ -5790,6 +5799,10 @@ export const api = {
     }),
   clearPlate: (printerId: number) =>
     request<{ success: boolean; message: string }>(`/printers/${printerId}/clear-plate`, {
+      method: 'POST',
+    }),
+  refillPlates: (printerId: number) =>
+    request<Printer>(`/printers/${printerId}/refill-plates`, {
       method: 'POST',
     }),
 

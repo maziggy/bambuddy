@@ -3361,6 +3361,15 @@ export default {
     second_other: '{{count}} sekunder',
     nSeconds: '{{count}} sekunder',
     increaseForWeakWifi: 'Öka för skrivare med svag WiFi',
+    // Printer Rediscovery
+    printerRediscovery: 'Återupptäckt av skrivare',
+    printerRediscoveryDescription: 'Upptäck automatiskt när en frånkopplad skrivare får en ny IP-adress och återanslut efter verifiering av serienummer och åtkomstkod.',
+    enablePrinterRediscovery: 'Aktivera automatisk återupptäckt',
+    printerRediscoverySsdpDescription: 'Lyssna efter Bambu SSDP-annonseringar när aktiva skrivare saknas',
+    printerRediscoverySubnetScan: 'Reservskanning av undernät',
+    printerRediscoverySubnetScanDescription: 'Kontrollera varsamt port 8883 i det lokala undernätet när SSDP-multicast blockeras mellan routrar',
+    printerRediscoveryScanInterval: 'Minsta skanningsintervall (minuter)',
+    printerRediscoveryScanIntervalHint: 'Begränsar aktiva undernätsskanningar (5–60 min) så att nätverksutrustning inte flaggar trafiken som misstänkt',
     // Home Assistant
     homeAssistant: 'Home Assistant',
     homeAssistantFullDescription: 'Anslut till Home Assistant för att styra smarta kontakter via HA:s REST API. Stöder switch, light, input_boolean och script-entiteter.',

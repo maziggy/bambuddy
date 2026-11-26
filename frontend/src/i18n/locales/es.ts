@@ -3311,6 +3311,15 @@ export default {
     second_other: '{{count}} segundos',
     nSeconds: '{{count}} segundos',
     increaseForWeakWifi: 'Aumente para impresoras con Wi-Fi débil',
+    // Printer Rediscovery
+    printerRediscovery: 'Redescubrimiento de impresoras',
+    printerRediscoveryDescription: 'Detecta automáticamente cuándo una impresora desconectada recibe una nueva dirección IP y se reconecta tras verificar su número de serie y código de acceso.',
+    enablePrinterRediscovery: 'Activar redescubrimiento automático',
+    printerRediscoverySsdpDescription: 'Escuchar anuncios SSDP de Bambu cuando falten impresoras activas',
+    printerRediscoverySubnetScan: 'Escaneo alternativo de subred',
+    printerRediscoverySubnetScanDescription: 'Sondear suavemente el puerto 8883 en la subred local cuando los routers bloqueen SSDP multicast',
+    printerRediscoveryScanInterval: 'Intervalo mínimo de escaneo (minutos)',
+    printerRediscoveryScanIntervalHint: 'Limita la frecuencia de escaneos de subred (5–60 min) para evitar alertas sospechosas en la red',
     // Home Assistant
     homeAssistant: 'Home Assistant',
     homeAssistantFullDescription: 'Conéctese a Home Assistant para controlar enchufes inteligentes mediante la API REST de HA. Admite las entidades switch, light, input_boolean y script.',

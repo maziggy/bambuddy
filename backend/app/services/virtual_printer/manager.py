@@ -2015,8 +2015,8 @@ class VirtualPrinterManager:
             if vp_id not in enabled_ids:
                 await self.remove_instance(vp_id)
 
-        # Look up printer IPs for proxy VPs
-        proxy_vps = [vp for vp in enabled_vps if vp.mode == "proxy"]
+        # Look up printer IPs for VPs bound to a target printer
+        proxy_vps = [vp for vp in enabled_vps if vp.target_printer_id]
         proxy_ips: dict[int, tuple[str, str]] = {}
         if proxy_vps:
             async with self._session_factory() as db:
@@ -2081,6 +2081,10 @@ class VirtualPrinterManager:
                     vp.mode,
                 )
                 await self.remove_instance(vp.id)
+            elif vp.id in proxy_ips:
+                rtsp_proxy = getattr(instance, "_rtsp_proxy", None)
+                if rtsp_proxy is not None and rtsp_proxy.target_host != proxy_ips[vp.id][0]:
+                    rtsp_proxy.target_host = proxy_ips[vp.id][0]
 
         # Start instances for all enabled VPs. One already there is left
         # alone: if its services have ended, the supervisor restarts it.

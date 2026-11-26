@@ -3331,6 +3331,15 @@ export default {
     second_other: '{{count}} seconds',
     nSeconds: '{{count}} seconds',
     increaseForWeakWifi: 'Increase for printers with weak WiFi',
+    // Printer Rediscovery
+    printerRediscovery: 'Printer Rediscovery',
+    printerRediscoveryDescription: 'Automatically detect when an offline printer receives a new IP address and reconnect after verifying its serial number and access code.',
+    enablePrinterRediscovery: 'Enable Automatic Rediscovery',
+    printerRediscoverySsdpDescription: 'Listen for Bambu SSDP announcements when active printers are missing',
+    printerRediscoverySubnetScan: 'Fallback Subnet Scan',
+    printerRediscoverySubnetScanDescription: 'Gently probe local subnet port 8883 when SSDP multicast is blocked across routers',
+    printerRediscoveryScanInterval: 'Minimum Scan Interval (minutes)',
+    printerRediscoveryScanIntervalHint: 'Rate-limits active subnet scans (5–60 min) so network equipment does not flag traffic as suspicious',
     // Home Assistant
     homeAssistant: 'Home Assistant',
     homeAssistantFullDescription: 'Connect to Home Assistant to control smart plugs via HA\'s REST API. Supports switch, light, input_boolean, and script entities.',

@@ -3309,6 +3309,15 @@ export default {
     second_other: '{{count}} Sekunden',
     nSeconds: '{{count}} Sekunden',
     increaseForWeakWifi: 'Erhöhen für Drucker mit schwachem WLAN',
+    // Printer Rediscovery
+    printerRediscovery: 'Drucker-Wiedererkennung',
+    printerRediscoveryDescription: 'Erkennt automatisch, wenn ein getrennter Drucker eine neue IP-Adresse erhält, und verbindet sich nach Prüfung von Seriennummer und Zugangscode neu.',
+    enablePrinterRediscovery: 'Automatische Wiedererkennung aktivieren',
+    printerRediscoverySsdpDescription: 'Auf Bambu-SSDP-Ankündigungen lauschen, wenn aktive Drucker nicht erreichbar sind',
+    printerRediscoverySubnetScan: 'Fallback-Subnetz-Scan',
+    printerRediscoverySubnetScanDescription: 'Lokales Subnetz schonend auf Port 8883 prüfen, wenn SSDP-Multicast durch Router blockiert wird',
+    printerRediscoveryScanInterval: 'Minimales Scan-Intervall (Minuten)',
+    printerRediscoveryScanIntervalHint: 'Begrenzt aktive Subnetz-Scans (5–60 Min.), damit Netzwerkgeräte den Datenverkehr nicht als verdächtig einstufen',
     // Home Assistant
     homeAssistant: 'Home Assistant',
     homeAssistantFullDescription: 'Mit Home Assistant verbinden, um Smart Plugs über die HA REST-API zu steuern. Unterstützt Switch-, Light-, Input_Boolean- und Script-Entitäten.',

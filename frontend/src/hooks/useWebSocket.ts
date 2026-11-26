@@ -483,6 +483,10 @@ export function useWebSocket() {
         debouncedInvalidate('announcements');
         break;
 
+      case 'printers_changed':
+        debouncedInvalidate('printers');
+        break;
+
       case 'printer_locations_changed':
         // A location was created, renamed, restyled or deleted, or printers moved
         // between them (#2962). Every page that shows a printer's location reads

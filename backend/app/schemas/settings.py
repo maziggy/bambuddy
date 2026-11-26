@@ -272,6 +272,20 @@ class AppSettings(BaseModel):
     ftp_retry_delay: int = Field(default=2, description="Seconds to wait between FTP retry attempts (1-30)")
     ftp_timeout: int = Field(default=30, description="FTP connection timeout in seconds (10-300)")
 
+    # Automatic IP rediscovery for disconnected printers
+    printer_rediscovery_enabled: bool = Field(
+        default=True,
+        description="Automatically rediscover active printers whose IP address changed while offline",
+    )
+    printer_rediscovery_subnet_scan: bool = Field(
+        default=False,
+        description="Fall back to a rate-limited subnet scan on port 8883 when SSDP does not locate missing printers",
+    )
+    printer_rediscovery_scan_interval: int = Field(
+        default=10,
+        description="Minimum minutes between fallback subnet scans when printers remain missing (5-60)",
+    )
+
     # MQTT Relay settings for publishing events to external broker
     mqtt_enabled: bool = Field(default=False, description="Enable MQTT event publishing to external broker")
     mqtt_broker: str = Field(default="", description="MQTT broker hostname or IP address")
@@ -822,6 +836,15 @@ class AppSettings(BaseModel):
             return 2.0
         return min(max(0.0, seconds), 5.0)
 
+    @field_validator("printer_rediscovery_scan_interval", mode="before")
+    @classmethod
+    def _printer_rediscovery_scan_interval_in_range(cls, value):
+        try:
+            minutes = int(value)
+        except (TypeError, ValueError):
+            return 10
+        return min(max(5, minutes), 60)
+
 
 class AppSettingsUpdate(BaseModel):
     """Schema for updating settings (all fields optional)."""
@@ -886,6 +909,9 @@ class AppSettingsUpdate(BaseModel):
     ftp_retry_count: int | None = None
     ftp_retry_delay: int | None = None
     ftp_timeout: int | None = None
+    printer_rediscovery_enabled: bool | None = None
+    printer_rediscovery_subnet_scan: bool | None = None
+    printer_rediscovery_scan_interval: int | None = Field(default=None, ge=5, le=60)
     mqtt_enabled: bool | None = None
     mqtt_broker: str | None = None
     mqtt_port: int | None = None

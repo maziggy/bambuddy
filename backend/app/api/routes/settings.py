@@ -201,6 +201,8 @@ _BOOL_SETTING_KEYS = frozenset(
         "announcements_enabled",
         "announcements_all_users",
         "ftp_retry_enabled",
+        "printer_rediscovery_enabled",
+        "printer_rediscovery_subnet_scan",
         "mqtt_enabled",
         "mqtt_use_tls",
         "panda_breath_enabled",
@@ -276,6 +278,7 @@ _INT_SETTING_KEYS = frozenset(
         "ftp_retry_count",
         "ftp_retry_delay",
         "ftp_timeout",
+        "printer_rediscovery_scan_interval",
         "mqtt_port",
         "stagger_group_size",
         "stagger_interval_minutes",
@@ -529,6 +532,20 @@ async def update_settings(
         if key in update_data and str(update_data[key]) != (await get_setting(db, key) or ""):
             price_source_changed = True
 
+    rediscovery_changed = any(
+        key in update_data and not _same_setting_value(update_data[key], stored.get(key))
+        for key in (
+            "printer_rediscovery_enabled",
+            "printer_rediscovery_subnet_scan",
+            "printer_rediscovery_scan_interval",
+        )
+    )
+    rediscovery_reenabled = (
+        update_data.get("printer_rediscovery_enabled") is True and not stored.get("printer_rediscovery_enabled")
+    ) or (
+        update_data.get("printer_rediscovery_subnet_scan") is True and not stored.get("printer_rediscovery_subnet_scan")
+    )
+
     for key, value in update_data.items():
         # Convert value to string for storage
         await set_setting(db, key, _as_stored_setting(value))
@@ -536,6 +553,11 @@ async def update_settings(
     await db.commit()
     # Expire all objects to ensure fresh reads after commit
     db.expire_all()
+
+    if rediscovery_changed:
+        from backend.app.services.printer_rediscovery import printer_rediscovery_service
+
+        printer_rediscovery_service.on_settings_changed(reset_scan_cooldown=rediscovery_reenabled)
 
     if update_data.get("obico_enabled") is False:
         from backend.app.services.obico_detection import obico_detection_service

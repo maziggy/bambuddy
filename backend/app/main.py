@@ -13140,6 +13140,12 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     print_scheduler.stop()
+    try:
+        from backend.app.services.label_print_jobs import label_print_service
+
+        await label_print_service.shutdown()  # label print jobs (#3612): cancelled jobs become failed
+    except Exception as e:
+        logging.warning("Failed to stop the label print workers: %s", e)
     smart_plug_manager.stop_scheduler()
     ha_sensor_manager.stop()
     location_ha_sensor_manager.stop()

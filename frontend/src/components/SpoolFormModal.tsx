@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { X, Loader2, Save, Beaker, Palette, Zap, Tag, Link2, Unlink } from 'lucide-react';
+import { X, Loader2, Save, Beaker, Palette, Zap, Tag, Link2, Unlink, Printer } from 'lucide-react';
 import { api, ApiError } from '../api/client';
 import type { InventorySpool, Supplier, SlicerSetting, SpoolCatalogEntry, LocalPreset, BuiltinFilament, SpoolmanBulkCreateResult, SpoolFilamentPresetInput, SpoolKProfileInput, SpoolmanFilamentEntry, ResolvedProfileDefault, ThreeDfpFilament } from '../api/client';
 import { Button } from './Button';
@@ -38,7 +38,9 @@ import {
   invalidateInventoryLocations,
   invalidateSpoolAndLocationQueries,
 } from '../utils/inventoryQueries';
-import { useUiSettings } from '../hooks/useUiSettings';
+import { printLabelsAfterSave as printSavedSpoolLabels } from '../utils/labelPrintJobs';
+import { isLabelPrinterConfigured, useUiSettings } from '../hooks/useUiSettings';
+import { autoPrintRequests, loadAutoPrintLabel, saveAutoPrintLabel } from '../utils/labelPrint';
 
 type TabId = 'filament' | 'appearance' | 'printers';
 
@@ -114,6 +116,23 @@ export function SpoolFormModal({
   const [quickAdd, setQuickAdd] = useState(false);
   const [quantity, setQuantity] = useState(1);
   const [showAssignModal, setShowAssignModal] = useState(false);
+  // "Print label after saving" (#3612): remembered per device, offered only
+  // with a label printer set up and with inventory:update, which printing
+  // needs. The choice is remembered per device, not per user, so without the
+  // permission it is not followed either.
+  const [autoPrintLabel, setAutoPrintLabel] = useState(loadAutoPrintLabel);
+  const { data: labelSettings } = useUiSettings({ enabled: isOpen });
+  const canPrintLabels = isLabelPrinterConfigured(labelSettings) && hasPermission('inventory:update');
+  const printLabelsAfterSave = canPrintLabels && autoPrintLabel && !isEditing;
+
+  // One label per created spool (#3612). Not awaited by the create flow: the
+  // dialog closes at once and the print job is followed by a module-level
+  // poller that toasts the result. A failure only warns, the spools are saved.
+  const printCreatedLabels = (spoolIds: number[]) => {
+    if (!printLabelsAfterSave || spoolIds.length === 0) return;
+    const tape = labelSettings?.label_printer_tape || '50';
+    printSavedSpoolLabels(spoolmanMode ? 'spoolman' : 'inventory', autoPrintRequests(spoolIds, tape), { t, showToast });
+  };
   // Giving this spool's tag to the spool it belongs to (#3658).
   const [moveTarget, setMoveTarget] = useState<LinkTagTarget | null>(null);
   // Start from the last created spool (#3619). `lastApplied` drives the hint;
@@ -1061,6 +1080,7 @@ export function SpoolFormModal({
       await refreshSpoolQueries();
       if (onSpoolsCreated) onSpoolsCreated([newSpool]);
       showToast(t('inventory.spoolCreated'), 'success');
+      if (newSpool?.id) printCreatedLabels([newSpool.id]);
       onClose();
     },
     onError: (error: Error) => {
@@ -1126,6 +1146,7 @@ export function SpoolFormModal({
       } else {
         showToast(t('inventory.spoolsCreated', { count: createdSpools.length }), 'success');
       }
+      printCreatedLabels(createdSpools.map((s) => s.id));
       onClose();
     },
     onError: (error: Error) => {
@@ -1590,6 +1611,25 @@ export function SpoolFormModal({
               />
             </button>
           </div>
+        )}
+
+        {/* Print a label per new spool (#3612); only with a label printer set up
+            and the permission to print. */}
+        {!isEditing && canPrintLabels && (
+          <label className="flex items-center gap-2 px-4 py-2 border-b border-bambu-dark-tertiary flex-shrink-0 cursor-pointer">
+            <input
+              type="checkbox"
+              data-testid="auto-print-label"
+              checked={autoPrintLabel}
+              onChange={(e) => {
+                setAutoPrintLabel(e.target.checked);
+                saveAutoPrintLabel(e.target.checked);
+              }}
+              className="accent-bambu-green"
+            />
+            <Printer className="w-4 h-4 text-bambu-gray" />
+            <span className="text-sm text-white">{t('inventory.printLabelAfterSave', 'Print label after saving')}</span>
+          </label>
         )}
 
         {/* Tabs */}

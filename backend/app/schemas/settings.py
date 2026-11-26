@@ -41,6 +41,47 @@ QUEUE_MAX_WAIT_HOURS_MIN = 1
 QUEUE_MAX_WAIT_HOURS_MAX = 8760
 
 
+def validate_label_printer_value(field: str, v: str | None) -> str | None:
+    """Validate one ``label_printer_*`` value. ``None`` and "" pass: a printer is
+    only used when type and host are both set. The host goes through the
+    LAN-service guard and the port is checked (loopback and private ranges stay
+    permitted, as for the other LAN services)."""
+    if v is None:
+        return v
+    # Lazy-imported: schemas avoid top-level imports from services/api (see above).
+    from backend.app.services.label_printers.base import PRINTER_TYPES, parse_printer_address
+    from backend.app.services.label_printers.brother_ql_media import MODELS, TAPES
+
+    value = v.strip()
+    if field == "label_printer_type":
+        if value and value not in PRINTER_TYPES:
+            raise ValueError(f"Label printer type must be one of: {', '.join(PRINTER_TYPES)}")
+    elif field == "label_printer_host":
+        if value:
+            parse_printer_address(value)
+    elif field == "label_printer_model":
+        if value and value not in MODELS:
+            raise ValueError(f"Label printer model must be one of: {', '.join(MODELS)}")
+    elif field == "label_printer_tape":
+        if value and value not in TAPES:
+            raise ValueError(f"Label printer tape must be one of: {', '.join(TAPES)} (mm)")
+    return value
+
+
+class LabelPrinterTestRequest(BaseModel):
+    """Values to test with before saving them (#3612); omitted ones come from the saved settings."""
+
+    type: str | None = None
+    host: str | None = None
+    model: str | None = None
+    tape: str | None = None
+
+    @field_validator("type", "host", "model", "tape")
+    @classmethod
+    def validate_value(cls, v: str | None, info: ValidationInfo) -> str | None:
+        return validate_label_printer_value(f"label_printer_{info.field_name}", v)
+
+
 class AppSettings(BaseModel):
     """Application settings schema."""
 
@@ -713,6 +754,20 @@ class AppSettings(BaseModel):
         description="Fallback BamBuddy group name assigned when an LDAP user authenticates but has no mapped groups. Empty = no fallback.",
     )
 
+    # Direct label printing (#3612). Empty type = off.
+    label_printer_type: str = Field(default="", description='Label printer driver: "" (off) or "brother_ql"')
+    label_printer_host: str = Field(
+        default="",
+        description=(
+            "Label printer host or IP, optionally with :port. The default port is 9100, "
+            "the raw printing port of Brother QL printers; any port 1-65535 is accepted"
+        ),
+    )
+    label_printer_model: str = Field(default="QL-820NWB", description="Label printer model")
+    label_printer_tape: str = Field(default="50", description="Width in mm of the continuous tape loaded")
+    # Derived from type and host; read-only.
+    label_printer_configured: bool = Field(default=False, description="A label printer is set up")
+
     # Obico AI failure detection (#172)
     obico_enabled: bool = Field(default=False, description="Enable Obico AI print failure detection")
     obico_ml_url: str = Field(
@@ -972,6 +1027,10 @@ class AppSettingsUpdate(BaseModel):
     ldap_group_mapping: str | None = None
     ldap_auto_provision: bool | None = None
     ldap_default_group: str | None = None
+    label_printer_type: str | None = None
+    label_printer_host: str | None = None
+    label_printer_model: str | None = None
+    label_printer_tape: str | None = None
     obico_enabled: bool | None = None
     obico_ml_url: str | None = None
     bambuddy_internal_url: str | None = None
@@ -1037,6 +1096,12 @@ class AppSettingsUpdate(BaseModel):
         except ValueError as exc:
             raise ValueError(str(exc)) from exc
         return v
+
+    @field_validator("label_printer_type", "label_printer_host", "label_printer_model", "label_printer_tape")
+    @classmethod
+    def validate_label_printer(cls, v: str | None, info: ValidationInfo) -> str | None:
+        """Check the label printer settings on save (#3612); empty keeps the default."""
+        return validate_label_printer_value(info.field_name or "", v)
 
     @field_validator("docker_compose_dir")
     @classmethod

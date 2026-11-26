@@ -2,12 +2,14 @@
 
 - ``POST /projects/labels``          — labels for one or more projects
 - ``POST /projects/labels/preview``  — one label as a PNG, for the dialog
+- ``POST /projects/labels/print``    — roll labels on the label printer (#3612)
 
-The request is the spool labels' (``labels.py``): a built-in template or a
-custom sheet, monochrome, the ``fields`` to print, PDF or PNG at a dpi, and a
-starting position on a sheet. Instead of spool ids it takes ``items``, one per
-label, each a project with what the user typed for that bag: how many parts
-are in it and a free-text line ("Order #1042", "Bag 2 of 3").
+The request is the spool labels' (``labels.py``): a built-in template, a
+custom sheet or a roll of label printer tape, monochrome, the ``fields`` to
+print, PDF or PNG at a dpi, and a starting position on a sheet. Instead of
+spool ids it takes ``items``, one per label, each a project with what the user
+typed for that bag: how many parts are in it and a free-text line
+("Order #1042", "Bag 2 of 3").
 
 The QR code on each label deep-links to ``/projects/<id>``.
 """
@@ -26,9 +28,12 @@ from sqlalchemy.orm import load_only
 
 from backend.app.api.routes.labels import (
     MAX_LABELS_PER_REQUEST,
+    MAX_PRINT_LABELS_PER_REQUEST,
     LabelLayoutOptions,
+    enqueue_print,
     label_file_response,
     label_preview_response,
+    printer_for,
     render_pdf_in_worker,
     resolve_deeplink_base,
     sheet_request_problem,
@@ -94,8 +99,8 @@ class ProjectLabelRequest(ProjectLabelOptions):
 
     @model_validator(mode="after")
     def validate_sheet(self) -> ProjectLabelRequest:
-        if (self.template == "custom") != (self.layout is not None):
-            return self  # layout_only_for_custom reports this one
+        if not self.stock_is_complete():
+            return self  # layout_only_for_custom / roll_only_for_roll report this one
         problem = sheet_request_problem(
             self.resolved_template(), len(self.items), self.starting_position, self.format, self.dpi, self.template
         )
@@ -106,6 +111,12 @@ class ProjectLabelRequest(ProjectLabelOptions):
 
 class ProjectLabelPreviewRequest(ProjectLabelOptions, ProjectLabelItem):
     pass
+
+
+class ProjectLabelPrintRequest(ProjectLabelOptions):
+    """The download's body without format, dpi and starting position (#3612)."""
+
+    items: list[ProjectLabelItem] = Field(..., min_length=1, max_length=MAX_PRINT_LABELS_PER_REQUEST)
 
 
 async def _project_label_data(
@@ -238,3 +249,23 @@ async def preview_project_label(
         draw=draw_project_label,
     )
     return await label_preview_response(pdf)
+
+
+@router.post("/projects/labels/print", status_code=202)
+async def print_project_labels(
+    body: ProjectLabelPrintRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
+) -> dict:
+    """Queue project labels on the configured label printer (#3612); poll
+    ``GET /labels/print-jobs/{job_id}`` for the outcome. Needs ``projects:update``,
+    not the download's ``projects:read``: a print uses up tape, as a spool
+    label's needs ``inventory:update``."""
+    template = body.resolved_template()
+    config = await printer_for(template, len(body.items), db)
+    fields = body.field_set()
+    data_list = await _project_label_data(body.items, fields, request, db, printer_scope, actor)
+    return enqueue_print(template, data_list, config, fields, draw=draw_project_label, subject="project")

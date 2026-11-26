@@ -25,6 +25,7 @@ import { Search, RotateCcw, Loader2, ChevronDown } from 'lucide-react';
 import { disabledKeys, type ToggleRules } from '../lib/slicerToggle';
 import { baselineForDisplay, displaySidetext, isModified, numericBound, serializeOverrides } from '../lib/slicerSettings';
 import type { OptionMode, ProcessOption, ProcessSchema, ProcessUiTree, SettingValue } from '../types/slicerSettings';
+import { effectiveProcessValues, FILAMENT_SLOT_OPTIONS } from '../utils/processFilamentSlots';
 import type { DesignOverride } from '../types/plates';
 import type { SlicerPresetValuesReason } from '../api/client';
 
@@ -98,23 +99,6 @@ export interface FilamentChoice {
   color?: string;
 }
 
-/**
- * Options whose integer value names a filament slot rather than a quantity.
- * All use the same encoding: 0 = "default / current filament", 1..N = slot.
- * Support base and interface are the pair on the Support page; the rest are
- * the Multimaterial page's per-region pickers, which have the same wart.
- */
-const FILAMENT_SLOT_OPTIONS = new Set([
-  'support_filament',
-  'support_interface_filament',
-  'outer_wall_filament_id',
-  'inner_wall_filament_id',
-  'top_surface_filament_id',
-  'bottom_surface_filament_id',
-  'internal_solid_filament_id',
-  'sparse_infill_filament_id',
-]);
-
 /** Visibility tiers, in increasing order of how much they reveal. */
 const MODES: OptionMode[] = ['simple', 'advanced', 'expert'];
 const MODE_RANK: Record<string, number> = { simple: 0, advanced: 1, expert: 2, develop: 3 };
@@ -161,18 +145,10 @@ export default function SlicerSettingsPanel({
   // What this slice will actually run with, in the same precedence order the
   // rows display: the picked preset underneath, the designer's value for each
   // key that is switched on, and anything typed here on top.
-  const effectiveValues = useMemo(() => {
-    const merged: Record<string, SettingValue> = { ...(presetValues ?? {}) };
-    for (const o of sourceOverrides) {
-      if (sourceSelected?.has(o.key)) merged[o.key] = o.value as SettingValue;
-    }
-    // An emptied field is not a value — leaving it in would read as "" and
-    // send the config reader to the schema default, past the preset.
-    for (const [key, value] of Object.entries(values)) {
-      if (value !== undefined && value !== '') merged[key] = value;
-    }
-    return merged;
-  }, [presetValues, sourceOverrides, sourceSelected, values]);
+  const effectiveValues = useMemo(
+    () => effectiveProcessValues(presetValues, sourceOverrides, sourceSelected, values),
+    [presetValues, sourceOverrides, sourceSelected, values],
+  );
 
   // The slicer's own `enable_if` rules, evaluated against that rather than
   // against `values` alone (#2942). `values` holds only what the user typed

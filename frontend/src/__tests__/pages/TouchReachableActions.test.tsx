@@ -84,8 +84,9 @@ describe('actions that were hover-only (#2865)', () => {
       const user = userEvent.setup();
       await user.click(within(card).getAllByRole('button').slice(-1)[0]);
 
-      expect(within(card).getByRole('button', { name: 'Edit' })).toBeInTheDocument();
-      expect(within(card).getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+      // The menu floats outside the card, which clipped it (#3739).
+      expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
     });
   });
 

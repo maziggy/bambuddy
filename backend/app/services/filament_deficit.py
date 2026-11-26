@@ -239,17 +239,11 @@ def _material_identity_spoolman(spool: dict | None) -> str:
     return f"unmatched:{spool_id}"
 
 
-def _live_tray_keys(printer_id: int) -> dict[int, str]:
-    """Pooling key per ``global_tray_id``, from what the printer reports per tray.
+def _live_trays(printer_id: int) -> dict[int, dict]:
+    """What the printer reports per ``global_tray_id``, AMS and external trays.
 
-    AMS Filament Backup is the firmware's decision, and it makes it on the
-    tray's own ``tray_info_idx`` and colour. The spool rows bound to two slots
-    can disagree about that while the printer does not: an RFID-created spool
-    stores "GFA10", one set up from a user preset "PFUS..." (#1824). So a slot
-    the printer reports is keyed on the report, in the same format
-    ``_material_identity_internal`` uses; a tray with nothing in it or no
-    preset gets a key of its own, so it never pairs. Slots missing from the
-    report fall back to the bound spool.
+    Free-form MQTT payload on the dispatch path: a malformed unit or tray
+    costs that slot its entry, never the check.
     """
     try:
         from backend.app.services.printer_manager import printer_manager
@@ -260,18 +254,7 @@ def _live_tray_keys(printer_id: int) -> dict[int, str]:
     if not isinstance(raw, dict):
         return {}
 
-    keys: dict[int, str] = {}
-
-    def _add(global_tray_id: int, tray: dict) -> None:
-        preset = tray.get("tray_info_idx")
-        preset = preset.strip() if isinstance(preset, str) else ""
-        if tray.get("tray_type") and preset:
-            keys[global_tray_id] = f"preset:{preset}|color:{_normalize_color_for_id(tray.get('tray_color'))}"
-        else:
-            keys[global_tray_id] = f"unmatched:tray:{global_tray_id}"
-
-    # Free-form MQTT payload on the dispatch path: a malformed unit or tray
-    # costs that slot its live key, never the check.
+    trays: dict[int, dict] = {}
     units = raw.get("ams") or []
     if isinstance(units, dict):  # also stored as the push's {"ams": [...]}
         units = units.get("ams") or []
@@ -286,7 +269,7 @@ def _live_tray_keys(printer_id: int) -> dict[int, str]:
                 ams_id, tray_id = int(unit.get("id", "")), int(tray.get("id", ""))
             except (TypeError, ValueError):
                 continue
-            _add(layout.tray_from_slot_key(ams_id, tray_id), tray)
+            trays[layout.tray_from_slot_key(ams_id, tray_id)] = tray
     vt_trays = raw.get("vt_tray") or []
     for tray in [vt_trays] if isinstance(vt_trays, dict) else vt_trays:
         if not isinstance(tray, dict):
@@ -295,8 +278,54 @@ def _live_tray_keys(printer_id: int) -> dict[int, str]:
             global_tray_id = int(tray.get("id", 254))
         except (TypeError, ValueError):
             continue
-        _add(global_tray_id, tray)
+        trays[global_tray_id] = tray
+    return trays
+
+
+def _tray_keys(trays: dict[int, dict]) -> dict[int, str]:
+    """Pooling key per ``global_tray_id``, from what the printer reports per tray.
+
+    AMS Filament Backup is the firmware's decision, and it makes it on the
+    tray's own ``tray_info_idx`` and colour. The spool rows bound to two slots
+    can disagree about that while the printer does not: an RFID-created spool
+    stores "GFA10", one set up from a user preset "PFUS..." (#1824). So a slot
+    the printer reports is keyed on the report, in the same format
+    ``_material_identity_internal`` uses; a tray with nothing in it or no
+    preset gets a key of its own, so it never pairs. Slots missing from the
+    report fall back to the bound spool.
+    """
+    keys: dict[int, str] = {}
+    for global_tray_id, tray in trays.items():
+        preset = tray.get("tray_info_idx")
+        preset = preset.strip() if isinstance(preset, str) else ""
+        if tray.get("tray_type") and preset:
+            keys[global_tray_id] = f"preset:{preset}|color:{_normalize_color_for_id(tray.get('tray_color'))}"
+        else:
+            keys[global_tray_id] = f"unmatched:tray:{global_tray_id}"
     return keys
+
+
+def _live_tray_keys(printer_id: int) -> dict[int, str]:
+    """``_tray_keys`` of what the printer reports right now."""
+    return _tray_keys(_live_trays(printer_id))
+
+
+def _ams_sees_filament_left(tray: dict | None) -> bool:
+    """True when the AMS measures this tray and still reads filament on it.
+
+    Only an RFID spool is measured: without a tag the firmware reports a
+    placeholder ``remain`` (100 on an A1 with AMS lite). The printer card
+    shows such a reading over an inventory spool at 0% (#676), so the queue
+    must not call that spool empty either (#3738).
+    """
+    if not tray or not tray.get("tray_type"):
+        return False
+    from backend.app.services.spool_tag_matcher import is_valid_tag
+
+    if not is_valid_tag(str(tray.get("tag_uid") or ""), str(tray.get("tray_uuid") or "")):
+        return False
+    remain = tray.get("remain")
+    return isinstance(remain, (int, float)) and not isinstance(remain, bool) and remain > 0
 
 
 def _extruder_side_for_ams(
@@ -507,14 +536,16 @@ async def build_slot_materials(
     printer_id: int,
     *,
     live_keys: dict[int, str] | None = None,
+    live_trays: dict[int, dict] | None = None,
 ) -> list[SlotMaterial]:
     """Every inventory-bound slot on ``printer_id``, with identity and remaining grams.
 
     Mode-agnostic: internal inventory resolves via ``SpoolAssignment`` joined to
     ``Spool`` (``label_weight`` minus ``weight_used``), Spoolman mode via
     ``SpoolmanSlotAssignment`` plus a live ``get_spool`` fetch. Slots whose
-    remaining weight can't be determined — no spool row, zero label weight,
-    Spoolman unreachable — are omitted entirely rather than reported as zero, so
+    remaining weight can't be determined — no spool row, zero label weight, a
+    spool at 0 g the AMS still measures filament on (#3738), Spoolman
+    unreachable — are omitted entirely rather than reported as zero, so
     a missing binding never manufactures a shortfall.
 
     This is the pool the AMS-Filament-Backup accounting draws on (#1762), and
@@ -523,10 +554,13 @@ async def build_slot_materials(
     warning and the dispatcher's 409 can't disagree about what backs what up.
     """
     _, ams_extruder_map, is_dual = await _get_printer_backup_context(printer_id)
-    # ``live_keys``: a caller that has keyed its own slots passes the same read,
-    # so a status push in between cannot put them in different pools.
+    # ``live_keys`` / ``live_trays``: a caller that has keyed its own slots
+    # passes the same read, so a status push in between cannot put them in
+    # different pools or call a slot empty on one side only.
+    if live_trays is None:
+        live_trays = _live_trays(printer_id)
     if live_keys is None:
-        live_keys = _live_tray_keys(printer_id)
+        live_keys = _tray_keys(live_trays)
     layout = printer_tray_layout(printer_id)
     materials: list[SlotMaterial] = []
 
@@ -613,11 +647,16 @@ async def build_slot_materials(
         weight_used = float(spool.weight_used or 0)
         if label_weight <= 0:
             continue
+        remaining = max(0.0, label_weight - weight_used)
+        global_tray_id = layout.tray_from_slot_key(assignment.ams_id, assignment.tray_id)
+        if remaining <= 0 and _ams_sees_filament_left(live_trays.get(global_tray_id)):
+            # Amount unknown, not empty (#3738): see _ams_sees_filament_left.
+            continue
         _append(
             assignment.ams_id,
             assignment.tray_id,
             _material_identity_internal(spool),
-            max(0.0, label_weight - weight_used),
+            remaining,
             _identity_from_internal(spool),
             spool.cost_per_kg,
         )
@@ -642,7 +681,8 @@ async def compute_deficit_for_queue_item(
 
     ``require_known`` also reports every printed slot whose remaining amount
     cannot be determined (no tray mapped, no spool assigned, no label weight,
-    Spoolman not answering), with ``remaining_grams=None``. Everywhere else an
+    a spool at 0 g the AMS still measures filament on, Spoolman not
+    answering), with ``remaining_grams=None``. Everywhere else an
     unknown amount lets the print through; a caller about to *start* a held
     job on its own uses this so it only does so on a positive finding.
 
@@ -713,7 +753,8 @@ async def compute_deficit_for_queue_item(
 
     spoolman_mode = await _is_spoolman_mode(db)
     backup_on, ams_extruder_map, is_dual = await _get_printer_backup_context(printer_id)
-    live_keys = _live_tray_keys(printer_id) if backup_on else {}
+    live_trays = _live_trays(printer_id)
+    live_keys = _tray_keys(live_trays) if backup_on else {}
     layout = printer_tray_layout(printer_id)
 
     # ------------------------------------------------------------------ phase 1
@@ -830,6 +871,10 @@ async def compute_deficit_for_queue_item(
                 _undetermined(req, ams_id, tray_id)
                 continue
             remaining = max(0.0, label_weight - weight_used)
+            if remaining <= 0 and _ams_sees_filament_left(live_trays.get(global_tray_id)):
+                # The inventory says empty while the AMS measures filament on
+                # the spool: amount unknown (#3738).
+                remaining = None
 
         if remaining is None:
             # Unable to determine remaining grams — preserve pre-#1762 behaviour
@@ -881,7 +926,7 @@ async def compute_deficit_for_queue_item(
     pool_by_key: dict[tuple[str, int], float] = defaultdict(float)
     required_by_key: dict[tuple[str, int], float] = defaultdict(float)
 
-    for slot in await build_slot_materials(db, printer_id, live_keys=live_keys):
+    for slot in await build_slot_materials(db, printer_id, live_keys=live_keys, live_trays=live_trays):
         pool_by_key[(slot.material_key, slot.extruder)] += slot.remaining_grams
 
     for row in resolved:

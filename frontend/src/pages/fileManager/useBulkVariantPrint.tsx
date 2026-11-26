@@ -10,7 +10,9 @@ import { planBulkPrint, promotePartialGroups, type BulkPrintPlan } from './varia
 // (#3628) rather than for the selection.
 interface PrintOverride {
   ids: number[];
-  variantFiles: { id: number; filename: string; sliced_for_model: string | null }[] | undefined;
+  variantFiles:
+    | { id: number; filename: string; sliced_for_model: string | null; clears_plate?: boolean }[]
+    | undefined;
 }
 
 type PrintQueue = { groups: GroupRow[]; loose: LibraryFileListItem[] };
@@ -97,6 +99,8 @@ export function useBulkVariantPrint({
           id: f.id,
           filename: f.filename,
           sliced_for_model: targets.get(f.id) ?? f.sliced_for_model,
+          // The file's own flag (#3576): the dialog sends what it shows per alternative.
+          clears_plate: f.clears_plate,
         })),
       });
       setPrintFile(sliced[0]);

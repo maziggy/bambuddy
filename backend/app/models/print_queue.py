@@ -136,6 +136,10 @@ class PrintQueueItem(Base):
     # Ask for a post-print outcome verdict when this job completes (#1898).
     # Copied onto the archive as confirm_requested at dispatch, like plate_id.
     confirm_outcome: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # The job clears its own plate (#3576), e.g. plate change or push-off at the end:
+    # after a successful print the queue needs no plate confirmation. Copied onto
+    # the archive at dispatch, like confirm_outcome.
+    clears_plate: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
     # Preheat / heat-soak override (#1468). 'inherit' uses the global
     # preheat_enabled setting; 'on' / 'off' force the per-item decision. The
@@ -266,6 +270,9 @@ class PrintQueueVariant(Base):
     filament_overrides: Mapped[str | None] = mapped_column(Text, nullable=True)
     required_filament_types: Mapped[str | None] = mapped_column(Text, nullable=True)
     print_time_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # This printer's slice clears its own plate (#3576); copied onto the item
+    # when this candidate wins, so each alternative decides on its own.
+    clears_plate: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
     # How many times this candidate has been dispatched and bounced back to
     # pending by the start-watchdog. The resolver tries least-attempted first, so

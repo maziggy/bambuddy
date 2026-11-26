@@ -93,11 +93,13 @@ async def _fail_closed(printer_id: int) -> None:
         logger.exception("plate changer empty notification failed for printer %s", printer_id)
 
 
-async def consume_auto_cleared_plate(printer_id: int) -> None:
+async def consume_auto_cleared_plate(printer_id: int, *, job_clears_plate: bool = False) -> None:
     """Count down a plate changer after a print that needed no plate confirmation.
 
     Does nothing for a printer without a capacity, or one that waits for the
     plate-clear confirmation after a print: someone clears that one by hand.
+    ``job_clears_plate`` says the finished job cleared its own plate (#3576):
+    it swapped the plate, so one is spent whatever the plate-clear setting says.
     Never raises, so a counting problem cannot break the print completion. When
     the count cannot be booked, the printer reads as empty until it is reset.
     """
@@ -110,9 +112,10 @@ async def consume_auto_cleared_plate(printer_id: int) -> None:
             if await db.scalar(select(Printer.plate_capacity).where(Printer.id == printer_id)) is None:
                 return None
             # Where the plate-clear gate applies, the app setting or the printer's
-            # own (#2860), someone clears the plate by hand and no plate is spent.
+            # own (#2860), someone clears the plate by hand and no plate is spent,
+            # unless the job cleared its plate itself (#3576).
             setting = setting_is_true(await get_setting(db, "require_plate_clear"))
-            if plate_clear.applies(printer_id, setting):
+            if not job_clears_plate and plate_clear.applies(printer_id, setting):
                 return None
             # One atomic statement: two prints ending together cannot both read
             # the same count, and it never goes below zero.

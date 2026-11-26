@@ -214,6 +214,12 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
 
   if (!isOpen) return null;
 
+  // Searching is what the dialog is usually opened for, so the search box
+  // takes focus on open (#3093). Only with a mouse or trackpad: on a touch
+  // screen (SpoolBuddy's kiosk, a phone) focusing it would pop the on-screen
+  // keyboard over the spool list before the user asked to type.
+  const autoFocusSearch = window.matchMedia('(pointer: fine)').matches;
+
   // Filter out spools already assigned to other slots
   const assignedSpoolIds = new Set(
     (assignments || [])
@@ -462,6 +468,7 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
                 value={searchFilter}
                 onChange={(e) => setSearchFilter(e.target.value)}
                 placeholder={t('inventory.searchSpools')}
+                autoFocus={autoFocusSearch}
                 className="w-full pl-9 pr-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder:text-bambu-gray focus:outline-none focus:border-bambu-green"
               />
             </div>

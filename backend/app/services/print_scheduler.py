@@ -1543,6 +1543,28 @@ def _order_printers(
     return sorted(printers, key=_wear_order)
 
 
+def finish_needs_plate_confirmation(
+    override: bool | None, require_plate_clear: bool, *, job_clears_plate: bool = False
+) -> bool:
+    """Whether a printer waits for someone to confirm its plate after a print.
+
+    ``override`` is the printer's own setting (#2860): True and False decide on
+    their own, None follows the app setting. Without ``job_clears_plate`` this
+    is ``plate_clear.applies``. A job that clears its own plate needs no
+    confirmation where the app setting would otherwise ask for it (#3576).
+    """
+    if override is not None:
+        return override
+    return require_plate_clear and not job_clears_plate
+
+
+async def load_plate_clear_policy(db: AsyncSession, printer_id: int) -> tuple[bool | None, bool]:
+    """The printer's own plate-clear setting and the app setting, read now."""
+    from backend.app.api.routes.settings import get_setting, setting_is_true
+
+    return plate_clear.override(printer_id), setting_is_true(await get_setting(db, "require_plate_clear"))
+
+
 class PrintScheduler:
     """Background scheduler that processes the print queue."""
 
@@ -5118,6 +5140,8 @@ class PrintScheduler:
         item.nozzle_rack_choice = variant.nozzle_rack_choice
         item.filament_overrides = variant.filament_overrides
         item.required_filament_types = variant.required_filament_types
+        # The chosen printer's slice decides whether its plate clears itself (#3576).
+        item.clears_plate = variant.clears_plate
         if variant.print_time_seconds is not None:
             # The row carried the shortest candidate's estimate so SJF could order
             # it before a printer was known; now that one is chosen, record what is
@@ -11137,6 +11161,7 @@ class PrintScheduler:
             # archive that already asked keeps asking.
             if item.confirm_outcome:
                 archive.confirm_requested = True
+            archive.clears_plate = item.clears_plate  # the job's own plate clearing rides along (#3576)
 
             file_path = settings.base_dir / archive.file_path
             filename = archive.filename
@@ -11239,6 +11264,7 @@ class PrintScheduler:
                     item.archive_id = archive.id
                     if item.confirm_outcome:
                         archive.confirm_requested = True  # ask-for-outcome opt-in (#1898)
+                    archive.clears_plate = item.clears_plate  # the job's own plate clearing rides along (#3576)
                     if budget_reservation is not None:
                         budget_reservation.print_archive_id = archive.id
                     if item.cleanup_library_after_dispatch and not library_file.is_external:

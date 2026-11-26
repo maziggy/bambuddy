@@ -1933,12 +1933,39 @@ def extract_support_filament_slots_from_3mf(zf: zipfile.ZipFile) -> set[int]:
         return set()
     if not isinstance(cfg, dict):
         return set()
-    if not supports_enabled_in_config(cfg):
-        return set()
+    return process_slots_in_config(cfg)
+
+
+# Process keys whose value names a filament slot (1..N, 0 = "the object's own
+# filament"). The support pair only counts while supports are on; the region
+# pickers (walls, surfaces, infill) count whenever they name a slot (#3736).
+SUPPORT_SLOT_KEYS = ("support_filament", "support_interface_filament")
+REGION_SLOT_KEYS = (
+    "outer_wall_filament_id",
+    "inner_wall_filament_id",
+    "top_surface_filament_id",
+    "bottom_surface_filament_id",
+    "internal_solid_filament_id",
+    "sparse_infill_filament_id",
+)
+
+
+def process_slots_in_config(cfg: dict[str, object]) -> set[int]:
+    """The slots a set of process settings prints with beyond the object geometry.
+
+    Support / support-interface slots while supports are on, and the slots
+    the region pickers name (walls, surfaces, infill). Read from a 3MF's
+    ``project_settings.config`` above, and by the slice route from the
+    settings the slice really runs with (#3736): a slot picked in the slice
+    dialog lives only there.
+    """
+    # A preset JSON may carry a value as a one-element list.
+    cfg = {k: v[0] if isinstance(v, list) and len(v) == 1 else v for k, v in cfg.items()}
+    keys = REGION_SLOT_KEYS + (SUPPORT_SLOT_KEYS if supports_enabled_in_config(cfg) else ())
     out: set[int] = set()
-    for key in ("support_filament", "support_interface_filament"):
+    for key in keys:
         raw = cfg.get(key)
-        if raw is None:
+        if not isinstance(raw, (int, str)):
             continue
         try:
             slot = int(raw)

@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import type { AMSUnit, AMSTray } from '../../api/client';
-import { amsUnitSlotCount, getEmptySlotKind, getFillBarColor, isAms3hUnit, spoolBuddyAmsName } from '../../utils/amsHelpers';
+import { amsUnitSlotCount, getEmptySlotKind, getFillBarColor, inventoryFillOverAms, isAms3hUnit, spoolBuddyAmsName } from '../../utils/amsHelpers';
 
 function trayColorToCSS(color: string | null): string {
   if (!color) return '#808080';
@@ -146,8 +146,8 @@ function SpoolSlot({ tray, slotIndex, isActive, fillOverride, spoolmanFill, acce
   const emptyKind = getEmptySlotKind(tray);
   const color = trayColorToCSS(tray.tray_color);
   const amsFill = tray.remain !== null && tray.remain !== undefined && tray.remain >= 0 ? tray.remain : null;
-  // If inventory says 0% but AMS reports positive remain, prefer AMS (#676)
-  const resolvedOverride = (fillOverride === 0 && amsFill !== null && amsFill > 0) ? null : fillOverride;
+  // An RFID spool the AMS still reads filament on wins over an inventory at 0% (#676, #3738)
+  const resolvedOverride = inventoryFillOverAms(fillOverride, tray);
   // Fill level fallback chain: Spoolman → Inventory → AMS remain
   const effectiveFill = spoolmanFill ?? resolvedOverride ?? amsFill;
 

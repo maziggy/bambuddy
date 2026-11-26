@@ -494,8 +494,8 @@ describe('printing a selection with groups', () => {
     await user.click(dialogPrint());
     await waitFor(() => expect(posted).toHaveLength(1));
     expect(posted[0].variants).toEqual([
-      { library_file_id: 21, plate_id: null },
-      { library_file_id: 22, plate_id: null },
+      { library_file_id: 21, plate_id: null, clears_plate: false },
+      { library_file_id: 22, plate_id: null, clears_plate: false },
     ]);
     expect(posted[0].library_file_id).toBeUndefined();
   });

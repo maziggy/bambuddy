@@ -29,6 +29,11 @@ def load_overrides(rows: dict[int, bool | None]) -> None:
         set_override(printer_id, value)
 
 
+def override(printer_id: int) -> bool | None:
+    """The printer's own setting; None when it follows the app setting."""
+    return _overrides.get(printer_id)
+
+
 def applies(printer_id: int, setting: bool) -> bool:
     """Whether the gate applies to this printer, given the app setting."""
     return _overrides.get(printer_id, setting)

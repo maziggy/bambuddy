@@ -2,7 +2,7 @@
  * Tests for the LibraryFileDetailsModal component (#3077).
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
@@ -10,9 +10,11 @@ import { LibraryFileDetailsModal } from '../../components/LibraryFileDetailsModa
 import type { LibraryFileListItem } from '../../api/client';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
+import { setAuthToken } from '../../api/client';
 
 const listItem: LibraryFileListItem = {
   id: 7,
+  clears_plate: false,
   folder_id: null,
   is_external: false,
   filename: 'benchy.gcode.3mf',
@@ -121,7 +123,7 @@ describe('LibraryFileDetailsModal', () => {
     await user.click(saveButton);
 
     await waitFor(() => {
-      expect(lastUpdate).toEqual({ notes: 'Use 0.2 mm layers', external_url: 'https://example.com/part' });
+      expect(lastUpdate).toEqual({ notes: 'Use 0.2 mm layers', external_url: 'https://example.com/part', clears_plate: false });
     });
     await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
@@ -135,7 +137,7 @@ describe('LibraryFileDetailsModal', () => {
     await user.click(screen.getByRole('button', { name: /save/i }));
 
     await waitFor(() => {
-      expect(lastUpdate).toEqual({ notes: 'Print with brim', external_url: '' });
+      expect(lastUpdate).toEqual({ notes: 'Print with brim', external_url: '', clears_plate: false });
     });
   });
 
@@ -148,6 +150,55 @@ describe('LibraryFileDetailsModal', () => {
     expect(screen.queryByRole('button', { name: /save/i })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Add photo')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Delete photo')).not.toBeInTheDocument();
+  });
+
+  it('seeds the clears-plate toggle from the details and saves it (#3576)', async () => {
+    const user = userEvent.setup();
+    render(<LibraryFileDetailsModal file={listItem} canEdit onClose={onClose} />);
+
+    const toggle = await screen.findByRole('checkbox', { name: /clears the plate automatically/i });
+    await screen.findByDisplayValue('Print with brim');
+    expect(toggle).not.toBeChecked();
+    const saveButton = screen.getByRole('button', { name: /save/i });
+    expect(saveButton).toBeDisabled();
+
+    await user.click(toggle);
+    expect(toggle).toBeChecked();
+    // The toggle alone marks the form dirty.
+    expect(saveButton).toBeEnabled();
+    await user.click(saveButton);
+
+    await waitFor(() => {
+      expect(lastUpdate).toEqual({
+        notes: 'Print with brim',
+        external_url: 'https://www.printables.com/model/1',
+        clears_plate: true,
+      });
+    });
+  });
+
+  it('shows a flagged file as checked and saves clearing it (#3576)', async () => {
+    server.use(http.get('/api/v1/library/files/7', () => HttpResponse.json({ ...details, clears_plate: true })));
+    const user = userEvent.setup();
+    render(<LibraryFileDetailsModal file={listItem} canEdit onClose={onClose} />);
+
+    const toggle = await screen.findByRole('checkbox', { name: /clears the plate automatically/i });
+    await waitFor(() => expect(toggle).toBeChecked());
+    expect(screen.getByRole('button', { name: /save/i })).toBeDisabled();
+
+    await user.click(toggle);
+    await user.click(screen.getByRole('button', { name: /save/i }));
+
+    await waitFor(() => expect(lastUpdate?.clears_plate).toBe(false));
+  });
+
+  it('disables the clears-plate toggle without edit permission (#3576)', async () => {
+    server.use(http.get('/api/v1/library/files/7', () => HttpResponse.json({ ...details, clears_plate: true })));
+    render(<LibraryFileDetailsModal file={listItem} canEdit={false} onClose={onClose} />);
+
+    const toggle = await screen.findByRole('checkbox', { name: /clears the plate automatically/i });
+    await waitFor(() => expect(toggle).toBeChecked());
+    expect(toggle).toBeDisabled();
   });
 
   it('removes a photo from the grid after deleting it', async () => {
@@ -329,5 +380,53 @@ describe('LibraryFileDetailsModal', () => {
         expect(screen.queryByText('Photo 1 of 1')).not.toBeInTheDocument();
       });
     });
+  });
+});
+
+// A signed-in user who may do everything here except confirm a cleared plate.
+function signInWithoutClearPlate(permissions: string[] = []) {
+  setAuthToken('test-token', 'session');
+  server.use(
+    http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+    http.get('*/api/v1/auth/me', () =>
+      HttpResponse.json({ id: 7, username: 'helper', is_admin: false, permissions }),
+    ),
+  );
+}
+
+describe('LibraryFileDetailsModal clears-plate toggle without printers:clear_plate (#3576)', () => {
+  const toggle = () => screen.findByRole('checkbox', { name: /clears the plate automatically/i });
+
+  afterEach(() => {
+    setAuthToken(null);
+  });
+
+  it('cannot switch an unflagged file on and says why', async () => {
+    server.use(http.get('/api/v1/library/files/7', () => HttpResponse.json(details)));
+    signInWithoutClearPlate(['library:update_all']);
+    render(<LibraryFileDetailsModal file={listItem} canEdit onClose={vi.fn()} />);
+
+    const checkbox = await toggle();
+    await waitFor(() => expect(checkbox).toBeDisabled());
+    expect(checkbox).not.toBeChecked();
+    expect(checkbox.closest('label')).toHaveAttribute('title', 'You do not have permission to control printers');
+    // The rest of the form stays editable.
+    expect(await screen.findByDisplayValue('Print with brim')).toBeEnabled();
+  });
+
+  it('can switch a flagged file off and back on', async () => {
+    server.use(http.get('/api/v1/library/files/7', () => HttpResponse.json({ ...details, clears_plate: true })));
+    signInWithoutClearPlate(['library:update_all']);
+    const user = userEvent.setup();
+    render(<LibraryFileDetailsModal file={listItem} canEdit onClose={vi.fn()} />);
+
+    const checkbox = await toggle();
+    await waitFor(() => expect(checkbox).toBeChecked());
+    await new Promise((r) => setTimeout(r, 150));
+    await user.click(checkbox);
+    expect(checkbox).not.toBeChecked();
+    expect(checkbox).toBeEnabled();
+    await user.click(checkbox);
+    expect(checkbox).toBeChecked();
   });
 });

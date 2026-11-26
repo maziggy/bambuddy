@@ -76,6 +76,35 @@ describe('FilamentHoverCard', () => {
     });
   });
 
+  describe('remaining grams (#3738)', () => {
+    const spoolAt = (grams: number) => ({
+      id: 7, material: 'PLA', subtype: null, brand: 'eSun', color_name: 'Black', remainingWeightGrams: grams,
+    });
+
+    it('shows the spool record grams next to its own fill', async () => {
+      renderWithHover(
+        <FilamentHoverCard data={{ ...baseFilamentData, fillLevel: 40, fillSource: 'inventory' }} inventory={{ assignedSpool: spoolAt(400) }}>
+          <div>trigger</div>
+        </FilamentHoverCard>
+      );
+      vi.advanceTimersByTime(100);
+
+      await waitFor(() => expect(screen.getByText('• 400g')).toBeInTheDocument());
+    });
+
+    it('leaves them out next to an AMS reading they contradict', async () => {
+      renderWithHover(
+        <FilamentHoverCard data={{ ...baseFilamentData, fillLevel: 100, fillSource: 'ams' }} inventory={{ assignedSpool: spoolAt(0) }}>
+          <div>trigger</div>
+        </FilamentHoverCard>
+      );
+      vi.advanceTimersByTime(100);
+
+      await waitFor(() => expect(screen.getByText('100%')).toBeInTheDocument());
+      expect(screen.queryByText('• 0g')).not.toBeInTheDocument();
+    });
+  });
+
   describe('fill source badge transparency (#11)', () => {
     it('never shows a Spoolman-source badge — UI stays mode-agnostic', async () => {
       renderWithHover(

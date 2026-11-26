@@ -40,6 +40,7 @@ async def _weight_after_ams_push(
     weight_used: float = 100,
     weight_locked: bool = False,
     loaded_as_unlocked: bool = False,
+    remain: int = 50,
 ) -> float:
     """``loaded_as_unlocked``: the sync loads the spool unlocked at 100 g, as
     it was before a hand edit that committed right after that load."""
@@ -62,7 +63,7 @@ async def _weight_after_ams_push(
     await db_session.commit()
     spool_id = spool.id
 
-    ams_data = [{"id": 0, "tray": [{"id": 0, "tray_type": "PLA", "tray_color": "FF0000FF", "remain": 50}]}]
+    ams_data = [{"id": 0, "tray": [{"id": 0, "tray_type": "PLA", "tray_color": "FF0000FF", "remain": remain}]}]
     status = MagicMock()
     status.raw_data = {"ams": {"ams": ams_data}}
     status.state = state
@@ -110,6 +111,17 @@ async def test_no_sync_while_printing_without_a_tracker_session(test_engine, db_
 @pytest.mark.integration
 async def test_syncs_when_idle(test_engine, db_session, printer_factory):
     assert await _weight_after_ams_push(test_engine, db_session, printer_factory, "IDLE") == 500
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_weight_that_already_reads_as_the_printers_percentage_is_kept(test_engine, db_session, printer_factory):
+    """559.4 g left of 1000 g, sent to the slot as 559 g, reads back as 55 %:
+    no sign of more use, and 450 g used would only lose the 9.4 g."""
+    weight = await _weight_after_ams_push(
+        test_engine, db_session, printer_factory, "IDLE", weight_used=440.6, remain=55
+    )
+    assert weight == 440.6
 
 
 @pytest.mark.asyncio

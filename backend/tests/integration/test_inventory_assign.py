@@ -2705,3 +2705,57 @@ class TestAutoUnlinkZeroColourIsBlank:
         await TestAutoUnlinkOccupiedSlot._run(printer.id, ams_data, _make_printing_status(ams_data, state="RUNNING"))
 
         assert not await self._exists(db_session, assignment_id)
+
+
+class TestAssignSendsTheSpoolsWeight:
+    """The spool's remaining weight goes with the slot's filament setting, as in
+    Spoolman mode, so the printer stops reporting remain -1 for it."""
+
+    BAMBU_TRAY_UUID = "EB335968299543078925C71D83DA3864"
+    OTHER_TRAY_UUID = "438DD55FE022481AB5746C3FC00498A2"
+
+    async def _then_weight(self, async_client, printer_factory, spool, tray=None):
+        printer = await printer_factory(name="H3C", model="H3C")
+        mock_client = MagicMock()
+        status = _make_mock_status(ams_data=[{"id": 32, "tray": [{"id": 4, "tray_type": "PLA", **(tray or {})}]}])
+        with patch("backend.app.services.printer_manager.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            mock_pm.get_status.return_value = status
+            mock_pm.get_model.return_value = "H3C"
+            response = await async_client.post(
+                "/api/v1/inventory/assignments",
+                json={"spool_id": spool.id, "printer_id": printer.id, "ams_id": 32, "tray_id": 4},
+            )
+        assert response.status_code == 200
+        return mock_client.ams_set_filament_setting.call_args.kwargs["then_weight"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_an_untagged_spool_sends_its_remaining_weight(
+        self, async_client: AsyncClient, printer_factory, spool_factory
+    ):
+        from backend.app.services.slot_filament_weight import FilamentWeight
+
+        spool = await spool_factory(label_weight=1000, weight_used=34.6)
+        assert await self._then_weight(async_client, printer_factory, spool) == FilamentWeight(1000, 965)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_bambu_spool_is_capped_at_1000_g(self, async_client: AsyncClient, printer_factory, spool_factory):
+        from backend.app.services.slot_filament_weight import FilamentWeight
+
+        spool = await spool_factory(label_weight=1250, weight_used=100, tray_uuid=self.BAMBU_TRAY_UUID)
+        weight = await self._then_weight(async_client, printer_factory, spool, {"tray_uuid": self.BAMBU_TRAY_UUID})
+        assert weight == FilamentWeight(1250, 1000, rfid=True)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_no_weight_to_a_tray_holding_another_spools_tag(
+        self, async_client: AsyncClient, printer_factory, spool_factory
+    ):
+        """The spool is assigned, but the AMS reads another inventory spool's tag in the slot."""
+        await spool_factory(tray_uuid=self.OTHER_TRAY_UUID)
+        spool = await spool_factory()
+        assert (
+            await self._then_weight(async_client, printer_factory, spool, {"tray_uuid": self.OTHER_TRAY_UUID}) is None
+        )

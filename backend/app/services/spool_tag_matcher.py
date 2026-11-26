@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from backend.app.models.spool import Spool
 from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.schemas.spool import effect_type_from_subtype
-from backend.app.services import slot_unlink_grace, spool_swaps
+from backend.app.services import slot_filament_weight, slot_unlink_grace, spool_swaps
 from backend.app.services.color_catalog_lookup import resolve_bambu_color
 from backend.app.services.slot_nozzle import resolve_slot_nozzle
 from backend.app.services.spool_filament_preset import printer_safe_filament_id, resolve_spool_preset
@@ -742,6 +742,9 @@ async def auto_assign_spool(
     await db.flush()
     await spool_swaps.record_assignment(db, printer_id, ams_id, tray_id, spool.id, spool_swaps.INVENTORY)
     slot_unlink_grace.forget_slot(printer_id, ams_id, tray_id)
+    # Linked to its slot: the reinsertion pass in on_ams_change sends the slot
+    # the spool's remaining weight (slot_filament_weight).
+    slot_filament_weight.mark_pending((printer_id, ams_id, tray_id))
 
     # Apply K-profile via MQTT (if available)
     # NOTE: Do NOT send ams_set_filament_setting here. This function is only

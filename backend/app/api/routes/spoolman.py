@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool, spoolman_net_weight
-from backend.app.api.routes.spoolman_inventory import _announce_freed_slots, _clear_stale_tag_links
+from backend.app.api.routes.spoolman_inventory import _announce_freed_slots, _clear_stale_tag_links, _live_slot_tray
 from backend.app.core.auth import (
     RequestPrinterScope,
     RequirePermissionIfAuthEnabled,
@@ -33,6 +33,7 @@ from backend.app.services.ams_slot_presence import spool_present
 from backend.app.services.inventory_mode import spoolman_owns_assignments
 from backend.app.services.printer_manager import PrinterManager, printer_manager
 from backend.app.services.slicer_filament_resolver import resolve_slicer_filament
+from backend.app.services.slot_filament_weight import SPOOLMAN, filament_weight, is_rfid_tray, weight_handled
 from backend.app.services.slot_nozzle import resolve_slot_nozzle
 from backend.app.services.spool_filament_preset import resolve_spoolman_preset
 from backend.app.services.spoolman import (
@@ -1168,6 +1169,15 @@ async def link_spool(
                         "printer" if printer_kp else "stored",
                     )
 
+                # The spool's weight follows the setting, as on a slot
+                # assignment. The tag in the tray was just linked to this
+                # spool, so the grams are this tray's.
+                link_tray = _live_slot_tray(state, a_id, t_id)
+                then_weight = filament_weight(
+                    spoolman_net_weight(spool_data),
+                    spool_data.get("remaining_weight"),
+                    rfid=is_rfid_tray(link_tray),
+                )
                 mqtt_client.ams_set_filament_setting(
                     ams_id=a_id,
                     tray_id=t_id,
@@ -1178,7 +1188,9 @@ async def link_spool(
                     nozzle_temp_min=temp_min,
                     nozzle_temp_max=temp_max,
                     setting_id=effective_setting_id,
+                    then_weight=then_weight,
                 )
+                weight_handled((p_id, a_id, t_id), (SPOOLMAN, spool_id))
 
                 sent_cali_idx: int | None = None
                 if matching_kp and matching_kp.cali_idx is not None:

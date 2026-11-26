@@ -88,6 +88,14 @@ from backend.app.services.location_service import (
 )
 from backend.app.services.material_number import apply_material_number_inheritance
 from backend.app.services.slicer_filament_resolver import resolve_slicer_filament, reusable_slot_filament_id
+from backend.app.services.slot_filament_weight import (
+    INVENTORY,
+    inventory_weight,
+    is_rfid_tray,
+    reads_as,
+    tray_tags,
+    weight_handled,
+)
 from backend.app.services.slot_nozzle import resolve_slot_nozzle
 from backend.app.services.spool_csv import (
     MAX_CSV_IMPORT_BYTES,
@@ -346,6 +354,33 @@ async def apply_spool_to_slot_via_mqtt(
             "printer" if printer_kp else "stored",
         )
 
+    # The spool's weight follows the setting, so the printer shows the
+    # inventory's remaining amount instead of none. A Bambu Lab spool's
+    # remaining weight is capped at 1000 g, as in Bambu Studio.
+    live_tray = None
+    raw = getattr(state, "raw_data", None) if state is not None else None
+    if isinstance(raw, dict) and ams_id != 255:
+        units = raw.get("ams", [])
+        live_tray = _find_tray_in_ams_data(units.get("ams", []) if isinstance(units, dict) else units, ams_id, tray_id)
+    then_weight = inventory_weight(spool.label_weight, spool.weight_used, rfid=is_rfid_tray(live_tray))
+    # Not to a tray whose tag says another spool is in it: those grams are not
+    # this spool's. A tag the inventory doesn't know yet is no such sign, and
+    # this assignment says which spool it is.
+    if then_weight is not None and live_tray and tray_tags(live_tray):
+        from backend.app.services.spool_tag_matcher import get_spool_by_tag as find_spool_by_tag
+
+        holder = await find_spool_by_tag(db, live_tray.get("tag_uid") or "", live_tray.get("tray_uuid") or "")
+        if holder is not None and holder.id != spool.id:
+            logger.info(
+                "Not sending spool %d's weight to printer %d AMS%d-T%d: the tag in the tray is spool %d's",
+                spool.id,
+                printer_id,
+                ams_id,
+                tray_id,
+                holder.id,
+            )
+            then_weight = None
+
     client.ams_set_filament_setting(
         ams_id=ams_id,
         tray_id=tray_id,
@@ -356,7 +391,10 @@ async def apply_spool_to_slot_via_mqtt(
         nozzle_temp_min=temp_min,
         nozzle_temp_max=temp_max,
         setting_id=effective_setting_id,
+        then_weight=then_weight,
     )
+    # This fill has its weight; the reinsertion pass doesn't send it again.
+    weight_handled((printer_id, ams_id, tray_id), (INVENTORY, spool.id))
 
     if matching_kp and matching_kp.cali_idx is not None:
         # filament_id for cali_sel must match the preset under which the kp
@@ -3366,7 +3404,8 @@ async def sync_weights_from_ams(
     Overwrites the database weight_used for every assigned spool using the
     current AMS remain% from connected printers.  This is a manual recovery
     tool — it bypasses the normal "only increase" guard, and the weight lock
-    a hand-set or weighed figure carries, which it releases.
+    a hand-set or weighed figure carries, which it releases. A spool whose
+    weight already reads as that remain% keeps it.
 
     A printer that is printing is left alone: its print's usage is charged
     when it completes, on top of whatever weight the spool has by then.
@@ -3443,8 +3482,21 @@ async def sync_weights_from_ams(
             continue
 
         lw = spool.label_weight or 1000
-        new_used = round(lw * (100 - remain_val) / 100.0, 1)
         old_used = spool.weight_used or 0
+        # The printer's percentage is rounded down: a figure that already
+        # comes to it is the precise one (slot_filament_weight.reads_as).
+        if reads_as(lw, lw - old_used, remain_val, rfid=is_rfid_tray(tray)):
+            logger.info(
+                "AMS weight sync: spool %d keeps weight_used %s, which already reads as remain=%d%%",
+                spool.id,
+                old_used,
+                remain_val,
+            )
+            # The figure agrees with the AMS; the override still applies.
+            spool.weight_locked = False
+            skipped += 1
+            continue
+        new_used = round(lw * (100 - remain_val) / 100.0, 1)
 
         if round(old_used, 1) != new_used:
             logger.info(

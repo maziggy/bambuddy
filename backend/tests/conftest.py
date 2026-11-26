@@ -270,6 +270,17 @@ def reset_slot_unlink_grace():
 
 
 @pytest.fixture(autouse=True)
+def reset_slot_filament_weight():
+    """Forget which slots had their Spoolman weight: kept per printer id, which
+    every test database hands out the same."""
+    from backend.app.services import slot_filament_weight
+
+    slot_filament_weight.reset()
+    yield
+    slot_filament_weight.reset()
+
+
+@pytest.fixture(autouse=True)
 def reset_usage_tracker_sessions():
     """Drop the usage tracker's in-flight print sessions between tests.
 

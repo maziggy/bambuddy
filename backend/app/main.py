@@ -3569,10 +3569,17 @@ async def on_ams_change(printer_id: int, ams_data: list):
                                 except (TypeError, ValueError):
                                     remain_val = -1
                                 if 1 <= remain_val <= 100:
+                                    from backend.app.services.slot_filament_weight import is_rfid_tray, reads_as
+
                                     lw = existing_assignment.spool.label_weight or 1000
                                     new_used = round(lw * (100 - remain_val) / 100.0, 1)
                                     current_used = existing_assignment.spool.weight_used or 0
-                                    if new_used > current_used + 1:
+                                    # The printer rounds its percentage down, so a figure
+                                    # that already comes to it is no sign of more use: the
+                                    # weight Bambuddy sent the slot reads back up to 1 % low.
+                                    if new_used > current_used + 1 and not reads_as(
+                                        lw, lw - current_used, remain_val, rfid=is_rfid_tray(tray)
+                                    ):
                                         # Rechecked in the statement: the spool was loaded
                                         # before this, and a weight set by hand (or weighed)
                                         # and locked since then must stay (WL-6).
@@ -3998,6 +4005,219 @@ async def on_ams_change(printer_id: int, ams_data: list):
 
     except Exception as e:
         logging.getLogger(__name__).error("Spoolman AMS sync failed for printer %s: %s", printer_id, e)
+    finally:
+        # After the sync, which may just have linked a spool to its slot. In a
+        # finally because the sync returns early with the built-in inventory,
+        # in manual mode, or when it can't reach Spoolman, and the weight is
+        # wanted all the same.
+        await _sync_slot_weights(printer_id, ams_data, _print_active)
+
+
+async def _sync_slot_weights(printer_id: int, ams_data: list, printing: bool) -> None:
+    """Give a refilled slot its spool's remaining weight again, from the inventory in use.
+
+    The printer doesn't always keep a slot's weight when its spool comes out:
+    an untagged tray has come back as ``remain: -1``, a Bambu Lab spool with
+    the printer's own estimate. A slot seen empty, or just linked to a spool by
+    the AMS sync, gets its spool's weight on its next fill, and so does one
+    reporting no weight at all (services/slot_filament_weight). Only on a model
+    that takes it, only once per fill, and never while a print runs or is
+    still being charged: the empty slot is noted then, and the weight goes out
+    on the first push after it. A tray with an RFID tag gets it only when the
+    tag is the assigned spool's: a slot keeps its spool after it reads empty,
+    for a while and for the rest of a print, so the spool back in it may be
+    another one. The built-in inventory's spools are read from the database,
+    Spoolman's from Spoolman.
+    """
+    logger = logging.getLogger(__name__)
+    try:
+        from backend.app.api.routes._spoolman_helpers import spoolman_net_weight
+        from backend.app.services import slot_filament_weight as weights
+        from backend.app.services.ams_slot_presence import spool_present
+        from backend.app.services.inventory_mode import spoolman_owns_assignments
+        from backend.app.services.spoolman import SpoolmanUnavailableError
+        from backend.app.utils.printer_models import supports_filament_remain_edit
+
+        mqtt_client = printer_manager.get_client(printer_id)
+        if mqtt_client is None or not supports_filament_remain_edit(getattr(mqtt_client, "model", None)):
+            return
+
+        filled: dict[tuple[int, int], dict] = {}
+        for ams_unit in ams_data or []:
+            if not isinstance(ams_unit, dict):
+                continue
+            ams_id = int(ams_unit.get("id", 0))
+            for tray in ams_unit.get("tray", []) or []:
+                if not isinstance(tray, dict):
+                    continue
+                tray_id = int(tray.get("id", 0))
+                if spool_present(tray) is False:
+                    weights.mark_pending((printer_id, ams_id, tray_id))
+                # Only a slot with a filament set: like Bambu Studio, the weight
+                # follows a filament setting.
+                elif (tray.get("tray_type") or "").strip():
+                    filled[(ams_id, tray_id)] = tray
+        if printing or not filled:
+            return
+
+        async with async_session() as db:
+            if not await spoolman_owns_assignments(db):
+                await _sync_inventory_slot_weights(db, printer_id, mqtt_client, filled)
+                return
+
+            from backend.app.api.routes.settings import get_setting
+            from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+
+            rows = (
+                (
+                    await db.execute(
+                        select(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.printer_id == printer_id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            due = [
+                (row.ams_id, row.tray_id, row.spoolman_spool_id)
+                for row in rows
+                if (row.ams_id, row.tray_id) in filled
+                and weights.needs_weight(
+                    (printer_id, row.ams_id, row.tray_id),
+                    (weights.SPOOLMAN, row.spoolman_spool_id),
+                    filled[(row.ams_id, row.tray_id)],
+                )
+            ]
+            if not due:
+                return
+            client = await get_spoolman_client()
+            if client is None:
+                spoolman_url = await get_setting(db, "spoolman_url")
+                if not spoolman_url:
+                    return
+                client = await init_spoolman_client(spoolman_url)
+
+        for ams_id, tray_id, spool_id in due:
+            slot = (printer_id, ams_id, tray_id)
+            tray = filled[(ams_id, tray_id)]
+            try:
+                spool = await client.get_spool(spool_id)
+            except SpoolmanUnavailableError as e:
+                # Not marked: the next push tries again. The other slots wait
+                # too, and an outage is logged once, not per slot and push.
+                if weights.spoolman_failed():
+                    logger.warning("Spoolman is unreachable, slot weights wait until it answers: %s", e)
+                break
+            except Exception as e:
+                # Not marked: the next push tries again.
+                logger.warning("Could not read Spoolman spool %s for its slot weight: %s", spool_id, e)
+                continue
+            if weights.spoolman_answered():
+                logger.info("Spoolman answers again, sending the slot weights that waited")
+            weight = weights.filament_weight(
+                spoolman_net_weight(spool), spool.get("remaining_weight"), rfid=weights.is_rfid_tray(tray)
+            )
+            tags = weights.tray_tags(tray)
+            if (
+                weight is not None
+                and weights.tray_remain(tray) != weight.percent
+                and tags
+                and not weights.spool_tags(spool) & tags
+            ):
+                # The slot keeps its spool after it reads empty, for a while and
+                # for the rest of a print, so a tagged spool in it now may be
+                # another one. Only its own tag says it is the assigned spool.
+                try:
+                    holder = weights.tag_holder(await client.get_spools(), tags)
+                except Exception as e:
+                    logger.warning("Could not search Spoolman for the tag in AMS%d-T%d: %s", ams_id, tray_id, e)
+                    holder = None
+                    whose = "could not be looked up"
+                else:
+                    whose = f"is spool {holder.get('id')}'s" if holder else "is not in Spoolman"
+                if holder is None or holder.get("id") != spool_id:
+                    _skip_slot_weight("Spoolman spool", slot, (weights.SPOOLMAN, spool_id), whose)
+                    continue
+            _send_slot_weight(mqtt_client, "Spoolman spool", slot, (weights.SPOOLMAN, spool_id), tray, weight)
+    except Exception as e:
+        logger.warning("Slot weight sync failed for printer %s: %s", printer_id, e, exc_info=True)
+
+
+async def _sync_inventory_slot_weights(db, printer_id: int, mqtt_client, filled: dict[tuple[int, int], dict]) -> None:
+    """The built-in inventory's part of _sync_slot_weights: its spools' weights are in the database."""
+    from sqlalchemy.orm import selectinload
+
+    from backend.app.models.spool_assignment import SpoolAssignment
+    from backend.app.services import slot_filament_weight as weights
+    from backend.app.services.spool_tag_matcher import get_spool_by_tag
+
+    rows = (
+        (
+            await db.execute(
+                select(SpoolAssignment)
+                .where(SpoolAssignment.printer_id == printer_id)
+                .options(selectinload(SpoolAssignment.spool))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for row in rows:
+        slot = (printer_id, row.ams_id, row.tray_id)
+        key = (weights.INVENTORY, row.spool_id)
+        tray = filled.get((row.ams_id, row.tray_id))
+        if tray is None or row.spool is None or not weights.needs_weight(slot, key, tray):
+            continue
+        weight = weights.inventory_weight(
+            row.spool.label_weight, row.spool.weight_used, rfid=weights.is_rfid_tray(tray)
+        )
+        if weight is not None and weights.tray_remain(tray) != weight.percent and weights.tray_tags(tray):
+            # As with Spoolman: only the spool's own tag says it is the one back in the slot.
+            holder = await get_spool_by_tag(db, tray.get("tag_uid") or "", tray.get("tray_uuid") or "")
+            if holder is None or holder.id != row.spool_id:
+                whose = f"is spool {holder.id}'s" if holder else "is not in the inventory"
+                _skip_slot_weight("Spool", slot, key, whose)
+                continue
+        _send_slot_weight(mqtt_client, "Spool", slot, key, tray, weight)
+
+
+def _skip_slot_weight(label: str, slot: tuple[int, int, int], spool: tuple[str, int], whose: str) -> None:
+    """Leave a refilled slot without its assigned spool's weight: the tag in the tray says another spool is in it."""
+    from backend.app.services import slot_filament_weight as weights
+
+    printer_id, ams_id, tray_id = slot
+    logging.getLogger(__name__).info(
+        "%s %d in printer %d AMS%d-T%d: not sending its weight, the tag in the tray %s",
+        label,
+        spool[1],
+        printer_id,
+        ams_id,
+        tray_id,
+        whose,
+    )
+    weights.weight_handled(slot, spool)
+
+
+def _send_slot_weight(
+    mqtt_client, label: str, slot: tuple[int, int, int], spool: tuple[str, int], tray: dict, weight
+) -> None:
+    """Send a refilled slot its spool's weight, unless the tray already shows it, and note the fill as done."""
+    from backend.app.services import slot_filament_weight as weights
+
+    printer_id, ams_id, tray_id = slot
+    if weight is not None and weights.tray_remain(tray) != weight.percent:
+        logging.getLogger(__name__).info(
+            "%s %d in printer %d AMS%d-T%d: sending its weight, %d of %d g",
+            label,
+            spool[1],
+            printer_id,
+            ams_id,
+            tray_id,
+            weight.remain,
+            weight.total,
+        )
+        if not mqtt_client.ams_set_filament_weight(ams_id, tray_id, weight) and not mqtt_client.state.connected:
+            return  # Not marked: tried again once the printer is back.
+    weights.weight_handled(slot, spool)
 
 
 # Largest finish photo attached to a notification; a bigger one is still linked.

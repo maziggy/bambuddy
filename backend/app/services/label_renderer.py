@@ -482,7 +482,8 @@ def _draw_label_tight(
 ) -> None:
     """Tight layout (h < 20 mm). Swatch + brand/material/hex/ID, no QR.
 
-    Only those four lines fit, so they are the only ``fields`` it honours.
+    Only those four lines fit, so they are the only ``fields`` it honours;
+    12 mm tape, too low for the ID under them, also prints the name (#3612).
     """
     # Monochrome: drop the colour swatch (see _draw_label_roomy) and give the
     # width to the text column (#1870).
@@ -500,16 +501,28 @@ def _draw_label_tight(
 
     c.setFillColor(black)
 
+    brand_size, sub_size, id_size = 6.5, 5, 13
+    # 12 mm tape prints 9 mm (#3612): too low for the spool ID under the brand
+    # and material lines, which it would print over. There the ID stands at the
+    # right-hand end, on at most 40 % of the width, and the line this frees
+    # below the material takes the name.
+    id_beside = "spool_id" in fields and inner_h < brand_size + 0.6 + sub_size + id_size
+    if id_beside:
+        id_text = f"#{data.spool_id}"
+        id_w = min(_text_width(id_text, FONT_BOLD, id_size), text_w * 0.4)
+        id_size = id_w / _text_width(id_text, FONT_BOLD, 1)
+        c.setFont(FONT_BOLD, id_size)
+        c.drawString(text_x + text_w - id_w, inner_y + (inner_h - 0.72 * id_size) / 2, id_text)
+        text_w -= id_w + pad
+
     # Top: brand — bumped to bold + larger per the #809 follow-up so it's the
     # easiest thing to read on a small AMS holder at arm's length.
-    brand_size = 6.5
     if data.brand and "brand" in fields:
         c.setFont(FONT_BOLD, brand_size)
         brand = _truncate_to_width(c, data.brand, FONT_BOLD, brand_size, text_w)
         _draw_text(c, text_x, y + h - pad - brand_size, brand, FONT_BOLD, brand_size)
 
     # Second line: material + subtype, small
-    sub_size = 5
     sub_line = " ".join(filter(None, [data.material, data.subtype])) if "material" in fields else ""
     sub_y_baseline = y + h - pad - brand_size - 0.6 - sub_size
     if sub_line:
@@ -520,6 +533,14 @@ def _draw_label_tight(
     # Third line (when there's room): hex code, tiny — useful when the user
     # has multiple near-identical colours in the same material family.
     hex_code = _hex_code_label(data.rgba) if "hex" in fields else ""
+    if id_beside:
+        # One line is left. The name takes it, cut where the line ends, unless
+        # it only repeats a line above; the hex code has it otherwise.
+        name = data.name if "name" in fields and data.name not in (data.brand, data.subtype) else ""
+        third = _truncate_to_width(c, name or hex_code, FONT_REGULAR, sub_size, text_w)
+        if third:
+            _draw_text(c, text_x, sub_y_baseline - 0.6 - sub_size, third, FONT_REGULAR, sub_size)
+        return
     if hex_code:
         hex_size = 4.5
         hex_y = sub_y_baseline - 0.4 - hex_size
@@ -531,7 +552,6 @@ def _draw_label_tight(
     # Bottom: BIG spool ID — the killer field at-a-glance.
     if "spool_id" not in fields:
         return
-    id_size = 13
     c.setFont(FONT_BOLD, id_size)
     id_text = _truncate_to_width(c, f"#{data.spool_id}", FONT_BOLD, id_size, text_w)
     c.drawString(text_x, inner_y + 0.5, id_text)

@@ -163,10 +163,8 @@ describe('SpoolFormModal profile defaults (#1326)', () => {
   it('an untouched bulk add leaves every copy to the backend', async () => {
     renderForm();
     await waitFor(() => expect(mApi.resolveProfileDefault).toHaveBeenCalled());
-    const quickAddToggle = screen
-      .getAllByRole('button')
-      .find((btn) => btn.className.includes('rounded-full') && btn.closest('div')?.textContent?.includes('Quick Add'));
-    fireEvent.click(quickAddToggle!);
+    const quickAddToggle = screen.getByRole('switch', { name: /Quick Add/ });
+    fireEvent.click(quickAddToggle);
     const quantity = (await screen.findByText('Quantity')).parentElement!.querySelector('input') as HTMLInputElement;
     fireEvent.change(quantity, { target: { value: '2' } });
     submit();

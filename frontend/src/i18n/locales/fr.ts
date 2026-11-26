@@ -6058,6 +6058,7 @@ export default {
     labelPrintFailed: 'Bobine enregistrée, mais l\'étiquette n\'a pas pu être imprimée : {{msg}}',
     labelPrintFailedPartial: 'Bobine enregistrée, mais l\'impression s\'est arrêtée après {{printed}} étiquettes sur {{total}} : {{msg}}',
     spoolsCreated: '{{count}} bobines créées',
+    createCopies: 'Créer {{count}} copies',
     spoolsPartiallyCreated: '{{created}} sur {{total}} bobines créées (certaines ont échoué)',
     spoolCreated: 'Bobine créée',
     spoolUpdated: 'Bobine mise à jour',

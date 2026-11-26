@@ -5847,6 +5847,7 @@ export default {
     labelPrintFailed: "Катушка сохранена, но этикетку напечатать не удалось: {{msg}}",
     labelPrintFailedPartial: "Катушка сохранена, но печать остановилась после {{printed}} из {{total}} этикеток: {{msg}}",
     spoolsCreated: "Создано катушек: {{count}}",
+    createCopies: "Создать копий: {{count}}",
     spoolsPartiallyCreated: "Создано {{created}} из {{total}} катушек; часть операций завершилась ошибкой",
     spoolCreated: "Катушка создана",
     spoolUpdated: "Катушка обновлена",

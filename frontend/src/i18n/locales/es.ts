@@ -6075,6 +6075,7 @@ export default {
     labelPrintFailed: 'Bobina guardada, pero no se pudo imprimir la etiqueta: {{msg}}',
     labelPrintFailedPartial: 'Bobina guardada, pero la impresión se detuvo tras {{printed}} de {{total}} etiquetas: {{msg}}',
     spoolsCreated: '{{count}} bobinas creadas',
+    createCopies: 'Crear {{count}} copias',
     spoolsPartiallyCreated: '{{created}} de {{total}} bobinas creadas (algunas fallaron)',
     spoolCreated: 'Bobina creada',
     spoolUpdated: 'Bobina actualizada',

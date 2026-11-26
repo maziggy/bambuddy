@@ -6057,6 +6057,7 @@ export default {
     labelPrintFailed: 'Bobina salvata, ma non è stato possibile stampare l\'etichetta: {{msg}}',
     labelPrintFailedPartial: 'Bobina salvata, ma la stampa si è interrotta dopo {{printed}} etichette su {{total}}: {{msg}}',
     spoolsCreated: '{{count}} bobine create',
+    createCopies: 'Crea {{count}} copie',
     spoolsPartiallyCreated: '{{created}} di {{total}} bobine create (alcune non riuscite)',
     spoolCreated: 'Bobina creata',
     spoolUpdated: 'Bobina aggiornata',

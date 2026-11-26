@@ -193,6 +193,8 @@ export interface FilamentSectionProps extends SectionProps {
   // validateForm. Drives the " *" markers so the form never advertises a
   // requirement it won't enforce (#1905).
   detailsRequired: boolean;
+  // Show the Quantity field: quick-add mode and copy mode.
+  showQuantity: boolean;
   quantity: number;
   onQuantityChange: (value: number) => void;
   errors?: Partial<Record<keyof SpoolFormData, string>>;

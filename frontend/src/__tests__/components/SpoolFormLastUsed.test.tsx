@@ -230,7 +230,7 @@ describe('SpoolFormModal last used values (#3619)', () => {
     renderForm();
     await screen.findByText(/Started with your last spool/);
     // Different material typed would need the combobox; the remembered one is enough for a quick add.
-    fireEvent.click(document.querySelector('button.rounded-full')!);
+    fireEvent.click(screen.getByRole('switch', { name: /Quick Add/ }));
     submit();
     await waitFor(() => expect(mApi.createSpool).toHaveBeenCalled());
     await waitFor(() => expect(JSON.parse(store.get(KEY)!).label_weight).toBe(1000));
@@ -241,7 +241,7 @@ describe('SpoolFormModal last used values (#3619)', () => {
     store.set(KEY, JSON.stringify({ v: 1, material: 'PETG' }));
     renderForm();
     await screen.findByText(/Started with your last spool/);
-    fireEvent.click(document.querySelector('button.rounded-full')!);
+    fireEvent.click(screen.getByRole('switch', { name: /Quick Add/ }));
     await waitFor(() => expect(document.querySelector('input[max="100"]')).not.toBeNull());
     fireEvent.change(document.querySelector('input[max="100"]')!, { target: { value: '2' } });
     submit();
@@ -409,7 +409,7 @@ describe('SpoolFormModal last used values (#3619)', () => {
     renderForm();
     await screen.findByText(/Started with your last spool/);
     await settle();
-    fireEvent.click(document.querySelector('button.rounded-full')!);
+    fireEvent.click(screen.getByRole('switch', { name: /Quick Add/ }));
     await waitFor(() => expect(document.querySelector('input[max="100"]')).not.toBeNull());
     fireEvent.change(document.querySelector('input[max="100"]')!, { target: { value: '2' } });
     submit();
@@ -423,7 +423,7 @@ describe('SpoolFormModal last used values (#3619)', () => {
     store.set(KEY, JSON.stringify({ ...remembered, location_id: undefined }));
     renderForm();
     await settle();
-    fireEvent.click(document.querySelector('button.rounded-full')!);
+    fireEvent.click(screen.getByRole('switch', { name: /Quick Add/ }));
     await waitFor(() => expect(document.querySelector('input[max="100"]')).not.toBeNull());
     fireEvent.change(document.querySelector('input[max="100"]')!, { target: { value: '2' } });
     submit();
@@ -437,7 +437,7 @@ describe('SpoolFormModal last used values (#3619)', () => {
       await waitFor(() => expect(JSON.parse(store.get(key)!)).toHaveProperty('preset_from_default'));
       return JSON.parse(store.get(key)!).supplier_ids;
     };
-    const quickAdd = () => fireEvent.click(document.querySelector('button.rounded-full')!);
+    const quickAdd = () => fireEvent.click(screen.getByRole('switch', { name: /Quick Add/ }));
 
     afterEach(() => {
       mApi.createSpool.mockResolvedValue({ id: 99 });

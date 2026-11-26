@@ -397,7 +397,7 @@ describe('SpoolFormModal relaxed edit/copy validation (#1905)', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Add Spool' })).toBeInTheDocument());
 
     // Turn Quick Add on — the preset field disappears.
-    fireEvent.click(screen.getByText('Quick Add (Stock)').closest('div')!.parentElement!.querySelector('button')!);
+    fireEvent.click(screen.getByRole('switch', { name: /Quick Add/ }));
     await waitFor(() =>
       expect(screen.queryByPlaceholderText('Search filament presets...')).not.toBeInTheDocument(),
     );

@@ -6108,6 +6108,7 @@ export default {
     labelPrintFailed: "Котушку збережено, але етикетку надрукувати не вдалося: {{msg}}",
     labelPrintFailedPartial: "Котушку збережено, але друк зупинився після {{printed}} з {{total}} етикеток: {{msg}}",
     spoolsCreated: "Створено котушок: {{count}}",
+    createCopies: "Створити копій: {{count}}",
     spoolsPartiallyCreated: "{{created}} з {{total}} котушок створено (деякі не вдалося)",
     spoolCreated: "Котушку створено",
     spoolUpdated: "Котушку оновлено",

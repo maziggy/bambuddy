@@ -6144,6 +6144,7 @@ errors: {
     labelPrintFailed: 'Spolen sparades, men etiketten kunde inte skrivas ut: {{msg}}',
     labelPrintFailedPartial: 'Spolen sparades, men utskriften stoppade efter {{printed}} av {{total}} etiketter: {{msg}}',
     spoolsCreated: '{{count}} rullar skapade',
+    createCopies: 'Skapa {{count}} kopior',
     spoolsPartiallyCreated: '{{created}} av {{total}} rullar skapade (några misslyckades)',
     spoolCreated: 'Rulle skapad',
     spoolUpdated: 'Rulle uppdaterad',

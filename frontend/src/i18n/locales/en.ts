@@ -6115,6 +6115,7 @@ export default {
     labelPrintFailed: 'Spool saved, but the label could not be printed: {{msg}}',
     labelPrintFailedPartial: 'Spool saved, but the label printing stopped after {{printed}} of {{total}} labels: {{msg}}',
     spoolsCreated: '{{count}} spools created',
+    createCopies: 'Create {{count}} copies',
     spoolsPartiallyCreated: '{{created}} of {{total}} spools created (some failed)',
     spoolCreated: 'Spool created',
     spoolUpdated: 'Spool updated',

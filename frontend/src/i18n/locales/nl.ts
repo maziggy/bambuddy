@@ -6113,6 +6113,7 @@ export default {
     labelPrintFailed: 'Spoel opgeslagen, maar het label kon niet worden afgedrukt: {{msg}}',
     labelPrintFailedPartial: 'Spoel opgeslagen, maar het afdrukken stopte na {{printed}} van {{total}} labels: {{msg}}',
     spoolsCreated: '{{count}} spoelen gemaakt',
+    createCopies: '{{count}} kopieën maken',
     spoolsPartiallyCreated: '{{created}} van {{total}} spoelen gemaakt (sommige mislukt)',
     spoolCreated: 'Spoel gemaakt',
     spoolUpdated: 'Spoel bijgewerkt',

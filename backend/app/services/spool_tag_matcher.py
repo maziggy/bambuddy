@@ -32,10 +32,6 @@ CASCADE_TAG = "88"
 # reports the SAK of level 1, so its 88 form always comes with this bit set.
 SAK_UID_INCOMPLETE = 0x04
 
-# The spool catalog row an RFID roll arrives on, as #2909 named it. Since #3727
-# the lookup goes by the Bambu Lab brand default instead; the #2909 repair
-# migration still reads the row by this name.
-BAMBU_PLASTIC_SPOOL_CATALOG_NAME = "Bambu Lab - Plastic Low Temp"
 # The empty-spool weight of a Bambu roll when the catalogue has no Bambu Lab default.
 BAMBU_PLASTIC_SPOOL_CORE_WEIGHT = 250
 BAMBU_BRAND = "Bambu Lab"

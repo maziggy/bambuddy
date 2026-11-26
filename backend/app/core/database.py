@@ -5939,6 +5939,9 @@ async def _run_migrations(conn):
     # after the #2909 repair, which reads the Bambu row by name.
     await _safe_execute(conn, "ALTER TABLE spool_catalog ADD COLUMN manufacturer VARCHAR(100)")
     await _safe_execute(conn, "ALTER TABLE spool_catalog ADD COLUMN default_for_brand BOOLEAN DEFAULT FALSE")
+    # Before the brand defaults, so a catalogue that gets both at once has the
+    # Bambu Lab default put on the renamed row.
+    await _migrate_one_bambu_plastic_spool_row(conn)
     await _migrate_spool_catalog_brand_defaults(conn)
 
     # Migration: the Bambu PLA Silk+ colours were seeded under "PLA Silk", so
@@ -7713,6 +7716,59 @@ async def _migrate_drop_ams_slot_locations(conn) -> None:
         )
 
 
+# The seeded Bambu plastic rows before #3727 made them one, and their seeded weights.
+_BAMBU_PLASTIC_ROW_BEFORE_3727 = "Bambu Lab - Plastic Low Temp"
+_BAMBU_PLASTIC_ROWS_DROPPED_3727 = {"Bambu Lab - Plastic High Temp": 216, "Bambu Lab - Plastic White": 253}
+
+
+async def _migrate_one_bambu_plastic_spool_row(conn) -> None:
+    """Make the seeded Bambu plastic rows one "Bambu Lab - Plastic" row, once (#3727).
+
+    The Low Temp row is renamed in place, so spools that point at it and a
+    weight the user corrected carry over; not when the user already has a row
+    of the new name. The High Temp and White rows go when they still are as
+    seeded (same weight, not a brand default) and no spool points at them;
+    otherwise they stay. An empty catalogue is left for seed_spool_catalog().
+    """
+    from sqlalchemy import text
+
+    from backend.app.core.catalog_defaults import DEFAULT_BRAND_SPOOLS
+
+    flag = "_migrate_3727_one_bambu_plastic_row_done"
+    new_name = DEFAULT_BRAND_SPOOLS["Bambu Lab"]
+
+    async with conn.begin_nested():
+        already = (
+            await conn.execute(text('SELECT value FROM settings WHERE "key" = :k'), {"k": flag})
+        ).scalar_one_or_none()
+        if already:
+            return
+
+        names = {n.upper() for (n,) in (await conn.execute(text("SELECT name FROM spool_catalog"))).fetchall()}
+        renamed = removed = 0
+        if names and new_name.upper() not in names:
+            renamed = (
+                await conn.execute(
+                    text("UPDATE spool_catalog SET name = :new WHERE name = :old AND is_default = :on"),
+                    {"new": new_name, "old": _BAMBU_PLASTIC_ROW_BEFORE_3727, "on": True},
+                )
+            ).rowcount
+        for name, weight in _BAMBU_PLASTIC_ROWS_DROPPED_3727.items():
+            removed += (
+                await conn.execute(
+                    text(
+                        "DELETE FROM spool_catalog WHERE name = :name AND weight = :weight AND is_default = :on "
+                        "AND default_for_brand = :off "
+                        "AND id NOT IN (SELECT core_weight_catalog_id FROM spool WHERE core_weight_catalog_id IS NOT NULL)"
+                    ),
+                    {"name": name, "weight": weight, "on": True, "off": False},
+                )
+            ).rowcount
+        if renamed or removed:
+            logger.info("Spool catalog (#3727): one Bambu Lab plastic row; renamed %d, removed %d", renamed, removed)
+        await conn.execute(text('INSERT INTO settings ("key", value) VALUES (:k, :v)'), {"k": flag, "v": "true"})
+
+
 # Seeded spool rows #3727 added. The migration adds them to an existing
 # catalogue; it never puts back other seeded rows a user deleted.
 _SPOOL_CATALOG_ROWS_ADDED_3727 = ("Sunlu - Plastic V3 + Cardboard Core",)
@@ -7852,14 +7908,13 @@ async def _migrate_repair_rfid_core_weight(conn) -> None:
     """
     from sqlalchemy import bindparam, text
 
-    # The same two values the creating path uses, imported rather than repeated:
-    # a repair that looked for a different row than the code writes would leave
-    # the tare it was built to correct in place. Imported inside the function to
+    # The row the creating path used when this repair was written, under the
+    # name it had then: this runs before #3727 renames it to "Bambu Lab - Plastic".
+    # The weight is imported rather than repeated. Imported inside the function to
     # keep this module free of a service-layer dependency at import time.
-    from backend.app.services.spool_tag_matcher import (
-        BAMBU_PLASTIC_SPOOL_CATALOG_NAME,
-        BAMBU_PLASTIC_SPOOL_CORE_WEIGHT,
-    )
+    from backend.app.services.spool_tag_matcher import BAMBU_PLASTIC_SPOOL_CORE_WEIGHT
+
+    BAMBU_PLASTIC_SPOOL_CATALOG_NAME = "Bambu Lab - Plastic Low Temp"
 
     flag = "_backfill_2909_rfid_core_weight_done"
 

@@ -190,8 +190,7 @@ class TestMigration:
     @pytest.mark.asyncio
     async def test_adds_the_new_sunlu_row_and_the_brand_defaults(self, engine, sm):
         async with sm() as db:
-            db.add(_seeded("Bambu Lab - Plastic High Temp", 216))
-            db.add(_seeded("Bambu Lab - Plastic Low Temp", 250))
+            db.add(_seeded("Bambu Lab - Plastic", 250))
             db.add(_seeded("Sunlu - Plastic V3", 179))
             await db.commit()
 
@@ -202,7 +201,7 @@ class TestMigration:
         assert rows[SUNLU_CORE].is_default
         assert rows[SUNLU_CORE].manufacturer == "Sunlu"
         defaults = {r.name for r in rows.values() if r.default_for_brand}
-        assert defaults == {"Bambu Lab - Plastic Low Temp", SUNLU_CORE}
+        assert defaults == {"Bambu Lab - Plastic", SUNLU_CORE}
 
     @pytest.mark.asyncio
     async def test_keeps_a_brand_default_the_user_already_set(self, engine, sm):
@@ -341,7 +340,13 @@ class TestUpgrade:
             await run_migrations(conn)
 
         rows = await _rows(sm)
-        low_temp = rows["Bambu Lab - Plastic Low Temp"]
+        # Low Temp renamed in place and the default; High Temp and White, which
+        # no spool uses once #2909 has repaired the tare, are gone
+        low_temp = rows["Bambu Lab - Plastic"]
+        assert low_temp.default_for_brand
+        assert not {"Bambu Lab - Plastic Low Temp", "Bambu Lab - Plastic High Temp", "Bambu Lab - Plastic White"} & set(
+            rows
+        )
         async with sm() as db:
             spool = (await db.execute(select(Spool))).scalar_one()
             assert (spool.core_weight, spool.core_weight_catalog_id, spool.weight_used) == (250, low_temp.id, 134)

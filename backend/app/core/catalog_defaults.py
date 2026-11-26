@@ -26,9 +26,12 @@ DEFAULT_SPOOL_CATALOG: list[tuple[str, int]] = [
     ("Atomic Filament - Plastic", 272),
     ("Aurapol - Plastic", 220),
     ("Azure Film - Plastic", 163),
-    ("Bambu Lab - Plastic High Temp", 216),
-    ("Bambu Lab - Plastic Low Temp", 250),
-    ("Bambu Lab - Plastic White", 253),
+    # Bambu's reusable spool with the cardboard core its rolls ship on (#3727),
+    # once three rows: Low Temp 250, High Temp 216 and White 253. 216 g looks like
+    # a bare spool and 253 g like the same spool with its ~37 g core; with the
+    # core in, high-temp and low-temp spools weigh about the same (236-245 g
+    # weighed for #3727, 245-260 g reported by others).
+    ("Bambu Lab - Plastic", 250),
     ("BQ - Plastic", 218),
     ("Colorfabb - Plastic", 236),
     ("Colorfabb 750g - Cardboard", 152),
@@ -104,7 +107,7 @@ DEFAULT_SPOOL_CATALOG: list[tuple[str, int]] = [
 # Seeding and Reset mark these rows default_for_brand, and the migration does so
 # on an existing catalogue unless the brand already has a default there.
 DEFAULT_BRAND_SPOOLS: dict[str, str] = {
-    "Bambu Lab": "Bambu Lab - Plastic Low Temp",
+    "Bambu Lab": "Bambu Lab - Plastic",
     "Sunlu": "Sunlu - Plastic V3 + Cardboard Core",
 }
 

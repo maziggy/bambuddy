@@ -3,7 +3,6 @@
 import pytest
 from sqlalchemy import inspect, select
 
-from backend.app.core.catalog_defaults import seed_spool_row
 from backend.app.models.color_catalog import ColorCatalogEntry
 from backend.app.models.spool import Spool
 from backend.app.models.spool_assignment import SpoolAssignment
@@ -1533,18 +1532,27 @@ async def test_find_matching_untagged_gradient_no_match_basic(db_session):
 
 
 async def _seed_bambu_spool_catalog(db_session):
-    """Seed the three Bambu Lab rows in DEFAULT_SPOOL_CATALOG order, as seeding does.
+    """Seed the three Bambu Lab rows the catalogue had when #2909 was fixed.
 
     High Temp is inserted first on purpose: that is the row the old prefix query
     returned, so any test that expects 250 here would have failed before the fix.
-    Seeding marks Low Temp the Bambu Lab default (#3727), which the lookup follows.
+    Low Temp is marked the Bambu Lab default, as the #3727 migration does, and
+    the lookup follows that.
     """
     for name, weight in (
         ("Bambu Lab - Plastic High Temp", 216),
         ("Bambu Lab - Plastic Low Temp", 250),
         ("Bambu Lab - Plastic White", 253),
     ):
-        db_session.add(SpoolCatalogEntry(**seed_spool_row(name, weight)))
+        db_session.add(
+            SpoolCatalogEntry(
+                name=name,
+                weight=weight,
+                is_default=True,
+                manufacturer="Bambu Lab",
+                default_for_brand=name.endswith("Low Temp"),
+            )
+        )
     await db_session.flush()
 
 

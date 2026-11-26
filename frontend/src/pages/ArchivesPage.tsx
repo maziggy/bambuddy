@@ -3930,6 +3930,17 @@ export function ArchivesPage() {
   const paginatedArchives = showAll
     ? filteredArchives
     : filteredArchives?.slice(pageIndex * effectivePageSize, (pageIndex + 1) * effectivePageSize);
+  // Shared by the bars above and below the grid/list results (#3079), so the
+  // two copies can never drift apart on page size or page-change handling.
+  const paginationBarProps = {
+    pageIndex,
+    pageSize,
+    totalRows: totalFiltered,
+    totalPages,
+    onPageChange: setPageIndex,
+    onPageSizeChange: (size: number) => { setPageSize(size); setPageIndex(0); },
+    t,
+  };
 
   // Jump to the page containing the highlighted archive
   useEffect(() => {
@@ -4637,6 +4648,7 @@ export function ArchivesPage() {
         </Card>
       ) : viewMode === 'grid' ? (
         <>
+          <ArchivePaginationBar {...paginationBarProps} placement="top" />
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {paginatedArchives?.map((archive) => (
               <ArchiveCard
@@ -4658,18 +4670,11 @@ export function ArchivesPage() {
               />
             ))}
           </div>
-          <ArchivePaginationBar
-            pageIndex={pageIndex}
-            pageSize={pageSize}
-            totalRows={totalFiltered}
-            totalPages={totalPages}
-            onPageChange={setPageIndex}
-            onPageSizeChange={(size) => { setPageSize(size); setPageIndex(0); }}
-            t={t}
-          />
+          <ArchivePaginationBar {...paginationBarProps} />
         </>
       ) : viewMode === 'list' ? (
         <>
+          <ArchivePaginationBar {...paginationBarProps} placement="top" />
           <Card>
             <div className="divide-y divide-bambu-dark-tertiary">
               {/* List Header */}
@@ -4700,15 +4705,7 @@ export function ArchivesPage() {
               ))}
             </div>
           </Card>
-          <ArchivePaginationBar
-            pageIndex={pageIndex}
-            pageSize={pageSize}
-            totalRows={totalFiltered}
-            totalPages={totalPages}
-            onPageChange={setPageIndex}
-            onPageSizeChange={(size) => { setPageSize(size); setPageIndex(0); }}
-            t={t}
-          />
+          <ArchivePaginationBar {...paginationBarProps} />
         </>
       ) : viewMode === 'log' ? (
         <div className="space-y-4">
@@ -5174,8 +5171,15 @@ export function ArchivesPage() {
 
 /* Pagination bar for archives grid/list views */
 function ArchivePaginationBar({
-  pageIndex, pageSize, totalRows, totalPages, onPageChange, onPageSizeChange, t,
+  pageIndex, pageSize, totalRows, totalPages, onPageChange, onPageSizeChange, t, placement = 'bottom',
 }: {
+  /**
+   * 'top' is the extra copy above the results (#3079), so a long page can be
+   * paged without scrolling to the bottom first (painful on a phone). It only
+   * shows when there is actually another page to go to; the bottom bar keeps
+   * its old behaviour of also staying visible in "All" mode for the size picker.
+   */
+  placement?: 'top' | 'bottom';
   pageIndex: number;
   pageSize: number;
   totalRows: number;
@@ -5185,10 +5189,13 @@ function ArchivePaginationBar({
   t: (key: string) => string;
 }) {
   const isShowAll = pageSize === -1;
-  if (totalPages <= 1 && !isShowAll) return null;
+  if (totalPages <= 1 && (!isShowAll || placement === 'top')) return null;
   const effectiveSize = isShowAll ? totalRows || 1 : pageSize;
   return (
-    <div className="flex items-center justify-between pt-2 text-sm">
+    <div
+      className={`flex items-center justify-between text-sm ${placement === 'top' ? 'pb-2' : 'pt-2'}`}
+      data-testid={`archive-pagination-${placement}`}
+    >
       <span className="text-bambu-gray">
         {isShowAll
           ? `${totalRows} ${t('archives.prints')}`

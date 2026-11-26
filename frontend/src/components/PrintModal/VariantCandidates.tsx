@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { useQueries } from '@tanstack/react-query';
-import { ArrowDown, ArrowUp, Layers, Printer as PrinterIcon } from 'lucide-react';
+import { ArrowDown, ArrowUp, Eraser, Layers, Printer as PrinterIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 
@@ -9,6 +9,8 @@ export interface VariantCandidate {
   id: number;
   filename: string;
   sliced_for_model: string | null;
+  /** The file's own clears_plate flag (#3576); the toggle's starting value. */
+  clears_plate?: boolean;
 }
 
 interface VariantCandidatesProps {
@@ -17,6 +19,16 @@ interface VariantCandidatesProps {
   /** file id -> chosen plate, for the multi-plate candidates only. */
   plateByFile: Record<number, number | null>;
   onPlateChange: (fileId: number, plateId: number | null) => void;
+  /** file id -> the value the user toggled (#3576). Files absent here show
+   *  their own flag and are sent without one. */
+  clearsPlateByFile?: Record<number, boolean>;
+  /** Offers the per-file "Clears plate" toggle (alternatives only: it is the
+   *  slice that ends with a push-off, and the printer that runs it is chosen
+   *  later). Omitted, a flagged file only shows a read-only marker. */
+  onClearsPlateChange?: (fileId: number, value: boolean) => void;
+  /** False without printers:clear_plate: a file that does not clear its plate
+   *  cannot be switched on, one that does can still be switched off (#3576). */
+  canSetClearsPlate?: boolean;
   /** Told whether every file's plate list has answered and every multi-plate
    *  file has a plate chosen; until then a submit would send no plate. */
   onPlatesReadyChange?: (ready: boolean) => void;
@@ -59,6 +71,9 @@ export function VariantCandidates({
   onReorder,
   plateByFile,
   onPlateChange,
+  clearsPlateByFile,
+  onClearsPlateChange,
+  canSetClearsPlate = true,
   onPlatesReadyChange,
   readOnly = false,
   readOnlyNote,
@@ -66,6 +81,9 @@ export function VariantCandidates({
   help,
 }: VariantCandidatesProps) {
   const { t } = useTranslation();
+  // Without the permission a file that does not clear its plate stays off (#3576).
+  const clearsPlateLocked = (candidate: VariantCandidate) =>
+    !canSetClearsPlate && !candidate.clears_plate && !clearsPlateByFile?.[candidate.id];
 
   const plateQueries = useQueries({
     // Read-only mode shows a job that is already queued — its plates were
@@ -131,6 +149,13 @@ export function VariantCandidates({
       </div>
       {helpText !== '' && <p className="text-xs text-bambu-gray mb-2">{helpText}</p>}
 
+      {!readOnly && onClearsPlateChange && (
+        <p className="sm:hidden flex items-center gap-1 text-[11px] text-bambu-gray mb-1">
+          <Eraser className="w-3 h-3 shrink-0" />
+          {t('printModal.variants.clearsPlateLegend')}
+        </p>
+      )}
+
       <div className="space-y-2">
         {candidates.map((candidate, index) => {
           const plates = platesByFile[candidate.id];
@@ -167,6 +192,39 @@ export function VariantCandidates({
                     ))}
                   </select>
                 </label>
+              )}
+
+              {!readOnly && onClearsPlateChange && (
+                <label
+                  className={`flex items-center gap-1 text-xs text-bambu-gray shrink-0 ${
+                    clearsPlateLocked(candidate) ? 'opacity-60' : 'cursor-pointer'
+                  }`}
+                  title={
+                    clearsPlateLocked(candidate)
+                      ? t('printers.permission.noControl')
+                      : t('printModal.variants.clearsPlateFor', { filename: candidate.filename })
+                  }
+                >
+                  <input
+                    type="checkbox"
+                    className="accent-bambu-green"
+                    aria-label={t('printModal.variants.clearsPlateFor', { filename: candidate.filename })}
+                    checked={clearsPlateByFile?.[candidate.id] ?? !!candidate.clears_plate}
+                    onChange={(e) => onClearsPlateChange(candidate.id, e.target.checked)}
+                    disabled={clearsPlateLocked(candidate)}
+                  />
+                  <Eraser className="w-3 h-3" />
+                  <span className="hidden sm:inline">{t('printModal.variants.clearsPlate')}</span>
+                </label>
+              )}
+              {readOnly && candidate.clears_plate && (
+                <span
+                  className="flex items-center gap-1 text-xs text-cyan-700 dark:text-cyan-300 shrink-0"
+                  title={t('printModal.variants.clearsPlateTitle')}
+                >
+                  <Eraser className="w-3 h-3" />
+                  {t('printModal.variants.clearsPlate')}
+                </span>
               )}
 
               {!readOnly && (

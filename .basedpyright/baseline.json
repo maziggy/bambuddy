@@ -288,14 +288,6 @@
                     "endColumn": 27,
                     "lineCount": 1
                 }
-            },
-            {
-                "code": "reportUnusedExcept",
-                "range": {
-                    "startColumn": 19,
-                    "endColumn": 31,
-                    "lineCount": 1
-                }
             }
         ],
         "./backend/app/api/routes/cloud.py": [
@@ -2510,14 +2502,6 @@
                     "endColumn": 24,
                     "lineCount": 1
                 }
-            },
-            {
-                "code": "reportArgumentType",
-                "range": {
-                    "startColumn": 46,
-                    "endColumn": 54,
-                    "lineCount": 1
-                }
             }
         ],
         "./backend/app/services/library_folder_access.py": [
@@ -4094,14 +4078,6 @@
                 "range": {
                     "startColumn": 60,
                     "endColumn": 75,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportArgumentType",
-                "range": {
-                    "startColumn": 69,
-                    "endColumn": 84,
                     "lineCount": 1
                 }
             }

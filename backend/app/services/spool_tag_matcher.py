@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from backend.app.models.spool import Spool
 from backend.app.models.spool_assignment import SpoolAssignment
-from backend.app.schemas.spool import normalize_effect_type
+from backend.app.schemas.spool import effect_type_from_subtype
 from backend.app.services import slot_unlink_grace, spool_swaps
 from backend.app.services.color_catalog_lookup import resolve_bambu_color
 from backend.app.services.slot_nozzle import resolve_slot_nozzle
@@ -147,16 +147,8 @@ async def resolve_tray_fields(db: AsyncSession, tray_data: dict) -> dict:
     # ("Wood", "Silk", "Dual Color" are values of both). A subtype that names
     # no effect -- Basic, Tough, CF -- leaves it NULL, which is the honest
     # answer rather than a guessed overlay.
-    # "Silk+" is the same finish as "Silk" with a plus on the product name, so
-    # the trailing sign is dropped on a second attempt rather than costing the
-    # roll its overlay.
-    if effect_type is None and subtype:
-        for candidate in (subtype, subtype.rstrip("+")):
-            try:
-                effect_type = normalize_effect_type(candidate)
-            except ValueError:
-                continue
-            break
+    if effect_type is None:
+        effect_type = effect_type_from_subtype(subtype)
 
     # Resolve slicer filament name from builtin table
     slicer_filament_name = None
@@ -303,12 +295,12 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
     return spool
 
 
-async def find_matching_untagged_spool(db: AsyncSession, tray_data: dict) -> Spool | None:
-    """Find an existing untagged Bambu inventory spool matching material/color.
+async def find_untagged_candidates(db: AsyncSession, tray_data: dict) -> list[Spool]:
+    """Untagged Bambu inventory spools a newly read tag could belong to, best first.
 
     When a Bambu Lab spool is detected in the AMS but no tag match exists,
     check if the user has a manually-added spool with the same properties
-    that hasn't been linked to a tag yet. Returns the best match (#918):
+    that hasn't been linked to a tag yet (#918):
 
     - **Brand**: only consider spools whose brand is unspecified or contains
       "bambu" (case-insensitive — covers both "Bambu" and "Bambu Lab" as
@@ -318,15 +310,17 @@ async def find_matching_untagged_spool(db: AsyncSession, tray_data: dict) -> Spo
       "Basic"), but fall back to a NULL-subtype spool — the form's Quick Add
       mode leaves subtype empty, so bulk-logged spools rely on this fallback
       to attract their RFID tag instead of duplicating on first AMS read.
-    - **FIFO** within each preference group (user likely logged in purchase
-      order).
+
+    Returns the best preference group only (the exact-subtype spools when
+    there are any, else the NULL-subtype ones), oldest first: the user likely
+    logged them in purchase order.
     """
     tray_type = tray_data.get("tray_type", "")
     tray_sub_brands = tray_data.get("tray_sub_brands", "")
     tray_color = tray_data.get("tray_color", "")  # RRGGBBAA
 
     if not tray_type or not tray_color:
-        return None
+        return []
 
     # Parse material the same way create_spool_from_tray does
     material = tray_type
@@ -354,26 +348,22 @@ async def find_matching_untagged_spool(db: AsyncSession, tray_data: dict) -> Spo
             subtype = "Tri Color"
 
     # Active, untagged spools matching material + color + Bambu-or-unset brand.
-    query = (
-        select(Spool)
-        .options(selectinload(Spool.k_profiles), selectinload(Spool.assignments))
-        .where(
-            Spool.archived_at.is_(None),
-            Spool.tag_uid.is_(None),
-            Spool.tray_uuid.is_(None),
-            func.upper(Spool.material) == material.upper(),
-            func.upper(Spool.rgba) == tray_color.upper(),
-            or_(
-                Spool.brand.is_(None),
-                func.lower(Spool.brand).like("%bambu%"),
-            ),
-        )
+    query = select(Spool).where(
+        Spool.archived_at.is_(None),
+        Spool.tag_uid.is_(None),
+        Spool.tray_uuid.is_(None),
+        func.upper(Spool.material) == material.upper(),
+        func.upper(Spool.rgba) == tray_color.upper(),
+        or_(
+            Spool.brand.is_(None),
+            func.lower(Spool.brand).like("%bambu%"),
+        ),
     )
 
     if subtype:
-        # Exact subtype OR NULL fallback. The CASE in ORDER BY ensures an
-        # exact-subtype row beats a NULL-subtype row when both exist; FIFO
-        # within each group.
+        # Exact subtype OR NULL fallback. The CASE in ORDER BY puts the
+        # exact-subtype rows ahead of the NULL-subtype rows; FIFO within each
+        # group.
         query = query.where(
             or_(
                 func.upper(Spool.subtype) == subtype.upper(),
@@ -382,25 +372,52 @@ async def find_matching_untagged_spool(db: AsyncSession, tray_data: dict) -> Spo
         ).order_by(
             case((func.upper(Spool.subtype) == subtype.upper(), 0), else_=1),
             Spool.created_at.asc(),
+            Spool.id.asc(),
         )
     else:
-        query = query.where(Spool.subtype.is_(None)).order_by(Spool.created_at.asc())
-
-    query = query.limit(1)
+        query = query.where(Spool.subtype.is_(None)).order_by(Spool.created_at.asc(), Spool.id.asc())
 
     result = await db.execute(query)
-    spool = result.scalar_one_or_none()
+    spools = list(result.scalars().all())
+    if subtype and spools and spools[0].subtype is not None:
+        spools = [s for s in spools if s.subtype is not None]
+    # A prompt only needs the candidate IDs. Load assignment data once there
+    # is a winner, instead of fetching profiles for every spool on every push.
+    if spools and not untagged_match_is_ambiguous(spools):
+        await db.refresh(spools[0], attribute_names=["k_profiles", "assignments"])
+    return spools
 
-    if spool:
-        logger.info(
-            "Found matching untagged spool %d: %s %s %s (rgba=%s)",
-            spool.id,
-            spool.brand or "",
-            spool.material,
-            spool.color_name or "",
-            spool.rgba or "",
-        )
 
+def untagged_match_is_ambiguous(candidates: list[Spool]) -> bool:
+    """True when the candidates differ in a way only the user can settle (#3658).
+
+    Identical unopened spools (the bulk-logged sealed boxes of #918) are
+    interchangeable, so the oldest takes the tag. Once one of them has been
+    used, picking by age can put the tag of an opened spool on a sealed one,
+    and every gram printed from the slot is then booked to the wrong spool.
+    """
+    return len(candidates) > 1 and any((s.weight_used or 0) > 0 for s in candidates)
+
+
+async def find_matching_untagged_spool(db: AsyncSession, tray_data: dict) -> Spool | None:
+    """The untagged inventory spool a newly read tag belongs to, if that is clear.
+
+    The oldest spool of the best candidate group (see ``find_untagged_candidates``),
+    or None when there is none, or when the candidates differ and the user has
+    to choose (``untagged_match_is_ambiguous``).
+    """
+    candidates = await find_untagged_candidates(db, tray_data)
+    if not candidates or untagged_match_is_ambiguous(candidates):
+        return None
+    spool = candidates[0]
+    logger.info(
+        "Found matching untagged spool %d: %s %s %s (rgba=%s)",
+        spool.id,
+        spool.brand or "",
+        spool.material,
+        spool.color_name or "",
+        spool.rgba or "",
+    )
     return spool
 
 
@@ -664,6 +681,7 @@ async def auto_assign_spool(
     printer_manager,
     db: AsyncSession,
     tray_info_idx: str = "",
+    live_tray: dict | None = None,
 ) -> SpoolAssignment:
     """Create a SpoolAssignment and auto-configure the AMS slot via MQTT.
 
@@ -671,13 +689,20 @@ async def auto_assign_spool(
     ams_set_filament_setting is NOT sent because the firmware already has
     filament configuration from the RFID tag, and sending it would destroy
     the RFID-detected state (eye → pen icon in BambuStudio).
+
+    ``live_tray`` is the tray a caller already read and checked for this slot
+    (the link-tag and from-slot routes, which also cover the external slot);
+    without it the tray is looked up in the AMS units as before.
     """
     # Get current tray state for fingerprint
     fingerprint_color = None
     fingerprint_type = None
-    tray = None
+    tray = live_tray
     state = printer_manager.get_status(printer_id)
-    if state and state.raw_data:
+    if tray:
+        fingerprint_color = tray.get("tray_color", "")
+        fingerprint_type = tray.get("tray_type", "")
+    elif state and state.raw_data:
         from backend.app.api.routes.inventory import _find_tray_in_ams_data
 
         ams = state.raw_data.get("ams", [])

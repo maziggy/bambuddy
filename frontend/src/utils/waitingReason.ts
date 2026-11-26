@@ -70,3 +70,23 @@ export function formatWaitingReason(reason: string, t: Translate): string {
     .join(' | ');
   return suffix ? `${text} · ${suffix}` : text;
 }
+
+// A short spool in a "Waiting for filament: " clause (#3659), as the scheduler
+// words it: "P1 (needs more filament)" for a printer of an "any model" job
+// (`_SHORT_FILAMENT_NEED`), "PLA (20 g left, needs 300 g)" or "PLA (needs 300 g)"
+// on a job's own printer (`_describe_deficit`). A filament not loaded at all
+// reads "PLA #FFFFFF" or "P1 (needs PLA #FFFFFF)" and is not one.
+const SHORT_SPOOL = /\(needs more filament\)|\(\d+ g left, needs \d+ g\)|\(needs \d+ g\)/;
+
+/**
+ * Does this reason say the job waits because a spool is too short (#3659)?
+ *
+ * Such a job can be released with "Print anyway", as a staged one can (#1496);
+ * one whose filament is not loaded at all cannot.
+ */
+export function isShortFilamentWaitingReason(reason: string | null | undefined): boolean {
+  if (!reason) return false;
+  return reason
+    .split(' | ')
+    .some(part => part.includes(FILAMENT_PREFIX) && SHORT_SPOOL.test(part));
+}

@@ -82,6 +82,12 @@ DEFAULT_TEMPLATES = [
         "body_template": "{printer}: {filename}\nThe print charge could not be recorded. The budget reservation was retained.\nArchive: {archive_id}",
     },
     {
+        "event_type": "filament_out_of_stock",
+        "name": "Filament Out of Stock",
+        "title_template": "Filament Out of Stock",
+        "body_template": "{job_name} waits for {filament}, and none is left in the inventory.",
+    },
+    {
         "event_type": "printer_offline",
         "name": "Printer Offline",
         "title_template": "Printer Offline",
@@ -110,6 +116,12 @@ DEFAULT_TEMPLATES = [
         "name": "Plate Clear Required",
         "title_template": "Plate Clear Required",
         "body_template": "{printer}: print finished. Confirm the build plate is clear before the queue continues.",
+    },
+    {
+        "event_type": "plate_changer_empty",
+        "name": "Plate Changer Empty",
+        "title_template": "Plate Changer Empty",
+        "body_template": "{printer}: all {capacity} plates used. Refill the plate changer and empty its bin, then reset the count on the printer card. The queue sends this printer nothing until then.",
     },
     {
         "event_type": "filament_low",

@@ -14,6 +14,7 @@ import {
 import { api } from '../api/client';
 import type { LibraryFileUploadResponse } from '../api/client';
 import { Button } from './Button';
+import { useAuth } from '../contexts/AuthContext';
 
 interface UploadFile {
   file: File;
@@ -42,12 +43,16 @@ interface FileUploadModalProps {
 
 export function FileUploadModal({ folderId, onClose, onUploadComplete, onFileUploaded, autoUpload, validateFile, accept, initialFiles }: FileUploadModalProps) {
   const { t } = useTranslation();
+  const { hasPermission } = useAuth();
+  // Marking files as clearing their plate needs the permission that confirms a cleared plate (#3576).
+  const canSetClearsPlate = hasPermission('printers:clear_plate');
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [preserveZipStructure, setPreserveZipStructure] = useState(true);
   const [createFolderFromZip, setCreateFolderFromZip] = useState(false);
   const [generateStlThumbnails, setGenerateStlThumbnails] = useState(true);
+  const [clearsPlate, setClearsPlate] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -87,14 +92,14 @@ export function FileUploadModal({ folderId, onClose, onUploadComplete, onFileUpl
 
       try {
         if (uf.isZip) {
-          const result = await api.extractZipFile(uf.file, folderId, preserveZipStructure, createFolderFromZip, generateStlThumbnails);
+          const result = await api.extractZipFile(uf.file, folderId, preserveZipStructure, createFolderFromZip, generateStlThumbnails, clearsPlate);
           updateFileStatus(uf.file, {
             status: result.errors.length > 0 && result.extracted === 0 ? 'error' : 'success',
             extractedCount: result.extracted,
             error: result.errors.length > 0 ? t('fileManager.zipFilesFailed', '{{count}} files failed', { count: result.errors.length }) : undefined,
           });
         } else {
-          const result = await api.uploadLibraryFile(uf.file, folderId, generateStlThumbnails);
+          const result = await api.uploadLibraryFile(uf.file, folderId, generateStlThumbnails, clearsPlate);
           updateFileStatus(uf.file, { status: 'success' });
           const error = onFileUploaded?.(result);
           if (error) {
@@ -286,6 +291,24 @@ export function FileUploadModal({ folderId, onClose, onUploadComplete, onFileUpl
               </div>
             </div>
           )}
+
+          {/* Files that clear their own plate (#3576) */}
+          <label
+            className={`flex items-start gap-2 ${canSetClearsPlate ? 'cursor-pointer' : ''}`}
+            title={!canSetClearsPlate ? t('printers.permission.noControl') : undefined}
+          >
+            <input
+              type="checkbox"
+              checked={clearsPlate}
+              onChange={(e) => setClearsPlate(e.target.checked)}
+              disabled={!canSetClearsPlate}
+              className="mt-0.5 w-4 h-4 rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green disabled:opacity-60"
+            />
+            <span>
+              <span className="block text-sm text-white">{t('fileManager.clearsPlateOnUpload')}</span>
+              <span className="block text-xs text-bambu-gray">{t('fileManager.clearsPlateOnUploadHelp')}</span>
+            </span>
+          </label>
 
           {/* File List */}
           {files.length > 0 && (

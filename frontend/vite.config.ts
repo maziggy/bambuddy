@@ -59,7 +59,12 @@ export default defineConfig({
   // fix for subpath reverse proxies (#1195, wontfix) is reverted — that
   // audience uses NPM + Cloudflare Tunnel at a real domain per the
   // documented workaround, which doesn't depend on this setting.
-  plugins: [react(), pdfjsRuntimeAssets()],
+  // Locale files are plain string tables (no JSX) and some exceed Babel's
+  // 500 KB pretty-print limit, so the React plugin skips them.
+  plugins: [
+    react({ exclude: [/\/node_modules\//, /\/i18n\/locales\//] }),
+    pdfjsRuntimeAssets(),
+  ],
   build: {
     outDir: '../static',
     emptyOutDir: true,

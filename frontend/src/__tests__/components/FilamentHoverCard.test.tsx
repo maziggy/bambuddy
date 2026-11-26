@@ -76,6 +76,35 @@ describe('FilamentHoverCard', () => {
     });
   });
 
+  describe('remaining grams (#3738)', () => {
+    const spoolAt = (grams: number) => ({
+      id: 7, material: 'PLA', subtype: null, brand: 'eSun', color_name: 'Black', remainingWeightGrams: grams,
+    });
+
+    it('shows the spool record grams next to its own fill', async () => {
+      renderWithHover(
+        <FilamentHoverCard data={{ ...baseFilamentData, fillLevel: 40, fillSource: 'inventory' }} inventory={{ assignedSpool: spoolAt(400) }}>
+          <div>trigger</div>
+        </FilamentHoverCard>
+      );
+      vi.advanceTimersByTime(100);
+
+      await waitFor(() => expect(screen.getByText('• 400g')).toBeInTheDocument());
+    });
+
+    it('leaves them out next to an AMS reading they contradict', async () => {
+      renderWithHover(
+        <FilamentHoverCard data={{ ...baseFilamentData, fillLevel: 100, fillSource: 'ams' }} inventory={{ assignedSpool: spoolAt(0) }}>
+          <div>trigger</div>
+        </FilamentHoverCard>
+      );
+      vi.advanceTimersByTime(100);
+
+      await waitFor(() => expect(screen.getByText('100%')).toBeInTheDocument());
+      expect(screen.queryByText('• 0g')).not.toBeInTheDocument();
+    });
+  });
+
   describe('fill source badge transparency (#11)', () => {
     it('never shows a Spoolman-source badge — UI stays mode-agnostic', async () => {
       renderWithHover(
@@ -1037,5 +1066,64 @@ describe('slot cards on a touch screen (#3577)', () => {
 
     press(document.body, 'touch');
     await waitFor(() => expect(screen.queryByText(/configure/i)).not.toBeInTheDocument());
+  });
+});
+
+describe('FilamentHoverCard RFID tag actions (#3658)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+
+  it('offers to link an unassigned RFID slot instead of the disabled Assign button', async () => {
+    const onLink = vi.fn();
+    renderWithHover(
+      <FilamentHoverCard
+        data={baseFilamentData}
+        inventory={{ assignedSpool: null, onAssignSpool: vi.fn(), isAssigned: true, onLinkExistingSpool: onLink }}
+      >
+        <div>trigger</div>
+      </FilamentHoverCard>
+    );
+    vi.advanceTimersByTime(100);
+
+    const button = await screen.findByRole('button', { name: 'Link to existing spool…' });
+    expect(screen.queryByText('Assign Spool')).not.toBeInTheDocument();
+    fireEvent.click(button);
+    expect(onLink).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers to move the tag of an automatically linked spool', async () => {
+    const onMove = vi.fn();
+    renderWithHover(
+      <FilamentHoverCard
+        data={baseFilamentData}
+        inventory={{
+          assignedSpool: { id: 61, material: 'PETG', subtype: 'HF', brand: 'Bambu Lab', color_name: 'Teal' },
+          onMoveTag: onMove,
+        }}
+      >
+        <div>trigger</div>
+      </FilamentHoverCard>
+    );
+    vi.advanceTimersByTime(100);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Wrong spool? Move tag…' }));
+    expect(onMove).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows neither action without the handlers', async () => {
+    renderWithHover(
+      <FilamentHoverCard
+        data={baseFilamentData}
+        inventory={{ assignedSpool: { id: 61, material: 'PETG', subtype: null, brand: null, color_name: null } }}
+      >
+        <div>trigger</div>
+      </FilamentHoverCard>
+    );
+    vi.advanceTimersByTime(100);
+
+    await screen.findByText('#61');
+    expect(screen.queryByText(/move tag/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/link to existing/i)).not.toBeInTheDocument();
   });
 });

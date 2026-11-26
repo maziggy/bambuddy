@@ -852,7 +852,7 @@ class TestModeOff:
 
         item = await _get(ctx, item_id)
         assert item.manual_start is True
-        assert item.waiting_reason == f"Needs {_BROWN_TEXT}"
+        assert item.waiting_reason == f"X1C-1 needs {_BROWN_TEXT}"  # names its printer (#3590)
         assert item.printer_id == 1
         assert result.waiting.await_count == 1
         assert result.waiting.await_args.kwargs["waiting_reason"] == f"needs {_BROWN_TEXT}"
@@ -1393,12 +1393,12 @@ class TestMatcherShortWording:
             return pid in short
 
         def missing_slots(pid, overrides, raw=None):
-            return ["PLA (Red)"] if pid in colour_missing else []
+            return [("PLA (Red)", overrides[0])] if pid in colour_missing else []
 
         with (
             patch("backend.app.services.print_scheduler.printer_manager.is_connected", MagicMock(return_value=True)),
             patch.object(scheduler, "_is_printer_idle", MagicMock(return_value=True)),
-            patch.object(scheduler, "_get_missing_force_color_slots", MagicMock(side_effect=missing_slots)),
+            patch.object(scheduler, "_missing_force_color_pairs", MagicMock(side_effect=missing_slots)),
         ):
             async with ctx.session_maker() as db:
                 return await scheduler._find_idle_printer_for_model(

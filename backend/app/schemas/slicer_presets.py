@@ -140,6 +140,17 @@ class LoadedSpoolUnit(BaseModel):
     trays: list[LoadedSpoolTray]
 
 
+class LoadedSpoolNozzle(BaseModel):
+    """A fitted nozzle, for the SliceModal's nozzle flow default (#3136)."""
+
+    # MQTT extruder id: 0 = right/main, 1 = left on a dual-nozzle printer.
+    extruder_id: int
+    diameter: str | None = None
+    # "Standard" or "High Flow"; None when the printer reports a material
+    # (X1 / P1) or nothing.
+    flow: str | None = None
+
+
 class LoadedSpoolPrinter(BaseModel):
     id: int
     name: str
@@ -151,6 +162,7 @@ class LoadedSpoolPrinter(BaseModel):
     # How many holders the printer has, loaded or not: two on a dual-nozzle
     # printer, whose holders are labelled left and right.
     external_holders: int = 0
+    nozzles: list[LoadedSpoolNozzle] = []
 
 
 class LoadedSpoolsResponse(BaseModel):

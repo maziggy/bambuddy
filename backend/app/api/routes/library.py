@@ -23,7 +23,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes.cloud import resolve_api_key_cloud_owner
-from backend.app.api.routes.library_variants import normalize_model_name, resolve_variant_model
+from backend.app.api.routes.library_variants import (
+    changeable_group_ids,
+    masked_group_names,
+    normalize_model_name,
+    resolve_variant_model,
+    visible_members_query,
+)
 from backend.app.api.routes.print_queue import (
     _extract_filament_types_from_3mf,
     printed_plate_of_multi_plate_file,
@@ -35,6 +41,7 @@ from backend.app.core.auth import (
     RequestActor,
     RequestPrinterScope,
     require_actor_still_exists,
+    require_clear_plate_permission,
     require_media_token_ownership,
     require_ownership_permission,
     require_permission_if_auth_enabled,
@@ -46,7 +53,7 @@ from backend.app.core.printer_scope import PrinterScope, ensure_model_target_all
 from backend.app.core.row_visibility import visible_row_clauses
 from backend.app.core.tasks import spawn_background_task
 from backend.app.models.archive import PrintArchive
-from backend.app.models.library import LibraryFile, LibraryFileTag, LibraryFolder
+from backend.app.models.library import FileVariantGroup, LibraryFile, LibraryFileTag, LibraryFolder
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
 from backend.app.models.project import Project
@@ -126,6 +133,8 @@ from backend.app.utils.printer_models import is_gcode_compatible
 from backend.app.utils.safe_path import PathTraversalError, assert_under, safe_join_under
 from backend.app.utils.slicer_strings import first_slicer_string
 from backend.app.utils.threemf_tools import (
+    REGION_SLOT_KEYS,
+    SUPPORT_SLOT_KEYS,
     carries_gcode,
     default_plate_gcode_name,
     expand_to_project_slots,
@@ -133,6 +142,7 @@ from backend.app.utils.threemf_tools import (
     extract_nozzle_mapping_from_3mf,
     extract_project_filaments_from_3mf,
     is_unsliced_3mf,
+    process_slots_in_config,
     sanitize_project_settings_sentinels,
     select_plate_gcode_name,
     supports_enabled_in_config,
@@ -2362,6 +2372,7 @@ async def list_files(
     external_only: bool = False,
     recursive: bool = False,
     tag_ids: list[int] = Query(default_factory=list),
+    with_variant_members: bool = False,
     db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
@@ -2369,6 +2380,7 @@ async def list_files(
             Permission.LIBRARY_READ_OWN,
         )
     ),
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """List files, optionally filtered by folder or project.
 
@@ -2393,6 +2405,13 @@ async def list_files(
                  intentionally bypassed — tags are cross-cutting and the user
                  wants "every file with this tag" regardless of where it lives.
                  ``recursive`` becomes irrelevant in that case.
+        with_variant_members: For every variant group present in the result, also
+                 return the visible members that the filters left out (other
+                 folders), flagged ``variant_elsewhere`` and carrying their
+                 ``folder_name``. Every row of a group then reports
+                 ``variant_group_name``, ``variant_position`` and
+                 ``variant_group_editable``, whether the caller may ungroup it
+                 or take a version out of it (#3628).
     """
     if internal_only and external_only:
         raise HTTPException(
@@ -2448,6 +2467,53 @@ async def list_files(
     result = await db.execute(query)
     files = result.scalars().unique().all() if tag_ids else result.scalars().all()
 
+    # Variant group members the filters left out (#3628): one query for the
+    # members, one for the group names, one for their folder names.
+    group_names: dict[int, str | None] = {}
+    editable_groups: set[int] = set()
+    elsewhere_ids: set[int] = set()
+    folder_names: dict[int, str] = {}
+    if with_variant_members:
+        shown_group_ids = {f.variant_group_id for f in files if f.variant_group_id}
+        if shown_group_ids:
+            shown_ids = {f.id for f in files}
+            extra_query = (
+                visible_members_query(shown_group_ids, user, can_read_all)
+                .options(selectinload(LibraryFile.created_by), selectinload(LibraryFile.tags))
+                .order_by(LibraryFile.variant_group_id, LibraryFile.variant_position, LibraryFile.id)
+            )
+            # Same internal/external restriction as the list itself.
+            if internal_only:
+                extra_query = extra_query.where(LibraryFile.is_external.is_(False))
+            elif external_only:
+                extra_query = extra_query.where(LibraryFile.is_external.is_(True))
+            extra_members = (await db.execute(extra_query)).scalars().all()
+            extras = [m for m in extra_members if m.id not in shown_ids]
+            elsewhere_ids = {m.id for m in extras}
+            files = [*files, *extras]
+            raw_names = dict(
+                (
+                    await db.execute(
+                        select(FileVariantGroup.id, FileVariantGroup.name).where(
+                            FileVariantGroup.id.in_(shown_group_ids)
+                        )
+                    )
+                ).all()
+            )
+            # A name equal to a file the caller cannot see is withheld (#3628).
+            group_names = await masked_group_names(db, raw_names, user, can_read_all)
+            # Said up front, so the client can disable what the server would refuse.
+            editable_groups = await changeable_group_ids(db, shown_group_ids, actor)
+            extra_folder_ids = {m.folder_id for m in extras if m.folder_id is not None}
+            if extra_folder_ids:
+                folder_names = dict(
+                    (
+                        await db.execute(
+                            select(LibraryFolder.id, LibraryFolder.name).where(LibraryFolder.id.in_(extra_folder_ids))
+                        )
+                    ).all()
+                )
+
     # Get duplicate counts
     hash_counts = {}
     if files:
@@ -2467,9 +2533,11 @@ async def list_files(
     variant_counts: dict[int, int] = {}
     group_ids = {f.variant_group_id for f in files if f.variant_group_id}
     if group_ids:
+        # Only members the caller may see (#3628), so the count never reveals
+        # files an *_OWN user cannot open.
         count_result = await db.execute(
-            select(LibraryFile.variant_group_id, func.count(LibraryFile.id))
-            .where(LibraryFile.variant_group_id.in_(group_ids), LibraryFile.deleted_at.is_(None))
+            visible_members_query(group_ids, user, can_read_all)
+            .with_only_columns(LibraryFile.variant_group_id, func.count(LibraryFile.id))
             .group_by(LibraryFile.variant_group_id)
         )
         variant_counts = dict(count_result.all())
@@ -2512,7 +2580,17 @@ async def list_files(
                 tags=[TagSummary(id=t.id, name=t.name) for t in f.tags],
                 variant_group_id=f.variant_group_id,
                 variant_count=variant_counts.get(f.variant_group_id, 0) if f.variant_group_id else 0,
+                variant_group_name=group_names.get(f.variant_group_id)
+                if with_variant_members and f.variant_group_id
+                else None,
+                variant_position=f.variant_position if with_variant_members and f.variant_group_id else None,
+                variant_group_editable=f.variant_group_id in editable_groups
+                if with_variant_members and f.variant_group_id
+                else None,
+                variant_elsewhere=f.id in elsewhere_ids,
+                folder_name=folder_names.get(f.folder_id) if f.id in elsewhere_ids and f.folder_id else None,
                 external_url=f.external_url,
+                clears_plate=bool(f.clears_plate),
                 has_notes=bool(f.notes),
                 photo_count=len(f.photos or []),
             )
@@ -2527,11 +2605,18 @@ async def upload_file(
     file: UploadFile = File(...),
     folder_id: int | None = None,
     generate_stl_thumbnails: bool = Query(default=True),
+    clears_plate: bool = Query(default=False),
     db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD)),
     actor: User | ApiKeyActor | None = RequestActor,
 ):
-    """Upload a file to the library."""
+    """Upload a file to the library.
+
+    ``clears_plate`` marks a file that clears its own plate (#3576); switching
+    it on takes printers:clear_plate.
+    """
+    if clears_plate:
+        require_clear_plate_permission(actor)
     try:
         if not file.filename:
             raise HTTPException(status_code=400, detail="Filename is required")
@@ -2676,6 +2761,7 @@ async def upload_file(
             thumbnail_path=to_relative_path(thumbnail_path) if thumbnail_path else None,
             file_metadata=_without_print_name(metadata) if metadata else None,
             created_by_id=actor.id if actor else None,
+            clears_plate=clears_plate,
         )
         db.add(library_file)
         await db.commit()
@@ -2704,6 +2790,7 @@ async def extract_zip_file(
     preserve_structure: bool = Query(default=True),
     create_folder_from_zip: bool = Query(default=False),
     generate_stl_thumbnails: bool = Query(default=True),
+    clears_plate: bool = Query(default=False),
     db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD)),
     actor: User | ApiKeyActor | None = RequestActor,
@@ -2718,6 +2805,10 @@ async def extract_zip_file(
         generate_stl_thumbnails: If True, generate thumbnails for STL files
     """
     import tempfile
+
+    # Marking the extracted files as clearing their plate takes printers:clear_plate (#3576)
+    if clears_plate:
+        require_clear_plate_permission(actor)
 
     if not file.filename or not file.filename.lower().endswith(".zip"):
         raise HTTPException(status_code=400, detail="Only ZIP files are supported")
@@ -2970,6 +3061,7 @@ async def extract_zip_file(
                         thumbnail_path=to_relative_path(thumbnail_path) if thumbnail_path else None,
                         file_metadata=_without_print_name(metadata) if metadata else None,
                         created_by_id=actor.id if actor else None,
+                        clears_plate=clears_plate,
                     )
                     db.add(library_file)
                     await db.flush()
@@ -3466,6 +3558,7 @@ async def add_files_to_queue(
                 position=max_position,
                 status="pending",
                 confirm_outcome=confirm_outcome,
+                clears_plate=bool(lib_file.clears_plate),
                 # Without this the row is ownerless, and `queue:read_own` filters
                 # on `created_by_id` — so the user who queued the file could not
                 # see it in their own queue.
@@ -4237,6 +4330,40 @@ def _declined_source_keys(offered: list[DesignOverride], requested: list[str] | 
     return {override.key for override in offered} - set(requested)
 
 
+_PROCESS_SLOT_KEYS = ("enable_support", *SUPPORT_SLOT_KEYS, *REGION_SLOT_KEYS)
+
+
+def _process_filament_slots(process_json: str, source_3mf_bytes: bytes) -> set[int] | None:
+    """The support and region-picker slots of the settings the slice runs with (#3736).
+
+    Starts from the source 3MF's settings for those keys and lets every key the
+    process JSON sets win: the #1881 carry, the design picks and the slice
+    dialog's own settings are all written into it. A standard preset arrives
+    as an ``inherits`` stub without these keys, so the file's values still
+    count there, as before. ``None`` when the process JSON can't be read, and
+    the caller then reads the file alone.
+    """
+    from io import BytesIO
+
+    try:
+        process_cfg = json.loads(process_json)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    if not isinstance(process_cfg, dict):
+        return None
+    merged: dict[str, object] = {}
+    try:
+        with zipfile.ZipFile(BytesIO(source_3mf_bytes), "r") as zf:
+            if "Metadata/project_settings.config" in zf.namelist():
+                src_cfg = json.loads(zf.read("Metadata/project_settings.config").decode("utf-8"))
+                if isinstance(src_cfg, dict):
+                    merged.update({k: src_cfg[k] for k in _PROCESS_SLOT_KEYS if k in src_cfg})
+    except (zipfile.BadZipFile, json.JSONDecodeError, UnicodeDecodeError, OSError, KeyError):
+        pass
+    merged.update({k: process_cfg[k] for k in _PROCESS_SLOT_KEYS if k in process_cfg})
+    return process_slots_in_config(merged)
+
+
 def _patch_process_support_settings(
     process_json: str,
     source_3mf_bytes: bytes,
@@ -4373,8 +4500,10 @@ async def _run_slicer_with_fallback(
     model_bytes: bytes,
     model_filename: str,
     request: SliceRequest,
+    printer_scope: PrinterScope,
     current_user_id: int | None = None,
     job_id: int | None = None,
+    target_printer_id: int | None = None,
 ):
     """Validate presets, dispatch to the right sidecar, run the slicer with
     the auto-fallback for 3MF inputs whose `--load-settings` path crashes the
@@ -4391,6 +4520,16 @@ async def _run_slicer_with_fallback(
     toast can show "Generating G-code (75%)" instead of just elapsed
     time. Pass None for synchronous routes that aren't tracked by the
     dispatcher.
+
+    `printer_scope`: the printers the caller may use, as the request's
+    auth resolved them (an API key's own printer list included). The
+    dual-nozzle filament map reads spools only from these. Required, so no
+    caller plans from every printer by leaving it out (#1727).
+
+    `target_printer_id`: the printer the result is for, when the caller
+    knows it (an archive re-slice, a pipeline aimed at one printer). The
+    dual-nozzle filament map is then planned from that printer's spools
+    alone; otherwise from every printer of the model in `printer_scope`.
     """
     from backend.app.api.routes.settings import get_setting
     from backend.app.services.preset_resolver import resolve_preset_ref
@@ -4652,10 +4791,128 @@ async def _run_slicer_with_fallback(
     # read from the project config and are not plate-scoped — they would
     # survive the (empty) geometry lookup for plate 0 and become the anchor,
     # collapsing every colour of a slice-all onto the support filament.
+    used_slots: set[int] | None = None
     if is_3mf and request.plate != 0:
-        from backend.app.services.slicer_3mf_convert import substitute_unused_plate_filaments
+        from backend.app.services.slicer_3mf_convert import plate_used_slots, substitute_unused_plate_filaments
 
-        filament_jsons = substitute_unused_plate_filaments(primary_bytes, request.plate or 1, filament_jsons)
+        # The support slots of the settings the slice runs with, not of the
+        # file: a support slot picked in the slice dialog is in no file, and
+        # one the dialog or an unticked design key switched off is still in
+        # it (#3736). The embedded-settings path slices with the file's own.
+        support_slots = None if embedded_mode else _process_filament_slots(presets["process"], primary_bytes)
+        filament_jsons = substitute_unused_plate_filaments(
+            primary_bytes, request.plate or 1, filament_jsons, support_slots
+        )
+        used_slots = plate_used_slots(primary_bytes, request.plate or 1, support_slots)
+
+    # Dual-nozzle printers: which extruder each filament prints from. Without
+    # a map the CLI puts every filament on one extruder, so the printer swaps
+    # filament at each colour change while the other nozzle stays cold. An
+    # explicit map from the caller is used as given; otherwise one is worked
+    # out from the spools loaded on the target printer, and anything that
+    # stops that from working leaves the slice exactly as it was. Planned after
+    # the unused-slot substitution above, so it sees the list the CLI gets,
+    # and only from the plate's used slots, never a stand-in. The spools are
+    # read only from printers the caller may use (#1727), and only from the
+    # target printer when the caller names one.
+    # The embedded-settings path loads no filament profiles to map.
+    # A Bambu Studio project whose plate the user already mapped by hand
+    # keeps that map: a planned one would overwrite it in the plate settings.
+    filament_map = request.filament_map
+    manual_plate_map = False
+    if filament_map is None and not embedded_mode and is_3mf:
+        from backend.app.services.slicer_3mf_convert import has_manual_plate_filament_map
+
+        manual_plate_map = has_manual_plate_filament_map(primary_bytes)
+    if filament_map is None and not embedded_mode and not manual_plate_map:
+        from backend.app.services.filament_map import auto_filament_map
+
+        def _allows(printer_id: int) -> bool:
+            if target_printer_id is not None and printer_id != target_printer_id:
+                return False
+            return printer_scope.allows(printer_id)
+
+        filament_map = await auto_filament_map(
+            db,
+            target_model=_printer_model_from_profile(presets["printer"]),
+            printer_json=presets["printer"],
+            filament_jsons=filament_jsons,
+            allows=_allows,
+            used_slots=used_slots,
+        )
+    map_was_planned = filament_map is not None and request.filament_map is None
+
+    # The nozzle flow (#3136): without it the CLI slices every extruder for a
+    # Standard nozzle, and a printer with a High Flow nozzle warns that the
+    # file does not match it. One flow per extruder of the profile: the CLI
+    # indexes the list by extruder, so a short one is refused here rather than
+    # sent. Missing, it is read from the printers the caller may use, the
+    # target printer when there is one. The embedded-settings path keeps the
+    # file's own flow, which the CLI leaves alone there.
+    nozzle_volume_type: list[str] | None = None
+    if not embedded_mode:
+        from backend.app.services.nozzle_volume_type import auto_nozzle_volume_type
+
+        if request.nozzle_volume_type is not None:
+            extruders = _profile_extruder_count(presets["printer"])
+            if extruders is not None and len(request.nozzle_volume_type) != extruders:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"nozzle_volume_type has {len(request.nozzle_volume_type)} entries "
+                        f"but the printer profile has {extruders} extruder(s)"
+                    ),
+                )
+            nozzle_volume_type = list(request.nozzle_volume_type)
+        else:
+
+            def _flow_allows(printer_id: int) -> bool:
+                if target_printer_id is not None and printer_id != target_printer_id:
+                    return False
+                return printer_scope.allows(printer_id)
+
+            nozzle_volume_type = await auto_nozzle_volume_type(
+                db,
+                target_model=_printer_model_from_profile(presets["printer"]),
+                printer_json=presets["printer"],
+                allows=_flow_allows,
+            )
+
+    async def _slice_with_profiles(**kwargs):
+        """``service.slice_with_profiles`` plus the nozzle flow, and the filament map if there is one.
+
+        A map Bambuddy planned itself is withdrawn if the slicer fails the
+        job with it, and the slice is retried exactly as it would have run
+        without one: the second extruder cannot reach every part of the bed
+        (on the X2D it stops 20.5 mm short of the left edge), so a map that
+        matches the spools can still describe a job the slicer will not cut.
+        Only a slicer failure is retried. A ``SlicerInputError`` also covers
+        an oversized upload, which must not be sent again.
+        A map the caller asked for is theirs, so its failure is reported.
+
+        A 3MF also gets the map in its plates' own settings, which Bambu
+        Studio reads before the flags (see ``with_plate_filament_map``). The
+        retry sends the 3MF exactly as it came.
+        """
+        kwargs = {**kwargs, "nozzle_volume_type": nozzle_volume_type}
+        if not filament_map:
+            return await service.slice_with_profiles(**kwargs)
+        mapped = dict(kwargs)
+        if is_3mf:
+            from backend.app.services.slicer_3mf_convert import with_plate_filament_map
+
+            mapped["model_bytes"] = with_plate_filament_map(kwargs["model_bytes"], filament_map)
+        try:
+            return await service.slice_with_profiles(**mapped, filament_map=filament_map)
+        except SlicerApiServerError as exc:
+            if not map_was_planned:
+                raise
+            logger.warning(
+                "Slice with filament_map=%s was refused (%s); retrying with the default grouping",
+                filament_map,
+                exc,
+            )
+            return await service.slice_with_profiles(**kwargs)
 
     # Arrange slice-all loop (#1493): when the user asks for ``plate=0``
     # (all plates) AND arrange is on, ``--slice 0 --arrange 1``
@@ -4742,7 +4999,7 @@ async def _run_slicer_with_fallback(
                             on_progress=plate_cb,
                         )
                     else:
-                        per_plate = await service.slice_with_profiles(
+                        per_plate = await _slice_with_profiles(
                             model_bytes=primary_bytes,
                             model_filename=model_filename,
                             printer_profile_json=presets["printer"],
@@ -4798,7 +5055,7 @@ async def _run_slicer_with_fallback(
                 )
                 used_embedded_settings = True
             else:
-                result = await service.slice_with_profiles(
+                result = await _slice_with_profiles(
                     model_bytes=primary_bytes,
                     model_filename=model_filename,
                     printer_profile_json=presets["printer"],
@@ -4952,6 +5209,37 @@ def _canonical_printer_model(raw: str | None) -> str | None:
     return normalize_printer_model(cleaned) if cleaned else None
 
 
+def _profile_extruder_count(printer_json: str) -> int | None:
+    """How many extruders a resolved printer profile has, or None if unreadable."""
+    try:
+        data = json.loads(printer_json)
+    except (TypeError, ValueError):
+        return None
+    sizes = data.get("nozzle_diameter") if isinstance(data, dict) else None
+    return len(sizes) if isinstance(sizes, list) and sizes else None
+
+
+def _printer_model_from_profile(printer_json: str) -> str | None:
+    """Canonical model code of an already-resolved printer profile, or None."""
+    try:
+        data = json.loads(printer_json)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    from backend.app.utils.printer_models import PRINTER_MODEL_MAP
+
+    # The first field that names a known model: a user preset's own name
+    # ("My H2D") names none, the stock preset it inherits from does.
+    known = set(PRINTER_MODEL_MAP.values())
+    for key in ("printer_model", "printer_settings_id", "name", "inherits"):
+        value = data.get(key)
+        model = _canonical_printer_model(value) if isinstance(value, str) else None
+        if model in known:
+            return model
+    return None
+
+
 async def _resolve_target_printer_model(db: AsyncSession, user: User | None, request: SliceRequest) -> str | None:
     """Best-effort: the printer model a slice request targets.
 
@@ -5010,14 +5298,18 @@ async def slice_and_persist(
     extra_metadata: dict | None,
     request: SliceRequest,
     current_user_id: int | None,
+    printer_scope: PrinterScope,
     job_id: int | None = None,
     owner_id: int | None | object = _CALLER,
+    target_printer_id: int | None = None,
 ) -> SliceResponse:
     """Slice a model and save the result as a new ``LibraryFile`` in
     ``folder_id`` (same folder as the source by convention).
 
     ``current_user_id`` resolves cloud presets; the new file is ``owner_id``'s,
-    by default the same user.
+    by default the same user. ``printer_scope`` and ``target_printer_id``
+    limit the printers the filament map reads (see
+    ``_run_slicer_with_fallback``).
 
     Always exports as ``.gcode.3mf`` so the existing library thumbnail
     pipeline works on the new file. Plain ``.gcode`` would have no
@@ -5033,7 +5325,9 @@ async def slice_and_persist(
         model_filename=model_filename,
         request=library_request,
         current_user_id=current_user_id,
+        printer_scope=printer_scope,
         job_id=job_id,
+        target_printer_id=target_printer_id,
     )
 
     # Same reduction as the archive sink: ``model_filename`` may be built from
@@ -5165,6 +5459,7 @@ async def slice_and_persist_as_archive(
     request: SliceRequest,
     source_archive,  # PrintArchive — hint kept loose to avoid cyclic import
     current_user_id: int | None,
+    printer_scope: PrinterScope,
     job_id: int | None = None,
     owner_id: int | None | object = _CALLER,
 ):
@@ -5189,6 +5484,9 @@ async def slice_and_persist_as_archive(
         request=archive_request,
         job_id=job_id,
         current_user_id=current_user_id,
+        printer_scope=printer_scope,
+        # The new archive belongs to the source archive's printer.
+        target_printer_id=source_archive.printer_id,
     )
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -5383,6 +5681,7 @@ async def slice_library_file(
     current_user: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD)),
     api_key_cloud_owner: User | None = Depends(resolve_api_key_cloud_owner),
     actor: User | ApiKeyActor | None = RequestActor,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Enqueue a slice job for a library file. Returns 202 + job_id; the
     slice runs in the background, the caller polls `GET /slice-jobs/{id}`.
@@ -5477,6 +5776,7 @@ async def slice_library_file(
                     extra_metadata={"sliced_from_library_file_id": source_lib_file_id},
                     request=request,
                     current_user_id=user_id,
+                    printer_scope=printer_scope,
                     job_id=job_id,
                     owner_id=owner_id,
                 )
@@ -5607,6 +5907,7 @@ async def get_file(
         last_printed_at=file.last_printed_at,
         notes=file.notes,
         external_url=file.external_url,
+        clears_plate=bool(file.clears_plate),
         photos=list(file.photos or []),
         source_url=file.source_url,
         duplicates=duplicates if duplicates else None,
@@ -5633,6 +5934,7 @@ async def update_file(
             Permission.LIBRARY_UPDATE_OWN,
         )
     ),
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Update a file's metadata."""
     user, can_modify_all = auth_result
@@ -5647,6 +5949,11 @@ async def update_file(
     if not can_modify_all:
         if file.created_by_id != user.id:
             raise HTTPException(status_code=403, detail="You can only update your own files")
+
+    # Switching plate clearing on takes printers:clear_plate (#3576); a file
+    # that already has it keeps it through an edit of its other fields.
+    if data.clears_plate and not file.clears_plate:
+        require_clear_plate_permission(actor)
 
     if data.filename is not None:
         # Bambu printer SD cards are FAT32/exFAT; reject the same set Bambu
@@ -5692,6 +5999,9 @@ async def update_file(
 
     if data.external_url is not None:
         file.external_url = data.external_url.strip() or None
+
+    if data.clears_plate is not None:
+        file.clears_plate = data.clears_plate
 
     await db.commit()
     await db.refresh(file)

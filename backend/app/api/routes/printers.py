@@ -8,7 +8,7 @@ from pathlib import Path
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, Response
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.background import BackgroundTask
 
@@ -73,8 +73,10 @@ from backend.app.services.bambu_ftp import (
     list_files_result_async,
 )
 from backend.app.services.hms_actions import HMSAction
+from backend.app.services.inventory_stock import inventory_stock
 from backend.app.services.panda_breath import panda_breath_service
 from backend.app.services.pause_eta import next_pause
+from backend.app.services.plate_changer import clear_count_unknown
 from backend.app.services.print_storage import ftp_probe_paths, print_file_reachable_over_ftp
 from backend.app.services.printer_diagnostic import run_connection_diagnostic
 from backend.app.services.printer_file_cache import printer_file_cache
@@ -109,7 +111,7 @@ from backend.app.services.printer_media import (
     start_printer_files_job,
 )
 from backend.app.services.slicer_filament_resolver import _ORCA_PROFILE_ID, lookup_orca_filament_id
-from backend.app.services.slot_nozzle import reports_two_nozzles, resolve_slot_nozzle
+from backend.app.services.slot_nozzle import resolve_slot_nozzle
 from backend.app.services.wled import WLEDResponseError, wled_manager
 from backend.app.utils.filament_finish import different_finish, finish_generic_id
 from backend.app.utils.filament_ids import (
@@ -324,6 +326,42 @@ async def list_usb_cameras(
     return {"cameras": cameras}
 
 
+@router.get("/inventory-filaments")
+async def get_inventory_filaments(
+    _=RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE, Permission.INVENTORY_READ),
+    db: AsyncSession = Depends(get_db, scope="function"),
+):
+    """Built-in inventory stock per type + colour + variant, for the filament override (#3590).
+
+    It is the inventory's stock, so the caller needs ``inventory:read`` next to
+    ``queue:create`` (an API key: Queue and Read Status), like the inventory's
+    own read routes. Not printer-specific, so no printer scope applies. In
+    Spoolman mode there is no built-in stock: ``inventory_available`` is False
+    and the list empty.
+    """
+    entries = await inventory_stock(db)
+    if entries is None:
+        return {"inventory_available": False, "filaments": []}
+    return {
+        "inventory_available": True,
+        "filaments": [
+            {
+                "type": e.type,
+                "color": e.color,
+                "tray_info_idx": e.tray_info_idx,
+                "subtype": e.subtype,
+                "color_name": e.color_name,
+                "rgba": e.rgba,
+                "extra_colors": e.extra_colors,
+                "effect_type": e.effect_type,
+                "spool_count": e.spool_count,
+                "remaining_grams": e.remaining_grams,
+            }
+            for e in entries
+        ],
+    }
+
+
 @router.get("/available-filaments")
 async def get_available_filaments(
     model: str = Query(..., description="Target printer model"),
@@ -336,101 +374,9 @@ async def get_available_filaments(
 
     Used by the frontend to offer filament override options for model-based queue assignment.
     """
-    from backend.app.utils.printer_models import normalize_printer_model, normalize_printer_model_id
+    from backend.app.services.loaded_filaments import loaded_filaments
 
-    # Normalize model name
-    normalized_model = normalize_printer_model(model) or normalize_printer_model_id(model) or model
-
-    query = (
-        select(Printer).where(func.lower(Printer.model) == normalized_model.lower()).where(Printer.is_active == True)  # noqa: E712
-    )
-    if location:
-        query = query.where(Printer.location == location)
-
-    result = await db.execute(query)
-    printers_list = [p for p in result.scalars().all() if printer_scope.allows(p.id)]
-
-    if not printers_list:
-        return []
-
-    # Collect filaments from all matching printers
-    # Dedup key includes extruder_id and tray_sub_brands so "PLA Basic" and "PLA Matte" appear separately
-    seen: set[tuple[str, str, str, int | None]] = set()  # (type_upper, color_normalized, sub_brands_upper, extruder_id)
-    filaments = []
-
-    for printer in printers_list:
-        status = printer_manager.get_status(printer.id)
-        if not status:
-            continue
-
-        # Get ams_extruder_map for dual-nozzle printers
-        ams_extruder_map = status.raw_data.get("ams_extruder_map", {})
-        # Same signal the scheduler matches with (#2771): without an AMS the map
-        # is empty on a dual-nozzle printer too.
-        is_dual_nozzle = reports_two_nozzles(status)
-
-        # AMS trays
-        for ams_unit in status.raw_data.get("ams", []):
-            ams_id = str(ams_unit.get("id", 0))
-            extruder_id = ams_extruder_map.get(ams_id)
-            for tray in ams_unit.get("tray", []):
-                tray_type = tray.get("tray_type")
-                if not tray_type:
-                    continue
-                tray_color = tray.get("tray_color", "") or "808080"
-                # Preserve the full RRGGBBAA so transparent filament (alpha=00)
-                # reaches the frontend instead of collapsing to #000000 → black
-                # (#1545). Opaque colours still round-trip as #RRGGBB. The
-                # dedup key uses the 6-char RGB so two slots that share an RGB
-                # but differ only in alpha still merge.
-                stripped = tray_color.replace("#", "")
-                rgb = stripped[:6].lower() or "808080"
-                color = f"#{stripped}"
-                tray_info_idx = tray.get("tray_info_idx", "")
-                tray_sub_brands = tray.get("tray_sub_brands", "") or ""
-
-                key = (tray_type.upper(), rgb, tray_sub_brands.upper(), extruder_id)
-                if key not in seen:
-                    seen.add(key)
-                    filaments.append(
-                        {
-                            "type": tray_type,
-                            "color": color,
-                            "tray_info_idx": tray_info_idx,
-                            "tray_sub_brands": tray_sub_brands,
-                            "extruder_id": extruder_id,
-                        }
-                    )
-
-        # External spools (vt_tray)
-        for vt in status.raw_data.get("vt_tray") or []:
-            vt_type = vt.get("tray_type")
-            if not vt_type:
-                continue
-            vt_color = vt.get("tray_color", "") or "808080"
-            # Same alpha-preserving handling as the AMS branch — see #1545.
-            stripped = vt_color.replace("#", "")
-            rgb = stripped[:6].lower() or "808080"
-            color = f"#{stripped}"
-            tray_info_idx = vt.get("tray_info_idx", "")
-            tray_sub_brands = vt.get("tray_sub_brands", "") or ""
-            vt_id = int(vt.get("id", 254))
-            extruder_id = (255 - vt_id) if is_dual_nozzle else None
-
-            key = (vt_type.upper(), rgb, tray_sub_brands.upper(), extruder_id)
-            if key not in seen:
-                seen.add(key)
-                filaments.append(
-                    {
-                        "type": vt_type,
-                        "color": color,
-                        "tray_info_idx": tray_info_idx,
-                        "tray_sub_brands": tray_sub_brands,
-                        "extruder_id": extruder_id,
-                    }
-                )
-
-    return filaments
+    return await loaded_filaments(db, model, location=location, allows=printer_scope.allows)
 
 
 @router.get("/developer-mode-warnings")
@@ -521,11 +467,58 @@ async def update_printer(
 
     ip_changed = "ip_address" in update_data and update_data["ip_address"] != printer.ip_address
 
+    # The display flag is NOT NULL; an explicit null means "unchanged" (#3575)
+    if update_data.get("plate_changer_show_count", True) is None:
+        update_data.pop("plate_changer_show_count")
+
+    # Plate changer count (#3575): keep plates_remaining consistent with the capacity.
+    plates_before = (printer.plate_capacity, printer.plates_remaining)
+    clamp_plates_to: int | None = None
+    if "plate_capacity" in update_data or "plates_remaining" in update_data:
+        capacity = update_data.get("plate_capacity", printer.plate_capacity)
+        sent_remaining = update_data.get("plates_remaining")
+        if capacity is None:
+            update_data["plates_remaining"] = None
+        elif sent_remaining is not None:
+            if sent_remaining > capacity:
+                raise HTTPException(400, "plates_remaining cannot exceed plate_capacity")
+        elif printer.plate_capacity is None or printer.plates_remaining is None:
+            # Just turned on: the changer starts full.
+            update_data["plates_remaining"] = capacity
+        else:
+            # An explicit null with a capacity set means "unchanged", never NULL.
+            update_data.pop("plates_remaining", None)
+            # Clamped in SQL below: a print finishing meanwhile may count down.
+            clamp_plates_to = capacity
+
+    # Only a real user reset clears the "unbooked print" mark. The edit dialog
+    # repeats the unchanged capacity on every save (e.g. a rename), which is not one.
+    count_reset = (
+        "plate_capacity" in update_data and update_data["plate_capacity"] != plates_before[0]
+    ) or update_data.get("plates_remaining") is not None
+
     for field, value in update_data.items():
         setattr(printer, field, value)
 
+    if clamp_plates_to is not None:
+        await db.execute(
+            update(Printer)
+            .where(Printer.id == printer_id, Printer.plates_remaining > clamp_plates_to)
+            .values(plates_remaining=clamp_plates_to)
+            .execution_options(synchronize_session=False)
+        )
+
     await db.commit()
     await db.refresh(printer)
+
+    if count_reset:
+        clear_count_unknown(printer_id)
+
+    if (printer.plate_capacity, printer.plates_remaining) != plates_before:
+        try:
+            await ws_manager.send_printer_plates_changed(printer_id, printer.plates_remaining, printer.plate_capacity)
+        except Exception as e:
+            logger.warning("Failed to broadcast plate changer count for printer %s: %s", printer_id, e)
 
     if access_moved:
         await ws_manager.refresh_printer_scopes()
@@ -639,6 +632,14 @@ async def delete_printer(
     await db.execute(select(Printer.id).where(Printer.id == printer_id).with_for_update())
 
     if delete_archives:
+        # A charge waiting on one of their runs for its energy is written
+        # first (#3581): without its archive it has nothing to charge.
+        from backend.app.models.print_log import PrintLogEntry
+        from backend.app.services.finance_billing import settle_pending_print_charges
+
+        await settle_pending_print_charges(
+            db, PrintLogEntry.archive_id.in_(select(PrintArchive.id).where(PrintArchive.printer_id == printer_id))
+        )
         # Delete all archives for this printer
         await db.execute(sql_delete(PrintArchive).where(PrintArchive.printer_id == printer_id))
     else:
@@ -3767,6 +3768,35 @@ async def clear_plate(
             await db.commit()
 
     return {"success": True, "message": "Plate cleared, next print will start shortly"}
+
+
+@router.post("/{printer_id}/refill-plates", response_model=PrinterResponse)
+async def refill_plates(
+    printer_id: int,
+    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_CLEAR_PLATE),
+    db: AsyncSession = Depends(get_db, scope="function"),
+):
+    """Reset the plate changer count after it was refilled and its bin emptied (#3575)."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+    if printer.plate_capacity is None:
+        raise HTTPException(400, "This printer has no plate changer capacity set")
+
+    # Like clear-plate, deliberately not gated on the printer being connected:
+    # it only changes Bambuddy-side state.
+    printer.plates_remaining = printer.plate_capacity
+    await db.commit()
+    await db.refresh(printer)
+    clear_count_unknown(printer_id)
+
+    try:
+        await ws_manager.send_printer_plates_changed(printer_id, printer.plates_remaining, printer.plate_capacity)
+    except Exception as e:
+        logger.warning("Failed to broadcast plate changer count for printer %s: %s", printer_id, e)
+
+    return printer
 
 
 @router.post("/{printer_id}/print/pause")

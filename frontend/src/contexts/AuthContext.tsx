@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { ApiError, api, getAuthToken, setAuthToken } from '../api/client';
+import { ADMIN_ONLY_PERMISSIONS, ApiError, api, getAuthToken, setAuthToken } from '../api/client';
 import type { LoginResponse, Permission, TokenPersistence, UserResponse } from '../api/client';
 
 interface AuthContextType {
@@ -316,13 +316,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const hasPermission = useCallback((permission: Permission): boolean => {
     if (!authEnabled) return true; // Auth disabled = allow all
     if (isAdmin) return true; // Admins have all permissions
+    if (ADMIN_ONLY_PERMISSIONS.has(permission)) return false; // backend refuses non-admins (#3729)
     return permissionSet.has(permission);
   }, [authEnabled, isAdmin, permissionSet]);
 
   const hasAnyPermission = useCallback((...permissions: Permission[]): boolean => {
     if (!authEnabled) return true;
     if (isAdmin) return true;
-    return permissions.some(p => permissionSet.has(p));
+    return permissions.some(p => !ADMIN_ONLY_PERMISSIONS.has(p) && permissionSet.has(p));
   }, [authEnabled, isAdmin, permissionSet]);
 
   // Ownership-based permission check

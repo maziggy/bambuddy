@@ -87,3 +87,47 @@
 # code (flatted/python/flatted.py), outside our control.
 - exclude:
     id: py/catch-base-exception
+
+# LDAP injection (4): All user input is RFC 4515 escaped via
+# _ldap_escape() in ldap_service.py before it goes into a search
+# filter; CodeQL doesn't trace through the escape loop. Same
+# exclusion as .codeql/codeql-config.yml (CI).
+- exclude:
+    id: py/ldap-injection
+
+# Incomplete URL substring sanitization (12): Test assertions that
+# a mocked HTTP client saw the right host, and bambu_cloud.py
+# looking for Cloudflare's challenge page in a response body. None
+# of them decides where a request goes. Same exclusion as CI.
+- exclude:
+    id: py/incomplete-url-substring-sanitization
+
+# ── Style rules ───────────────────────────────────────────────
+# Reported in the hundreds, mostly in tests, and none of them a
+# bug: they buried the findings worth reading. CI runs the default
+# (security-only) suite and never reported them.
+
+# Empty except (190): best-effort cleanup and teardown paths.
+- exclude:
+    id: py/empty-except
+
+# Unused import (89): mostly side-effect imports in tests
+# (`import backend.app.models` to register the ORM tables).
+- exclude:
+    id: py/unused-import
+
+# Side effect in assert (70): tests asserting on a call's result,
+# which is the point of the test; tests never run with -O.
+- exclude:
+    id: py/side-effect-in-assert
+
+# Import and import from (67), repeated import (44): function-level
+# imports to avoid import cycles and keep startup light.
+- exclude:
+    id: py/import-and-import-from
+- exclude:
+    id: py/repeated-import
+
+# Unnecessary lambda (27): mostly monkeypatch stand-ins in tests.
+- exclude:
+    id: py/unnecessary-lambda

@@ -133,6 +133,8 @@ class FileUpdate(IgnoresNullForRequiredColumns):
     notes: str | None = None
     # Empty string clears the link, like ``notes`` (#3077).
     external_url: str | None = Field(None, max_length=500)
+    # The file clears its own plate (#3576)
+    clears_plate: bool | None = None
 
     @field_validator("external_url")
     @classmethod
@@ -183,6 +185,8 @@ class FileResponse(BaseModel):
     # User link + photos of the printed result (#3077); ``source_url`` is the
     # read-only import provenance (MakerWorld) shown next to it.
     external_url: str | None = None
+    # The file clears its own plate (#3576)
+    clears_plate: bool = False
     photos: list[str] = []
     source_url: str | None = None
 
@@ -254,10 +258,21 @@ class FileListResponse(BaseModel):
     # query so the badge and the smart-print decision cost no extra request.
     variant_group_id: int | None = None
     variant_count: int = 0
+    # Only filled with ``with_variant_members=true`` (#3628): the group's name and
+    # this file's place in it, whether the caller may change the group (ungroup
+    # it, take a version out), whether the row was added because its group is in
+    # the result although the file itself is in another folder, and that folder's
+    # name (only set on those rows).
+    variant_group_name: str | None = None
+    variant_position: int | None = None
+    variant_group_editable: bool | None = None
+    variant_elsewhere: bool = False
+    folder_name: str | None = None
 
     # Metadata indicators (#3077). The list never ships the notes text itself —
     # ``has_notes`` is enough for the card badge; the details modal loads the rest.
     external_url: str | None = None
+    clears_plate: bool = False
     has_notes: bool = False
     photo_count: int = 0
 
@@ -526,6 +541,7 @@ class VariantGroupMemberResponse(BaseModel):
     filename: str
     target_model: str
     position: int
+    clears_plate: bool = False  # the file's own flag (#3576)
 
 
 class VariantGroupResponse(BaseModel):

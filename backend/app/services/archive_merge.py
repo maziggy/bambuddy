@@ -458,6 +458,21 @@ async def _merge(
     if _videos_conflict(list(rows.values()), runs):
         return SKIPPED_CONFLICTING_FILES, []
 
+    # A charge waiting on one of their runs for its energy is written first
+    # (#3581), for the archive it was printed from: the runs move below.
+    from backend.app.services.finance_billing import settle_pending_print_charges
+
+    if await settle_pending_print_charges(db, PrintLogEntry.archive_id.in_(ids)):
+        # One that failed was taken back to its savepoint, which leaves the
+        # run it had written to unread: read again, into the runs held above.
+        (
+            await db.scalars(
+                select(PrintLogEntry)
+                .where(PrintLogEntry.archive_id.in_(ids))
+                .execution_options(populate_existing=True, **{INCLUDE_OPEN_RUNS: True})
+            )
+        ).all()
+
     # Plan, reading only: the files to place in the survivor's folder. The
     # survivor's own files where it lost them, from the first archive that
     # still has them.

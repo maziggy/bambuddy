@@ -107,6 +107,9 @@ class NotificationProviderBase(BaseModel):
     on_plate_clear_required: bool = Field(
         default=False, description="Notify when a finished print is waiting for plate-clear confirmation"
     )
+    on_plate_changer_empty: bool = Field(
+        default=True, description="Notify when a printer's plate changer has used its last plate"
+    )
 
     # Event triggers - Post-print outcome confirmation (#1898)
     on_print_confirm_request: bool = Field(
@@ -152,6 +155,10 @@ class NotificationProviderBase(BaseModel):
     on_queue_job_skipped: bool = Field(default=True, description="Notify when job is skipped")
     on_queue_job_failed: bool = Field(default=True, description="Notify when job fails to start")
     on_queue_completed: bool = Field(default=False, description="Notify when all queue jobs finish")
+    on_filament_out_of_stock: bool = Field(
+        default=False,
+        description="Notify when a queued job waits for a filament with none left in the inventory",
+    )
 
     # Quiet hours
     quiet_hours_enabled: bool = Field(default=False, description="Enable quiet hours")
@@ -234,6 +241,7 @@ class NotificationProviderUpdate(IgnoresNullForRequiredColumns):
     # Event triggers - Build plate detection
     on_plate_not_empty: bool | None = None
     on_plate_clear_required: bool | None = None
+    on_plate_changer_empty: bool | None = None
 
     # Event triggers - Post-print outcome confirmation (#1898)
     on_print_confirm_request: bool | None = None
@@ -263,6 +271,7 @@ class NotificationProviderUpdate(IgnoresNullForRequiredColumns):
     on_queue_job_skipped: bool | None = None
     on_queue_job_failed: bool | None = None
     on_queue_completed: bool | None = None
+    on_filament_out_of_stock: bool | None = None
 
     # Quiet hours
     quiet_hours_enabled: bool | None = None

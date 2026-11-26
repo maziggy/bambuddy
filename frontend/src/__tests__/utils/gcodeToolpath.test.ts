@@ -118,6 +118,60 @@ G1 X5 Y5 E0.4
   });
 });
 
+describe('motion coordinates and comments', () => {
+  const start = 'G90\nM83\nG0 X50 Y40 Z1\n';
+
+  it('draws the same path with absolute and relative endpoints', () => {
+    const absolute = parseGcodeToolpath(start + 'G1 X55 E1\nG1 Y47 E1');
+    const relative = parseGcodeToolpath(start + 'G91\nG1 X5 E1\nG1 Y7 E1');
+    expect(relative.segmentCount).toBe(2);
+    expect(relative.layers).toEqual(absolute.layers);
+    expect(relative.bounds?.max).toEqual([55, 47, 1]);
+  });
+
+  it('resumes absolute travel after a relative start sequence', () => {
+    const parsed = parseGcodeToolpath(start + 'G91\nG1 Y-16\nG0 Z5\nG90\nG1 Y20');
+    const data = buildSegmentData(parsed.layers, parsed.defaultWidth);
+    expect(Array.from(data.travelPos)).toEqual([
+      50, 40, 1, 50, 24, 1,
+      50, 24, 1, 50, 24, 6,
+      50, 24, 6, 50, 20, 6,
+    ]);
+  });
+
+  it('keeps absolute extrusion active across XYZ mode changes', () => {
+    const parsed = parseGcodeToolpath(start + 'M82\nG1 X51 E2\nG91\nG1 X1 E1\nG90\nG1 X53 E3');
+    const data = buildSegmentData(parsed.layers, parsed.defaultWidth);
+    expect(data.nSeg).toBe(2);
+    expect(Array.from(data.travelPos)).toEqual([51, 40, 1, 52, 40, 1]);
+  });
+
+  it.each(['G2', 'G3'])('resolves %s endpoints and keeps I/J relative to the start', (arc) => {
+    const absolute = parseGcodeToolpath(start + arc + ' X60 I5 Z3');
+    const relative = parseGcodeToolpath(start + 'G91\n' + arc + ' X10 I5 Z2');
+    const data = buildSegmentData(relative.layers, relative.defaultWidth);
+    expect(relative.layers).toEqual(absolute.layers);
+    expect(data.nTrav).toBeGreaterThan(1);
+    expect(Array.from(data.travelPos.slice(-3))).toEqual([60, 40, 3]);
+    for (let i = 0; i < data.nTrav; i++) {
+      expect(data.travelPos[i * 6 + 5]).toBeCloseTo(1 + 2 * (i + 1) / data.nTrav, 5);
+    }
+  });
+
+  it('ignores a trailing comment while retaining full-line slicer annotations', () => {
+    const moves = ['G1 Y47', 'G1 Y47 ; next X55 E1', '; next X55 E1\nG1 Y47'];
+    const meshes = moves.map((move) => {
+      const parsed = parseGcodeToolpath(start + move + '\n; CHANGE_LAYER\n; FEATURE: Support\nG1 X51 E1');
+      return buildSegmentData(parsed.layers, parsed.defaultWidth);
+    });
+    expect(meshes[1]).toEqual(meshes[0]);
+    expect(meshes[2]).toEqual(meshes[0]);
+    expect(Array.from(meshes[0].travelPos)).toEqual([50, 40, 1, 50, 47, 1]);
+    expect(meshes[0].layerCount).toBe(2);
+    expect(Array.from(meshes[0].meta.vType)).toEqual([ToolpathType.support, ToolpathType.support]);
+  });
+});
+
 describe('the vendored libvgcode renderer accepts our parse', () => {
   const parsed = parseGcodeToolpath(GCODE);
 
@@ -457,6 +511,18 @@ G1 X40 Y10 E0.5
     const filtered = filterLayersByType(byFilament, new Set([2]));
     expect(typesOf(filtered)).not.toContain(2);
     expect(typesOf(filtered)).toContain(1);
+  });
+
+  it.each([
+    { hidden: 15, visible: [14, 16] },
+    { hidden: 16, visible: [14, 15] },
+  ])('hides only filament $hidden in the rendered mesh', ({ hidden, visible }) => {
+    const parsed = parseGcodeToolpath('M83\nG0 X50 Y40 Z1\nG1 Y41\nT13\nG1 X51 E1\nT14\nG1 X52 E1\nT15\nG1 X53 E1');
+    const filtered = filterLayersByType(layersByFilament(parsed.layers), new Set([hidden]));
+    const data = buildSegmentData(filtered, parsed.defaultWidth);
+    expect(data.nSeg).toBe(2);
+    expect(data.nTrav).toBe(1);
+    expect([...new Set(data.meta.vType)]).toEqual(visible);
   });
 
   it('returns the input untouched when nothing is hidden', () => {

@@ -1541,3 +1541,96 @@ class TestBackupPoolKeys:
         )
         wrapped = {"ams": {"ams": self.REPORTER_RAW["ams"]}}
         assert await self._deficit(db_session, printer, item, wrapped) == []
+
+
+class TestInventoryEmptyAmsMeasuresFilament:
+    """#3738: an inventory spool at 0 g in a slot the AMS still reads filament on.
+
+    The printer card shows the AMS reading over an inventory at 0% (#676), but
+    only an RFID spool is measured: without a tag ``remain`` is a placeholder.
+    The queue applies the same rule, so card and queue call the spool the same.
+    """
+
+    UUID = "A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4"
+    NO_UUID = "00000000000000000000000000000000"
+
+    @staticmethod
+    def _raw(tray_uuid: str, remain: int) -> dict:
+        tray = {"id": "0", "tray_type": "PLA", "remain": remain, "tray_uuid": tray_uuid, "tag_uid": "0000000000000000"}
+        return {"ams": [{"id": "0", "tray": [tray]}]}
+
+    async def _setup(self, db_session, printer_factory, tmp_path):
+        printer = await printer_factory(model="A1")
+        archive = await _setup_archive_3mf(
+            db_session, tmp_path, [{"id": "1", "type": "PLA", "color": "#000000", "used_g": "21.0"}]
+        )
+        # The reporter's spool: more recorded usage than its label weight.
+        spool = await _spool(db_session, label_weight=1000, weight_used=1046.0)
+        await _assign(db_session, printer_id=printer.id, spool_id=spool.id, ams_id=0, tray_id=0)
+        item = await _queue_item(db_session, printer_id=printer.id, archive=archive, ams_mapping=[0])
+        return printer, item
+
+    async def _check(self, db_session, printer, item, raw, *, backup_on=False, require_known=False):
+        patches = TestFilamentDeficitBackupAware._patch_status(
+            printer_id=printer.id, backup_on=backup_on, model="A1", raw_data=raw
+        )
+        for p in patches:
+            p.start()
+        try:
+            with patch("backend.app.services.filament_deficit.app_settings.base_dir", Path("/")):
+                return await compute_deficit_for_queue_item(db_session, item, require_known=require_known)
+        finally:
+            for p in patches:
+                p.stop()
+
+    @pytest.mark.asyncio
+    async def test_a_spool_without_rfid_stays_empty(self, db_session, printer_factory, tmp_path):
+        printer, item = await self._setup(db_session, printer_factory, tmp_path)
+
+        deficit = await self._check(db_session, printer, item, self._raw(self.NO_UUID, 100))
+
+        assert [(d.slot_id, d.remaining_grams) for d in deficit] == [(1, 0.0)]
+
+    @pytest.mark.asyncio
+    async def test_an_rfid_spool_the_ams_reads_filament_on_is_unknown(self, db_session, printer_factory, tmp_path):
+        printer, item = await self._setup(db_session, printer_factory, tmp_path)
+        raw = self._raw(self.UUID, 40)
+
+        assert await self._check(db_session, printer, item, raw) == []
+        assert await self._check(db_session, printer, item, raw, backup_on=True) == []
+        strict = await self._check(db_session, printer, item, raw, require_known=True)
+        assert [(d.slot_id, d.remaining_grams) for d in strict] == [(1, None)]
+
+    @pytest.mark.asyncio
+    async def test_an_rfid_spool_the_ams_reads_empty_stays_empty(self, db_session, printer_factory, tmp_path):
+        printer, item = await self._setup(db_session, printer_factory, tmp_path)
+
+        deficit = await self._check(db_session, printer, item, self._raw(self.UUID, 0))
+
+        assert [(d.slot_id, d.remaining_grams) for d in deficit] == [(1, 0.0)]
+
+    @pytest.mark.asyncio
+    async def test_the_pool_leaves_out_only_the_measured_spool(self, db_session, printer_factory):
+        from backend.app.services.filament_deficit import build_slot_materials
+
+        printer = await printer_factory(model="A1")
+        for tray_id in (0, 1):
+            spool = await _spool(db_session, label_weight=1000, weight_used=1046.0)
+            await _assign(db_session, printer_id=printer.id, spool_id=spool.id, ams_id=0, tray_id=tray_id)
+        raw = self._raw(self.UUID, 40)
+        raw["ams"][0]["tray"].append(
+            {"id": "1", "tray_type": "PLA", "remain": 100, "tray_uuid": self.NO_UUID, "tag_uid": ""}
+        )
+
+        patches = TestFilamentDeficitBackupAware._patch_status(
+            printer_id=printer.id, backup_on=True, model="A1", raw_data=raw
+        )
+        for p in patches:
+            p.start()
+        try:
+            slots = await build_slot_materials(db_session, printer.id)
+        finally:
+            for p in patches:
+                p.stop()
+
+        assert [(s.tray_id, s.remaining_grams) for s in slots] == [(1, 0.0)]

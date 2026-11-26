@@ -57,7 +57,7 @@ class MQTTRelayService:
         self._discovery_lock = threading.Lock()
         self._discovery_sent: dict[str, dict] = {}  # discovery topic -> the config published on it
         # Our retained configs as the broker holds them, which is what is left
-        # of them after a restart: what to clear when discovery is turned off.
+        # of them after a restart: cleared along with _discovery_sent.
         self._discovery_seen: set[str] = set()
         self._discovery_signatures: dict[str, tuple] = {}  # printer serial -> what its configs were built from
         # (discovery prefix, topic prefix) pairs whose configs must go: published
@@ -402,7 +402,7 @@ class MQTTRelayService:
                 return
             config = json.loads(message.payload)
             # Whose it is, from what it reads: <topic prefix>/printers/<serial>/status.
-            # Another Bambuddy on the same broker reads other topics.
+            # A Bambuddy with another topic prefix reads other topics.
             state_topic = config.get("state_topic") if isinstance(config, dict) else None
             if (
                 not isinstance(state_topic, str)

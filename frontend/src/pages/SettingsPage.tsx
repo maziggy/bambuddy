@@ -841,7 +841,7 @@ export function SettingsPage() {
     refetchInterval: activeTab === 'network' ? 5000 : false, // Poll every 5s when on Network tab
   });
 
-  // The backend refuses a save with both prefixes equal (#3724); say why next to the field.
+  // Discovery prefixes the backend refuses (#3724), to say why next to the field.
   const trimMqttPrefix = (value: string | undefined, fallback: string) =>
     (value ?? '').trim().replace(/^\/+|\/+$/g, '') || fallback;
   const mqttDiscoveryPrefix = trimMqttPrefix(localSettings?.mqtt_ha_discovery_prefix, 'homeassistant');

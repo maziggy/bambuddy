@@ -22,7 +22,7 @@ from backend.app.models.library import LibraryFile
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
-from backend.app.services import plate_clear
+from backend.app.services import plate_changer, plate_clear
 from backend.app.services.print_scheduler import PrintScheduler
 from backend.app.services.printer_manager import printer_manager
 from backend.tests.integration.test_print_complete_end_to_end import (  # noqa: F401
@@ -551,3 +551,122 @@ class TestAlternativesJob:
 
         assert _raised(gate, queued_print["printer"])
         assert printer_manager.is_awaiting_plate_clear(queued_print["printer"]) is True
+
+
+class TestPlateChangerCount:
+    """A job that clears its own plate spends one of a plate changer's plates (#3575).
+
+    #3575 counts every successful print whose plate nobody has to confirm. A
+    flagged job swaps its plate itself, so its successful finish always counts,
+    also on a printer whose own setting still asks for the confirmation.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _changer(self):
+        marks = (plate_changer._count_pending, plate_changer._count_unknown)
+        for mark in marks:
+            mark.clear()
+        with (
+            patch("backend.app.services.plate_changer.ws_manager") as ws,
+            patch("backend.app.services.plate_changer.notification_service") as notif,
+        ):
+            ws.send_printer_plates_changed = AsyncMock()
+            notif.on_plate_changer_empty = AsyncMock()
+            self.ws, self.notif = ws, notif
+            yield
+        for mark in marks:
+            mark.clear()
+
+    async def _capacity(self, db_session, printer_id, *, capacity=5, remaining=3):
+        printer = await db_session.get(Printer, printer_id)
+        printer.plate_capacity = capacity
+        printer.plates_remaining = remaining
+        await db_session.commit()
+
+    async def _remaining(self, db_session, printer_id):
+        db_session.expire_all()
+        return (await db_session.get(Printer, printer_id)).plates_remaining
+
+    @pytest.mark.parametrize(
+        ("status", "flag", "require_clear", "override"),
+        list(itertools.product(STATUSES, [True, False], [True, False], [None, True, False])),
+    )
+    async def test_which_finishes_count(
+        self, test_engine, db_session, queued_print, gate, status, flag, require_clear, override
+    ):
+        await _setup(db_session, queued_print, flag=flag, override=override, require_clear=require_clear)
+        await self._capacity(db_session, queued_print["printer"])
+
+        await _complete(test_engine, queued_print["printer"], status)
+
+        needs_confirmation = override if override is not None else require_clear
+        counted = status == "completed" and (flag or not needs_confirmation)
+        assert await self._remaining(db_session, queued_print["printer"]) == (2 if counted else 3)
+
+    async def test_a_flagged_job_that_skips_the_confirmation_counts(self, test_engine, db_session, queued_print, gate):
+        await _setup(db_session, queued_print)
+        await self._capacity(db_session, queued_print["printer"])
+
+        await _complete(test_engine, queued_print["printer"], "completed")
+
+        assert not _raised(gate, queued_print["printer"])
+        assert await self._remaining(db_session, queued_print["printer"]) == 2
+        self.ws.send_printer_plates_changed.assert_awaited_once_with(queued_print["printer"], 2, 5)
+
+    async def test_the_last_plate_of_a_flagged_job_empties_the_changer(
+        self, test_engine, db_session, queued_print, gate
+    ):
+        """The queue must stop here: the next flagged job would run on an empty magazine."""
+        await _setup(db_session, queued_print)
+        await self._capacity(db_session, queued_print["printer"], remaining=1)
+
+        await _complete(test_engine, queued_print["printer"], "completed")
+
+        assert await self._remaining(db_session, queued_print["printer"]) == 0
+        self.notif.on_plate_changer_empty.assert_awaited_once()
+        assert plate_changer.is_count_pending(queued_print["printer"]) is False
+
+    async def test_a_flagged_job_on_a_printer_that_always_asks_counts_and_still_waits(
+        self, test_engine, db_session, queued_print, gate
+    ):
+        """The printer's own setting (#2860) keeps the confirmation; the swapped plate is spent anyway."""
+        await _setup(db_session, queued_print, override=True)
+        await self._capacity(db_session, queued_print["printer"])
+
+        await _complete(test_engine, queued_print["printer"], "completed")
+
+        assert _raised(gate, queued_print["printer"])
+        assert printer_manager.is_awaiting_plate_clear(queued_print["printer"]) is True
+        assert await self._remaining(db_session, queued_print["printer"]) == 2
+        self.ws.send_printer_plates_changed.assert_awaited_once_with(queued_print["printer"], 2, 5)
+
+    @pytest.mark.parametrize("status", ["failed", "aborted", "cancelled"])
+    async def test_an_unsuccessful_flagged_job_does_not_count(
+        self, test_engine, db_session, queued_print, gate, status
+    ):
+        await _setup(db_session, queued_print)
+        await self._capacity(db_session, queued_print["printer"])
+
+        await _complete(test_engine, queued_print["printer"], status)
+
+        assert _raised(gate, queued_print["printer"])
+        assert await self._remaining(db_session, queued_print["printer"]) == 3
+
+    async def test_an_unverified_flagged_finish_does_not_count(self, test_engine, db_session, queued_print, gate):
+        """A completion that cannot be matched to the flagged job keeps the gate and the count."""
+        await _setup(db_session, queued_print)
+        await self._capacity(db_session, queued_print["printer"])
+
+        await _complete(test_engine, queued_print["printer"], "completed", name="somebody_elses_print")
+
+        assert _raised(gate, queued_print["printer"])
+        assert await self._remaining(db_session, queued_print["printer"]) == 3
+
+    async def test_no_capacity_counts_nothing(self, test_engine, db_session, queued_print, gate):
+        await _setup(db_session, queued_print)
+
+        await _complete(test_engine, queued_print["printer"], "completed")
+
+        assert not _raised(gate, queued_print["printer"])
+        assert await self._remaining(db_session, queued_print["printer"]) is None
+        self.ws.send_printer_plates_changed.assert_not_awaited()

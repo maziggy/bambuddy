@@ -500,6 +500,40 @@ describe('useWebSocket hook', () => {
       expect(received).toEqual([{ printer_id: 3, printer_name: 'X1C', reason: 'no_camera_frame' }]);
     });
 
+    it('refetches the printers on printer_plates_changed (#3575)', async () => {
+      vi.useFakeTimers();
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+      renderHook(() => useWebSocket(), {
+        wrapper: createWrapper(queryClient),
+      });
+
+      const ws = await waitForWs();
+
+      act(() => {
+        ws.open();
+      });
+
+      act(() => {
+        ws.simulateMessage({
+          type: 'printer_plates_changed',
+          printer_id: 1,
+          data: { plates_remaining: 0, plate_capacity: 5 },
+        });
+      });
+
+      await act(async () => {
+        vi.advanceTimersByTime(5000);
+      });
+
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['printers'] });
+
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    });
+
     it('invalidates inventory queries on inventory_changed message', async () => {
       vi.useFakeTimers();
       const { useWebSocket } = await import('../../hooks/useWebSocket');

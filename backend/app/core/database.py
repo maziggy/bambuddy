@@ -6246,6 +6246,16 @@ async def _run_migrations(conn):
     # no default -- identical DDL on SQLite and Postgres.
     await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN pending_charge TEXT")
 
+    # Migration: per-printer plate changer capacity (#3575). NULL capacity keeps
+    # counting off, so existing printers behave as before.
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN plate_capacity INTEGER")
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN plates_remaining INTEGER")
+    # Show the count on the printer card (#3575); on by default, so nothing changes on upgrade.
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN plate_changer_show_count BOOLEAN DEFAULT TRUE NOT NULL")
+    await _safe_execute(
+        conn, "ALTER TABLE notification_providers ADD COLUMN on_plate_changer_empty BOOLEAN DEFAULT TRUE"
+    )
+
     # Migration: the file / job / archive clears its own plate (#3576). False
     # keeps every existing row waiting for the plate confirmation as before.
     for _table in ("library_files", "print_queue", "print_archives"):
@@ -6488,6 +6498,7 @@ _PG_COLUMNS_SET_FROM_MODEL = (
     ("notification_providers", "on_filament_out_of_stock"),
     ("notification_providers", "on_ha_sensor_alert"),
     ("notification_providers", "on_location_ha_sensor_alert"),
+    ("notification_providers", "on_plate_changer_empty"),
     ("notification_providers", "on_plate_clear_required"),
     ("notification_providers", "on_print_confirm_request"),
     ("notification_providers", "on_print_pause_upcoming"),

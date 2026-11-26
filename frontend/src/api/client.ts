@@ -511,6 +511,9 @@ export interface Printer {
   external_camera_snapshot_url: string | null;  // optional single-frame override (#1177)
   camera_rotation: number;  // 0, 90, 180, 270 degrees
   camera_light_auto: boolean;  // picked for the chamber light when camera_light_mode is 'selected' (#1655)
+  plate_capacity: number | null;  // plates the plate changer holds; null = no counting (#3575)
+  plate_changer_show_count: boolean;  // show the plate count on the printer card (#3575)
+  plates_remaining: number | null;  // plates left before a refill / bin emptying is due (#3575)
   plate_detection_enabled: boolean;  // Check plate before print
   plate_detection_roi?: PlateDetectionROI;  // ROI for plate detection
   wear_cost_per_hour: number | null;  // Wear cost per printing hour (#694)
@@ -874,6 +877,9 @@ export interface PrinterCreate {
   external_camera_snapshot_url?: string | null;
   camera_rotation?: number;
   camera_light_auto?: boolean;
+  plate_capacity?: number | null;
+  plates_remaining?: number | null;
+  plate_changer_show_count?: boolean;
   plate_detection_enabled?: boolean;
   plate_detection_roi?: PlateDetectionROI;
   wear_cost_per_hour?: number | null;
@@ -3493,6 +3499,7 @@ export interface NotificationProvider {
   // Build plate detection
   on_plate_not_empty: boolean;
   on_plate_clear_required: boolean;
+  on_plate_changer_empty: boolean;
   // Post-print outcome confirmation (#1898)
   on_print_confirm_request: boolean;
   on_filament_out_of_stock: boolean;
@@ -3565,6 +3572,7 @@ export interface NotificationProviderCreate {
   // Build plate detection
   on_plate_not_empty?: boolean;
   on_plate_clear_required?: boolean;
+  on_plate_changer_empty?: boolean;
   // Post-print outcome confirmation (#1898)
   on_print_confirm_request?: boolean;
   on_filament_out_of_stock?: boolean;
@@ -3630,6 +3638,7 @@ export interface NotificationProviderUpdate {
   // Build plate detection
   on_plate_not_empty?: boolean;
   on_plate_clear_required?: boolean;
+  on_plate_changer_empty?: boolean;
   // Post-print outcome confirmation (#1898)
   on_print_confirm_request?: boolean;
   on_filament_out_of_stock?: boolean;
@@ -4959,6 +4968,14 @@ export type Permission =
   | 'pipelines:read' | 'pipelines:write' | 'pipelines:run'
   | 'websocket:connect';
 
+// Permissions the backend only honours for admins (#3729): the user and group
+// write routes also require admin status, since a non-admin holding them could
+// otherwise make themselves admin. Granting them to another group does nothing.
+export const ADMIN_ONLY_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission>([
+  'users:create', 'users:update', 'users:delete',
+  'groups:create', 'groups:update', 'groups:delete',
+]);
+
 // Group types
 export interface GroupBrief {
   id: number;
@@ -5796,6 +5813,10 @@ export const api = {
     }),
   clearPlate: (printerId: number) =>
     request<{ success: boolean; message: string }>(`/printers/${printerId}/clear-plate`, {
+      method: 'POST',
+    }),
+  refillPlates: (printerId: number) =>
+    request<Printer>(`/printers/${printerId}/refill-plates`, {
       method: 'POST',
     }),
 
@@ -8516,6 +8537,7 @@ export const api = {
     scope?: 'internal' | 'external',
     recursive = false,
     tagIds: number[] = [],
+    withVariantMembers = false,
   ) => {
     const params = new URLSearchParams();
     if (folderId !== undefined && folderId !== null) {
@@ -8538,6 +8560,9 @@ export const api = {
     for (const tagId of tagIds) {
       params.append('tag_ids', String(tagId));
     }
+    // Also list the members of the groups in the result that sit in other
+    // folders or outside the filter, flagged `variant_elsewhere` (#3628).
+    if (withVariantMembers) params.set('with_variant_members', 'true');
     return request<LibraryFileListItem[]>(`/library/files?${params}`);
   },
   getLibraryFolderReadme: (folderId: number) =>
@@ -8583,6 +8608,11 @@ export const api = {
     }),
   getVariantGroup: (groupId: number) =>
     request<VariantGroup>(`/library/variant-groups/${groupId}`),
+  // Ungroup: the files themselves are kept.
+  deleteVariantGroup: (groupId: number) =>
+    request<void>(`/library/variant-groups/${groupId}`, { method: 'DELETE' }),
+  removeVariantGroupMember: (groupId: number, fileId: number) =>
+    request<void>(`/library/variant-groups/${groupId}/members/${fileId}`, { method: 'DELETE' }),
 
   getLibraryFile: (id: number) => request<LibraryFile>(`/library/files/${id}`),
   uploadLibraryFile: async (
@@ -9386,6 +9416,16 @@ export interface LibraryFileListItem {
   // matching rows on screen. 0 when the file is not grouped.
   variant_group_id?: number | null;
   variant_count?: number;
+  // Only with `with_variant_members=true` (#3628): the group's name and this
+  // file's place in it, whether the caller may change the group (ungroup it,
+  // take a version out; false when the server would refuse), whether the file
+  // was appended from outside the listing's folder or filter, and the folder
+  // it sits in then.
+  variant_group_name?: string | null;
+  variant_position?: number | null;
+  variant_group_editable?: boolean | null;
+  variant_elsewhere?: boolean;
+  folder_name?: string | null;
   // Metadata indicators (#3077). Optional for the same reason as `tags`: older
   // mocks construct list items without them. Read sites default to falsy.
   external_url?: string | null;

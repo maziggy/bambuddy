@@ -391,6 +391,80 @@ describe('computeAmsMapping', () => {
     expect(result).toEqual([0, 2]);  // Each slot gets its specific tray
   });
 
+  // #3733: tray_info_idx names the variant, not the spool.
+  it('lets the colour win over a unique tray_info_idx of another colour', () => {
+    const reqs = {
+      filaments: [
+        { slot_id: 1, type: 'PLA', color: '#000000', used_grams: 10, tray_info_idx: 'GFA01' },
+        { slot_id: 2, type: 'PLA', color: '#FFFFFF', used_grams: 10, tray_info_idx: 'GFA00' },
+      ],
+    };
+    const status = createPrinterStatus([
+      {
+        id: 0,
+        tray: [
+          { id: 0, tray_type: 'PLA', tray_color: '000000', tray_info_idx: 'GFA00' },
+          { id: 1, tray_type: 'PLA', tray_color: 'FFFFFF', tray_info_idx: 'GFA01' },
+        ],
+      },
+    ]);
+
+    expect(computeAmsMapping(reqs, status)).toEqual([0, 1]);
+  });
+
+  it('still prefers a unique tray_info_idx of another colour over another variant', () => {
+    const reqs = {
+      filaments: [{ slot_id: 1, type: 'PLA', color: '#000000', used_grams: 10, tray_info_idx: 'GFA01' }],
+    };
+    const status = createPrinterStatus([
+      {
+        id: 0,
+        tray: [
+          { id: 0, tray_type: 'PLA', tray_color: 'FF0000', tray_info_idx: 'GFA00' },
+          { id: 1, tray_type: 'PLA', tray_color: 'FFFFFF', tray_info_idx: 'GFA01' },
+        ],
+      },
+    ]);
+
+    expect(computeAmsMapping(reqs, status)).toEqual([1]);
+  });
+
+  it('lets the colour win over several tray_info_idx matches of another colour', () => {
+    const reqs = {
+      filaments: [{ slot_id: 1, type: 'PLA', color: '#000000', used_grams: 10, tray_info_idx: 'GFA01' }],
+    };
+    const status = createPrinterStatus([
+      {
+        id: 0,
+        tray: [
+          { id: 0, tray_type: 'PLA', tray_color: 'FFFFFF', tray_info_idx: 'GFA01' },
+          { id: 1, tray_type: 'PLA', tray_color: 'FFFFFF', tray_info_idx: 'GFA01' },
+          { id: 2, tray_type: 'PLA', tray_color: '000000', tray_info_idx: 'GFA00' },
+        ],
+      },
+    ]);
+
+    expect(computeAmsMapping(reqs, status)).toEqual([2]);
+  });
+
+  it('prefers one of several tray_info_idx matches of another colour over another variant', () => {
+    const reqs = {
+      filaments: [{ slot_id: 1, type: 'PLA', color: '#000000', used_grams: 10, tray_info_idx: 'GFA01' }],
+    };
+    const status = createPrinterStatus([
+      {
+        id: 0,
+        tray: [
+          { id: 0, tray_type: 'PLA', tray_color: 'FF0000', tray_info_idx: 'GFA00' },
+          { id: 1, tray_type: 'PLA', tray_color: 'FFFFFF', tray_info_idx: 'GFA01' },
+          { id: 2, tray_type: 'PLA', tray_color: 'FFFFFF', tray_info_idx: 'GFA01' },
+        ],
+      },
+    ]);
+
+    expect(computeAmsMapping(reqs, status)).toEqual([1]);
+  });
+
   it('handles external spool matching', () => {
     const reqs = {
       filaments: [

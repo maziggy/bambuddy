@@ -142,6 +142,9 @@ class NotificationProvider(Base):
     on_plate_clear_required: Mapped[bool | None] = mapped_column(
         Boolean, default=False, server_default=false()
     )  # Print ended, queue gated until plate is confirmed clear
+    # Plate changer used its last plate, queue skips the printer (#3575). On by
+    # default: it only fires for printers with a capacity set.
+    on_plate_changer_empty: Mapped[bool | None] = mapped_column(Boolean, default=True, server_default=true())
 
     # Print asked for an outcome verdict (#1898). Defaults ON: it only ever
     # fires for prints where the user opted in per-job, so the provider-level

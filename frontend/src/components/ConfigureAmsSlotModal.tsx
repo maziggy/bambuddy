@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { X, Loader2, Settings2, ChevronDown, CheckCircle2, RotateCcw } from 'lucide-react';
 import { api } from '../api/client';
 import type { KProfile } from '../api/client';
-import { matchesPrinterModelSuffix, presetCompatibility, buildCompatibilityIndex, extractPresetModel } from '../utils/slicerPrinterMatch';
+import { matchesPrinterModelSuffix, presetCompatibility, buildCompatibilityIndex, extractPresetModel, parseCompatiblePrinters, printerPresetName } from '../utils/slicerPrinterMatch';
 import { toFilamentId } from './spool-form/utils';
 import { cloudPresetFilamentId, cloudPresetFilamentIds, filamentIdToSettingId } from '../utils/filamentIds';
 import { Button } from './Button';
@@ -400,12 +400,7 @@ export function ConfigureAmsSlotModal({
   // the filter in that case (fail-open, same shape as the cloud-preset filter).
   const fullPrinterName = useMemo<string | null>(() => {
     if (!printerModel || !printerModelsData) return null;
-    for (const [longName, shortCode] of Object.entries(printerModelsData)) {
-      if (shortCode === printerModel) {
-        return `${longName.startsWith('Bambu Lab ') ? longName : `Bambu Lab ${longName}`} ${nozzleDiameter} nozzle`;
-      }
-    }
-    return null;
+    return printerPresetName(printerModel, nozzleDiameter, printerModelsData);
   }, [printerModel, printerModelsData, nozzleDiameter]);
 
   // Configure slot mutation
@@ -771,15 +766,7 @@ export function ConfigureAmsSlotModal({
         if (query && !lp.name.toLowerCase().includes(query)) continue;
         const isCurrentPreset = savedLocalId === localId;
         if (!isCurrentPreset && fullPrinterName) {
-          let compatList: string[] | null = null;
-          if (lp.compatible_printers) {
-            try {
-              const parsed = JSON.parse(lp.compatible_printers);
-              if (Array.isArray(parsed)) compatList = parsed.filter((s): s is string => typeof s === 'string');
-            } catch {
-              compatList = null;
-            }
-          }
+          const compatList = parseCompatiblePrinters(lp.compatible_printers);
           const verdict = presetCompatibility(
             { name: lp.name, compatible_printers: compatList },
             'filament',

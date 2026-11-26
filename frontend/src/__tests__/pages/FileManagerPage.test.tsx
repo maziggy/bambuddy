@@ -1484,8 +1484,9 @@ describe('FileManagerPage', () => {
       render(<FileManagerPage />);
       await waitFor(() => expect(screen.getByText('Benchy')).toBeInTheDocument());
 
-      await user.click(screen.getByText('Benchy').closest('div[class*="cursor-pointer"]') as HTMLElement);
-      await user.click(await screen.findByRole('button', { name: /^Print$/ }));
+      // The two members are one card (#3628); its Print offers the whole group.
+      await user.click(screen.getByRole('button', { name: 'Actions for version group Benchy' }));
+      await user.click(await screen.findByRole('button', { name: 'Print all versions as one job' }));
 
       // The dialog is the multi-file one (the archive name lists both files) ...
       expect(await screen.findByText(/benchy\.gcode\.3mf \+1 more/)).toBeInTheDocument();
@@ -1493,13 +1494,17 @@ describe('FileManagerPage', () => {
       expect(screen.queryByRole('radiogroup', { name: 'What the selected files become' })).not.toBeInTheDocument();
     });
 
-    it('prefills the alternatives toggle from the group member, even for a file outside the loaded list (#3576)', async () => {
+    it('prefills the alternatives toggle of a version group from each file’s own flag (#3576)', async () => {
       const user = userEvent.setup();
       server.use(
         http.get('/api/v1/library/files', ({ request }) =>
           HttpResponse.json(
             filesForRequest(request).map((f: { id: number }) =>
-              f.id === 1 ? { ...f, variant_group_id: 7 } : f
+              f.id === 1
+                ? { ...f, variant_group_id: 7, clears_plate: false }
+                : f.id === 3
+                  ? { ...f, variant_group_id: 7, clears_plate: true }
+                  : f
             )
           )
         ),
@@ -1509,15 +1514,17 @@ describe('FileManagerPage', () => {
             name: 'Benchy',
             members: [
               { library_file_id: 1, filename: 'benchy.gcode.3mf', target_model: 'X1C', position: 0, clears_plate: false },
-              { library_file_id: 999, filename: 'elsewhere.gcode.3mf', target_model: 'P1S', position: 1, clears_plate: true },
+              { library_file_id: 3, filename: 'cube.gcode.3mf', target_model: 'P1S', position: 1, clears_plate: true },
             ],
           })
         )
       );
       render(<FileManagerPage />);
       await waitFor(() => expect(screen.getByText('Benchy')).toBeInTheDocument());
-      await user.click(screen.getByText('Benchy').closest('div[class*="cursor-pointer"]') as HTMLElement);
-      await user.click(await screen.findByRole('button', { name: /^Print$/ }));
+
+      // The group is one card (#3628); its Print offers every version as an alternative.
+      await user.click(screen.getByRole('button', { name: 'Actions for version group Benchy' }));
+      await user.click(await screen.findByRole('button', { name: 'Print all versions as one job' }));
 
       await screen.findByText('Printer alternatives');
       const boxes = screen.getAllByRole('checkbox', { name: /Clears plate/ });

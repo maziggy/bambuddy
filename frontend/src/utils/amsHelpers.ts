@@ -775,6 +775,29 @@ export function isBambuLabSpool(tray: {
 }
 
 /**
+ * The inventory fill to show for a slot, or null to show the AMS reading.
+ *
+ * An inventory at 0% yields when the AMS measures the spool and still reads
+ * filament on it (#676). Only an RFID spool is measured: without a tag the
+ * firmware reports a placeholder `remain` (100 on an A1 with AMS lite), which
+ * showed a used-up spool as full (#3738). The queue's filament check applies
+ * the same rule, so both call the spool the same.
+ */
+export function inventoryFillOverAms(
+  inventoryFill: number | null | undefined,
+  tray: {
+    tray_type?: string | null;
+    remain?: number | null;
+    tray_uuid?: string | null;
+    tag_uid?: string | null;
+  } | null | undefined,
+): number | null {
+  if (inventoryFill == null) return null;
+  const amsSeesFilament = !!tray?.tray_type && isBambuLabSpool(tray) && tray.remain != null && tray.remain > 0;
+  return inventoryFill === 0 && amsSeesFilament ? null : inventoryFill;
+}
+
+/**
  * Does a stored slot preset still describe what is in the slot?
  *
  * `slot_preset_mappings` remembers the preset a slot was last configured with,

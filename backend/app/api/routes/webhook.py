@@ -173,6 +173,8 @@ async def webhook_add_to_queue(
         created_by_id=api_key.user_id,
         # Waits for someone to start it unless the owner may print without review (#1620)
         manual_start=await is_auth_enabled(db) and queue_review_required_for(await resolve_apikey_owner(db, api_key)),
+        # Inherited from the archive, as POST /queue/ does (#3576)
+        clears_plate=bool(archive.clears_plate),
         # No print options in the request: the install's defaults.
         **await default_print_options(db),
         # The slicer's slots, as a reprint from the UI reuses them

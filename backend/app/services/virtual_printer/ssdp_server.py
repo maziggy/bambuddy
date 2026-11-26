@@ -239,13 +239,13 @@ class VirtualPrinterSSDPServer:
 
         except OSError as e:
             if e.errno == 98:  # Address already in use
-                logger.warning("SSDP port %s in use - real printers may be running", SSDP_PORT)
+                logger.warning("[%s] SSDP port %s in use - real printers may be running", self.name, SSDP_PORT)
             else:
-                logger.error("SSDP server error: %s", e)
+                logger.error("[%s] SSDP server error: %s", self.name, e)
         except asyncio.CancelledError:
             logger.debug("SSDP server cancelled")
         except Exception as e:
-            logger.error("SSDP server error: %s", e)
+            logger.error("[%s] SSDP server error: %s", self.name, e)
         finally:
             await self._cleanup()
 

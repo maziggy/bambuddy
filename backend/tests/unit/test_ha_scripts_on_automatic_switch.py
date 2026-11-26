@@ -149,9 +149,12 @@ class TestEveryAutomaticOff:
             patch.object(manager, "_mark_auto_off_executed", AsyncMock()),
         ):
             pm.is_print_active.return_value = False
+            pm.get_status.return_value = MagicMock(connected=True, raw_data={"ams": []})
             await manager.resume_pending_auto_offs()
+            # Runs as a pending off, which first waits out drying (#3660).
+            await manager._pending_off[1]
 
-        scripts.assert_awaited_once_with(7, plug, "OFF")
+        assert scripts.await_args.args[0] == 7 and scripts.await_args.args[2] == "OFF"
 
 
 class TestTheSchedule:

@@ -24,3 +24,13 @@ export function useUiSettings(options: { enabled?: boolean; staleTime?: number }
 export function hasGcodeSnippets(settings: UiSettings | undefined): boolean {
   return !!(settings?.gcode_snippets || settings?.has_gcode_snippets);
 }
+
+/**
+ * Whether a label printer is set up (#3612). /settings/ui-flags derives the
+ * flag; the full settings carry type and address, so either form answers.
+ */
+export function isLabelPrinterConfigured(settings: UiSettings | undefined): boolean {
+  if (!settings) return false;
+  if (typeof settings.label_printer_configured === 'boolean') return settings.label_printer_configured;
+  return !!settings.label_printer_type && !!settings.label_printer_host;
+}

@@ -4,6 +4,11 @@ import { useTranslation } from 'react-i18next';
 import { useToast } from '../../contexts/ToastContext';
 import { toDateTimeLocalValue } from '../../utils/date';
 import type { AdditionalSectionProps } from './types';
+import { splitSuggested, brandSuggestedNames } from './utils';
+import { GroupHeading } from './GroupHeading';
+import { brandAliases as findBrandAliases } from './catalogColors';
+
+const NO_ALIASES: string[] = [];
 
 function SpoolWeightPicker({
   catalog,
@@ -11,12 +16,18 @@ function SpoolWeightPicker({
   onChange,
   catalogId,
   onCatalogIdChange,
+  brand = '',
+  brandAliases = NO_ALIASES,
 }: {
   catalog: { id: number; name: string; weight: number }[];
   value: number;
   onChange: (weight: number) => void;
   catalogId: number | null;
   onCatalogIdChange: (id: number | null) => void;
+  // Optional: entries named after this brand are listed first (#3619).
+  brand?: string;
+  // Other names of the brand in the colour catalog, matched like the brand itself.
+  brandAliases?: string[];
 }) {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
@@ -72,6 +83,12 @@ function SpoolWeightPicker({
     );
   }, [catalog, search]);
 
+  // Empty spools of the chosen brand first; nothing is hidden (#3619).
+  const groups = useMemo(
+    () => splitSuggested(filtered, brandSuggestedNames(filtered.map(e => e.name), brand, brandAliases), e => e.name),
+    [filtered, brand, brandAliases],
+  );
+
   // Find all entries matching the current weight
   const matchingEntries = useMemo(() => {
     return catalog.filter(e => e.weight === value);
@@ -95,6 +112,27 @@ function SpoolWeightPicker({
     // Leave empty if there are no matches
     return '';
   }, [isOpen, search, catalogId, catalog, matchingEntries]);
+
+  const renderEntry = (entry: { id: number; name: string; weight: number }) => (
+    <button
+      key={entry.id}
+      type="button"
+      className={`w-full px-3 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex justify-between items-center ${
+        (catalogId ? entry.id === catalogId : entry.weight === value)
+          ? 'bg-bambu-green/10 text-bambu-green'
+          : 'text-white'
+      }`}
+      onClick={() => {
+        onCatalogIdChange(entry.id);
+        onChange(entry.weight);
+        setIsOpen(false);
+        setSearch('');
+      }}
+    >
+      <span className="truncate">{entry.name}</span>
+      <span className="font-mono text-xs text-bambu-gray ml-2 shrink-0">{entry.weight}g</span>
+    </button>
+  );
 
   return (
     <div>
@@ -126,26 +164,20 @@ function SpoolWeightPicker({
               {filtered.length === 0 ? (
                 <div className="px-3 py-2 text-sm text-bambu-gray">{t('inventory.noResults')}</div>
               ) : (
-                filtered.map(entry => (
-                  <button
-                    key={entry.id}
-                    type="button"
-                    className={`w-full px-3 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex justify-between items-center ${
-                      (catalogId ? entry.id === catalogId : entry.weight === value)
-                        ? 'bg-bambu-green/10 text-bambu-green'
-                        : 'text-white'
-                    }`}
-                    onClick={() => {
-                      onCatalogIdChange(entry.id);
-                      onChange(entry.weight);
-                      setIsOpen(false);
-                      setSearch('');
-                    }}
-                  >
-                    <span className="truncate">{entry.name}</span>
-                    <span className="font-mono text-xs text-bambu-gray ml-2 shrink-0">{entry.weight}g</span>
-                  </button>
-                ))
+                <>
+                  {groups.top.length > 0 && (
+                    <>
+                      <GroupHeading label={t('inventory.suggestedOptions')} />
+                      {groups.top.map(renderEntry)}
+                    </>
+                  )}
+                  {groups.rest.length > 0 && (
+                    <>
+                      {groups.top.length > 0 && <GroupHeading label={t('inventory.allOptions')} />}
+                      {groups.rest.map(renderEntry)}
+                    </>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -181,8 +213,12 @@ export function AdditionalSection({
   globalLowStockThreshold,
   spoolmanMode = false,
   showLastDried = false,
+  brand,
+  catalogColors,
 }: AdditionalSectionProps) {
   const { t } = useTranslation();
+  // Product lines / manufacturer the catalog knows the brand by (#3619).
+  const aliases = useMemo(() => findBrandAliases(catalogColors ?? [], brand), [catalogColors, brand]);
   const { showToast } = useToast();
   const [measuredInput, setMeasuredInput] = useState('');
   const [isMeasuredFocused, setIsMeasuredFocused] = useState(false);
@@ -223,6 +259,8 @@ export function AdditionalSection({
           onChange={(weight) => updateField('core_weight', weight)}
           catalogId={formData.core_weight_catalog_id}
           onCatalogIdChange={(id) => updateField('core_weight_catalog_id', id)}
+          brand={brand}
+          brandAliases={aliases}
         />
       </div>
 

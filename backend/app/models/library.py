@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, Select, String, Text, func, select
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, Select, String, Text, false, func, select
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
@@ -152,6 +152,10 @@ class LibraryFile(Base):
 
     # User notes
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # The file clears its own plate (#3576), e.g. a plate change or push-off at
+    # the end. Seeds the same flag on queue items made from this file.
+    clears_plate: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
     # User-provided link (Printables, Thingiverse, ...) and photos of the printed
     # result (#3077) — the same trio archives carry. ``photos`` is a list of

@@ -80,6 +80,9 @@ class QueueVariantCreate(BaseModel):
     # live rack at dispatch; null means "assign them for me".
     nozzle_rack_choice: dict[int, int] | None = None
     filament_overrides: list[dict] | None = None
+    # Whether this printer's slice clears its own plate (#3576); null takes the
+    # candidate file's flag.
+    clears_plate: bool | None = None
 
 
 class PrintQueueItemCreate(BaseModel):
@@ -120,6 +123,9 @@ class PrintQueueItemCreate(BaseModel):
     nozzle_offset_cali: TriState = "auto"
     # Ask for a post-print outcome verdict when this job completes (#1898)
     confirm_outcome: bool = False
+    # The file clears its own plate (#3576). None = take it from the library file,
+    # else the cross-model alternatives, else the archive, else False.
+    clears_plate: bool | None = None
     # Preheat / heat-soak per-item override (#1468). 'inherit' uses the global
     # preheat_enabled setting; 'on' / 'off' force the decision. The chamber
     # target falls through: this override → max(filament-map[loaded tray]) → 0.
@@ -177,6 +183,7 @@ class PrintQueueItemUpdate(IgnoresNullForRequiredColumns):
     use_ams: bool | None = None
     nozzle_offset_cali: TriState | None = None
     confirm_outcome: bool | None = None
+    clears_plate: bool | None = None
     preheat_override: Literal["inherit", "on", "off"] | None = None
     preheat_chamber_target_override: int | None = Field(default=None, ge=0, le=MAX_CHAMBER_TEMP_C)
     # Auto-print G-code injection
@@ -200,6 +207,7 @@ class QueueVariantSummary(BaseModel):
     filename: str
     target_model: str
     position: int
+    clears_plate: bool = False
 
 
 class ColorSubstitution(BaseModel):
@@ -248,6 +256,7 @@ class PrintQueueItemResponse(BaseModel):
     use_ams: bool = True
     nozzle_offset_cali: TriState = "auto"
     confirm_outcome: bool = False
+    clears_plate: bool = False
     preheat_override: Literal["inherit", "on", "off"] = "inherit"
     preheat_chamber_target_override: int | None = None
     status: Literal["pending", "printing", "completed", "failed", "skipped", "cancelled"]
@@ -402,6 +411,7 @@ class PrintQueueBulkUpdate(IgnoresNullForRequiredColumns):
     use_ams: bool | None = None
     nozzle_offset_cali: TriState | None = None
     confirm_outcome: bool | None = None
+    clears_plate: bool | None = None
     preheat_override: Literal["inherit", "on", "off"] | None = None
     preheat_chamber_target_override: int | None = Field(default=None, ge=0, le=MAX_CHAMBER_TEMP_C)
     # Auto-print G-code injection
@@ -416,6 +426,19 @@ class PrintQueueBulkUpdateResponse(BaseModel):
     updated_count: int
     skipped_count: int  # Items that were not pending
     message: str
+
+
+class PrintQueueDuplicateRequest(BaseModel):
+    """Queue another copy of each of these jobs (#3441)."""
+
+    item_ids: list[int] = Field(min_length=1, max_length=500)
+
+
+class PrintQueueDuplicateResponse(BaseModel):
+    """The copies made, in the order of the request, and how many jobs got none."""
+
+    created_ids: list[int]
+    skipped_count: int
 
 
 class PrintBatchPlateTarget(BaseModel):

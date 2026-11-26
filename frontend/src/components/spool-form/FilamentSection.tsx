@@ -3,32 +3,24 @@ import { Search, Loader2, ChevronDown, Cloud, CloudOff, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { FilamentSectionProps, FilamentOption } from './types';
 import { KNOWN_VARIANTS } from './constants';
-import { parsePresetName } from './utils';
+import { parsePresetName, splitSuggested } from './utils';
+import { GroupHeading } from './GroupHeading';
 import { PresetSourceBadge } from './PresetPicker';
 import { NumberInput } from '../NumberInput';
 
 // The identity fields a slicer preset can auto-fill.
 type PresetFilledField = 'material' | 'brand' | 'subtype';
+type IdentitySources = Partial<Record<PresetFilledField, 'preset' | 'material'>>;
 
-// Split a dropdown's options into the ones the catalog/presets pair with the
-// other field's current value and everything else (#1905). Suggestions are only
-// a sort order — nothing is ever hidden, so an unusual-but-real combination
-// (Elegoo ASA) stays one click away.
-function splitSuggested(options: string[], suggested: string[]): { top: string[]; rest: string[] } {
-  if (suggested.length === 0) return { top: [], rest: options };
-  const keys = new Set(suggested.map(s => s.toLowerCase()));
-  return {
-    top: options.filter(o => keys.has(o.toLowerCase())),
-    rest: options.filter(o => !keys.has(o.toLowerCase())),
-  };
-}
-
-function GroupHeading({ label }: { label: string }) {
-  return (
-    <div className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-bambu-gray/70 bg-bambu-dark-tertiary/40">
-      {label}
-    </div>
-  );
+function matchesPresetProductLine(
+  material: string,
+  subtype: string,
+  preset: ReturnType<typeof parsePresetName>,
+): boolean {
+  if (!preset.material || !preset.variant) return false;
+  const normalize = (value: string) => value.trim().replace(/\s+/g, ' ').toLowerCase();
+  return normalize(material) === normalize(`${preset.material} ${preset.variant}`)
+    && normalize(subtype) === normalize(preset.variant);
 }
 
 export function FilamentSection({
@@ -44,6 +36,7 @@ export function FilamentSection({
   availableMaterials,
   suggestedBrands,
   suggestedMaterials,
+  splitPresetProductLine = false,
   quickAdd,
   detailsRequired,
   quantity,
@@ -65,14 +58,16 @@ export function FilamentSection({
   const [materialSearch, setMaterialSearch] = useState('');
   const [labelInput, setLabelInput] = useState(String(formData.label_weight));
   const [isLabelFocused, setIsLabelFocused] = useState(false);
-  // Which identity fields the currently selected preset filled in (#1905).
-  // Anything outside this set was set by the user (or loaded from the spool
-  // being edited) and must survive picking a preset.
-  const [presetFilled, setPresetFilled] = useState<Set<PresetFilledField>>(new Set());
+  // Preserve saved and user-set fields when picking a preset (#1905). A
+  // subtype taken from a chosen product line follows that material selection.
+  const [identitySources, setIdentitySources] = useState<IdentitySources>({});
   const presetRef = useRef<HTMLDivElement>(null);
   const brandRef = useRef<HTMLDivElement>(null);
   const subtypeRef = useRef<HTMLDivElement>(null);
   const materialRef = useRef<HTMLDivElement>(null);
+
+  // A linked Spoolman filament supplies its catalog identity.
+  const canSplitPresetProductLine = splitPresetProductLine && formData.spoolman_filament_id === null;
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -169,7 +164,9 @@ export function FilamentSection({
     // forced to assign a preset, so the spool vanished from where they filed it.
     // Switching between presets still replaces what the earlier one filled in.
     const parsed = parsePresetName(option.name);
-    const filled = new Set<PresetFilledField>();
+    const subtype = formData.subtype && identitySources.subtype !== 'preset' ? formData.subtype : parsed.variant;
+    const nextSources: IdentitySources = {};
+    if (identitySources.subtype === 'material') nextSources.subtype = 'material';
     const entries: [PresetFilledField, string][] = [
       ['material', parsed.material],
       ['brand', parsed.brand],
@@ -177,23 +174,42 @@ export function FilamentSection({
     ];
     for (const [field, value] of entries) {
       if (!value) continue;
-      if (formData[field] && !presetFilled.has(field)) continue;
+      if (formData[field] && identitySources[field] !== 'preset') continue;
       updateField(field, value);
-      filled.add(field);
+      nextSources[field] = 'preset';
     }
-    setPresetFilled(filled);
+    // The catalog can offer the full product line as Material. Split an exact
+    // match so the subtype appears once on the new spool.
+    if (canSplitPresetProductLine && matchesPresetProductLine(formData.material, subtype, parsed)) {
+      updateField('material', parsed.material);
+      delete nextSources.material;
+      if (nextSources.subtype === 'preset') nextSources.subtype = 'material';
+    }
+    setIdentitySources(nextSources);
   };
 
   // A manual edit to an identity field takes it back out of the preset's hands.
   const updateIdentityField = (field: PresetFilledField, value: string) => {
-    if (presetFilled.has(field)) {
-      setPresetFilled(prev => {
-        const next = new Set(prev);
-        next.delete(field);
-        return next;
-      });
+    let splitMaterial: string | undefined;
+    if (canSplitPresetProductLine && field !== 'brand' && selectedPresetOption) {
+      const parsed = parsePresetName(selectedPresetOption.name);
+      const material = field === 'material' ? value : formData.material;
+      const subtype = field === 'subtype' ? value : formData.subtype;
+      if (matchesPresetProductLine(material, subtype, parsed)) splitMaterial = parsed.material;
     }
-    updateField(field, value);
+
+    const nextSources = { ...identitySources };
+    delete nextSources[field];
+    if (splitMaterial) {
+      delete nextSources.material;
+      if (nextSources.subtype === 'preset') nextSources.subtype = 'material';
+    } else if (field === 'material' && value !== formData.material && nextSources.subtype === 'material') {
+      // Let the next preset fill the subtype when its original material was replaced.
+      nextSources.subtype = 'preset';
+    }
+    setIdentitySources(nextSources);
+    if (splitMaterial && field === 'subtype') updateField('material', splitMaterial);
+    updateField(field, field === 'material' ? splitMaterial ?? value : value);
   };
 
   const renderBrandOption = (brand: string) => (

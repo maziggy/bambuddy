@@ -22,31 +22,41 @@ import asyncio
 import io
 import logging
 import zipfile
+from collections.abc import Callable, Iterator, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
-from typing import Annotated, Literal
+from functools import partial
+from typing import Annotated, Any, Literal, ParamSpec
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
+from PIL import Image
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes._label_printer_helpers import deliver_job, load_label_printer_config
 from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool
 from backend.app.api.routes.settings import get_setting
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.auth import RequireAnyPermissionIfAuthEnabled, RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.spool import Spool
 from backend.app.models.user import User
-from backend.app.schemas.label_template import SheetLayoutSpec
+from backend.app.schemas.label_template import RollSpec, SheetLayoutSpec
+from backend.app.services.label_print_jobs import QUEUE_FULL_MESSAGE, PrintJob, PrintQueueFull, label_print_service
+from backend.app.services.label_printers.base import LabelPrinterConfig, PreparedJob, describe_error, get_driver
 from backend.app.services.label_renderer import (
     ALL_LABEL_FIELDS,
     DEFAULT_LABEL_FIELDS,
+    DrawLabel,
     LabelData,
     LabelField,
+    RollLayout,
     Template,
     TemplateName,
     get_sheet_capacity,
+    iter_pdf_images,
     pdf_to_pngs,
     render_label_preview_pdf,
     render_labels,
@@ -71,6 +81,21 @@ MAX_LABELS_PER_REQUEST = 500
 # always fit. Mirrored in the dialog (labelSheetLayout.ts).
 MAX_PNG_SHEET_PAGES_X_DPI = 15_000
 
+# Printing straight to a label printer (#3612): fewer labels than a download, as
+# every one is rasterised and sent in one connection, and the raster resolution
+# of the QL printers.
+MAX_PRINT_LABELS_PER_REQUEST = 100
+# Total tape of one request, labels x length. The printer prints at a few
+# centimetres a second and the request waits for it, so this bounds how long.
+# 100 labels of 40 mm fit.
+MAX_PRINT_TAPE_MM = 4000
+PRINT_DPI = 300
+# A label that reads along the tape is drawn with the tape width as its height.
+# The printer wants the tape width as the image width, so that page is turned a
+# quarter; flip this one constant if the text comes out upside down on a printer.
+# A label that reads across the tape (RollLayout.across_tape) is printed as drawn.
+TAPE_ROTATION = Image.Transpose.ROTATE_90
+
 # Preview resolution. High enough that the browser's downscale stays sharp on
 # a HiDPI screen; a label is a few centimetres, so the PNG stays small.
 PREVIEW_DPI = 300
@@ -80,34 +105,81 @@ PREVIEW_DPI = 300
 SpoolId = Annotated[int, Field(gt=0)]
 
 
-class LabelOptions(BaseModel):
-    template: TemplateName | Literal["custom"]
+class LabelLayoutOptions(BaseModel):
+    """Which label stock to print on: shared by spool and project labels (#3655)."""
+
+    template: TemplateName | Literal["custom", "roll"]
     # The sheet, when ``template`` is "custom" (#3296). A saved template is
     # sent this way too: the dialog holds its layout, so printing never reads
     # the saved-template table.
     layout: SheetLayoutSpec | None = None
+    # The tape and label length, when ``template`` is "roll" (#3612): labels for
+    # a label printer's continuous tape, one per page.
+    roll: RollSpec | None = None
     # Black-and-white thermal printers: drop the colour swatch (prints as a
     # muddy grey block) and widen the text column instead (#1870).
     monochrome: bool = False
-    # The lines to print (#2981). Omitted: what labels always carried.
-    fields: list[LabelField] | None = Field(default=None, max_length=len(ALL_LABEL_FIELDS))
 
     @model_validator(mode="after")
-    def layout_only_for_custom(self) -> LabelOptions:
+    def layout_only_for_custom(self) -> LabelLayoutOptions:
         if (self.template == "custom") != (self.layout is not None):
             raise ValueError('layout is required for template "custom" and not allowed otherwise')
         return self
 
-    def field_set(self) -> frozenset[LabelField]:
-        return DEFAULT_LABEL_FIELDS if self.fields is None else frozenset(self.fields)
+    @model_validator(mode="after")
+    def roll_only_for_roll(self) -> LabelLayoutOptions:
+        if (self.template == "roll") != (self.roll is not None):
+            raise ValueError('roll is required for template "roll" and not allowed otherwise')
+        return self
+
+    def stock_is_complete(self) -> bool:
+        """Whether ``template`` came with exactly the layout or roll it needs.
+        The two validators above report a request where it did not."""
+        return (self.template == "custom") == (self.layout is not None) and (self.template == "roll") == (
+            self.roll is not None
+        )
 
     def resolved_template(self) -> Template:
         if self.layout is not None:
             return self.layout.to_layout()
-        if self.template == "custom":
-            # layout_only_for_custom refuses this, so a validated request never gets here.
-            raise ValueError('layout is required for template "custom"')
+        if self.roll is not None:
+            return self.roll.to_layout()
+        if self.template == "custom" or self.template == "roll":
+            # The validators refuse this, so a validated request never gets here.
+            raise ValueError(f'template "{self.template}" needs its layout')
         return self.template
+
+
+class LabelOptions(LabelLayoutOptions):
+    # The lines to print (#2981). Omitted: what labels always carried.
+    fields: list[LabelField] | None = Field(default=None, max_length=len(ALL_LABEL_FIELDS))
+
+    def field_set(self) -> frozenset[LabelField]:
+        return DEFAULT_LABEL_FIELDS if self.fields is None else frozenset(self.fields)
+
+
+def sheet_request_problem(
+    template: Template, label_count: int, starting_position: int, format: str, dpi: int, template_name: str
+) -> str | None:
+    """Why a download of ``label_count`` labels can't be made, or ``None``: a
+    starting position on a roll or past the sheet, or a PNG of too many sheet
+    pages. Spool and project labels (#3655) check the same."""
+    capacity = get_sheet_capacity(template)
+    if capacity is None:
+        if starting_position != 1:
+            return "starting_position is only supported for sheet label templates"
+        return None
+    if starting_position > capacity:
+        return f"starting_position must be between 1 and {capacity} for template {template_name}"
+    if format == "png":
+        pages = sheet_page_count(template, label_count, starting_position) or 0
+        if pages * dpi > MAX_PNG_SHEET_PAGES_X_DPI:
+            max_pages = MAX_PNG_SHEET_PAGES_X_DPI // dpi
+            return (
+                f"PNG export is limited to {max_pages} sheet pages at {dpi} dpi, and this is {pages}. "
+                "Use PDF, a lower resolution or fewer labels."
+            )
+    return None
 
 
 class LabelRequest(LabelOptions):
@@ -120,24 +192,20 @@ class LabelRequest(LabelOptions):
 
     @model_validator(mode="after")
     def validate_starting_position(self) -> LabelRequest:
-        if (self.template == "custom") != (self.layout is not None):
-            return self  # layout_only_for_custom reports this one
-        capacity = get_sheet_capacity(self.resolved_template())
-        if capacity is None:
-            if self.starting_position != 1:
-                raise ValueError("starting_position is only supported for sheet label templates")
-            return self
-        if self.starting_position > capacity:
-            raise ValueError(f"starting_position must be between 1 and {capacity} for template {self.template}")
-        if self.format == "png":
-            pages = sheet_page_count(self.resolved_template(), len(self.spool_ids), self.starting_position) or 0
-            if pages * self.dpi > MAX_PNG_SHEET_PAGES_X_DPI:
-                max_pages = MAX_PNG_SHEET_PAGES_X_DPI // self.dpi
-                raise ValueError(
-                    f"PNG export is limited to {max_pages} sheet pages at {self.dpi} dpi, and this is {pages}. "
-                    "Use PDF, a lower resolution or fewer spools."
-                )
+        if not self.stock_is_complete():
+            return self  # layout_only_for_custom / roll_only_for_roll report this one
+        problem = sheet_request_problem(
+            self.resolved_template(), len(self.spool_ids), self.starting_position, self.format, self.dpi, self.template
+        )
+        if problem:
+            raise ValueError(problem)
         return self
+
+
+class LabelPrintRequest(LabelOptions):
+    """The download's body without format, dpi and starting position (a roll has no sheet)."""
+
+    spool_ids: list[SpoolId] = Field(..., min_length=1, max_length=MAX_PRINT_LABELS_PER_REQUEST)
 
 
 class LabelPreviewRequest(LabelOptions):
@@ -152,7 +220,7 @@ def _split_extra_colors(raw: str | None) -> list[str] | None:
     return parts or None
 
 
-async def _resolve_deeplink_base(request: Request, db: AsyncSession) -> str:
+async def resolve_deeplink_base(request: Request, db: AsyncSession) -> str:
     """Where the QR codes should point. Prefers `external_url` when set so a
     phone scan reaches the user's public Bambuddy URL rather than an internal
     address; falls back to the request's own scheme+host when no setting is
@@ -241,20 +309,41 @@ def _stream_pdf(pdf: bytes, filename: str) -> StreamingResponse:
     )
 
 
+# ReportLab shares the registered TrueType fonts across documents. Build one
+# label PDF at a time, off the event loop, including single-label previews.
+_PDF_WORKER = ThreadPoolExecutor(max_workers=1, thread_name_prefix="label-pdf")
+_P = ParamSpec("_P")
+
+
+async def render_pdf_in_worker(render: Callable[_P, bytes], *args: _P.args, **kwargs: _P.kwargs) -> bytes:
+    return await asyncio.get_running_loop().run_in_executor(_PDF_WORKER, partial(render, *args, **kwargs))
+
+
 async def _render_response(body: LabelRequest, data_list: list[LabelData], filename_stem: str) -> Response:
     template = body.resolved_template()
-    pdf = render_labels(
+    pdf = await render_pdf_in_worker(
+        render_labels,
         template,
         data_list,
         monochrome=body.monochrome,
         starting_position=body.starting_position,
         fields=body.field_set(),
     )
-    if body.format == "pdf":
+    return await label_file_response(
+        pdf, template, filename_stem, body.format, body.dpi, [f"label-{d.spool_id}.png" for d in data_list]
+    )
+
+
+async def label_file_response(
+    pdf: bytes, template: Template, filename_stem: str, format: str, dpi: int, roll_names: list[str]
+) -> Response:
+    """The rendered labels as the download asked for: the PDF, one PNG, or a
+    ZIP of PNGs. ``roll_names`` names a roll template's PNGs, one per label."""
+    if format == "pdf":
         return _stream_pdf(pdf, f"{filename_stem}.pdf")
 
     # Rasterising a few hundred pages is CPU work; keep it off the event loop.
-    pngs = await asyncio.to_thread(pdf_to_pngs, pdf, body.dpi)
+    pngs = await asyncio.to_thread(pdf_to_pngs, pdf, dpi)
     if len(pngs) == 1:
         return Response(
             content=pngs[0],
@@ -265,10 +354,10 @@ async def _render_response(body: LabelRequest, data_list: list[LabelData], filen
             },
         )
 
-    # A roll template has one page per spool, so its files are named after
-    # the spool; a sheet's pages are numbered.
+    # A roll template has one page per label, so its files are named after
+    # what is on it; a sheet's pages are numbered.
     if get_sheet_capacity(template) is None:
-        names = [f"label-{d.spool_id}.png" for d in data_list]
+        names = roll_names
     else:
         names = [f"sheet-{n}.png" for n in range(1, len(pngs) + 1)]
     buf = io.BytesIO()
@@ -287,7 +376,14 @@ async def _render_response(body: LabelRequest, data_list: list[LabelData], filen
 
 
 async def _render_preview(body: LabelPreviewRequest, data: LabelData) -> Response:
-    pdf = render_label_preview_pdf(body.resolved_template(), data, monochrome=body.monochrome, fields=body.field_set())
+    pdf = await render_pdf_in_worker(
+        render_label_preview_pdf, body.resolved_template(), data, monochrome=body.monochrome, fields=body.field_set()
+    )
+    return await label_preview_response(pdf)
+
+
+async def label_preview_response(pdf: bytes) -> Response:
+    """A one-label PDF as the PNG the dialog's preview shows."""
     pngs = await asyncio.to_thread(pdf_to_pngs, pdf, PREVIEW_DPI)
     return Response(content=pngs[0], media_type="image/png", headers={"Cache-Control": "no-store"})
 
@@ -304,7 +400,7 @@ async def _local_label_data(spool_ids: list[int], request: Request, db: AsyncSes
     # Preserve caller's order so an Avery sheet print matches the on-screen list.
     ordered = sorted(spools, key=lambda s: spool_ids.index(s.id))
 
-    deeplink_base = await _resolve_deeplink_base(request, db)
+    deeplink_base = await resolve_deeplink_base(request, db)
     return [_spool_to_label_data(s, deeplink_base) for s in ordered]
 
 
@@ -332,8 +428,86 @@ async def _spoolman_label_data(spool_ids: list[int], request: Request, db: Async
     if missing:
         raise HTTPException(404, f"Spool(s) not found in Spoolman: {missing}")
 
-    deeplink_base = await _resolve_deeplink_base(request, db)
+    deeplink_base = await resolve_deeplink_base(request, db)
     return [_spoolman_dict_to_label_data(by_id[sid], deeplink_base) for sid in spool_ids]
+
+
+def print_pages(pdf: bytes, roll: RollLayout) -> Iterator[Image.Image]:
+    """The pages of a roll PDF as the label printer takes them: greyscale at its
+    resolution, lazily, the tape's printable width as the image width."""
+    images = iter_pdf_images(pdf, PRINT_DPI, grayscale=True)
+    return images if roll.across_tape else (im.transpose(TAPE_ROTATION) for im in images)
+
+
+def enqueue_print(
+    roll: Template,
+    data_list: Sequence[Any],
+    config: LabelPrinterConfig,
+    fields: frozenset[Any],
+    *,
+    draw: DrawLabel | None = None,
+    subject: str = "spool",
+) -> dict:
+    """Queue the print behind the printer's earlier jobs and return its job id.
+    Rendering, rasterising and delivering all happen in the background.
+    ``draw`` and ``subject`` are passed on to ``render_labels``: spool labels
+    by default, project labels with the project renderer's (#3655)."""
+    assert isinstance(roll, RollLayout)  # printer_for refused everything else
+    driver = get_driver(config.type)
+
+    def rasterise(pdf: bytes) -> PreparedJob:
+        # One page at a time: the driver takes the images lazily and drops each
+        # one once it is rasterised, so memory stays at about a single label.
+        return driver.prepare(print_pages(pdf, roll), config)
+
+    async def work(job: PrintJob) -> None:
+        # CPU work first, outside the printer's time limit and lock. The PDF is
+        # built in the one PDF worker, like every label PDF (shared fonts).
+        # Monochrome always: the printer has no grey, so the swatch would print as a block.
+        pdf = await render_pdf_in_worker(
+            render_labels, roll, data_list, monochrome=True, fields=fields, draw=draw, subject=subject
+        )
+        prepared = await asyncio.to_thread(rasterise, pdf)
+
+        def confirmed(count: int) -> None:
+            job.printed = min(count, job.total)  # the printer's own count, from the worker thread
+
+        await deliver_job(driver, prepared, config, on_progress=confirmed)
+
+    try:
+        job = label_print_service.submit(
+            (config.host, config.port),
+            len(data_list),
+            work,
+            lambda exc: describe_error(exc, config)[1],
+        )
+    except PrintQueueFull as exc:
+        raise HTTPException(503, QUEUE_FULL_MESSAGE) from exc
+    return {"job_id": job.id, "total": job.total}
+
+
+async def printer_for(template: Template, label_count: int, db: AsyncSession) -> LabelPrinterConfig:
+    """The configured label printer, once ``label_count`` labels of ``template``
+    can be printed on it. Spool and project labels (#3655) check the same."""
+    config = await load_label_printer_config(db)
+    if config is None:
+        raise HTTPException(400, "No label printer is set up")
+    if not isinstance(template, RollLayout):
+        if get_sheet_capacity(template) is not None:
+            raise HTTPException(400, "Sheet templates can't be printed on a label printer")
+        raise HTTPException(400, "Choose the roll format to print on a label printer")
+    if template.tape != config.tape:
+        raise HTTPException(
+            400, f"The label printer is set up for {config.tape} mm tape, but the labels are for {template.tape} mm"
+        )
+    tape_mm = label_count * template.length_mm
+    if tape_mm > MAX_PRINT_TAPE_MM:
+        raise HTTPException(
+            422,
+            f"That is {tape_mm:g} mm of tape; at most {MAX_PRINT_TAPE_MM} mm can be printed at once. "
+            "Print fewer labels or shorter ones.",
+        )
+    return config
 
 
 @router.post("/inventory/labels")
@@ -382,3 +556,48 @@ async def preview_spoolman_label(
     """One label for a Spoolman spool, as a PNG, for the picker's preview."""
     data_list = await _spoolman_label_data([body.spool_id], request, db)
     return await _render_preview(body, data_list[0])
+
+
+@router.post("/inventory/labels/print", status_code=202)
+async def print_local_inventory_labels(
+    body: LabelPrintRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+) -> dict:
+    """Queue labels for local spools on the configured label printer (#3612); poll
+    ``GET /labels/print-jobs/{job_id}`` for the outcome. Needs ``inventory:update``,
+    not the download's ``inventory:read``: a print uses up tape."""
+    template = body.resolved_template()
+    config = await printer_for(template, len(body.spool_ids), db)
+    data_list = await _local_label_data(body.spool_ids, request, db)
+    return enqueue_print(template, data_list, config, body.field_set())
+
+
+@router.post("/spoolman/labels/print", status_code=202)
+async def print_spoolman_labels(
+    body: LabelPrintRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+) -> dict:
+    """Queue labels for Spoolman spools on the configured label printer (#3612).
+    Needs ``inventory:update``, like the local route."""
+    template = body.resolved_template()
+    config = await printer_for(template, len(body.spool_ids), db)
+    data_list = await _spoolman_label_data(body.spool_ids, request, db)
+    return enqueue_print(template, data_list, config, body.field_set())
+
+
+@router.get("/labels/print-jobs/{job_id}")
+async def get_label_print_job(
+    job_id: str,
+    _: User | None = RequireAnyPermissionIfAuthEnabled(Permission.INVENTORY_READ, Permission.PROJECTS_READ),
+) -> dict:
+    """State of a queued label print job (#3612). Jobs are kept for 15 minutes after they finish.
+    Open to a reader of either kind of label, spool or project (#3655): the job
+    says how many labels are out, not what is on them."""
+    job = label_print_service.store.get(job_id)
+    if job is None:
+        raise HTTPException(404, "Print job not found or expired")
+    return job.to_dict()

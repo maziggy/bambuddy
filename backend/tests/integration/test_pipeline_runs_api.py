@@ -7,10 +7,27 @@ needing a live sidecar in CI.
 
 from __future__ import annotations
 
+import os
+import shutil
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
+
+# The run route checks that the source file exists under ``settings.base_dir``,
+# which under test is the project root. The files go in one subdirectory that
+# is removed after each test, named per process so one xdist worker's teardown
+# can't delete another worker's files (as in test_slicer_token_reuse_3029.py).
+_FILE_DIR = f"test_files_pipeline_runs_{os.getpid()}"
+
+
+@pytest.fixture(autouse=True)
+def _clean_files():
+    from backend.app.core.config import settings
+
+    yield
+    shutil.rmtree(Path(settings.base_dir) / _FILE_DIR, ignore_errors=True)
 
 
 def _pipeline_payload(**overrides) -> dict:
@@ -76,8 +93,6 @@ async def printer_factory(db_session):
 @pytest.fixture
 async def library_file_factory(db_session):
     """Insert a LibraryFile row for tests that need a source_library_file_id."""
-    from pathlib import Path
-
     from backend.app.core.config import settings as app_settings
     from backend.app.models.library import LibraryFile
 
@@ -87,7 +102,7 @@ async def library_file_factory(db_session):
         counter[0] += 1
         # Materialise an empty file on disk so the orchestration's path-exists
         # guard passes when tests reach it.
-        rel = f"test_pipeline_run_{counter[0]}.3mf"
+        rel = f"{_FILE_DIR}/test_pipeline_run_{counter[0]}.3mf"
         abs_path = Path(app_settings.base_dir) / rel
         abs_path.parent.mkdir(parents=True, exist_ok=True)
         abs_path.write_bytes(b"")
@@ -521,16 +536,16 @@ class TestCancelRun:
         db_session,
     ):
         """``source_archive_id`` is accepted in place of source_library_file_id."""
-        from pathlib import Path
-
         from backend.app.core.config import settings as app_settings
         from backend.app.models.archive import PrintArchive
 
         printer = await printer_factory()
         pipeline = await pipeline_factory(target_printer_id=printer.id)
 
-        rel = "test_pipeline_archive_source.3mf"
-        (Path(app_settings.base_dir) / rel).write_bytes(b"")
+        rel = f"{_FILE_DIR}/test_pipeline_archive_source.3mf"
+        abs_path = Path(app_settings.base_dir) / rel
+        abs_path.parent.mkdir(parents=True, exist_ok=True)
+        abs_path.write_bytes(b"")
         archive = PrintArchive(
             printer_id=printer.id,
             filename="Archive Source.3mf",

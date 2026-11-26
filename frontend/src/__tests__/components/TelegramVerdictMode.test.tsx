@@ -49,6 +49,8 @@ function buildProvider(overrides: Partial<NotificationProvider> = {}): Notificat
     on_ams_ht_temperature_high: false,
     on_plate_not_empty: true,
     on_plate_clear_required: false,
+    on_plate_changer_empty: true,
+    on_filament_out_of_stock: false,
     on_print_confirm_request: true,
     telegram_verdict_mode: 'buttons',
     on_bed_cooled: false,

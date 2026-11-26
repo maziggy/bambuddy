@@ -19,6 +19,9 @@ Beyond these, a sheet of any grid can be described at run time as a
 ``SheetLayout`` (#3296): page size, label size, columns and rows, margins and
 gaps. The built-in sheets are ``SheetLayout`` values too.
 
+A ``RollLayout`` (#3612) is one label per page sized for a label printer's
+continuous tape: the length along the tape, and the tape's printable width.
+
 The legacy ``ams_30x15`` preset (#809) was incorrect — the original 30×15 mm
 dimension didn't fit any documented variant of model 752566. Replaced by the
 two ``ams_holder_*`` presets above (#1426).
@@ -45,18 +48,22 @@ from __future__ import annotations
 
 import io
 import unicodedata
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import qrcode
+from PIL import Image
 from reportlab.lib.colors import Color, HexColor, black, white
 from reportlab.lib.pagesizes import A4, letter
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas as rl_canvas
+
+from backend.app.services.label_printers.brother_ql_media import TAPES, TapeId, printable_width_mm
 
 # Label text is printed in Liberation Sans, embedded in the PDF (#3553). The
 # PDF base fonts (Helvetica) only cover Western European characters, so names
@@ -362,9 +369,14 @@ def _truncate_to_width(c: rl_canvas.Canvas, text: str, font: str, size: float, m
     if _text_width(text, font, size) <= max_w:
         return text
     ell = "…"
-    while text and _text_width(text + ell, font, size) > max_w:
-        text = text[:-1]
-    return text + ell if text else ell
+    lo, hi = 0, len(text)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if _text_width(text[:mid] + ell, font, size) <= max_w:
+            lo = mid
+        else:
+            hi = mid - 1
+    return text[:lo] + ell
 
 
 def _is_wide(ch: str) -> bool:
@@ -470,7 +482,8 @@ def _draw_label_tight(
 ) -> None:
     """Tight layout (h < 20 mm). Swatch + brand/material/hex/ID, no QR.
 
-    Only those four lines fit, so they are the only ``fields`` it honours.
+    Only those four lines fit, so they are the only ``fields`` it honours;
+    12 mm tape, too low for the ID under them, also prints the name (#3612).
     """
     # Monochrome: drop the colour swatch (see _draw_label_roomy) and give the
     # width to the text column (#1870).
@@ -488,16 +501,28 @@ def _draw_label_tight(
 
     c.setFillColor(black)
 
+    brand_size, sub_size, id_size = 6.5, 5, 13
+    # 12 mm tape prints 9 mm (#3612): too low for the spool ID under the brand
+    # and material lines, which it would print over. There the ID stands at the
+    # right-hand end, on at most 40 % of the width, and the line this frees
+    # below the material takes the name.
+    id_beside = "spool_id" in fields and inner_h < brand_size + 0.6 + sub_size + id_size
+    if id_beside:
+        id_text = f"#{data.spool_id}"
+        id_w = min(_text_width(id_text, FONT_BOLD, id_size), text_w * 0.4)
+        id_size = id_w / _text_width(id_text, FONT_BOLD, 1)
+        c.setFont(FONT_BOLD, id_size)
+        c.drawString(text_x + text_w - id_w, inner_y + (inner_h - 0.72 * id_size) / 2, id_text)
+        text_w -= id_w + pad
+
     # Top: brand — bumped to bold + larger per the #809 follow-up so it's the
     # easiest thing to read on a small AMS holder at arm's length.
-    brand_size = 6.5
     if data.brand and "brand" in fields:
         c.setFont(FONT_BOLD, brand_size)
         brand = _truncate_to_width(c, data.brand, FONT_BOLD, brand_size, text_w)
         _draw_text(c, text_x, y + h - pad - brand_size, brand, FONT_BOLD, brand_size)
 
     # Second line: material + subtype, small
-    sub_size = 5
     sub_line = " ".join(filter(None, [data.material, data.subtype])) if "material" in fields else ""
     sub_y_baseline = y + h - pad - brand_size - 0.6 - sub_size
     if sub_line:
@@ -508,6 +533,14 @@ def _draw_label_tight(
     # Third line (when there's room): hex code, tiny — useful when the user
     # has multiple near-identical colours in the same material family.
     hex_code = _hex_code_label(data.rgba) if "hex" in fields else ""
+    if id_beside:
+        # One line is left. The name takes it, cut where the line ends, unless
+        # it only repeats a line above; the hex code has it otherwise.
+        name = data.name if "name" in fields and data.name not in (data.brand, data.subtype) else ""
+        third = _truncate_to_width(c, name or hex_code, FONT_REGULAR, sub_size, text_w)
+        if third:
+            _draw_text(c, text_x, sub_y_baseline - 0.6 - sub_size, third, FONT_REGULAR, sub_size)
+        return
     if hex_code:
         hex_size = 4.5
         hex_y = sub_y_baseline - 0.4 - hex_size
@@ -519,7 +552,6 @@ def _draw_label_tight(
     # Bottom: BIG spool ID — the killer field at-a-glance.
     if "spool_id" not in fields:
         return
-    id_size = 13
     c.setFont(FONT_BOLD, id_size)
     id_text = _truncate_to_width(c, f"#{data.spool_id}", FONT_BOLD, id_size, text_w)
     c.drawString(text_x, inner_y + 0.5, id_text)
@@ -602,7 +634,31 @@ def _draw_label_roomy(
     ]
 
     active = [row for row in rows if row[0] in fields and row[1]]
-    cursor_y = y + h - pad
+    top_y = y + h - pad
+
+    def name_gets_a_line(candidates: list[tuple[LabelField, str, str, float, float]]) -> bool:
+        # A row continues on further lines only while every row below it keeps
+        # its own (#3621), so where the lines run out each row above the name
+        # takes exactly one.
+        cursor = top_y
+        for field, _text, _font, size, gap in candidates:
+            if cursor - size < floor_y:
+                return False
+            if field == "name":
+                return True
+            cursor -= size + gap
+        return False
+
+    # On a short label the lines run out before the name. The name tells the
+    # user more than the hex code above it, so the code gives way (#3612).
+    # Only then: a name that has its first line is cut or continued as on
+    # every other label, and the hex code stays.
+    if any(row[0] == "name" for row in active) and not name_gets_a_line(active):
+        without_hex = [row for row in active if row[0] != "hex"]
+        if name_gets_a_line(without_hex):
+            active = without_hex
+
+    cursor_y = top_y
     for i, (_field, text, font, size, gap) in enumerate(active):
         if cursor_y - size < floor_y:
             break
@@ -625,6 +681,12 @@ def _draw_label_roomy(
 
 
 # ── Template entry points ────────────────────────────────────────────────────
+
+# Draws one label of any kind into the box (canvas, x, y, w, h, data,
+# monochrome, fields). ``None`` draws a spool label (``_draw_label``, looked up
+# when called); project labels (#3655) bring their own, and the templates,
+# sheets and pages are shared.
+DrawLabel = Callable[[rl_canvas.Canvas, float, float, float, float, Any, bool, frozenset[Any]], None]
 
 PageSize = Literal["a4", "letter"]
 
@@ -699,8 +761,46 @@ class SheetLayout:
         return None
 
 
-# A built-in template name, or a sheet layout supplied at run time.
-Template = TemplateName | SheetLayout
+# Label length along a roll's tape (#3612). From 20 mm the roomy layout's text
+# column fits; 200 mm is far beyond any spool label.
+ROLL_MIN_LENGTH_MM = 20.0
+ROLL_MAX_LENGTH_MM = 200.0
+
+
+@dataclass(frozen=True)
+class RollLayout:
+    """One label per page on a label printer's continuous tape (#3612).
+
+    Always drawn landscape, so what is rendered is what the printer prints. A
+    label at least as long as the tape is wide reads along the tape
+    (``length_mm`` wide, the printable width tall). A shorter one reads across
+    the tape (the printable width wide, ``length_mm`` tall): a 20 mm cut of
+    50 mm tape is a 47 x 20 mm label, not a 20 x 47 mm strip."""
+
+    tape: TapeId
+    length_mm: float
+
+    @property
+    def across_tape(self) -> bool:
+        """The text runs across the tape: the page is printed as drawn, not turned."""
+        return self.length_mm < printable_width_mm(self.tape)
+
+    @property
+    def label_size_mm(self) -> tuple[float, float]:
+        width = printable_width_mm(self.tape)
+        return (width, self.length_mm) if self.across_tape else (self.length_mm, width)
+
+    def problem(self) -> str | None:
+        """Why this roll can't be printed, or ``None`` when it can."""
+        if self.tape not in TAPES:
+            return f"Unknown tape: {self.tape!r}"
+        if not ROLL_MIN_LENGTH_MM <= self.length_mm <= ROLL_MAX_LENGTH_MM:
+            return f"The label length must be between {ROLL_MIN_LENGTH_MM:g} and {ROLL_MAX_LENGTH_MM:g} mm"
+        return None
+
+
+# A built-in template name, or a sheet or roll layout supplied at run time.
+Template = TemplateName | SheetLayout | RollLayout
 
 # (label_w_mm, label_h_mm) for single-label-per-page templates.
 _SINGLE_LABEL_SIZES_MM: dict[str, tuple[float, float]] = {
@@ -717,30 +817,37 @@ _SHEET_TEMPLATES: dict[str, SheetLayout] = {
 
 
 def _sheet_layout(template: Template) -> SheetLayout | None:
+    if isinstance(template, RollLayout):
+        return None
     if isinstance(template, SheetLayout):
         return template
     return _SHEET_TEMPLATES.get(template)
 
 
 def _template_title(template: Template) -> str:
+    if isinstance(template, RollLayout):
+        return f"{template.tape} mm roll"
     return "custom sheet" if isinstance(template, SheetLayout) else template
 
 
 def _render_single_label_pdf(
-    template: TemplateName,
-    data_list: list[LabelData],
+    template: TemplateName | RollLayout,
+    data_list: Sequence[Any],
     monochrome: bool = False,
-    fields: frozenset[LabelField] = DEFAULT_LABEL_FIELDS,
+    fields: frozenset[Any] = DEFAULT_LABEL_FIELDS,
+    *,
+    draw: DrawLabel | None = None,
+    subject: str = "spool",
 ) -> bytes:
     w_mm, h_mm = label_size_mm(template)
     page_w, page_h = w_mm * mm, h_mm * mm
 
     buf = io.BytesIO()
     c = _new_canvas(buf, (page_w, page_h))
-    c.setTitle(f"Bambuddy spool labels ({template})")
+    c.setTitle(f"Bambuddy {subject} labels ({_template_title(template)})")
 
     for data in data_list:
-        _draw_label(c, 0, 0, page_w, page_h, data, monochrome, fields)
+        (draw or _draw_label)(c, 0, 0, page_w, page_h, data, monochrome, fields)
         c.showPage()
 
     c.save()
@@ -748,7 +855,10 @@ def _render_single_label_pdf(
 
 
 def label_size_mm(template: Template) -> tuple[float, float]:
-    """(width, height) of one label of ``template`` — a sheet's cell size."""
+    """(width, height) of one label of ``template`` — a sheet's cell size, or a
+    roll label's length and the tape's printable width."""
+    if isinstance(template, RollLayout):
+        return template.label_size_mm
     if isinstance(template, SheetLayout):
         return template.label_w_mm, template.label_h_mm
     if template in _SHEET_TEMPLATES:
@@ -777,10 +887,13 @@ def sheet_page_count(template: Template, label_count: int, starting_position: in
 def _render_sheet_pdf(
     layout: SheetLayout,
     title: str,
-    data_list: list[LabelData],
+    data_list: Sequence[Any],
     monochrome: bool,
     starting_position: int,
-    fields: frozenset[LabelField] = DEFAULT_LABEL_FIELDS,
+    fields: frozenset[Any] = DEFAULT_LABEL_FIELDS,
+    *,
+    draw: DrawLabel | None = None,
+    subject: str = "spool",
 ) -> bytes:
     problem = layout.problem()
     if problem:
@@ -798,7 +911,7 @@ def _render_sheet_pdf(
 
     buf = io.BytesIO()
     c = _new_canvas(buf, page_size)
-    c.setTitle(f"Bambuddy spool labels ({title})")
+    c.setTitle(f"Bambuddy {subject} labels ({title})")
 
     per_page = layout.capacity
     if starting_position < 1 or starting_position > per_page:
@@ -816,7 +929,7 @@ def _render_sheet_pdf(
             col = slot_index % cols
             x = left_margin + col * (label_w + col_gap)
             y = page_h - top_margin - (row + 1) * label_h - row * row_gap
-            _draw_label(c, x, y, label_w, label_h, data, monochrome, fields)
+            (draw or _draw_label)(c, x, y, label_w, label_h, data, monochrome, fields)
         c.showPage()
         data_index += len(chunk)
         page_number += 1
@@ -827,11 +940,13 @@ def _render_sheet_pdf(
 
 def render_labels(
     template: Template,
-    data_list: list[LabelData],
+    data_list: Sequence[Any],
     *,
     monochrome: bool = False,
     starting_position: int = 1,
-    fields: frozenset[LabelField] = DEFAULT_LABEL_FIELDS,
+    fields: frozenset[Any] = DEFAULT_LABEL_FIELDS,
+    draw: DrawLabel | None = None,
+    subject: str = "spool",
 ) -> bytes:
     """Render ``data_list`` to a PDF using ``template``: a built-in template
     name, or a ``SheetLayout`` for a custom sheet (#3296). Returns bytes.
@@ -847,38 +962,88 @@ def render_labels(
     sheet template. Later pages always begin at the first slot.
 
     ``fields`` names the lines to print (#2981); see ``ALL_LABEL_FIELDS``.
+
+    ``draw`` draws one label and ``subject`` names them in the PDF title: a
+    spool label by default, a project label with the project renderer's
+    (#3655).
     """
+    kind = {"draw": draw, "subject": subject}
+    if isinstance(template, RollLayout):
+        problem = template.problem()
+        if problem:
+            raise ValueError(problem)
+        if starting_position != 1:
+            raise ValueError("Starting position is only supported for sheet label templates")
+        return _render_single_label_pdf(template, data_list, monochrome, fields, **kind)
     if isinstance(template, SheetLayout):
-        return _render_sheet_pdf(template, _template_title(template), data_list, monochrome, starting_position, fields)
+        return _render_sheet_pdf(
+            template, _template_title(template), data_list, monochrome, starting_position, fields, **kind
+        )
     if template in _SHEET_TEMPLATES:
-        return _render_sheet_pdf(_SHEET_TEMPLATES[template], template, data_list, monochrome, starting_position, fields)
+        return _render_sheet_pdf(
+            _SHEET_TEMPLATES[template], template, data_list, monochrome, starting_position, fields, **kind
+        )
     if template in _SINGLE_LABEL_SIZES_MM:
         if starting_position != 1:
             raise ValueError("Starting position is only supported for sheet label templates")
-        return _render_single_label_pdf(template, data_list, monochrome, fields)
+        return _render_single_label_pdf(template, data_list, monochrome, fields, **kind)
     raise ValueError(f"Unknown label template: {template!r}")
 
 
 def render_label_preview_pdf(
     template: Template,
-    data: LabelData,
+    data: Any,
     *,
     monochrome: bool = False,
-    fields: frozenset[LabelField] = DEFAULT_LABEL_FIELDS,
+    fields: frozenset[Any] = DEFAULT_LABEL_FIELDS,
+    draw: DrawLabel | None = None,
 ) -> bytes:
     """One label of ``template`` on a page of its own size.
 
     For a roll template that is the label as printed; for a sheet it is one
     cell, which is all the preview needs to show.
     """
+    if isinstance(template, RollLayout) and (problem := template.problem()):
+        raise ValueError(problem)
     w_mm, h_mm = label_size_mm(template)
     page_w, page_h = w_mm * mm, h_mm * mm
     buf = io.BytesIO()
     c = _new_canvas(buf, (page_w, page_h))
-    _draw_label(c, 0, 0, page_w, page_h, data, monochrome, fields)
+    (draw or _draw_label)(c, 0, 0, page_w, page_h, data, monochrome, fields)
     c.showPage()
     c.save()
     return buf.getvalue()
+
+
+def iter_pdf_images(pdf: bytes, dpi: int, *, grayscale: bool = False) -> Iterator[Image.Image]:
+    """Rasterise the pages of ``pdf`` to PIL images at ``dpi``, one page at a
+    time, without smoothing the embedded QR bitmap (see ``pdf_to_pngs``).
+
+    Lazy, so a caller that drops each image before taking the next holds one
+    page at a time. PDFium is only locked while it renders, not while the caller
+    works on a page; ``grayscale`` yields "L" images instead of "RGB".
+    """
+    import pypdfium2 as pdfium
+
+    from backend.app.services.pdf_thumbnail import _PDFIUM_LOCK
+
+    with _PDFIUM_LOCK:
+        doc = pdfium.PdfDocument(pdf)
+        count = len(doc)
+    try:
+        for index in range(count):
+            with _PDFIUM_LOCK:
+                page = doc[index]
+                try:
+                    bitmap = page.render(scale=dpi / 72, no_smoothimage=True, grayscale=grayscale)  # pyright: ignore[reportArgumentType]
+                    image = bitmap.to_pil().convert("L" if grayscale else "RGB")
+                finally:
+                    page.close()
+            yield image
+            del image  # not alive while the next page renders
+    finally:
+        with _PDFIUM_LOCK:
+            doc.close()
 
 
 def pdf_to_pngs(pdf: bytes, dpi: int) -> list[bytes]:
@@ -889,40 +1054,33 @@ def pdf_to_pngs(pdf: bytes, dpi: int) -> list[bytes]:
     makes a small code unreadable on a 203 dpi thermal printer (#1870). The
     PNG carries its dpi so label software prints it at the right size.
     """
-    import pypdfium2 as pdfium
-
-    from backend.app.services.pdf_thumbnail import _PDFIUM_LOCK
-
-    pages: list[bytes] = []
-    with _PDFIUM_LOCK:
-        doc = pdfium.PdfDocument(pdf)
-        try:
-            for index in range(len(doc)):
-                page = doc[index]
-                try:
-                    image = page.render(scale=dpi / 72, no_smoothimage=True).to_pil()
-                finally:
-                    page.close()
-                out = io.BytesIO()
-                image.convert("RGB").save(out, "PNG", dpi=(dpi, dpi), optimize=True)
-                pages.append(out.getvalue())
-        finally:
-            doc.close()
-    return pages
+    pngs: list[bytes] = []
+    # Each page is encoded before the next is rendered, so only one bitmap is alive.
+    for image in iter_pdf_images(pdf, dpi):
+        out = io.BytesIO()
+        image.save(out, "PNG", dpi=(dpi, dpi), optimize=True)
+        pngs.append(out.getvalue())
+        del image
+    return pngs
 
 
 __all__ = [
     "ALL_LABEL_FIELDS",
     "DEFAULT_LABEL_FIELDS",
+    "DrawLabel",
     "LabelData",
     "LabelField",
     "PageSize",
+    "ROLL_MAX_LENGTH_MM",
+    "ROLL_MIN_LENGTH_MM",
+    "RollLayout",
     "sheet_page_count",
     "SheetLayout",
     "Template",
     "TemplateName",
     "get_sheet_capacity",
     "label_size_mm",
+    "iter_pdf_images",
     "pdf_to_pngs",
     "render_label_preview_pdf",
     "render_labels",

@@ -6,7 +6,7 @@ import { api, type InventorySpool, type PrinterStatus, type AMSTray } from '../.
 import { ConfirmModal } from '../ConfirmModal';
 import { AmsUnitCard, NozzleBadge } from './AmsUnitCard';
 import type { AmsThresholds } from './AmsUnitCard';
-import { getFillBarColor, isAms3hUnit, isAmsHtUnit, rackExternalLabel, spoolBuddyAmsName } from '../../utils/amsHelpers';
+import { getFillBarColor, inventoryFillOverAms, isAms3hUnit, isAmsHtUnit, rackExternalLabel, spoolBuddyAmsName } from '../../utils/amsHelpers';
 import { EXTERNAL_AMS_ID, externalSlotIndex, externalTrayId, isRackAms, layoutAmsType, trayLayoutOf } from '../../utils/trayIds';
 import { getSwatchStyle, resolveSpoolColorName } from '../../utils/colors';
 import { spoolSwatchStyle } from './spoolPaint';
@@ -448,7 +448,8 @@ export function AssignToAmsModal({
       };
       const invFill = fillOverrides[`${unit.id}-0`] ?? null;
       const amsFill = tray.remain != null && tray.remain >= 0 ? tray.remain : null;
-      const resolvedInvFill = (invFill === 0 && amsFill !== null && amsFill > 0) ? null : invFill;
+      // An RFID spool the AMS still reads filament on wins over an inventory at 0% (#676, #3738)
+      const resolvedInvFill = inventoryFillOverAms(invFill, tray);
       items.push({
         key: `ht-${unit.id}`, label: spoolBuddyAmsName(unit.id),
         amsId: unit.id, trayId: 0, tray, isEmpty: isTrayEmpty(tray),
@@ -462,7 +463,7 @@ export function AssignToAmsModal({
       const extSlotTrayId = externalSlotIndex(extTrayId);
       const extInvFill = fillOverrides[`255-${extSlotTrayId}`] ?? null;
       const extAmsFill = extTray.remain != null && extTray.remain >= 0 ? extTray.remain : null;
-      const extResolvedInvFill = (extInvFill === 0 && extAmsFill !== null && extAmsFill > 0) ? null : extInvFill;
+      const extResolvedInvFill = inventoryFillOverAms(extInvFill, extTray);
       items.push({
         key: `ext-${extTrayId}`,
         label: rackExternals

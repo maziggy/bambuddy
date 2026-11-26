@@ -161,6 +161,21 @@ describe('buildFilamentOptions', () => {
   });
 });
 
+describe('imported presets carry their compatible printers (#3731)', () => {
+  it('parses the stored list onto the option, and leaves it off when there is none', () => {
+    const result = buildFilamentOptions(
+      [],
+      new Set(),
+      [
+        localPreset({ id: 1, name: 'Elegoo PLA Matte', compatible_printers: '["Bambu Lab A1 0.2 nozzle"]' }),
+        localPreset({ id: 2, name: 'Plain PLA', compatible_printers: null }),
+      ],
+    );
+    expect(result.find(o => o.code === '1')?.compatiblePrinters).toEqual(['Bambu Lab A1 0.2 nozzle']);
+    expect(result.find(o => o.code === '2')).not.toHaveProperty('compatiblePrinters');
+  });
+});
+
 describe('the fallback list when every source is empty (#3559)', () => {
   // Each entry must carry the filament id Bambu gives its name. A wrong id is
   // what the slot gets configured with: "Bambu PLA-CF" used to be GFS00, which

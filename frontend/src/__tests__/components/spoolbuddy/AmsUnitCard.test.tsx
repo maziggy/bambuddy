@@ -145,6 +145,20 @@ describe('AmsUnitCard', () => {
     expect(fillBars.length).toBe(3);
   });
 
+  // #676 / #3738: an inventory spool at 0% against the AMS reading.
+  it.each([
+    ['a spool without RFID keeps the inventory 0%', null, '0%'],
+    ['an RFID spool the AMS reads filament on shows the AMS', 'A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4', '100%'],
+  ])('%s', (_name, trayUuid, width) => {
+    const unit = makeUnit({ tray: [makeTray({ id: 0, remain: 100, tray_uuid: trayUuid })] });
+    const { container } = render(
+      <AmsUnitCard unit={unit} activeSlot={null} fillOverrides={{ '0-0': 0 }} />
+    );
+
+    const bar = container.querySelector('.h-full.rounded-full.transition-all') as HTMLElement;
+    expect(bar.style.width).toBe(width);
+  });
+
   it('renders only 1 slot for AMS-HT', () => {
     const htUnit = makeUnit({
       is_ams_ht: true,

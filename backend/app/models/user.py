@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, String, func
+from sqlalchemy import DateTime, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
@@ -83,6 +83,16 @@ class User(Base):
     orca_cloud_pending_verifier: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
     orca_cloud_pending_state: Mapped[str | None] = mapped_column(String(32), nullable=True, default=None)
     orca_cloud_pending_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+
+    # Per-user 3D Filament Profiles connection (#2981). The device flow issues
+    # one token with no expiry and no refresh token, so this is all there is:
+    # the token, the account's email for the settings card, and the device-code
+    # state held between /threedfp/device/start and /threedfp/device/poll.
+    threedfp_token: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
+    threedfp_email: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
+    threedfp_pending_device_code: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
+    threedfp_pending_interval: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    threedfp_pending_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
 
     # Relationship to groups through association table
     groups: Mapped[list[Group]] = relationship(

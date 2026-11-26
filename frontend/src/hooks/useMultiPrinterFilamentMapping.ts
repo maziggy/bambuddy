@@ -33,6 +33,12 @@ export interface PerPrinterConfig {
   manualMappings: Record<number, number>;
   /** Whether this mapping was auto-configured */
   autoConfigured: boolean;
+  /**
+   * Slots whose tray the user picked in this printer's editor (#3711).
+   * `manualMappings` also holds the trays auto-configure filled in, which a
+   * forced colour must not be traded for.
+   */
+  pickedSlots?: number[];
 }
 
 /**
@@ -445,6 +451,7 @@ export function useMultiPrinterFilamentMapping(
       useDefault: false,
       manualMappings,
       autoConfigured: true,
+      pickedSlots: [],
     });
   };
 

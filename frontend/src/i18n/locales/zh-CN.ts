@@ -3358,6 +3358,15 @@ export default {
     passwordOptional: '密码（可选）',
     topicPrefix: '主题前缀',
     topicPrefixHint: '主题格式：{{prefix}}/printers/<serial>/status 等',
+    // Home Assistant MQTT discovery (#3724)
+    haDiscovery: {
+      title: "Home Assistant 自动发现",
+      hint: "打印机和 AMS 单元会作为带传感器的设备出现在 Home Assistant 中，无需编写 YAML。只读：Home Assistant 无法通过它控制打印机。",
+      prefix: "发现前缀",
+      prefixHint: "Home Assistant 的默认值为 homeassistant。仅当您在那里修改过时才需要更改。",
+      prefixConflict: "发现前缀必须与主题前缀不同。",
+      prefixWildcard: "发现前缀不能包含 + 或 #。",
+    },
     prometheusMetrics: 'Prometheus 指标',
     prometheusEndpointDescription: '在 <code>/api/v1/metrics</code> 公开打印机指标，用于Prometheus/Grafana监控。',
     bearerTokenOptional: 'Bearer令牌（可选）',

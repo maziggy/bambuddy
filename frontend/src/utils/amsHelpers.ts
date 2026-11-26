@@ -8,7 +8,7 @@ import { settingIdToFilamentId } from './filamentIds';
 import {
   AmsType,
   EXTERNAL_AMS_ID,
-  RACK_SLOT_COUNT,
+  rackSlotCount,
   externalHotend,
   externalTrayId,
   globalTrayId as studioGlobalTrayId,
@@ -87,11 +87,12 @@ export function resolveSlotExtruder(
 }
 
 const AMS3H_LABEL = 'AMS 3H';
+const AMS3P_LABEL = 'AMS 3P';
 
 /**
  * AMS unit label using the codebase convention: "AMS-A / AMS-B / ..." for
  * regular AMS, "HT-A / HT-B / ..." for AMS-HT (single-tray modules with
- * IDs 128-135), "AMS 3H" for the H3C's. The unit id decides: a regular AMS can
+ * IDs 128-135), "AMS 3H" for the H3C's, "AMS 3P" for the P3C's. The unit id decides: a regular AMS can
  * report one tray.
  */
 export function getAmsLabel(amsId: number | string, amsType?: number | null): string {
@@ -103,6 +104,7 @@ export function getAmsLabel(amsId: number | string, amsType?: number | null): st
   // self-scoping label for the Lite's 4-slot unit.
   if (safeId === 6) return 'AMS Lite';
   if (isAms3hUnit({ id: safeId, ams_type: amsType })) return AMS3H_LABEL;
+  if (isAms3pUnit({ id: safeId, ams_type: amsType })) return AMS3P_LABEL;
   const isHt = isAmsHtUnit(safeId);
   const normalizedId = safeId >= 128 ? safeId - 128 : safeId;
   const letter = String.fromCharCode(65 + normalizedId);
@@ -114,6 +116,11 @@ export function isAms3hUnit(unit: { id: number; ams_type?: number | null } | nul
   return !!unit && unitAmsType(unit.id, unit.ams_type) === AmsType.ZMULTI_A;
 }
 
+/** The P3C's AMS 3P: one seven-slot rack AMS whose slot k feeds hotend k (#3737). */
+export function isAms3pUnit(unit: { id: number; ams_type?: number | null } | null | undefined): boolean {
+  return !!unit && unitAmsType(unit.id, unit.ams_type) === AmsType.ZMULTI_B;
+}
+
 /** Tray state of an AMS 3H slot whose filament is in its hotend (26: held at the inlet, #3531). */
 export const AMS3H_TRAY_IN_HOTEND = 27;
 
@@ -122,10 +129,11 @@ export function ams3hHasLoadedSlot(unit: { tray?: { state?: number | null }[] | 
   return (unit.tray ?? []).some((tray) => tray.state === AMS3H_TRAY_IN_HOTEND);
 }
 
-/** How many slots a unit's card draws: nine for a rack AMS, one for an AMS-HT, else four. */
+/** How many slots a unit's card draws: a rack AMS's own (AMS 3H nine, AMS 3P seven), one for an AMS-HT, else four. */
 export function amsUnitSlotCount(unit: { id: number; ams_type?: number | null }): number {
   if (isAmsHtUnit(unit.id)) return 1;
-  return isRackAms(unitAmsType(unit.id, unit.ams_type)) ? RACK_SLOT_COUNT : 4;
+  const kind = unitAmsType(unit.id, unit.ams_type);
+  return isRackAms(kind) ? rackSlotCount(kind) : 4;
 }
 
 /**
@@ -158,7 +166,7 @@ export function rackExternalLabel(trayId: number): string {
 
 /**
  * Compact slot label for a spool assignment: "B3" / "HT-A" / "Ext", "3H-7" for
- * an AMS 3H slot and "Ext-n" for a rack printer's external input.
+ * an AMS 3H slot, "3P-5" for an AMS 3P slot and "Ext-n" for a rack printer's external input.
  */
 export function formatAssignmentSlotLabel(a: { ams_id: number; tray_id: number; printer_model?: string | null }): string {
   const isExternal = a.ams_id === 254 || a.ams_id === EXTERNAL_AMS_ID;
@@ -169,11 +177,12 @@ export function formatAssignmentSlotLabel(a: { ams_id: number; tray_id: number; 
   return formatSlotLabel(a.ams_id, a.tray_id, isHt, isExternal);
 }
 
-/** SpoolBuddy's unit name: "AMS A", "AMS HT A", "AMS 3H". */
+/** SpoolBuddy's unit name: "AMS A", "AMS HT A", "AMS 3H", "AMS 3P". */
 export function spoolBuddyAmsName(amsId: number, amsType?: number | null): string {
   if (amsId <= 3) return `AMS ${String.fromCharCode(65 + amsId)}`;
   if (isAmsHtUnit(amsId)) return `AMS HT ${String.fromCharCode(65 + amsId - 128)}`;
   if (isAms3hUnit({ id: amsId, ams_type: amsType })) return AMS3H_LABEL;
+  if (isAms3pUnit({ id: amsId, ams_type: amsType })) return AMS3P_LABEL;
   return `AMS ${amsId}`;
 }
 
@@ -451,6 +460,7 @@ export function formatSlotLabel(
 ): string {
   if (isExternal) return 'Ext';
   if (!isHt && isAms3hUnit({ id: amsId, ams_type: amsType })) return `3H-${trayId + 1}`;
+  if (!isHt && isAms3pUnit({ id: amsId, ams_type: amsType })) return `3P-${trayId + 1}`;
   // Convert AMS ID to letter (A, B, C, D)
   // AMS-HT uses IDs starting at 128
   const letter = String.fromCharCode(65 + (amsId >= 128 ? amsId - 128 : amsId));

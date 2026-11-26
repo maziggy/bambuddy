@@ -22,7 +22,7 @@ from backend.app.services.panda_breath import panda_breath_service
 from backend.app.services.pause_eta import next_pause
 from backend.app.utils.ams_humidity import ams_humidity_percent
 from backend.app.utils.kprofile_lookup import build_slot_k_resolver
-from backend.app.utils.printer_models import has_ams3h
+from backend.app.utils.printer_models import model_rack_ams
 from backend.app.utils.tray_ids import (
     RACK_SLOT_COUNT,
     TrayLayout,
@@ -52,6 +52,7 @@ CHAMBER_TEMP_SUPPORTED_MODELS = frozenset(
         "H2DPRO",
         "H2S",  # H2 series
         "H3C",  # H3 series
+        "P3C",  # P3 series (support_chamber in Studio's N11.json, #3737)
         # Internal codes (from MQTT/SSDP)
         "BL-P001",  # X1/X1C
         "C13",  # X1E
@@ -64,6 +65,7 @@ CHAMBER_TEMP_SUPPORTED_MODELS = frozenset(
         "O2D",  # H2D Pro (alternate code)
         "N7",  # P2S
         "N10",  # H3C
+        "N11",  # P3C
     ]
 )
 
@@ -159,7 +161,8 @@ def supports_chamber_heater(model: str | None) -> bool:
 
 
 # Models with a cooling / heating airduct flap. Same set as the frontend
-# PrintersPage airduct-toggle whitelist (P2S, X2D, H2D, H2D Pro, H2C, H2S, H3C).
+# PrintersPage airduct-toggle whitelist (P2S, X2D, H2D, H2D Pro, H2C, H2S, H3C, P3C).
+# The P3C has the flap (device.airduct) but, like the P2S, no heater (#3737).
 # X1E has a chamber heater but NO airduct flap — the warm-air recirculation
 # happens via the fixed front-door inlet, so no `set_airduct` command is
 # needed (and the firmware ignores it). P2S has an airduct but no heater —
@@ -177,6 +180,7 @@ CHAMBER_AIRDUCT_MODELS = frozenset(
         "H2DPRO",
         "H2S",
         "H3C",
+        "P3C",
         # Internal codes (from MQTT/SSDP)
         "N7",  # P2S
         "N6",  # X2D
@@ -187,6 +191,7 @@ CHAMBER_AIRDUCT_MODELS = frozenset(
         "O2D",  # H2D Pro alternate code
         "O1S",  # H2S
         "N10",  # H3C
+        "N11",  # P3C
     ]
 )
 
@@ -194,7 +199,7 @@ CHAMBER_AIRDUCT_MODELS = frozenset(
 def supports_airduct(model: str | None) -> bool:
     """Check if a printer model has a cooling / heating airduct mode toggle.
 
-    Mirrors the frontend PrintersPage `['P2S', 'X2D', 'H2D', 'H2C', 'H2S', 'H3C']`
+    Mirrors the frontend PrintersPage `['P2S', 'X2D', 'H2D', 'H2C', 'H2S', 'H3C', 'P3C']`
     + H2D Pro whitelist. Distinct from `supports_chamber_heater` — P2S has
     the airduct toggle but no active heater, and X1E has the heater but no
     airduct. The preheat stage cares about the intersection (heater AND
@@ -1988,4 +1993,4 @@ def printer_tray_layout(printer_id: int | None, manager: PrinterManager | None =
     if printer_id is None:
         return TrayLayout()
     manager = manager or printer_manager
-    return TrayLayout.from_state(manager.get_status(printer_id), has_ams3h(manager.get_model(printer_id)))
+    return TrayLayout.from_state(manager.get_status(printer_id), model_rack_ams(manager.get_model(printer_id)))

@@ -69,6 +69,7 @@ MODEL_TO_API_KEY = {
     "H2S": "h2s",
     "H3C": "h3c",
     "P2S": "p2s",
+    "P3C": "p3c",
     "X1E": "x1e",
     "X2D": "x2d",
     "H2D Pro": "h2d-pro",
@@ -93,6 +94,7 @@ MODEL_TO_API_KEY = {
     "N7": "p2s",
     "N9": "a2l",
     "N10": "h3c",
+    "N11": "p3c",
 }
 
 # Reverse mapping: API key to model codes
@@ -110,6 +112,7 @@ API_KEY_TO_DEV_MODEL = {
     "h2d-pro": "O1E",
     "a2l": "N9",
     "h3c": "N10",
+    "p3c": "N11",
 }
 
 # Wiki firmware release history pages (primary version source)
@@ -131,6 +134,8 @@ API_KEY_TO_WIKI_PATH = {
     "a2l": "/en/a2l/manual/a2l-firmware-release-history",
     # H3C: no model prefix in the page name, like the H2D Pro.
     "h3c": "/en/h3c/manual/firmware-release-history",
+    # P3C: the same page name as the H3C (#3737).
+    "p3c": "/en/p3c/manual/firmware-release-history",
 }
 
 

@@ -86,6 +86,7 @@ MODEL_PRODUCT_NAMES = {
     "O1C2": "H2C",
     "O1S": "H2S",
     "N10": "H3C",
+    "N11": "P3C",
 }
 
 

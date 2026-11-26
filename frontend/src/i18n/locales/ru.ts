@@ -3229,6 +3229,15 @@ export default {
     passwordOptional: "Пароль (необязательно)",
     topicPrefix: "Префикс топиков",
     topicPrefixHint: "Топики будут иметь вид {{prefix}}/printers/<serial>/status и т. п.",
+    // Home Assistant MQTT discovery (#3724)
+    haDiscovery: {
+      title: "Обнаружение в Home Assistant",
+      hint: "Принтеры и модули AMS появляются в Home Assistant как устройства с датчиками, без YAML. Только чтение: управлять принтером из Home Assistant таким образом нельзя.",
+      prefix: "Префикс обнаружения",
+      prefixHint: "По умолчанию в Home Assistant используется homeassistant. Меняйте, только если изменили его там.",
+      prefixConflict: "Префикс обнаружения должен отличаться от префикса топиков.",
+      prefixWildcard: "Префикс обнаружения не может содержать + или #.",
+    },
     prometheusMetrics: "Метрики Prometheus",
     prometheusEndpointDescription: "Публиковать метрики принтеров по адресу <code>/api/v1/metrics</code> для мониторинга в Prometheus/Grafana.",
     bearerTokenOptional: "Bearer-токен (необязательно)",

@@ -109,10 +109,10 @@ from backend.app.utils.filename import InvalidFilenameError, derive_remote_filen
 from backend.app.utils.library_paths import move_library_photos
 from backend.app.utils.local_time import utcnow_naive
 from backend.app.utils.printer_models import (
-    has_ams3h,
     is_dual_nozzle_model,
     is_gcode_compatible,
     is_nozzle_rack_model,
+    model_rack_ams,
     normalize_printer_model,
 )
 from backend.app.utils.threemf_tools import (
@@ -4960,7 +4960,7 @@ class PrintScheduler:
                 use_ams = reconcile_use_ams(
                     mapping,
                     use_ams and not only_external,
-                    TrayLayout.from_state(status, has_ams3h(printer.model if printer else None)),
+                    TrayLayout.from_state(status, model_rack_ams(printer.model if printer else None)),
                     plate_uses_only_external=only_external,
                 )
             except (TypeError, ValueError):

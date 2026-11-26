@@ -11,6 +11,8 @@ export function mapModelCode(ssdpModel: string | null): string {
     'O1S': 'H2S',
     // H3 Series (model_id in BambuStudio's "Bambu Lab H3C.json")
     'N10': 'H3C',
+    // P3 Series (model_id in BambuStudio's "Bambu Lab P3C.json", #3737)
+    'N11': 'P3C',
     // X1 Series
     'BL-P001': 'X1C',
     'BL-P002': 'X1',
@@ -47,6 +49,7 @@ export function mapModelCode(ssdpModel: string | null): string {
     'H2C': 'H2C',
     'H2S': 'H2S',
     'H3C': 'H3C',
+    'P3C': 'P3C',
   };
   return modelMap[ssdpModel] || ssdpModel;
 }

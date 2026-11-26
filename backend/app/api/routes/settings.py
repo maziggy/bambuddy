@@ -206,6 +206,7 @@ _BOOL_SETTING_KEYS = frozenset(
         "ftp_retry_enabled",
         "mqtt_enabled",
         "mqtt_use_tls",
+        "mqtt_ha_discovery_enabled",
         "panda_breath_enabled",
         "ha_enabled",
         "per_printer_mapping_expanded",
@@ -529,9 +530,45 @@ async def update_settings(
         "mqtt_password",
         "mqtt_topic_prefix",
         "mqtt_use_tls",
+        "mqtt_ha_discovery_enabled",
+        "mqtt_ha_discovery_prefix",
+        # The link on the Home Assistant device.
+        "external_url",
         "panda_breath_enabled",
     }
     mqtt_updated = bool(mqtt_keys & set(update_data.keys()))
+
+    # Home Assistant discovery (#3724). Checked against what will be stored,
+    # whichever of these this save changes: the page sends every field on each save.
+    discovery_keys = {"mqtt_enabled", "mqtt_topic_prefix", "mqtt_ha_discovery_enabled", "mqtt_ha_discovery_prefix"}
+    if discovery_keys & set(update_data.keys()):
+        from backend.app.services.mqtt_ha_discovery import DEFAULT_DISCOVERY_PREFIX, normalize_prefix
+
+        async def _effective(key: str) -> str:
+            if key in update_data:
+                value = update_data[key]
+                return ("true" if value else "false") if isinstance(value, bool) else str(value)
+            return await get_setting(db, key) or ""
+
+        discovery_prefix = normalize_prefix(await _effective("mqtt_ha_discovery_prefix"), DEFAULT_DISCOVERY_PREFIX)
+        # MQTT wildcards: the relay could neither publish under it nor subscribe to it.
+        if "+" in discovery_prefix or "#" in discovery_prefix:
+            raise HTTPException(
+                status_code=400,
+                detail="The Home Assistant discovery prefix cannot contain + or #.",
+            )
+        # Printer status under Home Assistant's own discovery topics would be read
+        # as broken discovery messages. Only while discovery will be on: an install
+        # whose topic prefix is already "homeassistant" must still save its settings.
+        discovery_on = (
+            await _effective("mqtt_enabled") == "true" and await _effective("mqtt_ha_discovery_enabled") == "true"
+        )
+        topic_prefix = normalize_prefix(await _effective("mqtt_topic_prefix"), "bambuddy")
+        if discovery_on and topic_prefix == discovery_prefix:
+            raise HTTPException(
+                status_code=400,
+                detail="The MQTT topic prefix must differ from the Home Assistant discovery prefix.",
+            )
 
     # The page saves every field it shows on each change, so compare against
     # what is stored: only a real change of price source is worth a read.
@@ -588,6 +625,9 @@ async def update_settings(
                 "mqtt_password": await get_setting(db, "mqtt_password") or "",
                 "mqtt_topic_prefix": await get_setting(db, "mqtt_topic_prefix") or "bambuddy",
                 "mqtt_use_tls": (await get_setting(db, "mqtt_use_tls") or "false") == "true",
+                "mqtt_ha_discovery_enabled": (await get_setting(db, "mqtt_ha_discovery_enabled") or "false") == "true",
+                "mqtt_ha_discovery_prefix": await get_setting(db, "mqtt_ha_discovery_prefix") or "homeassistant",
+                "external_url": await get_setting(db, "external_url") or "",
                 "panda_breath_enabled": (await get_setting(db, "panda_breath_enabled") or "false") == "true",
             }
             await mqtt_relay.configure(mqtt_settings)

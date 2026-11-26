@@ -373,7 +373,7 @@ describe('QueuePage', () => {
 
       render(<QueuePage />);
 
-      const colourName = await screen.findByText('Bone White');
+      const colourName = await screen.findByText('PLA · Bone White');
       const row = colourName.closest('.group');
 
       expect(row).not.toBeNull();
@@ -381,6 +381,37 @@ describe('QueuePage', () => {
         'title',
         '#C2BAA7',
       );
+    });
+
+    it('names the material in front of the colour of an unmapped slot (#3742)', async () => {
+      const item = {
+        ...mockQueueItems[0],
+        id: 89,
+        printer_id: null,
+        target_model: 'P2S',
+        archive_id: null,
+        library_file_id: 20,
+        archive_name: null,
+        library_file_name: 'Material type test',
+        plate_id: 1,
+        filament_overrides: [
+          { slot_id: 1, type: 'PLA', color: '#C2BAA7FF', color_name: 'Bone White', force_color_match: false },
+          { slot_id: 2, type: 'PETG', color: '#8E351BFF', color_name: 'Caramel', force_color_match: false },
+        ],
+      };
+
+      server.use(
+        http.get('/api/v1/queue/', () => HttpResponse.json([item])),
+        http.get('/api/v1/library/files/20/plates', () => HttpResponse.json({ detail: 'Not found' }, { status: 404 })),
+      );
+
+      render(<QueuePage />);
+
+      const row = (await screen.findByText('Material type test')).closest('.group') as HTMLElement;
+      // Two jobs in the same colour can need different spools; the material
+      // tells the user which one to load before the job starts.
+      expect(await within(row).findByText('PLA · Bone White')).toBeInTheDocument();
+      expect(within(row).getByText('PETG · Caramel')).toBeInTheDocument();
     });
 
     it('shows the resolved AMS slot and bound spool when a physical mapping is stored (#3132)', async () => {
@@ -502,7 +533,7 @@ describe('QueuePage', () => {
           within(row as HTMLElement).getByText('A2 · eSUN PLA Basic · Bone White'),
         ).toBeInTheDocument();
       });
-      expect(within(row as HTMLElement).queryByText('Caramel')).not.toBeInTheDocument();
+      expect(within(row as HTMLElement).queryByText(/Caramel/)).not.toBeInTheDocument();
     });
 
     it('resolves a mapped tray on a second regular AMS unit (#3132)', async () => {
@@ -737,7 +768,7 @@ describe('QueuePage', () => {
 
       render(<QueuePage />);
 
-      const overrideName = await screen.findByText('Bone White');
+      const overrideName = await screen.findByText('PLA · Bone White');
       const row = overrideName.closest('.group');
 
       expect(row).not.toBeNull();
@@ -815,7 +846,7 @@ describe('QueuePage', () => {
       it("names the plate colour within the preset's product line", async () => {
         const row = await show({ tray_info_idx: 'GFA01' });
 
-        expect(await within(row).findByText('Charcoal')).toBeInTheDocument();
+        expect(await within(row).findByText('PLA · Charcoal')).toBeInTheDocument();
       });
 
       it("names an override within the override's own preset", async () => {
@@ -823,7 +854,7 @@ describe('QueuePage', () => {
           { slot_id: 1, type: 'PLA', color: '#000000', tray_info_idx: 'GFA01', force_color_match: false },
         ]);
 
-        expect(await within(row).findByText('Charcoal')).toBeInTheDocument();
+        expect(await within(row).findByText('PLA · Charcoal')).toBeInTheDocument();
       });
 
       it('names an override within its preset when the file has no plate listing', async () => {
@@ -831,7 +862,7 @@ describe('QueuePage', () => {
           { slot_id: 1, type: 'PLA', color: '#000000', tray_info_idx: 'GFA01', force_color_match: false },
         ]);
 
-        expect(await within(row).findByText('Charcoal')).toBeInTheDocument();
+        expect(await within(row).findByText('PLA · Charcoal')).toBeInTheDocument();
       });
 
       it("does not lend the plate's preset to an override of another filament", async () => {
@@ -839,8 +870,8 @@ describe('QueuePage', () => {
           { slot_id: 1, type: 'PETG', color: '#000000', force_color_match: false },
         ]);
 
-        expect(await within(row).findByText('Black')).toBeInTheDocument();
-        expect(within(row).queryByText('Charcoal')).toBeNull();
+        expect(await within(row).findByText('PETG · Black')).toBeInTheDocument();
+        expect(within(row).queryByText(/Charcoal/)).toBeNull();
       });
     });
 
@@ -913,19 +944,19 @@ describe('QueuePage', () => {
         const compact = within(row as HTMLElement).getByTestId('queue-filament-compact');
         expect(compact).toHaveAttribute(
           'title',
-          colours.map((_, index) => `Colour ${index + 1}`).join('\n'),
+          colours.map((_, index) => `PLA · Colour ${index + 1}`).join('\n'),
         );
         expect(within(compact).getAllByTestId('filament-swatch')).toHaveLength(8);
       });
       // Touch screens never show the tooltip; the same lines are the group's
       // accessible name.
-      expect(screen.getByRole('img', { name: /^Colour 1, Colour 2, .*Colour 8$/ })).toBe(
+      expect(screen.getByRole('img', { name: /^PLA · Colour 1, PLA · Colour 2, .*PLA · Colour 8$/ })).toBe(
         within(row as HTMLElement).getByTestId('queue-filament-compact'),
       );
 
       // Compact mode keeps the long labels out of the metadata row itself.
-      expect(within(row as HTMLElement).queryByText('Colour 1')).not.toBeInTheDocument();
-      expect(within(row as HTMLElement).queryByText('Colour 8')).not.toBeInTheDocument();
+      expect(within(row as HTMLElement).queryByText(/Colour 1/)).not.toBeInTheDocument();
+      expect(within(row as HTMLElement).queryByText(/Colour 8/)).not.toBeInTheDocument();
     });
 
     describe('stored mapping on the live printer (#3132)', () => {
@@ -1029,7 +1060,7 @@ describe('QueuePage', () => {
         await waitFor(() => {
           expect(within(row).getByText(/^External · PETG · /)).toBeInTheDocument();
         });
-        expect(within(row).queryByText('Caramel')).not.toBeInTheDocument();
+        expect(within(row).queryByText(/Caramel/)).not.toBeInTheDocument();
       });
 
       it('says the mapped slot is empty, keeping the intended colour', async () => {
@@ -1124,7 +1155,7 @@ describe('QueuePage', () => {
         const row = await mappedRow();
 
         await waitFor(() => expect(statusServed).toBe(true));
-        expect(await within(row).findByText('Caramel')).toBeInTheDocument();
+        expect(await within(row).findByText('PLA · Caramel')).toBeInTheDocument();
         expect(within(row).queryByText(/Empty/)).not.toBeInTheDocument();
       });
 
@@ -1153,7 +1184,7 @@ describe('QueuePage', () => {
         const row = await mappedRow();
 
         await waitFor(() => expect(statusServed).toBe(true));
-        expect(await within(row).findByText('Caramel')).toBeInTheDocument();
+        expect(await within(row).findByText('PLA · Caramel')).toBeInTheDocument();
         expect(within(row).queryByText(/Empty/)).not.toBeInTheDocument();
       });
 
@@ -1161,7 +1192,7 @@ describe('QueuePage', () => {
         useMappedPrinter([2], { connected: false, ams: amsWithEmptyA3, vt_tray: [] });
         const row = await mappedRow();
 
-        expect(await within(row).findByText('Caramel')).toBeInTheDocument();
+        expect(await within(row).findByText('PLA · Caramel')).toBeInTheDocument();
         expect(within(row).queryByText(/Empty/)).not.toBeInTheDocument();
       });
 
@@ -1208,7 +1239,7 @@ describe('QueuePage', () => {
         const row = await mappedRow();
 
         await waitFor(() => expect(statusServed).toBe(true));
-        expect(await within(row).findByText('Caramel')).toBeInTheDocument();
+        expect(await within(row).findByText('PLA · Caramel')).toBeInTheDocument();
         expect(within(row).queryByText(/Empty/)).not.toBeInTheDocument();
       });
     });

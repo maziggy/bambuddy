@@ -166,6 +166,8 @@ function backupTrays(mapping: number[] | null | undefined, log: [number, number]
   return backups;
 }
 
+// An unmapped slot leads with its material too, so the card says what to load
+// into the AMS before the job starts, not only which colour (#3742).
 function queueFilamentLabel(filament: QueueFilamentDisplay): string {
   return filament.slotLabel
     ? [
@@ -173,7 +175,7 @@ function queueFilamentLabel(filament: QueueFilamentDisplay): string {
         filament.spoolName || filament.type,
         filament.colorName,
       ].filter(Boolean).join(' · ')
-    : filament.colorName;
+    : [filament.type, filament.colorName].filter(Boolean).join(' · ');
 }
 
 /**

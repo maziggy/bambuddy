@@ -534,7 +534,7 @@ describe('useWebSocket hook', () => {
       expect(received).toEqual([{ printer_id: 3, printer_name: 'X1C', reason: 'no_camera_frame' }]);
     });
 
-    it('refetches the printers on printer_plates_changed (#3575)', async () => {
+    it('refetches the printers and the To do list on printer_plates_changed (#3575, #3615)', async () => {
       vi.useFakeTimers();
       const { useWebSocket } = await import('../../hooks/useWebSocket');
 
@@ -563,6 +563,7 @@ describe('useWebSocket hook', () => {
       });
 
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['printers'] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['queue-todo'] });
 
       vi.useRealTimers();
       vi.unstubAllGlobals();

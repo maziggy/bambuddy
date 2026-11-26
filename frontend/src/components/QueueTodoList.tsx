@@ -1,17 +1,22 @@
+import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Palette, Play, ShieldAlert, PowerOff, Loader2 } from 'lucide-react';
+import type { TFunction } from 'i18next';
+import { Palette, Play, ShieldAlert, PowerOff, Loader2, SquareStack, PackagePlus } from 'lucide-react';
 import { api, ApiError } from '../api/client';
-import type { QueueTodo, QueueTodoEntry, QueueTodoGroup, QueueTodoKind } from '../api/client';
+import type { QueueTodo, QueueTodoEntry, QueueTodoFilament, QueueTodoGroup, QueueTodoKind } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { ConfirmModal } from './ConfirmModal';
 import { PlateClearedIcon } from './icons/PlateClearedIcon';
 import { QUEUE_TODO_KEY } from '../hooks/useQueueTodo';
 import { useStartQueueItem } from '../hooks/useStartQueueItem';
+import { formatSlotLabel } from '../utils/amsHelpers';
 
 const KIND_ICON: Record<QueueTodoKind, React.ComponentType<{ className?: string }>> = {
   plate_clear: PlateClearedIcon,
+  plate_changer_empty: SquareStack,
   load_filament: Palette,
   start_staged: Play,
   sensor_interlock: ShieldAlert,
@@ -20,19 +25,43 @@ const KIND_ICON: Record<QueueTodoKind, React.ComponentType<{ className?: string 
 
 const KIND_TEXT_KEY: Record<QueueTodoKind, string> = {
   plate_clear: 'queueTodo.kind.plateClear',
+  plate_changer_empty: 'queueTodo.kind.plateChangerEmpty',
   load_filament: 'queueTodo.kind.loadFilament',
   start_staged: 'queueTodo.kind.startStaged',
   sensor_interlock: 'queueTodo.kind.sensorInterlock',
   power_on_failed: 'queueTodo.kind.powerOnFailed',
 };
 
-function EntryRow({ group, entry, onNavigate, onOpenQueue, onStart, startPending }: {
+// "Not enough PLA Red: A2 has 12 g, the job needs 30 g" for a spool that holds
+// too little (#3137). The tray and the amounts are left out when not known.
+function shortText(t: TFunction, f: QueueTodoFilament): string {
+  const filament = [f.type, f.color_name].filter(Boolean).join(' ');
+  const trays = f.short_trays ?? [];
+  if (trays.length === 0) return t('queueTodo.short.plain', { filament });
+  const slots = trays
+    .map((tray) => {
+      const isExternal = tray.ams_id >= 254;
+      return formatSlotLabel(tray.ams_id, tray.tray_id, !isExternal && tray.ams_id >= 128, isExternal);
+    })
+    .join(' + ');
+  const [tray] = trays;
+  if (trays.length > 1 || typeof tray.remaining_grams !== 'number') {
+    return t('queueTodo.short.in', { filament, slots });
+  }
+  const remaining = Math.round(tray.remaining_grams);
+  return typeof f.required_grams === 'number'
+    ? t('queueTodo.short.hasGramsNeeds', { filament, slots, remaining, required: Math.round(f.required_grams) })
+    : t('queueTodo.short.hasGrams', { filament, slots, remaining });
+}
+
+function EntryRow({ group, entry, onNavigate, onOpenQueue, onStart, startPending, overlayZIndex }: {
   group: QueueTodoGroup;
   entry: QueueTodoEntry;
   onNavigate?: () => void;
   onOpenQueue?: () => void;
   onStart: (id: number) => void;
   startPending: boolean;
+  overlayZIndex?: string;
 }) {
   const { t } = useTranslation();
   const { hasPermission, hasAnyPermission } = useAuth();
@@ -40,6 +69,18 @@ function EntryRow({ group, entry, onNavigate, onOpenQueue, onStart, startPending
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const Icon = KIND_ICON[entry.kind];
+
+  // Same call, permission and confirmation as the refill control on the printer card (#3575).
+  const [showRefillConfirm, setShowRefillConfirm] = useState(false);
+  const refillPlates = useMutation({
+    mutationFn: () => api.refillPlates(group.printer_id as number),
+    onSuccess: (updated) => {
+      showToast(t('printers.plateChanger.refilledToast', { capacity: updated.plate_capacity }));
+      queryClient.invalidateQueries({ queryKey: ['printers'] });
+      queryClient.invalidateQueries({ queryKey: QUEUE_TODO_KEY });
+    },
+    onError: (error: Error) => showToast(error.message || t('printers.plateChanger.refillFailed'), 'error'),
+  });
 
   // Same call and permission as the Plate-is-clear button on the printer card.
   const clearPlate = useMutation({
@@ -63,6 +104,9 @@ function EntryRow({ group, entry, onNavigate, onOpenQueue, onStart, startPending
 
   const jobs = entry.jobs;
   const modelPrinters = entry.kind === 'load_filament' && group.printer_id == null ? entry.printers : [];
+  // Every filament of the entry is loaded but too little: a spool to replace, not one to load.
+  const shortOnly =
+    entry.kind === 'load_filament' && entry.filaments.length > 0 && entry.filaments.every((f) => f.short);
   const jobLabel = jobs.length > 2
     ? t('queueTodo.jobCount', { count: jobs.length })
     : jobs.map((j) => j.name).join(', ');
@@ -88,6 +132,29 @@ function EntryRow({ group, entry, onNavigate, onOpenQueue, onStart, startPending
       >
         <PlateClearedIcon className="w-4 h-4" />
         {t('queueTodo.plateIsClear')}
+      </button>
+    );
+  } else if (entry.kind === 'plate_changer_empty' && group.printer_id != null) {
+    action = canClearPlate ? (
+      <button
+        type="button"
+        onClick={() => setShowRefillConfirm(true)}
+        disabled={refillPlates.isPending}
+        title={t('printers.plateChanger.refillTitle', { capacity: entry.plate_capacity })}
+        className="flex items-center gap-1.5 px-3 py-1.5 min-h-[36px] text-sm rounded-md bg-bambu-green/20 text-bambu-green hover:bg-bambu-green/30 disabled:opacity-50"
+      >
+        {refillPlates.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <PackagePlus className="w-4 h-4" />}
+        {t('printers.plateChanger.refill')}
+      </button>
+    ) : (
+      <button
+        type="button"
+        disabled
+        title={t('printers.permission.noControl')}
+        className="flex items-center gap-1.5 px-3 py-1.5 min-h-[36px] text-sm rounded-md bg-bambu-dark-tertiary text-bambu-gray opacity-50 cursor-not-allowed"
+      >
+        <PackagePlus className="w-4 h-4" />
+        {t('printers.plateChanger.refill')}
       </button>
     );
   } else if (entry.kind === 'start_staged') {
@@ -143,7 +210,7 @@ function EntryRow({ group, entry, onNavigate, onOpenQueue, onStart, startPending
         <div className="text-sm text-white break-words">
           {modelPrinters.length > 0 ? (
             <>
-              {t('queueTodo.kind.loadFilamentOn')}{' '}
+              {t(shortOnly ? 'queueTodo.kind.replaceSpoolOn' : 'queueTodo.kind.loadFilamentOn')}{' '}
               {modelPrinters.map((p, i) => (
                 <span key={p.id}>
                   {i > 0 && ` ${t('queueTodo.or')} `}
@@ -154,7 +221,7 @@ function EntryRow({ group, entry, onNavigate, onOpenQueue, onStart, startPending
               ))}
             </>
           ) : (
-            t(KIND_TEXT_KEY[entry.kind])
+            t(shortOnly ? 'queueTodo.kind.replaceSpool' : KIND_TEXT_KEY[entry.kind])
           )}
         </div>
         {entry.kind === 'sensor_interlock' && entry.detail && (
@@ -174,7 +241,11 @@ function EntryRow({ group, entry, onNavigate, onOpenQueue, onStart, startPending
                     style={{ backgroundColor: f.color }}
                   />
                 )}
-                <span>{[f.type, f.color_name].filter(Boolean).join(' ')}</span>
+                {f.short ? (
+                  <span data-testid="todo-short" className="min-w-0 break-words">{shortText(t, f)}</span>
+                ) : (
+                  <span>{[f.type, f.color_name].filter(Boolean).join(' ')}</span>
+                )}
                 {(f.nozzle === 0 || f.nozzle === 1) && (
                   <span data-testid="todo-nozzle">
                     ({t(f.nozzle === 1 ? 'printModal.leftNozzleTooltip' : 'printModal.rightNozzleTooltip')})
@@ -192,6 +263,21 @@ function EntryRow({ group, entry, onNavigate, onOpenQueue, onStart, startPending
         </div>
         {action}
       </div>
+      {/* At 0 the queue holds every job for this printer, so the reset must not happen on a stray tap. */}
+      {showRefillConfirm && entry.plate_capacity != null && (
+        <ConfirmModal
+          title={t('printers.plateChanger.refillConfirmTitle')}
+          message={t('printers.plateChanger.refillConfirmMessage', { capacity: entry.plate_capacity })}
+          confirmText={t('printers.plateChanger.refill')}
+          variant="warning"
+          overlayZIndex={overlayZIndex}
+          onConfirm={() => {
+            refillPlates.mutate();
+            setShowRefillConfirm(false);
+          }}
+          onCancel={() => setShowRefillConfirm(false)}
+        />
+      )}
     </li>
   );
 }
@@ -234,6 +320,7 @@ export function QueueTodoList({ todo, onNavigate, onOpenQueue, overlayZIndex }: 
                 onOpenQueue={onOpenQueue}
                 onStart={(id) => startMutation.mutate({ id })}
                 startPending={startMutation.isPending}
+                overlayZIndex={overlayZIndex}
               />
             ))}
           </ul>

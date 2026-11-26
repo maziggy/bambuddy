@@ -2998,7 +2998,13 @@ export interface DiscoveredTasmotaDevice {
 
 // Print Queue types
 // "To do" list of everything the queue waits on (#3615).
-export type QueueTodoKind = 'plate_clear' | 'load_filament' | 'start_staged' | 'sensor_interlock' | 'power_on_failed';
+export type QueueTodoKind =
+  | 'plate_clear'
+  | 'plate_changer_empty'
+  | 'load_filament'
+  | 'start_staged'
+  | 'sensor_interlock'
+  | 'power_on_failed';
 export interface QueueTodoFilament {
   type: string;
   color: string;
@@ -3006,6 +3012,12 @@ export interface QueueTodoFilament {
   no_stock: boolean;
   // The nozzle a dual-nozzle file wants it on: 0 right, 1 left; null when it names none.
   nozzle?: number | null;
+  // Loaded, but its spool holds less than the job needs (#3137): not a filament to load.
+  short?: boolean;
+  // The tray of that spool; empty when it is not known or the entry lists several printers.
+  short_trays?: { ams_id: number; tray_id: number; remaining_grams: number | null }[];
+  // What the job prints of a short filament, in grams.
+  required_grams?: number | null;
 }
 export interface QueueTodoEntry {
   kind: QueueTodoKind;
@@ -3014,6 +3026,8 @@ export interface QueueTodoEntry {
   // Model-group load_filament: printers where loading lets the job start.
   printers: { id: number; name: string }[];
   detail: string | null;
+  // plate_changer_empty: the count a refill resets the plate changer to (#3575).
+  plate_capacity?: number | null;
 }
 export interface QueueTodoGroup {
   printer_id: number | null;

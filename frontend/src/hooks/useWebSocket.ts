@@ -495,6 +495,8 @@ export function useWebSocket() {
       case 'printer_plates_changed':
         // A plate changer count moved: a plate was used, or it was refilled (#3575).
         debouncedInvalidate('printers');
+        // An empty plate changer is an entry of the To do list (#3615).
+        debouncedInvalidate('queue-todo');
         break;
 
       case 'printer_locations_changed':

@@ -306,6 +306,30 @@ describe('PrintModal inventory override (#3590)', () => {
     await waitFor(() => expect(forceBox().checked).toBe(true));
   });
 
+  // #3733: a model change clears the pick, and the tick it set goes with it.
+  it('unticks an automatic force colour when the target model changes', async () => {
+    server.use(
+      http.get('/api/v1/printers/', () =>
+        HttpResponse.json([
+          { id: 1, name: 'X1C-1', model: 'X1C', ip_address: '10.0.0.1', is_active: true, enabled: true },
+          { id: 2, name: 'P1S-1', model: 'P1S', ip_address: '10.0.0.2', is_active: true, enabled: true },
+        ]),
+      ),
+    );
+    renderEdit();
+    await pickInventory();
+    await waitFor(() => expect(forceBox().checked).toBe(true));
+    const modelSelect = await waitFor(() => {
+      const select = screen
+        .getAllByRole('combobox')
+        .find((el) => el instanceof HTMLSelectElement && [...el.options].some((o) => o.value === 'P1S'));
+      if (!select) throw new Error('target model select not rendered');
+      return select as HTMLSelectElement;
+    });
+    fireEvent.change(modelSelect, { target: { value: 'P1S' } });
+    await waitFor(() => expect(forceBox().checked).toBe(false));
+  });
+
   it('keeps a manual untick after an inventory pick', async () => {
     renderEdit();
     await pickInventory();

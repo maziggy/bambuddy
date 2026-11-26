@@ -2,6 +2,7 @@ import { api } from '../../api/client';
 import type { SlicerSetting, LocalPreset, BuiltinFilament, SpoolKProfileInput } from '../../api/client';
 import { installedNozzleDiameters } from '../../utils/amsHelpers';
 import { filamentIdToSettingId, settingIdToFilamentId } from '../../utils/filamentIds';
+import { parseCompatiblePrinters } from '../../utils/slicerPrinterMatch';
 import type { CalibrationProfile, ColorPreset, FilamentOption } from './types';
 import { KNOWN_VARIANTS, DEFAULT_BRANDS, RECENT_COLORS_KEY, LAST_SPOOL_KEY, LAST_SPOOL_SPOOLMAN_KEY, MAX_RECENT_COLORS, STANDARD_NOZZLE_DIAMETERS } from './constants';
 
@@ -206,6 +207,7 @@ function buildLocalFilamentOptions(localPresets: LocalPreset[]): FilamentOption[
     const code = String(preset.id);
     const legacyCode = preset.filament_type || code;
     const allCodes = Array.from(new Set([code, legacyCode]));
+    const compatiblePrinters = parseCompatiblePrinters(preset.compatible_printers);
     return {
       code,
       name: preset.name,
@@ -213,6 +215,7 @@ function buildLocalFilamentOptions(localPresets: LocalPreset[]): FilamentOption[
       isCustom: false,
       allCodes,
       source: 'local',
+      ...(compatiblePrinters ? { compatiblePrinters } : {}),
     };
   });
   return options.sort((a, b) => a.displayName.localeCompare(b.displayName));

@@ -482,6 +482,11 @@ export default {
       editFieldHelp: 'Quando attivata, questa stampante è in pausa da MQTT, dispatch della coda e notifiche — utile per riparazioni, installazioni Bambuddy parallele o sospensione temporanea.',
     },
     // Chamber light
+    // Per-printer opt-out from the door plate-clear trigger (#2805)
+    plateClearDoor: {
+      editFieldLabel: 'Chiudere lo sportello conferma il piatto',
+      editFieldHelp: 'Deseleziona per una stampante il cui sportello viene aperto per altri motivi: attenderà il pulsante come prima.',
+    },
     chamberLightOn: 'Accendi luce camera',
     chamberLightOff: 'Spegni luce camera',
     // Files
@@ -2800,6 +2805,10 @@ export default {
     plateClear: 'Conferma piatto libero',
     requirePlateClear: 'Richiedi conferma piatto libero',
     requirePlateClearDescription: 'Quando questa opzione è abilitata, lo scheduler attende una conferma per stampante che il piatto sia libero prima di avviare le stampe in coda su stampanti con lavori completati. Disabilitandola vengono nascosti anche il badge di stato del piatto e il pulsante "Segna il piatto come liberato" sulle schede stampante. Una stampante può sostituire questa impostazione nelle proprie impostazioni (Modifica Stampante).',
+    plateClearTrigger: 'Sblocca la conferma tramite',
+    plateClearTriggerManual: 'Solo il pulsante',
+    plateClearTriggerDoor: 'Il pulsante, o la chiusura dello sportello',
+    plateClearTriggerDescription: 'Con «chiusura dello sportello», una stampante in attesa della conferma del piatto si sblocca da sola quando il suo sportello viene aperto e richiuso: togliere i pezzi è la conferma. Le stampanti senza sensore sportello non sono interessate e ogni stampante può essere esclusa nelle sue impostazioni.',
     keepBedWarm: 'Mantieni il piano caldo tra le stampe',
     keepBedWarmDesc: 'In attesa della conferma di piatto liberato, mantiene il piano alla temperatura di mantenimento indicata sotto così la camera resta calda — o alla temperatura del piano della stampa successiva se è più alta. Si applica solo quando la stampa successiva richiede il riscaldamento della camera (ASA, ABS, PA, PC, ecc.). Vale per le stampanti che attendono la conferma di piatto liberato, secondo l\'impostazione o il valore proprio della stampante.',
     keepWarmBedTemp: 'Temperatura del piano in mantenimento (°C)',

@@ -514,6 +514,7 @@ export interface Printer {
   plate_detection_enabled: boolean;  // Check plate before print
   plate_detection_roi?: PlateDetectionROI;  // ROI for plate detection
   wear_cost_per_hour: number | null;  // Wear cost per printing hour (#694)
+  plate_clear_door_enabled: boolean;  // Per-printer opt-out from the door plate-clear trigger (#2805)
   dispatch_priority: number | null;  // Place in the pick order of any-model jobs, lowest first (#2915)
   require_plate_clear: boolean | null;  // Own "Require plate-clear confirmation", null follows the app setting (#2860)
   wled_config: WLEDConfig | null;
@@ -877,6 +878,7 @@ export interface PrinterCreate {
   plate_detection_enabled?: boolean;
   plate_detection_roi?: PlateDetectionROI;
   wear_cost_per_hour?: number | null;
+  plate_clear_door_enabled?: boolean;
   dispatch_priority?: number | null;
   require_plate_clear?: boolean | null;
   wled_config?: WLEDConfig | null;
@@ -1708,6 +1710,8 @@ export interface AppSettings {
   finance_budget_reset_timezone: string;
   // Plate-clear confirmation
   require_plate_clear: boolean;
+  // What releases that confirmation: the button alone, or also the door closing (#2805)
+  plate_clear_trigger: 'manual' | 'door';
   // Shortest job first scheduling
   queue_shortest_first: boolean;
   // Offer the built-in inventory's colours in the print dialog's filament override (#3590).
@@ -6812,6 +6816,7 @@ export const api = {
   getUiPreferences: () =>
     request<{
       require_plate_clear?: boolean;
+      plate_clear_trigger?: 'manual' | 'door';
       check_printer_firmware?: boolean;
       camera_view_mode?: 'window' | 'embedded';
       time_format?: 'system' | '12h' | '24h';

@@ -535,6 +535,16 @@ class AppSettings(BaseModel):
         default=False,
         description="Require per-printer plate-clear confirmation before starting queued prints on finished printers",
     )
+    # What releases that confirmation. Only meaningful while require_plate_clear
+    # is on: a trigger changes HOW the gate opens, never WHETHER there is one.
+    # Anything other than 'door' falls through to the manual button.
+    plate_clear_trigger: str = Field(
+        default="manual",
+        description=(
+            "How the plate-clear gate is released: 'manual' by the button or API call, "
+            "'door' also when the printer's door is closed after having been opened"
+        ),
+    )
     queue_shortest_first: bool = Field(
         default=False,
         description="Shortest Job First — scheduler prioritizes shorter print jobs over longer ones",
@@ -940,6 +950,7 @@ class AppSettingsUpdate(BaseModel):
     finance_budget_reset_day: int | None = Field(default=None, ge=1, le=31)
     finance_budget_reset_timezone: str | None = None
     require_plate_clear: bool | None = None
+    plate_clear_trigger: str | None = None
     queue_shortest_first: bool | None = None
     queue_loaded_filament_first: bool | None = None
     queue_max_wait_hours: int | None = Field(default=None, ge=QUEUE_MAX_WAIT_HOURS_MIN, le=QUEUE_MAX_WAIT_HOURS_MAX)

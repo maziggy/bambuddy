@@ -485,6 +485,11 @@ export default {
       editFieldHelp: 'När det är på, är denna skrivare pausad från MQTT, köutskick och notiser — användbart för reparation, parallella Bambuddy-installationer eller tillfällig paus.',
     },
     // Chamber light
+    // Per-printer opt-out from the door plate-clear trigger (#2805)
+    plateClearDoor: {
+      editFieldLabel: 'Att stänga luckan bekräftar plattan',
+      editFieldHelp: 'Avmarkera för en skrivare vars lucka öppnas av andra skäl — den väntar då på knappen som förut.',
+    },
     chamberLightOn: 'Sätt på kammarljus',
     chamberLightOff: 'Stäng av kammarljus',
     // Files
@@ -2897,6 +2902,10 @@ export default {
     plateClear: 'Bekräftelse för tömd platta',
     requirePlateClear: 'Kräv bekräftelse för tömd platta',
     requirePlateClearDescription: 'När aktiverat väntar schemaläggaren på bekräftelse för tömd platta per skrivare innan köade utskrifter startar på skrivare med slutförda jobb. Om detta inaktiveras döljs också plattstatusbadgen och knappen "Markera platta som tömd" på skrivarkorten. En skrivare kan åsidosätta detta i sina egna inställningar (Redigera skrivare).',
+    plateClearTrigger: 'Frigör bekräftelsen med',
+    plateClearTriggerManual: 'Endast knappen',
+    plateClearTriggerDoor: 'Knappen, eller att luckan stängs',
+    plateClearTriggerDescription: 'Med ”att luckan stängs” frigör en skrivare som väntar på bekräftelse av sin platta sig själv när luckan öppnas och stängs igen — att ta av delarna är bekräftelsen. Skrivare utan luckgivare påverkas inte, och varje skrivare kan undantas i sina inställningar.',
     keepBedWarm: 'Håll plattan varm mellan utskrifterna',
     keepBedWarmDesc: 'Tills plattan är tömd, håll plattan vid varmhållningstemperaturen nedan så att kammaren förblir varm - eller vid nästa utskrifts egen plattemperatur om den är högre. Gäller endast när nästa utskrift behöver kammarvärme (ASA, ABS, PA, PC etc.). Gäller skrivare som väntar på bekräftelse på tömd platta, enligt inställningen eller skrivarens eget värde.',
     keepWarmBedTemp: 'Varmhållningstemperatur för platta (°C)',

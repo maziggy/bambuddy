@@ -482,6 +482,11 @@ export default {
       editFieldHelp: 'Etkinleştirildiğinde, bu yazıcı MQTT, kuyruk gönderimi ve bildirimlerden duraklatılır — tamir, paralel Bambuddy kurulumları veya geçici askıya alma için kullanışlıdır.',
     },
     // Hazne ışığı
+    // Per-printer opt-out from the door plate-clear trigger (#2805)
+    plateClearDoor: {
+      editFieldLabel: 'Kapağı kapatmak tablayı onaylar',
+      editFieldHelp: 'Kapağı başka nedenlerle açılan bir yazıcı için işareti kaldırın — o zaman eskisi gibi düğmeyi bekler.',
+    },
     chamberLightOn: 'Hazne ışığını aç',
     chamberLightOff: 'Hazne ışığını kapat',
     // Dosyalar
@@ -2849,6 +2854,10 @@ export default {
     plateClear: 'Plaka Temizleme Onayı',
     requirePlateClear: 'Plaka temizleme onayı gerektir',
     requirePlateClearDescription: 'Etkinleştirildiğinde, planlayıcı bitmiş işleri olan yazıcılarda kuyruktaki baskıları başlatmadan önce yazıcı başına plaka temizleme onayını bekler. Bunu devre dışı bırakmak ayrıca plaka durum rozetini ve yazıcı kartlarındaki "Plakayı temizlendi olarak işaretle" düğmesini gizler. Bir yazıcı bunu kendi ayarlarında (Yazıcıyı Düzenle) geçersiz kılabilir.',
+    plateClearTrigger: 'Onayı şununla serbest bırak',
+    plateClearTriggerManual: 'Yalnızca düğme',
+    plateClearTriggerDoor: 'Düğme veya kapağın kapatılması',
+    plateClearTriggerDescription: '“Kapağın kapatılması” seçildiğinde, tablasının onaylanmasını bekleyen bir yazıcı, kapağı açılıp yeniden kapatıldığında kendini serbest bırakır — parçaları almak onayın kendisidir. Kapak sensörü olmayan yazıcılar etkilenmez ve her yazıcı kendi ayarlarında bunun dışında tutulabilir.',
     keepBedWarm: 'Baskılar arasında yatak sıcaklığını koru',
     keepBedWarmDesc: 'Plaka temizleme onayı beklenirken, yatağı aşağıdaki sıcak tutma sıcaklığında tutarak hazneyi sıcak tutar — veya bir sonraki baskının yatak sıcaklığı daha yüksekse onu kullanır. Yalnızca bir sonraki baskının hazne ısıtması gerektirmesi durumunda uygulanır (ASA, ABS, PA, PC vb.). Ayara veya yazıcının kendi değerine göre plaka temizleme onayını bekleyen yazıcılara uygulanır.',
     keepWarmBedTemp: 'Sıcak tutma yatak sıcaklığı (°C)',

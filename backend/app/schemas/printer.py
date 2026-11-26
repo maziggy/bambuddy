@@ -195,6 +195,7 @@ class PrinterUpdate(IgnoresNullForRequiredColumns):
     camera_light_auto: bool | None = None  # #1655
     plate_detection_enabled: bool | None = None
     plate_detection_roi: PlateDetectionROI | None = None
+    plate_clear_door_enabled: bool | None = None
     wled_config: WLEDConfig | None = None
 
 
@@ -220,6 +221,7 @@ class PrinterResponse(PrinterBase):
     camera_light_auto: bool = False  # #1655
     plate_detection_enabled: bool = False
     plate_detection_roi: PlateDetectionROI | None = None
+    plate_clear_door_enabled: bool = True
     created_at: datetime
     updated_at: datetime
 

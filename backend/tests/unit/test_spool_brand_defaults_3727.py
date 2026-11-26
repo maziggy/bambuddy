@@ -346,6 +346,7 @@ class TestUpgrade:
             spool = (await db.execute(select(Spool))).scalar_one()
             assert (spool.core_weight, spool.core_weight_catalog_id, spool.weight_used) == (250, low_temp.id, 134)
             assert await bambu_spool_core_weight(db) == (250, low_temp.id)
+            assert (await bambu_spool_core_weight(db, "PPA-CF", "GFN06"))[0] == 196
             assert (await default_spool_core_weight(db, "SUNLU"))[0] == 217
 
         async with engine.begin() as conn:

@@ -817,9 +817,12 @@ async def nfc_tag_scanned(
         if tag_data is not None and tag_data["core_weight"] is None and tag_data["brand"]:
             # A tag without its own empty-spool weight (OpenSpool, FilaMan, an
             # OpenTag3D tag that leaves it out) gets its brand's default spool
-            # (#3727); with none, Quick Add keeps its own default.
+            # (#3727); with none, Quick Add keeps its own default. A Bambu
+            # PPA-CF or PPS-CF roll gets the cardboard spool, as from its RFID tag.
             try:
-                default = await default_spool_core_weight(db, tag_data["brand"])
+                default = await default_spool_core_weight(
+                    db, tag_data["brand"], tag_data.get("material"), tag_data.get("slicer_filament")
+                )
             except Exception:
                 logger.warning("Spool catalogue lookup failed for %s", req.tag_uid, exc_info=True)
                 default = None

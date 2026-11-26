@@ -58,6 +58,7 @@ const catalog = [
   { id: 2, name: 'Sunlu - Plastic V3', weight: 179, is_default: true, manufacturer: 'Sunlu', default_for_brand: false },
   { id: 3, name: 'Sunlu - Plastic V3 + Cardboard Core', weight: 217, is_default: true, manufacturer: 'Sunlu', default_for_brand: true },
   { id: 4, name: 'Mine', weight: 205, is_default: false, manufacturer: null, default_for_brand: false },
+  { id: 5, name: 'Bambu Lab - Cardboard', weight: 196, is_default: true, manufacturer: 'Bambu Lab', default_for_brand: false },
 ];
 
 async function openForm(props: Partial<React.ComponentProps<typeof SpoolFormModal>> = {}) {
@@ -90,8 +91,11 @@ describe('SpoolFormModal brand default spool (#3727)', () => {
     vi.mocked(localStorage.getItem).mockReturnValue(null);
     mApi.getSpoolCatalog.mockResolvedValue(catalog);
     // The server's answer: Sunlu's default row, nothing for other brands
-    mApi.getDefaultSpool.mockImplementation(async (brand: string) =>
-      brand.trim().toLowerCase() === 'sunlu' ? { weight: 217, catalog_id: 3 } : null);
+    mApi.getDefaultSpool.mockImplementation(async (brand: string, material?: string) => {
+      if (brand.trim().toLowerCase() === 'sunlu') return { weight: 217, catalog_id: 3 };
+      if (brand === 'Bambu Lab' && material === 'PPA-CF') return { weight: 196, catalog_id: 5 };
+      return null;
+    });
     mApi.getLocations.mockResolvedValue([]);
     mApi.getSuppliers.mockResolvedValue([]);
     mApi.resolveProfileDefault.mockResolvedValue(null);
@@ -152,5 +156,17 @@ describe('SpoolFormModal brand default spool (#3727)', () => {
     await new Promise((r) => setTimeout(r, 20));
     expect(mApi.getDefaultSpool).not.toHaveBeenCalled();
     expect(weightPicker().value).not.toBe(SUNLU_CORE);
+  });
+
+  it('asks again when the material changes, for a Bambu cardboard-spool line', async () => {
+    await openForm();
+    pickBrand('Bambu Lab');
+    await waitFor(() => expect(weightPicker().value).toBe('Bambu Lab - Plastic Low Temp'));
+    fireEvent.click(screen.getByRole('button', { name: 'Filament Info' }));
+    const material = screen.getByPlaceholderText('Select material...');
+    fireEvent.focus(material);
+    fireEvent.change(material, { target: { value: 'PPA-CF' } });
+    fireEvent.click(await screen.findByRole('button', { name: /PPA-CF/ }));
+    await waitFor(() => expect(weightPicker().value).toBe('Bambu Lab - Cardboard'));
   });
 });

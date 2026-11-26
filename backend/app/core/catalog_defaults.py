@@ -26,6 +26,10 @@ DEFAULT_SPOOL_CATALOG: list[tuple[str, int]] = [
     ("Atomic Filament - Plastic", 272),
     ("Aurapol - Plastic", 220),
     ("Azure Film - Plastic", 163),
+    # The cardboard spool Bambu's PPA-CF and PPS-CF ship on (#3727). Their data
+    # sheets give the same spool (cardboard, 145 °C, 200 x 67 mm, 0.75 kg net);
+    # two owners weighed PPA-CF's empty at 196 g and 195 g, months apart.
+    ("Bambu Lab - Cardboard", 196),
     ("Bambu Lab - Plastic High Temp", 216),
     ("Bambu Lab - Plastic Low Temp", 250),
     ("Bambu Lab - Plastic White", 253),

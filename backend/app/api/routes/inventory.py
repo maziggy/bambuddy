@@ -590,6 +590,7 @@ async def get_spool_catalog(
 @router.get("/catalog/default-spool", response_model=DefaultSpoolResponse | None)
 async def get_default_spool(
     brand: str,
+    material: str | None = None,
     db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ):
@@ -600,7 +601,7 @@ async def get_default_spool(
     """
     from backend.app.services.spool_tag_matcher import default_spool_core_weight
 
-    found = await default_spool_core_weight(db, brand)
+    found = await default_spool_core_weight(db, brand, material)
     return DefaultSpoolResponse(weight=found[0], catalog_id=found[1]) if found else None
 
 

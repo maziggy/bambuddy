@@ -148,3 +148,25 @@ class TestNdefPrefillTakesTheBrandDefault:
         tag_data = await self._scan(async_client)
         assert tag_data["core_weight"] is None
         assert tag_data["core_weight_catalog_id"] is None
+
+    async def test_a_bambu_ppa_cf_roll_gets_the_cardboard_spool(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """The same spool its RFID tag would give it."""
+        db_session.add(
+            SpoolCatalogEntry(
+                name="Bambu Lab - Plastic Low Temp", weight=250, manufacturer="Bambu Lab", default_for_brand=True
+            )
+        )
+        cardboard = SpoolCatalogEntry(name="Bambu Lab - Cardboard", weight=196, manufacturer="Bambu Lab")
+        db_session.add(cardboard)
+        await db_session.commit()
+
+        payload = b'{"protocol":"openspool","version":"1.0","type":"PPA-CF","color_hex":"000000","brand":"Bambu Lab"}'
+        tag_data = await self._scan(async_client, payload)
+        assert tag_data["material"] == "PPA-CF"
+        assert (tag_data["core_weight"], tag_data["core_weight_catalog_id"]) == (196, cardboard.id)
+
+        # And what the Add Spool form is told for the same brand and material
+        resp = await async_client.get(f"{CATALOG}/default-spool", params={"brand": "Bambu Lab", "material": "PPA-CF"})
+        assert resp.json() == {"weight": 196, "catalog_id": cardboard.id}

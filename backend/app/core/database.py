@@ -5940,6 +5940,7 @@ async def _run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE spool_catalog ADD COLUMN manufacturer VARCHAR(100)")
     await _safe_execute(conn, "ALTER TABLE spool_catalog ADD COLUMN default_for_brand BOOLEAN DEFAULT FALSE")
     await _migrate_spool_catalog_brand_defaults(conn)
+    await _migrate_add_bambu_cardboard_spool_row(conn)
 
     # Migration: the Bambu PLA Silk+ colours were seeded under "PLA Silk", so
     # an RFID roll reporting "PLA Silk+" never got its colour name. Relabel
@@ -7809,6 +7810,45 @@ async def _migrate_spool_catalog_brand_defaults(conn) -> None:
                 defaults or "none",
             )
 
+        await conn.execute(text('INSERT INTO settings ("key", value) VALUES (:k, :v)'), {"k": flag, "v": "true"})
+
+
+async def _migrate_add_bambu_cardboard_spool_row(conn) -> None:
+    """Add the "Bambu Lab - Cardboard" row to an existing spool catalogue, once (#3727).
+
+    Its own step rather than part of the brand-default migration, which may
+    already have run. Not when a row of that name exists, and not on an empty
+    catalogue, which seed_spool_catalog() fills afterwards. A user who deletes
+    the row keeps it deleted.
+    """
+    from sqlalchemy import text
+
+    from backend.app.services.spool_tag_matcher import BAMBU_BRAND, BAMBU_CARDBOARD_SPOOL_CATALOG_NAME
+
+    flag = "_migrate_3727_bambu_cardboard_row_done"
+    name = BAMBU_CARDBOARD_SPOOL_CATALOG_NAME
+
+    async with conn.begin_nested():
+        already = (
+            await conn.execute(text('SELECT value FROM settings WHERE "key" = :k'), {"k": flag})
+        ).scalar_one_or_none()
+        if already:
+            return
+        has_rows = (await conn.execute(text("SELECT 1 FROM spool_catalog LIMIT 1"))).first()
+        exists = (
+            await conn.execute(text("SELECT 1 FROM spool_catalog WHERE UPPER(name) = :n"), {"n": name.upper()})
+        ).first()
+        if has_rows and not exists:
+            from backend.app.core.catalog_defaults import DEFAULT_SPOOL_CATALOG
+
+            await conn.execute(
+                text(
+                    "INSERT INTO spool_catalog (name, weight, is_default, manufacturer, default_for_brand) "
+                    "VALUES (:name, :weight, :on, :m, :off)"
+                ),
+                {"name": name, "weight": dict(DEFAULT_SPOOL_CATALOG)[name], "on": True, "m": BAMBU_BRAND, "off": False},
+            )
+            logger.info("Spool catalog (#3727): added %s", name)
         await conn.execute(text('INSERT INTO settings ("key", value) VALUES (:k, :v)'), {"k": flag, "v": "true"})
 
 

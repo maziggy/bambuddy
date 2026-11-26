@@ -922,15 +922,15 @@ export function SpoolFormModal({
 
   // The empty-spool weight that comes with picking a brand on a new spool
   // (#3727), asked of the server so the form follows the same rule as the AMS
-  // and SpoolBuddy. Never over a weight the user set in this form, and not in
+  // and SpoolBuddy; the material matters for Bambu's cardboard-spool lines. Never over a weight the user set in this form, and not in
   // Spoolman mode, where the tare comes from Spoolman. A brand without a default
   // takes back only what an earlier brand put there.
-  const applyBrandTare = async (brand: string) => {
+  const applyBrandTare = async (brand: string, material: string) => {
     if (!isCreating || spoolmanMode) return;
     const request = ++brandTareRequest.current;
     let found: DefaultSpool | null = null;
     try {
-      found = brand.trim() ? await api.getDefaultSpool(brand) : null;
+      found = brand.trim() ? await api.getDefaultSpool(brand, material) : null;
     } catch (err) {
       console.error('SpoolFormModal: default spool lookup failed', err);
       return;
@@ -970,7 +970,8 @@ export function SpoolFormModal({
       tareFromMemory.current = false;
       tareFromBrand.current = false;
     }
-    if (key === 'brand') void applyBrandTare(value as string);
+    if (key === 'brand') void applyBrandTare(value as string, formDataRef.current.material);
+    if (key === 'material') void applyBrandTare(formDataRef.current.brand, value as string);
     if (key === 'location_id') setLocationIdTouched(true);
     if (key === 'last_dried_at') setLastDriedTouched(true);
     // A preset the user picked is theirs: the next product's default leaves it alone.

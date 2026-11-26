@@ -96,7 +96,9 @@ async def spool_prefill_from_tag(db: AsyncSession, raw_blocks: dict[str, str] | 
         return None
 
     prefill = await resolve_tray_fields(db, tray)
-    prefill["core_weight"], prefill["core_weight_catalog_id"] = await bambu_spool_core_weight(db)
+    prefill["core_weight"], prefill["core_weight_catalog_id"] = await bambu_spool_core_weight(
+        db, prefill["material"], prefill["slicer_filament"]
+    )
     prefill["variant_id"] = tray["tray_id_name"] or None
     prefill["diameter"] = tray.get("tray_diameter")
     prefill["drying_temp"] = tray.get("drying_temp")

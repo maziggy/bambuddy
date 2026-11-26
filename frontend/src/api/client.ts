@@ -7907,8 +7907,11 @@ export const api = {
     request<SpoolCatalogEntry[]>('/inventory/catalog'),
   addCatalogEntry: (data: SpoolCatalogEntryInput) =>
     request<SpoolCatalogEntry>('/inventory/catalog', { method: 'POST', body: JSON.stringify(data) }),
-  getDefaultSpool: (brand: string) =>
-    request<DefaultSpool | null>(`/inventory/catalog/default-spool?brand=${encodeURIComponent(brand)}`),
+  getDefaultSpool: (brand: string, material?: string) =>
+    request<DefaultSpool | null>(
+      `/inventory/catalog/default-spool?brand=${encodeURIComponent(brand)}`
+        + (material ? `&material=${encodeURIComponent(material)}` : ''),
+    ),
   updateCatalogEntry: (id: number, data: SpoolCatalogEntryInput) =>
     request<SpoolCatalogEntry>(`/inventory/catalog/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteCatalogEntry: (id: number) =>

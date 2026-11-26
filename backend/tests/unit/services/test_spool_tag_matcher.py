@@ -1983,3 +1983,30 @@ async def test_auto_assign_local_preset_uses_local_prefix(db_session, printer_fa
     assert mapping.preset_id == "local_50"
     assert mapping.preset_source == "local"
     assert mapping.preset_name == "My Custom PLA"
+
+
+@pytest.mark.asyncio
+async def test_core_weight_puts_a_ppa_cf_roll_on_the_cardboard_row(db_session):
+    """PPA-CF ships on Bambu's cardboard spool, about 54 g lighter than the plastic one (#3727)."""
+    await _seed_bambu_spool_catalog(db_session)
+    cardboard = SpoolCatalogEntry(name="Bambu Lab - Cardboard", weight=196, is_default=True)
+    db_session.add(cardboard)
+    await db_session.flush()
+
+    tray = {**SAMPLE_TRAY, "tray_type": "PPA-CF", "tray_sub_brands": "PPA-CF", "tray_info_idx": "GFN06"}
+    spool = await create_spool_from_tray(db_session, tray)
+
+    assert (spool.core_weight, spool.core_weight_catalog_id) == (196, cardboard.id)
+
+
+@pytest.mark.asyncio
+async def test_core_weight_keeps_pa6_cf_on_the_plastic_spool(db_session):
+    """PA6-CF and PAHT-CF ship on the high-temp reusable spool: no substring match on "PA-CF"."""
+    await _seed_bambu_spool_catalog(db_session)
+    db_session.add(SpoolCatalogEntry(name="Bambu Lab - Cardboard", weight=196, is_default=True))
+    await db_session.flush()
+
+    tray = {**SAMPLE_TRAY, "tray_type": "PA6-CF", "tray_sub_brands": "PA6-CF", "tray_info_idx": "GFN05"}
+    spool = await create_spool_from_tray(db_session, tray)
+
+    assert spool.core_weight == 250

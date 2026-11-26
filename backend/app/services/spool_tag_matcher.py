@@ -40,6 +40,22 @@ BAMBU_PLASTIC_SPOOL_CATALOG_NAME = "Bambu Lab - Plastic Low Temp"
 BAMBU_PLASTIC_SPOOL_CORE_WEIGHT = 250
 BAMBU_BRAND = "Bambu Lab"
 
+# The Bambu lines that ship on a cardboard spool instead (#3727), by filament id
+# and, for a slot set to a local preset whose id isn't a GF id, by exact
+# material. Exact, so PA-CF doesn't catch PA6-CF or PAHT-CF, which ship on the
+# high-temp reusable spool. PA-CF itself (GFN03, discontinued in 2023) stays on
+# the brand default, the spool its successor PAHT-CF comes on.
+BAMBU_CARDBOARD_SPOOL_CATALOG_NAME = "Bambu Lab - Cardboard"
+BAMBU_CARDBOARD_FILAMENT_IDS = frozenset({"GFN06", "GFT02"})  # PPA-CF, PPS-CF
+BAMBU_CARDBOARD_MATERIALS = frozenset({"PPA-CF", "PPS-CF"})
+
+
+def ships_on_bambu_cardboard(material: str | None, filament_id: str | None) -> bool:
+    """Whether a Bambu roll of this filament id or material comes on the cardboard spool."""
+    if (filament_id or "").strip().upper() in BAMBU_CARDBOARD_FILAMENT_IDS:
+        return True
+    return (material or "").strip().upper() in BAMBU_CARDBOARD_MATERIALS
+
 
 def is_valid_tag(tag_uid: str, tray_uuid: str) -> bool:
     """Check if a tag/UUID pair contains a non-zero, non-empty value."""
@@ -209,27 +225,48 @@ async def brand_default_rows(db: AsyncSession, brand: str | None) -> list:
     return [row for row in result.scalars().all() if brand_key(row.manufacturer) == key]
 
 
-async def default_spool_core_weight(db: AsyncSession, brand: str | None) -> tuple[int, int] | None:
+async def default_spool_core_weight(
+    db: AsyncSession, brand: str | None, material: str | None = None, filament_id: str | None = None
+) -> tuple[int, int] | None:
     """The empty spool a new roll of *brand* starts on (#3727): the weight and id
     of the brand's default catalog row, or None when the brand has none.
 
-    The weight is read when a spool is created, so a row a user corrected to
-    their own measurement wins.
+    The one exception is Bambu Lab's cardboard-spool lines, which take the
+    cardboard row while it exists. The weight is read when a spool is created,
+    so a row a user corrected to their own measurement wins.
     """
+    from backend.app.models.spool_catalog import SpoolCatalogEntry
+
+    if brand_key(brand) == brand_key(BAMBU_BRAND) and ships_on_bambu_cardboard(material, filament_id):
+        cardboard = (
+            await db.execute(
+                select(SpoolCatalogEntry)
+                .where(func.upper(SpoolCatalogEntry.name) == BAMBU_CARDBOARD_SPOOL_CATALOG_NAME.upper())
+                .order_by(SpoolCatalogEntry.id)
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if cardboard is not None:
+            return cardboard.weight, cardboard.id
+
     rows = await brand_default_rows(db, brand)
     return (rows[0].weight, rows[0].id) if rows else None
 
 
-async def bambu_spool_core_weight(db: AsyncSession) -> tuple[int, int | None]:
+async def bambu_spool_core_weight(
+    db: AsyncSession, material: str | None = None, filament_id: str | None = None
+) -> tuple[int, int | None]:
     """The empty-spool weight an RFID roll arrives on, and the catalog row it came from (if any).
 
-    The Bambu Lab brand default (#3727), which the seeded catalogue sets to the
-    Low Temp row; without one, the 250 g constant. Never "some Bambu Lab row":
+    The cardboard row for a cardboard-spool line, else the Bambu Lab brand
+    default (#3727), which the seeded catalogue sets to the Low Temp row; without
+    one, the 250 g constant. Never "some Bambu Lab row":
     the lookup #2909 replaced took whichever of the three the database returned
     first (High Temp, 216 g, on SQLite), and core_weight is the tare in
     SpoolBuddy's weigh flow, so a wrong value biases every weighing.
     """
-    return await default_spool_core_weight(db, BAMBU_BRAND) or (BAMBU_PLASTIC_SPOOL_CORE_WEIGHT, None)
+    found = await default_spool_core_weight(db, BAMBU_BRAND, material, filament_id)
+    return found or (BAMBU_PLASTIC_SPOOL_CORE_WEIGHT, None)
 
 
 async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
@@ -243,7 +280,7 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
     label_weight = fields["label_weight"]
     tag_uid = _normalize_tag_uid(tray_data.get("tag_uid", ""))
     tray_uuid = _normalize_tray_uuid(tray_data.get("tray_uuid", ""))
-    core_weight, core_weight_catalog_id = await bambu_spool_core_weight(db)
+    core_weight, core_weight_catalog_id = await bambu_spool_core_weight(db, material, fields["slicer_filament"])
 
     # Calculate initial weight_used from AMS remain percentage
     remain_raw = tray_data.get("remain")

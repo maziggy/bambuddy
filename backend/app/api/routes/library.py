@@ -41,6 +41,7 @@ from backend.app.core.auth import (
     RequestActor,
     RequestPrinterScope,
     require_actor_still_exists,
+    require_clear_plate_permission,
     require_media_token_ownership,
     require_ownership_permission,
     require_permission_if_auth_enabled,
@@ -2589,6 +2590,7 @@ async def list_files(
                 variant_elsewhere=f.id in elsewhere_ids,
                 folder_name=folder_names.get(f.folder_id) if f.id in elsewhere_ids and f.folder_id else None,
                 external_url=f.external_url,
+                clears_plate=bool(f.clears_plate),
                 has_notes=bool(f.notes),
                 photo_count=len(f.photos or []),
             )
@@ -2603,11 +2605,18 @@ async def upload_file(
     file: UploadFile = File(...),
     folder_id: int | None = None,
     generate_stl_thumbnails: bool = Query(default=True),
+    clears_plate: bool = Query(default=False),
     db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD)),
     actor: User | ApiKeyActor | None = RequestActor,
 ):
-    """Upload a file to the library."""
+    """Upload a file to the library.
+
+    ``clears_plate`` marks a file that clears its own plate (#3576); switching
+    it on takes printers:clear_plate.
+    """
+    if clears_plate:
+        require_clear_plate_permission(actor)
     try:
         if not file.filename:
             raise HTTPException(status_code=400, detail="Filename is required")
@@ -2752,6 +2761,7 @@ async def upload_file(
             thumbnail_path=to_relative_path(thumbnail_path) if thumbnail_path else None,
             file_metadata=_without_print_name(metadata) if metadata else None,
             created_by_id=actor.id if actor else None,
+            clears_plate=clears_plate,
         )
         db.add(library_file)
         await db.commit()
@@ -2780,6 +2790,7 @@ async def extract_zip_file(
     preserve_structure: bool = Query(default=True),
     create_folder_from_zip: bool = Query(default=False),
     generate_stl_thumbnails: bool = Query(default=True),
+    clears_plate: bool = Query(default=False),
     db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD)),
     actor: User | ApiKeyActor | None = RequestActor,
@@ -2794,6 +2805,10 @@ async def extract_zip_file(
         generate_stl_thumbnails: If True, generate thumbnails for STL files
     """
     import tempfile
+
+    # Marking the extracted files as clearing their plate takes printers:clear_plate (#3576)
+    if clears_plate:
+        require_clear_plate_permission(actor)
 
     if not file.filename or not file.filename.lower().endswith(".zip"):
         raise HTTPException(status_code=400, detail="Only ZIP files are supported")
@@ -3046,6 +3061,7 @@ async def extract_zip_file(
                         thumbnail_path=to_relative_path(thumbnail_path) if thumbnail_path else None,
                         file_metadata=_without_print_name(metadata) if metadata else None,
                         created_by_id=actor.id if actor else None,
+                        clears_plate=clears_plate,
                     )
                     db.add(library_file)
                     await db.flush()
@@ -3542,6 +3558,7 @@ async def add_files_to_queue(
                 position=max_position,
                 status="pending",
                 confirm_outcome=confirm_outcome,
+                clears_plate=bool(lib_file.clears_plate),
                 # Without this the row is ownerless, and `queue:read_own` filters
                 # on `created_by_id` — so the user who queued the file could not
                 # see it in their own queue.
@@ -5890,6 +5907,7 @@ async def get_file(
         last_printed_at=file.last_printed_at,
         notes=file.notes,
         external_url=file.external_url,
+        clears_plate=bool(file.clears_plate),
         photos=list(file.photos or []),
         source_url=file.source_url,
         duplicates=duplicates if duplicates else None,
@@ -5916,6 +5934,7 @@ async def update_file(
             Permission.LIBRARY_UPDATE_OWN,
         )
     ),
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Update a file's metadata."""
     user, can_modify_all = auth_result
@@ -5930,6 +5949,11 @@ async def update_file(
     if not can_modify_all:
         if file.created_by_id != user.id:
             raise HTTPException(status_code=403, detail="You can only update your own files")
+
+    # Switching plate clearing on takes printers:clear_plate (#3576); a file
+    # that already has it keeps it through an edit of its other fields.
+    if data.clears_plate and not file.clears_plate:
+        require_clear_plate_permission(actor)
 
     if data.filename is not None:
         # Bambu printer SD cards are FAT32/exFAT; reject the same set Bambu
@@ -5975,6 +5999,9 @@ async def update_file(
 
     if data.external_url is not None:
         file.external_url = data.external_url.strip() or None
+
+    if data.clears_plate is not None:
+        file.clears_plate = data.clears_plate
 
     await db.commit()
     await db.refresh(file)

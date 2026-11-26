@@ -1,5 +1,5 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, AlertTriangle, Layers, Loader2, Pencil, Printer, ThumbsUp, X } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Eraser, Layers, Loader2, Pencil, Printer, ThumbsUp, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { CostCenterSummary, PrintQueueItemCreate, PrintQueueItemUpdate, SlotMaterial, UiSettings } from '../../api/client';
@@ -181,10 +181,13 @@ export function PrintModal({
           id: v.library_file_id,
           filename: v.filename,
           sliced_for_model: v.target_model,
+          clears_plate: v.clears_plate,
         }))
       : [];
   const hasEditingVariants = editingVariants.length > 0;
   const [candidates, setCandidates] = useState<VariantCandidate[]>(variantFiles ?? []);
+  // file id -> clears_plate the user toggled on that alternative (#3576).
+  const [candidateClearsPlate, setCandidateClearsPlate] = useState<Record<number, boolean>>({});
   const [candidatePlates, setCandidatePlates] = useState<Record<number, number | null>>(
     () => resumedSettings?.plateByFile ?? {},
   );
@@ -250,6 +253,7 @@ export function PrintModal({
         timelapse: queueItem.timelapse ?? DEFAULT_PRINT_OPTIONS.timelapse,
         nozzle_offset_cali: queueItem.nozzle_offset_cali ?? DEFAULT_PRINT_OPTIONS.nozzle_offset_cali,
         confirm_outcome: queueItem.confirm_outcome ?? DEFAULT_PRINT_OPTIONS.confirm_outcome,
+        clears_plate: queueItem.clears_plate ?? DEFAULT_PRINT_OPTIONS.clears_plate,
         preheat_override: queueItem.preheat_override ?? DEFAULT_PRINT_OPTIONS.preheat_override,
         preheat_chamber_target_override: queueItem.preheat_chamber_target_override ?? DEFAULT_PRINT_OPTIONS.preheat_chamber_target_override,
       };
@@ -419,7 +423,7 @@ export function PrintModal({
     // A resumed run keeps the options it was submitted with.
     if (!settings || printDefaultsApplied.current || mode === 'edit-queue-item' || resumedSettings) return;
     printDefaultsApplied.current = true;
-    setPrintOptions({
+    setPrintOptions((prev) => ({
       bed_levelling: settings.default_bed_levelling ?? DEFAULT_PRINT_OPTIONS.bed_levelling,
       flow_cali: settings.default_flow_cali ?? DEFAULT_PRINT_OPTIONS.flow_cali,
       vibration_cali: settings.default_vibration_cali ?? DEFAULT_PRINT_OPTIONS.vibration_cali,
@@ -427,9 +431,11 @@ export function PrintModal({
       timelapse: settings.default_timelapse ?? DEFAULT_PRINT_OPTIONS.timelapse,
       nozzle_offset_cali: settings.default_nozzle_offset_cali ?? DEFAULT_PRINT_OPTIONS.nozzle_offset_cali,
       confirm_outcome: settings.default_confirm_outcome ?? DEFAULT_PRINT_OPTIONS.confirm_outcome,
+      // Not a settings default: seeded from the file or archive below (#3576).
+      clears_plate: prev.clears_plate,
       preheat_override: DEFAULT_PRINT_OPTIONS.preheat_override,
       preheat_chamber_target_override: DEFAULT_PRINT_OPTIONS.preheat_chamber_target_override,
-    });
+    }));
   }, [settings, mode, resumedSettings]);
 
   // Sync stagger defaults from settings once available
@@ -527,18 +533,55 @@ export function PrintModal({
   }, [selectedPrinters, inventoryRemainQueries]);
 
   // Fetch archive details to get sliced_for_model
-  const { data: archiveDetails, isError: archiveDetailsFailed } = useQuery({
+  const { data: archiveDetails, isError: archiveDetailsFailed, isFetchedAfterMount: archiveDetailsFresh } = useQuery({
     queryKey: ['archive', archiveId],
     queryFn: () => api.getArchive(archiveId!),
     enabled: !!archiveId && !isLibraryFile,
+    // Always refetch on mount: the "clears plate" seed needs fresh data, and the
+    // app-wide staleTime would otherwise serve a cached copy without a fetch.
+    refetchOnMount: 'always',
   });
 
   // Fetch library file details to get sliced_for_model
-  const { data: libraryFileDetails, isError: libraryFileDetailsFailed } = useQuery({
+  const { data: libraryFileDetails, isError: libraryFileDetailsFailed, isFetchedAfterMount: libraryDetailsFresh } = useQuery({
     queryKey: ['library-file', libraryFileId],
     queryFn: () => api.getLibraryFile(libraryFileId!),
     enabled: isLibraryFile && !!libraryFileId,
+    refetchOnMount: 'always',
   });
+
+  // "Clears plate automatically" is decided once it was seeded from the single
+  // file / archive / queue item it applies to, or the user touched the pill.
+  // Until then the create payloads omit it, so the backend falls back to each
+  // file's own flag: a value copied from one file must never reach another (#3576).
+  const [clearsPlateDecided, setClearsPlateDecided] = useState(mode === 'edit-queue-item');
+  useEffect(() => {
+    if (clearsPlateDecided || isMultiFile || mode === 'edit-queue-item' || resumedSettings) return;
+    const details = isLibraryFile ? libraryFileDetails : archiveDetails;
+    const fresh = isLibraryFile ? libraryDetailsFresh : archiveDetailsFresh;
+    // Only fresh data: a stale cached value must not latch.
+    if (!details || !fresh) return;
+    setClearsPlateDecided(true);
+    if (details.clears_plate) {
+      setPrintOptions((prev) => ({ ...prev, clears_plate: true }));
+    }
+  }, [clearsPlateDecided, isMultiFile, mode, resumedSettings, isLibraryFile, libraryFileDetails, archiveDetails, libraryDetailsFresh, archiveDetailsFresh]);
+  // Sent explicitly only when decided; otherwise the backend decides per file.
+  // Until decided, show what the backend will apply (the file's own flag).
+  const clearsPlateShown =
+    clearsPlateDecided || isMultiFile
+      ? printOptions.clears_plate
+      : ((isLibraryFile ? libraryFileDetails : archiveDetails)?.clears_plate ?? printOptions.clears_plate);
+  const clearsPlatePayload = clearsPlateDecided && !isMultiFile ? printOptions.clears_plate : undefined;
+  // Switching it on needs the permission that confirms a cleared plate. A job
+  // whose file, archive or stored value already has it can be switched off
+  // and back on (#3576).
+  const canSetClearsPlate = hasPermission('printers:clear_plate');
+  const clearsPlateInherited =
+    mode === 'edit-queue-item'
+      ? !!queueItem?.clears_plate
+      : !!(isLibraryFile ? libraryFileDetails : archiveDetails)?.clears_plate;
+  const clearsPlateLocked = !canSetClearsPlate && !clearsPlateInherited && !clearsPlateShown;
 
   // Get sliced_for_model from archive or library file
   const slicedForModel = archiveDetails?.sliced_for_model || libraryFileDetails?.sliced_for_model || null;
@@ -1589,6 +1632,8 @@ export function PrintModal({
             library_file_id: c.id,
             plate_id: candidatePlates[c.id] ?? null,
             filament_overrides: filamentOverridesArray,
+            // The displayed value, always explicit: what the checkbox shows is what the backend applies (#3576).
+            clears_plate: candidateClearsPlate[c.id] ?? !!c.clears_plate,
           })),
           target_location: targetLocation,
           require_previous_success: scheduleOptions.requirePreviousSuccess,
@@ -1600,6 +1645,7 @@ export function PrintModal({
             : undefined,
           quantity,
           ...printOptions,
+          clears_plate: clearsPlatePayload,
           project_id: projectId ?? undefined,
         });
         showToast(t('printModal.variants.queued', { count: candidates.length }), 'success');
@@ -1685,6 +1731,7 @@ export function PrintModal({
                 ? new Date(scheduleOptions.scheduledTime).toISOString()
                 : undefined,
               ...printOptions,
+              clears_plate: clearsPlatePayload,
               project_id: projectId ?? undefined,
               cost_center_id: billingEnabled ? selectedCostCenterId : undefined,
               cleanup_library_after_dispatch: cleanupLibraryAfterDispatch,
@@ -1879,6 +1926,7 @@ export function PrintModal({
         ? new Date(scheduleOptions.scheduledTime).toISOString()
         : undefined,
       ...printOptions,
+      clears_plate: clearsPlatePayload,
       project_id: projectId ?? undefined,
       cost_center_id: billingEnabled ? selectedCostCenterId : undefined,
       estimated_cost: billingEnabled && selectedCostCenterId != null ? plateEstimatedCost : undefined,
@@ -1916,6 +1964,7 @@ export function PrintModal({
               cost_center_id: billingEnabled ? selectedCostCenterId : undefined,
               estimated_cost: billingEnabled && selectedCostCenterId != null ? estimatedCost : undefined,
             };
+            if (hasEditingVariants) delete updateData.clears_plate;
             await updateQueueMutation.mutateAsync(updateData);
           } else {
             // Add-to-queue mode with model-based assignment
@@ -1990,6 +2039,7 @@ export function PrintModal({
                     : estimatedCost)
                   : undefined,
               };
+              if (hasEditingVariants) delete updateData.clears_plate;
               await updateQueueMutation.mutateAsync(updateData);
             } else {
               // New print mode, staggered print, or edit mode with additional entries
@@ -2444,6 +2494,13 @@ export function PrintModal({
                   setCandidatePlates((prev) => ({ ...prev, [fileId]: plateId }))
                 }
                 onPlatesReadyChange={setCandidatePlatesReady}
+                clearsPlateByFile={candidateClearsPlate}
+                canSetClearsPlate={canSetClearsPlate}
+                onClearsPlateChange={
+                  isSeparateJobs
+                    ? undefined
+                    : (fileId, value) => setCandidateClearsPlate((prev) => ({ ...prev, [fileId]: value }))
+                }
                 title={isSeparateJobs ? t('printModal.multiFile.orderTitle') : undefined}
                 help={showModeToggle ? '' : isSeparateJobs ? t('printModal.multiFile.separateHint') : undefined}
               />
@@ -2762,23 +2819,49 @@ export function PrintModal({
               needsReview={needsReview}
             />
 
-            {/* Outcome prompt (#1898) sits outside the collapsed Print Options
-                panel so it is discoverable; it edits the same printOptions
-                field as the row inside the panel. */}
-            <button
-              type="button"
-              aria-pressed={printOptions.confirm_outcome}
-              title={t('printModal.askForOutcomeTitle')}
-              onClick={() => setPrintOptions((prev) => ({ ...prev, confirm_outcome: !prev.confirm_outcome }))}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm transition-colors ${
-                printOptions.confirm_outcome
-                  ? 'bg-bambu-green/20 border-bambu-green text-bambu-green'
-                  : 'bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:text-white'
-              }`}
-            >
-              <ThumbsUp className="w-4 h-4" />
-              {t('printModal.askForOutcome')}
-            </button>
+            {/* Outcome prompt (#1898) and clears-plate (#3576) sit outside the
+                collapsed Print Options panel so they are discoverable; the
+                outcome pill edits the same printOptions field as the row
+                inside the panel. */}
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                aria-pressed={printOptions.confirm_outcome}
+                title={t('printModal.askForOutcomeTitle')}
+                onClick={() => setPrintOptions((prev) => ({ ...prev, confirm_outcome: !prev.confirm_outcome }))}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm transition-colors ${
+                  printOptions.confirm_outcome
+                    ? 'bg-bambu-green/20 border-bambu-green text-bambu-green'
+                    : 'bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:text-white'
+                }`}
+              >
+                <ThumbsUp className="w-4 h-4" />
+                {t('printModal.askForOutcome')}
+              </button>
+
+              {/* The file clears its own plate (#3576). Hidden for several files or
+                  alternatives: one switch cannot speak for files with different flags. */}
+              {!isMultiFile && !hasEditingVariants && (
+              <button
+                type="button"
+                aria-pressed={clearsPlateShown}
+                disabled={clearsPlateLocked}
+                title={clearsPlateLocked ? t('printers.permission.noControl') : t('printModal.clearsPlateTitle')}
+                onClick={() => {
+                  setClearsPlateDecided(true);
+                  setPrintOptions((prev) => ({ ...prev, clears_plate: !clearsPlateShown }));
+                }}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                  clearsPlateShown
+                    ? 'bg-bambu-green/20 border-bambu-green text-bambu-green'
+                    : 'bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:text-white'
+                }`}
+              >
+                <Eraser className="w-4 h-4" />
+                {t('printModal.clearsPlate')}
+              </button>
+              )}
+            </div>
 
             {/* Error message */}
             {updateQueueMutation.isError && (

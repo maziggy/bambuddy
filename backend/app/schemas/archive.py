@@ -151,6 +151,8 @@ class ArchiveResponse(BaseModel):
     user_verdict_source: str | None = _per_print(None)
     user_verdict_at: datetime | None = _per_print(None)
     confirm_requested: bool = False
+    # The print clears its own plate (#3576); a reprint inherits it
+    clears_plate: bool = False
     # The run (print log entry) whose outcome this response shows, when it
     # shows one run of the archive rather than its latest (#1898).
     run_id: int | None = None

@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes._label_printer_helpers import deliver_job_http, load_label_printer_config
 from backend.app.core.auth import (
     RequestPrinterScope,
     RequireAdminIfAuthEnabled,
@@ -38,8 +39,10 @@ from backend.app.schemas.settings import (
     QUEUE_MAX_WAIT_HOURS_MIN,
     AppSettings,
     AppSettingsUpdate,
+    LabelPrinterTestRequest,
 )
 from backend.app.services import camera_light
+from backend.app.services.label_printers.base import get_driver
 from backend.app.services.secret_fields import SETTINGS_SECRETS, SecretConfigError, mask_fields, merge_partial
 
 logger = logging.getLogger(__name__)
@@ -360,6 +363,14 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False, m
     ha_settings = await get_homeassistant_settings(db)
     settings_dict.update(ha_settings)
 
+    # An empty saved model or tape shows the default (the select would be blank otherwise).
+    settings_dict["label_printer_model"] = settings_dict["label_printer_model"].strip() or "QL-820NWB"
+    settings_dict["label_printer_tape"] = settings_dict["label_printer_tape"].strip() or "50"
+    # Derived (#3612): type and host set. Not stored, not writable.
+    settings_dict["label_printer_configured"] = bool(
+        settings_dict["label_printer_type"].strip() and settings_dict["label_printer_host"].strip()
+    )
+
     # ldap_bind_password is never returned to any caller (mask=False is
     # server-side only)
     if mask or is_api_key:
@@ -627,6 +638,31 @@ async def update_settings(
     return await _build_settings_response(db, is_api_key=False)
 
 
+@router.post("/label-printer/test")
+async def test_label_printer(
+    body: LabelPrinterTestRequest | None = None,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+):
+    """Print a small test label (#3612), with the given values or the saved ones.
+
+    Returns the status the printer answered with, if it answered, so the page
+    can say what tape it found.
+    """
+    overrides = body.model_dump() if body is not None else None
+    config = await load_label_printer_config(db, overrides)
+    if config is None:
+        raise HTTPException(400, "No label printer is set up")
+    driver = get_driver(config.type)
+    job = await asyncio.to_thread(driver.test_job, config)
+    # One small label, so a short bound without any cooling allowance. The test is
+    # for whoever may change the address, so errors may name it.
+    status = await deliver_job_http(
+        driver, job, config, bound=driver.timeout_s(job), reveal_address=True, lock_timeout=0
+    )
+    return {"status": status.to_dict() if status is not None else None}
+
+
 @router.patch("/", response_model=AppSettings)
 @router.patch("", response_model=AppSettings)
 async def patch_settings(
@@ -852,6 +888,11 @@ async def get_ui_flags(
         flags["default_printer_id"] = None
     # Whether G-code snippets are set up, not the snippets themselves.
     flags["has_gcode_snippets"] = bool(dumped.get("gcode_snippets"))
+    # Whether a label printer is set up (the Print button and the add-spool
+    # checkbox), not where it is: the address stays behind settings:read (#3612).
+    flags["label_printer_configured"] = bool(dumped.get("label_printer_configured"))
+    # The tape id is not secret: the label dialog needs it to enable Print.
+    flags["label_printer_tape"] = dumped.get("label_printer_tape", "") if flags["label_printer_configured"] else ""
     return flags
 
 

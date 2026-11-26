@@ -125,6 +125,9 @@ class PrintArchive(Base):
     # User additions
     is_favorite: Mapped[bool] = mapped_column(Boolean, default=False)
     wallet_charge_skipped: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # The print clears its own plate (#3576), e.g. plate change or push-off at the end.
+    # Copied from the queue item at dispatch so a reprint from the archive inherits it.
+    clears_plate: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     tags: Mapped[str | None] = mapped_column(Text)
     notes: Mapped[str | None] = mapped_column(Text)
     cost: Mapped[float | None] = mapped_column(Float)

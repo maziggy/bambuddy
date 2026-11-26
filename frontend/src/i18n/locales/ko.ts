@@ -7617,6 +7617,8 @@ export default {
     priority: '우선순위',
     pushoverRetry: '긴급 재알림 (초)',
     pushoverExpire: '긴급 만료 (초)',
+    pushoverSound: '알림음',
+    pushoverSoundDeviceDefault: '기기 기본값',
     botToken: '봇 토큰',
     chatId: '채팅 ID',
     telegramThreadId: '포럼 주제 ID',

@@ -7956,6 +7956,8 @@ export default {
     priority: 'Prioriteit',
     pushoverRetry: 'Noodherhaling (s)',
     pushoverExpire: 'Noodverval (s)',
+    pushoverSound: 'Meldingsgeluid',
+    pushoverSoundDeviceDefault: 'Standaard van apparaat',
     botToken: 'Bottoken',
     chatId: 'Chat-ID',
     telegramThreadId: 'Forumtopic-ID',

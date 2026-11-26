@@ -738,7 +738,7 @@ class NotificationService:
         """Send notification via Pushover.
 
         Args:
-            config: Provider configuration with user_key, app_token, priority
+            config: Provider configuration with user_key, app_token, priority, sound
             title: Notification title
             message: Notification body
             image_data: Optional JPEG image bytes to attach (max 2.5MB)
@@ -767,6 +767,14 @@ class NotificationService:
             data["url"] = url
             if url_title:
                 data["url_title"] = url_title
+
+        # Notification sound (#1637). Empty means "device default": omit the
+        # param so the user's Pushover app plays whatever sound it is set to.
+        # Any name is passed through as-is, so a custom sound uploaded to the
+        # user's Pushover account works as well as the built-in ones.
+        sound = str(config.get("sound") or "").strip()
+        if sound:
+            data["sound"] = sound
 
         # Emergency priority (2) keeps re-alerting until acknowledged, so
         # Pushover *requires* retry (how often, >= 30s) and expire (when to

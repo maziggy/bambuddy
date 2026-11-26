@@ -23,6 +23,14 @@ interface ConfigField {
   pattern?: string;
 }
 
+// Built-in Pushover sound names, from https://pushover.net/api#sounds (#1637).
+// Shown by their API name, the same name the Pushover app and docs list.
+const PUSHOVER_SOUNDS = [
+  'pushover', 'bike', 'bugle', 'cashregister', 'classical', 'cosmic', 'falling', 'gamelan',
+  'incoming', 'intermission', 'magic', 'mechanical', 'pianobar', 'siren', 'spacealarm',
+  'tugboat', 'alien', 'climb', 'persistent', 'echo', 'updown', 'vibrate', 'none',
+] as const;
+
 const NOTIFY_METRICS = ['progress', 'eta', 'layers', 'nozzle', 'bed', 'chamber'] as const;
 type NotifyMetric = (typeof NOTIFY_METRICS)[number];
 
@@ -343,6 +351,18 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
             type: 'number',
             required: false,
             showIf: (cfg: Record<string, string>) => cfg.priority === '2',
+          },
+          // Notification sound (#1637). "Device default" stores an empty value
+          // and the backend omits the param, so the phone keeps its own sound.
+          {
+            key: 'sound',
+            label: t('notifications.pushoverSound'),
+            type: 'select',
+            required: false,
+            options: [
+              { value: '', label: t('notifications.pushoverSoundDeviceDefault') },
+              ...PUSHOVER_SOUNDS.map((sound) => ({ value: sound, label: sound })),
+            ],
           },
         ];
       case 'notify':

@@ -7893,6 +7893,8 @@ export default {
     priority: 'Priorité',
     pushoverRetry: 'Réessai urgence (s)',
     pushoverExpire: 'Expiration urgence (s)',
+    pushoverSound: 'Son de notification',
+    pushoverSoundDeviceDefault: 'Par défaut de l\'appareil',
     botToken: 'Jeton du bot',
     chatId: 'ID du chat',
     telegramThreadId: 'ID du sujet de forum',

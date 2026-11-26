@@ -7946,6 +7946,8 @@ export default {
     priority: "Пріоритет",
     pushoverRetry: "Інтервал повторення екстреного сповіщення (с)",
     pushoverExpire: "Термін дії екстреного сповіщення (с)",
+    pushoverSound: "Звук сповіщення",
+    pushoverSoundDeviceDefault: "За замовчуванням на пристрої",
     botToken: "Токен бота",
     chatId: "Ідентифікатор чату",
     telegramThreadId: "ID теми форуму",

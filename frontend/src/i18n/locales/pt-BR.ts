@@ -7892,6 +7892,8 @@ export default {
     priority: 'Prioridade',
     pushoverRetry: 'Repetição de emergência (s)',
     pushoverExpire: 'Expiração de emergência (s)',
+    pushoverSound: 'Som da notificação',
+    pushoverSoundDeviceDefault: 'Padrão do dispositivo',
     botToken: 'Token do Bot',
     chatId: 'ID do Chat',
     telegramThreadId: 'ID do tópico do fórum',

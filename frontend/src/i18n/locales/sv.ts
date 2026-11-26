@@ -7987,6 +7987,8 @@ errors: {
     priority: 'Prioritet',
     pushoverRetry: 'Nödåterförsök (s)',
     pushoverExpire: 'Nödutgång (s)',
+    pushoverSound: 'Aviseringsljud',
+    pushoverSoundDeviceDefault: 'Enhetens standard',
     botToken: 'Bot-token',
     chatId: 'Chat-ID',
     telegramThreadId: 'Forumämnes-ID',

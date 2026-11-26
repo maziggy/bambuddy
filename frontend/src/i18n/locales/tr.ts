@@ -7853,6 +7853,8 @@ export default {
     priority: 'Öncelik',
     pushoverRetry: 'Acil yeniden deneme (sn)',
     pushoverExpire: 'Acil sona erme (sn)',
+    pushoverSound: 'Bildirim sesi',
+    pushoverSoundDeviceDefault: 'Cihaz varsayılanı',
     botToken: 'Bot Belirteci',
     chatId: 'Sohbet ID',
     telegramThreadId: 'Forum Konu Kimliği',

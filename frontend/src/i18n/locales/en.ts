@@ -7958,6 +7958,8 @@ export default {
     priority: 'Priority',
     pushoverRetry: 'Emergency Retry (s)',
     pushoverExpire: 'Emergency Expire (s)',
+    pushoverSound: 'Notification Sound',
+    pushoverSoundDeviceDefault: 'Device default',
     botToken: 'Bot Token',
     chatId: 'Chat ID',
     telegramThreadId: 'Forum Topic ID',

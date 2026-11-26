@@ -1292,3 +1292,43 @@ describe('AddNotificationModal — filament out of stock (#3590)', () => {
     expect((captured as Record<string, unknown>).on_filament_out_of_stock).toBe(true);
   });
 });
+
+describe('AddNotificationModal — Pushover sound (#1637)', () => {
+  const pushoverProvider = (config: Record<string, string> = {}) =>
+    buildProvider({
+      name: 'My Pushover',
+      provider_type: 'pushover',
+      config: { user_key: 'Ukey', app_token: 'Atoken', ...config },
+    });
+
+  it('defaults to the device sound', async () => {
+    render(<AddNotificationModal provider={pushoverProvider()} onClose={() => undefined} />);
+
+    const select = (await screen.findByLabelText(/notification sound/i)) as HTMLSelectElement;
+    expect(select.value).toBe('');
+    expect(select.options[0].textContent).toBe('Device default');
+    expect(Array.from(select.options).map((o) => o.value)).toContain('cashregister');
+  });
+
+  it('pre-fills and saves the chosen sound', async () => {
+    let captured: { config: Record<string, unknown> } | null = null;
+    server.use(
+      http.patch('*/api/v1/notifications/1', async ({ request }) => {
+        captured = (await request.json()) as { config: Record<string, unknown> };
+        return HttpResponse.json({ id: 1 });
+      }),
+    );
+
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(<AddNotificationModal provider={pushoverProvider({ sound: 'siren' })} onClose={onClose} />);
+
+    const select = (await screen.findByLabelText(/notification sound/i)) as HTMLSelectElement;
+    expect(select.value).toBe('siren');
+    await user.selectOptions(select, 'bugle');
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(captured!.config).toMatchObject({ sound: 'bugle' });
+  });
+});

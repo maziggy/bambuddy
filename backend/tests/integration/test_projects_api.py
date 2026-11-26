@@ -1565,6 +1565,228 @@ class TestProjectFileProgress:
         response = await async_client.get("/api/v1/projects/999999/file-progress")
         assert response.status_code == 404
 
+    @pytest.fixture
+    async def queue_factory(self, db_session):
+        async def _create_item(**kwargs):
+            from backend.app.models.print_queue import PrintQueueItem
+
+            item = PrintQueueItem(**{"status": "pending", **kwargs})
+            db_session.add(item)
+            await db_session.commit()
+            await db_session.refresh(item)
+            return item
+
+        return _create_item
+
+    @staticmethod
+    async def _progress(client: AsyncClient, project_id: int) -> dict[int, dict[str, int]]:
+        response = await client.get(f"/api/v1/projects/{project_id}/file-progress")
+        assert response.status_code == 200, response.text
+        return {row.pop("file_id"): row for row in response.json()}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_new_counters_default_to_zero(
+        self, async_client: AsyncClient, project_factory, folder_factory, file_factory, printer_factory, archive_factory
+    ):
+        """A file with only completed runs reports the added counters as 0."""
+        project = await project_factory()
+        folder = await folder_factory(project_id=project.id)
+        lib_file = await file_factory(folder_id=folder.id)
+        printer = await printer_factory()
+        await archive_factory(printer.id, project_id=project.id, library_file_id=lib_file.id)
+
+        assert await self._progress(async_client, project.id) == {
+            lib_file.id: {
+                "completed_count": 1,
+                "queued_count": 0,
+                "printing_count": 0,
+                "failed_count": 0,
+                "rejected_count": 0,
+            }
+        }
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_queue_counts_pending_and_printing_only(
+        self, async_client: AsyncClient, project_factory, folder_factory, file_factory, printer_factory, queue_factory
+    ):
+        """Pending items are queued, printing ones printing; finished,
+        failed, skipped and cancelled items count as neither."""
+        project = await project_factory()
+        folder = await folder_factory(project_id=project.id)
+        lib_file = await file_factory(folder_id=folder.id)
+        printer = await printer_factory()
+
+        for status in ("pending", "pending", "printing", "completed", "failed", "skipped", "cancelled"):
+            await queue_factory(
+                printer_id=printer.id, project_id=project.id, library_file_id=lib_file.id, status=status
+            )
+
+        progress = await self._progress(async_client, project.id)
+        assert progress == {
+            lib_file.id: {
+                "completed_count": 0,
+                "queued_count": 2,
+                "printing_count": 1,
+                "failed_count": 0,
+                "rejected_count": 0,
+            }
+        }
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_multi_plate_queue_counts_each_plate(
+        self, async_client: AsyncClient, project_factory, folder_factory, file_factory, queue_factory
+    ):
+        """Each plate of a multi-plate 3MF is its own queue item, so three
+        queued plates of one file are three queued prints."""
+        project = await project_factory()
+        folder = await folder_factory(project_id=project.id)
+        lib_file = await file_factory(folder_id=folder.id)
+
+        for plate in (1, 2, 3):
+            await queue_factory(project_id=project.id, library_file_id=lib_file.id, plate_id=plate)
+
+        progress = await self._progress(async_client, project.id)
+        assert progress[lib_file.id]["queued_count"] == 3
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_queue_item_of_a_linked_folder_file_without_project(
+        self, async_client: AsyncClient, project_factory, folder_factory, file_factory, queue_factory
+    ):
+        """A job of one of the project's files counts even when it was queued
+        without the project (e.g. from the File Manager)."""
+        project = await project_factory()
+        folder = await folder_factory(project_id=project.id)
+        lib_file = await file_factory(folder_id=folder.id)
+
+        await queue_factory(project_id=None, library_file_id=lib_file.id, status="printing")
+
+        progress = await self._progress(async_client, project.id)
+        assert progress[lib_file.id]["printing_count"] == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_queue_item_attributed_through_its_archive(
+        self,
+        async_client: AsyncClient,
+        project_factory,
+        folder_factory,
+        file_factory,
+        printer_factory,
+        archive_factory,
+        queue_factory,
+    ):
+        """A reprint queued from an archive (no library_file_id on the item)
+        matches by the archive's library_file_id, then hash, then filename."""
+        project = await project_factory()
+        folder = await folder_factory(project_id=project.id)
+        by_id = await file_factory(folder_id=folder.id)
+        by_hash = await file_factory(folder_id=folder.id, file_hash="b" * 64)
+        by_name = await file_factory(folder_id=folder.id, filename="named.gcode.3mf")
+        printer = await printer_factory()
+
+        for archive_kwargs in (
+            {"library_file_id": by_id.id, "filename": "dispatched.gcode.3mf"},
+            {"content_hash": "b" * 64, "filename": "printer_copy.gcode.3mf"},
+            {"filename": "named.gcode.3mf"},
+        ):
+            archive = await archive_factory(printer.id, with_run=False, **archive_kwargs)
+            await queue_factory(printer_id=printer.id, project_id=project.id, archive_id=archive.id)
+
+        progress = await self._progress(async_client, project.id)
+        assert {fid: row["queued_count"] for fid, row in progress.items()} == {
+            by_id.id: 1,
+            by_hash.id: 1,
+            by_name.id: 1,
+        }
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_queue_of_other_projects_excluded(
+        self,
+        async_client: AsyncClient,
+        project_factory,
+        folder_factory,
+        file_factory,
+        printer_factory,
+        archive_factory,
+        queue_factory,
+    ):
+        """A job of another project, of a file outside this project's folders,
+        does not count — even when its archive has the same name."""
+        project = await project_factory()
+        other = await project_factory()
+        folder = await folder_factory(project_id=project.id)
+        await file_factory(folder_id=folder.id, filename="shared_name.gcode.3mf")
+        outside = await file_factory(folder_id=None, filename="shared_name.gcode.3mf")
+        printer = await printer_factory()
+
+        archive = await archive_factory(printer.id, with_run=False, filename="shared_name.gcode.3mf")
+        await queue_factory(printer_id=printer.id, project_id=other.id, archive_id=archive.id)
+        await queue_factory(printer_id=printer.id, project_id=other.id, library_file_id=outside.id)
+        await queue_factory(printer_id=printer.id, project_id=None, archive_id=archive.id)
+
+        assert await self._progress(async_client, project.id) == {}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_failed_runs_count_every_failure_status(
+        self,
+        async_client: AsyncClient,
+        db_session,
+        project_factory,
+        folder_factory,
+        file_factory,
+        printer_factory,
+        archive_factory,
+    ):
+        """failed / aborted / cancelled / stopped runs are failures, as in the
+        project stats. A rejected completed run is neither completed nor
+        failed: it has its own counter. Runs of a deleted archive are left out."""
+        from datetime import datetime, timezone
+
+        from sqlalchemy import update
+
+        from backend.app.models.print_log import PrintLogEntry
+
+        project = await project_factory()
+        folder = await folder_factory(project_id=project.id)
+        lib_file = await file_factory(folder_id=folder.id)
+        printer = await printer_factory()
+
+        for status in ("failed", "aborted", "cancelled", "stopped", "skipped"):
+            await archive_factory(
+                printer.id, project_id=project.id, library_file_id=lib_file.id, status=status, run_status=status
+            )
+        await archive_factory(printer.id, project_id=project.id, library_file_id=lib_file.id)
+        rejected = await archive_factory(printer.id, project_id=project.id, library_file_id=lib_file.id)
+        await archive_factory(
+            printer.id,
+            project_id=project.id,
+            library_file_id=lib_file.id,
+            status="failed",
+            run_status="failed",
+            deleted_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        )
+        await db_session.execute(
+            update(PrintLogEntry).where(PrintLogEntry.archive_id == rejected.id).values(user_verdict="reject")
+        )
+        await db_session.commit()
+
+        progress = await self._progress(async_client, project.id)
+        assert progress == {
+            lib_file.id: {
+                "completed_count": 1,
+                "queued_count": 0,
+                "printing_count": 0,
+                "failed_count": 4,
+                "rejected_count": 1,
+            }
+        }
+
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_target_sets_roundtrip(self, async_client: AsyncClient):

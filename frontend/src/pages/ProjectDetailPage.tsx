@@ -13,6 +13,7 @@ import {
   XCircle,
   ListTodo,
   Printer,
+  Play,
   ChevronRight,
   FileText,
   Tag,
@@ -49,6 +50,20 @@ import { PrintModal } from '../components/PrintModal';
 import { ProjectModal } from './ProjectsPage';
 import { getCurrencySymbol } from '../utils/currency';
 import { isSlicedLibraryFile } from '../utils/libraryFiles';
+import {
+  NO_COUNTS,
+  availableFileFilters,
+  fileStatus,
+  hasActivePrints,
+  matchesFileFilter,
+  plannedCount,
+  plannedSets,
+  toFileCounts,
+  unsuccessfulCount,
+  type FileCounts,
+  type FileFilter,
+  type FileStatus,
+} from '../utils/projectFileProgress';
 import { NumberInput } from '../components/NumberInput';
 import { useUiSettings } from '../hooks/useUiSettings';
 
@@ -167,6 +182,123 @@ function ArchiveGrid({ archives, t }: { archives: Archive[]; t: TFunction }) {
   );
 }
 
+const FILE_STATUS_TEXT: Record<FileStatus, string> = {
+  done: 'text-status-ok',
+  printing: 'text-blue-700 dark:text-blue-400',
+  queued: 'text-violet-700 dark:text-violet-400',
+  inProgress: 'text-status-warning',
+  none: 'text-bambu-gray',
+};
+
+const FILE_STATUS_BAR: Record<FileStatus, string> = {
+  done: 'bg-status-ok',
+  printing: 'bg-blue-500',
+  queued: 'bg-violet-500',
+  inProgress: 'bg-status-warning',
+  none: 'bg-bambu-gray',
+};
+
+/**
+ * Per-file print status (#1897): completed, printing and queued prints, out of
+ * Copies per File when the project sets it. Green once completed prints reach
+ * the target, blue while a print of the file is running, violet when its jobs
+ * only wait in the queue, amber when it is short of the target with nothing
+ * running or queued, gray with nothing yet. Failed and rejected prints show as one
+ * red count, so a file whose prints all failed does not look like one nobody
+ * started; the tooltip splits them.
+ */
+function FileProgressBadge({
+  counts,
+  target,
+  t,
+}: {
+  counts: FileCounts;
+  target: number | null | undefined;
+  t: TFunction;
+}) {
+  const status = fileStatus(counts, target);
+  // Without a target there is nothing to fall short of: no badge until something happened.
+  const unsuccessful = unsuccessfulCount(counts);
+  if (!target && status === 'none' && unsuccessful === 0) return null;
+
+  // Same order as the filters above the list: queued, printing, failed, done.
+  const tooltip = [
+    t('projectDetail.files.queuedCount', { count: counts.queued }),
+    t('projectDetail.files.printingCount', { count: counts.printing }),
+    t('projectDetail.files.failedCount', { count: counts.failed }),
+    t('projectDetail.files.rejectedCount', { count: counts.rejected }),
+    target
+      ? t('projectDetail.files.progressTooltip', { done: counts.completed, target })
+      : t('projectDetail.files.printedCount', { count: counts.completed }),
+  ].join('\n');
+
+  // Completed comes last, next to the target it is counted against.
+  const parts = (
+    <>
+      {counts.queued > 0 && (
+        <>
+          <span className="inline-flex items-center gap-0.5">
+            {counts.queued}
+            <Clock className="w-3 h-3" aria-hidden="true" />
+          </span>
+          <span aria-hidden="true">·</span>
+        </>
+      )}
+      {counts.printing > 0 && (
+        <>
+          <span className="inline-flex items-center gap-0.5">
+            {counts.printing}
+            <Play className="w-3 h-3" aria-hidden="true" />
+          </span>
+          <span aria-hidden="true">·</span>
+        </>
+      )}
+      {unsuccessful > 0 && (
+        <>
+          <span className="inline-flex items-center gap-0.5 text-status-error" data-testid="file-unsuccessful-count">
+            {unsuccessful}
+            <XCircle className="w-3 h-3" aria-hidden="true" />
+          </span>
+          <span aria-hidden="true">·</span>
+        </>
+      )}
+      <span className="inline-flex items-center gap-0.5">
+        {counts.completed}
+        <CheckCircle className="w-3 h-3" aria-hidden="true" />
+      </span>
+    </>
+  );
+
+  if (!target) {
+    return (
+      <span
+        className="shrink-0 inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full bg-bambu-dark text-bambu-gray"
+        title={tooltip}
+        data-testid="file-progress-badge"
+      >
+        {parts}
+      </span>
+    );
+  }
+
+  const donePct = Math.min((counts.completed / target) * 100, 100);
+  const plannedPct = Math.min((plannedCount(counts) / target) * 100, 100) - donePct;
+  return (
+    <div className="shrink-0 min-w-20" title={tooltip} data-testid="file-progress-badge" data-status={status}>
+      <p className={`text-xs font-medium flex items-center justify-end gap-1 ${FILE_STATUS_TEXT[status]}`}>
+        {parts}
+        <span>/ {target}</span>
+      </p>
+      <div className="h-1 bg-bambu-dark rounded-full overflow-hidden mt-1 flex">
+        <div className={`h-full ${FILE_STATUS_BAR[status]}`} style={{ width: `${donePct}%` }} />
+        {plannedPct > 0 && (
+          <div className={`h-full ${FILE_STATUS_BAR[status]} opacity-40`} style={{ width: `${plannedPct}%` }} />
+        )}
+      </div>
+    </div>
+  );
+}
+
 function PriorityBadge({ priority, t }: { priority: string; t: TFunction }) {
   const config = {
     low: { color: 'bg-gray-500/20 text-gray-400', label: t('projectDetail.priority.low') },
@@ -264,28 +396,57 @@ export function ProjectDetailPage() {
     return map;
   }, [allProjectFiles]);
 
-  // Per-file completed-run counts (#1897); a file absent from the response has 0
+  // Per-file print status (#1897); a file absent from the response has 0 of
+  // everything. Queue changes made on other pages send no websocket event, so
+  // while anything is queued or printing the page polls (visible tab only).
   const { data: fileProgress } = useQuery({
     queryKey: ['project-file-progress', projectId],
     queryFn: () => api.getProjectFileProgress(projectId),
     enabled: projectId > 0,
+    refetchInterval: (query) => (hasActivePrints(query.state.data) ? 30_000 : false),
+    refetchIntervalInBackground: false,
   });
 
   const progressByFileId = useMemo(() => {
-    const map = new Map<number, number>();
-    for (const row of fileProgress ?? []) map.set(row.file_id, row.completed_count);
+    const map = new Map<number, FileCounts>();
+    for (const row of fileProgress ?? []) map.set(row.file_id, toFileCounts(row));
     return map;
   }, [fileProgress]);
 
+  const printableCounts = useMemo(
+    () =>
+      (allProjectFiles ?? [])
+        .filter((f) => isSlicedLibraryFile(f))
+        .map((f) => progressByFileId.get(f.id) ?? NO_COUNTS),
+    [allProjectFiles, progressByFileId],
+  );
+
   // Complete sets (#1897): the number of finished assemblies — the minimum
   // completed count across the project's printable files, capped at the target.
+  // Planned sets count printing and queued jobs as finished.
   const completeSets = useMemo(() => {
     const target = project?.target_sets;
-    if (!target || !allProjectFiles) return null;
-    const printable = allProjectFiles.filter((f) => isSlicedLibraryFile(f));
-    if (printable.length === 0) return null;
-    return Math.min(...printable.map((f) => Math.min(progressByFileId.get(f.id) ?? 0, target)));
-  }, [project?.target_sets, allProjectFiles, progressByFileId]);
+    if (!target || printableCounts.length === 0) return null;
+    return Math.min(...printableCounts.map((c) => Math.min(c.completed, target)));
+  }, [project?.target_sets, printableCounts]);
+
+  const plannedSetCount = useMemo(() => {
+    const target = project?.target_sets;
+    return target ? plannedSets(printableCounts, target) : null;
+  }, [project?.target_sets, printableCounts]);
+
+  // File list filter, with how many printable files each one would show.
+  const [fileFilter, setFileFilter] = useState<FileFilter>('all');
+  const fileFilterCounts = useMemo(
+    () =>
+      availableFileFilters(project?.target_sets).map((filter) => ({
+        filter,
+        count: printableCounts.filter((c) => matchesFileFilter(c, project?.target_sets, filter)).length,
+      })),
+    [printableCounts, project?.target_sets],
+  );
+  // A filter the project no longer offers (its target was cleared) shows everything.
+  const activeFileFilter: FileFilter = fileFilterCounts.some((f) => f.filter === fileFilter) ? fileFilter : 'all';
 
   const currency = getCurrencySymbol(settings?.currency || 'USD');
   const timeFormat: TimeFormat = settings?.time_format || 'system';
@@ -633,11 +794,22 @@ export function ProjectDetailPage() {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm text-bambu-gray">{t('projectDetail.progress.setsProgress')}</span>
-                  <span className="text-sm font-medium text-white">
-                    {completeSets ?? 0} / {project.target_sets} {t('projectDetail.progress.sets')}
-                  </span>
+                  <div className="text-sm font-medium text-white flex items-center gap-2">
+                    {/* Planned sets: printing and queued jobs counted as finished */}
+                    {(plannedSetCount ?? 0) > (completeSets ?? 0) && (
+                      <span
+                        className="text-xs font-normal text-blue-700 dark:text-blue-400"
+                        title={t('projectDetail.progress.plannedHint')}
+                      >
+                        {t('projectDetail.progress.plannedSets', { count: plannedSetCount ?? 0 })}
+                      </span>
+                    )}
+                    <span>
+                      {completeSets ?? 0} / {project.target_sets} {t('projectDetail.progress.sets')}
+                    </span>
+                  </div>
                 </div>
-                <div className="h-3 bg-bambu-dark rounded-full overflow-hidden">
+                <div className="h-3 bg-bambu-dark rounded-full overflow-hidden flex">
                   <div
                     className="h-full transition-all duration-500"
                     style={{
@@ -645,6 +817,18 @@ export function ProjectDetailPage() {
                       backgroundColor: (completeSets ?? 0) >= project.target_sets ? '#22c55e' : project.color || '#6b7280',
                     }}
                   />
+                  {(plannedSetCount ?? 0) > (completeSets ?? 0) && (
+                    <div
+                      className="h-full bg-blue-500/50 transition-all duration-500"
+                      data-testid="planned-sets-segment"
+                      style={{
+                        width: `${Math.min(
+                          (((plannedSetCount ?? 0) - (completeSets ?? 0)) / project.target_sets) * 100,
+                          100,
+                        )}%`,
+                      }}
+                    />
+                  )}
                 </div>
                 <p className="text-xs text-bambu-gray/70 mt-1">{t('projectDetail.progress.setsHint')}</p>
               </div>
@@ -1023,11 +1207,33 @@ export function ProjectDetailPage() {
       {/* Files section - linked folders from File Manager with printable files */}
       <Card>
         <CardContent className="p-4">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
             <h2 className="text-lg font-semibold text-white flex items-center gap-2">
               <FolderOpen className="w-5 h-5" />
               {t('projectDetail.files.title')}
             </h2>
+            {/* Print status filter (#1897), over the printable files */}
+            {printableCounts.length > 0 && (
+              <div className="flex flex-wrap gap-1" role="group" aria-label={t('projectDetail.files.filter.label')}>
+                {fileFilterCounts.map(({ filter, count }) => {
+                  const active = filter === activeFileFilter;
+                  return (
+                    <button
+                      key={filter}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => setFileFilter(filter)}
+                      className={`text-xs px-2 py-1 rounded-full transition-colors ${
+                        active ? 'bg-bambu-green text-white' : 'bg-bambu-dark text-bambu-gray hover:text-white'
+                      }`}
+                    >
+                      {t(`projectDetail.files.filter.${filter}`)}
+                      <span className="ml-1 opacity-70">{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <p className="text-xs text-bambu-gray mb-3">
@@ -1040,7 +1246,19 @@ export function ProjectDetailPage() {
           {linkedFolders && linkedFolders.length > 0 ? (
             <div className="space-y-4">
               {linkedFolders.map((folder) => {
-                const files = filesByFolder.get(folder.id) ?? [];
+                const folderFiles = filesByFolder.get(folder.id) ?? [];
+                const files =
+                  activeFileFilter === 'all'
+                    ? folderFiles
+                    : folderFiles.filter(
+                        (f) =>
+                          isSlicedLibraryFile(f) &&
+                          matchesFileFilter(
+                            progressByFileId.get(f.id) ?? NO_COUNTS,
+                            project.target_sets,
+                            activeFileFilter,
+                          ),
+                      );
                 const isLoading = projectFilesLoading;
 
                 return (
@@ -1069,7 +1287,7 @@ export function ProjectDetailPage() {
                       </div>
                     ) : files.length === 0 ? (
                       <p className="text-bambu-gray/60 text-xs italic px-3">
-                        {t('projectDetail.files.noFiles')}
+                        {folderFiles.length > 0 ? t('projectDetail.files.noMatch') : t('projectDetail.files.noFiles')}
                       </p>
                     ) : (
                       <div className="space-y-1 pl-3">
@@ -1107,40 +1325,14 @@ export function ProjectDetailPage() {
                                 </span>
                               </div>
 
-                              {/* Per-file print progress (#1897) */}
-                              {printable && (() => {
-                                const done = progressByFileId.get(file.id) ?? 0;
-                                const target = project.target_sets;
-                                if (!target) {
-                                  // No copies-per-file target — show a plain printed-count badge
-                                  return done > 0 ? (
-                                    <span
-                                      className="shrink-0 text-xs px-1.5 py-0.5 rounded-full bg-bambu-dark text-bambu-gray"
-                                      title={t('projectDetail.files.printedCount', { count: done })}
-                                    >
-                                      {done}×
-                                    </span>
-                                  ) : null;
-                                }
-                                const pct = Math.min((done / target) * 100, 100);
-                                const textColor =
-                                  done >= target ? 'text-status-ok' : done > 0 ? 'text-status-warning' : 'text-bambu-gray';
-                                const barColor =
-                                  done >= target ? 'bg-status-ok' : done > 0 ? 'bg-status-warning' : 'bg-bambu-gray';
-                                return (
-                                  <div
-                                    className="shrink-0 w-20"
-                                    title={t('projectDetail.files.progressTooltip', { done, target })}
-                                  >
-                                    <p className={`text-xs font-medium text-right ${textColor}`}>
-                                      {done} / {target}
-                                    </p>
-                                    <div className="h-1 bg-bambu-dark rounded-full overflow-hidden mt-1">
-                                      <div className={`h-full ${barColor}`} style={{ width: `${pct}%` }} />
-                                    </div>
-                                  </div>
-                                );
-                              })()}
+                              {/* Per-file print status (#1897) */}
+                              {printable && (
+                                <FileProgressBadge
+                                  counts={progressByFileId.get(file.id) ?? NO_COUNTS}
+                                  target={project.target_sets}
+                                  t={t}
+                                />
+                              )}
 
                               {/* Print actions for sliced files */}
                               {printable && (
@@ -1627,6 +1819,8 @@ export function ProjectDetailPage() {
             setPrintFile(null);
             queryClient.invalidateQueries({ queryKey: ['archives'] });
             queryClient.invalidateQueries({ queryKey: ['queue'] });
+            // A job queued here shows on the file at once; no websocket event announces it.
+            queryClient.invalidateQueries({ queryKey: ['project-file-progress', projectId] });
           }}
         />
       )}

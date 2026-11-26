@@ -1322,10 +1322,15 @@ export interface ProjectAttachment {
   uploaded_at: string;
 }
 
-// Completed-run count for one library file inside a project (#1897)
+// Print status of one library file inside a project (#1897). The counters
+// after completed_count are optional: an older backend sends only that one.
 export interface ProjectFileProgress {
   file_id: number;
-  completed_count: number;
+  completed_count: number; // completed runs, rejected ones excluded
+  queued_count?: number; // pending queue items
+  printing_count?: number; // queue items printing now
+  failed_count?: number; // failed / aborted / cancelled / stopped runs
+  rejected_count?: number; // completed runs the user rejected
 }
 
 export interface ArchivePreview {
@@ -8479,7 +8484,7 @@ export const api = {
     request<{ message: string }>(`/projects/${id}`, { method: 'DELETE' }),
   getProjectArchives: (id: number, limit = 100, offset = 0) =>
     request<Archive[]>(`/projects/${id}/archives?limit=${limit}&offset=${offset}`),
-  // Completed-run counts per library file (#1897); files with 0 runs are omitted
+  // Per-file print status (#1897); files with every counter at 0 are omitted
   getProjectFileProgress: (id: number) =>
     request<ProjectFileProgress[]>(`/projects/${id}/file-progress`),
   addArchivesToProject: (projectId: number, archiveIds: number[]) =>

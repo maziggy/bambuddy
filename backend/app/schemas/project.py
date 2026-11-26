@@ -153,10 +153,20 @@ class ProjectResponse(BaseModel):
 
 
 class ProjectFileProgress(BaseModel):
-    """Completed-run count for one library file inside a project (#1897)."""
+    """Print status of one library file inside a project (#1897).
+
+    ``completed_count`` / ``failed_count`` / ``rejected_count`` count runs;
+    ``queued_count`` / ``printing_count`` count pending / printing queue items.
+    The added counters default to 0 so older clients keep reading
+    ``completed_count``.
+    """
 
     file_id: int
     completed_count: int
+    queued_count: int = 0
+    printing_count: int = 0
+    failed_count: int = 0
+    rejected_count: int = 0
 
 
 class ArchivePreview(BaseModel):

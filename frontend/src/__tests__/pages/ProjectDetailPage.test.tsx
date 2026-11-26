@@ -260,9 +260,9 @@ describe('ProjectDetailPage', () => {
 
       // Per-file badges: 3 / 10 for plate_1, 0 / 10 for the never-printed plate_2
       await waitFor(() => {
-        expect(screen.getByTitle('3 of 10 completed prints')).toBeInTheDocument();
+        expect(screen.getByTitle(/ 3 of 10 completed prints$/)).toBeInTheDocument();
       });
-      expect(screen.getByTitle('0 of 10 completed prints')).toBeInTheDocument();
+      expect(screen.getByTitle(/ 0 of 10 completed prints$/)).toBeInTheDocument();
 
       // Complete sets = min across printable files = 0
       expect(screen.getByText('Complete Sets')).toBeInTheDocument();
@@ -315,10 +315,170 @@ describe('ProjectDetailPage', () => {
       render(<ProjectDetailPage />);
 
       await waitFor(() => {
-        expect(screen.getByText('4\u00d7')).toBeInTheDocument();
+        expect(screen.getByTitle(/ Printed 4 time\(s\)$/)).toHaveTextContent('4');
       });
       // No sets bar without a target
       expect(screen.queryByText('Complete Sets')).not.toBeInTheDocument();
+    });
+  });
+  describe('per-file print status (#1897)', () => {
+    // target 6: plate_1 printing (3 done + 1 printing + 2 queued), plate_2 done,
+    // plate_3 in progress, plate_4 not started; the STL is not printable.
+    const statusFiles = [
+      makeFile({ id: 5, filename: 'plate_1.gcode.3mf' }),
+      makeFile({ id: 6, filename: 'plate_2.gcode.3mf' }),
+      makeFile({ id: 7, filename: 'plate_3.gcode.3mf' }),
+      makeFile({ id: 8, filename: 'plate_4.gcode.3mf' }),
+      makeFile({ id: 9, filename: 'source.stl', file_type: 'stl' }),
+    ];
+    const statusProgress = [
+      { file_id: 5, completed_count: 3, printing_count: 1, queued_count: 2, failed_count: 1, rejected_count: 2 },
+      { file_id: 6, completed_count: 6, printing_count: 0, queued_count: 0, failed_count: 0 },
+      { file_id: 7, completed_count: 1, printing_count: 0, queued_count: 0, failed_count: 2 },
+    ];
+
+    beforeEach(() => {
+      server.use(
+        http.get('/api/v1/projects/:id', () => HttpResponse.json({ ...mockProject, target_sets: 6 })),
+        http.get('/api/v1/library/files', () => HttpResponse.json(statusFiles)),
+        http.get('/api/v1/projects/:id/file-progress', () => HttpResponse.json(statusProgress)),
+      );
+    });
+
+    const badges = async () => {
+      await waitFor(() => expect(screen.getAllByTestId('file-progress-badge')).toHaveLength(4));
+      return screen.getAllByTestId('file-progress-badge');
+    };
+
+    const visibleFiles = () =>
+      ['plate_1', 'plate_2', 'plate_3', 'plate_4', 'source']
+        .filter((name) => screen.queryByText(new RegExp(`^${name}\\.`)))
+        .sort();
+
+    it('shows completed, printing and queued out of the target, coloured by status', async () => {
+      render(<ProjectDetailPage />);
+
+      const [printing, done, inProgress, none] = await badges();
+      // 1 failed + 2 rejected show as one red count.
+      expect(printing).toHaveTextContent('2·1·3·3/ 6');
+      expect(printing.querySelector('[data-testid="file-unsuccessful-count"]')).toHaveClass('text-status-error');
+      // A print of the file is running: blue, whatever else is queued.
+      expect(printing).toHaveAttribute('data-status', 'printing');
+      expect(printing.querySelector('p')).toHaveClass('text-blue-700');
+      // Nothing printing or queued: only the completed count.
+      expect(done).toHaveTextContent(/^6\/ 6$/);
+      expect(done).toHaveAttribute('data-status', 'done');
+      expect(done.querySelector('p')).toHaveClass('text-status-ok');
+      expect(inProgress).toHaveAttribute('data-status', 'inProgress');
+      expect(inProgress.querySelector('p')).toHaveClass('text-status-warning');
+      expect(none).toHaveTextContent(/^0\/ 6$/);
+      expect(none).toHaveAttribute('data-status', 'none');
+      expect(none.querySelector('p')).toHaveClass('text-bambu-gray');
+    });
+
+    it('colours a file whose jobs only wait in the queue differently from one printing', async () => {
+      server.use(
+        http.get('/api/v1/projects/:id/file-progress', () =>
+          HttpResponse.json([
+            { file_id: 5, completed_count: 0, printing_count: 1, queued_count: 1 },
+            { file_id: 6, completed_count: 0, printing_count: 0, queued_count: 1 },
+          ]),
+        ),
+      );
+      render(<ProjectDetailPage />);
+
+      const [printing, queued] = await badges();
+      expect(printing).toHaveAttribute('data-status', 'printing');
+      expect(printing.querySelector('p')).toHaveClass('text-blue-700');
+      expect(queued).toHaveAttribute('data-status', 'queued');
+      expect(queued.querySelector('p')).toHaveClass('text-violet-700');
+    });
+
+    it('lists every counter, failures and rejects included, in the tooltip', async () => {
+      render(<ProjectDetailPage />);
+
+      const [printing] = await badges();
+      expect(printing.getAttribute('title')).toBe(
+        '2 queued\n1 printing\n1 failed\n2 rejected\n3 of 6 completed prints',
+      );
+    });
+
+    it('filters the file list by print status', async () => {
+      const user = userEvent.setup();
+      render(<ProjectDetailPage />);
+      await badges();
+
+      expect(visibleFiles()).toEqual(['plate_1', 'plate_2', 'plate_3', 'plate_4', 'source']);
+
+      const group = screen.getByRole('group', { name: 'Filter files by print status' });
+      const pick = async (label: string) => {
+        const button = Array.from(group.querySelectorAll('button')).find((b) =>
+          b.textContent?.startsWith(label),
+        );
+        expect(button).toBeDefined();
+        await user.click(button!);
+        expect(button).toHaveAttribute('aria-pressed', 'true');
+      };
+
+      await pick('Queued');
+      expect(visibleFiles()).toEqual(['plate_1']);
+      await pick('Printing');
+      expect(visibleFiles()).toEqual(['plate_1']);
+      await pick('Failed');
+      expect(visibleFiles()).toEqual(['plate_1', 'plate_3']);
+      await pick('Done');
+      expect(visibleFiles()).toEqual(['plate_2']);
+      await pick('Not started');
+      expect(visibleFiles()).toEqual(['plate_4']);
+      // plate_1's queued and printing jobs reach the target, so it is not remaining.
+      await pick('Remaining');
+      expect(visibleFiles()).toEqual(['plate_3', 'plate_4']);
+      await pick('All');
+      expect(visibleFiles()).toEqual(['plate_1', 'plate_2', 'plate_3', 'plate_4', 'source']);
+    });
+
+    it('shows how many files each filter matches', async () => {
+      render(<ProjectDetailPage />);
+      await badges();
+
+      const group = screen.getByRole('group', { name: 'Filter files by print status' });
+      const labels = Array.from(group.querySelectorAll('button')).map((b) => b.textContent);
+      expect(labels).toEqual(['All4', 'Not started1', 'Queued1', 'Printing1', 'Failed2', 'Done1', 'Remaining2']);
+    });
+
+    it('says when no file in a folder matches the filter', async () => {
+      const user = userEvent.setup();
+      server.use(
+        http.get('/api/v1/projects/:id/file-progress', () => HttpResponse.json([])),
+      );
+      render(<ProjectDetailPage />);
+      await badges();
+
+      await user.click(screen.getByRole('button', { name: /^Printing/ }));
+      expect(screen.getByText('No files in this folder match the filter.')).toBeInTheDocument();
+    });
+
+    it('shows no Planned segment while planned sets equal complete ones', async () => {
+      render(<ProjectDetailPage />);
+      await badges();
+
+      // Complete: min(3, 6, 1, 0) = 0. Planned: min(6, 6, 1, 0) = 0 too, so no segment yet.
+      expect(screen.queryByTestId('planned-sets-segment')).not.toBeInTheDocument();
+    });
+
+    it('shows planned sets ahead of complete ones', async () => {
+      server.use(
+        http.get('/api/v1/library/files', () => HttpResponse.json(statusFiles.slice(0, 2))),
+      );
+      render(<ProjectDetailPage />);
+      await waitFor(() => expect(screen.getAllByTestId('file-progress-badge')).toHaveLength(2));
+
+      // Complete: min(3, 6) = 3. Planned: min(3 + 1 + 2, 6) = 6.
+      expect(
+        screen.getByText((_, element) => element?.tagName === 'SPAN' && element.textContent === '3 / 6 sets'),
+      ).toBeInTheDocument();
+      expect(screen.getByText('6 planned')).toBeInTheDocument();
+      expect(screen.getByTestId('planned-sets-segment')).toHaveStyle({ width: '50%' });
     });
   });
   describe('sub-project roll-up (#1264)', () => {

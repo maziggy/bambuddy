@@ -6238,13 +6238,15 @@ class PrintScheduler:
     ) -> list[int] | None:
         """Match required filaments to loaded filaments and build AMS mapping.
 
-        Priority: unique tray_info_idx match > exact color match > similar color match > type-only match
+        Priority: tray_info_idx match of the right colour > exact color match > similar color
+        match > tray_info_idx match of another colour > type-only match
 
         The tray_info_idx is a filament type identifier stored in the 3MF file when the user
-        slices (e.g., "GFA00" for generic PLA, "P4d64437" for custom presets). If the same
-        tray_info_idx appears in only ONE available tray, we use that tray. If multiple trays
-        have the same tray_info_idx (e.g., two spools of generic PLA), we fall back to color
-        matching among those trays.
+        slices (e.g., "GFA00" for generic PLA, "P4d64437" for custom presets). It names the
+        variant, not the spool, so it only wins when the colour also matches (exact or
+        similar); a tray of the right variant in another colour ranks below any tray of the
+        right colour (#3733). With several trays of the same tray_info_idx, colour matching
+        picks among them.
 
         Args:
             required: List of required filaments with slot_id, type, color, tray_info_idx
@@ -6276,8 +6278,12 @@ class PrintScheduler:
             req_color = req.get("color", "")
             req_tray_info_idx = req.get("tray_info_idx", "")
 
-            # Find best match: unique tray_info_idx > exact color > similar color > type-only
+            # Find best match: tray_info_idx of the right colour > exact color > similar
+            # color > tray_info_idx of another colour > type-only (#3733)
             idx_match = None
+            # The right variant in the wrong colour: better than any other colour of
+            # the type, worse than the right colour in another variant.
+            idx_other_color = None
             exact_match = None
             similar_match = None
             similar_distance = float("inf")
@@ -6361,11 +6367,20 @@ class PrintScheduler:
             if req_tray_info_idx and not forced:
                 idx_matches = [f for f in available if f.get("tray_info_idx") == req_tray_info_idx]
                 if len(idx_matches) == 1:
-                    # Unique tray_info_idx - use it as definitive match
-                    idx_match = idx_matches[0]
+                    # Unique tray_info_idx - only definitive when the colour matches too
+                    cand = idx_matches[0]
+                    cand_color = cand.get("color", "")
+                    if (
+                        not self._normalize_color_for_compare(req_color)
+                        or self._normalize_color_for_compare(cand_color) == self._normalize_color_for_compare(req_color)
+                        or self._colors_are_similar(cand_color, req_color)
+                    ):
+                        idx_match = cand
+                    else:
+                        idx_other_color = cand
                     logger.debug(
                         f"Matched filament slot {req.get('slot_id')} by unique tray_info_idx={req_tray_info_idx} "
-                        f"-> tray {idx_match['global_tray_id']}"
+                        f"-> tray {cand['global_tray_id']}{'' if idx_match else ' (other colour)'}"
                     )
                 elif len(idx_matches) > 1:
                     # Multiple trays with same tray_info_idx - use color matching among them
@@ -6386,11 +6401,11 @@ class PrintScheduler:
                             if distance is not None and distance < similar_distance:
                                 similar_match = f
                                 similar_distance = distance
-                        elif not type_only_match:
-                            type_only_match = f
+                        elif not idx_other_color:
+                            idx_other_color = f
 
-            # If no idx_match yet, do standard type/color matching on all available trays
-            if not forced and not idx_match and not exact_match and not similar_match and not type_only_match:
+            # If no idx match of the right colour yet, do standard type/color matching on all available trays
+            if not forced and not idx_match and not exact_match and not similar_match:
                 for f in available:
                     f_type = (f.get("type") or "").upper()
                     if canonical_filament_type(f_type) != canonical_filament_type(req_type):
@@ -6414,7 +6429,7 @@ class PrintScheduler:
                     elif not type_only_match:
                         type_only_match = f
 
-            match = idx_match or exact_match or similar_match or type_only_match
+            match = idx_match or exact_match or similar_match or idx_other_color or type_only_match
             if match:
                 used_tray_ids.add(match["global_tray_id"])
                 comparisons.append({"slot_id": req.get("slot_id", 0), "global_tray_id": match["global_tray_id"]})
@@ -6435,6 +6450,8 @@ class PrintScheduler:
                     if exact_match is not None
                     else "similar_color"
                     if similar_match is not None
+                    else "idx_other_color"
+                    if idx_other_color is not None
                     else "type_only"
                 )
                 logger.info(

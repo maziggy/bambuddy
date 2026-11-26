@@ -82,6 +82,36 @@ describe('ProjectsPage', () => {
       expect(window.location.pathname).toBe(previousPath);
     });
 
+    it('opens the card menu as a floating menu the card cannot clip (#3739)', async () => {
+      const user = userEvent.setup();
+      render(<ProjectsPage />);
+      const actions = await screen.findAllByRole('button', { name: 'Actions' });
+      await user.click(actions[0]);
+
+      const remove = screen.getByRole('button', { name: 'Delete' });
+      const menu = remove.closest('[data-context-menu]') as HTMLElement;
+      // The card's overflow-hidden clipped a menu positioned inside it.
+      expect(menu.parentElement).toBe(document.body);
+      expect(screen.getByRole('button', { name: 'Label' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument();
+
+      await user.click(actions[0]);
+      expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+    });
+
+    it('opens the delete confirmation from the card menu without navigating', async () => {
+      const user = userEvent.setup();
+      const previousPath = window.location.pathname;
+      render(<ProjectsPage />);
+      const actions = await screen.findAllByRole('button', { name: 'Actions' });
+      await user.click(actions[0]);
+      await user.click(screen.getByRole('button', { name: 'Delete' }));
+
+      expect(await screen.findByRole('heading', { name: 'Delete Project' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Label' })).not.toBeInTheDocument();
+      expect(window.location.pathname).toBe(previousPath);
+    });
+
     it('shows project descriptions', async () => {
       render(<ProjectsPage />);
 

@@ -473,7 +473,8 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                   </span>
                   <span className="text-xs text-white font-semibold flex items-center gap-1">
                     <span>{data.fillLevel !== null ? `${data.fillLevel}%` : '—'}</span>
-                    {assignedRemainingWeight !== null && data.fillLevel !== null && (
+                    {/* The grams are the spool record's: beside an AMS reading they can contradict it (#3738). */}
+                    {assignedRemainingWeight !== null && data.fillLevel !== null && data.fillSource !== 'ams' && (
                       <span className="text-[9px] text-bambu-gray font-normal">• {assignedRemainingWeight}g</span>
                     )}
                   </span>

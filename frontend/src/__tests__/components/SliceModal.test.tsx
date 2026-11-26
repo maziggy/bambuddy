@@ -1504,6 +1504,67 @@ describe('SliceModal', () => {
     expect(screen.getByText(/not used by this plate/i)).toBeDefined();
   });
 
+  // #3736: a slot the slice's process settings print supports with is used,
+  // whatever the plate's geometry says, so its profile can be picked.
+  it.each([
+    ['supports on', { enable_support: '1', support_interface_filament: '2' }, false],
+    ['supports off', { enable_support: '0', support_interface_filament: '2' }, true],
+    ['an infill slot', { sparse_infill_filament_id: '2' }, false],
+  ])('a slot the process settings use is open to pick: %s', async (_name, values, disabled) => {
+    mockApi.getSlicerPresetValues.mockResolvedValue({ resolved: true, values, reason: 'ok' });
+    mockApi.getLibraryFilePlates.mockResolvedValue({
+      file_id: 100,
+      filename: 'Helmet.3mf',
+      is_multi_plate: false,
+      plates: [
+        {
+          index: 1,
+          name: 'Plate 1',
+          objects: ['Helmet'],
+          has_thumbnail: false,
+          thumbnail_url: null,
+          print_time_seconds: 1200,
+          filament_used_grams: 80,
+          filaments: [],
+        },
+      ],
+    });
+    mockApi.getLibraryFileFilamentRequirements.mockResolvedValue({
+      file_id: 100,
+      filename: 'Helmet.3mf',
+      plate_id: 1,
+      filaments: [
+        { slot_id: 1, type: 'PLA', color: '#FFFFFF', used_grams: 80, used_meters: 27, used_in_plate: true },
+        { slot_id: 2, type: 'PETG', color: '#808080', used_grams: 0, used_meters: 0, used_in_plate: false },
+      ],
+    });
+    mockApi.getSlicerPresets.mockResolvedValue({
+      cloud: {
+        printer: [{ id: 'P1', name: 'X1C', source: 'cloud' }],
+        process: [{ id: 'PR1', name: '0.20mm', source: 'cloud' }],
+        filament: [
+          { id: 'F-WHITE', name: 'Cloud PLA White', source: 'cloud', filament_type: 'PLA', filament_colour: '#FFFFFF' },
+          { id: 'F-GREY', name: 'Cloud PETG Grey', source: 'cloud', filament_type: 'PETG', filament_colour: '#808080' },
+        ],
+      },
+      local: { printer: [], process: [], filament: [] },
+      standard: { printer: [], process: [], filament: [] },
+      cloud_status: 'ok',
+      orca_cloud: { printer: [], process: [], filament: [] },
+      orca_cloud_status: 'ok',
+    });
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Helmet.3mf' },
+      onClose: vi.fn(),
+    });
+
+    await waitFor(() => expect(screen.getByText('X1C')).toBeDefined());
+    await waitFor(() => expect(mockApi.getSlicerPresetValues).toHaveBeenCalled());
+    await waitFor(() => expect(presetSelects()[4].disabled).toBe(disabled));
+    expect(screen.queryByText(/not used by this plate/i) !== null).toBe(disabled);
+  });
+
   it('still sends both filaments to the backend even when one slot is disabled', async () => {
     // The auto-pick scoring fills the disabled slot from project
     // metadata — the slicer CLI requires a profile for every project

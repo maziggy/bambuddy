@@ -10,6 +10,7 @@ from backend.app.services.slicer_3mf_convert import (
     count_plates_in_3mf,
     extract_source_printer_model,
     merge_plate_3mfs,
+    plate_used_slots,
     substitute_unused_plate_filaments,
 )
 
@@ -542,3 +543,51 @@ class TestSubstituteUnusedPlateFilaments:
 
         # Slot 4 is unused and takes slot 1's profile, with its own colour.
         assert [json.loads(p)["filament_colour"][0] for p in result] == ["#000000", "#FFFFFF", "#00AE42", "#00AE42"]
+
+
+class TestSupportSlotsFromTheSliceSettings:
+    """#3736: the slots the slice settings print with, not the file's."""
+
+    _xml = staticmethod(TestSubstituteUnusedPlateFilaments._model_settings_xml)
+
+    def _source(self, project_settings: dict | None = None, geometry: bool = True) -> bytes:
+        entries: dict[str, bytes] = {}
+        if geometry:
+            entries["Metadata/model_settings.config"] = self._xml([(1, [1])])
+        if project_settings is not None:
+            entries["Metadata/project_settings.config"] = json.dumps(project_settings).encode()
+        return _make_3mf(entries)
+
+    def test_a_support_slot_picked_in_the_dialog_is_kept(self):
+        """The report: supports on but both slots 0 in the file, interface on slot 3 in the dialog."""
+        source = self._source({"enable_support": "1", "support_filament": "0", "support_interface_filament": "0"})
+        items = ["pla.json", "pla_unused.json", "petg_interface.json"]
+
+        result = substitute_unused_plate_filaments(source, plate_id=1, items=items, support_slots={3})
+
+        assert result == ["pla.json", "pla.json", "petg_interface.json"]
+        assert plate_used_slots(source, 1, {3}) == {1, 3}
+
+    def test_a_support_slot_the_dialog_switched_off_is_substituted(self):
+        source = self._source({"enable_support": "1", "support_filament": "2", "support_interface_filament": "2"})
+        items = ["pla.json", "pva.json"]
+
+        assert substitute_unused_plate_filaments(source, plate_id=1, items=items, support_slots=set()) == [
+            "pla.json",
+            "pla.json",
+        ]
+
+    def test_without_given_slots_the_file_still_decides(self):
+        source = self._source({"enable_support": "1", "support_filament": "2", "support_interface_filament": "2"})
+
+        assert plate_used_slots(source, 1) == {1, 2}
+
+    def test_support_slots_without_geometry_rewrite_nothing(self):
+        """No plate metadata means every slot is used; a support slot must not
+        make it "only the support slot", which would print the model in PVA."""
+        source = self._source({"enable_support": "1", "support_filament": "2"}, geometry=False)
+        items = ["pla.json", "pva.json"]
+
+        assert plate_used_slots(source, 1, {2}) is None
+        assert plate_used_slots(source, 1) is None
+        assert substitute_unused_plate_filaments(source, plate_id=1, items=items, support_slots={2}) == items

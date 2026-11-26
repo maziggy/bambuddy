@@ -271,7 +271,7 @@ class TestOrdering:
         maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
         seen = {}
 
-        async def watching(printer_id):
+        async def watching(printer_id, **_kwargs):
             await consume_auto_cleared_plate(printer_id)
             async with maker() as other:
                 seen["remaining"] = await other.scalar(select(Printer.plates_remaining).where(Printer.id == printer_id))
@@ -292,7 +292,7 @@ class TestOrdering:
     async def test_consume_runs_once_per_completion(self, test_engine, db_session, queued_print, changer_mocks):
         with patch.object(main_module, "consume_auto_cleared_plate", AsyncMock()) as consume:
             await _complete(test_engine, queued_print["printer"], "completed")
-        consume.assert_awaited_once_with(queued_print["printer"])
+        consume.assert_awaited_once_with(queued_print["printer"], job_clears_plate=False)
 
     @pytest.mark.parametrize("status", ["failed", "aborted", "cancelled"])
     async def test_consume_is_not_even_called_for_other_statuses(
@@ -490,7 +490,7 @@ class TestPendingMarker:
         pid = queued_print["printer"]
         seen = {}
 
-        async def watching(printer_id):
+        async def watching(printer_id, **_kwargs):
             seen["before"] = plate_changer.is_count_pending(printer_id)
             await consume_auto_cleared_plate(printer_id)
             seen["after"] = plate_changer.is_count_pending(printer_id)

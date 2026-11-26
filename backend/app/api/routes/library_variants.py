@@ -281,6 +281,7 @@ async def _group_response(
                 # was rewritten since then should not blow up a read.
                 target_model=resolve_variant_model(f) or "",
                 position=f.variant_position,
+                clears_plate=bool(f.clears_plate),
             )
             for f in members
         ],

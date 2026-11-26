@@ -9416,6 +9416,63 @@ async def _completion_belongs_to_queue_item(db, item, data: dict) -> bool:
     return False
 
 
+async def _finishing_job_clears_plate(printer_id: int, data: dict) -> bool:
+    """Whether the queue job this completion closes clears its own plate (#3576).
+
+    Lifting the plate-clear gate is a safety relaxation, so unlike the
+    permissive ``_completion_belongs_to_queue_item`` this needs a positive name
+    match: an empty subtask name, a row without archive or an archive without
+    file name cannot be verified and keep the gate. Fail-safe False.
+    """
+    try:
+        from backend.app.models.print_queue import PrintQueueItem
+
+        async with async_session() as db:
+            result = await db.execute(
+                select(PrintQueueItem)
+                .where(PrintQueueItem.printer_id == printer_id)
+                .where(PrintQueueItem.status == "printing")
+            )
+            printing_items = list(result.scalars().all())
+            if len(printing_items) != 1:
+                return False
+            item = printing_items[0]
+            if not item.clears_plate:
+                return False
+            reconciled_id = data.get("_reconciled_archive_id")
+            if reconciled_id is not None:
+                # The archive id is a stronger match than the name (reconciled payloads carry
+                # archive.print_name, which need not equal the file stem).
+                return item.archive_id == reconciled_id
+            observed = (data.get("subtask_name") or "").strip()
+            expected = await _queue_item_dispatched_name(db, item)
+            if not observed or not expected:
+                return False
+            return _dispatched_name_matches_echo(expected, observed)
+    except Exception as e:
+        logging.getLogger(__name__).warning(
+            "Could not tell whether the job on printer %s clears its plate: %s", printer_id, e
+        )
+        return False
+
+
+async def _job_skips_plate_confirmation(printer_id: int) -> bool:
+    """A job that clears its own plate lifts the confirmation only where the setting would ask for it (#3576)."""
+    # True only for a printer that follows the app setting, and only when that asks;
+    # a printer with its own setting (#2860) decides on its own.
+    try:
+        from backend.app.services.print_scheduler import finish_needs_plate_confirmation, load_plate_clear_policy
+
+        async with async_session() as db:
+            override, require_plate_clear = await load_plate_clear_policy(db, printer_id)
+        return finish_needs_plate_confirmation(override, require_plate_clear) and not finish_needs_plate_confirmation(
+            override, require_plate_clear, job_clears_plate=True
+        )
+    except Exception as e:
+        logging.getLogger(__name__).warning("Could not read the plate-clear policy of printer %s: %s", printer_id, e)
+        return False
+
+
 async def _recover_fallback_from_cache_before_eviction(printer_id: int, data: dict) -> None:
     """Spend the 3MF download cache on a still-empty fallback archive.
 
@@ -9669,8 +9726,17 @@ async def _close_out_print(printer_id: int, data: dict):
     except Exception:
         logger.exception("Notify Live Activity completion hook failed for printer %s", printer_id)
     _final_status = data.get("status", "completed")
+    # A successful job whose file clears its own plate leaves nothing to confirm (#3576);
+    # a failure or cancel still raises the gate, and a printer set to always require it (#2860) still waits.
+    _job_clears_plate = _final_status == "completed" and await _finishing_job_clears_plate(printer_id, data)
     if _final_status in ("completed", "failed", "aborted", "cancelled"):
-        printer_manager.set_awaiting_plate_clear(printer_id, True)
+        if _job_clears_plate and await _job_skips_plate_confirmation(printer_id):
+            # (#3576) Dispatch clears the gate at start, so a gate that is up at a positively
+            # matched flagged success was raised during this same run (e.g. by the printer's own
+            # calibration run); this run's successful end cleared the plate.
+            printer_manager.set_awaiting_plate_clear(printer_id, False)
+        else:
+            printer_manager.set_awaiting_plate_clear(printer_id, True)
     if _final_status == "completed":
         # A plate changer spent a plate on a finish nobody has to clear (#3575).
         # Counted here, before the queue row below leaves 'printing', so no queue
@@ -9693,7 +9759,10 @@ async def _close_out_print(printer_id: int, data: dict):
         if _internal:
             clear_count_pending(printer_id)
         else:
-            await consume_auto_cleared_plate(printer_id)
+            # A job that clears its own plate (#3576) swapped it, so it spent a plate
+            # whatever the printer's plate-clear setting says, even where the
+            # confirmation is still asked for.
+            await consume_auto_cleared_plate(printer_id, job_clears_plate=_job_clears_plate)
 
     # MQTT relay - publish print complete
     try:

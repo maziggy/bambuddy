@@ -132,6 +132,8 @@ from backend.app.utils.printer_models import is_gcode_compatible
 from backend.app.utils.safe_path import PathTraversalError, assert_under, safe_join_under
 from backend.app.utils.slicer_strings import first_slicer_string
 from backend.app.utils.threemf_tools import (
+    REGION_SLOT_KEYS,
+    SUPPORT_SLOT_KEYS,
     carries_gcode,
     default_plate_gcode_name,
     expand_to_project_slots,
@@ -139,6 +141,7 @@ from backend.app.utils.threemf_tools import (
     extract_nozzle_mapping_from_3mf,
     extract_project_filaments_from_3mf,
     is_unsliced_3mf,
+    process_slots_in_config,
     sanitize_project_settings_sentinels,
     select_plate_gcode_name,
     supports_enabled_in_config,
@@ -4310,6 +4313,40 @@ def _declined_source_keys(offered: list[DesignOverride], requested: list[str] | 
     return {override.key for override in offered} - set(requested)
 
 
+_PROCESS_SLOT_KEYS = ("enable_support", *SUPPORT_SLOT_KEYS, *REGION_SLOT_KEYS)
+
+
+def _process_filament_slots(process_json: str, source_3mf_bytes: bytes) -> set[int] | None:
+    """The support and region-picker slots of the settings the slice runs with (#3736).
+
+    Starts from the source 3MF's settings for those keys and lets every key the
+    process JSON sets win: the #1881 carry, the design picks and the slice
+    dialog's own settings are all written into it. A standard preset arrives
+    as an ``inherits`` stub without these keys, so the file's values still
+    count there, as before. ``None`` when the process JSON can't be read, and
+    the caller then reads the file alone.
+    """
+    from io import BytesIO
+
+    try:
+        process_cfg = json.loads(process_json)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    if not isinstance(process_cfg, dict):
+        return None
+    merged: dict[str, object] = {}
+    try:
+        with zipfile.ZipFile(BytesIO(source_3mf_bytes), "r") as zf:
+            if "Metadata/project_settings.config" in zf.namelist():
+                src_cfg = json.loads(zf.read("Metadata/project_settings.config").decode("utf-8"))
+                if isinstance(src_cfg, dict):
+                    merged.update({k: src_cfg[k] for k in _PROCESS_SLOT_KEYS if k in src_cfg})
+    except (zipfile.BadZipFile, json.JSONDecodeError, UnicodeDecodeError, OSError, KeyError):
+        pass
+    merged.update({k: process_cfg[k] for k in _PROCESS_SLOT_KEYS if k in process_cfg})
+    return process_slots_in_config(merged)
+
+
 def _patch_process_support_settings(
     process_json: str,
     source_3mf_bytes: bytes,
@@ -4741,8 +4778,15 @@ async def _run_slicer_with_fallback(
     if is_3mf and request.plate != 0:
         from backend.app.services.slicer_3mf_convert import plate_used_slots, substitute_unused_plate_filaments
 
-        filament_jsons = substitute_unused_plate_filaments(primary_bytes, request.plate or 1, filament_jsons)
-        used_slots = plate_used_slots(primary_bytes, request.plate or 1)
+        # The support slots of the settings the slice runs with, not of the
+        # file: a support slot picked in the slice dialog is in no file, and
+        # one the dialog or an unticked design key switched off is still in
+        # it (#3736). The embedded-settings path slices with the file's own.
+        support_slots = None if embedded_mode else _process_filament_slots(presets["process"], primary_bytes)
+        filament_jsons = substitute_unused_plate_filaments(
+            primary_bytes, request.plate or 1, filament_jsons, support_slots
+        )
+        used_slots = plate_used_slots(primary_bytes, request.plate or 1, support_slots)
 
     # Dual-nozzle printers: which extruder each filament prints from. Without
     # a map the CLI puts every filament on one extruder, so the printer swaps

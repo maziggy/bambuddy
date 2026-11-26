@@ -22,6 +22,7 @@ import { SliceSpoolPicker } from './SliceSpoolPicker';
 import SlicerSettingsPanel, { type FilamentChoice } from './SlicerSettingsPanel';
 import type { DesignOverride, PlateFilament } from '../types/plates';
 import type { SettingValue } from '../types/slicerSettings';
+import { effectiveProcessValues, processFilamentSlots } from '../utils/processFilamentSlots';
 import {
   presetCompatibility,
   buildCompatibilityIndex,
@@ -710,6 +711,15 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
   );
   const embeddedProcess = platesQuery.data?.embedded_process ?? null;
 
+  // Slots the slice's process settings print with beyond the geometry: a
+  // support, interface or region filament picked here, or in the preset or a
+  // ticked design key (#3736). Their profile picker must be open even when the
+  // plate's geometry does not use the slot.
+  const processSlots = useMemo(
+    () => processFilamentSlots(effectiveProcessValues(presetValues, designOverrides, designKeys, processOverrides)),
+    [presetValues, designOverrides, designKeys, processOverrides],
+  );
+
   // "Slice as designed" is offered only when the source carries embedded
   // settings (a real project 3MF, not an STL) AND the picked printer matches
   // the design's target model. The match gate is load-bearing: honouring
@@ -1394,7 +1404,8 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
                   // have to think about slots their plate doesn't
                   // paint with. used_in_plate defaults to true when
                   // missing (sliced 3MFs and the no-flag legacy path).
-                  const isUsed = slot.used_in_plate !== false;
+                  const isUsed =
+                    slot.used_in_plate !== false || (!useEmbedded && processSlots.has(slot.slot_id ?? idx + 1));
                   const baseLabel =
                     filamentSlots.length > 1
                       ? t('slice.filamentSlot', {

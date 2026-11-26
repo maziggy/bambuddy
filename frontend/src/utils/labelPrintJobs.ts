@@ -5,6 +5,7 @@ import {
   MAX_PRINT_TAPE_MM,
   api,
   type DirectPrintLabelsRequest,
+  type DirectPrintProjectLabelsRequest,
   type LabelPrintJob,
 } from '../api/client';
 
@@ -19,6 +20,10 @@ const POLL_INTERVAL_MS = 1000;
 const GIVE_UP_AFTER_MS = 30 * 60 * 1000;
 // Polls that may fail in a row (network blip) before the job is given up on.
 const MAX_POLL_FAILURES = 5;
+
+// What is printed: spool labels of either inventory, or project labels (#3655).
+type PrintSource = 'inventory' | 'spoolman' | 'projects';
+type PrintBody = DirectPrintLabelsRequest | DirectPrintProjectLabelsRequest;
 
 type ShowToast = (message: string, type?: 'success' | 'error' | 'warning' | 'info' | 'loading') => void;
 export interface LabelJobDeps {
@@ -97,7 +102,7 @@ export async function waitForLabelJob(jobId: string, t: TFunction): Promise<Labe
 }
 
 // The print POST, with a reverse proxy's bare 504 (no JSON body) made readable.
-async function postJob(source: 'inventory' | 'spoolman', body: DirectPrintLabelsRequest, t: TFunction) {
+async function postJob(source: PrintSource, body: PrintBody, t: TFunction) {
   try {
     return await api.printLabelsToPrinter(source, body);
   } catch (err) {
@@ -118,7 +123,7 @@ async function postJob(source: 'inventory' | 'spoolman', body: DirectPrintLabels
  * throws if it refused; the returned promise settles with the finished job.
  * Nothing is toasted here.
  */
-async function submit(source: 'inventory' | 'spoolman', body: DirectPrintLabelsRequest, t: TFunction) {
+async function submit(source: PrintSource, body: PrintBody, t: TFunction) {
   const accepted = await postJob(source, body, t);
   return { total: accepted.total, finished: waitForLabelJob(accepted.job_id, t) };
 }
@@ -131,8 +136,8 @@ const printedText = (t: TFunction, count: number) =>
  * refused, for the caller's error toast), then follows it with toasts.
  */
 export async function printLabelsWithToasts(
-  source: 'inventory' | 'spoolman',
-  body: DirectPrintLabelsRequest,
+  source: PrintSource,
+  body: PrintBody,
   { t, showToast }: LabelJobDeps,
 ): Promise<void> {
   const { total, finished } = await submit(source, body, t);

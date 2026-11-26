@@ -5234,6 +5234,7 @@ export default {
       copiesInvalid: '請輸入 1 到 {{max}} 之間的整數。',
       previewInvalid: '請輸入有效數量以查看標籤。',
       singleLabelPage: '每頁列印一張標籤。',
+      directTooLong: '這些標籤需要 {{total}} mm 的標籤帶；一次列印最多 {{max}} mm。請減少標籤數量或使用較短的標籤。',
       pngTooLarge: '需要 {{pages}} 頁。在 {{dpi}} dpi 下，PNG 最多可匯出 {{maxPages}} 頁。請選擇 PDF、降低解析度或減少標籤數量。',
       fields: {
         parent: '上層專案',

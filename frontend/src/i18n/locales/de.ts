@@ -5247,6 +5247,7 @@ export default {
       copiesInvalid: 'Gib eine ganze Zahl von 1 bis {{max}} ein.',
       previewInvalid: 'Gib eine gültige Anzahl ein, um das Etikett zu sehen.',
       singleLabelPage: 'Ein Etikett pro Seite.',
+      directTooLong: 'Diese Etiketten benötigen {{total}} mm Band; pro Druck sind höchstens {{max}} mm möglich. Drucken Sie weniger Etiketten oder ein kürzeres Etikett.',
       pngTooLarge: 'Für diese Etiketten werden {{pages}} Seiten benötigt. Bei {{dpi}} dpi sind im PNG-Format höchstens {{maxPages}} Seiten möglich. Wähle PDF, verringere die Auflösung oder drucke weniger Etiketten.',
       fields: {
         parent: 'Übergeordnetes Projekt',

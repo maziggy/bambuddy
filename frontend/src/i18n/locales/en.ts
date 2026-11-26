@@ -5279,6 +5279,7 @@ export default {
       copiesInvalid: 'Enter a whole number from 1 to {{max}}.',
       previewInvalid: 'Enter a valid quantity to see the label.',
       singleLabelPage: 'One label per page.',
+      directTooLong: 'These labels need {{total}} mm of tape; at most {{max}} mm fit in one print. Print fewer labels or use a shorter label.',
       pngTooLarge: 'This needs {{pages}} sheet pages. At {{dpi}} dpi the PNG limit is {{maxPages}}. Choose PDF, lower the resolution or print fewer labels.',
       fields: {
         parent: 'Parent project',

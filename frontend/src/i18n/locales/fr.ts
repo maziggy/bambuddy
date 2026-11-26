@@ -5235,6 +5235,7 @@ export default {
       copiesInvalid: 'Saisissez un nombre entier de 1 à {{max}}.',
       previewInvalid: 'Saisissez une quantité valide pour voir l\'étiquette.',
       singleLabelPage: 'Une étiquette par page.',
+      directTooLong: "Ces étiquettes nécessitent {{total}} mm de ruban ; une impression accepte au maximum {{max}} mm. Imprimez moins d'étiquettes ou utilisez une étiquette plus courte.",
       pngTooLarge: 'Il faut {{pages}} pages. À {{dpi}} ppp, l’export PNG est limité à {{maxPages}} pages. Choisissez le PDF, réduisez la résolution ou imprimez moins d’étiquettes.',
       fields: {
         parent: 'Projet parent',

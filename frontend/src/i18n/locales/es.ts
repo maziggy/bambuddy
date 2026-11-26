@@ -5249,6 +5249,7 @@ export default {
       copiesInvalid: 'Introduce un número entero de 1 a {{max}}.',
       previewInvalid: 'Introduce una cantidad válida para ver la etiqueta.',
       singleLabelPage: 'Una etiqueta por página.',
+      directTooLong: 'Estas etiquetas necesitan {{total}} mm de cinta; en una impresión caben como máximo {{max}} mm. Imprime menos etiquetas o usa una etiqueta más corta.',
       pngTooLarge: 'Se necesitan {{pages}} páginas. A {{dpi}} ppp, el límite para PNG es de {{maxPages}} páginas. Elige PDF, baja la resolución o imprime menos etiquetas.',
       fields: {
         parent: 'Proyecto principal',

@@ -5236,6 +5236,7 @@ export default {
       copiesInvalid: '1 ile {{max}} arasında bir tam sayı girin.',
       previewInvalid: 'Etiketi görmek için geçerli bir adet girin.',
       singleLabelPage: 'Her sayfaya bir etiket basılır.',
+      directTooLong: 'Bu etiketler {{total}} mm bant gerektiriyor; tek bir baskıya en fazla {{max}} mm sığar. Daha az etiket yazdırın veya daha kısa bir etiket kullanın.',
       pngTooLarge: '{{pages}} sayfa gerekiyor. {{dpi}} dpi çözünürlükte PNG için üst sınır {{maxPages}} sayfadır. PDF seçin, çözünürlüğü düşürün veya daha az etiket yazdırın.',
       fields: {
         parent: 'Üst proje',

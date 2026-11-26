@@ -5234,6 +5234,7 @@ export default {
       copiesInvalid: 'Inserisci un numero intero da 1 a {{max}}.',
       previewInvalid: 'Inserisci una quantità valida per vedere l\'etichetta.',
       singleLabelPage: 'Una sola etichetta per pagina.',
+      directTooLong: "Queste etichette richiedono {{total}} mm di nastro; in una stampa ne stanno al massimo {{max}} mm. Stampa meno etichette o usa un'etichetta più corta.",
       pngTooLarge: 'Servono {{pages}} pagine. A {{dpi}} dpi il limite per il PNG è di {{maxPages}} pagine. Scegli il PDF, riduci la risoluzione o stampa meno etichette.',
       fields: {
         parent: 'Progetto padre',

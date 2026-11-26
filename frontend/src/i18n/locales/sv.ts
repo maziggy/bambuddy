@@ -5309,6 +5309,7 @@ errors: {
       copiesInvalid: 'Ange ett heltal från 1 till {{max}}.',
       previewInvalid: 'Ange ett giltigt antal för att se etiketten.',
       singleLabelPage: 'En etikett per sida.',
+      directTooLong: 'De här etiketterna kräver {{total}} mm tejp; högst {{max}} mm ryms i en utskrift. Skriv ut färre etiketter eller använd en kortare etikett.',
       pngTooLarge: 'Det behövs {{pages}} sidor. Vid {{dpi}} dpi är gränsen för PNG {{maxPages}} sidor. Välj PDF, sänk upplösningen eller skriv ut färre etiketter.',
       fields: {
         parent: 'Överordnat projekt',

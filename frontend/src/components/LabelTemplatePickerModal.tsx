@@ -453,11 +453,12 @@ export function LabelTemplatePickerModal({
   });
   const savedTemplates = useMemo(() => savedQuery.data ?? [], [savedQuery.data]);
   // Direct printing is offered only with a label printer set up (#3612), and
-  // only with inventory:update: a print uses up tape, a download does not.
-  // Spool labels only: a project label (#3655) is downloaded as before.
-  const { data: appSettings } = useUiSettings({ enabled: isOpen && !project });
+  // only with the update permission of what is labelled, inventory:update or
+  // for a project label (#3655) projects:update: a print uses up tape, a
+  // download does not.
+  const { data: appSettings } = useUiSettings({ enabled: isOpen });
   const printerConfigured =
-    !project && hasPermission('inventory:update') && isLabelPrinterConfigured(appSettings);
+    hasPermission(project ? 'projects:update' : 'inventory:update') && isLabelPrinterConfigured(appSettings);
   // ui-flags sends the tape to every user; an older backend omits it, and the
   // server then checks the tape itself.
   const printerTape = printerConfigured ? appSettings?.label_printer_tape || null : null;
@@ -573,10 +574,7 @@ export function LabelTemplatePickerModal({
   const preferredId = savedIdOf(prefs.template);
   const missingOnError = savedQuery.isError && preferredId !== null && !editing &&
     !savedTemplates.some((tpl) => tpl.id === preferredId);
-  // The roll format and direct printing are for spool labels (#3612): a project
-  // label shows the default stock when the roll is the remembered choice.
-  const rollForProject = project !== undefined && prefs.template === 'roll';
-  const template = missingOnError || rollForProject ? DEFAULT_PREFS.template : prefs.template;
+  const template = missingOnError ? DEFAULT_PREFS.template : prefs.template;
   // Spool labels and project labels (#3655) have their own lines to choose from.
   const fieldOptions: readonly string[] = project ? PROJECT_LABEL_FIELDS : SPOOL_LABEL_FIELDS;
   const defaultFields: readonly string[] = project ? DEFAULT_PROJECT_LABEL_FIELDS : DEFAULT_SPOOL_LABEL_FIELDS;
@@ -776,18 +774,23 @@ export function LabelTemplatePickerModal({
   const canPrint = !noSelection && !pending && !directPending && startingPositionIsValid && sheetReady && !pngTooLarge;
   // Only the roll format on the printer's own tape goes to the label printer.
   // One print request is capped in labels and in metres of tape (#3612).
-  const capsProblem = roll ? printCapsProblem(selectedCount, roll.length_mm) : null;
+  const capsProblem = roll ? printCapsProblem(labelCount, roll.length_mm) : null;
+  const tapeNeeded = { total: labelCount * (roll?.length_mm ?? 0), max: MAX_PRINT_TAPE_MM };
+  // A project label's number of labels is typed and never above the cap on
+  // labels, so only the tape can run out.
   const capsHint =
     capsProblem === 'tooMany'
       ? t('inventory.labels.direct.tooMany', 'At most {{max}} labels can be printed at once. Select fewer spools.', {
           max: MAX_PRINT_LABELS_PER_REQUEST,
         })
-      : capsProblem === 'tooLong' && roll
-        ? t(
-            'inventory.labels.direct.tooLong',
-            'These labels need {{total}} mm of tape; at most {{max}} mm fit in one print. Select fewer spools or use a shorter label.',
-            { total: selectedCount * roll.length_mm, max: MAX_PRINT_TAPE_MM },
-          )
+      : capsProblem === 'tooLong'
+        ? project
+          ? t('projectDetail.labels.directTooLong', tapeNeeded)
+          : t(
+              'inventory.labels.direct.tooLong',
+              'These labels need {{total}} mm of tape; at most {{max}} mm fit in one print. Select fewer spools or use a shorter label.',
+              tapeNeeded,
+            )
         : null;
   const canDirectPrint =
     printerConfigured &&
@@ -936,16 +939,27 @@ export function LabelTemplatePickerModal({
   async function handleDirectPrint() {
     if (!canDirectPrint || !roll) return;
     const ids = sortedSpools.filter((s) => selectedIds.has(s.id)).map((s) => s.id);
+    // Always monochrome: the printer prints black on white (#3612).
+    const options = { template: 'roll', roll, monochrome: true } as const;
     setDirectPending(true);
     try {
-      // Always monochrome: the printer prints black on white (#3612).
       // The server takes the job at once; the toasts follow it from here, so
       // the dialog can close.
-      await printLabelsWithToasts(
-        spoolmanMode ? 'spoolman' : 'inventory',
-        { spool_ids: ids, template: 'roll', roll, monochrome: true, fields: fields as SpoolLabelField[] },
-        { t, showToast },
-      );
+      if (project) {
+        // One item per label, as in the download.
+        const item = { project_id: project.id, quantity, note: note || null };
+        await printLabelsWithToasts(
+          'projects',
+          { ...options, items: Array.from({ length: labelCount }, () => item), fields: fields as ProjectLabelField[] },
+          { t, showToast },
+        );
+      } else {
+        await printLabelsWithToasts(
+          spoolmanMode ? 'spoolman' : 'inventory',
+          { ...options, spool_ids: ids, fields: fields as SpoolLabelField[] },
+          { t, showToast },
+        );
+      }
       onClose();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1227,7 +1241,7 @@ export function LabelTemplatePickerModal({
                     {t(`inventory.labels.templates.${opt.i18nKey}.label`, opt.fallbackLabel)}
                   </option>
                 ))}
-                {!project && <option value="roll">{t('inventory.labels.roll.option', 'Roll (label printer tape)')}</option>}
+                <option value="roll">{t('inventory.labels.roll.option', 'Roll (label printer tape)')}</option>
                 {savedTemplates.length > 0 && (
                   <optgroup label={t('inventory.labels.custom.savedGroup', 'Saved templates')}>
                     {savedTemplates.map((tpl) => (

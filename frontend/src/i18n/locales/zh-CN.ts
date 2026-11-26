@@ -5234,6 +5234,7 @@ export default {
       copiesInvalid: '请输入 1 到 {{max}} 之间的整数。',
       previewInvalid: '请输入有效数量以查看标签。',
       singleLabelPage: '每页打印一张标签。',
+      directTooLong: '这些标签需要 {{total}} mm 的标签带；一次打印最多 {{max}} mm。请减少标签数量或使用更短的标签。',
       pngTooLarge: '需要 {{pages}} 页。在 {{dpi}} dpi 下，PNG 最多可导出 {{maxPages}} 页。请选择 PDF、降低分辨率或减少标签数量。',
       fields: {
         parent: '上级项目',

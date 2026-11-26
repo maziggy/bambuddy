@@ -5279,6 +5279,7 @@ export default {
       copiesInvalid: 'Wpisz liczbę całkowitą od 1 do {{max}}.',
       previewInvalid: 'Wpisz prawidłową ilość, aby zobaczyć etykietę.',
       singleLabelPage: 'Jedna etykieta na stronę.',
+      directTooLong: 'Te etykiety wymagają {{total}} mm taśmy; w jednym wydruku mieści się najwyżej {{max}} mm. Wydrukuj mniej etykiet lub użyj krótszej etykiety.',
       pngTooLarge: 'Liczba potrzebnych stron to {{pages}}. Przy {{dpi}} dpi limit dla PNG wynosi {{maxPages}}. Wybierz PDF, zmniejsz rozdzielczość lub wydrukuj mniej etykiet.',
       fields: {
         parent: 'Projekt nadrzędny',

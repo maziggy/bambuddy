@@ -5247,6 +5247,7 @@ export default {
       copiesInvalid: '1〜{{max}}の整数を入力してください。',
       previewInvalid: 'ラベルを表示するには有効な数量を入力してください。',
       singleLabelPage: '1ページにラベルを1枚印刷します。',
+      directTooLong: 'これらのラベルには {{total}} mm のテープが必要ですが、1 回の印刷では最大 {{max}} mm までです。ラベルの枚数を減らすか、短いラベルを使用してください。',
       pngTooLarge: '印刷には{{pages}}ページ必要です。{{dpi}} dpiでPNGに書き出せるのは{{maxPages}}ページまでです。PDFを選ぶか、解像度を下げるか、ラベルの枚数を減らしてください。',
       fields: {
         parent: '親プロジェクト',

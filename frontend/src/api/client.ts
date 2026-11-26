@@ -4335,6 +4335,7 @@ export interface ProjectLabelItem {
 interface ProjectLabelOptions {
   template: SpoolLabelRequestTemplate;
   layout?: LabelSheetLayout | null;
+  roll?: LabelRollSpec;
   monochrome?: boolean;
   fields?: ProjectLabelField[] | null;
 }
@@ -4347,6 +4348,10 @@ export interface PrintProjectLabelsRequest extends ProjectLabelOptions {
 }
 
 export type PreviewProjectLabelRequest = ProjectLabelItem & ProjectLabelOptions;
+
+// Direct print of project labels (#3612): the download body without output
+// format, resolution and starting position, like DirectPrintLabelsRequest.
+export type DirectPrintProjectLabelsRequest = Omit<PrintProjectLabelsRequest, 'format' | 'dpi' | 'starting_position'>;
 
 export interface InventorySpool {
   id: number;
@@ -7834,8 +7839,12 @@ export const api = {
     postForBlob('/inventory/labels', data),
   printSpoolmanSpoolLabels: (data: PrintSpoolLabelsRequest): Promise<Blob> =>
     postForBlob('/spoolman/labels', data),
-  // Send labels straight to the configured label printer (#3612).
-  printLabelsToPrinter: (source: 'inventory' | 'spoolman', data: DirectPrintLabelsRequest) =>
+  // Send labels straight to the configured label printer (#3612): spool
+  // labels of either inventory, or project labels (#3655).
+  printLabelsToPrinter: (
+    source: 'inventory' | 'spoolman' | 'projects',
+    data: DirectPrintLabelsRequest | DirectPrintProjectLabelsRequest,
+  ) =>
     request<LabelPrintJobAccepted>(`/${source}/labels/print`, { method: 'POST', body: JSON.stringify(data) }),
   getLabelPrintJob: (jobId: string) =>
     request<LabelPrintJob>(`/labels/print-jobs/${encodeURIComponent(jobId)}`),

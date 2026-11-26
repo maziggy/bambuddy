@@ -15,6 +15,7 @@ vi.mock('../../api/client', async (importOriginal) => ({
   api: {
     printSpoolLabels: vi.fn(),
     printSpoolmanSpoolLabels: vi.fn(),
+    printProjectLabels: vi.fn(),
     printLabelsToPrinter: vi.fn(),
     getLabelPrintJob: vi.fn(),
     previewSpoolLabel: vi.fn(),
@@ -323,23 +324,157 @@ describe('direct label printing for a user without settings:read (#3612)', () =>
     expect(screen.queryByTestId('label-direct-print-button')).not.toBeInTheDocument();
   });
 
-  it('a project label has no roll format and no Print button, also with roll remembered', async () => {
-    localStorage.setItem('bambuddy-label-print-options', JSON.stringify({ template: 'roll' }));
+});
+
+// Project labels (#3655) print on the label printer like spool labels.
+describe('direct printing of a project label (#3612)', () => {
+  const PROJECT = { id: 7, name: 'Bag', color: null };
+  const openProject = (onClose = vi.fn()) => {
+    render(<LabelTemplatePickerModal isOpen onClose={onClose} project={PROJECT} />);
+    return onClose;
+  };
+
+  beforeEach(() => {
     vi.mocked(api.previewProjectLabel).mockResolvedValue(PNG_BLOB);
-    render(<LabelTemplatePickerModal isOpen onClose={vi.fn()} project={{ id: 7, name: 'Bag', color: null }} />);
+  });
+  afterEach(() => setAuthToken(null));
+
+  it('offers the roll format and previews it in black and white on the printer tape', async () => {
+    openProject();
+    await screen.findByTestId('label-direct-print-button');
+    pickTemplate('roll');
+    expect(screen.getByTestId('label-roll-tape')).toHaveValue('50');
     await waitFor(() =>
-      expect(api.previewProjectLabel).toHaveBeenCalledWith(
-        expect.objectContaining({ project_id: 7, template: 'ams_holder_74x33' }),
+      expect(api.previewProjectLabel).toHaveBeenLastCalledWith(
+        expect.objectContaining({ project_id: 7, template: 'roll', roll: { tape: '50', length_mm: 40 }, monochrome: true }),
         expect.anything(),
       ),
     );
-    expect(vi.mocked(api.previewProjectLabel).mock.calls[0][0]).not.toHaveProperty('roll');
-    expect(screen.getByTestId('label-template-select')).toHaveValue('ams_holder_74x33');
-    expect(screen.queryByRole('option', { name: /Roll/ })).not.toBeInTheDocument();
-    expect(screen.queryByTestId('label-roll-tape')).not.toBeInTheDocument();
+    expect(screen.getByTestId('label-monochrome')).toBeDisabled();
+  });
+
+  it('prints one item per label as a monochrome roll and toasts the count', async () => {
+    acceptJob(3);
+    const onClose = openProject();
+    await screen.findByTestId('label-direct-print-button');
+    pickTemplate('roll');
+    fireEvent.change(screen.getByTestId('project-label-quantity'), { target: { value: '12' } });
+    fireEvent.change(screen.getByTestId('project-label-note'), { target: { value: ' Order 1042 ' } });
+    fireEvent.change(screen.getByTestId('project-label-copies'), { target: { value: '3' } });
+    fireEvent.click(screen.getByTestId('label-direct-print-button'));
+    await waitFor(() => expect(api.printLabelsToPrinter).toHaveBeenCalledTimes(1));
+    const item = { project_id: 7, quantity: 12, note: 'Order 1042' };
+    expect(api.printLabelsToPrinter).toHaveBeenCalledWith('projects', {
+      items: [item, item, item],
+      template: 'roll',
+      roll: { tape: '50', length_mm: 40 },
+      monochrome: true,
+      fields: ['name', 'note', 'due_date', 'color', 'qr', 'quantity'],
+    });
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    await waitFor(() => expect(api.getLabelPrintJob).toHaveBeenCalledWith('j1'));
+    await waitFor(() => expect(mockShowToast).toHaveBeenCalledWith('Printed 3 labels', 'success'));
+    expect(api.printProjectLabels).not.toHaveBeenCalled();
+  });
+
+  it('Print is disabled for a sheet, another tape or a bad quantity', async () => {
+    openProject();
+    const btn = await screen.findByTestId('label-direct-print-button');
+    expect(btn).toBeDisabled(); // the default stock is not a roll
+    expect(screen.getByTestId('label-direct-hint')).toHaveTextContent('50 mm');
+    pickTemplate('roll');
+    expect(btn).toBeEnabled();
+    fireEvent.change(screen.getByTestId('project-label-quantity'), { target: { value: '0' } });
+    expect(btn).toBeDisabled();
+    fireEvent.change(screen.getByTestId('project-label-quantity'), { target: { value: '' } });
+    expect(btn).toBeEnabled();
+    fireEvent.change(screen.getByTestId('label-roll-tape'), { target: { value: '62' } });
+    expect(btn).toBeDisabled();
+    // The other tape can still be downloaded.
+    expect(screen.getByTestId('label-print-button')).toBeEnabled();
+    fireEvent.click(btn);
+    expect(api.printLabelsToPrinter).not.toHaveBeenCalled();
+  });
+
+  it('Print is disabled with a hint when the labels need more tape than one print takes', async () => {
+    openProject();
+    const btn = await screen.findByTestId('label-direct-print-button');
+    pickTemplate('roll');
+    fireEvent.change(screen.getByTestId('label-roll-length'), { target: { value: '200' } });
+    fireEvent.change(screen.getByTestId('project-label-copies'), { target: { value: '21' } });
+    expect(btn).toBeDisabled();
+    expect(screen.getByTestId('label-direct-hint')).toHaveTextContent(
+      'These labels need 4200 mm of tape; at most 4000 mm fit in one print. Print fewer labels or use a shorter label.',
+    );
+    fireEvent.change(screen.getByTestId('project-label-copies'), { target: { value: '20' } });
+    expect(btn).toBeEnabled();
+  });
+
+  it('downloads a roll with the roll in the request', async () => {
+    vi.mocked(api.printProjectLabels).mockResolvedValue(new Blob(['%PDF'], { type: 'application/pdf' }));
+    vi.spyOn(window, 'open').mockImplementation(() => ({}) as Window);
+    openProject();
+    await screen.findByTestId('label-direct-print-button');
+    pickTemplate('roll');
+    fireEvent.click(screen.getByTestId('label-print-button'));
+    await waitFor(() =>
+      expect(api.printProjectLabels).toHaveBeenCalledWith(
+        expect.objectContaining({ template: 'roll', roll: { tape: '50', length_mm: 40 }, format: 'pdf' }),
+      ),
+    );
+    expect(api.printLabelsToPrinter).not.toHaveBeenCalled();
+  });
+
+  it('shows an error toast and stays open when the print is refused', async () => {
+    vi.mocked(api.printLabelsToPrinter).mockRejectedValue(new Error('The printer has 62 mm tape loaded'));
+    const onClose = openProject();
+    await screen.findByTestId('label-direct-print-button');
+    pickTemplate('roll');
+    fireEvent.click(screen.getByTestId('label-direct-print-button'));
+    await waitFor(() =>
+      expect(mockShowToast).toHaveBeenCalledWith('Could not print: The printer has 62 mm tape loaded', 'error'),
+    );
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('has no Print button without a configured label printer, and keeps the roll for the download', async () => {
+    vi.mocked(api.getSettings).mockResolvedValue({ label_printer_type: '', label_printer_host: '' } as never);
+    openProject();
+    await screen.findByTestId('label-print-button');
+    await waitFor(() => expect(api.getSettings).toHaveBeenCalled());
     expect(screen.queryByTestId('label-direct-print-button')).not.toBeInTheDocument();
     expect(screen.queryByTestId('label-direct-hint')).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Roll/ })).toBeInTheDocument();
+  });
+
+  it('has no Print button without projects:update, also with inventory:update', async () => {
+    signIn('stock', ['projects:read', 'inventory:read', 'inventory:update']);
+    openProject();
+    await screen.findByTestId('label-print-button');
+    await waitFor(() => expect(api.getUiSettings).toHaveBeenCalled());
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(screen.queryByTestId('label-direct-print-button')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('label-direct-hint')).not.toBeInTheDocument();
+    // Nothing goes to the printer, so the monochrome option is not locked on.
+    pickTemplate('roll');
+    expect(screen.queryByTestId('label-direct-print-button')).not.toBeInTheDocument();
+    expect(screen.getByTestId('label-monochrome')).toBeEnabled();
     expect(screen.getByTestId('label-print-button')).toBeEnabled();
+  });
+
+  it('has the Print button with projects:update and no inventory permission', async () => {
+    signIn('maker', ['projects:read', 'projects:update']);
+    acceptJob(1);
+    openProject();
+    const btn = await screen.findByTestId('label-direct-print-button');
+    pickTemplate('roll');
+    await waitFor(() => expect(btn).toBeEnabled());
+    fireEvent.click(btn);
+    await waitFor(() =>
+      expect(api.printLabelsToPrinter).toHaveBeenCalledWith('projects', expect.objectContaining({ template: 'roll' })),
+    );
   });
 });
 

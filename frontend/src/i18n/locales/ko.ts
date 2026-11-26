@@ -5047,6 +5047,7 @@ export default {
       copiesInvalid: '1에서 {{max}} 사이의 정수를 입력하세요.',
       previewInvalid: '라벨을 보려면 올바른 수량을 입력하세요.',
       singleLabelPage: '페이지당 라벨 한 장을 인쇄합니다.',
+      directTooLong: '이 라벨에는 테이프 {{total}} mm가 필요하지만 한 번에 최대 {{max}} mm까지 인쇄할 수 있습니다. 라벨 수를 줄이거나 더 짧은 라벨을 사용하세요.',
       pngTooLarge: '{{pages}}페이지가 필요합니다. {{dpi}} dpi에서 PNG로 내보낼 수 있는 최대 페이지 수는 {{maxPages}}입니다. PDF를 선택하거나 해상도를 낮추거나 라벨 수를 줄이세요.',
       fields: {
         parent: '상위 프로젝트',

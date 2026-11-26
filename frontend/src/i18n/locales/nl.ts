@@ -5277,6 +5277,7 @@ export default {
       copiesInvalid: 'Voer een geheel getal van 1 tot {{max}} in.',
       previewInvalid: 'Voer een geldig aantal in om het etiket te zien.',
       singleLabelPage: 'Eén etiket per pagina.',
+      directTooLong: 'Deze labels hebben {{total}} mm tape nodig; per afdruk passen er maximaal {{max}} mm. Druk minder labels af of gebruik een korter label.',
       pngTooLarge: 'Hiervoor zijn {{pages}} pagina’s nodig. Bij {{dpi}} dpi geldt voor PNG een maximum van {{maxPages}} pagina’s. Kies PDF, verlaag de resolutie of druk minder etiketten af.',
       fields: {
         parent: 'Bovenliggend project',

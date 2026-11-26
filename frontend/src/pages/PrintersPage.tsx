@@ -201,7 +201,7 @@ import { PrintModal } from '../components/PrintModal';
 import { PrinterInfoModal } from '../components/PrinterInfoModal';
 import { FeedDirectionModal } from '../components/FeedDirectionModal';
 import { plateCheckFailureText } from '../utils/plateCheck';
-import { ams3hDryerGridColumns, ams3hHasLoadedSlot, ams3hSlotGridPlacement, amsUnitSlotCount, isAms3hUnit, rackExternalLabel, amsHasLoadedTray, getAmsLabel, getEmptySlotKind, getGlobalTrayId, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag, installedNozzleDiameters, isAmsHtUnit, isBambuLabSpool, trayForSlot, resolveSlotNozzleDiameter, resolveSlotExtruder, formatSlotLabel, slotPresetDescribesTray, FTS_INLET_SIDE } from '../utils/amsHelpers';
+import { ams3hDryerGridColumns, ams3hHasLoadedSlot, ams3hSlotGridPlacement, amsUnitSlotCount, isAms3hUnit, rackExternalLabel, amsHasLoadedTray, getAmsLabel, getEmptySlotKind, getGlobalTrayId, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag, installedNozzleDiameters, inventoryFillOverAms, isAmsHtUnit, isBambuLabSpool, trayForSlot, resolveSlotNozzleDiameter, resolveSlotExtruder, formatSlotLabel, slotPresetDescribesTray, FTS_INLET_SIDE } from '../utils/amsHelpers';
 import { RACK_SLOT_COUNT, externalHotend, externalSlotIndex, isExternalTray, layoutAmsType, locateTray, trayLayoutOf } from '../utils/trayIds';
 import { MAX_CHAMBER_TEMP_C, PANDA_BREATH_MAX_TARGET_C, getPrinterImage, getWifiStrength, filterCompatibleQueueItems, isPrinterCurrentlyDispatchable, IDLE_PRINTER_STATES } from '../utils/printer';
 import { FilamentSlotCircle } from '../components/FilamentSlotCircle';
@@ -5947,10 +5947,8 @@ function PrinterCard({
                                   }
                                   return null;
                                 })();
-                                // If inventory says 0% but AMS reports positive remain, prefer AMS
-                                // (inventory weight_used may be stale or over-counted — #676)
-                                const resolvedInventoryFill = (inventoryFill === 0 && hasFillLevel && tray.remain > 0)
-                                  ? null : inventoryFill;
+                                // An RFID spool the AMS still reads filament on wins over an inventory at 0% (#676, #3738)
+                                const resolvedInventoryFill = inventoryFillOverAms(inventoryFill, tray);
                                 const effectiveFill = spoolmanFill ?? slotSpoolFill ?? resolvedInventoryFill ?? (hasFillLevel ? tray.remain : null);
                                 const fillSource = (spoolmanFill !== null || slotSpoolFill !== null) ? 'spoolman' as const
                                   : resolvedInventoryFill !== null ? 'inventory' as const
@@ -6253,9 +6251,8 @@ function PrinterCard({
                           }
                           return null;
                         })();
-                        // If inventory says 0% but AMS reports positive remain, prefer AMS (#676)
-                        const htResolvedInventoryFill = (htInventoryFill === 0 && hasFillLevel && tray.remain > 0)
-                          ? null : htInventoryFill;
+                        // An RFID spool the AMS still reads filament on wins over an inventory at 0% (#676, #3738)
+                        const htResolvedInventoryFill = inventoryFillOverAms(htInventoryFill, tray);
                         // Slot-assigned-only fill (when spool has no NFC tag but is slot-assigned)
                         const htSlotAssignmentForFill = spoolmanEnabled && !spoolmanLoading
                           ? spoolmanSlotAssignments?.find(a => a.printer_id === printer.id && a.ams_id === ams.id && a.tray_id === htSlotId)
@@ -6733,9 +6730,8 @@ function PrinterCard({
                                 return null;
                               })();
                               const extHasFillLevel = extTray.tray_type && extTray.remain >= 0;
-                              // If inventory says 0% but AMS reports positive remain, prefer AMS (#676)
-                              const extResolvedInventoryFill = (extInventoryFill === 0 && extHasFillLevel && extTray.remain > 0)
-                                ? null : extInventoryFill;
+                              // An RFID spool the AMS still reads filament on wins over an inventory at 0% (#676, #3738)
+                              const extResolvedInventoryFill = inventoryFillOverAms(extInventoryFill, extTray);
                               // Slot-assigned-only fill (when spool has no NFC tag but is slot-assigned)
                               const extSlotAssignmentForFill = spoolmanEnabled && !spoolmanLoading
                                 ? spoolmanSlotAssignments?.find(a => a.printer_id === printer.id && a.ams_id === 255 && a.tray_id === slotTrayId)

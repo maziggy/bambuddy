@@ -143,13 +143,15 @@ export function buildLoadedFilaments(
  * Compute AMS mapping for a printer given filament requirements and printer status.
  * This is a non-hook version that can be called imperatively (e.g., in a loop for multiple printers).
  *
- * Priority: unique tray_info_idx match > exact color match > similar color match > type-only match
+ * Priority: tray_info_idx match of the right colour > exact color match > similar color
+ * match > tray_info_idx match of another colour > type-only match
  *
  * The tray_info_idx is a filament type identifier stored in the 3MF file when the user
- * slices (e.g., "GFA00" for generic PLA, "P4d64437" for custom presets). If the same
- * tray_info_idx appears in only ONE available tray, we use that tray. If multiple trays
- * have the same tray_info_idx (e.g., two spools of generic PLA), we fall back to color
- * matching among those trays.
+ * slices (e.g., "GFA00" for generic PLA, "P4d64437" for custom presets). It names the
+ * variant, not the spool, so it only wins when the colour also matches (exact or
+ * similar); a tray of the right variant in another colour ranks below any tray of the
+ * right colour (#3733). With several trays of the same tray_info_idx, colour matching
+ * picks among them.
  *
  * @param filamentReqs - Required filaments from the 3MF file
  * @param printerStatus - Current printer status with AMS information
@@ -363,7 +365,8 @@ export function buildFilamentComparison(
     }
 
     // Auto-match: Find a loaded filament
-    // Priority: unique tray_info_idx match > exact color match > similar color match > type-only match
+    // Priority: tray_info_idx match of the right colour > exact color > similar color >
+    // tray_info_idx match of another colour > type-only (#3733)
     // IMPORTANT: Exclude trays that are already assigned (manually or auto)
     const reqTrayInfoIdx = req.tray_info_idx || '';
 
@@ -394,13 +397,17 @@ export function buildFilamentComparison(
     let exactMatch: LoadedFilament | undefined;
     let similarMatch: LoadedFilament | undefined;
     let typeOnlyMatch: LoadedFilament | undefined;
+    // The right variant in the wrong colour: better than any other colour of the
+    // type, worse than the right colour in another variant (#3733).
+    let idxOtherColour: LoadedFilament | undefined;
 
     // Check if tray_info_idx is unique among available trays
     if (reqTrayInfoIdx) {
       const idxMatches = available.filter((f) => f.trayInfoIdx === reqTrayInfoIdx);
       if (idxMatches.length === 1) {
-        // Unique tray_info_idx - use it as definitive match
-        idxMatch = idxMatches[0];
+        // Unique tray_info_idx - only definitive when the colour matches too
+        if (coloursMatch(idxMatches[0].color, req.color)) idxMatch = idxMatches[0];
+        else idxOtherColour = idxMatches[0];
       } else if (idxMatches.length > 1) {
         // Multiple trays with same tray_info_idx - use color matching among them
         if (preferLowest) {
@@ -424,15 +431,15 @@ export function buildFilamentComparison(
           );
         }
         if (!exactMatch && !similarMatch) {
-          typeOnlyMatch = idxMatches.find(
+          idxOtherColour = idxMatches.find(
             (f) => filamentTypesCompatible(f.type, req.type)
           );
         }
       }
     }
 
-    // If no idx match, do standard type/color matching on all available trays
-    if (!idxMatch && !exactMatch && !similarMatch && !typeOnlyMatch) {
+    // If no idx match of the right colour, do standard type/color matching on all available trays
+    if (!idxMatch && !exactMatch && !similarMatch) {
       exactMatch = available.find(
         (f) =>
           filamentTypesCompatible(f.type, req.type) &&
@@ -445,14 +452,14 @@ export function buildFilamentComparison(
           (f) => f.color,
         );
       }
-      if (!exactMatch && !similarMatch) {
+      if (!exactMatch && !similarMatch && !idxOtherColour) {
         typeOnlyMatch = available.find(
           (f) => filamentTypesCompatible(f.type, req.type)
         );
       }
     }
 
-    const loaded = idxMatch || exactMatch || similarMatch || typeOnlyMatch || undefined;
+    const loaded = idxMatch || exactMatch || similarMatch || idxOtherColour || typeOnlyMatch || undefined;
 
     // Mark this tray as used so it won't be assigned to another slot
     if (loaded) {

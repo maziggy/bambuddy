@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, String, false, func
+from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, String, false, func, true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
@@ -60,6 +60,13 @@ class Printer(Base):
     # Overrides the app setting require_plate_clear for this printer (#2860):
     # True/False gates it or not, null follows the setting.
     require_plate_clear: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Plate changer capacity (#3575): NULL capacity = no plate changer counting.
+    # plates_remaining counts down per print the printer clears itself and is
+    # reset to plate_capacity when the changer is refilled and its bin emptied.
+    plate_capacity: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    plates_remaining: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Show the plate count on the printer card (#3575); an empty changer shows regardless.
+    plate_changer_show_count: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
     # Optional per-printer WLED preset mapping. WLED owns all visual effects.
     wled_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

@@ -2468,6 +2468,88 @@ describe('PrintModal — per-plate filament override in model mode (#2552)', () 
     ]);
   });
 
+  // #3733: a plate or model change cleared every tick without a word, and the
+  // job was queued without force_color_match and printed in any colour.
+  describe('keeps a "Force color match" tick (#3733)', () => {
+    type Queued = {
+      plate_id: number;
+      filament_overrides?: Array<{ slot_id: number; force_color_match: boolean }> | null;
+    };
+    const captureQueue = () => {
+      const queued: Queued[] = [];
+      server.use(
+        http.post('/api/v1/queue/', async ({ request }) => {
+          queued.push((await request.json()) as Queued);
+          return HttpResponse.json({ id: queued.length, status: 'pending' });
+        }),
+      );
+      return queued;
+    };
+    const pickModel = async (user: ReturnType<typeof userEvent.setup>, model: string) => {
+      const modelSelect = await waitFor(() => {
+        const select = screen
+          .getAllByRole('combobox')
+          .find((el) => (el as HTMLSelectElement).options[0]?.value === '' && (el as HTMLSelectElement).options[0]?.text === 'Select a model...');
+        if (!select) throw new Error('target model select not rendered');
+        return select as HTMLSelectElement;
+      });
+      await user.selectOptions(modelSelect, model);
+    };
+    const tickSlot1 = async (user: ReturnType<typeof userEvent.setup>) => {
+      const box = await waitFor(() => {
+        const boxes = screen.getAllByRole('checkbox', { name: /force color match/i });
+        expect(boxes).toHaveLength(1);
+        return boxes[0];
+      });
+      await user.click(box);
+      expect(box).toBeChecked();
+    };
+
+    it('across a plate change', async () => {
+      const queued = captureQueue();
+      const user = userEvent.setup();
+      renderWithCache(
+        <PrintModal mode="create" archiveId={1} archiveName="Two.gcode.3mf" onClose={mockOnClose} />,
+        (qc) => qc.setQueryData(['archive-plates', 1], PLATES),
+      );
+      await waitFor(() => expect(screen.getByText('Plate 2')).toBeInTheDocument());
+      await user.click(screen.getByRole('button', { name: /any model/i }));
+      await pickModel(user, 'X1C');
+      await tickSlot1(user); // plate 1 is auto-selected and prints slot 1
+
+      await user.click(screen.getByText('Plate 2'));
+      await waitFor(() => expect(screen.getByText(/Filament Override — Plate 2/)).toBeInTheDocument());
+      await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+
+      await waitFor(() => expect(queued.length).toBe(2));
+      expect(queued.find((q) => q.plate_id === 1)?.filament_overrides).toEqual([
+        expect.objectContaining({ slot_id: 1, force_color_match: true }),
+      ]);
+    });
+
+    it('across a target model change', async () => {
+      const queued = captureQueue();
+      const user = userEvent.setup();
+      renderWithCache(
+        <PrintModal mode="create" archiveId={1} archiveName="Two.gcode.3mf" onClose={mockOnClose} />,
+        (qc) => qc.setQueryData(['archive-plates', 1], PLATES),
+      );
+      await waitFor(() => expect(screen.getByText('Plate 2')).toBeInTheDocument());
+      await user.click(screen.getByRole('button', { name: /any model/i }));
+      await pickModel(user, 'X1C');
+      await tickSlot1(user);
+
+      await pickModel(user, 'P1S');
+      expect(screen.getByRole('checkbox', { name: /force color match/i })).toBeChecked();
+      await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+
+      await waitFor(() => expect(queued.length).toBe(1));
+      expect(queued[0].filament_overrides).toEqual([
+        expect.objectContaining({ slot_id: 1, force_color_match: true }),
+      ]);
+    });
+  });
+
   // The queue page shows the stored colour name. The same blue is "Marine
   // Blue" in PLA Matte; the plain type "PLA" only reaches the generic name (SN-C9).
   it("stores a forced slot's colour name within its sliced product line", async () => {

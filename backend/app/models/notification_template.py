@@ -118,6 +118,12 @@ DEFAULT_TEMPLATES = [
         "body_template": "{printer}: print finished. Confirm the build plate is clear before the queue continues.",
     },
     {
+        "event_type": "plate_changer_empty",
+        "name": "Plate Changer Empty",
+        "title_template": "Plate Changer Empty",
+        "body_template": "{printer}: all {capacity} plates used. Refill the plate changer and empty its bin, then reset the count on the printer card. The queue sends this printer nothing until then.",
+    },
+    {
         "event_type": "filament_low",
         "name": "Filament Low",
         "title_template": "Filament Low",

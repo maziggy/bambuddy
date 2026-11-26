@@ -492,6 +492,11 @@ export function useWebSocket() {
         debouncedInvalidate('announcements');
         break;
 
+      case 'printer_plates_changed':
+        // A plate changer count moved: a plate was used, or it was refilled (#3575).
+        debouncedInvalidate('printers');
+        break;
+
       case 'printer_locations_changed':
         // A location was created, renamed, restyled or deleted, or printers moved
         // between them (#2962). Every page that shows a printer's location reads

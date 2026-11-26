@@ -3,7 +3,7 @@ import { Link, useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, Save, Loader2, Search, Check, Minus, Shield, AlertTriangle, Printer as PrinterIcon } from 'lucide-react';
-import { api } from '../api/client';
+import { ADMIN_ONLY_PERMISSIONS, api } from '../api/client';
 import type { FilamentRule, FilamentRuleMode, GroupCreate, GroupUpdate, Permission, PermissionCategory } from '../api/client';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
@@ -358,6 +358,11 @@ export function GroupEditPage() {
                         {perm.value === 'websocket:connect' && (
                           <span className="text-xs text-bambu-gray/60">
                             {t('groups.editor.websocketHint')}
+                          </span>
+                        )}
+                        {ADMIN_ONLY_PERMISSIONS.has(perm.value) && (
+                          <span className="text-xs text-bambu-gray/60">
+                            {t('groups.editor.adminOnlyHint')}
                           </span>
                         )}
                       </span>

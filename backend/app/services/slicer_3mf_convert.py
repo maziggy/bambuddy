@@ -312,8 +312,16 @@ def has_manual_plate_filament_map(source_3mf_bytes: bytes) -> bool:
     return any(mode.strip().lower() == "manual" for mode in _PLATE_MAP_MODE.findall(settings))
 
 
-def plate_used_slots(source_3mf_bytes: bytes, plate_id: int | None) -> set[int] | None:
+def plate_used_slots(
+    source_3mf_bytes: bytes, plate_id: int | None, support_slots: set[int] | None = None
+) -> set[int] | None:
     """The 1-indexed filament slots ``plate_id`` prints with, or ``None`` when unknown.
+
+    ``support_slots`` are the support / support-interface slots of the process
+    settings the slice runs with. A caller that knows them passes them: a slot
+    picked in the slice dialog is in no file, and a support slot the dialog
+    switched off is still in the file (#3736). ``None`` reads them from the
+    3MF's own ``project_settings.config``.
 
     ``None`` means "treat every slot as used": ``plate_id`` is not a real
     plate (``None``, or ``0`` for slice-all, see below), the source is not a
@@ -339,14 +347,22 @@ def plate_used_slots(source_3mf_bytes: bytes, plate_id: int | None) -> set[int] 
             # attached to object geometry so the geometry pass alone
             # misses PVA-in-support-slot setups (#1881).
             used = extract_plate_extruder_set_from_3mf(zf, plate_id)
-            used |= extract_support_filament_slots_from_3mf(zf)
+            if support_slots is None:
+                support_slots = extract_support_filament_slots_from_3mf(zf)
     except (zipfile.BadZipFile, OSError) as exc:
         logger.warning("Plate-filament parse failed (%s); leaving filament list unchanged", exc)
         return None
-    return used or None
+    # No geometry means "every slot is used". The support slots must not turn
+    # that into "only the support slot is used", which would rewrite the
+    # model's own filament to the support material.
+    if not used:
+        return None
+    return used | support_slots
 
 
-def substitute_unused_plate_filaments(source_3mf_bytes: bytes, plate_id: int | None, items: list[str]) -> list[str]:
+def substitute_unused_plate_filaments(
+    source_3mf_bytes: bytes, plate_id: int | None, items: list[str], support_slots: set[int] | None = None
+) -> list[str]:
     """Replace any filament-list entry whose 1-indexed slot isn't used by
     ``plate_id`` with the entry from the plate's lowest *used* slot.
 
@@ -397,7 +413,7 @@ def substitute_unused_plate_filaments(source_3mf_bytes: bytes, plate_id: int | N
     """
     if len(items) < 2:
         return items
-    used = plate_used_slots(source_3mf_bytes, plate_id)
+    used = plate_used_slots(source_3mf_bytes, plate_id, support_slots)
     if used is None:
         return items
     out = list(items)

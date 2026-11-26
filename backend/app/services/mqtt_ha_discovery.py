@@ -41,7 +41,7 @@ _SPEED_LEVELS = {1: "silent", 2: "standard", 3: "sport", 4: "ludicrous"}
 # Models with a door sensor (home_flag bit 23), as PrinterState.door_open names
 # them. Elsewhere door_open is always False, and a door that never opens is
 # worse than no entity.
-_DOOR_SENSOR_MODELS = {"X1", "X1C", "X1E", "X2D", "P2S"}
+_DOOR_SENSOR_MODELS = {"X1", "X1C", "X1E", "X2D", "P2S", "P3C", "N11"}
 _DOOR_SENSOR_MODEL_PREFIXES = ("H2",)
 
 # The unit's model, from its AMS type (bits 0-3 of ``info``, see utils/tray_ids)
@@ -53,8 +53,16 @@ _AMS_MODELS_BY_TYPE = {
     AmsType.N3S: "AMS HT",
     AmsType.AMS_LITE_MIXED: "AMS Lite",
     AmsType.ZMULTI_A: "AMS 3H",
+    AmsType.ZMULTI_B: "AMS 3P",
 }
-_AMS_MODELS_BY_MODULE = {"ams": "AMS", "ams_f1": "AMS Lite", "n3f": "AMS 2 Pro", "n3s": "AMS HT", "n10a": "AMS 3H"}
+_AMS_MODELS_BY_MODULE = {
+    "ams": "AMS",
+    "ams_f1": "AMS Lite",
+    "n3f": "AMS 2 Pro",
+    "n3s": "AMS HT",
+    "n10a": "AMS 3H",
+    "n11a": "AMS 3P",
+}
 # Units with a dryer: only they count a drying time down.
 _AMS_DRYER_MODELS = {"AMS 2 Pro", "AMS HT"}
 # The AMS Lite has no humidity or temperature sensor.
@@ -426,18 +434,18 @@ def build_printer_config(
 
 
 def ams_unit_name(unit: dict) -> str:
-    """The unit as the printer and the slicer count it: AMS 1, AMS HT 1, or AMS 3H."""
+    """The unit as the printer and the slicer count it: AMS 1, AMS HT 1, AMS 3H or AMS 3P."""
     ams_id = int(unit.get("id", 0))
     if unit.get("is_ams_ht"):
         return f"AMS HT {ams_id - 127}"
-    if ams_model(unit) == "AMS 3H":
-        # The H3C's one rack unit, reported as unit 32.
-        return "AMS 3H"
+    if ams_model(unit) in ("AMS 3H", "AMS 3P"):
+        # The one rack unit of the H3C (unit 32) or the P3C (unit 33).
+        return ams_model(unit)
     return f"AMS {ams_id + 1}"
 
 
 def ams_model(unit: dict) -> str:
-    """The unit's model as Bambu Lab names it: "AMS", "AMS Lite", "AMS 2 Pro", "AMS HT", "AMS 3H"."""
+    """The unit's model as Bambu Lab names it: "AMS", "AMS Lite", "AMS 2 Pro", "AMS HT", "AMS 3H", "AMS 3P"."""
     if unit.get("is_ams_ht"):
         return "AMS HT"
     module = str(unit.get("module_type") or "").lower()

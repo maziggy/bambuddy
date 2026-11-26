@@ -6,7 +6,7 @@ import { api, type InventorySpool, type PrinterStatus, type AMSTray } from '../.
 import { ConfirmModal } from '../ConfirmModal';
 import { AmsUnitCard, NozzleBadge } from './AmsUnitCard';
 import type { AmsThresholds } from './AmsUnitCard';
-import { getFillBarColor, inventoryFillOverAms, isAms3hUnit, isAmsHtUnit, rackExternalLabel, spoolBuddyAmsName } from '../../utils/amsHelpers';
+import { getFillBarColor, inventoryFillOverAms, isAms3hUnit, isAms3pUnit, isAmsHtUnit, rackExternalLabel, spoolBuddyAmsName } from '../../utils/amsHelpers';
 import { EXTERNAL_AMS_ID, externalSlotIndex, externalTrayId, isRackAms, layoutAmsType, trayLayoutOf } from '../../utils/trayIds';
 import { getSwatchStyle, resolveSpoolColorName } from '../../utils/colors';
 import { spoolSwatchStyle } from './spoolPaint';
@@ -633,8 +633,8 @@ export function AssignToAmsModal({
               {regularAms.length > 0 && (
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
                   {regularAms.map((unit) => (
-                    // The AMS 3H takes the full width for its nine slots.
-                    <div key={unit.id} className={isAms3hUnit(unit) ? 'xl:col-span-2' : 'contents'}>
+                    // A rack AMS takes the full width: the AMS 3H's nine slots, the AMS 3P's seven.
+                    <div key={unit.id} className={isAms3hUnit(unit) || isAms3pUnit(unit) ? 'xl:col-span-2' : 'contents'}>
                     <AmsUnitCard
                       unit={unit}
                       activeSlot={

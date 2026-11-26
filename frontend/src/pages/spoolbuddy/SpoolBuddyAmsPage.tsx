@@ -6,7 +6,7 @@ import { Layers, Settings2, Package, Unlink, Link2, X } from 'lucide-react';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
 import { api } from '../../api/client';
 import type { PrinterStatus, AMSTray, SpoolAssignment } from '../../api/client';
-import { getGlobalTrayId, getEmptySlotKind, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag, formatSlotLabel, isAms3hUnit, inventoryFillOverAms, isAmsHtUnit, isBambuLabSpool, rackExternalLabel, resolveSlotNozzleDiameter, slotPresetDescribesTray, spoolBuddyAmsName } from '../../utils/amsHelpers';
+import { getGlobalTrayId, getEmptySlotKind, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag, formatSlotLabel, isAms3hUnit, isAms3pUnit, inventoryFillOverAms, isAmsHtUnit, isBambuLabSpool, rackExternalLabel, resolveSlotNozzleDiameter, slotPresetDescribesTray, spoolBuddyAmsName } from '../../utils/amsHelpers';
 import { externalSlotIndex, isRackAms, layoutAmsType, locateTray, trayLayoutOf } from '../../utils/trayIds';
 import { getSwatchStyle, resolveSpoolColorName } from '../../utils/colors';
 import { mapModelCode } from '../../utils/printerModel';
@@ -595,8 +595,8 @@ export function SpoolBuddyAmsPage() {
             {/* Regular AMS cards — 4-slot, 2-col grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {regularAms.map((unit) => (
-                // The AMS 3H takes the full width for its nine slots.
-                <div key={unit.id} className={isAms3hUnit(unit) ? 'md:col-span-2' : 'contents'}>
+                // A rack AMS takes the full width: the AMS 3H's nine slots, the AMS 3P's seven.
+                <div key={unit.id} className={isAms3hUnit(unit) || isAms3pUnit(unit) ? 'md:col-span-2' : 'contents'}>
                 <AmsUnitCard
                   unit={unit}
                   activeSlot={getActiveSlotForAms(unit.id)}

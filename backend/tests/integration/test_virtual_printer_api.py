@@ -751,6 +751,14 @@ class TestVirtualPrinterSerialSurface:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_the_list_offers_the_p3c(self, async_client: AsyncClient):
+        body = (await async_client.get("/api/v1/virtual-printers")).json()
+
+        assert body["models"]["N11"] == "P3C"
+        assert body["model_serial_prefixes"]["N11"] == "331"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_non_proxy_vp_keeps_self_generated_serial(self, async_client: AsyncClient, printer_factory):
         # Even with a target printer set (#1429 access-code inheritance flow),
         # archive / queue / review VPs are NOT bridging the target's identity

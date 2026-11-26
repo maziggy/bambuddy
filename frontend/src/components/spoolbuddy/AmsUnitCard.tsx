@@ -276,7 +276,7 @@ export function AmsUnitCard({ unit, activeSlot, onConfigureSlot, isDualNozzle, n
       </div>
 
       {/* Slots grid */}
-      <div className={`grid ${isHt ? 'grid-cols-1 max-w-[100px] mx-auto' : isAms3h ? 'grid-cols-5 md:grid-cols-9' : 'grid-cols-4'} gap-2`}>
+      <div className={`grid ${isHt ? 'grid-cols-1 max-w-[100px] mx-auto' : isAms3h ? 'grid-cols-5 md:grid-cols-9' : slotCount === 7 ? 'grid-cols-4 md:grid-cols-7' : 'grid-cols-4'} gap-2`}>
         {Array.from({ length: slotCount }).map((_, i) => {
           const tray = trays[i] || {
             id: i,

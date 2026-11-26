@@ -153,6 +153,10 @@ export interface FilamentOption {
   isCustom: boolean;
   allCodes: string[];
   source: FilamentOptionSource;
+  // Imported presets only: the slicer's own list of printer presets this one
+  // is for ("Bambu Lab A1 0.2 nozzle"). Decides which model and nozzle rows of
+  // the spool's Printers tab offer it (#3731).
+  compatiblePrinters?: string[];
 }
 
 // Color preset

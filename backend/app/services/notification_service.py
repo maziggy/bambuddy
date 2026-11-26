@@ -46,6 +46,13 @@ DIGEST_RETRY_HOURS = 48
 # bot signature for upstream WAFs.
 _USER_AGENT = "Bambuddy/1.0 (+https://github.com/maziggy/bambuddy)"
 
+# Body of the Plate Changer Empty notification when the plate count could not be
+# saved (#3575). It replaces the event's body template, which says the plates are used up.
+PLATE_COUNT_UNKNOWN_BODY = (
+    "{printer}: the plate count could not be saved. Check the plate changer and reset the count "
+    "on the printer card. The queue sends this printer nothing until then."
+)
+
 # Appended to a Telegram outcome prompt in reaction mode (#3046); the message
 # itself carries no buttons there, so the user needs telling how to answer.
 TELEGRAM_REACTION_HINT = "React with \U0001f44d or \U0001f44e to record the outcome."
@@ -2367,6 +2374,45 @@ class NotificationService:
             message,
             db,
             "plate_clear_required",
+            printer_id,
+            printer_name,
+            variables=variables,
+        )
+
+    async def on_plate_changer_empty(
+        self,
+        printer_id: int,
+        printer_name: str,
+        capacity: int,
+        db: AsyncSession,
+        count_unknown: bool = False,
+    ):
+        """Handle plate-changer-empty event — the last plate was used (#3575).
+
+        Fires once, on the edge to zero: from then on the queue sends the printer
+        nothing until someone refills the plate changer and empties its bin.
+
+        ``count_unknown`` is the other way a printer gets here: its count could
+        not be saved, so it is treated as empty. The event's body template, the
+        default one or an edited one, describes a used-up plate changer and would
+        send someone to refill a full one, so that case has its own body. The
+        title still comes from the template.
+        """
+        providers = await self._get_providers_for_event(db, "on_plate_changer_empty", printer_id)
+        if not providers:
+            return
+
+        variables = {"printer": printer_name, "capacity": str(capacity)}
+
+        title, message = await self._build_message_from_template(db, "plate_changer_empty", variables)
+        if count_unknown:
+            message = self._render_template(PLATE_COUNT_UNKNOWN_BODY, variables)
+        await self._send_to_providers(
+            providers,
+            title,
+            message,
+            db,
+            "plate_changer_empty",
             printer_id,
             printer_name,
             variables=variables,

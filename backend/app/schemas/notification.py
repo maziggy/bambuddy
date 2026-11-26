@@ -107,6 +107,9 @@ class NotificationProviderBase(BaseModel):
     on_plate_clear_required: bool = Field(
         default=False, description="Notify when a finished print is waiting for plate-clear confirmation"
     )
+    on_plate_changer_empty: bool = Field(
+        default=True, description="Notify when a printer's plate changer has used its last plate"
+    )
 
     # Event triggers - Post-print outcome confirmation (#1898)
     on_print_confirm_request: bool = Field(
@@ -238,6 +241,7 @@ class NotificationProviderUpdate(IgnoresNullForRequiredColumns):
     # Event triggers - Build plate detection
     on_plate_not_empty: bool | None = None
     on_plate_clear_required: bool | None = None
+    on_plate_changer_empty: bool | None = None
 
     # Event triggers - Post-print outcome confirmation (#1898)
     on_print_confirm_request: bool | None = None

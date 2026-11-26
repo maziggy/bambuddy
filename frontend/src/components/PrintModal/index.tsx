@@ -1030,8 +1030,18 @@ export function PrintModal({
     if (modelChanged && !plateChanged && prevTargetModel === null) return;
     if (mode !== 'edit-queue-item' || prevTargetModel !== null) {
       setFilamentOverrides({});
-      setForceColorMatch({});
-      autoForcedSlots.current.clear();
+      // A tick the user set stays: slot ids are global to the file and the tick
+      // does not depend on the model, so clearing it silently queued the job
+      // without it (#3733). A tick an inventory pick set goes with that pick.
+      const autoForced = autoForcedSlots.current;
+      if (autoForced.size > 0) {
+        setForceColorMatch((prev) => {
+          const next = { ...prev };
+          for (const slotId of autoForced) delete next[slotId];
+          return next;
+        });
+      }
+      autoForcedSlots.current = new Set();
     }
   }, [targetModel, selectedPlate, prevTargetModel, prevPlateForOverrides, mode]);
 

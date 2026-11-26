@@ -282,14 +282,17 @@ describe('SettingsPage users & groups wiring', () => {
     expect(writes()[0]).toMatchObject({ method: 'POST', path: '/api/v1/auth/reset-password', body: { user_id: 2 } });
   });
 
-  it('without create/delete permissions there is no add-user, delete-user, delete-group or disable-auth button', async () => {
+  it('a non-admin gets no add, edit or delete button for users and groups, nor disable-auth, even holding the write permissions (#3729)', async () => {
     meIsAdmin = false;
-    mePermissions = ['settings:read', 'users:read', 'users:update', 'groups:read'];
+    mePermissions = [
+      'settings:read', 'users:read', 'users:create', 'users:update', 'users:delete',
+      'groups:read', 'groups:create', 'groups:update', 'groups:delete',
+    ];
     await openUsersTab();
 
     expect(screen.queryByRole('button', { name: /add user/i })).not.toBeInTheDocument();
-    // Edit only
-    expect(within(userRow('bob')).getAllByRole('button')).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: /add group/i })).not.toBeInTheDocument();
+    expect(within(userRow('bob')).queryAllByRole('button')).toHaveLength(0);
     expect(within(groupRow('Night shift')).queryAllByRole('button')).toHaveLength(0);
     expect(screen.queryByRole('button', { name: /^disable$/i })).not.toBeInTheDocument();
   });

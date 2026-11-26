@@ -1766,13 +1766,12 @@ class TestMissingForceColours:
         scheduler = PrintScheduler()
 
         def missing_slots(pid, overrides, raw=None):
-            return ["PLA (Red)"]
+            return [("PLA (Red)", self.RED)]
 
         with (
             patch("backend.app.services.print_scheduler.printer_manager.is_connected", MagicMock(return_value=True)),
             patch.object(scheduler, "_is_printer_idle", MagicMock(return_value=True)),
-            patch.object(scheduler, "_get_missing_force_color_slots", MagicMock(side_effect=missing_slots)),
-            patch.object(scheduler, "_missing_force_color_overrides", MagicMock(return_value=[self.RED])),
+            patch.object(scheduler, "_missing_force_color_pairs", MagicMock(side_effect=missing_slots)),
         ):
             async with ctx.session_maker() as db:
                 printer_id, reason = await scheduler._find_idle_printer_for_model(

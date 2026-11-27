@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 from backend.app.models.spool import Spool
 from backend.app.services.slicer_filament_resolver import realign_builtin_filament_id
-from backend.app.utils.color_utils import color6_key
+from backend.app.utils.color_utils import forced_colors_match
 from backend.app.utils.filament_ids import GENERIC_FILAMENT_IDS, normalize_slicer_filament
 from backend.app.utils.filament_types import (
     canonical_filament_type,
@@ -92,6 +92,6 @@ def identity_matches(
     """The scheduler's forced-override match: type, colour, and idx when both set."""
     if canonical_filament_type(a_type) != canonical_filament_type(b_type):
         return False
-    if color6_key(a_color) != color6_key(b_color):
+    if not forced_colors_match(a_color, b_color):
         return False
     return not (a_idx and b_idx and a_idx != b_idx)

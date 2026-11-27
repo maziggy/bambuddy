@@ -12,13 +12,13 @@ import json
 import logging
 import re
 import time
-from contextlib import asynccontextmanager, nullcontext
+from contextlib import asynccontextmanager
 from datetime import datetime
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
-from sqlalchemy import delete, select, text, tuple_, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -66,8 +66,7 @@ from backend.app.schemas.spoolman import (
     check_slot_tray_id,
 )
 from backend.app.schemas.supplier import SpoolSupplierLinkInput
-from backend.app.services import filament_profile_default as profile_defaults, slot_unlink_grace, spool_swaps
-from backend.app.services.ams_assignment_lock import get_spool_move_lock
+from backend.app.services import filament_profile_default as profile_defaults
 from backend.app.services.location_service import (
     enrich_spool_dicts_with_location_id,
     maybe_sync_spoolman_locations,
@@ -75,6 +74,7 @@ from backend.app.services.location_service import (
 )
 from backend.app.services.printer_manager import PrinterManager, printer_manager
 from backend.app.services.slicer_filament_resolver import resolve_slicer_filament, reusable_slot_filament_id
+from backend.app.services.slot_assignment import assign_spoolman_spool
 from backend.app.services.slot_nozzle import resolve_slot_nozzle
 from backend.app.services.spool_filament_preset import forget_spoolman_spool_own_preset, resolve_spoolman_preset
 from backend.app.services.spoolman import (
@@ -2246,165 +2246,27 @@ async def assign_spoolman_slot(
 
     client = await _get_client(db)
     printer_scope.ensure(body.printer_id)
-    result = await db.execute(select(Printer).where(Printer.id == body.printer_id))
-    printer = result.scalar_one_or_none()
-    if not printer:
-        raise HTTPException(status_code=404, detail="Printer not found")
-
-    # Verify the Spoolman spool exists before committing to local DB.
-    # This prevents ghost rows pointing at non-existent spool IDs.
-    async with _translate_spoolman_errors():
-        spool = await client.get_spool(body.spoolman_spool_id)
-    # As the built-in inventory refuses it: an archived spool on a slot would
-    # be charged the next print's usage (SSA-8).
-    if spool.get("archived"):
-        raise HTTPException(status_code=400, detail="Cannot assign an archived spool")
-
-    # A move (#1574) takes the spool out of every other slot it holds, in the
-    # same commit as the upsert below, so a failed move leaves it where it was
-    # instead of in no slot. Its fallback tag for a slot it leaves is cleared
-    # first. Moves of one spool take turns (get_spool_move_lock): on PostgreSQL
-    # a move's DELETE doesn't see the slot another move inserts and commits
-    # after it began, and both left the spool assigned. A slot on a printer
-    # outside the caller's scope stays assigned, as unassigning leaves it
-    # (#1727).
-    # Whether the configuration below can reach the printer, decided before the
-    # upsert so a slot that cannot is marked pending in the same commit (#3771).
-    # The publish itself has the last word; a printer that connects or drops in
-    # between is put right after it.
-    assign_client = printer_manager.get_client(body.printer_id)
-    expect_offline = assign_client is None or not getattr(getattr(assign_client, "state", None), "connected", False)
-    target = (body.printer_id, body.ams_id, body.tray_id)
-    slot_columns = (SpoolmanSlotAssignment.printer_id, SpoolmanSlotAssignment.ams_id, SpoolmanSlotAssignment.tray_id)
-    others = [SpoolmanSlotAssignment.spoolman_spool_id == body.spoolman_spool_id, tuple_(*slot_columns) != target]
-    if (in_scope := printer_scope.where_strict(SpoolmanSlotAssignment.printer_id)) is not None:
-        others.append(in_scope)
-    vacated: list[tuple[int, int, int]] = []
-    cleared_tag: str | None = None
-    async with get_spool_move_lock("spoolman", body.spoolman_spool_id) if body.move else nullcontext():
-        if body.move:
-            vacated = list((await db.execute(select(*slot_columns).where(*others))).tuples())
-            cleared_tag = await _clear_vacated_slot_fallback_tag(
-                client, db, spool_id=body.spoolman_spool_id, spool=spool, vacated=vacated
-            )
-
-        # Spool confirmed in Spoolman — upsert into local slot-assignment table
-        # assigned_at is intentionally not refreshed on re-assign (original timestamp preserved)
-        try:
-            if body.move:
-                # Every other slot of the spool, not only those read above: a
-                # link or the AMS sync may have given it one more meanwhile.
-                result = await db.execute(delete(SpoolmanSlotAssignment).where(*others).returning(*slot_columns))
-                vacated = list(result.tuples())
-            await db.execute(
-                # A new assign replaces whatever was pending for the slot
-                # with its own state (#3771).
-                text(
-                    "INSERT INTO spoolman_slot_assignments"
-                    " (printer_id, ams_id, tray_id, spoolman_spool_id, pending_config, assigned_by_user_id)"
-                    " VALUES (:printer_id, :ams_id, :tray_id, :spool_id, :pending, :user_id)"
-                    " ON CONFLICT(printer_id, ams_id, tray_id)"
-                    " DO UPDATE SET spoolman_spool_id = excluded.spoolman_spool_id,"
-                    " pending_config = excluded.pending_config, assigned_by_user_id = excluded.assigned_by_user_id"
-                ),
-                {
-                    "printer_id": body.printer_id,
-                    "ams_id": body.ams_id,
-                    "tray_id": body.tray_id,
-                    "spool_id": body.spoolman_spool_id,
-                    "user_id": current_user.id if current_user is not None else None,
-                    "pending": expect_offline,
-                },
-            )
-            await spool_swaps.record_assignment(
-                db, body.printer_id, body.ams_id, body.tray_id, body.spoolman_spool_id, spool_swaps.SPOOLMAN
-            )
-            await db.commit()
-            slot_unlink_grace.forget_slot(body.printer_id, body.ams_id, body.tray_id)
-        except Exception as exc:
-            await db.rollback()
-            logger.error("Failed to persist slot assignment: %s", exc)
-            if cleared_tag:
-                # The spool stays in its old slot, so it gets that slot's tag back.
-                try:
-                    await client.merge_spool_extra(body.spoolman_spool_id, {"tag": json.dumps(cleared_tag)})
-                except (SpoolmanClientError, SpoolmanUnavailableError, SpoolmanNotFoundError) as restore_exc:
-                    logger.warning(
-                        "Could not put back the fallback tag of Spoolman spool %s: %s",
-                        body.spoolman_spool_id,
-                        restore_exc,
-                    )
-            raise HTTPException(status_code=500, detail="Failed to save slot assignment") from exc
-    if vacated:
-        logger.info(
-            "Moved Spoolman spool %d to printer %d AMS%d-T%d from %s",
-            body.spoolman_spool_id,
-            body.printer_id,
-            body.ams_id,
-            body.tray_id,
-            ", ".join(f"printer {p} AMS{a}-T{t}" for p, a, t in vacated),
-        )
-    # #1457: clear stale fallback-tag links on OTHER spools still bound to this
-    # slot. Without this, a non-RFID slot's deterministic fallback tag stays
-    # attached to the previous spool in Spoolman's extra.tag and re-surfaces in
-    # the hover card whenever the local slot assignment is removed.
-    if printer.serial_number:
-        await _clear_stale_slot_fallback_tag_links(
-            client,
-            printer_serial=printer.serial_number,
-            ams_id=body.ams_id,
-            tray_id=body.tray_id,
-            keep_spool_id=body.spoolman_spool_id,
-        )
-
-    # Other tabs and the SpoolBuddy kiosk follow slot changes over the
-    # websocket, as the built-in assign announces them: the slots the spool
-    # left, and the one it went to. After the tag clean-up above, which the
-    # pages read back with the slot rows (#3402).
-    await _announce_freed_slots([*vacated, target])
-
-    mapped = _map_spoolman_spool(spool)
-
-    # Auto-configure AMS slot via MQTT (best-effort; slot assignment is already persisted)
-    configured = False
-    raised = False
-    try:
-        configured = await apply_spoolman_spool_to_slot(
-            db,
-            current_user=current_user,
-            mapped=mapped,
-            spoolman_spool_id=body.spoolman_spool_id,
-            printer_id=body.printer_id,
-            ams_id=body.ams_id,
-            tray_id=body.tray_id,
-        )
-    except Exception:
-        raised = True
-        logger.exception(
-            "Failed to auto-configure AMS slot for Spoolman spool %d (printer=%d, ams=%d, tray=%d)",
-            body.spoolman_spool_id,
-            body.printer_id,
-            body.ams_id,
-            body.tray_id,
-        )
-    # Nothing reached a printer that is offline: the slot is configured on its
-    # first AMS report once it is back (main._replay_spoolman_pending_configs,
-    # #3771). Not after a failure that raised, which may have sent part of it
-    # and would raise again on every report.
-    printer_offline = not configured and not raised
-    if printer_offline != expect_offline:
-        await db.execute(
-            update(SpoolmanSlotAssignment)
-            .where(
-                SpoolmanSlotAssignment.printer_id == body.printer_id,
-                SpoolmanSlotAssignment.ams_id == body.ams_id,
-                SpoolmanSlotAssignment.tray_id == body.tray_id,
-                SpoolmanSlotAssignment.spoolman_spool_id == body.spoolman_spool_id,
-            )
-            .values(pending_config=printer_offline)
-        )
-        await db.commit()
-    return {**mapped, "configured": configured, "pending_config": printer_offline, "printer_offline": printer_offline}
+    outcome = await assign_spoolman_spool(
+        db,
+        client,
+        spoolman_spool_id=body.spoolman_spool_id,
+        printer_id=body.printer_id,
+        ams_id=body.ams_id,
+        tray_id=body.tray_id,
+        move=body.move,
+        printer_scope=printer_scope,
+        current_user=current_user,
+        printer_manager=printer_manager,
+        ws_manager=ws_manager,
+        clear_vacated_fallback_tag=_clear_vacated_slot_fallback_tag,
+        apply_to_slot=apply_spoolman_spool_to_slot,
+    )
+    return {
+        **outcome.mapped,
+        "configured": outcome.configured,
+        "pending_config": outcome.printer_offline,
+        "printer_offline": outcome.printer_offline,
+    }
 
 
 @router.delete("/slot-assignments/{spoolman_spool_id}")

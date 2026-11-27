@@ -8,6 +8,8 @@ import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
 import { InstallAppButton } from './InstallAppButton';
 import { SwitchbarPopover } from './SwitchbarPopover';
 import { CameraLauncher } from './CameraLauncher';
+import { QueueTodoLauncher } from './QueueTodoLauncher';
+import { useQueueTodoAutoRefresh } from '../hooks/useQueueTodo';
 import { useQuery, useQueries } from '@tanstack/react-query';
 import { api, supportApi, pendingUploadsApi, type Permission } from '../api/client';
 import { getIconByName } from './IconPicker';
@@ -289,6 +291,7 @@ export function Layout() {
     refetchOnWindowFocus: true,
   });
   const pendingQueueCount = queueItems?.length ?? 0;
+  useQueueTodoAutoRefresh(); // #3615: the to-do list follows the queue poll
 
   // Fetch pending uploads count for archive badge (virtual printer review items)
   const { data: pendingUploadsData } = useQuery({
@@ -635,7 +638,9 @@ export function Layout() {
             className="h-8 ml-3"
           />
           {/* A camera from any page (#2737), beside the bug report. */}
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center">
+            {/* What the queue waits on (#3615) */}
+            <QueueTodoLauncher />
             <CameraLauncher placement="down" open={cameraListOpen} onOpenChange={setCameraListOpen} />
           </div>
           {/* Bug report — the compact-layout home of the floating bubble. */}
@@ -834,9 +839,10 @@ export function Layout() {
         <div className="flex-shrink-0 p-2 border-t border-bambu-dark-tertiary">
           {isSidebarCompact || sidebarExpanded ? (
             <div className="flex flex-col gap-2">
-              {/* Top row: icons. 32px each with no gap so seven fit the 239px
-                  of an expanded sidebar -- announcements, System, GitHub,
-                  shortcuts, theme, account, logout -- without wrapping. */}
+              {/* Top row: icons, 32px each with no gap. Up to eight (to do,
+                  announcements, System, GitHub, shortcuts, theme, account,
+                  logout) can exceed the 239px of an expanded sidebar; the row
+                  wraps onto a second line then. */}
               <div className="flex items-center justify-center flex-wrap [&>a]:p-1.5 [&>button]:p-1.5 [&>span]:p-1.5 [&>div>button]:p-1.5">
                 {hasSwitchbarPlugs && (
                   <div className="relative">
@@ -854,6 +860,7 @@ export function Layout() {
                     )}
                   </div>
                 )}
+                {!isSidebarCompact && <QueueTodoLauncher sidebarExpanded />}
                 {announcementsVisible && (
                   <button
                     onClick={() => openAnnouncements()}
@@ -974,6 +981,7 @@ export function Layout() {
                   )}
                 </div>
               )}
+              <QueueTodoLauncher sidebarExpanded={sidebarExpanded} />
               {announcementsVisible && (
                 <button
                   onClick={() => openAnnouncements()}

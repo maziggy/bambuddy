@@ -6150,6 +6150,9 @@ export default {
       showAll: 'Mostrar todos los colores',
       showMatching: 'Mostrar solo los que coinciden',
       allBrand: 'Todos los colores de {{brand}}',
+      sortBy: 'Ordenar colores del catálogo',
+      sortByName: 'Ordenar por nombre',
+      sortByColor: 'Ordenar por color',
     },
     noResults: 'No se encontraron coincidencias',
     // Multi-color gradient + visual effect (#1154)
@@ -8845,6 +8848,8 @@ export default {
       waiting: 'Esperando a SpoolBuddy...',
       writeSuccess: '¡Etiqueta escrita correctamente!',
       writeFailed: 'Error al escribir',
+      writeExpired: 'No se colocó ninguna etiqueta a tiempo. Inténtalo de nuevo.',
+      writeReplaced: 'Otro comando para este SpoolBuddy terminó la escritura. Inténtalo de nuevo.',
       linkFailedSpoolmanNotConfigured: 'La etiqueta se escribió, pero Spoolman no está configurado, así que no está vinculada a la bobina',
       linkFailedSpoolman: 'La etiqueta se escribió, pero no se pudo vincular a la bobina en Spoolman',
       linkFailedSpoolNotFound: 'La etiqueta se escribió, pero la bobina ya no existe',

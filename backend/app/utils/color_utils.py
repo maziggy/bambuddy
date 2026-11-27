@@ -386,3 +386,28 @@ def color_note(hex_value: str | None) -> str:
     if alpha == "00":
         return "clear"
     return "translucent" if _parse_int16(alpha) is not None else ""
+
+
+# Below a just-noticeable difference (CIEDE2000 ~1.0): no eye tells the two apart (#3763).
+FORCED_COLOR_MAX_DELTA_E = 1.0
+
+
+def forced_colors_match(color1: str | None, color2: str | None) -> bool:
+    """Whether two colours count as the same colour for a forced colour match (#3763).
+
+    The same six hex digits, or a perceptual difference below a just-noticeable
+    one. A catalog colour and a slicer preset's often differ by a shade of
+    rounding (55B688 against 55B687), and Enforce color held such a job forever
+    although exactly that spool was loaded. Anything an eye can tell apart still
+    does not match: this is not the scheduler's "similar colour" box.
+
+    Shared by every place that checks a forced colour (scheduler, stock, the
+    printer card's queue filter mirrors it), so they cannot drift.
+    """
+    key1, key2 = color6_key(color1), color6_key(color2)
+    if key1 == key2:
+        return True
+    if not key1 or not key2:
+        return False
+    distance = perceptual_color_distance(key1, key2)
+    return distance is not None and distance < FORCED_COLOR_MAX_DELTA_E

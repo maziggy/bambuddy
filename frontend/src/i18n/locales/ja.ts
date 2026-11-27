@@ -6146,6 +6146,9 @@ export default {
       showAll: 'すべての色を表示',
       showMatching: '一致するものだけ表示',
       allBrand: '{{brand}}のすべての色',
+      sortBy: 'カタログの色の並べ替え',
+      sortByName: '名前順に並べる',
+      sortByColor: '色順に並べる',
     },
     noResults: '結果なし',
     // Multi-color gradient + visual effect (#1154) — English fallback.
@@ -8838,6 +8841,8 @@ export default {
       waiting: 'SpoolBuddyを待機中...',
       writeSuccess: 'タグの書込みが完了しました！',
       writeFailed: '書込み失敗',
+      writeExpired: '時間内にタグが置かれませんでした。もう一度お試しください。',
+      writeReplaced: 'この SpoolBuddy への別のコマンドで書込みが終了しました。もう一度お試しください。',
       linkFailedSpoolmanNotConfigured: 'タグは書き込まれましたが、Spoolman が設定されていないためスプールにリンクされていません',
       linkFailedSpoolman: 'タグは書き込まれましたが、Spoolman でスプールへのリンクに失敗しました',
       linkFailedSpoolNotFound: 'タグは書き込まれましたが、スプールはもう存在しません',

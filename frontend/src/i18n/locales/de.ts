@@ -6144,6 +6144,9 @@ export default {
       showAll: 'Alle Farben anzeigen',
       showMatching: 'Nur passende anzeigen',
       allBrand: 'Alle {{brand}}-Farben',
+      sortBy: 'Katalogfarben sortieren',
+      sortByName: 'Nach Name sortieren',
+      sortByColor: 'Nach Farbe sortieren',
     },
     noResults: 'Keine Ergebnisse',
     // Multi-Color-Verlauf + visueller Effekt (#1154)
@@ -8837,6 +8840,8 @@ export default {
       waiting: 'Warte auf SpoolBuddy...',
       writeSuccess: 'Tag erfolgreich beschrieben!',
       writeFailed: 'Schreiben fehlgeschlagen',
+      writeExpired: 'Es wurde nicht rechtzeitig ein Tag aufgelegt. Versuchen Sie es erneut.',
+      writeReplaced: 'Ein anderer Befehl an das SpoolBuddy hat das Schreiben beendet. Versuchen Sie es erneut.',
       linkFailedSpoolmanNotConfigured: 'Der Tag wurde beschrieben, aber Spoolman ist nicht eingerichtet, daher ist er nicht mit der Spule verknüpft',
       linkFailedSpoolman: 'Der Tag wurde beschrieben, aber die Verknüpfung mit der Spule in Spoolman ist fehlgeschlagen',
       linkFailedSpoolNotFound: 'Der Tag wurde beschrieben, aber die Spule existiert nicht mehr',

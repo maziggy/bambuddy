@@ -381,6 +381,25 @@ export function colorDistance(
   return ciede2000(lab1, lab2);
 }
 
+// Below a just-noticeable difference (CIEDE2000 ~1.0): no eye tells the two apart (#3763).
+const FORCED_COLOR_MAX_DELTA_E = 1.0;
+
+/**
+ * Whether two colours count as the same colour for a forced colour match (#3763):
+ * the same six hex digits, or a perceptual difference below a just-noticeable
+ * one. A catalog colour and a slicer preset's often differ by a shade of
+ * rounding (55B688 against 55B687). The twin of `forced_colors_match` in
+ * backend/app/utils/color_utils.py; not the looser `colorsAreSimilar`.
+ */
+export function forcedColorsMatch(color1: string | undefined, color2: string | undefined): boolean {
+  const a = (color1 ?? '').replace('#', '').toLowerCase().slice(0, 6);
+  const b = (color2 ?? '').replace('#', '').toLowerCase().slice(0, 6);
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const distance = colorDistance(a, b);
+  return distance !== null && distance < FORCED_COLOR_MAX_DELTA_E;
+}
+
 /**
  * The closest colour match among `candidates`, or undefined if none is similar
  * enough to qualify.

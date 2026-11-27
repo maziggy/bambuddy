@@ -17,6 +17,9 @@ export interface CatalogDisplayColor {
   // was that they were never propagated past the API layer.
   extra_colors?: string | null;
   effect_type?: string | null;
+  // Catalog hex incl. alpha (RRGGBBAA) for ordering: `hex` has the alpha stripped,
+  // which would hide a Clear entry from the colour sort.
+  sortHex?: string;
 }
 
 // Form data structure

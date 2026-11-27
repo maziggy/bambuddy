@@ -6219,6 +6219,9 @@ errors: {
       showAll: 'Visa alla färger',
       showMatching: 'Visa bara matchande',
       allBrand: 'Alla {{brand}}-färger',
+      sortBy: 'Sortera katalogfärger',
+      sortByName: 'Sortera efter namn',
+      sortByColor: 'Sortera efter färg',
     },
     noResults: 'Inga matchningar hittade',
     // Multi-color gradient + visual effect (#1154)
@@ -8919,6 +8922,8 @@ errors: {
       waiting: 'Väntar på SpoolBuddy...',
       writeSuccess: 'Tagg skriven!',
       writeFailed: 'Kunde inte skriva tagg',
+      writeExpired: 'Ingen tagg lades på i tid. Försök igen.',
+      writeReplaced: 'Ett annat kommando till denna SpoolBuddy avslutade skrivningen. Försök igen.',
       linkFailedSpoolmanNotConfigured: 'Taggen skrevs, men Spoolman är inte konfigurerat, så den är inte kopplad till spolen',
       linkFailedSpoolman: 'Taggen skrevs, men kopplingen till spolen i Spoolman misslyckades',
       linkFailedSpoolNotFound: 'Taggen skrevs, men spolen finns inte längre',

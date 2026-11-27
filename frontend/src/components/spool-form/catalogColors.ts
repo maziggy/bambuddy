@@ -1,5 +1,8 @@
 import type { CatalogDisplayColor, ColorSectionProps } from './types';
 import { KNOWN_VARIANTS, MATERIALS } from './constants';
+import { colorSortKey } from '../../utils/colors';
+
+export type CatalogColorOrder = 'name' | 'color';
 
 export type CatalogColorEntry = ColorSectionProps['catalogColors'][number];
 
@@ -10,6 +13,7 @@ const toDisplay = (c: CatalogColorEntry): CatalogDisplayColor => ({
   material: typeof c.material === 'string' ? c.material : undefined,
   extra_colors: c.extra_colors ?? null,
   effect_type: c.effect_type ?? null,
+  sortHex: c.hex_color.replace('#', ''),
 });
 
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -206,4 +210,19 @@ export function brandAliases(catalogColors: CatalogColorEntry[], formBrand: stri
     if (containsBrandPhrase(materialLower, brandLower)) add(c.manufacturer);
   }
   return [...found.values()];
+}
+
+/**
+ * Catalog colours in the chosen order (#3633). 'name' keeps the input (server)
+ * order; 'color' sorts into rainbow order with `colorSortKey`, the same order as
+ * the inventory's Color column. A gradient sorts by its first colour (`hex`). The
+ * key is taken from the catalog hex with alpha so a Clear entry sorts last, and
+ * the sort is stable: equal colours keep their input order.
+ */
+export function sortCatalogColors(colors: CatalogDisplayColor[], order: CatalogColorOrder): CatalogDisplayColor[] {
+  if (order !== 'color') return colors;
+  return colors
+    .map((c, i) => ({ c, i, key: colorSortKey(c.sortHex ?? c.hex) }))
+    .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : a.i - b.i))
+    .map(e => e.c);
 }

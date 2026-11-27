@@ -172,6 +172,46 @@ class TestHeartbeatLoopCommands:
 
         assert shared["pending_write"]["ndef_v2"] == bytes.fromhex("CAFE")
 
+    async def _armed_then(self, later):
+        """A heartbeat arms a write, the next ones answer ``later`` (#3503)."""
+        config = _make_config()
+        api = _make_api()
+        answers = [
+            {"pending_command": "write_tag", "pending_write_payload": {"spool_id": 42, "ndef_data_hex": "DEADBEEF"}},
+            later,
+        ]
+
+        async def mock_heartbeat(*args, **kwargs):
+            return answers.pop(0) if answers else later
+
+        api.heartbeat = mock_heartbeat
+        shared = {"nfc": None, "scale": None, "display": MagicMock()}
+        task = asyncio.create_task(heartbeat_loop(config, api, time.monotonic(), shared))
+        await asyncio.sleep(0.1)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        return shared
+
+    @pytest.mark.asyncio
+    async def test_a_write_the_backend_no_longer_has_is_dropped(self):
+        # Cancelled, expired or replaced: the next heartbeat carries no write_tag.
+        shared = await self._armed_then({"pending_command": None, "ssh_public_key": None})
+        assert "pending_write" not in shared
+
+    @pytest.mark.asyncio
+    async def test_a_write_replaced_by_another_command_is_dropped(self):
+        shared = await self._armed_then({"pending_command": "tare", "ssh_public_key": None})
+        assert "pending_write" not in shared
+
+    @pytest.mark.asyncio
+    async def test_a_heartbeat_that_failed_keeps_the_write(self):
+        # No answer from the backend says nothing about the write.
+        shared = await self._armed_then(None)
+        assert shared["pending_write"]["spool_id"] == 42
+
     @pytest.mark.asyncio
     async def test_display_settings_applied_from_heartbeat(self):
         config = _make_config()

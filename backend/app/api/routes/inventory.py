@@ -1564,8 +1564,13 @@ async def import_spools_csv(
         # the other create paths: the file is authoritative. A CSV that
         # leaves the column blank is stating "no number", not asking for
         # one to be guessed from whatever else is in the inventory.
-        # The file has no lock column: a used weight in it is locked.
-        spool = Spool(**_lock_entered_weight(dict(row.spool or {}), set()))
+        # A weight_locked stated in the file is kept; without one, a used
+        # weight in it is locked (the parser leaves the key out then).
+        payload = dict(row.spool or {})
+        spool = Spool(**_lock_entered_weight(payload, {"weight_locked"} & payload.keys()))
+        # A tag that comes in with the spool leaves any archived spool that
+        # still carries it, as link-tag recycles it (#3324).
+        await _release_tags_from_archived_spools(db, spool.tag_uid, spool.tray_uuid)
         if row.keeps_id is not None:
             spool.id = row.keeps_id
         db.add(spool)
@@ -1663,6 +1668,22 @@ async def get_spool(
     if not spool:
         raise HTTPException(404, "Spool not found")
     return spool
+
+
+async def _release_tags_from_archived_spools(db: AsyncSession, tag_uid: str | None, tray_uuid: str | None) -> None:
+    """Clear a tag from archived spools before an imported spool takes it.
+
+    The import stores tag ids normalised (hex, upper case), so the compare is
+    the upper-cased one link-tag uses.
+    """
+    for column, value in ((Spool.tag_uid, tag_uid), (Spool.tray_uuid, tray_uuid)):
+        if not value:
+            continue
+        archived = await db.execute(
+            select(Spool).where(func.upper(column) == value.upper(), Spool.archived_at.is_not(None))
+        )
+        for old_spool in archived.scalars().all():
+            setattr(old_spool, column.key, None)
 
 
 def _lock_entered_weight(payload: dict, fields_set: set[str]) -> dict:

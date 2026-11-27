@@ -6183,6 +6183,9 @@ export default {
       showAll: "Показати всі кольори",
       showMatching: "Показати лише відповідні",
       allBrand: "Усі кольори {{brand}}",
+      sortBy: "Сортування кольорів каталогу",
+      sortByName: "Сортувати за назвою",
+      sortByColor: "Сортувати за кольором",
     },
     noResults: "Збігів не знайдено",
     // Multi-color gradient + visual effect (#1154)
@@ -8878,6 +8881,8 @@ export default {
       waiting: "Очікування SpoolBuddy...",
       writeSuccess: "Тег успішно записано!",
       writeFailed: "Помилка запису",
+      writeExpired: "Мітку не було прикладено вчасно. Спробуйте ще раз.",
+      writeReplaced: "Інша команда для цього SpoolBuddy перервала запис. Спробуйте ще раз.",
       linkFailedSpoolmanNotConfigured: "Мітку записано, але Spoolman не налаштовано, тому її не пов'язано з котушкою",
       linkFailedSpoolman: "Мітку записано, але пов'язати її з котушкою в Spoolman не вдалося",
       linkFailedSpoolNotFound: "Мітку записано, але котушки більше не існує",

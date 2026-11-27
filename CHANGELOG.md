@@ -2,7 +2,7 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
-## [1.3.3b1] - Unreleased
+## [1.3.3] - Unreleased
 
 ### Added
 - **Duplicate queued and printing jobs (#3441, requested and contributed by @0xCyberFortress in #3440)** — A **Duplicate** button on each queued or printing job, and a **Duplicate** action for the selected jobs, add another copy to the end of the queue: same file, plate, target, project, filament choices and print options. A copy for a specific printer keeps its slot picks; a copy for any printer of a model has its printer and slots chosen again. The scheduled time and the batch are not copied, nor a hold the scheduler put on the original for filament. Printer-card uploads whose file is removed once they print get no button. The API has `POST /queue/duplicate` for this.

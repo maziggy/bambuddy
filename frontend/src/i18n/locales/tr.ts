@@ -3372,6 +3372,15 @@ export default {
     passwordOptional: 'Parola (isteğe bağlı)',
     topicPrefix: 'Konu öneki',
     topicPrefixHint: 'Konular: {{prefix}}/printers/<serial>/status, vb. olacak',
+    // Home Assistant MQTT discovery (#3724)
+    haDiscovery: {
+      title: "Home Assistant keşfi",
+      hint: "Yazıcılar ve AMS üniteleri, YAML gerekmeden sensörleriyle birlikte Home Assistant'ta cihaz olarak görünür. Salt okunur: Home Assistant yazıcıyı bu yolla kontrol edemez.",
+      prefix: "Keşif öneki",
+      prefixHint: "Home Assistant'ın varsayılanı homeassistant'tır. Yalnızca orada değiştirdiyseniz değiştirin.",
+      prefixConflict: "Keşif öneki, konu önekinden farklı olmalıdır.",
+      prefixWildcard: "Keşif öneki + veya # içeremez.",
+    },
     // Prometheus
     prometheusMetrics: 'Prometheus Metrikleri',
     prometheusEndpointDescription: 'Prometheus/Grafana izleme için yazıcı metriklerini <code>/api/v1/metrics</code> adresinde sun.',
@@ -9765,5 +9774,37 @@ export default {
     title: 'QR Kodu',
     scanHint: 'Bu arşivi açmak için tarayın',
     download: 'QR Kodunu İndir',
+  },
+  // "To do" list of what the queue waits on (#3615)
+  queueTodo: {
+    title: "Yapılacaklar",
+    empty: "Yapılacak bir şey yok. Kuyruk kimseyi beklemiyor.",
+    badgeLabel: "Yapılacaklar: {{count}}",
+    anyModel: "Herhangi bir {{model}}",
+    jobCount_one: "{{count}} iş",
+    jobCount_other: "{{count}} iş",
+    kind: {
+      plateClear: "Plakanın boş olduğunu onaylayın",
+      loadFilament: "Filament yükleyin",
+      startStaged: "Bekleyen işi başlat",
+      sensorInterlock: "Bir sensör tarafından engellendi",
+      powerOnFailed: "Yazıcı açılmadı",
+      loadFilamentOn: "Filament yükleyin:",
+      plateChangerEmpty: "Plaka değiştirici boş",
+      replaceSpool: "Makarayı değiştir",
+      replaceSpoolOn: "Makarayı değiştir:",
+    },
+    plateIsClear: "Plaka boş",
+    or: "veya",
+    noStock: "envanterde kalmadı",
+    short: {
+      plain: "Yeterli {{filament}} yok",
+      in: "{{slots}} içinde yeterli {{filament}} yok",
+      hasGrams: "Yeterli {{filament}} yok: {{slots}} içinde {{remaining}} g var",
+      hasGramsNeeds: "Yeterli {{filament}} yok: {{slots}} içinde {{remaining}} g var, iş {{required}} g gerektiriyor",
+    },
+    openPrinter: "Yazıcıyı aç",
+    openQueue: "Kuyruğu aç",
+    actionFailed: "İşlem başarısız oldu",
   },
 };

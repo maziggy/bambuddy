@@ -4,6 +4,7 @@
  * Model families:
  *   - X1, P1         → carbon rods
  *   - P2S, X2D       → hardened steel rods (X2D shares P2S's gantry — #988)
+ *   - P3C            → hardened steel rods, with its own axis and belt pages (#3737)
  *   - A1, A1 Mini    → linear rails (Y axis)
  *   - H2D, H2C, H2S  → linear rails (X-axis lubrication)
  *   - H3C            → its own tasks carry their wiki links; only the shared
@@ -29,14 +30,17 @@ export function getMaintenanceWikiUrl(typeName: string, printerModel: string | n
   // X2D shares the hardened steel rod hardware and belt layout with P2S,
   // so its maintenance routes use the P2S wiki pages until dedicated
   // X2D pages are published by Bambu Lab.
-  const isSteelRod = isP2S || isX2D;
+  const isP3C = model.includes('P3C') || model === 'N11';
+  const isSteelRod = isP2S || isX2D || isP3C;
 
   switch (typeName) {
     case 'Lubricate Steel Rods':
+      if (isP3C) return 'https://wiki.bambulab.com/en/p3c/maintenance/lubricate-x-y-z-axis';
       if (isSteelRod) return 'https://wiki.bambulab.com/en/p2s/maintenance/lubricate-x-y-z-axis';
       return null;
 
     case 'Clean Steel Rods':
+      if (isP3C) return 'https://wiki.bambulab.com/en/p3c/maintenance/lubricate-x-y-z-axis';
       if (isSteelRod) return 'https://wiki.bambulab.com/en/p2s/maintenance/lubricate-x-y-z-axis';
       return null;
 
@@ -60,6 +64,7 @@ export function getMaintenanceWikiUrl(typeName: string, printerModel: string | n
       if (isH2C) return 'https://wiki.bambulab.com/en/h2c/maintenance/belt-tension';
       if (isH2S) return 'https://wiki.bambulab.com/en/h2s/maintenance/belt-tension';
       if (isH3C) return 'https://wiki.bambulab.com/en/h3c/maintenance/belt_tension';
+      if (isP3C) return 'https://wiki.bambulab.com/en/p3c/maintenance/belt_tension';
       if (isSteelRod) return 'https://wiki.bambulab.com/en/p2s/maintenance/belt-tension';
       // X1 and P1 share one page, "X1/P1 Series Belt tensioning procedure";
       // P1 has none of its own, so it must not get a branch above (#3302).

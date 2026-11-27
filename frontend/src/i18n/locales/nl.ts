@@ -3389,6 +3389,15 @@ export default {
     passwordOptional: 'Wachtwoord (optioneel)',
     topicPrefix: 'Topic-prefix',
     topicPrefixHint: 'Topics worden: {{prefix}}/printers/<serial>/status, enz.',
+    // Home Assistant MQTT discovery (#3724)
+    haDiscovery: {
+      title: "Home Assistant-detectie",
+      hint: "Printers en AMS-eenheden verschijnen in Home Assistant als apparaten met sensoren, zonder YAML. Alleen-lezen: Home Assistant kan de printer hiermee niet bedienen.",
+      prefix: "Detectieprefix",
+      prefixHint: "De standaard van Home Assistant is homeassistant. Wijzig dit alleen als je het daar hebt aangepast.",
+      prefixConflict: "De detectieprefix moet verschillen van de topicprefix.",
+      prefixWildcard: "De detectieprefix mag geen + of # bevatten.",
+    },
     // Prometheus
     prometheusMetrics: 'Prometheus-metrics',
     prometheusEndpointDescription: 'Printermetrics beschikbaar stellen op <code>/api/v1/metrics</code> voor bewaking met Prometheus/Grafana.',
@@ -9889,5 +9898,37 @@ export default {
     title: 'QR-code',
     scanHint: 'Scan om dit archief te openen',
     download: 'QR-code downloaden',
+  },
+  // "To do" list of what the queue waits on (#3615)
+  queueTodo: {
+    title: "Te doen",
+    empty: "Niets te doen. De wachtrij wacht op niemand.",
+    badgeLabel: "Te doen: {{count}}",
+    anyModel: "Elke {{model}}",
+    jobCount_one: "{{count}} opdracht",
+    jobCount_other: "{{count}} opdrachten",
+    kind: {
+      plateClear: "Bevestig dat de bouwplaat leeg is",
+      loadFilament: "Filament laden",
+      startStaged: "Gereedstaande opdracht starten",
+      sensorInterlock: "Geblokkeerd door een sensor",
+      powerOnFailed: "Printer is niet ingeschakeld",
+      loadFilamentOn: "Filament laden op",
+      plateChangerEmpty: "Plaatwisselaar leeg",
+      replaceSpool: "Spoel vervangen",
+      replaceSpoolOn: "Spoel vervangen op",
+    },
+    plateIsClear: "Bouwplaat is leeg",
+    or: "of",
+    noStock: "niets meer in voorraad",
+    short: {
+      plain: "Te weinig {{filament}}",
+      in: "Te weinig {{filament}} in {{slots}}",
+      hasGrams: "Te weinig {{filament}}: {{slots}} heeft {{remaining}} g",
+      hasGramsNeeds: "Te weinig {{filament}}: {{slots}} heeft {{remaining}} g, de opdracht heeft {{required}} g nodig",
+    },
+    openPrinter: "Printer openen",
+    openQueue: "Wachtrij openen",
+    actionFailed: "Actie mislukt",
   },
 };

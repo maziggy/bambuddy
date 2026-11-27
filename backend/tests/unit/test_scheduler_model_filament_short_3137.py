@@ -107,7 +107,15 @@ def _short_on(short: set[int], unknown: frozenset[int] = frozenset()) -> AsyncMo
 
 
 async def _run(
-    ctx, scheduler, *, short: set[int], launched, idle=lambda pid: True, short_check=None, unknown=frozenset()
+    ctx,
+    scheduler,
+    *,
+    short: set[int],
+    launched,
+    idle=lambda pid: True,
+    short_check=None,
+    unknown=frozenset(),
+    status=None,
 ):
     """One queue pass. The deficit gate is real; only the deficit it reads is faked."""
 
@@ -118,7 +126,7 @@ async def _run(
         patch("backend.app.services.print_scheduler.async_session", ctx.session_maker),
         patch("backend.app.core.database.async_session", ctx.session_maker),
         patch("backend.app.services.print_scheduler.printer_manager.is_connected", MagicMock(return_value=True)),
-        patch("backend.app.services.print_scheduler.printer_manager.get_status", MagicMock(return_value=None)),
+        patch("backend.app.services.print_scheduler.printer_manager.get_status", MagicMock(return_value=status)),
         patch(
             "backend.app.services.print_scheduler.ha_sensor_manager.blocked_printers",
             AsyncMock(return_value={}),

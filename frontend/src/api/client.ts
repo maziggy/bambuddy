@@ -1635,6 +1635,9 @@ export interface AppSettings {
   mqtt_password: string;
   mqtt_topic_prefix: string;
   mqtt_use_tls: boolean;
+  // Home Assistant MQTT discovery for the relay (#3724)
+  mqtt_ha_discovery_enabled: boolean;
+  mqtt_ha_discovery_prefix: string;
   // BIQU Panda Breath heaters on the same broker (#1466)
   panda_breath_enabled: boolean;
   // External URL for notifications
@@ -3015,6 +3018,48 @@ export interface DiscoveredTasmotaDevice {
 }
 
 // Print Queue types
+// "To do" list of everything the queue waits on (#3615).
+export type QueueTodoKind =
+  | 'plate_clear'
+  | 'plate_changer_empty'
+  | 'load_filament'
+  | 'start_staged'
+  | 'sensor_interlock'
+  | 'power_on_failed';
+export interface QueueTodoFilament {
+  type: string;
+  color: string;
+  color_name: string;
+  no_stock: boolean;
+  // The nozzle a dual-nozzle file wants it on: 0 right, 1 left; null when it names none.
+  nozzle?: number | null;
+  // Loaded, but its spool holds less than the job needs (#3137): not a filament to load.
+  short?: boolean;
+  // The tray of that spool; empty when it is not known or the entry lists several printers.
+  short_trays?: { ams_id: number; tray_id: number; remaining_grams: number | null }[];
+  // What the job prints of a short filament, in grams.
+  required_grams?: number | null;
+}
+export interface QueueTodoEntry {
+  kind: QueueTodoKind;
+  jobs: { id: number; name: string; can_start: boolean }[];
+  filaments: QueueTodoFilament[];
+  // Model-group load_filament: printers where loading lets the job start.
+  printers: { id: number; name: string }[];
+  detail: string | null;
+  // plate_changer_empty: the count a refill resets the plate changer to (#3575).
+  plate_capacity?: number | null;
+}
+export interface QueueTodoGroup {
+  printer_id: number | null;
+  printer_name: string;
+  target_model: string | null;
+  // The printer's model (a model group's target model), for naming its slots.
+  printer_model?: string | null;
+  entries: QueueTodoEntry[];
+}
+export interface QueueTodo { count: number; groups: QueueTodoGroup[] }
+
 export interface PrintQueueItem {
   id: number;
   printer_id: number | null;  // null = unassigned
@@ -7284,6 +7329,7 @@ export const api = {
     if (targetModel) params.set('target_model', targetModel);
     return request<PrintQueueItem[]>(`/queue/?${params}`);
   },
+  getQueueTodo: () => request<QueueTodo>('/queue/todo'),
   // History (completed / failed / skipped / cancelled), one page at a time.
   getQueueHistory: (params: QueueHistoryParams) =>
     request<QueueHistoryPage>(`/queue/history?${queueHistorySearch(params)}`),

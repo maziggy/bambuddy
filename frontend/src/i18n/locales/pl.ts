@@ -3391,6 +3391,15 @@ export default {
     passwordOptional: 'Hasło (opcjonalnie)',
     topicPrefix: 'Prefiks tematu',
     topicPrefixHint: 'Tematy będą miały postać: {{prefix}}/printers/<serial>/status itd.',
+    // Home Assistant MQTT discovery (#3724)
+    haDiscovery: {
+      title: "Wykrywanie w Home Assistant",
+      hint: "Drukarki i jednostki AMS pojawiają się w Home Assistant jako urządzenia z czujnikami, bez YAML. Tylko do odczytu: Home Assistant nie może w ten sposób sterować drukarką.",
+      prefix: "Prefiks wykrywania",
+      prefixHint: "Domyślna wartość w Home Assistant to homeassistant. Zmień ją tylko wtedy, gdy została zmieniona także tam.",
+      prefixConflict: "Prefiks wykrywania musi różnić się od prefiksu tematów.",
+      prefixWildcard: "Prefiks wykrywania nie może zawierać + ani #.",
+    },
     // Prometheus
     prometheusMetrics: 'Metryki Prometheus',
     prometheusEndpointDescription: 'Udostępniaj metryki drukarek pod <code>/api/v1/metrics</code> do monitorowania w Prometheus/Grafana.',
@@ -9891,5 +9900,37 @@ export default {
     title: 'Kod QR',
     scanHint: 'Zeskanuj, aby otworzyć to archiwum',
     download: 'Pobierz kod QR',
+  },
+  // "To do" list of what the queue waits on (#3615)
+  queueTodo: {
+    title: "Do zrobienia",
+    empty: "Nic do zrobienia. Kolejka na nikogo nie czeka.",
+    badgeLabel: "Do zrobienia: {{count}}",
+    anyModel: "Dowolna {{model}}",
+    jobCount_one: "Zadania: {{count}}",
+    jobCount_other: "Zadania: {{count}}",
+    kind: {
+      plateClear: "Potwierdź, że płyta jest pusta",
+      loadFilament: "Załaduj filament",
+      startStaged: "Uruchom przygotowane zadanie",
+      sensorInterlock: "Zablokowane przez czujnik",
+      powerOnFailed: "Drukarka nie włączyła się",
+      loadFilamentOn: "Załaduj filament do",
+      plateChangerEmpty: "Zmieniarka płyt pusta",
+      replaceSpool: "Wymień szpulę",
+      replaceSpoolOn: "Wymień szpulę w",
+    },
+    plateIsClear: "Płyta jest pusta",
+    or: "lub",
+    noStock: "brak w magazynie",
+    short: {
+      plain: "Za mało filamentu {{filament}}",
+      in: "Za mało filamentu {{filament}} w {{slots}}",
+      hasGrams: "Za mało filamentu {{filament}}: {{slots}} ma {{remaining}} g",
+      hasGramsNeeds: "Za mało filamentu {{filament}}: {{slots}} ma {{remaining}} g, zadanie potrzebuje {{required}} g",
+    },
+    openPrinter: "Otwórz drukarkę",
+    openQueue: "Otwórz kolejkę",
+    actionFailed: "Akcja nie powiodła się",
   },
 };

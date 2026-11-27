@@ -3371,6 +3371,15 @@ export default {
     passwordOptional: 'Contraseña (opcional)',
     topicPrefix: 'Prefijo del tema',
     topicPrefixHint: 'Los temas serán: {{prefix}}/printers/<serial>/status, etc.',
+    // Home Assistant MQTT discovery (#3724)
+    haDiscovery: {
+      title: "Descubrimiento de Home Assistant",
+      hint: "Las impresoras y las unidades AMS aparecen en Home Assistant como dispositivos con sensores, sin YAML. Solo lectura: Home Assistant no puede controlar la impresora por esta vía.",
+      prefix: "Prefijo de descubrimiento",
+      prefixHint: "El valor por defecto de Home Assistant es homeassistant. Cámbialo solo si lo cambiaste allí.",
+      prefixConflict: "El prefijo de descubrimiento debe ser distinto del prefijo de topic.",
+      prefixWildcard: "El prefijo de descubrimiento no puede contener + ni #.",
+    },
     // Prometheus
     prometheusMetrics: 'Métricas de Prometheus',
     prometheusEndpointDescription: 'Exponer las métricas de la impresora en <code>/api/v1/metrics</code> para la supervisión con Prometheus/Grafana.',
@@ -9846,5 +9855,37 @@ export default {
     title: 'Código QR',
     scanHint: 'Escanee para abrir este archivo',
     download: 'Descargar código QR',
+  },
+  // "To do" list of what the queue waits on (#3615)
+  queueTodo: {
+    title: "Pendiente",
+    empty: "Nada pendiente. La cola no espera a nadie.",
+    badgeLabel: "Pendiente: {{count}}",
+    anyModel: "Cualquier {{model}}",
+    jobCount_one: "{{count}} trabajo",
+    jobCount_other: "{{count}} trabajos",
+    kind: {
+      plateClear: "Confirmar que la cama está libre",
+      loadFilament: "Cargar filamento",
+      startStaged: "Iniciar el trabajo en espera",
+      sensorInterlock: "Bloqueado por un sensor",
+      powerOnFailed: "La impresora no se encendió",
+      loadFilamentOn: "Cargar filamento en",
+      plateChangerEmpty: "Cambiador de placas vacío",
+      replaceSpool: "Cambiar bobina",
+      replaceSpoolOn: "Cambiar bobina en",
+    },
+    plateIsClear: "Cama despejada",
+    or: "o",
+    noStock: "no queda en el inventario",
+    short: {
+      plain: "No hay suficiente {{filament}}",
+      in: "No hay suficiente {{filament}} en {{slots}}",
+      hasGrams: "No hay suficiente {{filament}}: {{slots}} tiene {{remaining}} g",
+      hasGramsNeeds: "No hay suficiente {{filament}}: {{slots}} tiene {{remaining}} g, el trabajo necesita {{required}} g",
+    },
+    openPrinter: "Abrir impresora",
+    openQueue: "Abrir cola",
+    actionFailed: "La acción falló",
   },
 };

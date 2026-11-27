@@ -3391,6 +3391,15 @@ export default {
     passwordOptional: 'Password (optional)',
     topicPrefix: 'Topic prefix',
     topicPrefixHint: 'Topics will be: {{prefix}}/printers/<serial>/status, etc.',
+    // Home Assistant MQTT discovery (#3724)
+    haDiscovery: {
+      title: "Home Assistant discovery",
+      hint: "Printers and AMS units appear in Home Assistant as devices with sensors, without any YAML. Read-only: Home Assistant cannot control the printer through it.",
+      prefix: "Discovery prefix",
+      prefixHint: "Home Assistant's default is homeassistant. Change it only if you changed it there.",
+      prefixConflict: "The discovery prefix must differ from the topic prefix.",
+      prefixWildcard: "The discovery prefix cannot contain + or #.",
+    },
     // Prometheus
     prometheusMetrics: 'Prometheus Metrics',
     prometheusEndpointDescription: 'Expose printer metrics at <code>/api/v1/metrics</code> for Prometheus/Grafana monitoring.',
@@ -9891,5 +9900,37 @@ export default {
     title: 'QR Code',
     scanHint: 'Scan to open this archive',
     download: 'Download QR Code',
+  },
+  // "To do" list of what the queue waits on (#3615)
+  queueTodo: {
+    title: "To do",
+    empty: "Nothing to do. The queue is not waiting on anyone.",
+    badgeLabel: "To do: {{count}}",
+    anyModel: "Any {{model}}",
+    jobCount_one: "{{count}} job",
+    jobCount_other: "{{count}} jobs",
+    kind: {
+      plateClear: "Confirm the plate is clear",
+      loadFilament: "Load filament",
+      startStaged: "Start the staged job",
+      sensorInterlock: "Blocked by a sensor",
+      powerOnFailed: "Printer did not power on",
+      loadFilamentOn: "Load filament on",
+      plateChangerEmpty: "Plate changer empty",
+      replaceSpool: "Replace spool",
+      replaceSpoolOn: "Replace spool on",
+    },
+    plateIsClear: "Plate is clear",
+    or: "or",
+    noStock: "none left in inventory",
+    short: {
+      plain: "Not enough {{filament}}",
+      in: "Not enough {{filament}} in {{slots}}",
+      hasGrams: "Not enough {{filament}}: {{slots}} has {{remaining}} g",
+      hasGramsNeeds: "Not enough {{filament}}: {{slots}} has {{remaining}} g, the job needs {{required}} g",
+    },
+    openPrinter: "Open printer",
+    openQueue: "Open queue",
+    actionFailed: "Action failed",
   },
 };

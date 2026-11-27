@@ -4,6 +4,8 @@ Converts 3MF printer model names (e.g., "Bambu Lab X1 Carbon") to
 normalized short names (e.g., "X1C") that match database storage.
 """
 
+from backend.app.utils.tray_ids import AmsType
+
 # Map from 3MF printer_model strings to normalized short names
 PRINTER_MODEL_MAP = {
     "Bambu Lab X1 Carbon": "X1C",
@@ -25,6 +27,7 @@ PRINTER_MODEL_MAP = {
     "Bambu Lab X2D": "X2D",
     "Bambu Lab A2L": "A2L",
     "Bambu Lab H3C": "H3C",
+    "Bambu Lab P3C": "P3C",
 }
 
 # Map from printer_model_id (internal codes in slice_info.config) to short names
@@ -66,12 +69,15 @@ PRINTER_MODEL_ID_MAP = {
     # nozzles in Studio's profile, so not in DUAL_NOZZLE_MODELS or
     # NOZZLE_RACK_MODELS: the H2C's rack ids and left/right split don't fit it.
     "N10": "H3C",
+    # P3 series ("Bambu Lab P3C.json" model_id N11, sn_prefix 331): Studio's
+    # N11 is a copy of the H3C's N10 with a seven-dock rack (#3737).
+    "N11": "P3C",
 }
 
 
 # Rod/rail type classification for maintenance tasks.
 # Carbon rods: X1, P1 series (CoreXY with carbon fiber rods)
-# Steel rods: P2S, X2D series (hardened steel linear shafts)
+# Steel rods: P2S, X2D, P3C (hardened steel linear shafts)
 # Linear rails: A1, H2 series (linear rail motion system)
 # Values must be uppercase with spaces stripped for normalized comparison.
 CARBON_ROD_MODELS = frozenset(
@@ -96,9 +102,11 @@ STEEL_ROD_MODELS = frozenset(
         # Display names (uppercase, no spaces)
         "P2S",
         "X2D",
+        "P3C",
         # Internal codes
         "N7",  # P2S
         "N6",  # X2D
+        "N11",  # P3C
     ]
 )
 
@@ -286,7 +294,8 @@ NOZZLE_RACK_MODELS = frozenset(
 # "Exhaust" rather than "Chamber". Bambu Studio calls part 3 "Exhaust" unless a
 # printer's file renames it, and only the X1 Carbon, X1, X1E and P1S files
 # rename it to "Chamber". On the P2S it is an add-on kit rather than built-in
-# hardware. The H2 series and the H3C were missing (#3521). Must match
+# hardware. The H2 series and the H3C were missing (#3521); Studio's P3C file
+# (N11) names it "Exhaust" too (#3737). Must match
 # MODELS_WITH_EXHAUST_LABEL in frontend PrintersPage.tsx (a test checks).
 EXHAUST_FAN_LABEL_MODELS = frozenset(
     [
@@ -298,6 +307,7 @@ EXHAUST_FAN_LABEL_MODELS = frozenset(
         "H2C",
         "H2S",
         "H3C",
+        "P3C",
         # Internal codes
         "N7",  # P2S
         "N6",  # X2D
@@ -308,6 +318,7 @@ EXHAUST_FAN_LABEL_MODELS = frozenset(
         "O1C2",  # H2C
         "O1S",  # H2S
         "N10",  # H3C
+        "N11",  # P3C
     ]
 )
 
@@ -409,11 +420,18 @@ def is_dual_nozzle_model(model: str | None) -> bool:
 # H3C acks M141 and stays off; the H2 series heats in either).
 CHAMBER_HEATER_NEEDS_HEATING_MODE_MODELS = frozenset(["H3C", "N10"])
 
-# `mc_percent` counts the start sequence (an H3C is at ~20% on layer 0), so a
-# stopped print is charged by layers instead (usage_progress).
-PROGRESS_INCLUDES_START_SEQUENCE_MODELS = frozenset(["H3C", "N10"])
+# `mc_percent` counts the start sequence (an H3C is at ~20% on layer 0, a P3C
+# at 43% on layer 73 of 240, #3737), so a stopped print is charged by layers
+# instead (usage_progress).
+PROGRESS_INCLUDES_START_SEQUENCE_MODELS = frozenset(["H3C", "N10", "P3C", "N11"])
 
-AMS3H_MODELS = frozenset(["H3C", "N10"])
+# The rack AMS each rack printer comes with: the H3C's AMS 3H, the P3C's AMS 3P.
+_RACK_AMS_BY_MODEL = {
+    "H3C": AmsType.ZMULTI_A,
+    "N10": AmsType.ZMULTI_A,
+    "P3C": AmsType.ZMULTI_B,
+    "N11": AmsType.ZMULTI_B,
+}
 
 
 def progress_includes_start_sequence(model: str | None) -> bool:
@@ -421,9 +439,9 @@ def progress_includes_start_sequence(model: str | None) -> bool:
     return _model_key(model) in PROGRESS_INCLUDES_START_SEQUENCE_MODELS
 
 
-def has_ams3h(model: str | None) -> bool:
-    """True for a model that comes with an AMS 3H (H3C)."""
-    return _model_key(model) in AMS3H_MODELS
+def model_rack_ams(model: str | None) -> AmsType | None:
+    """The rack AMS a model comes with (H3C: AMS 3H, P3C: AMS 3P), else None."""
+    return _RACK_AMS_BY_MODEL.get(_model_key(model))
 
 
 def usage_progress(

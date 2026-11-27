@@ -3368,6 +3368,15 @@ export default {
     passwordOptional: 'パスワード（オプション）',
     topicPrefix: 'トピックプレフィックス',
     topicPrefixHint: 'トピック形式: {{prefix}}/printers/<serial>/status 等',
+    // Home Assistant MQTT discovery (#3724)
+    haDiscovery: {
+      title: "Home Assistant 自動検出",
+      hint: "プリンターと AMS ユニットが、YAML なしでセンサー付きのデバイスとして Home Assistant に表示されます。読み取り専用のため、Home Assistant からプリンターを操作することはできません。",
+      prefix: "検出プレフィックス",
+      prefixHint: "Home Assistant の既定値は homeassistant です。Home Assistant 側で変更した場合のみ変更してください。",
+      prefixConflict: "検出プレフィックスはトピックプレフィックスと異なる必要があります。",
+      prefixWildcard: "検出プレフィックスに + や # は使用できません。",
+    },
     // Prometheus
     prometheusMetrics: 'Prometheusメトリクス',
     prometheusEndpointDescription: 'Prometheus/Grafanaモニタリング用に<code>/api/v1/metrics</code>でプリンターメトリクスを公開。',
@@ -9837,5 +9846,37 @@ export default {
     title: 'QRコード',
     scanHint: 'スキャンしてこのアーカイブを開く',
     download: 'QRコードをダウンロード',
+  },
+  // "To do" list of what the queue waits on (#3615)
+  queueTodo: {
+    title: "やること",
+    empty: "やることはありません。キューは誰の操作も待っていません。",
+    badgeLabel: "やること: {{count}}",
+    anyModel: "任意の{{model}}",
+    jobCount_one: "{{count}} 件のジョブ",
+    jobCount_other: "{{count}} 件のジョブ",
+    kind: {
+      plateClear: "プレートが空であることを確認",
+      loadFilament: "フィラメントをセット",
+      startStaged: "待機中のジョブを開始",
+      sensorInterlock: "センサーによりブロック中",
+      powerOnFailed: "プリンターの電源が入りませんでした",
+      loadFilamentOn: "フィラメントをセット:",
+      plateChangerEmpty: "プレートチェンジャーが空です",
+      replaceSpool: "スプールを交換",
+      replaceSpoolOn: "スプールを交換:",
+    },
+    plateIsClear: "プレートは空です",
+    or: "または",
+    noStock: "在庫なし",
+    short: {
+      plain: "{{filament}}が足りません",
+      in: "{{slots}}の{{filament}}が足りません",
+      hasGrams: "{{filament}}が足りません: {{slots}}に {{remaining}} g",
+      hasGramsNeeds: "{{filament}}が足りません: {{slots}}に {{remaining}} g、ジョブには {{required}} g 必要です",
+    },
+    openPrinter: "プリンターを開く",
+    openQueue: "キューを開く",
+    actionFailed: "操作に失敗しました",
   },
 };

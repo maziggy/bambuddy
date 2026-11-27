@@ -1,12 +1,14 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { Search, Clock, ChevronDown, ChevronUp, Sparkles } from 'lucide-react';
+import { Search, Clock, ChevronDown, ChevronUp, Sparkles, ArrowDownAZ, Palette } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ColorSectionProps, CatalogDisplayColor } from './types';
 import { QUICK_COLORS, ALL_COLORS } from './constants';
 import { FilamentSwatch } from '../FilamentSwatch';
 import { buildFilamentBackground, FILAMENT_EFFECT_OPTIONS } from '../filamentSwatchHelpers';
 import { getSwatchStyle } from '../../utils/colors';
-import { matchCatalogColors, allBrandCatalogColors } from './catalogColors';
+import { matchCatalogColors, allBrandCatalogColors, sortCatalogColors } from './catalogColors';
+import type { CatalogColorOrder } from './catalogColors';
+import { loadCatalogColorOrder, saveCatalogColorOrder } from './utils';
 
 /** Parse user paste from 3dfilamentprofiles.com etc.: split on commas/whitespace,
  *  drop the leading `#`, accept 6/8-char hex, lowercase. Returns null when no
@@ -116,13 +118,24 @@ export function ColorSection({
   // #3619: "Show all colours" widens the list to every catalog colour of the brand
   // (matching ones first). Only offered when that adds colours.
   const [showAllCatalog, setShowAllCatalog] = useState(false);
+  // #3633: order of the catalog colours, remembered across forms.
+  const [catalogOrder, setCatalogOrder] = useState<CatalogColorOrder>(loadCatalogColorOrder);
+  const chooseCatalogOrder = (order: CatalogColorOrder) => {
+    setCatalogOrder(order);
+    saveCatalogColorOrder(order);
+  };
   const allBrandColors = useMemo<CatalogDisplayColor[]>(
     () => allBrandCatalogColors(catalogColors, formData.brand, matchedCatalogColors),
     [catalogColors, formData.brand, matchedCatalogColors],
   );
   const canShowAllCatalog = allBrandColors.length > matchedCatalogColors.length;
   const showingAllCatalog = showAllCatalog && canShowAllCatalog;
-  const visibleCatalogColors = showingAllCatalog ? allBrandColors : matchedCatalogColors;
+  // Matching colours stay ahead of the brand's other product lines; each block is sorted on its own.
+  const visibleCatalogColors = useMemo<CatalogDisplayColor[]>(() => {
+    const matched = sortCatalogColors(matchedCatalogColors, catalogOrder);
+    if (!showingAllCatalog) return matched;
+    return [...matched, ...sortCatalogColors(allBrandColors.slice(matchedCatalogColors.length), catalogOrder)];
+  }, [showingAllCatalog, matchedCatalogColors, allBrandColors, catalogOrder]);
   // A new product starts with its own colours again.
   useEffect(() => {
     setShowAllCatalog(false);
@@ -260,21 +273,44 @@ export function ColorSection({
                   ? t('inventory.catalogColors.allBrand', { brand: formData.brand.trim() })
                   : `${formData.brand}${formData.material ? ` ${formData.material}` : ''}`}
             </span>
-            {!colorSearch && canShowAllCatalog && (
-              <button
-                type="button"
-                onClick={() => setShowAllCatalog(!showAllCatalog)}
-                aria-expanded={showingAllCatalog}
-                className="flex items-center gap-1 hover:text-white transition-colors"
-                data-testid="catalog-colors-toggle"
-              >
-                {showAllCatalog ? (
-                  <>{matchedCatalogColors.length > 0 ? t('inventory.catalogColors.showMatching') : t('inventory.showLess')} <ChevronUp className="w-3 h-3" /></>
-                ) : (
-                  <>{t('inventory.catalogColors.showAll')} <ChevronDown className="w-3 h-3" /></>
-                )}
-              </button>
-            )}
+            <div className="flex items-center gap-2 shrink-0">
+              <div role="group" aria-label={t('inventory.catalogColors.sortBy')} className="flex items-center rounded border border-bambu-dark-tertiary overflow-hidden">
+                {([
+                  { order: 'name', Icon: ArrowDownAZ, label: t('inventory.catalogColors.sortByName') },
+                  { order: 'color', Icon: Palette, label: t('inventory.catalogColors.sortByColor') },
+                ] as const).map(({ order, Icon, label }) => (
+                  <button
+                    key={order}
+                    type="button"
+                    onClick={() => chooseCatalogOrder(order)}
+                    aria-pressed={catalogOrder === order}
+                    aria-label={label}
+                    title={label}
+                    data-testid={`catalog-color-order-${order}`}
+                    className={`flex items-center justify-center w-8 h-8 sm:w-6 sm:h-6 transition-colors ${
+                      catalogOrder === order ? 'bg-bambu-green/20 text-bambu-green' : 'hover:text-white'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+                  </button>
+                ))}
+              </div>
+              {!colorSearch && canShowAllCatalog && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllCatalog(!showAllCatalog)}
+                  aria-expanded={showingAllCatalog}
+                  className="flex items-center gap-1 hover:text-white transition-colors"
+                  data-testid="catalog-colors-toggle"
+                >
+                  {showAllCatalog ? (
+                    <>{matchedCatalogColors.length > 0 ? t('inventory.catalogColors.showMatching') : t('inventory.showLess')} <ChevronUp className="w-3 h-3" /></>
+                  ) : (
+                    <>{t('inventory.catalogColors.showAll')} <ChevronDown className="w-3 h-3" /></>
+                  )}
+                </button>
+              )}
+            </div>
           </div>
           <div className="flex flex-wrap gap-1.5">
             {catalogSearchResults.map(color => (

@@ -6108,6 +6108,9 @@ export default {
       showAll: 'Pokaż wszystkie kolory',
       showMatching: 'Pokaż tylko pasujące',
       allBrand: 'Wszystkie kolory {{brand}}',
+      sortBy: 'Sortowanie kolorów katalogu',
+      sortByName: 'Sortuj według nazwy',
+      sortByColor: 'Sortuj według koloru',
     },
     noResults: 'Nie znaleziono dopasowań',
     // Multi-color gradient + visual effect (#1154)

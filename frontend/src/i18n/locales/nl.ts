@@ -6188,6 +6188,9 @@ export default {
       showAll: 'Alle kleuren tonen',
       showMatching: 'Alleen passende kleuren tonen',
       allBrand: 'Alle {{brand}}-kleuren',
+      sortBy: 'Cataloguskleuren sorteren',
+      sortByName: 'Sorteren op naam',
+      sortByColor: 'Sorteren op kleur',
     },
     noResults: 'Geen overeenkomsten gevonden',
     // Multi-color gradient + visual effect (#1154)

@@ -6138,6 +6138,9 @@ export default {
       showAll: '顯示所有顏色',
       showMatching: '僅顯示符合的顏色',
       allBrand: '{{brand}} 的所有顏色',
+      sortBy: '目錄顏色排序',
+      sortByName: '依名稱排序',
+      sortByColor: '依顏色排序',
     },
     noResults: '未找到匹配項',
     // 多色漸層 + 視覺效果 (#1154)

@@ -6132,6 +6132,9 @@ export default {
       showAll: 'Mostrar todas as cores',
       showMatching: 'Mostrar apenas as correspondentes',
       allBrand: 'Todas as cores {{brand}}',
+      sortBy: 'Ordenar cores do catálogo',
+      sortByName: 'Ordenar por nome',
+      sortByColor: 'Ordenar por cor',
     },
     noResults: 'Nenhum resultado encontrado',
     // Multi-color gradient + visual effect (#1154) — English fallback.

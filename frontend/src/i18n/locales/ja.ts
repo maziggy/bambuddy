@@ -6146,6 +6146,9 @@ export default {
       showAll: 'すべての色を表示',
       showMatching: '一致するものだけ表示',
       allBrand: '{{brand}}のすべての色',
+      sortBy: 'カタログの色の並べ替え',
+      sortByName: '名前順に並べる',
+      sortByColor: '色順に並べる',
     },
     noResults: '結果なし',
     // Multi-color gradient + visual effect (#1154) — English fallback.

@@ -6144,6 +6144,9 @@ export default {
       showAll: 'Alle Farben anzeigen',
       showMatching: 'Nur passende anzeigen',
       allBrand: 'Alle {{brand}}-Farben',
+      sortBy: 'Katalogfarben sortieren',
+      sortByName: 'Nach Name sortieren',
+      sortByColor: 'Nach Farbe sortieren',
     },
     noResults: 'Keine Ergebnisse',
     // Multi-Color-Verlauf + visueller Effekt (#1154)

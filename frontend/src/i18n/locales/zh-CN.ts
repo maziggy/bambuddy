@@ -6138,6 +6138,9 @@ export default {
       showAll: '显示所有颜色',
       showMatching: '仅显示匹配的颜色',
       allBrand: '{{brand}} 的所有颜色',
+      sortBy: '目录颜色排序',
+      sortByName: '按名称排序',
+      sortByColor: '按颜色排序',
     },
     noResults: '未找到匹配项',
     // 多色渐变 + 视觉效果 (#1154)

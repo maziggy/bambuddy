@@ -6190,6 +6190,9 @@ export default {
       showAll: 'Show all colors',
       showMatching: 'Show matching only',
       allBrand: 'All {{brand}} colors',
+      sortBy: 'Sort catalog colors',
+      sortByName: 'Sort by name',
+      sortByColor: 'Sort by color',
     },
     noResults: 'No matches found',
     // Multi-color gradient + visual effect (#1154)

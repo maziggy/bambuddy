@@ -196,6 +196,8 @@ class TestWhatItExposes:
             # Withheld (None) from a caller outside that printer's scope.
             "default_printer_id",
             "has_gcode_snippets",
+            "label_printer_configured",
+            "label_printer_tape",
         }
 
     @pytest.mark.asyncio

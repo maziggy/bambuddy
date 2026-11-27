@@ -178,15 +178,15 @@ class TestLayout:
         class _NoAms:
             raw_data: dict = {}
 
-        assert TrayLayout.from_state(None, ams3h_model=True) == TrayLayout.ams3h()
-        assert TrayLayout.from_state(_NoAms(), ams3h_model=True).slot_key(250) == (255, 5)
+        assert TrayLayout.from_state(None, AmsType.ZMULTI_A) == TrayLayout.ams3h()
+        assert TrayLayout.from_state(_NoAms(), AmsType.ZMULTI_A).slot_key(250) == (255, 5)
         assert TrayLayout.ams3h().is_external(250)
 
         # Live units always win over the model.
         class _Regular:
             raw_data = {"ams": [{"id": "0", "info": "1001"}]}
 
-        assert TrayLayout.from_state(_Regular(), ams3h_model=True).rack_units == ()
+        assert TrayLayout.from_state(_Regular(), AmsType.ZMULTI_A).rack_units == ()
 
 
 class TestWireSlot:

@@ -2646,6 +2646,7 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
                 printer_info.name,
                 printer_info.serial_number,
                 printer_manager.is_awaiting_plate_clear(printer_id),
+                printer_model=printer_manager.get_model(printer_id),
             )
     except Exception:
         pass  # Don't fail status callback if MQTT fails
@@ -12974,6 +12975,9 @@ async def lifespan(app: FastAPI):
             "mqtt_password": await get_setting(db, "mqtt_password") or "",
             "mqtt_topic_prefix": await get_setting(db, "mqtt_topic_prefix") or "bambuddy",
             "mqtt_use_tls": (await get_setting(db, "mqtt_use_tls") or "false") == "true",
+            "mqtt_ha_discovery_enabled": (await get_setting(db, "mqtt_ha_discovery_enabled") or "false") == "true",
+            "mqtt_ha_discovery_prefix": await get_setting(db, "mqtt_ha_discovery_prefix") or "homeassistant",
+            "external_url": await get_setting(db, "external_url") or "",
             "panda_breath_enabled": (await get_setting(db, "panda_breath_enabled") or "false") == "true",
         }
         await mqtt_relay.configure(mqtt_settings)
@@ -13140,6 +13144,12 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     print_scheduler.stop()
+    try:
+        from backend.app.services.label_print_jobs import label_print_service
+
+        await label_print_service.shutdown()  # label print jobs (#3612): cancelled jobs become failed
+    except Exception as e:
+        logging.warning("Failed to stop the label print workers: %s", e)
     smart_plug_manager.stop_scheduler()
     ha_sensor_manager.stop()
     location_ha_sensor_manager.stop()

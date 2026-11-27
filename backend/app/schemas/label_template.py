@@ -6,13 +6,17 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from backend.app.services.label_printers.brother_ql_media import TapeId
 from backend.app.services.label_renderer import (
     MAX_COLS,
     MAX_LENGTH_MM,
     MAX_ROWS,
     MIN_LABEL_H_MM,
     MIN_LABEL_W_MM,
+    ROLL_MAX_LENGTH_MM,
+    ROLL_MIN_LENGTH_MM,
     PageSize,
+    RollLayout,
     SheetLayout,
 )
 
@@ -52,6 +56,18 @@ class SheetLayoutSpec(BaseModel):
 
     def to_layout(self) -> SheetLayout:
         return SheetLayout(**self.model_dump())
+
+
+class RollSpec(BaseModel):
+    """Roll labels for a label printer's continuous tape (#3612), as a request carries them."""
+
+    model_config = ConfigDict(allow_inf_nan=False)
+
+    tape: TapeId
+    length_mm: float = Field(ge=ROLL_MIN_LENGTH_MM, le=ROLL_MAX_LENGTH_MM)
+
+    def to_layout(self) -> RollLayout:
+        return RollLayout(tape=self.tape, length_mm=self.length_mm)
 
 
 class SheetLayoutResponse(BaseModel):

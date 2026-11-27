@@ -21,6 +21,7 @@ import { Toggle } from './Toggle';
 import {
   computeBackupGroups,
   isAms3hUnit,
+  isAms3pUnit,
   isAmsHtUnit,
   normalizeColor,
   type AmsUnitLike,
@@ -45,6 +46,7 @@ interface AmsBackupModalProps {
  */
 function formatSlotLabel(amsId: number, slotIdx: number): string {
   if (isAms3hUnit({ id: amsId })) return `3H·${slotIdx + 1}`;
+  if (isAms3pUnit({ id: amsId })) return `3P·${slotIdx + 1}`;
   const isHt = isAmsHtUnit(amsId);
   const normalizedId = amsId >= 128 ? amsId - 128 : amsId;
   const letter = String.fromCharCode(65 + normalizedId);

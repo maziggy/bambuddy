@@ -1730,15 +1730,17 @@ async def _migrate_update_auto_link_constraint(conn) -> None:
 
 
 async def _migrate_widen_spoolman_slot_ams_id_range(conn) -> None:
-    """Bring spoolman_slot_assignments' CHECKs up to the model's (AMS-HT #1274, the H3C's AMS 3H).
+    """Bring spoolman_slot_assignments' CHECKs up to the model's (AMS-HT #1274, the H3C's AMS 3H, the P3C's AMS 3P).
 
     ck_ams_id_range, oldest formula: (ams_id >= 0 AND ams_id <= 7) OR ams_id = 255
     #1274 added AMS-HT:  ... OR (ams_id >= 128 AND ams_id <= 191) OR ams_id = 255
-    Now also the AMS 3H: ... OR ams_id = 32 OR ...
-    ck_tray_id_range:    tray_id 0-3, and 4-8 for ams_id 32 / 255 (models.spoolman_slot_assignment)
+    Then the AMS 3H:     ... OR ams_id = 32 OR ...
+    Now also the AMS 3P: ... OR ams_id IN (32, 33) OR ...
+    ck_tray_id_range:    tray_id 0-3, and 4-8 for ams_id 32 / 33 / 255 (models.spoolman_slot_assignment)
 
     The H2C/H2D AMS-HT reports ams_id 128+. The H3C's AMS 3H is unit 32 with
-    nine slots, and its per-hotend external inputs are stored as (255, 2-8).
+    nine slots, the P3C's AMS 3P unit 33 with seven (#3737), and their
+    per-hotend external inputs are stored as (255, 2-8).
     The old constraints rejected every such slot link with
     `IntegrityError: CHECK constraint failed`. A table whose tray check is a
     plain ``tray_id <= 8`` gets the final form too, without any row on slot 4-8
@@ -1777,7 +1779,7 @@ async def _migrate_widen_spoolman_slot_ams_id_range(conn) -> None:
         return
     sql = row[0] or ""
     # Already in the final form (a previous start, or create_all on a fresh install).
-    if "ams_id = 32" in sql and "ams_id IN (32, 255)" in sql:
+    if AMS_ID_CHECK in sql and TRAY_ID_CHECK in sql:
         return
     # Pre-migration table without any CHECK constraint at all → leave alone;
     # the app-level validation handles correctness and we don't risk a
@@ -4803,7 +4805,7 @@ async def _run_migrations(conn):
     # Replaces the pattern of writing spool.location in Spoolman (which polluted the
     # user-editable storage_location field in the UI).
     # ck_ams_id_range formula was widened in #1274 to admit AMS-HT (ams_id 128-191),
-    # and for the H3C's AMS 3H (as models.spoolman_slot_assignment).
+    # and for the H3C's AMS 3H and the P3C's AMS 3P (as models.spoolman_slot_assignment).
     await _safe_execute(
         conn,
         """
@@ -4815,8 +4817,8 @@ async def _run_migrations(conn):
             spoolman_spool_id INTEGER NOT NULL,
             assigned_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT uq_slot_assignment UNIQUE(printer_id, ams_id, tray_id),
-            CONSTRAINT ck_ams_id_range CHECK ((ams_id >= 0 AND ams_id <= 7) OR ams_id = 32 OR (ams_id >= 128 AND ams_id <= 191) OR ams_id = 255),
-            CONSTRAINT ck_tray_id_range CHECK (tray_id >= 0 AND (tray_id <= 3 OR (ams_id IN (32, 255) AND tray_id <= 8)))
+            CONSTRAINT ck_ams_id_range CHECK ((ams_id >= 0 AND ams_id <= 7) OR ams_id IN (32, 33) OR (ams_id >= 128 AND ams_id <= 191) OR ams_id = 255),
+            CONSTRAINT ck_tray_id_range CHECK (tray_id >= 0 AND (tray_id <= 3 OR (ams_id IN (32, 33, 255) AND tray_id <= 8)))
         )
         """
         if is_sqlite()
@@ -4829,8 +4831,8 @@ async def _run_migrations(conn):
             spoolman_spool_id INTEGER NOT NULL,
             assigned_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT uq_slot_assignment UNIQUE(printer_id, ams_id, tray_id),
-            CONSTRAINT ck_ams_id_range CHECK ((ams_id >= 0 AND ams_id <= 7) OR ams_id = 32 OR (ams_id >= 128 AND ams_id <= 191) OR ams_id = 255),
-            CONSTRAINT ck_tray_id_range CHECK (tray_id >= 0 AND (tray_id <= 3 OR (ams_id IN (32, 255) AND tray_id <= 8)))
+            CONSTRAINT ck_ams_id_range CHECK ((ams_id >= 0 AND ams_id <= 7) OR ams_id IN (32, 33) OR (ams_id >= 128 AND ams_id <= 191) OR ams_id = 255),
+            CONSTRAINT ck_tray_id_range CHECK (tray_id >= 0 AND (tray_id <= 3 OR (ams_id IN (32, 33, 255) AND tray_id <= 8)))
         )
         """,
     )
@@ -6345,7 +6347,7 @@ async def _migrate_h3c_queue_tray_ids(conn) -> None:
 
     from sqlalchemy import text
 
-    from backend.app.utils.tray_ids import AMS3H_UNIT_ID, RACK_SLOT_COUNT, TrayLayout, legacy_tray_index
+    from backend.app.utils.tray_ids import AMS3H_UNIT_ID, RACK_SLOT_COUNTS, AmsType, TrayLayout, legacy_tray_index
 
     old_base = legacy_tray_index(AMS3H_UNIT_ID, 0)  # 128
     ams3h = TrayLayout.ams3h()
@@ -6377,7 +6379,7 @@ async def _migrate_h3c_queue_tray_ids(conn) -> None:
                     continue
                 new = [
                     ams3h.global_tray_id(AMS3H_UNIT_ID, v - old_base)
-                    if type(v) is int and old_base <= v < old_base + RACK_SLOT_COUNT
+                    if type(v) is int and old_base <= v < old_base + RACK_SLOT_COUNTS[AmsType.ZMULTI_A]
                     else v
                     for v in mapping
                 ]

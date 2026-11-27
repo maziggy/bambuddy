@@ -1,0 +1,1 @@
+import{A as e}from"./client-DowYGtos.js";var t=e(`minus`,[[`path`,{d:`M5 12h14`,key:`1ays0h`}]]);export{t};

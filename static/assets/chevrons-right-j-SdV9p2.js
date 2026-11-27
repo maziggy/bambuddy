@@ -1,1 +1,0 @@
-import{A as e}from"./client-BQc3YK0t.js";var t=e(`chevrons-left`,[[`path`,{d:`m11 17-5-5 5-5`,key:`13zhaf`}],[`path`,{d:`m18 17-5-5 5-5`,key:`h8a8et`}]]),n=e(`chevrons-right`,[[`path`,{d:`m6 17 5-5-5-5`,key:`xnjwq`}],[`path`,{d:`m13 17 5-5-5-5`,key:`17xmmf`}]]);export{t as n,n as t};

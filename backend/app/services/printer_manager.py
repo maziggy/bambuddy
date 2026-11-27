@@ -3,7 +3,7 @@ import logging
 import math
 import re
 import traceback
-from collections.abc import Callable, Iterator
+from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
 
 from sqlalchemy import select
@@ -435,6 +435,7 @@ class PrinterManager:
         self._on_status_change: Callable[[int, PrinterState], None] | None = None
         self._on_ams_change: Callable[[int, list], None] | None = None
         self._on_fts_inlet_change: Callable[[int, int, str], None] | None = None
+        self._on_ams_presence_change: Callable[[int, int, int, bool], Awaitable[None]] | None = None
         self._on_layer_change: Callable[[int, int], None] | None = None
         self._on_print_progress: Callable[[int, int], None] | None = None
         self._on_bed_temp_update: Callable[[int, float], None] | None = None
@@ -751,6 +752,15 @@ class PrinterManager:
         """
         self._on_fts_inlet_change = callback
 
+    def set_ams_presence_change_callback(self, callback: Callable[[int, int, int, bool], Awaitable[None]]):
+        """Set callback for a spool going into or out of an AMS slot (#3756).
+
+        Receives ``(printer_id, ams_id, tray_id, present)``, from the slot's
+        presence bit (``tray_exist_bits``). Fired only when the bit flips, not
+        on the first sighting of a slot.
+        """
+        self._on_ams_presence_change = callback
+
     def set_layer_change_callback(self, callback: Callable[[int, int], None]):
         """Set callback for layer change events. Receives (printer_id, layer_num)."""
         self._on_layer_change = callback
@@ -885,6 +895,10 @@ class PrinterManager:
             if self._on_fts_inlet_change:
                 self._schedule_async(self._on_fts_inlet_change(printer_id, ams_id, inlet))
 
+        def on_ams_presence_change(ams_id: int, tray_id: int, present: bool):
+            if self._on_ams_presence_change:
+                self._schedule_async(self._on_ams_presence_change(printer_id, ams_id, tray_id, present))
+
         def on_layer_change(layer_num: int):
             if self._on_layer_change:
                 self._schedule_async(self._on_layer_change(printer_id, layer_num))
@@ -923,6 +937,7 @@ class PrinterManager:
             on_print_complete=on_print_complete,
             on_ams_change=on_ams_change,
             on_fts_inlet_change=on_fts_inlet_change,
+            on_ams_presence_change=on_ams_presence_change,
             on_layer_change=on_layer_change,
             on_print_progress=on_print_progress,
             on_bed_temp_update=on_bed_temp_update,

@@ -1046,6 +1046,23 @@ def _swap_splitter(printer_id: int, state, layer_usage_raw, end_layer: int, comp
     )
 
 
+def _whole_print_gcode_totals(
+    filament_usage: list[dict], layer_usage: dict[int, dict[int, float]] | None, filament_properties: dict | None
+) -> dict[int, float]:
+    """Slot id -> the G-code's grams over the whole print, for a finished print's
+    tray split (#3322), as the partial path passes the totals up to its stop layer."""
+    from backend.app.utils.tray_split import whole_print_gcode_grams
+
+    totals: dict[int, float] = {}
+    for usage in filament_usage:
+        slot_id = usage.get("slot_id", 0)
+        props = (filament_properties or {}).get(str(slot_id)) or (filament_properties or {}).get(slot_id) or {}
+        totals[slot_id] = whole_print_gcode_grams(
+            layer_usage, slot_id, float(props.get("density", 1.24)), float(props.get("diameter", 1.75))
+        )
+    return totals
+
+
 def _layer_usage_from_json(layer_usage_raw) -> dict[int, dict[int, float]] | None:
     """The tracking row's per-layer G-code usage with its int keys restored.
 
@@ -1969,6 +1986,7 @@ async def report_usage(printer_id: int, archive_id: int):
                     slot_materials_out=slot_materials,
                     cost_out=print_cost,
                     swaps=swaps,
+                    gcode_totals=_whole_print_gcode_totals(filament_usage, layer_usage, filament_properties),
                 )
                 spools_updated += split_updated
                 handled_global_tray_ids |= split_handled
@@ -1980,12 +1998,13 @@ async def report_usage(printer_id: int, archive_id: int):
                     changes = slot_changes.get(u.get("slot_id", 0))
                     if not changes:
                         continue
+                    slot_layer_usage = _layer_usage_from_json(layer_usage_raw)
                     split_updated, split_handled = await _report_spool_usage_split_by_tray_changes(
                         client,
                         [u],
                         changes,
                         ams_trays,
-                        _layer_usage_from_json(layer_usage_raw),
+                        slot_layer_usage,
                         filament_properties,
                         _multi_total,
                         _multi_total or _multi_current,
@@ -1996,6 +2015,7 @@ async def report_usage(printer_id: int, archive_id: int):
                         slot_materials_out=slot_materials,
                         cost_out=print_cost,
                         swaps=swaps,
+                        gcode_totals=_whole_print_gcode_totals([u], slot_layer_usage, filament_properties),
                     )
                     spools_updated += split_updated
                     handled_global_tray_ids |= split_handled

@@ -3421,6 +3421,15 @@ export default {
     passwordOptional: 'Lösenord (valfritt)',
     topicPrefix: 'Ämnesprefix',
     topicPrefixHint: 'Ämnen kommer att vara: {{prefix}}/printers/<serial>/status, etc.',
+    // Home Assistant MQTT discovery (#3724)
+    haDiscovery: {
+      title: "Home Assistant-upptäckt",
+      hint: "Skrivare och AMS-enheter visas i Home Assistant som enheter med sensorer, utan YAML. Skrivskyddat: Home Assistant kan inte styra skrivaren den här vägen.",
+      prefix: "Upptäcktsprefix",
+      prefixHint: "Standardvärdet i Home Assistant är homeassistant. Ändra det bara om du har ändrat det där.",
+      prefixConflict: "Upptäcktsprefixet måste skilja sig från ämnesprefixet.",
+      prefixWildcard: "Upptäcktsprefixet får inte innehålla + eller #.",
+    },
     // Prometheus
     prometheusMetrics: 'Prometheus-mätvärden',
     prometheusEndpointDescription: 'Exponera skrivarmätvärden på <code>/api/v1/metrics</code> för Prometheus/Grafana-övervakning.',
@@ -9920,5 +9929,37 @@ errors: {
     title: 'QR-kod',
     scanHint: 'Skanna för att öppna detta arkiv',
     download: 'Ladda ner QR-kod',
+  },
+  // "To do" list of what the queue waits on (#3615)
+  queueTodo: {
+    title: "Att göra",
+    empty: "Inget att göra. Kön väntar inte på någon.",
+    badgeLabel: "Att göra: {{count}}",
+    anyModel: "Valfri {{model}}",
+    jobCount_one: "{{count}} jobb",
+    jobCount_other: "{{count}} jobb",
+    kind: {
+      plateClear: "Bekräfta att byggplattan är tom",
+      loadFilament: "Ladda filament",
+      startStaged: "Starta det förberedda jobbet",
+      sensorInterlock: "Blockerad av en sensor",
+      powerOnFailed: "Skrivaren slogs inte på",
+      loadFilamentOn: "Ladda filament i",
+      plateChangerEmpty: "Plattbytaren är tom",
+      replaceSpool: "Byt spole",
+      replaceSpoolOn: "Byt spole i",
+    },
+    plateIsClear: "Plattan är tom",
+    or: "eller",
+    noStock: "inget kvar i lagret",
+    short: {
+      plain: "För lite {{filament}}",
+      in: "För lite {{filament}} i {{slots}}",
+      hasGrams: "För lite {{filament}}: {{slots}} har {{remaining}} g",
+      hasGramsNeeds: "För lite {{filament}}: {{slots}} har {{remaining}} g, jobbet behöver {{required}} g",
+    },
+    openPrinter: "Öppna skrivare",
+    openQueue: "Öppna kön",
+    actionFailed: "Åtgärden misslyckades",
   },
 };

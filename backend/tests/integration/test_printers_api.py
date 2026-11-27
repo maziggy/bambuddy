@@ -471,6 +471,40 @@ class TestPrintersAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_delete_printer_removes_it_from_home_assistant_discovery(
+        self, async_client: AsyncClient, printer_factory
+    ):
+        """The relay is told, so the printer's retained discovery configs are cleared (#3724)."""
+        from backend.app.services.mqtt_relay import mqtt_relay
+
+        printer = await printer_factory()
+
+        with patch.object(mqtt_relay, "on_printer_removed", AsyncMock()) as removed:
+            response = await async_client.delete(f"/api/v1/printers/{printer.id}")
+
+        assert response.status_code == 200
+        removed.assert_awaited_once_with(printer.serial_number)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_rename_reaches_the_name_the_status_callbacks_publish(
+        self, async_client: AsyncClient, printer_factory
+    ):
+        """MQTT and Home Assistant discovery read the cached name (#3724)."""
+        from backend.app.services.printer_manager import PrinterInfo, printer_manager
+
+        printer = await printer_factory(name="Old name")
+        printer_manager._printer_info[printer.id] = PrinterInfo(printer.name, printer.serial_number)
+        try:
+            response = await async_client.patch(f"/api/v1/printers/{printer.id}", json={"name": "New name"})
+
+            assert response.status_code == 200
+            assert printer_manager.get_printer(printer.id).name == "New name"
+        finally:
+            printer_manager._printer_info.pop(printer.id, None)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_delete_printer_removes_scheduled_dryings(
         self, async_client: AsyncClient, printer_factory, db_session
     ):

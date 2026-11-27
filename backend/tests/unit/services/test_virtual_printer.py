@@ -4899,6 +4899,37 @@ class TestH3cVirtualPrinter:
         assert _get_serial_for_model("N10", "391800001").startswith("32X99B")
 
 
+class TestP3cVirtualPrinter:
+    """A virtual printer can be a P3C (#3737).
+
+    Bambu Studio knows a P3C by its serial ("331", sn_prefix in
+    resources/printers/N11.json) and its model code N11.
+    """
+
+    @pytest.mark.parametrize("model", ["P3C", "N11"])
+    def test_the_name_and_the_code_resolve_to_n11(self, model):
+        from backend.app.api.routes.virtual_printers import _resolve_printer_model
+
+        assert _resolve_printer_model(model) == "N11"
+
+    def test_a_proxy_for_a_p3c_takes_its_code(self):
+        from backend.app.services.virtual_printer.manager import model_code_for_printer
+
+        assert model_code_for_printer("P3C", "33189A000000001") == "N11"
+
+    def test_a_virtual_p3c_has_a_real_p3c_serial(self):
+        from backend.app.services.virtual_printer.manager import _get_serial_for_model
+
+        assert _get_serial_for_model("N11", "391800001").startswith("33189A")
+
+    def test_a_virtual_p3c_is_a_rack_printer_with_the_ams3p(self):
+        """Without a target printer its trays are numbered as a P3C's."""
+        from backend.app.utils.printer_models import model_rack_ams
+        from backend.app.utils.tray_ids import AmsType
+
+        assert model_rack_ams("N11") == AmsType.ZMULTI_B
+
+
 class TestMqttIpRewrite:
     """Tests for TLSProxy._rewrite_mqtt_ip() MQTT packet IP rewriting."""
 

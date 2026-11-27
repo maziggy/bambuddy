@@ -1,8 +1,9 @@
-"""spoolman_slot_assignments admits the H3C's AMS 3H: ams_id 32 with slots 0-8, externals (255, 2-8).
+"""spoolman_slot_assignments admits the rack AMS units: the H3C's AMS 3H (ams_id 32,
+slots 0-8), the P3C's AMS 3P (33, slots 0-6, #3737), externals (255, 2-8).
 
-Slots 4-8 exist only on the AMS 3H and among an H3C's external inputs, so the
-tray CHECK is ``tray_id >= 0 AND (tray_id <= 3 OR (ams_id IN (32, 255) AND
-tray_id <= 8))``. An upgraded SQLite table is rebuilt to it from upstream's
+Slots 4-8 exist only on a rack AMS and among a rack printer's external inputs,
+so the tray CHECK is ``tray_id >= 0 AND (tray_id <= 3 OR (ams_id IN (32, 33,
+255) AND tray_id <= 8))``. An upgraded SQLite table is rebuilt to it from upstream's
 CHECKs and from the plain ``tray_id <= 8`` an earlier build of this support
 wrote; a row the latter let through on another unit is dropped.
 """
@@ -46,6 +47,11 @@ TABLE_WIDENED_REBUILT = (
 # ...and by the live-install script, which rewrote the create_all form in place.
 TABLE_WIDENED_IN_PLACE = _TABLE.format(ams=AMS_ID_CHECK, tray="tray_id >= 0 AND tray_id <= 8")
 TABLE_FINAL = _TABLE.format(ams=AMS_ID_CHECK, tray=TRAY_ID_CHECK)
+# As the H3C support left it, before the AMS 3P (unit 33).
+TABLE_AMS3H = _TABLE.format(
+    ams="(ams_id >= 0 AND ams_id <= 7) OR ams_id = 32 OR (ams_id >= 128 AND ams_id <= 191) OR ams_id = 255",
+    tray="tray_id >= 0 AND (tray_id <= 3 OR (ams_id IN (32, 255) AND tray_id <= 8))",
+)
 
 
 @pytest.fixture(autouse=True)
@@ -77,7 +83,8 @@ async def _rows(conn) -> list[tuple]:
 async def _assert_final_checks(conn) -> None:
     await _insert(conn, 32, 8, 14)  # AMS 3H slot 9
     await _insert(conn, 255, 5, 15)  # an H3C external input (250)
-    for ams_id, tray_id in ((0, 4), (128, 5), (8, 0), (32, 9), (40, 0), (255, 9)):
+    await _insert(conn, 33, 6, 16)  # AMS 3P slot 7
+    for ams_id, tray_id in ((0, 4), (128, 5), (8, 0), (32, 9), (33, 9), (34, 0), (40, 0), (255, 9)):
         with pytest.raises(IntegrityError):
             async with conn.begin_nested():
                 await _insert(conn, ams_id, tray_id, 99)
@@ -133,6 +140,26 @@ async def test_a_table_an_earlier_build_widened_is_narrowed_to_real_slots(ddl):
 
 
 @pytest.mark.asyncio
+async def test_the_ams3h_table_takes_the_ams3p_and_keeps_its_rows():
+    """An install upgraded for the H3C refused the P3C's unit 33 (#3737)."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await _table(conn, TABLE_AMS3H)
+        await _insert(conn, 32, 7, 11)
+        await _insert(conn, 255, 4, 12)
+        with pytest.raises(IntegrityError):
+            async with conn.begin_nested():
+                await _insert(conn, 33, 6, 13)
+
+        await _migrate_widen_spoolman_slot_ams_id_range(conn)
+        await _migrate_widen_spoolman_slot_ams_id_range(conn)
+
+        assert await _rows(conn) == [(32, 7, 11), (255, 4, 12)]
+        await _assert_final_checks(conn)
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_a_final_table_is_left_alone():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
@@ -165,7 +192,7 @@ def test_the_model_admits_what_the_migration_does():
     assert (
         checks["ck_tray_id_range"]
         == TRAY_ID_CHECK
-        == ("tray_id >= 0 AND (tray_id <= 3 OR (ams_id IN (32, 255) AND tray_id <= 8))")
+        == ("tray_id >= 0 AND (tray_id <= 3 OR (ams_id IN (32, 33, 255) AND tray_id <= 8))")
     )
 
 
@@ -181,14 +208,18 @@ def test_the_fresh_install_ddl_matches_the_model():
         assert f"CHECK ({AMS_ID_CHECK})" in ddl and f"CHECK ({TRAY_ID_CHECK})" in ddl
 
 
-def test_the_request_schema_admits_the_ams3h():
+def test_the_request_schema_admits_the_rack_ams_units():
     from pydantic import TypeAdapter, ValidationError
 
-    from backend.app.schemas.spoolman import SlotAmsId, SlotTrayId
+    from backend.app.schemas.spoolman import SlotAmsId, SlotTrayId, check_slot_tray_id
 
     assert TypeAdapter(SlotAmsId).validate_python(32) == 32
+    assert TypeAdapter(SlotAmsId).validate_python(33) == 33  # the P3C's AMS 3P (#3737)
     assert TypeAdapter(SlotTrayId).validate_python(8) == 8
-    for bad_ams in (8, 31, 33):
+    check_slot_tray_id(33, 6)
+    with pytest.raises(ValueError):
+        check_slot_tray_id(34, 6)
+    for bad_ams in (8, 31, 34):
         with pytest.raises(ValidationError):
             TypeAdapter(SlotAmsId).validate_python(bad_ams)
     with pytest.raises(ValidationError):

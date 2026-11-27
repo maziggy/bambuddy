@@ -31,7 +31,7 @@ from backend.app.services.virtual_printer.mqtt_bridge import MQTTBridge
 from backend.app.services.virtual_printer.mqtt_server import SimpleMQTTServer
 from backend.app.services.virtual_printer.ssdp_server import SSDPProxy, VirtualPrinterSSDPServer
 from backend.app.services.virtual_printer.tcp_proxy import SlicerProxyManager
-from backend.app.utils.printer_models import has_ams3h, is_nozzle_rack_model
+from backend.app.utils.printer_models import is_nozzle_rack_model, model_rack_ams
 from backend.app.utils.tray_ids import TrayLayout
 
 if TYPE_CHECKING:
@@ -70,6 +70,8 @@ VIRTUAL_PRINTER_MODELS = {
     "O1S": "H2S",  # H2S
     # H3 Series
     "N10": "H3C",  # H3C
+    # P3 Series
+    "N11": "P3C",  # P3C
 }
 
 # Serial number prefixes for each model (based on Bambu Lab serial number format)
@@ -111,6 +113,9 @@ MODEL_SERIAL_PREFIXES = {
     # H3C: first 6 characters of a real H3C serial (#3442); Bambu Studio knows
     # an H3C by "32X" (sn_prefix in resources/printers/N10.json).
     "N10": "32X99B",
+    # P3C: first 5 characters of a real P3C serial (#3737), then the revision
+    # letter as for the A2L; Bambu Studio knows a P3C by "331" (N11.json).
+    "N11": "33189A",
 }
 
 # Reverse mapping: display name → SSDP model code (for auto-inheriting from printer model)
@@ -233,7 +238,7 @@ def _extract_slicer_ams_mapping_json(
     as unmapped and the printer stopped with 0700-8012 (#3237).
     ``is_dual_nozzle`` is the target printer's, since that decides which
     global tray an external spool is. So is ``layout``: on a rack printer
-    (H3C) each hotend has its own external input, 247-255.
+    (H3C, P3C) each hotend has its own external input, 247-255.
 
     Returns ``None`` when the field is absent, unparsable, or the classic
     "all -1" unresolved-race sentinel (#2589) — never worth trusting over a
@@ -602,7 +607,8 @@ class VirtualPrinterInstance:
             from backend.app.services.printer_manager import printer_tray_layout
 
             return printer_tray_layout(self.target_printer_id, self._printer_manager)
-        return TrayLayout.ams3h() if has_ams3h(self.model) else TrayLayout()
+        rack_ams = model_rack_ams(self.model)
+        return TrayLayout.rack_printer(rack_ams) if rack_ams is not None else TrayLayout()
 
     async def on_print_command(self, filename: str, data: dict) -> None:
         """Handle print command from MQTT.

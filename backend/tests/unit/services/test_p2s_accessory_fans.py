@@ -400,7 +400,7 @@ class TestExhaustLabelModelListsAgree:
         from backend.app.utils.printer_models import EXHAUST_FAN_LABEL_MODELS
 
         # Internal codes never reach the card, so exclude them.
-        internal_codes = {"N7", "N6", "O1D", "O1E", "O2D", "O1C", "O1C2", "O1S", "N10"}
+        internal_codes = {"N7", "N6", "O1D", "O1E", "O2D", "O1C", "O1C2", "O1S", "N10", "N11"}
         backend_display = set(EXHAUST_FAN_LABEL_MODELS) - internal_codes
         missing = backend_display - self._frontend_models()
         assert not missing, (

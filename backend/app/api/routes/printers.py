@@ -520,6 +520,14 @@ async def update_printer(
         except Exception as e:
             logger.warning("Failed to broadcast plate changer count for printer %s: %s", printer_id, e)
 
+    # The name the status callbacks publish with is cached at connect: without
+    # this a rename reached MQTT and Home Assistant discovery (#3724) only with
+    # the next reconnect.
+    if "name" in update_data:
+        cached = printer_manager.get_printer(printer_id)
+        if cached is not None:
+            cached.name = printer.name
+
     if access_moved:
         await ws_manager.refresh_printer_scopes()
 
@@ -621,6 +629,12 @@ async def delete_printer(
 
     printer_manager.disconnect_printer(printer_id)
     wled_manager.remove_printer(printer_id)
+    try:
+        from backend.app.services.mqtt_relay import mqtt_relay
+
+        await mqtt_relay.on_printer_removed(printer.serial_number)
+    except Exception as e:
+        logger.warning("Could not remove printer %s from Home Assistant discovery: %s", printer_id, e)
 
     # Locked from the archive sweep to the commit (PostgreSQL; SQLite's single
     # writer serialises this anyway). A print start adopting or writing an

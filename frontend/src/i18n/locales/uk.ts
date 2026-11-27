@@ -3386,6 +3386,15 @@ export default {
     passwordOptional: "Пароль (необов’язково)",
     topicPrefix: "Префікс теми",
     topicPrefixHint: "Теми будуть: {{prefix}}/printers/<serial>/status тощо.",
+    // Home Assistant MQTT discovery (#3724)
+    haDiscovery: {
+      title: "Виявлення в Home Assistant",
+      hint: "Принтери та модулі AMS з'являються в Home Assistant як пристрої з датчиками, без YAML. Лише читання: керувати принтером із Home Assistant у такий спосіб не можна.",
+      prefix: "Префікс виявлення",
+      prefixHint: "Типове значення в Home Assistant — homeassistant. Змінюйте лише тоді, коли змінили його там.",
+      prefixConflict: "Префікс виявлення має відрізнятися від префікса топіків.",
+      prefixWildcard: "Префікс виявлення не може містити + або #.",
+    },
     // Prometheus
     prometheusMetrics: "Prometheus Метрики",
     prometheusEndpointDescription: "Показати показники принтера на <code>/api/v1/metrics</code> для моніторингу Prometheus/Grafana.",
@@ -9879,5 +9888,37 @@ export default {
     title: 'QR-код',
     scanHint: 'Скануйте, щоб відкрити цей архів',
     download: 'Завантажити QR-код',
+  },
+  // "To do" list of what the queue waits on (#3615)
+  queueTodo: {
+    title: "До виконання",
+    empty: "Немає завдань. Черга ні на кого не чекає.",
+    badgeLabel: "До виконання: {{count}}",
+    anyModel: "Будь-який {{model}}",
+    jobCount_one: "Завдання: {{count}}",
+    jobCount_other: "Завдання: {{count}}",
+    kind: {
+      plateClear: "Підтвердьте, що стіл вільний",
+      loadFilament: "Завантажте філамент",
+      startStaged: "Запустити підготовлене завдання",
+      sensorInterlock: "Заблоковано датчиком",
+      powerOnFailed: "Принтер не ввімкнувся",
+      loadFilamentOn: "Завантажте філамент у",
+      plateChangerEmpty: "Змінювач пластин порожній",
+      replaceSpool: "Замінити котушку",
+      replaceSpoolOn: "Замінити котушку в",
+    },
+    plateIsClear: "Стіл вільний",
+    or: "або",
+    noStock: "на складі не залишилось",
+    short: {
+      plain: "Недостатньо філаменту {{filament}}",
+      in: "Недостатньо філаменту {{filament}} у {{slots}}",
+      hasGrams: "Недостатньо філаменту {{filament}}: у {{slots}} залишилось {{remaining}} г",
+      hasGramsNeeds: "Недостатньо філаменту {{filament}}: у {{slots}} залишилось {{remaining}} г, завданню потрібно {{required}} г",
+    },
+    openPrinter: "Відкрити принтер",
+    openQueue: "Відкрити чергу",
+    actionFailed: "Не вдалося виконати дію",
   },
 };

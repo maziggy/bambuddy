@@ -165,7 +165,7 @@ import {
 import { ConfirmOutcomeDialog } from '../components/ConfirmOutcomeDialog';
 
 // Aliased: lucide-react already exports a `Link` icon into this module.
-import { Link as RouterLink, useNavigate } from 'react-router-dom';
+import { Link as RouterLink, useLocation, useNavigate } from 'react-router-dom';
 import { api, discoveryApi, firmwareApi, withMediaToken, ApiError } from '../api/client';
 import { formatDateOnly, formatDateTime, formatETA, formatDuration, formatDurationFromHours, parseUTCDate } from '../utils/date';
 import type { Printer, PrinterCreate, PrinterStatus, PandaBreathCommand, PandaBreathMode, PandaBreathState, AMSUnit, AMSTray, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool, SmartPlug, PrinterDiagnosticResult } from '../api/client';
@@ -204,7 +204,7 @@ import { PrinterInfoModal } from '../components/PrinterInfoModal';
 import { FeedDirectionModal } from '../components/FeedDirectionModal';
 import { plateCheckFailureText } from '../utils/plateCheck';
 import { ams3hDryerGridColumns, ams3hHasLoadedSlot, ams3hSlotGridPlacement, amsUnitSlotCount, isAms3hUnit, rackExternalLabel, amsHasLoadedTray, getAmsLabel, getEmptySlotKind, getGlobalTrayId, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag, installedNozzleDiameters, inventoryFillOverAms, isAmsHtUnit, isBambuLabSpool, trayForSlot, resolveSlotNozzleDiameter, resolveSlotExtruder, formatSlotLabel, slotPresetDescribesTray, FTS_INLET_SIDE } from '../utils/amsHelpers';
-import { RACK_SLOT_COUNT, externalHotend, externalSlotIndex, isExternalTray, layoutAmsType, locateTray, trayLayoutOf } from '../utils/trayIds';
+import { RACK_SLOT_COUNT, externalHotend, isRackAms, rackSlotCount, externalSlotIndex, isExternalTray, layoutAmsType, locateTray, trayLayoutOf } from '../utils/trayIds';
 import { MAX_CHAMBER_TEMP_C, PANDA_BREATH_MAX_TARGET_C, getPrinterImage, getWifiStrength, filterCompatibleQueueItems, isPrinterCurrentlyDispatchable, IDLE_PRINTER_STATES } from '../utils/printer';
 import { FilamentSlotCircle } from '../components/FilamentSlotCircle';
 import { Collapsible } from '../components/Collapsible';
@@ -749,10 +749,10 @@ function DualNozzleHoverCard({ leftSlot, rightSlot, activeNozzle, filamentInfo, 
 }
 
 // H2C Nozzle Rack Card — compact single row showing 6-position tool-changer dock.
-// A rack printer (H3C) has one hotend per rack AMS slot, rack ids 16-24. The
-// one on the toolhead reports id 0 with `addr_id` = its rack position, so it
-// is drawn there, ringed.
-function NozzleRackCard({ slots, filamentInfo, rackPrinter = false }: { slots: import('../api/client').NozzleRackSlot[]; filamentInfo?: Record<string, { name: string; k: number | null }>; rackPrinter?: boolean }) {
+// A rack printer has one hotend per rack AMS slot (the H3C nine, rack ids
+// 16-24; the P3C seven, 16-22). The one on the toolhead reports id 0 with
+// `addr_id` = its rack position, so it is drawn there, ringed.
+function NozzleRackCard({ slots, filamentInfo, rackPrinter = false, rackSize = RACK_SLOT_COUNT }: { slots: import('../api/client').NozzleRackSlot[]; filamentInfo?: Record<string, { name: string; k: number | null }>; rackPrinter?: boolean; rackSize?: number }) {
   const { t } = useTranslation();
   // Rack nozzles only (IDs >= 2) — excludes L/R hotend nozzles (IDs 0, 1).
   // H2C rack slot IDs are fixed at 16..21. When a nozzle is picked up into the
@@ -760,7 +760,7 @@ function NozzleRackCard({ slots, filamentInfo, rackPrinter = false }: { slots: i
   // base — computing it from min(present IDs) shifts everything left when slot 16
   // is the one currently mounted (#943).
   const rackNozzles = slots.filter(s => s.id >= 2);
-  const RACK_SIZE = rackPrinter ? RACK_SLOT_COUNT : 6;
+  const RACK_SIZE = rackPrinter ? rackSize : 6;
   const RACK_BASE_ID = 16;
   const mountedAt = (i: number) =>
     rackPrinter ? slots.find(s => s.id === 0 && s.addr_id === i) : undefined;
@@ -1875,6 +1875,7 @@ const MODELS_WITH_CHAMBER_FAN: ReadonlySet<string> = new Set([
   'H2C',
   'H2S',
   'H3C',
+  'P3C',
 ]);
 
 // The enclosure fan (big_fan2 / airduct part id 3) is the chamber EXHAUST fan
@@ -1884,7 +1885,8 @@ const MODELS_WITH_CHAMBER_FAN: ReadonlySet<string> = new Set([
 // (FAN_CHAMBER_0_IDX) unless a printer's file renames it, and only the X1
 // Carbon, X1, X1E and P1S files rename it to "Chamber", so those keep that
 // label. The H2 series and the H3C were missing here (#3521); the H3C's own
-// "Chamber" fan is a different one, part 15.
+// "Chamber" fan is a different one, part 15. Studio's P3C file (N11) names
+// part 3 "Exhaust" too (#3737).
 const MODELS_WITH_EXHAUST_LABEL: ReadonlySet<string> = new Set([
   'P2S',
   'X2D',
@@ -1893,6 +1895,7 @@ const MODELS_WITH_EXHAUST_LABEL: ReadonlySet<string> = new Set([
   'H2C',
   'H2S',
   'H3C',
+  'P3C',
 ]);
 
 // Where the exhaust fan is an add-on kit rather than built in, so its badge
@@ -4564,7 +4567,7 @@ function PrinterCard({
 
               {/* Enclosure Door Badge — models with an actual door sensor.
                   P1S has an enclosure door but no sensor; P1P has no enclosure at all. */}
-              {status?.connected && ['X1C', 'X1', 'X1E', 'X2D', 'P2S', 'H2D', 'H2D Pro', 'H2C', 'H2S', 'H3C'].includes(printer.model ?? '') && (
+              {status?.connected && ['X1C', 'X1', 'X1E', 'X2D', 'P2S', 'H2D', 'H2D Pro', 'H2C', 'H2S', 'H3C', 'P3C'].includes(printer.model ?? '') && (
                 <span
                   className={`flex items-center px-2 py-1 rounded-full text-xs ${
                     status.door_open
@@ -5255,6 +5258,7 @@ function PrinterCard({
                         slots={status.nozzle_rack}
                         filamentInfo={filamentInfo}
                         rackPrinter={trayLayout.rack}
+                        rackSize={rackSlotCount(trayLayout.units.find((unit) => isRackAms(unit.type))?.type) || RACK_SLOT_COUNT}
                       />
                     )}
                   </div>
@@ -5338,7 +5342,7 @@ function PrinterCard({
                       </button>
 
                       {/* Airduct Mode (P2S / X2D / H2* / H3C, an H2D Pro stored as "H2D Pro", #3335) */}
-                      {(['P2S', 'X2D', 'H2D', 'H2D Pro', 'H2C', 'H2S', 'H3C'].includes(printer.model ?? '')) && (() => {
+                      {(['P2S', 'X2D', 'H2D', 'H2D Pro', 'H2C', 'H2S', 'H3C', 'P3C'].includes(printer.model ?? '')) && (() => {
                         const isHeating = status.airduct_mode === 1;
                         const Icon = isHeating ? Flame : Snowflake;
                         const color = isHeating ? 'text-orange-600 dark:text-orange-400' : 'text-sky-600 dark:text-sky-400';
@@ -5794,6 +5798,8 @@ function PrinterCard({
                       const cardAms3h = isAms3hUnit(ams);
                       const cardLabel = getAmsLabel(ams.id, ams.ams_type);
                       const slotIndexes = Array.from({ length: amsUnitSlotCount(ams) }, (_, slotIdx) => slotIdx);
+                      // Slots in one row: four, or the AMS 3P's seven (#3737).
+                      const cardColumns = Math.max(4, slotIndexes.length);
                       // The AMS 3H dryer box around its two back-row slots, with the
                       // dryer's own humidity and temperature.
                       const ams3hDrySlots = cardAms3h ? (ams.dryer_slots ?? []) : [];
@@ -5808,7 +5814,7 @@ function PrinterCard({
 
                       return (
                         // The AMS 3H card is ten half-slot columns wide: five slots, nine gaps.
-                        <div key={ams.id} style={cardAms3h ? getAmsCardStyle(5, 9) : getAmsCardStyle(4)} className="min-w-0 p-2 bg-bambu-dark rounded-[10px] space-y-1">
+                        <div key={ams.id} style={cardAms3h ? getAmsCardStyle(5, 9) : getAmsCardStyle(cardColumns)} className="min-w-0 p-2 bg-bambu-dark rounded-[10px] space-y-1">
                             {/* Header: Label + Stats (no icon) */}
                             <div className="flex w-full min-h-7 items-center justify-between gap-2 rounded-lg bg-bambu-dark-secondary px-2 py-1">
                               <div className="flex min-w-0 flex-1 items-center gap-1.5">
@@ -5983,7 +5989,7 @@ function PrinterCard({
                               </div>
                             )}
                             {/* Slots grid: 4 columns - always render 4 slots (nine on the AMS 3H) */}
-                            <div className="grid w-full gap-1" style={cardAms3h ? ams3hSlotGridStyle : slotGridStyle(4)}>
+                            <div className="grid w-full gap-1" style={cardAms3h ? ams3hSlotGridStyle : slotGridStyle(cardColumns)}>
                               {ams3hDryer && (
                                 <div
                                   aria-hidden="true"
@@ -8695,6 +8701,7 @@ export function AddPrinterModal({
                   <option value="P1P">P1P</option>
                   <option value="P1S">P1S</option>
                   <option value="P2S">P2S</option>
+                  <option value="P3C">P3C</option>
                 </optgroup>
                 <optgroup label={t('printers.modal.seriesGroup', { series: 'X1' })}>
                   <option value="X1">X1</option>
@@ -9289,6 +9296,7 @@ function EditPrinterModal({
                   <option value="P1P">P1P</option>
                   <option value="P1S">P1S</option>
                   <option value="P2S">P2S</option>
+                  <option value="P3C">P3C</option>
                 </optgroup>
                 <optgroup label={t('printers.modal.seriesGroup', { series: 'X1' })}>
                   <option value="X1">X1</option>
@@ -9686,6 +9694,27 @@ export function PrintersPage() {
     queryKey: ['printers'],
     queryFn: api.getPrinters,
   });
+
+  // /printers#printer-card-<id> (the queue "To do" list, #3615): once the
+  // printers are loaded, bring that card into view; in S mode open it.
+  // Keyed on the navigation (location.key), so following the same link again
+  // scrolls again; marked handled only once the card was there to act on, so
+  // printers still loading or a filter hiding it retry when those change.
+  const { hash: locationHash, key: locationKey } = useLocation();
+  const handledCardNav = useRef<string | null>(null);
+  useEffect(() => {
+    const match = /^#printer-card-(\d+)$/.exec(locationHash);
+    if (!match || !printers || handledCardNav.current === locationKey) return;
+    const id = Number(match[1]);
+    if (!printers.some((p) => p.id === id)) return;
+    if (viewMode === 'compact') {
+      handledCardNav.current = locationKey;
+      openCompactCard(id);
+    } else if (document.getElementById(`printer-card-${id}`)) {
+      handledCardNav.current = locationKey;
+      scrollPrinterIntoView(id);
+    }
+  }, [locationHash, locationKey, printers, statusFilter, locationFilter, viewMode, openCompactCard, scrollPrinterIntoView]);
 
   // Fetch the UI-rendering subset of settings. Uses /ui-preferences (not /settings)
   // so users with printers:read but no settings:read still get the values needed

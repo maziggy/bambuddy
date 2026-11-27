@@ -27,8 +27,7 @@ from backend.app.utils.ams_drying import ACTIVE_DRY_STATUSES, DRY_COUNTDOWN_STAL
 from backend.app.utils.ams_humidity import ams_humidity_percent
 from backend.app.utils.paho_teardown import discard_queued_publishes, retire_paho_client
 from backend.app.utils.tray_ids import (
-    AMS3H_UNIT_ID,
-    RACK_SLOT_COUNT,
+    RACK_UNIT_IDS,
     AmsType,
     TrayLayout,
     ams_type_from_info,
@@ -40,6 +39,7 @@ from backend.app.utils.tray_ids import (
     is_rack_ams,
     legacy_tray_index,
     mapped_trays_with_slot,
+    rack_slot_count,
     reconcile_use_ams,
     reports_no_ams,
     tray_flag_bit,
@@ -61,7 +61,9 @@ PENDING_TRAY_TARGET_TTL = 120.0
 #   "n3f/<id>"     – AMS 2 Pro (H2D Pro and similar)
 #   "n3s/<id>"     – AMS HT (H2D Pro and similar; IDs typically start at 128)
 #   "n10a"         – AMS 3H (H3C), no suffix: read as "n10a/<its unit id>"
-_AMS_MODULE_PREFIXES = ("ams/", "ams_f1/", "n3f/", "n3s/", "n10a/")
+#   "n11a"         – AMS 3P (P3C, Studio's hotend_ams_type_string in N11.json);
+#                    without a suffix read as "n11a/<its unit id>" like the 3H
+_AMS_MODULE_PREFIXES = ("ams/", "ams_f1/", "n3f/", "n3s/", "n10a/", "n11a/")
 
 # gcode_state values that mean the printer is not idle and must not be handed a
 # new start-print (#2598). The firmware rejects a project_file while busy with
@@ -266,6 +268,9 @@ def change_filament_wire_ids(tray_id: int, layout: TrayLayout | None = None) -> 
 # print.mapping and the snow fields encode a slot as (32 << 8) | k. Commands
 # address it as {ams_id: 32, slot_id: k}.
 AMS3H_MODULE_NAME = "n10a"  # its get_version module (no "/<unit>" suffix)
+# The get_version module of each rack AMS, as the printer names it without a
+# unit suffix: the AMS 3H's (verified) and the AMS 3P's (#3737).
+RACK_AMS_MODULE_NAMES = {AMS3H_MODULE_NAME: AmsType.ZMULTI_A, "n11a": AmsType.ZMULTI_B}
 # Tray state of an AMS 3H slot whose filament is in its hotend (26: held at the inlet).
 _RACK_TRAY_IN_HOTEND = 27
 
@@ -397,7 +402,7 @@ def resolve_external_spools_in_mapping(
             and isinstance(slot_id, int)
             and not is_external_tray(ams_id, layout.rack)
             and is_rack_ams(layout.ams_type(ams_id))
-            and 0 <= slot_id < RACK_SLOT_COUNT
+            and 0 <= slot_id < rack_slot_count(layout.ams_type(ams_id))
         ):
             resolved[i] = layout.global_tray_id(ams_id, slot_id)
             continue
@@ -1264,7 +1269,8 @@ class PrinterState:
     ipcam: bool = False  # Live view / camera streaming enabled
     wifi_signal: int | None = None  # WiFi signal strength in dBm
     wired_network: bool = False  # Ethernet connection detected (home_flag bit 18)
-    door_open: bool = False  # Enclosure door open (home_flag bit 23; models with a door sensor: X1/X1C/X1E/X2D/P2S/H2*)
+    # Enclosure door open (home_flag bit 23; models with a door sensor: X1/X1C/X1E/X2D/P2S/P3C/H2*)
+    door_open: bool = False
     # Nozzle hardware info. Indexed by EXTRUDER id: [0] is the RIGHT hotend and
     # [1] the left, measured 2026-08-27 on an H2D fitted with 0.4 left / 0.6
     # right. (The legacy parser below writes left -> [0], but it only ever runs
@@ -3101,8 +3107,8 @@ class BambuMQTTClient:
             if not isinstance(module, dict):
                 continue
             name = module.get("name", "")
-            if name == AMS3H_MODULE_NAME:
-                name = f"{name}/{self._ams3h_unit_id()}"
+            if name in RACK_AMS_MODULE_NAMES:
+                name = f"{name}/{self._rack_unit_id(RACK_AMS_MODULE_NAMES[name])}"
             if not any(name.startswith(prefix) for prefix in _AMS_MODULE_PREFIXES):
                 continue
             try:
@@ -3518,9 +3524,9 @@ class BambuMQTTClient:
             self.model,
         )
         if key != self._tray_layout_key:
-            from backend.app.utils.printer_models import has_ams3h
+            from backend.app.utils.printer_models import model_rack_ams
 
-            self._tray_layout = TrayLayout.from_state(self.state, has_ams3h(self.model))
+            self._tray_layout = TrayLayout.from_state(self.state, model_rack_ams(self.model))
             self._tray_layout_key = key
         return self._tray_layout
 
@@ -3547,12 +3553,12 @@ class BambuMQTTClient:
                 ams_id,
                 int(kind),
                 global_tray_id(ams_id, 0, kind),
-                global_tray_id(ams_id, RACK_SLOT_COUNT - 1, kind),
+                global_tray_id(ams_id, rack_slot_count(kind) - 1, kind),
             )
 
-    def _ams3h_unit_id(self) -> int:
-        """The unit id of this printer's AMS 3H (32 on the H3C)."""
-        return next((uid for uid, kind in self.tray_layout.rack_units if kind == AmsType.ZMULTI_A), AMS3H_UNIT_ID)
+    def _rack_unit_id(self, rack_ams: AmsType) -> int:
+        """The unit id of this printer's rack AMS of type ``rack_ams`` (the H3C's AMS 3H 32, the P3C's AMS 3P 33)."""
+        return next((uid for uid, kind in self.tray_layout.rack_units if kind == rack_ams), RACK_UNIT_IDS[rack_ams])
 
     def _rack_ams_type(self, ams_id: int) -> AmsType | None:
         """The type of unit ``ams_id`` when it is one of this printer's rack AMS units, else None."""

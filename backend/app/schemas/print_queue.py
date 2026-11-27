@@ -592,3 +592,76 @@ class PrintBatchResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class QueueTodoShortTray(BaseModel):
+    """The tray of a spool that holds too little for the job (#3137)."""
+
+    # The slot as the inventory stores it: 255 is the external holder, 128 and up an AMS-HT.
+    ams_id: int
+    tray_id: int
+    # What the spool has left; None when the amount is not known.
+    remaining_grams: float | None = None
+
+
+class QueueTodoFilament(BaseModel):
+    """One filament a waiting job needs loaded (#3615). ``color`` is "#RRGGBB" or empty."""
+
+    type: str
+    color: str = ""
+    color_name: str = ""
+    # No spool in the inventory has any of it left (#3590): it has to be bought, not loaded.
+    no_stock: bool = False
+    # The nozzle a dual-nozzle file wants it on: 0 right, 1 left, None when it names none.
+    nozzle: int | None = None
+    # The filament is loaded, but its spool holds less than the job needs (#3137).
+    short: bool = False
+    # The tray of that spool. Empty when it is not known, or when the entry lists several printers.
+    short_trays: list[QueueTodoShortTray] = []
+    # What the job prints of a short filament, in grams; None when it is not short.
+    required_grams: float | None = None
+
+
+class QueueTodoJob(BaseModel):
+    id: int
+    name: str
+    # Whether the caller may start it now; only meaningful for a staged job.
+    can_start: bool = False
+
+
+class QueueTodoPrinter(BaseModel):
+    id: int
+    name: str
+
+
+class QueueTodoEntry(BaseModel):
+    kind: Literal[
+        "plate_clear",
+        "plate_changer_empty",
+        "load_filament",
+        "start_staged",
+        "sensor_interlock",
+        "power_on_failed",
+    ]
+    jobs: list[QueueTodoJob]
+    # What a load_filament entry waits for: filaments to load, or spools that are too short.
+    filaments: list[QueueTodoFilament] = []
+    # Printers where loading ``filaments`` lets a model job start; empty for other kinds.
+    printers: list[QueueTodoPrinter] = []
+    detail: str | None = None
+    # plate_changer_empty: the count a refill resets the plate changer to (#3575).
+    plate_capacity: int | None = None
+
+
+class QueueTodoGroup(BaseModel):
+    printer_id: int | None = None
+    printer_name: str
+    target_model: str | None = None
+    # The printer's model (a model group's target model), for naming its slots.
+    printer_model: str | None = None
+    entries: list[QueueTodoEntry]
+
+
+class QueueTodoResponse(BaseModel):
+    count: int
+    groups: list[QueueTodoGroup]

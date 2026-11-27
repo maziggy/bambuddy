@@ -277,6 +277,11 @@ def support_filament_type(tray_type: str | None, filament_id: str | None, preset
     return tray_type or ""
 
 
+def is_printer_filament_type(name: str | None) -> bool:
+    """Whether ``name`` is exactly one of the types an AMS slot can carry, in any case."""
+    return (name or "").strip().upper() in _PRINTER_TYPE_SET
+
+
 def known_printer_filament_type(text: str | None) -> str | None:
     """``printer_filament_type`` when it places ``text`` on a known type, else ``None``.
 

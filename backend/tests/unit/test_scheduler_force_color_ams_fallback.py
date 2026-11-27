@@ -159,6 +159,7 @@ class TestComputeAmsMappingFallback:
         item.plate_id = None
         item.filament_overrides = filament_overrides_json
         item.printer_id = 5
+        item.created_by_id = None  # no creator: unrestricted filament scope (#3522)
         return item
 
     def _make_status(self) -> MagicMock:

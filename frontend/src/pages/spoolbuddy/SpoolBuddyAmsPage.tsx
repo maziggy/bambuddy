@@ -6,7 +6,7 @@ import { Layers, Settings2, Package, Unlink, Link2, X } from 'lucide-react';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
 import { api } from '../../api/client';
 import type { PrinterStatus, AMSTray, SpoolAssignment } from '../../api/client';
-import { getGlobalTrayId, getEmptySlotKind, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag, formatSlotLabel, isAms3hUnit, isAmsHtUnit, isBambuLabSpool, rackExternalLabel, resolveSlotNozzleDiameter, slotPresetDescribesTray, spoolBuddyAmsName } from '../../utils/amsHelpers';
+import { getGlobalTrayId, getEmptySlotKind, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag, formatSlotLabel, isAms3hUnit, isAms3pUnit, inventoryFillOverAms, isAmsHtUnit, isBambuLabSpool, rackExternalLabel, resolveSlotNozzleDiameter, slotPresetDescribesTray, spoolBuddyAmsName } from '../../utils/amsHelpers';
 import { externalSlotIndex, isRackAms, layoutAmsType, locateTray, trayLayoutOf } from '../../utils/trayIds';
 import { getSwatchStyle, resolveSpoolColorName } from '../../utils/colors';
 import { mapModelCode } from '../../utils/printerModel';
@@ -388,11 +388,14 @@ export function SpoolBuddyAmsPage() {
       savedPresetId: slotPresetDescribesTray(slotPreset?.preset_id, tray?.tray_info_idx, slotPreset?.tray_info_idx)
         ? slotPreset?.preset_id
         : undefined,
-      location: `${spoolBuddyAmsName(amsId, amsType)} Slot ${trayId + 1}`,
+      location: t('configureAmsSlot.slotLabel', '{{ams}} Slot {{slot}}', {
+        ams: spoolBuddyAmsName(amsId, amsType),
+        slot: trayId + 1,
+      }),
     };
 
     setSlotActionPicker(slotData);
-  }, [slotPresets, amsExtruderMap, isDualNozzle, trayLayout]);
+  }, [slotPresets, amsExtruderMap, isDualNozzle, trayLayout, t]);
 
   const handleExtSlotClick = useCallback((extTray: AMSTray) => {
     const extTrayId = extTray.id ?? 254;
@@ -414,12 +417,12 @@ export function SpoolBuddyAmsPage() {
       location: trayLayout.rack
         ? rackExternalLabel(extTrayId)
         : isDualNozzle
-          ? (extTrayId === 254 ? 'Ext-L' : 'Ext-R')
-          : 'External',
+          ? (extTrayId === 254 ? t('printers.extL', 'Ext-L') : t('printers.extR', 'Ext-R'))
+          : t('printers.external', 'External'),
     };
 
     setSlotActionPicker(slotData);
-  }, [slotPresets, isDualNozzle, trayLayout.rack]);
+  }, [slotPresets, isDualNozzle, trayLayout.rack, t]);
 
   const openConfigureFromPicker = useCallback(() => {
     if (!slotActionPicker) return;
@@ -484,7 +487,7 @@ export function SpoolBuddyAmsPage() {
           const slot = formatSlotLabel(unit.id, i, isHt, isExternal);
           setAlert({
             type: 'warning',
-            message: `Low Filament: ${tray.tray_type} (${slot}) - ${tray.remain}% remaining`,
+            message: t('spoolbuddy.ams.lowFilamentAlert', 'Low Filament: {{type}} ({{slot}}) - {{remain}}% remaining', { type: tray.tray_type, slot, remain: tray.remain }),
           });
           return;
         }
@@ -512,8 +515,8 @@ export function SpoolBuddyAmsPage() {
       const spoolmanFill = getSpoolmanFillForSlot(unit.id, 0, isTrayEmpty(tray) ? null : tray);
       const invFill = fillOverrides[`${unit.id}-0`] ?? null;
       const amsFill = tray.remain != null && tray.remain >= 0 ? tray.remain : null;
-      // If inventory says 0% but AMS reports positive remain, prefer AMS (#676)
-      const resolvedInvFill = (invFill === 0 && amsFill !== null && amsFill > 0) ? null : invFill;
+      // An RFID spool the AMS still reads filament on wins over an inventory at 0% (#676, #3738)
+      const resolvedInvFill = inventoryFillOverAms(invFill, tray);
       items.push({
         key: `ht-${unit.id}`,
         label: spoolBuddyAmsName(unit.id),
@@ -542,8 +545,8 @@ export function SpoolBuddyAmsPage() {
       const extSpoolmanFill = getSpoolmanFillForSlot(255, extSlotTrayId, isTrayEmpty(extTray) ? null : extTray);
       const extInvFill = fillOverrides[`255-${extSlotTrayId}`] ?? null;
       const extAmsFill = extTray.remain != null && extTray.remain >= 0 ? extTray.remain : null;
-      // If inventory says 0% but AMS reports positive remain, prefer AMS (#676)
-      const extResolvedInvFill = (extInvFill === 0 && extAmsFill !== null && extAmsFill > 0) ? null : extInvFill;
+      // An RFID spool the AMS still reads filament on wins over an inventory at 0% (#676, #3738)
+      const extResolvedInvFill = inventoryFillOverAms(extInvFill, extTray);
       items.push({
         key: `ext-${extTrayId}`,
         label: trayLayout.rack
@@ -592,8 +595,8 @@ export function SpoolBuddyAmsPage() {
             {/* Regular AMS cards — 4-slot, 2-col grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {regularAms.map((unit) => (
-                // The AMS 3H takes the full width for its nine slots.
-                <div key={unit.id} className={isAms3hUnit(unit) ? 'md:col-span-2' : 'contents'}>
+                // A rack AMS takes the full width: the AMS 3H's nine slots, the AMS 3P's seven.
+                <div key={unit.id} className={isAms3hUnit(unit) || isAms3pUnit(unit) ? 'md:col-span-2' : 'contents'}>
                 <AmsUnitCard
                   unit={unit}
                   activeSlot={getActiveSlotForAms(unit.id)}
@@ -645,7 +648,7 @@ export function SpoolBuddyAmsPage() {
                           {nozzleSide && <NozzleBadge side={nozzleSide} />}
                         </div>
                         <div className="text-sm text-white/80 truncate">
-                          {isEmpty ? 'Empty' : tray.tray_type || '?'}
+                          {isEmpty ? t('ams.empty', 'Empty') : tray.tray_type || '?'}
                         </div>
                         {(temp != null || humidity != null) && (
                           <div className="flex items-center gap-1.5">

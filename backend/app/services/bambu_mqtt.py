@@ -27,8 +27,7 @@ from backend.app.utils.ams_drying import ACTIVE_DRY_STATUSES, DRY_COUNTDOWN_STAL
 from backend.app.utils.ams_humidity import ams_humidity_percent
 from backend.app.utils.paho_teardown import discard_queued_publishes, retire_paho_client
 from backend.app.utils.tray_ids import (
-    AMS3H_UNIT_ID,
-    RACK_SLOT_COUNT,
+    RACK_UNIT_IDS,
     AmsType,
     TrayLayout,
     ams_type_from_info,
@@ -40,6 +39,9 @@ from backend.app.utils.tray_ids import (
     is_rack_ams,
     legacy_tray_index,
     mapped_trays_with_slot,
+    rack_slot_count,
+    reconcile_use_ams,
+    reports_no_ams,
     tray_flag_bit,
     unit_ams_type,
     unit_label,
@@ -59,7 +61,9 @@ PENDING_TRAY_TARGET_TTL = 120.0
 #   "n3f/<id>"     – AMS 2 Pro (H2D Pro and similar)
 #   "n3s/<id>"     – AMS HT (H2D Pro and similar; IDs typically start at 128)
 #   "n10a"         – AMS 3H (H3C), no suffix: read as "n10a/<its unit id>"
-_AMS_MODULE_PREFIXES = ("ams/", "ams_f1/", "n3f/", "n3s/", "n10a/")
+#   "n11a"         – AMS 3P (P3C, Studio's hotend_ams_type_string in N11.json);
+#                    without a suffix read as "n11a/<its unit id>" like the 3H
+_AMS_MODULE_PREFIXES = ("ams/", "ams_f1/", "n3f/", "n3s/", "n10a/", "n11a/")
 
 # gcode_state values that mean the printer is not idle and must not be handed a
 # new start-print (#2598). The firmware rejects a project_file while busy with
@@ -78,6 +82,12 @@ _ACTIVE_PRINT_STATES = frozenset({"PREPARE", "SLICING", "RUNNING", "PAUSE"})
 # evidence of why. The margin absorbs a stale last observation between AMS
 # pushes; it is not a judgement about how short "short" is.
 _EARLY_DRY_END_MINUTES = 5
+
+# A cycle whose countdown reads 0 on the first report after the printer was out
+# of sight ended while nobody watched (#3662). It finished when its countdown
+# could have run out in that time, with this many minutes of slack for the
+# report interval; otherwise it was cut off, by a power loss most likely.
+_UNSEEN_DRY_END_SLACK_MINUTES = 2
 
 # CONNACK reason codes that mean the printer actively refused our credentials,
 # as opposed to being unreachable or busy. Bambu speaks MQTT 3.1.1, whose
@@ -258,6 +268,11 @@ def change_filament_wire_ids(tray_id: int, layout: TrayLayout | None = None) -> 
 # print.mapping and the snow fields encode a slot as (32 << 8) | k. Commands
 # address it as {ams_id: 32, slot_id: k}.
 AMS3H_MODULE_NAME = "n10a"  # its get_version module (no "/<unit>" suffix)
+# The get_version module of each rack AMS, as the printer names it without a
+# unit suffix: the AMS 3H's (verified) and the AMS 3P's (#3737).
+RACK_AMS_MODULE_NAMES = {AMS3H_MODULE_NAME: AmsType.ZMULTI_A, "n11a": AmsType.ZMULTI_B}
+# Tray state of an AMS 3H slot whose filament is in its hotend (26: held at the inlet).
+_RACK_TRAY_IN_HOTEND = 27
 
 
 def _mqtt_int(value: object) -> int | None:
@@ -387,7 +402,7 @@ def resolve_external_spools_in_mapping(
             and isinstance(slot_id, int)
             and not is_external_tray(ams_id, layout.rack)
             and is_rack_ams(layout.ams_type(ams_id))
-            and 0 <= slot_id < RACK_SLOT_COUNT
+            and 0 <= slot_id < rack_slot_count(layout.ams_type(ams_id))
         ):
             resolved[i] = layout.global_tray_id(ams_id, slot_id)
             continue
@@ -1039,6 +1054,11 @@ _HMS_USER_ACTION_CODES: frozenset[str] = frozenset(
 # "0500_0007", which matches nothing in any catalog.
 HMS_MQTT_VERIFY_FAILED: str = "0500050000010007"
 
+# Command responses whose content the debug log leaves out (#3531). push_status
+# is the printer's status, arriving every second and logged field by field;
+# project_file carries the download URL of a print, which may be a signed one.
+_COMMANDS_LOGGED_BY_NAME_ONLY: frozenset[str] = frozenset({"push_status", "project_file"})
+
 
 @dataclass
 class KProfile:
@@ -1249,7 +1269,8 @@ class PrinterState:
     ipcam: bool = False  # Live view / camera streaming enabled
     wifi_signal: int | None = None  # WiFi signal strength in dBm
     wired_network: bool = False  # Ethernet connection detected (home_flag bit 18)
-    door_open: bool = False  # Enclosure door open (home_flag bit 23; models with a door sensor: X1/X1C/X1E/X2D/P2S/H2*)
+    # Enclosure door open (home_flag bit 23; models with a door sensor: X1/X1C/X1E/X2D/P2S/P3C/H2*)
+    door_open: bool = False
     # Nozzle hardware info. Indexed by EXTRUDER id: [0] is the RIGHT hotend and
     # [1] the left, measured 2026-08-27 on an H2D fitted with 0.4 left / 0.6
     # right. (The legacy parser below writes left -> [0], but it only ever runs
@@ -1671,6 +1692,18 @@ class BambuMQTTClient:
         # The target is copied here when the countdown starts because a stop
         # drops _drying_targets before the cycle ends (#2863).
         self._dry_cycles: dict[int, dict[str, object]] = {}
+        # Per-AMS monotonic stamp of the last report that carried dry_time, and
+        # the units that were drying when the printer went out of sight (MQTT
+        # dropped, or Bambuddy switched its plug off), with their countdown and
+        # that stamp: the first report after it decides how their cycle ended
+        # (#3662). The cycle state above is kept through the gap, so a network
+        # drop mid-cycle loses nothing.
+        self._dry_seen_at: dict[int, float] = {}
+        self._dry_unseen: dict[int, tuple[int, float]] = {}
+        # Bambuddy switched the printer's plug off while one of them dried, and
+        # the connection dropped after that: the power really went (#3662).
+        self._dry_power_cut = False
+        self._dry_power_cut_disconnected = False
         # Stage numbers this printer has reported that STAGE_NAMES has no entry
         # for, so each is reported once rather than on every transition into it.
         self._unnamed_stages_seen: set[int] = set()
@@ -1945,6 +1978,7 @@ class BambuMQTTClient:
         """
         if not self.state.connected:
             return False
+        self._note_drying_out_of_sight(power_cut=True)
         previous = self.state.state
         # Blank the state BEFORE recording what to restore. This runs on the
         # event loop while _on_message runs on the paho thread, and the restore
@@ -2030,6 +2064,7 @@ class BambuMQTTClient:
                     self.serial_number,
                 )
             self._last_stale_reconnect = now
+            self._note_drying_out_of_sight()
             self.state.connected = False
             if self.on_state_change:
                 self.on_state_change(self.state)
@@ -2289,6 +2324,7 @@ class BambuMQTTClient:
                 self.serial_number,
                 rc,
             )
+            self._note_drying_out_of_sight(disconnected=True)
             return
 
         # Ignore spurious disconnect callbacks if we've received a message recently
@@ -2302,6 +2338,8 @@ class BambuMQTTClient:
                 f"[{self.serial_number}] Ignoring spurious disconnect (last message {time_since_last_message:.1f}s ago)"
             )
             return
+
+        self._note_drying_out_of_sight(disconnected=True)
 
         # Carry the last CONNACK refusal into the disconnect line. paho reports
         # the drop that follows a refused CONNACK as "Unspecified error", so on
@@ -2867,6 +2905,14 @@ class BambuMQTTClient:
             if "command" in print_data:
                 cmd = print_data.get("command")
                 logger.debug("[%s] Received command response: %s", self.serial_number, cmd)
+                if cmd not in _COMMANDS_LOGGED_BY_NAME_ONLY:
+                    # The printer reports back commands sent from its own
+                    # screen too, and this is the only place their content can
+                    # be seen: H3C Unload All is one command whose fields are
+                    # not documented anywhere (#3531).
+                    logger.debug(
+                        "[%s] %s content: %s", self.serial_number, cmd, json.dumps(print_data, default=str)[:4000]
+                    )
                 if cmd in ("extrusion_cali_set", "extrusion_cali_del"):
                     # INFO, not debug: this is the printer's verdict on a write
                     # the user just made, and it was invisible in support
@@ -3061,8 +3107,8 @@ class BambuMQTTClient:
             if not isinstance(module, dict):
                 continue
             name = module.get("name", "")
-            if name == AMS3H_MODULE_NAME:
-                name = f"{name}/{self._ams3h_unit_id()}"
+            if name in RACK_AMS_MODULE_NAMES:
+                name = f"{name}/{self._rack_unit_id(RACK_AMS_MODULE_NAMES[name])}"
             if not any(name.startswith(prefix) for prefix in _AMS_MODULE_PREFIXES):
                 continue
             try:
@@ -3478,9 +3524,9 @@ class BambuMQTTClient:
             self.model,
         )
         if key != self._tray_layout_key:
-            from backend.app.utils.printer_models import has_ams3h
+            from backend.app.utils.printer_models import model_rack_ams
 
-            self._tray_layout = TrayLayout.from_state(self.state, has_ams3h(self.model))
+            self._tray_layout = TrayLayout.from_state(self.state, model_rack_ams(self.model))
             self._tray_layout_key = key
         return self._tray_layout
 
@@ -3507,12 +3553,12 @@ class BambuMQTTClient:
                 ams_id,
                 int(kind),
                 global_tray_id(ams_id, 0, kind),
-                global_tray_id(ams_id, RACK_SLOT_COUNT - 1, kind),
+                global_tray_id(ams_id, rack_slot_count(kind) - 1, kind),
             )
 
-    def _ams3h_unit_id(self) -> int:
-        """The unit id of this printer's AMS 3H (32 on the H3C)."""
-        return next((uid for uid, kind in self.tray_layout.rack_units if kind == AmsType.ZMULTI_A), AMS3H_UNIT_ID)
+    def _rack_unit_id(self, rack_ams: AmsType) -> int:
+        """The unit id of this printer's rack AMS of type ``rack_ams`` (the H3C's AMS 3H 32, the P3C's AMS 3P 33)."""
+        return next((uid for uid, kind in self.tray_layout.rack_units if kind == rack_ams), RACK_UNIT_IDS[rack_ams])
 
     def _rack_ams_type(self, ams_id: int) -> AmsType | None:
         """The type of unit ``ams_id`` when it is one of this printer's rack AMS units, else None."""
@@ -4377,6 +4423,7 @@ class BambuMQTTClient:
             seen_before = ams_id in self._previous_dry_times
             previous = self._previous_dry_times.get(ams_id, 0)
             self._previous_dry_times[ams_id] = current
+            cut_off = self._dry_end_was_cut_off(ams_id, previous, current)
             if current > 0:
                 cycle = self._dry_cycles.get(ams_id)
                 if cycle is None or previous == 0:
@@ -4403,9 +4450,24 @@ class BambuMQTTClient:
                 and now_mono - self._dry_time_changed_at[ams_id] > DRY_COUNTDOWN_STALL_SECONDS
             )
             if previous > 0 and current == 0:
-                self._log_drying_cycle_end(ams_id, previous, ams_unit, self._drying_targets.pop(ams_id, None))
-                if self.on_drying_complete:
-                    self.on_drying_complete(ams_id)
+                if cut_off:
+                    # Not a finished cycle: nothing may act on it as one, as
+                    # the drying auto-off did by switching the plug off again
+                    # five minutes after the power came back (#3662). Its end
+                    # is still recorded below: the cycle is over.
+                    self._drying_targets.pop(ams_id, None)
+                    self._drying_stops_sent.discard(ams_id)
+                    logger.info(
+                        "[%s] AMS %d drying was cut off while the printer was out of sight, with %d minutes "
+                        "still on the clock (power loss?); not treated as a finished cycle",
+                        self.serial_number,
+                        ams_id,
+                        previous,
+                    )
+                else:
+                    self._log_drying_cycle_end(ams_id, previous, ams_unit, self._drying_targets.pop(ams_id, None))
+                    if self.on_drying_complete:
+                        self.on_drying_complete(ams_id)
                 cycle = self._dry_cycles.pop(ams_id, None) or {"peak": previous, "start_seen": False, "target": None}
                 if self.on_drying_cycle_end:
                     self.on_drying_cycle_end(self._drying_cycle_end(ams_id, previous, cycle))
@@ -4466,6 +4528,45 @@ class BambuMQTTClient:
             target_temp=target_temp,
             target_hours=target_hours,
         )
+
+    def _note_drying_out_of_sight(self, *, power_cut: bool = False, disconnected: bool = False) -> None:
+        """Remember which AMS units were drying when the printer went out of sight (#3662).
+
+        Called when the MQTT connection drops or goes stale, and when Bambuddy
+        presumes the power gone because it switched the printer's plug off.
+        The first of these in a gap wins: it holds the last report before it.
+        """
+        now = time.monotonic()
+        for ams_id, remaining in self._previous_dry_times.items():
+            if remaining > 0 and ams_id not in self._dry_unseen:
+                self._dry_unseen[ams_id] = (remaining, self._dry_seen_at.get(ams_id, now))
+        if power_cut and self._dry_unseen:
+            self._dry_power_cut = True
+        if disconnected and self._dry_power_cut:
+            self._dry_power_cut_disconnected = True
+
+    def _dry_end_was_cut_off(self, ams_id: int, previous: int, current: int) -> bool:
+        """Did this unit's cycle end while the printer was out of sight, short of its time (#3662)?
+
+        Asked on every report that carries ``dry_time``; only the first one
+        after a gap for a unit that was drying then can answer True. That
+        report reading 0 is a cut-off cycle when its countdown could not have
+        run out in the gap, or when Bambuddy switched the plug off under it and
+        the connection then dropped. Otherwise the cycle may have finished
+        while unseen (a network drop near its end) and counts as finished.
+        """
+        now = time.monotonic()
+        self._dry_seen_at[ams_id] = now
+        unseen = self._dry_unseen.pop(ams_id, None)
+        power_cut = self._dry_power_cut and self._dry_power_cut_disconnected
+        if not self._dry_unseen:
+            self._dry_power_cut = False
+            self._dry_power_cut_disconnected = False
+        if unseen is None or current != 0 or previous <= 0:
+            return False
+        remaining, seen_at = unseen
+        minutes_unseen = (now - seen_at) / 60
+        return power_cut or remaining - minutes_unseen > _UNSEEN_DRY_END_SLACK_MINUTES
 
     def _log_drying_cycle_end(
         self,
@@ -6708,6 +6809,10 @@ class BambuMQTTClient:
             from backend.app.utils.printer_models import is_dual_nozzle_model, is_nozzle_rack_model
 
             is_dual_nozzle = self._is_dual_nozzle or is_dual_nozzle_model(self.model)
+            # The scheduler's filament check (#3522) reads the feed with the
+            # same `reconcile_use_ams`, but its dual-nozzle test
+            # (`_might_be_dual_nozzle`) is more generous: it also counts a
+            # populated `ams_extruder_map` or more than one external feed.
 
             # Build ams_mapping2 from ams_mapping (detailed format with ams_id/slot_id)
             ams_mapping2 = []
@@ -6798,26 +6903,28 @@ class BambuMQTTClient:
             #     0-253. Keeping them distinct means an unresolved mapping fails loudly
             #     (or is recomputed upstream) instead of silently going external, and
             #     never gets force-enabled by (a) either.
+            #
+            # The rule lives in `reconcile_use_ams`, which the scheduler's
+            # filament-permission check (#3522) shares, so what it judges is
+            # what is sent here. (Not when the scheduler worked out from the
+            # plate's own filament list that it prints only from the spool
+            # holder: a real tray here is then one another plate of the file
+            # uses.)
             if ams_mapping and not is_dual_nozzle:
-                has_real_tray = any(
-                    t is not None and 0 <= int(t) <= 253 and not layout.is_external(int(t)) for t in ams_mapping
+                reconciled = reconcile_use_ams(
+                    ams_mapping, use_ams, layout, plate_uses_only_external=plate_uses_only_external
                 )
-                all_external = all(t is None or int(t) >= 254 or layout.is_external(int(t)) for t in ams_mapping)
-                # (Not when the scheduler worked out from the plate's own
-                # filament list that it prints only from the spool holder: a
-                # real tray here is then one another plate of the file uses.)
-                if has_real_tray and not use_ams and not plate_uses_only_external:
-                    use_ams = True
+                if reconciled and not use_ams:
                     logger.info(
                         "[%s] AMS mapping resolved a real slot — setting use_ams=True (#2595)",
                         self.serial_number,
                     )
-                elif use_ams and all_external:
-                    use_ams = False
+                elif use_ams and not reconciled:
                     logger.info(
                         "[%s] All filament slots use external spool — setting use_ams=False",
                         self.serial_number,
                     )
+                use_ams = reconciled
 
             # (c) A single-nozzle printer that reported no AMS at all can only
             #     print from the spool holder, whatever the mapping says. With
@@ -6827,7 +6934,7 @@ class BambuMQTTClient:
             #     mapping table" (#3356). An empty raw_data["ams"] is the
             #     printer's own report of no AMS; a missing key means no AMS
             #     push has been handled yet (a reconnect), which changes nothing.
-            if use_ams and not is_dual_nozzle and self.state.raw_data.get("ams") == []:
+            if use_ams and not is_dual_nozzle and reports_no_ams(self.state.raw_data):
                 use_ams = False
                 logger.info("[%s] Printer has no AMS — setting use_ams=False (#3356)", self.serial_number)
 
@@ -8563,6 +8670,59 @@ class BambuMQTTClient:
         logger.info("[%s] Cleared pending_tray_target (unload)", self.serial_number)
 
         return True
+
+    def rack_loaded_slots(self) -> list[tuple[int, int]]:
+        """``(ams_id, slot)`` of every rack AMS slot whose hotend holds its filament.
+
+        The AMS 3H reports such a slot as tray state 27; a spool that is only
+        held at the inlet reports 26 (#3531).
+        """
+        loaded: list[tuple[int, int]] = []
+        for ams_id, _kind in self.tray_layout.rack_units:
+            unit = self._ams_unit(ams_id) or {}
+            for tray in unit.get("tray") or []:
+                if not isinstance(tray, dict) or _mqtt_int(tray.get("state")) != _RACK_TRAY_IN_HOTEND:
+                    continue
+                slot = _mqtt_int(tray.get("id"))
+                if slot is not None:
+                    loaded.append((ams_id, slot))
+        return sorted(loaded)
+
+    def ams_unload_all(self) -> int:
+        """Unload every loaded hotend of a rack printer (H3C) in one command.
+
+        As the H3C's own Unload All sends it (#3531): one
+        ``multi_slot_ams_change_filament`` listing each loaded AMS 3H slot as
+        ``255 - k``, the same feeder id a single unload names. The printer then
+        unloads them one after another and asks for the hand pull at the end.
+
+        Returns:
+            The number of slots in the command, 0 if nothing was sent.
+        """
+        client = self._client
+        if client is None or not self.state.connected:
+            return 0
+        slots = self.rack_loaded_slots()
+        if not slots:
+            logger.info("[%s] Unload all: no AMS 3H slot is loaded", self.serial_number)
+            return 0
+        self._sequence_id += 1
+        command = {
+            "print": {
+                "command": "multi_slot_ams_change_filament",
+                "sequence_id": str(self._sequence_id),
+                "is_load": False,
+                "request_array": [{"ams_id": ams_id, "slot_id": 255 - slot, "soft_temp": 0} for ams_id, slot in slots],
+                "soft_temp": 0,
+                "temper_check": True,
+            }
+        }
+        command_json = json.dumps(command)
+        logger.info("[%s] Publishing multi_slot_ams_change_filament (unload all): %s", self.serial_number, command_json)
+        client.publish(self.topic_publish, command_json, qos=1)
+        self.state.pending_tray_target = None
+        self.state.pending_tray_target_at = None
+        return len(slots)
 
     def ams_control(self, action: str) -> bool:
         """Control AMS operations.

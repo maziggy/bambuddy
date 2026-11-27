@@ -18,6 +18,7 @@ class EventType(StrEnum):
     PRINT_PROGRESS = "print_progress"
     PRINT_MISSING_SPOOL_ASSIGNMENT = "print_missing_spool_assignment"
     BILLING_CHARGE_FAILED = "billing_charge_failed"
+    FILAMENT_OUT_OF_STOCK = "filament_out_of_stock"
     PRINTER_OFFLINE = "printer_offline"
     PRINTER_ERROR = "printer_error"
     AI_FAILURE_DETECTION = "ai_failure_detection"
@@ -47,10 +48,21 @@ EVENT_VARIABLES: dict[str, list[str]] = {
         "timestamp",
         "app_name",
     ],
-    "print_start": ["printer", "filename", "estimated_time", "eta", "timestamp", "app_name"],
+    "print_start": [
+        "printer",
+        "filename",
+        "submitted_by",
+        "submitted_by_email",
+        "estimated_time",
+        "eta",
+        "timestamp",
+        "app_name",
+    ],
     "print_complete": [
         "printer",
         "filename",
+        "submitted_by",
+        "submitted_by_email",
         "duration",
         "filament_grams",
         "filament_details",
@@ -63,6 +75,8 @@ EVENT_VARIABLES: dict[str, list[str]] = {
     "print_failed": [
         "printer",
         "filename",
+        "submitted_by",
+        "submitted_by_email",
         "duration",
         "filament_grams",
         "filament_details",
@@ -77,6 +91,8 @@ EVENT_VARIABLES: dict[str, list[str]] = {
     "print_stopped": [
         "printer",
         "filename",
+        "submitted_by",
+        "submitted_by_email",
         "duration",
         "filament_grams",
         "filament_details",
@@ -110,6 +126,8 @@ EVENT_VARIABLES: dict[str, list[str]] = {
     ],
     "plate_not_empty": ["printer", "difference_percent", "timestamp", "app_name"],
     "plate_clear_required": ["printer", "timestamp", "app_name"],
+    "plate_changer_empty": ["printer", "capacity", "timestamp", "app_name"],
+    "filament_out_of_stock": ["job_name", "target_model", "filament", "timestamp", "app_name"],
     "filament_low": ["printer", "slot", "remaining_percent", "color", "timestamp", "app_name"],
     "maintenance_due": ["printer", "items", "timestamp", "app_name"],
     "ams_humidity_high": ["printer", "ams_label", "humidity", "threshold", "timestamp", "app_name"],
@@ -212,6 +230,8 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
     "print_start": {
         "printer": "Bambu X1C",
         "filename": "Benchy.3mf",
+        "submitted_by": "alice",
+        "submitted_by_email": "alice@example.com",
         "estimated_time": "1h 23m",
         "eta": "15:53",
         "timestamp": "2024-01-15 14:30",
@@ -220,6 +240,8 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
     "print_complete": {
         "printer": "Bambu X1C",
         "filename": "Benchy.3mf",
+        "submitted_by": "alice",
+        "submitted_by_email": "alice@example.com",
         "duration": "1h 18m",
         "filament_grams": "15.2",
         "filament_details": "AMS-A T1 PLA: 12.4g | AMS-A T3 PETG: 2.8g",
@@ -232,6 +254,8 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
     "print_failed": {
         "printer": "Bambu X1C",
         "filename": "Benchy.3mf",
+        "submitted_by": "alice",
+        "submitted_by_email": "alice@example.com",
         "duration": "0h 45m",
         "filament_grams": "7.6",
         "filament_details": "AMS-A T1 PLA: 7.6g",
@@ -246,6 +270,8 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
     "print_stopped": {
         "printer": "Bambu X1C",
         "filename": "Benchy.3mf",
+        "submitted_by": "alice",
+        "submitted_by_email": "alice@example.com",
         "duration": "0h 30m",
         "filament_grams": "4.6",
         "filament_details": "AMS-A T2 PLA: 4.6g",
@@ -321,6 +347,19 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
     },
     "plate_clear_required": {
         "printer": "Bambu X1C",
+        "timestamp": "2024-01-15 15:48",
+        "app_name": "Bambuddy",
+    },
+    "plate_changer_empty": {
+        "printer": "Bambu X1C",
+        "capacity": "5",
+        "timestamp": "2024-01-15 15:48",
+        "app_name": "Bambuddy",
+    },
+    "filament_out_of_stock": {
+        "job_name": "Benchy",
+        "target_model": "X1C",
+        "filament": "PLA (Earth Brown)",
         "timestamp": "2024-01-15 15:48",
         "app_name": "Bambuddy",
     },

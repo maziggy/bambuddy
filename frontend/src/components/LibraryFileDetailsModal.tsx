@@ -7,6 +7,7 @@ import type { LibraryFileListItem } from '../api/client';
 import { Button } from './Button';
 import { PhotoGalleryModal } from './PhotoGalleryModal';
 import { useToast } from '../contexts/ToastContext';
+import { useAuth } from '../contexts/AuthContext';
 import { formatDate, formatDuration } from '../utils/date';
 import { formatFileSize } from '../utils/file';
 
@@ -24,6 +25,7 @@ interface LibraryFileDetailsModalProps {
 export function LibraryFileDetailsModal({ file, canEdit, onClose }: LibraryFileDetailsModalProps) {
   const { t } = useTranslation();
   const { showToast } = useToast();
+  const { hasPermission } = useAuth();
   const queryClient = useQueryClient();
 
   const { data: details } = useQuery({
@@ -33,6 +35,7 @@ export function LibraryFileDetailsModal({ file, canEdit, onClose }: LibraryFileD
 
   const [notes, setNotes] = useState('');
   const [externalUrl, setExternalUrl] = useState('');
+  const [clearsPlate, setClearsPlate] = useState(false);
   const [photos, setPhotos] = useState<string[]>([]);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   // The photo the lightbox opens on, or null while it is closed.
@@ -47,6 +50,7 @@ export function LibraryFileDetailsModal({ file, canEdit, onClose }: LibraryFileD
     seededForId.current = details.id;
     setNotes(details.notes ?? '');
     setExternalUrl(details.external_url ?? '');
+    setClearsPlate(details.clears_plate ?? false);
     setPhotos(details.photos ?? []);
   }, [details]);
 
@@ -65,10 +69,12 @@ export function LibraryFileDetailsModal({ file, canEdit, onClose }: LibraryFileD
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['library-files'] });
     queryClient.invalidateQueries({ queryKey: ['library-file', file.id] });
+    // Print-modal alternatives prefill clears_plate from the group (#3576).
+    queryClient.invalidateQueries({ queryKey: ['variant-group'] });
   };
 
   const saveMutation = useMutation({
-    mutationFn: () => api.updateLibraryFile(file.id, { notes, external_url: externalUrl.trim() }),
+    mutationFn: () => api.updateLibraryFile(file.id, { notes, external_url: externalUrl.trim(), clears_plate: clearsPlate }),
     onSuccess: () => {
       invalidate();
       showToast(t('fileManager.details.saved'), 'success');
@@ -79,8 +85,16 @@ export function LibraryFileDetailsModal({ file, canEdit, onClose }: LibraryFileD
     },
   });
 
+  // Switching it on needs the permission that confirms a cleared plate; a
+  // file that already has it can be switched off and back on (#3576).
+  const clearsPlateLocked =
+    !hasPermission('printers:clear_plate') && !(details?.clears_plate ?? false) && !clearsPlate;
+
   const hasChanges =
-    !!details && (notes !== (details.notes ?? '') || externalUrl.trim() !== (details.external_url ?? ''));
+    !!details &&
+    (notes !== (details.notes ?? '') ||
+      externalUrl.trim() !== (details.external_url ?? '') ||
+      clearsPlate !== (details.clears_plate ?? false));
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const picked = e.target.files?.[0];
@@ -251,6 +265,24 @@ export function LibraryFileDetailsModal({ file, canEdit, onClose }: LibraryFileD
               )}
             </div>
           </div>
+
+          {/* Clears its own plate (#3576) */}
+          <label
+            className={`flex items-start gap-2 ${canEdit && !clearsPlateLocked ? 'cursor-pointer' : ''}`}
+            title={canEdit && clearsPlateLocked ? t('printers.permission.noControl') : undefined}
+          >
+            <input
+              type="checkbox"
+              checked={clearsPlate}
+              onChange={(e) => setClearsPlate(e.target.checked)}
+              disabled={!canEdit || clearsPlateLocked}
+              className="mt-0.5 w-4 h-4 rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green disabled:opacity-60"
+            />
+            <span>
+              <span className="block text-sm text-white">{t('fileManager.details.clearsPlate')}</span>
+              <span className="block text-xs text-bambu-gray">{t('fileManager.details.clearsPlateHelp')}</span>
+            </span>
+          </label>
 
           {/* Photos */}
           <div>

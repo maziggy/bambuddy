@@ -52,6 +52,15 @@ export const localeBackend: BackendModule = {
 const SUPPORTED_LNGS = ['en', 'de', 'es', 'fr', 'ja', 'it', 'ko', 'nl', 'pl', 'pt-BR', 'ru', 'sv', 'tr', 'uk', 'zh-CN', 'zh-TW'];
 const APPLIANCE_CONSUMED_KEY = 'bambuddy_appliance_locale_consumed';
 
+/** Keep `<html lang>` on the language in use. Left at "en", a page shown in
+ *  Spanish was announced as English and the browser offered to translate it,
+ *  which crashes the UI (#3647). */
+export function syncHtmlLang(language: string | undefined) {
+  if (typeof document === 'undefined' || !language) return;
+  document.documentElement.lang = language;
+}
+i18n.on('languageChanged', syncHtmlLang);
+
 /** Settles once the language in use has loaded (or failed to). */
 export const i18nReady = i18n
   .use(localeBackend)
@@ -117,23 +126,3 @@ function applyApplianceLocale() {
 applyApplianceLocale();
 
 export default i18n;
-
-// Helper to get available languages
-export const availableLanguages = [
-  { code: 'en', name: 'English', nativeName: 'English' },
-  { code: 'de', name: 'German', nativeName: 'Deutsch' },
-  { code: 'es', name: 'Spanish', nativeName: 'Español' },
-  { code: 'fr', name: 'French', nativeName: 'Français' },
-  { code: 'ja', name: 'Japanese', nativeName: '日本語' },
-  { code: 'it', name: 'Italian', nativeName: 'Italiano' },
-  { code: 'ko', name: 'Korean', nativeName: '한국어' },
-  { code: 'nl', name: 'Dutch', nativeName: 'Nederlands' },
-  { code: 'pl', name: 'Polish', nativeName: 'Polski' },
-  { code: 'pt-BR', name: 'Portuguese (Brazil)', nativeName: 'Português (Brasil)' },
-  { code: 'zh-CN', name: 'Chinese (Simplified)', nativeName: '简体中文' },
-  { code: 'zh-TW', name: 'Chinese (Traditional)', nativeName: '繁體中文' },
-  { code: 'sv', name: 'Swedish', nativeName: 'Svenska' },
-  { code: 'tr', name: 'Turkish', nativeName: 'Türkçe' },
-  { code: 'ru', name: 'Russian', nativeName: 'Русский' },
-  { code: 'uk', name: 'Ukrainian', nativeName: 'Українська' },
-];

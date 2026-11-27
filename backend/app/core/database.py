@@ -496,9 +496,9 @@ async def _migrate_sqlite_autoincrement(conn) -> None:
             await conn.execute(text(f"DROP TABLE IF EXISTS {copy}"))
             await conn.execute(text(new_sql))
             names = ", ".join(f'"{r[1]}"' for r in await conn.execute(text(f"PRAGMA table_info({table})")))
-            await conn.execute(text(f"INSERT INTO {copy} ({names}) SELECT {names} FROM {table}"))  # nosec B608 -- table from AUTOINCREMENT_TABLES, columns from its own PRAGMA
-            original = (await conn.execute(text(f"SELECT count(*) FROM {table}"))).scalar_one()  # nosec B608 -- table from AUTOINCREMENT_TABLES, columns from its own PRAGMA
-            copied = (await conn.execute(text(f"SELECT count(*) FROM {copy}"))).scalar_one()  # nosec B608 -- table from AUTOINCREMENT_TABLES, columns from its own PRAGMA
+            await conn.execute(text(f"INSERT INTO {copy} ({names}) SELECT {names} FROM {table}"))  # nosec B608  # table from AUTOINCREMENT_TABLES, columns from its own PRAGMA
+            original = (await conn.execute(text(f"SELECT count(*) FROM {table}"))).scalar_one()  # nosec B608  # table from AUTOINCREMENT_TABLES, columns from its own PRAGMA
+            copied = (await conn.execute(text(f"SELECT count(*) FROM {copy}"))).scalar_one()  # nosec B608  # table from AUTOINCREMENT_TABLES, columns from its own PRAGMA
             if copied != original:
                 raise RuntimeError(f"{table} AUTOINCREMENT rebuild: {original} rows, {copied} copied")
             await conn.execute(text(f"DROP TABLE {table}"))
@@ -1123,6 +1123,23 @@ async def _safe_execute(conn, sql):
             raise
 
 
+async def _table_column_exists(conn, table: str, column_name: str) -> bool:
+    """Return True if ``column_name`` exists on ``table`` (table is a trusted literal)."""
+    from sqlalchemy import text
+
+    if is_sqlite():
+        result = await conn.execute(text(f"PRAGMA table_info({table})"))
+        return any(row[1] == column_name for row in result)
+    result = await conn.execute(
+        text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_schema = current_schema() AND table_name = :tbl AND column_name = :col"
+        ),
+        {"tbl": table, "col": column_name},
+    )
+    return result.scalar_one_or_none() is not None
+
+
 async def _api_keys_column_exists(conn, column_name: str) -> bool:
     """Return True if the named column exists on ``api_keys``.
 
@@ -1131,16 +1148,7 @@ async def _api_keys_column_exists(conn, column_name: str) -> bool:
     would silently overwrite values the user later edited in the UI.
     Dialect-specific because SQLite has no information_schema.
     """
-    from sqlalchemy import text
-
-    if is_sqlite():
-        result = await conn.execute(text("PRAGMA table_info(api_keys)"))
-        return any(row[1] == column_name for row in result)
-    result = await conn.execute(
-        text("SELECT 1 FROM information_schema.columns WHERE table_name = 'api_keys' AND column_name = :col"),
-        {"col": column_name},
-    )
-    return result.scalar_one_or_none() is not None
+    return await _table_column_exists(conn, "api_keys", column_name)
 
 
 async def _migrate_scope_force_color_overrides_to_plate(conn) -> None:
@@ -1493,7 +1501,7 @@ async def _repair_bare_hex_filament_colors(conn) -> None:
     from sqlalchemy import text
 
     async with conn.begin_nested():
-        # nosec B608 -- ``table`` comes from the literal tuple below.
+        # nosec B608  # ``table`` comes from the literal tuple below.
         for table in ("print_archives", "print_log_entries"):
             rows = (
                 await conn.execute(
@@ -1722,15 +1730,17 @@ async def _migrate_update_auto_link_constraint(conn) -> None:
 
 
 async def _migrate_widen_spoolman_slot_ams_id_range(conn) -> None:
-    """Bring spoolman_slot_assignments' CHECKs up to the model's (AMS-HT #1274, the H3C's AMS 3H).
+    """Bring spoolman_slot_assignments' CHECKs up to the model's (AMS-HT #1274, the H3C's AMS 3H, the P3C's AMS 3P).
 
     ck_ams_id_range, oldest formula: (ams_id >= 0 AND ams_id <= 7) OR ams_id = 255
     #1274 added AMS-HT:  ... OR (ams_id >= 128 AND ams_id <= 191) OR ams_id = 255
-    Now also the AMS 3H: ... OR ams_id = 32 OR ...
-    ck_tray_id_range:    tray_id 0-3, and 4-8 for ams_id 32 / 255 (models.spoolman_slot_assignment)
+    Then the AMS 3H:     ... OR ams_id = 32 OR ...
+    Now also the AMS 3P: ... OR ams_id IN (32, 33) OR ...
+    ck_tray_id_range:    tray_id 0-3, and 4-8 for ams_id 32 / 33 / 255 (models.spoolman_slot_assignment)
 
     The H2C/H2D AMS-HT reports ams_id 128+. The H3C's AMS 3H is unit 32 with
-    nine slots, and its per-hotend external inputs are stored as (255, 2-8).
+    nine slots, the P3C's AMS 3P unit 33 with seven (#3737), and their
+    per-hotend external inputs are stored as (255, 2-8).
     The old constraints rejected every such slot link with
     `IntegrityError: CHECK constraint failed`. A table whose tray check is a
     plain ``tray_id <= 8`` gets the final form too, without any row on slot 4-8
@@ -1751,7 +1761,7 @@ async def _migrate_widen_spoolman_slot_ams_id_range(conn) -> None:
         )
         await _safe_execute(conn, "ALTER TABLE spoolman_slot_assignments DROP CONSTRAINT IF EXISTS ck_tray_id_range")
         dropped = await conn.execute(
-            text(f"DELETE FROM spoolman_slot_assignments WHERE NOT ({TRAY_ID_CHECK})")  # nosec B608 -- the model's constant CHECK text
+            text(f"DELETE FROM spoolman_slot_assignments WHERE NOT ({TRAY_ID_CHECK})")  # nosec B608  # the model's constant CHECK text
         )
         if dropped.rowcount:
             logger.warning("Dropped %d Spoolman slot assignment(s) naming a slot no AMS has", dropped.rowcount)
@@ -1769,7 +1779,7 @@ async def _migrate_widen_spoolman_slot_ams_id_range(conn) -> None:
         return
     sql = row[0] or ""
     # Already in the final form (a previous start, or create_all on a fresh install).
-    if "ams_id = 32" in sql and "ams_id IN (32, 255)" in sql:
+    if AMS_ID_CHECK in sql and TRAY_ID_CHECK in sql:
         return
     # Pre-migration table without any CHECK constraint at all → leave alone;
     # the app-level validation handles correctness and we don't risk a
@@ -1797,7 +1807,7 @@ async def _migrate_widen_spoolman_slot_ams_id_range(conn) -> None:
             )
             await conn.execute(
                 text(
-                    "INSERT INTO spoolman_slot_assignments_v2 "  # nosec B608 -- the model's constant CHECK text
+                    "INSERT INTO spoolman_slot_assignments_v2 "  # nosec B608  # the model's constant CHECK text
                     "(id, printer_id, ams_id, tray_id, spoolman_spool_id, assigned_at) "
                     "SELECT id, printer_id, ams_id, tray_id, spoolman_spool_id, assigned_at "
                     f"FROM spoolman_slot_assignments WHERE {TRAY_ID_CHECK}"
@@ -1806,7 +1816,7 @@ async def _migrate_widen_spoolman_slot_ams_id_range(conn) -> None:
             original = (await conn.execute(text("SELECT count(*) FROM spoolman_slot_assignments"))).scalar_one()
             kept = (
                 await conn.execute(
-                    text(f"SELECT count(*) FROM spoolman_slot_assignments WHERE {TRAY_ID_CHECK}")  # nosec B608 -- the model's constant CHECK text
+                    text(f"SELECT count(*) FROM spoolman_slot_assignments WHERE {TRAY_ID_CHECK}")  # nosec B608  # the model's constant CHECK text
                 )
             ).scalar_one()
             copied = (await conn.execute(text("SELECT count(*) FROM spoolman_slot_assignments_v2"))).scalar_one()
@@ -2335,7 +2345,7 @@ async def _migrate_failure_reason_vocabulary(conn):
 
     total = 0
     async with conn.begin_nested():
-        # nosec B608 — the only interpolated fragment is `table`, which the loop
+        # nosec B608  # the only interpolated fragment is `table`, which the loop
         # below draws from a literal tuple; no caller value reaches the string.
         # Both the key and the label list are bound parameters. A table name
         # cannot be expressed as one, which is why it is interpolated at all.
@@ -2398,7 +2408,7 @@ async def _migrate_project_priority_status(conn) -> None:
 
     repaired: dict[str, int] = {}
     async with conn.begin_nested():
-        # nosec B608 -- `column` and `fallback` come from the literal tuple below;
+        # nosec B608  # `column` and `fallback` come from the literal tuple below;
         # the accepted values are bound parameters.
         for column, accepted, fallback in (
             ("priority", PROJECT_PRIORITIES, "normal"),
@@ -4795,7 +4805,7 @@ async def _run_migrations(conn):
     # Replaces the pattern of writing spool.location in Spoolman (which polluted the
     # user-editable storage_location field in the UI).
     # ck_ams_id_range formula was widened in #1274 to admit AMS-HT (ams_id 128-191),
-    # and for the H3C's AMS 3H (as models.spoolman_slot_assignment).
+    # and for the H3C's AMS 3H and the P3C's AMS 3P (as models.spoolman_slot_assignment).
     await _safe_execute(
         conn,
         """
@@ -4807,8 +4817,8 @@ async def _run_migrations(conn):
             spoolman_spool_id INTEGER NOT NULL,
             assigned_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT uq_slot_assignment UNIQUE(printer_id, ams_id, tray_id),
-            CONSTRAINT ck_ams_id_range CHECK ((ams_id >= 0 AND ams_id <= 7) OR ams_id = 32 OR (ams_id >= 128 AND ams_id <= 191) OR ams_id = 255),
-            CONSTRAINT ck_tray_id_range CHECK (tray_id >= 0 AND (tray_id <= 3 OR (ams_id IN (32, 255) AND tray_id <= 8)))
+            CONSTRAINT ck_ams_id_range CHECK ((ams_id >= 0 AND ams_id <= 7) OR ams_id IN (32, 33) OR (ams_id >= 128 AND ams_id <= 191) OR ams_id = 255),
+            CONSTRAINT ck_tray_id_range CHECK (tray_id >= 0 AND (tray_id <= 3 OR (ams_id IN (32, 33, 255) AND tray_id <= 8)))
         )
         """
         if is_sqlite()
@@ -4821,8 +4831,8 @@ async def _run_migrations(conn):
             spoolman_spool_id INTEGER NOT NULL,
             assigned_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT uq_slot_assignment UNIQUE(printer_id, ams_id, tray_id),
-            CONSTRAINT ck_ams_id_range CHECK ((ams_id >= 0 AND ams_id <= 7) OR ams_id = 32 OR (ams_id >= 128 AND ams_id <= 191) OR ams_id = 255),
-            CONSTRAINT ck_tray_id_range CHECK (tray_id >= 0 AND (tray_id <= 3 OR (ams_id IN (32, 255) AND tray_id <= 8)))
+            CONSTRAINT ck_ams_id_range CHECK ((ams_id >= 0 AND ams_id <= 7) OR ams_id IN (32, 33) OR (ams_id >= 128 AND ams_id <= 191) OR ams_id = 255),
+            CONSTRAINT ck_tray_id_range CHECK (tray_id >= 0 AND (tray_id <= 3 OR (ams_id IN (32, 33, 255) AND tray_id <= 8)))
         )
         """,
     )
@@ -5384,6 +5394,17 @@ async def _run_migrations(conn):
     else:
         await _safe_execute(conn, "ALTER TABLE users ADD COLUMN IF NOT EXISTS orca_cloud_pending_at TIMESTAMP")
 
+    # Migration: per-user 3D Filament Profiles connection (#2981). Its table of
+    # spool links is new, so create_all() makes it on every database.
+    await _safe_execute(conn, "ALTER TABLE users ADD COLUMN threedfp_token VARCHAR(255)")
+    await _safe_execute(conn, "ALTER TABLE users ADD COLUMN threedfp_email VARCHAR(255)")
+    await _safe_execute(conn, "ALTER TABLE users ADD COLUMN threedfp_pending_device_code VARCHAR(255)")
+    await _safe_execute(conn, "ALTER TABLE users ADD COLUMN threedfp_pending_interval INTEGER")
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE users ADD COLUMN threedfp_pending_at DATETIME")
+    else:
+        await _safe_execute(conn, "ALTER TABLE users ADD COLUMN IF NOT EXISTS threedfp_pending_at TIMESTAMP")
+
     # Migration: record when Bambu rejects a stored cloud token. Until now the
     # only state we kept was the token string itself, so a dead credential was
     # indistinguishable from a live one and the UI reported "connected" forever
@@ -5800,6 +5821,10 @@ async def _run_migrations(conn):
     await _safe_execute(
         conn, "ALTER TABLE notification_providers ADD COLUMN on_print_confirm_request BOOLEAN DEFAULT TRUE"
     )
+    # A queued job waits for a forced colour with none left in the inventory (#3590).
+    await _safe_execute(
+        conn, "ALTER TABLE notification_providers ADD COLUMN on_filament_out_of_stock BOOLEAN DEFAULT FALSE"
+    )
     # The one-tap verdict route looks archives up by this token and runs with no
     # authentication, so an upgraded install needs the index too — without it
     # every tap, and every unauthenticated request carrying a bogus token, is a
@@ -5992,6 +6017,21 @@ async def _run_migrations(conn):
             text("UPDATE groups SET restrict_printers = :off WHERE restrict_printers IS NULL"), {"off": False}
         )
 
+    # Migration: filament-scoped groups (#3522). Off by default, so no group
+    # narrows anyone's filaments on upgrade. The backfills cover a table
+    # create_all() already gave the columns, where the ALTER is swallowed.
+    await _safe_execute(conn, "ALTER TABLE groups ADD COLUMN restrict_filaments BOOLEAN DEFAULT FALSE")
+    async with conn.begin_nested():
+        await conn.execute(
+            text("UPDATE groups SET restrict_filaments = :off WHERE restrict_filaments IS NULL"), {"off": False}
+        )
+    await _safe_execute(conn, "ALTER TABLE groups ADD COLUMN filament_rule_mode VARCHAR(10) DEFAULT 'block'")
+    async with conn.begin_nested():
+        await conn.execute(
+            text("UPDATE groups SET filament_rule_mode = :mode WHERE filament_rule_mode IS NULL"), {"mode": "block"}
+        )
+    await _safe_execute(conn, "ALTER TABLE groups ADD COLUMN filament_rules JSON")
+
     # Migration: camera-stream and websocket tokens record who minted them, so
     # they carry that caller's printer scope (#1727). Camera tokens minted
     # before this have no principal at all (username NULL; every new one sets
@@ -6048,6 +6088,10 @@ async def _run_migrations(conn):
     # Migration: a printer's place in the pick order of "Any model" jobs (#2915).
     # Nullable: no printer has one until the order setting is "priority" and one is set.
     await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN dispatch_priority INTEGER")
+
+    # Migration: a printer's own "Require plate-clear confirmation" (#2860).
+    # Nullable: null follows the app setting, which every printer did before.
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN require_plate_clear BOOLEAN")
 
     # Migration: when each spool was last dried, at what temperature and for
     # how long (#2863). Nullable: no spool has a drying record until one ends.
@@ -6174,6 +6218,66 @@ async def _run_migrations(conn):
     )
     await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN off_bed_temp_threshold INTEGER NOT NULL DEFAULT 35")
 
+    # Migration: the events a provider sends without its camera snapshot
+    # (#2877). Nullable, no backfill: NULL means no event is skipped, so every
+    # provider keeps attaching photos exactly as before.
+    await _safe_execute(conn, "ALTER TABLE notification_providers ADD COLUMN photo_skip_events JSON")
+
+    # Migration: an MQTT plug's lifetime energy counter, separate from its daily
+    # one (#3582). A print's energy is the difference of two readings, so a
+    # daily counter that resets at midnight lost any print running across it.
+    # Nullable path, no backfill: existing plugs read their one energy value as
+    # before. The multiplier is NOT NULL with the model's server default, and
+    # gets the model's float type on Postgres from the start.
+    float_type = "REAL" if is_sqlite() else "DOUBLE PRECISION"
+    await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN mqtt_energy_total_path VARCHAR(100)")
+    await _safe_execute(
+        conn, f"ALTER TABLE smart_plugs ADD COLUMN mqtt_energy_total_multiplier {float_type} NOT NULL DEFAULT '1.0'"
+    )
+
+    # Migration: what a run was expected to cost at its start, priced at the
+    # spools mapped for it, and the grams that was priced for (#3580). Billing
+    # charges a reprint from them. Nullable, no backfill: a run without them is
+    # charged from the archive's cost as before. The model's float type on each
+    # dialect.
+    await _safe_execute(conn, f"ALTER TABLE print_log_entries ADD COLUMN planned_cost {float_type}")
+    await _safe_execute(conn, f"ALTER TABLE print_log_entries ADD COLUMN planned_grams {float_type}")
+
+    # Migration: a run's wallet charge while it waits for the run's energy
+    # (#3581), so a restart in between does not lose it. Nullable TEXT (JSON),
+    # no default -- identical DDL on SQLite and Postgres.
+    await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN pending_charge TEXT")
+
+    # Migration: per-printer plate changer capacity (#3575). NULL capacity keeps
+    # counting off, so existing printers behave as before.
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN plate_capacity INTEGER")
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN plates_remaining INTEGER")
+    # Show the count on the printer card (#3575); on by default, so nothing changes on upgrade.
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN plate_changer_show_count BOOLEAN DEFAULT TRUE NOT NULL")
+    await _safe_execute(
+        conn, "ALTER TABLE notification_providers ADD COLUMN on_plate_changer_empty BOOLEAN DEFAULT TRUE"
+    )
+
+    # Migration: the file / job / archive clears its own plate (#3576). False
+    # keeps every existing row waiting for the plate confirmation as before.
+    for _table in ("library_files", "print_queue", "print_archives"):
+        await _safe_execute(conn, f"ALTER TABLE {_table} ADD COLUMN clears_plate BOOLEAN DEFAULT FALSE NOT NULL")
+    # ...and per printer alternative of a cross-model job, so one alternative
+    # can clear its plate while another of the same job waits for it.
+    variant_column_existed = await _table_column_exists(conn, "print_queue_variants", "clears_plate")
+    await _safe_execute(conn, "ALTER TABLE print_queue_variants ADD COLUMN clears_plate BOOLEAN DEFAULT FALSE NOT NULL")
+    if not variant_column_existed:
+        # One-shot, only on the migration that adds the column: pending jobs the
+        # first build flagged from "all alternatives clear" keep that per
+        # alternative. Later boots must not touch user-edited values.
+        async with conn.begin_nested():
+            await conn.execute(
+                text(
+                    "UPDATE print_queue_variants SET clears_plate = TRUE WHERE queue_item_id IN "
+                    "(SELECT id FROM print_queue WHERE clears_plate = TRUE AND status = 'pending')"
+                )
+            )
+
     await _backfill_archive_run_photos(conn)
     await _migrate_h3c_queue_tray_ids(conn)
 
@@ -6184,6 +6288,7 @@ async def _run_migrations(conn):
     await _migrate_spool_usage_outlives_its_archive(conn)
     await _migrate_spool_usage_outlives_its_spool(conn)
     await _backfill_pipeline_job_final_status(conn)
+    await _backfill_maintenance_log(conn)
     await _release_stuck_budget_reservations(conn)
     await _release_slots_of_archived_spools(conn)
     await _migrate_pg_column_types(conn)
@@ -6242,7 +6347,7 @@ async def _migrate_h3c_queue_tray_ids(conn) -> None:
 
     from sqlalchemy import text
 
-    from backend.app.utils.tray_ids import AMS3H_UNIT_ID, RACK_SLOT_COUNT, TrayLayout, legacy_tray_index
+    from backend.app.utils.tray_ids import AMS3H_UNIT_ID, RACK_SLOT_COUNTS, AmsType, TrayLayout, legacy_tray_index
 
     old_base = legacy_tray_index(AMS3H_UNIT_ID, 0)  # 128
     ams3h = TrayLayout.ams3h()
@@ -6263,7 +6368,7 @@ async def _migrate_h3c_queue_tray_ids(conn) -> None:
         )
         renumbered = 0
         for table, where in targets:
-            query = f"SELECT q.id, q.ams_mapping FROM {table} q WHERE {where}"  # nosec B608 -- table and filter from the fixed targets above
+            query = f"SELECT q.id, q.ams_mapping FROM {table} q WHERE {where}"  # nosec B608  # table and filter from the fixed targets above
             rows = (await conn.execute(text(query))).all()
             for row_id, raw in rows:
                 try:
@@ -6274,13 +6379,13 @@ async def _migrate_h3c_queue_tray_ids(conn) -> None:
                     continue
                 new = [
                     ams3h.global_tray_id(AMS3H_UNIT_ID, v - old_base)
-                    if type(v) is int and old_base <= v < old_base + RACK_SLOT_COUNT
+                    if type(v) is int and old_base <= v < old_base + RACK_SLOT_COUNTS[AmsType.ZMULTI_A]
                     else v
                     for v in mapping
                 ]
                 if new != mapping:
                     await conn.execute(
-                        text(f"UPDATE {table} SET ams_mapping = :m WHERE id = :id"),  # nosec B608 -- table from the fixed targets above
+                        text(f"UPDATE {table} SET ams_mapping = :m WHERE id = :id"),  # nosec B608  # table from the fixed targets above
                         {"m": json.dumps(new), "id": row_id},
                     )
                     renumbered += 1
@@ -6382,6 +6487,8 @@ _PG_COLUMNS_SET_FROM_MODEL = (
     ("api_keys", "can_update_energy_cost"),
     ("github_backup_config", "allow_insecure_http"),
     ("github_backup_config", "provider"),
+    ("groups", "filament_rule_mode"),
+    ("groups", "restrict_filaments"),
     ("groups", "restrict_printers"),
     ("library_files", "variant_position"),
     ("library_folders", "shared"),
@@ -6390,8 +6497,10 @@ _PG_COLUMNS_SET_FROM_MODEL = (
     ("notification_providers", "on_ams_drying_suspended"),
     ("notification_providers", "on_app_message"),
     ("notification_providers", "on_billing_charge_failed"),
+    ("notification_providers", "on_filament_out_of_stock"),
     ("notification_providers", "on_ha_sensor_alert"),
     ("notification_providers", "on_location_ha_sensor_alert"),
+    ("notification_providers", "on_plate_changer_empty"),
     ("notification_providers", "on_plate_clear_required"),
     ("notification_providers", "on_print_confirm_request"),
     ("notification_providers", "on_print_pause_upcoming"),
@@ -6472,7 +6581,7 @@ async def _migrate_pg_columns_to_model(conn) -> None:
         extra = ""
         if (table, column) == ("oidc_providers", "email_claim"):
             extra = ", auto_link_existing_accounts = false"
-        filled = await conn.execute(text(f"UPDATE {table} SET {column} = {fill}{extra} WHERE {column} IS NULL"))  # nosec B608 -- table/column from _PG_COLUMNS_SET_FROM_MODEL, fill from the model default
+        filled = await conn.execute(text(f"UPDATE {table} SET {column} = {fill}{extra} WHERE {column} IS NULL"))  # nosec B608  # table/column from _PG_COLUMNS_SET_FROM_MODEL, fill from the model default
         if filled.rowcount:
             logger.info("Filled %d NULL %s.%s value(s) with %s", filled.rowcount, table, column, fill)
         await _safe_execute(conn, f"ALTER TABLE {table} ALTER COLUMN {column} SET NOT NULL")
@@ -6539,13 +6648,13 @@ async def _migrate_pg_column_types(conn) -> None:
         if current != old_type:
             continue
         if new_type == "JSON":
-            rows = await conn.execute(text(f"SELECT id, {column} FROM {table} WHERE {column} IS NOT NULL"))  # nosec B608 -- table/column from _PG_COLUMN_TYPE_FIXES
+            rows = await conn.execute(text(f"SELECT id, {column} FROM {table} WHERE {column} IS NOT NULL"))  # nosec B608  # table/column from _PG_COLUMN_TYPE_FIXES
             for row_id, value in rows.all():
                 try:
                     json.loads(value, parse_constant=_reject_non_json_constant)
                 except ValueError:
                     logger.warning("Clearing %s.%s of row %s: not valid JSON", table, column, row_id)
-                    await conn.execute(text(f"UPDATE {table} SET {column} = NULL WHERE id = :id"), {"id": row_id})  # nosec B608 -- table/column from _PG_COLUMN_TYPE_FIXES; id bound
+                    await conn.execute(text(f"UPDATE {table} SET {column} = NULL WHERE id = :id"), {"id": row_id})  # nosec B608  # table/column from _PG_COLUMN_TYPE_FIXES; id bound
         # Float to text gives the shortest exact decimal only with
         # extra_float_digits >= 1, PostgreSQL's default since 12, which a server,
         # database or role setting can lower: at 0 text keeps 6 digits.
@@ -6703,6 +6812,46 @@ async def _backfill_pipeline_job_final_status(conn) -> None:
         logger.info("Stored the final status of %d pipeline job(s) from their queue entry", result.rowcount)
 
 
+async def _backfill_maintenance_log(conn) -> None:
+    """Copy maintenance history into the maintenance log.
+
+    The log (maintenance_log_entries) is written with each reset and outlives
+    the printer and its tasks; resets before it existed are only in
+    maintenance_history, which goes with them. Who reset them was never
+    recorded and stays unknown.
+
+    Once only, gated by a settings flag: entries deleted from the log later
+    (cleanup, a mistaken reset) still have their history row, and a second
+    pass would bring them back. Rows the log already has an entry for
+    (``history_id``) are skipped either way.
+    """
+    from sqlalchemy import text
+
+    flag = "_backfill_maintenance_log_done"
+    async with conn.begin_nested():
+        already = (
+            await conn.execute(text('SELECT value FROM settings WHERE "key" = :k'), {"k": flag})
+        ).scalar_one_or_none()
+        if already is not None:
+            return
+        result = await conn.execute(
+            text(
+                "INSERT INTO maintenance_log_entries (printer_id, printer_name, maintenance_type_id, "
+                "maintenance_type_name, hours_at_maintenance, notes, performed_at, history_id) "
+                "SELECT pm.printer_id, p.name, pm.maintenance_type_id, t.name, "
+                "COALESCE(h.hours_at_maintenance, 0), h.notes, h.performed_at, h.id "
+                "FROM maintenance_history h "
+                "JOIN printer_maintenance pm ON pm.id = h.printer_maintenance_id "
+                "JOIN printers p ON p.id = pm.printer_id "
+                "JOIN maintenance_types t ON t.id = pm.maintenance_type_id "
+                "WHERE NOT EXISTS (SELECT 1 FROM maintenance_log_entries l WHERE l.history_id = h.id)"
+            )
+        )
+        await conn.execute(text('INSERT INTO settings ("key", value) VALUES (:k, :v)'), {"k": flag, "v": "true"})
+    if result.rowcount:
+        logger.info("Copied %d maintenance history row(s) into the maintenance log", result.rowcount)
+
+
 async def _release_stuck_budget_reservations(conn) -> None:
     """Release print reservations whose queue entry has finished or is gone.
 
@@ -6802,7 +6951,7 @@ async def _migrate_add_missing_set_null_fks(conn) -> None:
             continue
         cleared = await conn.execute(
             text(
-                f"UPDATE {table} SET {column} = NULL WHERE {column} IS NOT NULL "  # nosec B608 -- table/column/parent from _MISSING_SET_NULL_FKS
+                f"UPDATE {table} SET {column} = NULL WHERE {column} IS NOT NULL "  # nosec B608  # table/column/parent from _MISSING_SET_NULL_FKS
                 f"AND NOT EXISTS (SELECT 1 FROM {parent} WHERE {parent}.id = {table}.{column})"
             )
         )
@@ -7475,11 +7624,11 @@ async def _migrate_normalize_printer_locations(conn) -> None:
     async with conn.begin_nested():
         for table, column in (("printers", "location"), ("print_queue", "target_location")):
             await conn.execute(
-                text(f"UPDATE {table} SET {column} = NULL WHERE {column} IS NOT NULL AND TRIM({column}) = ''")  # noqa: S608  # nosec B608 — fixed identifiers
+                text(f"UPDATE {table} SET {column} = NULL WHERE {column} IS NOT NULL AND TRIM({column}) = ''")  # noqa: S608  # nosec B608  # fixed identifiers
             )
             await conn.execute(
                 text(
-                    f"UPDATE {table} SET {column} = TRIM({column}) WHERE {column} IS NOT NULL AND {column} <> TRIM({column})"  # noqa: S608  # nosec B608 — fixed identifiers
+                    f"UPDATE {table} SET {column} = TRIM({column}) WHERE {column} IS NOT NULL AND {column} <> TRIM({column})"  # noqa: S608  # nosec B608  # fixed identifiers
                 )
             )
 
@@ -7830,7 +7979,7 @@ async def _migrate_backfill_variant_groups(conn) -> None:
         model_expr = "file_metadata::jsonb->>'sliced_for_model'"
 
     async with conn.begin_nested():
-        # nosec B608 — the only interpolated fragments are the two dialect
+        # nosec B608  # the only interpolated fragments are the two dialect
         # literals assigned directly above; both branches are constants and no
         # caller value reaches this string. They are JSON *expressions*, not
         # values, so a bind parameter cannot express them.
@@ -8267,6 +8416,10 @@ async def seed_default_groups():
                 perms.append("orca_cloud:auth")
                 changed = True
                 logger.info("Added orca_cloud:auth to Operators group (backfill)")
+            if non_admin_group_name == "Operators" and "threedfp:auth" not in perms:
+                perms.append("threedfp:auth")
+                changed = True
+                logger.info("Added threedfp:auth to Operators group (backfill)")
             if changed:
                 grp.permissions = perms
         await session.commit()

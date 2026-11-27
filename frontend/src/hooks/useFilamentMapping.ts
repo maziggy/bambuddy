@@ -15,7 +15,8 @@ import {
   rackExternalLabel,
 } from '../utils/amsHelpers';
 import { externalSlotIndex, trayLayoutOf } from '../utils/trayIds';
-import type { PrinterStatus, SlotSpoolIdentity } from '../api/client';
+import { markBlocked } from '../utils/filamentScope';
+import type { FilamentPolicy, PrinterStatus, SlotSpoolIdentity } from '../api/client';
 
 /** Global-tray-id → the identity of the spool Bambuddy has bound to that slot. */
 export type SlotSpoolIdentities = Map<number, SlotSpoolIdentity>;
@@ -46,10 +47,14 @@ function spoolDisplayName(identity: SlotSpoolIdentity | undefined): string | nul
  * `slotSpools` is optional and display-only: it renames slots after their
  * bound spool without touching `type`, `color` or `trayInfoIdx`, so matching
  * and the dispatcher keep drawing on the printer's own telemetry.
+ *
+ * `policies` are the signed-in user's filament rules (#3522): trays they don't
+ * allow come back with `blocked` set.
  */
 export function buildLoadedFilaments(
   printerStatus: PrinterStatus | undefined,
   slotSpools?: SlotSpoolIdentities,
+  policies?: FilamentPolicy[] | null,
 ): LoadedFilament[] {
   const filaments: LoadedFilament[] = [];
   const amsExtruderMap = printerStatus?.ams_extruder_map;
@@ -131,23 +136,26 @@ export function buildLoadedFilaments(
     }
   }
 
-  return filaments;
+  return markBlocked(filaments, policies);
 }
 
 /**
  * Compute AMS mapping for a printer given filament requirements and printer status.
  * This is a non-hook version that can be called imperatively (e.g., in a loop for multiple printers).
  *
- * Priority: unique tray_info_idx match > exact color match > similar color match > type-only match
+ * Priority: tray_info_idx match of the right colour > exact color match > similar color
+ * match > tray_info_idx match of another colour > type-only match
  *
  * The tray_info_idx is a filament type identifier stored in the 3MF file when the user
- * slices (e.g., "GFA00" for generic PLA, "P4d64437" for custom presets). If the same
- * tray_info_idx appears in only ONE available tray, we use that tray. If multiple trays
- * have the same tray_info_idx (e.g., two spools of generic PLA), we fall back to color
- * matching among those trays.
+ * slices (e.g., "GFA00" for generic PLA, "P4d64437" for custom presets). It names the
+ * variant, not the spool, so it only wins when the colour also matches (exact or
+ * similar); a tray of the right variant in another colour ranks below any tray of the
+ * right colour (#3733). With several trays of the same tray_info_idx, colour matching
+ * picks among them.
  *
  * @param filamentReqs - Required filaments from the 3MF file
  * @param printerStatus - Current printer status with AMS information
+ * @param policies - The signed-in user's filament rules (#3522); blocked trays are never picked
  * @returns AMS mapping array or undefined if no mapping needed
  */
 export function computeAmsMapping(
@@ -155,8 +163,9 @@ export function computeAmsMapping(
   printerStatus: PrinterStatus | undefined,
   preferLowest?: boolean,
   inventoryByTrayId?: Map<number, number>,
+  policies?: FilamentPolicy[] | null,
 ): number[] | undefined {
-  const loadedFilaments = buildLoadedFilaments(printerStatus);
+  const loadedFilaments = buildLoadedFilaments(printerStatus, undefined, policies);
   if (loadedFilaments.length === 0) return undefined;
 
   // FTS routes any AMS slot to any extruder, so per-nozzle slot restriction
@@ -205,6 +214,8 @@ export interface LoadedFilament {
   /** The bound spool's subtype ("PLA Silk", "Multicolor"), which decides
    *  whether the swatch renders its stops as a conic sweep. */
   spoolSubtype?: string;
+  /** The signed-in user's groups may not use this filament (#3522): never auto-picked, greyed out in the picker */
+  blocked?: boolean;
 }
 
 /**
@@ -269,10 +280,11 @@ interface UseFilamentMappingResult {
 export function useLoadedFilaments(
   printerStatus: PrinterStatus | undefined,
   slotSpools?: SlotSpoolIdentities,
+  policies?: FilamentPolicy[] | null,
 ): LoadedFilament[] {
   return useMemo(() => {
-    return buildLoadedFilaments(printerStatus, slotSpools);
-  }, [printerStatus, slotSpools]);
+    return buildLoadedFilaments(printerStatus, slotSpools, policies);
+  }, [printerStatus, slotSpools, policies]);
 }
 
 /**
@@ -353,12 +365,15 @@ export function buildFilamentComparison(
     }
 
     // Auto-match: Find a loaded filament
-    // Priority: unique tray_info_idx match > exact color match > similar color match > type-only match
+    // Priority: tray_info_idx match of the right colour > exact color > similar color >
+    // tray_info_idx match of another colour > type-only (#3733)
     // IMPORTANT: Exclude trays that are already assigned (manually or auto)
     const reqTrayInfoIdx = req.tray_info_idx || '';
 
-    // Get available trays (not already used)
-    let available = loadedFilaments.filter((f) => !usedTrayIds.has(f.globalTrayId));
+    // Get available trays (not already used). A tray the user's groups block is
+    // never auto-picked (#3522); a manual pick of one is kept above as theirs,
+    // and the scheduler re-picks it at dispatch.
+    let available = loadedFilaments.filter((f) => !usedTrayIds.has(f.globalTrayId) && !f.blocked);
 
     // Nozzle-aware filtering: restrict to trays on the correct nozzle.
     // This is a hard filter — cross-nozzle assignment causes print failures.
@@ -382,13 +397,17 @@ export function buildFilamentComparison(
     let exactMatch: LoadedFilament | undefined;
     let similarMatch: LoadedFilament | undefined;
     let typeOnlyMatch: LoadedFilament | undefined;
+    // The right variant in the wrong colour: better than any other colour of the
+    // type, worse than the right colour in another variant (#3733).
+    let idxOtherColour: LoadedFilament | undefined;
 
     // Check if tray_info_idx is unique among available trays
     if (reqTrayInfoIdx) {
       const idxMatches = available.filter((f) => f.trayInfoIdx === reqTrayInfoIdx);
       if (idxMatches.length === 1) {
-        // Unique tray_info_idx - use it as definitive match
-        idxMatch = idxMatches[0];
+        // Unique tray_info_idx - only definitive when the colour matches too
+        if (coloursMatch(idxMatches[0].color, req.color)) idxMatch = idxMatches[0];
+        else idxOtherColour = idxMatches[0];
       } else if (idxMatches.length > 1) {
         // Multiple trays with same tray_info_idx - use color matching among them
         if (preferLowest) {
@@ -412,15 +431,15 @@ export function buildFilamentComparison(
           );
         }
         if (!exactMatch && !similarMatch) {
-          typeOnlyMatch = idxMatches.find(
+          idxOtherColour = idxMatches.find(
             (f) => filamentTypesCompatible(f.type, req.type)
           );
         }
       }
     }
 
-    // If no idx match, do standard type/color matching on all available trays
-    if (!idxMatch && !exactMatch && !similarMatch && !typeOnlyMatch) {
+    // If no idx match of the right colour, do standard type/color matching on all available trays
+    if (!idxMatch && !exactMatch && !similarMatch) {
       exactMatch = available.find(
         (f) =>
           filamentTypesCompatible(f.type, req.type) &&
@@ -433,14 +452,14 @@ export function buildFilamentComparison(
           (f) => f.color,
         );
       }
-      if (!exactMatch && !similarMatch) {
+      if (!exactMatch && !similarMatch && !idxOtherColour) {
         typeOnlyMatch = available.find(
           (f) => filamentTypesCompatible(f.type, req.type)
         );
       }
     }
 
-    const loaded = idxMatch || exactMatch || similarMatch || typeOnlyMatch || undefined;
+    const loaded = idxMatch || exactMatch || similarMatch || idxOtherColour || typeOnlyMatch || undefined;
 
     // Mark this tray as used so it won't be assigned to another slot
     if (loaded) {
@@ -519,8 +538,10 @@ export function useFilamentMapping(
   preferLowest?: boolean,
   inventoryByTrayId?: Map<number, number>,
   slotSpools?: SlotSpoolIdentities,
+  /** The signed-in user's filament rules (#3522), from `useFilamentPolicies` */
+  policies?: FilamentPolicy[] | null,
 ): UseFilamentMappingResult {
-  const loadedFilaments = useLoadedFilaments(printerStatus, slotSpools);
+  const loadedFilaments = useLoadedFilaments(printerStatus, slotSpools, policies);
 
   // FTS routes any AMS slot to any extruder, so per-nozzle slot restriction
   // doesn't apply when it's installed (#1162).

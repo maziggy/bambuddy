@@ -17,6 +17,9 @@ export interface CatalogDisplayColor {
   // was that they were never propagated past the API layer.
   extra_colors?: string | null;
   effect_type?: string | null;
+  // Catalog hex incl. alpha (RRGGBBAA) for ordering: `hex` has the alpha stripped,
+  // which would hide a Clear entry from the colour sort.
+  sortHex?: string;
 }
 
 // Form data structure
@@ -153,6 +156,10 @@ export interface FilamentOption {
   isCustom: boolean;
   allCodes: string[];
   source: FilamentOptionSource;
+  // Imported presets only: the slicer's own list of printer presets this one
+  // is for ("Bambu Lab A1 0.2 nozzle"). Decides which model and nozzle rows of
+  // the spool's Printers tab offer it (#3731).
+  compatiblePrinters?: string[];
 }
 
 // Color preset
@@ -183,6 +190,7 @@ export interface FilamentSectionProps extends SectionProps {
   // legitimate combinations (Elegoo ASA) look impossible to enter.
   suggestedBrands: string[];
   suggestedMaterials: string[];
+  splitPresetProductLine?: boolean;
   quickAdd: boolean;
   // Whether preset/brand/subtype are mandatory for this submission — see
   // validateForm. Drives the " *" markers so the form never advertises a
@@ -226,6 +234,11 @@ export interface AdditionalSectionProps extends SectionProps {
   // When true the "Last dried" field is shown. Edit mode only: a new spool
   // has no drying record to correct (#2863).
   showLastDried?: boolean;
+  // Chosen brand: empty spools named after it are listed first (#3619).
+  brand?: string;
+  // Colour catalog: tells which product lines / manufacturer the brand goes by, so spool
+  // names of those are suggested too (#3619). Optional; without it only the brand matches.
+  catalogColors?: ColorSectionProps['catalogColors'];
   // When true the material number input is hidden: in Spoolman mode the
   // number is Spoolman's filament-level article_number, maintained in
   // Spoolman itself and shown read-only in the list (#2870).

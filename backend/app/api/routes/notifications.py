@@ -118,6 +118,7 @@ def _provider_to_dict(provider: NotificationProvider) -> dict:
         "enabled": provider.enabled,
         "config": mask_config(_stored_config(provider)),
         "attach_photo": provider.attach_photo,
+        "photo_skip_events": provider.photo_skip_events or [],
         # Print lifecycle events
         "on_print_start": provider.on_print_start,
         "on_print_complete": provider.on_print_complete,
@@ -147,6 +148,7 @@ def _provider_to_dict(provider: NotificationProvider) -> dict:
         # Build plate detection
         "on_plate_not_empty": provider.on_plate_not_empty,
         "on_plate_clear_required": provider.on_plate_clear_required,
+        "on_plate_changer_empty": provider.on_plate_changer_empty,
         # Post-print outcome confirmation (#1898)
         "on_print_confirm_request": provider.on_print_confirm_request,
         # Rows from before #3046 hold NULL here; "buttons" is what they did.
@@ -172,6 +174,7 @@ def _provider_to_dict(provider: NotificationProvider) -> dict:
         "on_queue_job_skipped": provider.on_queue_job_skipped,
         "on_queue_job_failed": provider.on_queue_job_failed,
         "on_queue_completed": provider.on_queue_completed,
+        "on_filament_out_of_stock": provider.on_filament_out_of_stock,
         # Quiet hours
         "quiet_hours_enabled": provider.quiet_hours_enabled,
         "quiet_hours_start": provider.quiet_hours_start,
@@ -277,6 +280,7 @@ async def create_notification_provider(
         enabled=provider_data.enabled,
         config=json.dumps(provider_data.config),
         attach_photo=provider_data.attach_photo,
+        photo_skip_events=provider_data.photo_skip_events,
         # Print lifecycle events
         on_print_start=provider_data.on_print_start,
         on_print_complete=provider_data.on_print_complete,
@@ -304,6 +308,7 @@ async def create_notification_provider(
         # Build plate detection
         on_plate_not_empty=provider_data.on_plate_not_empty,
         on_plate_clear_required=provider_data.on_plate_clear_required,
+        on_plate_changer_empty=provider_data.on_plate_changer_empty,
         # Post-print outcome confirmation (#1898)
         on_print_confirm_request=provider_data.on_print_confirm_request,
         telegram_verdict_mode=provider_data.telegram_verdict_mode,
@@ -324,6 +329,7 @@ async def create_notification_provider(
         on_queue_job_skipped=provider_data.on_queue_job_skipped,
         on_queue_job_failed=provider_data.on_queue_job_failed,
         on_queue_completed=provider_data.on_queue_completed,
+        on_filament_out_of_stock=provider_data.on_filament_out_of_stock,
         # Quiet hours
         quiet_hours_enabled=provider_data.quiet_hours_enabled,
         quiet_hours_start=provider_data.quiet_hours_start,

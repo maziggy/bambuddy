@@ -54,9 +54,10 @@ class Group(Base):
     Users can belong to multiple groups, and their permissions are additive.
     System groups (Administrators, Operators, Viewers) cannot be deleted.
 
-    Permissions say *what* a member may do; ``restrict_printers`` says *where*.
-    A group without the flag doesn't narrow printer access at all, so it can be
-    combined with a team group that does. See ``core/printer_scope.py``.
+    Permissions say *what* a member may do; ``restrict_printers`` says *where*
+    and ``restrict_filaments`` *with which filaments*. A group without a flag
+    doesn't narrow that dimension at all, so it can be combined with a team
+    group that does. See ``core/printer_scope.py`` and ``core/filament_scope.py``.
     """
 
     __tablename__ = "groups"
@@ -67,6 +68,12 @@ class Group(Base):
     permissions: Mapped[list[str]] = mapped_column(JSON, default=list)
     is_system: Mapped[bool] = mapped_column(Boolean, default=False)
     restrict_printers: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # Filament scope (#3522): when set, members may only print with the
+    # filaments this group's rules allow (see ``core/filament_scope.py``). The
+    # mode and rules are kept while the flag is off, like the printer picks.
+    restrict_filaments: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    filament_rule_mode: Mapped[str] = mapped_column(String(10), default="block", server_default="block")
+    filament_rules: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 

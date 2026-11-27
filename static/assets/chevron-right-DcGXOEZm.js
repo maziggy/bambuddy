@@ -1,0 +1,1 @@
+import{A as e}from"./client-DowYGtos.js";var t=e(`chevron-right`,[[`path`,{d:`m9 18 6-6-6-6`,key:`mthhwq`}]]);export{t};

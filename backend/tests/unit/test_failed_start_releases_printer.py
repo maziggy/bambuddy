@@ -172,7 +172,7 @@ async def test_a_dispatch_that_never_sends_releases_the_print_user(clean_state):
         sched._unconfirmed_print_user[597] = PRINTER
 
     db = MagicMock()
-    db.get = AsyncMock(return_value=MagicMock(id=597, printer_id=PRINTER))
+    db.get = AsyncMock(return_value=MagicMock(id=597, printer_id=PRINTER, created_by_id=None))
     ctx = MagicMock()
     ctx.__aenter__ = AsyncMock(return_value=db)
     ctx.__aexit__ = AsyncMock(return_value=False)

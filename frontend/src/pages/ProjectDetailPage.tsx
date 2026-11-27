@@ -42,6 +42,7 @@ import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { RichTextEditor } from '../components/RichTextEditor';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { LabelTemplatePickerModal } from '../components/LabelTemplatePickerModal';
 import { PrintModal } from '../components/PrintModal';
 
 // Project edit modal (reused from ProjectsPage)
@@ -135,7 +136,7 @@ function ArchiveGrid({ archives, t }: { archives: Archive[]; t: TFunction }) {
           {archive.thumbnail_path ? (
             <img
               src={api.getArchiveThumbnail(archive.id)}
-              alt={archive.print_name || 'Print'}
+              alt={archive.print_name || t('common.print')}
               className="w-full h-full object-cover"
             />
           ) : (
@@ -158,7 +159,7 @@ function ArchiveGrid({ archives, t }: { archives: Archive[]; t: TFunction }) {
 
           {/* Name overlay on hover */}
           <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <p className="text-xs text-white truncate">{archive.print_name || 'Unknown'}</p>
+            <p className="text-xs text-white truncate">{archive.print_name || t('common.unknown')}</p>
           </div>
         </Link>
       ))}
@@ -204,6 +205,7 @@ export function ProjectDetailPage() {
   const { showToast } = useToast();
   const { hasPermission } = useAuth();
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showLabelModal, setShowLabelModal] = useState(false);
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesContent, setNotesContent] = useState('');
   const [printFile, setPrintFile] = useState<LibraryFileListItem | null>(null);
@@ -505,24 +507,24 @@ export function ProjectDetailPage() {
           {t('nav.projects')}
         </Link>
         <ChevronRight className="w-4 h-4" />
-        <span className="text-white">{project.name}</span>
+        <span className="min-w-0 [overflow-wrap:anywhere] text-white">{project.name}</span>
       </div>
 
       {/* Header */}
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex min-w-0 items-center gap-3 sm:gap-4">
           <button
             onClick={() => navigate('/projects')}
             className="p-2 rounded-lg bg-bambu-card hover:bg-bambu-dark-tertiary transition-colors"
           >
             <ArrowLeft className="w-5 h-5 text-bambu-gray" />
           </button>
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <div
               className="w-4 h-4 rounded-full shrink-0"
               style={{ backgroundColor: project.color || '#6b7280' }}
             />
-            <div>
+            <div className="min-w-0 [overflow-wrap:anywhere]">
               <h1 className="text-2xl font-bold text-white">{project.name}</h1>
               {project.description && (
                 <p className="text-bambu-gray mt-1">{project.description}</p>
@@ -531,7 +533,7 @@ export function ProjectDetailPage() {
           </div>
           <StatusBadge status={project.status} t={t} />
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 lg:shrink-0">
           <Button
             variant="secondary"
             onClick={handleExportProject}
@@ -540,6 +542,16 @@ export function ProjectDetailPage() {
           >
             <Download className="w-4 h-4 mr-2" />
             {t('projectDetail.export')}
+          </Button>
+          <Button
+            variant="secondary"
+            data-testid="project-print-label"
+            onClick={() => setShowLabelModal(true)}
+            disabled={!hasPermission('projects:read')}
+            title={t('projectDetail.labels.buttonTitle', 'Print a label for the bag or box of finished parts')}
+          >
+            <Tag className="w-4 h-4 mr-2" />
+            {t('projectDetail.labels.button', 'Label')}
           </Button>
           <Button
             onClick={() => setShowEditModal(true)}
@@ -1583,6 +1595,13 @@ export function ProjectDetailPage() {
           isLoading={updateMutation.isPending}
         />
       )}
+
+      {/* Bag label for the finished parts (#3655) */}
+      <LabelTemplatePickerModal
+        isOpen={showLabelModal}
+        onClose={() => setShowLabelModal(false)}
+        project={{ id: project.id, name: project.name, color: project.color }}
+      />
 
       {/* Confirm Modal */}
       {confirmModal.isOpen && (

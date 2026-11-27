@@ -602,7 +602,9 @@ def _make_orchestration_callable(
                     },
                     request=slice_request,
                     current_user_id=creator_user_id,
+                    printer_scope=printer_scope,
                     job_id=slice_job_id,
+                    target_printer_id=pipeline.target_printer_id,
                     # The run's owner, also when a key without the cloud scope
                     # started it and no one resolves cloud presets.
                     owner_id=run.created_by,

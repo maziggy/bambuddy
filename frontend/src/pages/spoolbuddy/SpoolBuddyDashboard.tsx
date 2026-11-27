@@ -440,8 +440,9 @@ export function SpoolBuddyDashboard() {
     setQuickAddBusy(true);
     try {
       const weight = liveWeight ?? displayedWeight;
-      // A decoded Bambu tag gives the spool AMS sync would create; without one
-      // it stays a basic PLA entry to edit later (#2685).
+      // A decoded tag gives the spool it describes: for a Bambu tag the one AMS
+      // sync would create (#2685), for an OpenTag3D or OpenSpool NTAG what the
+      // tag says (#3657). Without one it stays a basic PLA entry to edit later.
       const td = displayedTagData;
       const fromTag = {
         material: td?.material ?? 'PLA',
@@ -607,7 +608,7 @@ export function SpoolBuddyDashboard() {
                     <div
                       key={printer.id}
                       className="flex items-center gap-1.5 px-2.5 py-1 bg-zinc-800/50 rounded-lg"
-                      title={`${printer.name} — ${isOnline ? 'Online' : 'Offline'}`}
+                      title={`${printer.name} — ${isOnline ? t('spoolbuddy.status.online') : t('spoolbuddy.status.offline')}`}
                     >
                       <div className={`w-2 h-2 rounded-full shrink-0 ${isOnline ? 'bg-green-500' : 'bg-zinc-600'}`} />
                       <span className="text-xs text-zinc-400 truncate max-w-[100px]">{printer.name}</span>
@@ -746,7 +747,7 @@ export function SpoolBuddyDashboard() {
             {displayedTagData ? (
               <>
                 <p className="text-sm text-zinc-400 mb-3">
-                  {t('spoolbuddy.modal.quickAddFromTag', 'Adds this spool with the details read from its Bambu tag. You can edit them later in Bambuddy.')}
+                  {t('spoolbuddy.modal.quickAddFromTag', 'Adds this spool with the details read from its tag. You can edit them later in Bambuddy.')}
                 </p>
                 <div className="flex items-center gap-3 p-3 bg-zinc-900/60 border border-zinc-700 rounded-lg mb-1">
                   <SpoolIcon color={spoolColorString(displayedTagData.rgba)} isEmpty={false} size={40} spool={displayedTagData} />
@@ -757,7 +758,7 @@ export function SpoolBuddyDashboard() {
                     <p className="text-xs text-zinc-400 truncate">
                       {[
                         displayedTagData.color_name,
-                        `${displayedTagData.label_weight} g`,
+                        displayedTagData.label_weight ? `${displayedTagData.label_weight} g` : null,
                         displayedTagData.diameter ? `${displayedTagData.diameter} mm` : null,
                       ]
                         .filter(Boolean)

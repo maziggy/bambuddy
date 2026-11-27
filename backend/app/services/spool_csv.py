@@ -85,6 +85,10 @@ CSV_COLUMNS = [
     "core_weight",
     "data_origin",
     "tag_type",
+    # Whether the used weight is locked against the AMS remain% sync. A file
+    # without this column (or with the cell empty) locks an imported used
+    # weight, as the other create paths do; a stated value is kept.
+    "weight_locked",
 ]
 
 # Columns of the spool table the export leaves out. `archived_at` is always
@@ -125,6 +129,10 @@ _FORMULA_INJECTION_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 _TAG_TEXT_COLUMNS = ("tag_uid", "tray_uuid", "slicer_filament", "slicer_filament_name", "data_origin", "tag_type")
 _INT_COLUMNS = {"label_weight", "core_weight", "nozzle_temp_min", "nozzle_temp_max", "low_stock_threshold_pct"}
 _FLOAT_COLUMNS = {"cost_per_kg", "weight_used"}
+
+# Cell values a boolean column accepts, case-insensitive. The export writes
+# str(bool): True / False.
+_BOOL_VALUES = {"true": True, "1": True, "yes": True, "false": False, "0": False, "no": False}
 
 # label_weight default, pulled from the schema so the weight_used bounds check
 # stays in sync if the schema default ever changes.
@@ -564,6 +572,15 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
                         row_error = f"{field} must be a number (got '{value}')"
                         break
 
+        if row_error is None:
+            locked_cell = cell(raw_row, "weight_locked")
+            if locked_cell:
+                locked = _BOOL_VALUES.get(locked_cell.strip().lower())
+                if locked is None:
+                    row_error = f"weight_locked must be true or false (got '{locked_cell}')"
+                else:
+                    data["weight_locked"] = locked
+
         # Bounds check: weight_used must be within [0, label_weight]. The schema
         # accepts any float, so a negative or over-full value would otherwise be
         # imported silently. label_weight falls back to the schema default when
@@ -644,6 +661,10 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
             continue
 
         spool_data = spool.model_dump()
+        if "weight_locked" not in data:
+            # Not stated in the file: leave it out, so the route locks an
+            # entered used weight like the other create paths.
+            spool_data.pop("weight_locked", None)
         if last_used is not None:
             # last_used isn't a SpoolCreate field; graft it onto the persisted
             # dict so the ORM object carries it.
@@ -720,7 +741,7 @@ async def highest_spool_id_given_out(db: AsyncSession) -> int:
         return max(highest, seq or 0)
     sequence = (await db.execute(text("SELECT pg_get_serial_sequence('spool', 'id')"))).scalar()
     if sequence:
-        state = (await db.execute(text(f"SELECT last_value, is_called FROM {sequence}"))).first()  # noqa: S608  # nosec B608 -- name from pg_get_serial_sequence
+        state = (await db.execute(text(f"SELECT last_value, is_called FROM {sequence}"))).first()  # noqa: S608  # nosec B608  # name from pg_get_serial_sequence
         if state is not None:
             last_value, is_called = state
             highest = max(highest, last_value if is_called else last_value - 1)

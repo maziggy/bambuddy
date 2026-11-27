@@ -299,6 +299,17 @@ describe('computeDisplayItems', () => {
 });
 
 describe('aggregateGroupSpool (#1368)', () => {
+  it('carries no scale reading, so the header shows no weight check', () => {
+    // The first member's reading against the group's summed weight was always
+    // a mismatch, and Sync then re-synced only that member.
+    const agg = aggregateGroupSpool([
+      makeSpool({ id: 1, last_scale_weight: 1250, last_weighed_at: '2026-11-01T10:00:00Z' }),
+      makeSpool({ id: 2, last_scale_weight: 1250, last_weighed_at: '2026-11-01T10:05:00Z' }),
+    ]);
+    expect(agg.last_scale_weight).toBeNull();
+    expect(agg.last_weighed_at).toBeNull();
+  });
+
   it('sums label_weight, weight_used and core_weight across members', () => {
     const agg = aggregateGroupSpool([
       makeSpool({ id: 1, label_weight: 1000, weight_used: 200, core_weight: 250 }),

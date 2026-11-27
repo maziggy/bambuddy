@@ -471,6 +471,40 @@ class TestPrintersAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_delete_printer_removes_it_from_home_assistant_discovery(
+        self, async_client: AsyncClient, printer_factory
+    ):
+        """The relay is told, so the printer's retained discovery configs are cleared (#3724)."""
+        from backend.app.services.mqtt_relay import mqtt_relay
+
+        printer = await printer_factory()
+
+        with patch.object(mqtt_relay, "on_printer_removed", AsyncMock()) as removed:
+            response = await async_client.delete(f"/api/v1/printers/{printer.id}")
+
+        assert response.status_code == 200
+        removed.assert_awaited_once_with(printer.serial_number)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_rename_reaches_the_name_the_status_callbacks_publish(
+        self, async_client: AsyncClient, printer_factory
+    ):
+        """MQTT and Home Assistant discovery read the cached name (#3724)."""
+        from backend.app.services.printer_manager import PrinterInfo, printer_manager
+
+        printer = await printer_factory(name="Old name")
+        printer_manager._printer_info[printer.id] = PrinterInfo(printer.name, printer.serial_number)
+        try:
+            response = await async_client.patch(f"/api/v1/printers/{printer.id}", json={"name": "New name"})
+
+            assert response.status_code == 200
+            assert printer_manager.get_printer(printer.id).name == "New name"
+        finally:
+            printer_manager._printer_info.pop(printer.id, None)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_delete_printer_removes_scheduled_dryings(
         self, async_client: AsyncClient, printer_factory, db_session
     ):
@@ -1875,6 +1909,57 @@ class TestAMSLoadUnloadAPI:
 
             assert response.status_code == 500
             assert "failed" in response.json()["detail"].lower()
+
+    @staticmethod
+    def _h3c_client(loaded: list[tuple[int, int]]) -> MagicMock:
+        from backend.app.utils.tray_ids import TrayLayout
+
+        client = MagicMock()
+        client.tray_layout = TrayLayout.from_units([{"id": 32, "ams_type": 6}])
+        client.rack_loaded_slots.return_value = loaded
+        client.ams_unload_all.return_value = len(loaded)
+        return client
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unload_all_unloads_the_loaded_ams3h_slots(self, async_client: AsyncClient, printer_factory):
+        """H3C Unload All (#3531): one command for every loaded AMS 3H slot."""
+        printer = await printer_factory(name="H3C")
+        client = self._h3c_client([(32, 0), (32, 4)])
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/unload-all")
+
+        assert response.status_code == 200, response.text
+        client.ams_unload_all.assert_called_once_with()
+        assert response.json()["count"] == 2
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unload_all_with_nothing_loaded_is_409(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="H3C")
+        client = self._h3c_client([])
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/unload-all")
+
+        assert response.status_code == 409
+        client.ams_unload_all.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unload_all_needs_an_ams3h(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="X1C")
+        client = MagicMock()
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/unload-all")
+
+        assert response.status_code == 400
+        client.ams_unload_all.assert_not_called()
 
 
 class TestConfigureAMSSlotAPI:

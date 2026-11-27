@@ -18,10 +18,11 @@ from backend.app.services.bambu_mqtt import (
     PrinterState,
     get_stage_name,
 )
+from backend.app.services.panda_breath import panda_breath_service
 from backend.app.services.pause_eta import next_pause
 from backend.app.utils.ams_humidity import ams_humidity_percent
 from backend.app.utils.kprofile_lookup import build_slot_k_resolver
-from backend.app.utils.printer_models import has_ams3h
+from backend.app.utils.printer_models import model_rack_ams
 from backend.app.utils.tray_ids import (
     RACK_SLOT_COUNT,
     TrayLayout,
@@ -51,6 +52,7 @@ CHAMBER_TEMP_SUPPORTED_MODELS = frozenset(
         "H2DPRO",
         "H2S",  # H2 series
         "H3C",  # H3 series
+        "P3C",  # P3 series (support_chamber in Studio's N11.json, #3737)
         # Internal codes (from MQTT/SSDP)
         "BL-P001",  # X1/X1C
         "C13",  # X1E
@@ -63,6 +65,7 @@ CHAMBER_TEMP_SUPPORTED_MODELS = frozenset(
         "O2D",  # H2D Pro (alternate code)
         "N7",  # P2S
         "N10",  # H3C
+        "N11",  # P3C
     ]
 )
 
@@ -158,7 +161,8 @@ def supports_chamber_heater(model: str | None) -> bool:
 
 
 # Models with a cooling / heating airduct flap. Same set as the frontend
-# PrintersPage airduct-toggle whitelist (P2S, X2D, H2D, H2D Pro, H2C, H2S, H3C).
+# PrintersPage airduct-toggle whitelist (P2S, X2D, H2D, H2D Pro, H2C, H2S, H3C, P3C).
+# The P3C has the flap (device.airduct) but, like the P2S, no heater (#3737).
 # X1E has a chamber heater but NO airduct flap — the warm-air recirculation
 # happens via the fixed front-door inlet, so no `set_airduct` command is
 # needed (and the firmware ignores it). P2S has an airduct but no heater —
@@ -176,6 +180,7 @@ CHAMBER_AIRDUCT_MODELS = frozenset(
         "H2DPRO",
         "H2S",
         "H3C",
+        "P3C",
         # Internal codes (from MQTT/SSDP)
         "N7",  # P2S
         "N6",  # X2D
@@ -186,6 +191,7 @@ CHAMBER_AIRDUCT_MODELS = frozenset(
         "O2D",  # H2D Pro alternate code
         "O1S",  # H2S
         "N10",  # H3C
+        "N11",  # P3C
     ]
 )
 
@@ -193,7 +199,7 @@ CHAMBER_AIRDUCT_MODELS = frozenset(
 def supports_airduct(model: str | None) -> bool:
     """Check if a printer model has a cooling / heating airduct mode toggle.
 
-    Mirrors the frontend PrintersPage `['P2S', 'X2D', 'H2D', 'H2C', 'H2S', 'H3C']`
+    Mirrors the frontend PrintersPage `['P2S', 'X2D', 'H2D', 'H2C', 'H2S', 'H3C', 'P3C']`
     + H2D Pro whitelist. Distinct from `supports_chamber_heater` — P2S has
     the airduct toggle but no active heater, and X1E has the heater but no
     airduct. The preheat stage cares about the intersection (heater AND
@@ -448,6 +454,21 @@ class PrinterManager:
         """Get printer info by ID."""
         return self._printer_info.get(printer_id)
 
+    def printer_id_for_serial(self, serial: str) -> int | None:
+        """The printer with this serial number, ignoring case and blanks."""
+        wanted = (serial or "").strip().upper()
+        if not wanted:
+            return None
+        for printer_id, info in list(self._printer_info.items()):
+            if (info.serial_number or "").strip().upper() == wanted:
+                return printer_id
+        return None
+
+    def schedule_status_broadcast(self, printer_id: int) -> None:
+        """Push this printer's status from any thread, e.g. a Panda Breath update (#1466)."""
+        if self._loop and self._loop.is_running():
+            self._schedule_async(self._broadcast_status_change(printer_id))
+
     def set_current_print_user(self, printer_id: int, user_id: int, username: str, queue_item_id: int | None = None):
         """Track who started the current print (Issue #206), and for which queue item."""
         self._current_print_user[printer_id] = {
@@ -572,10 +593,18 @@ class PrinterManager:
             return
 
         try:
+            from backend.app.api.routes.settings import get_setting, setting_is_true
             from backend.app.core.database import async_session
+            from backend.app.services import plate_clear
             from backend.app.services.notification_service import notification_service
 
             async with async_session() as db:
+                # The flag goes up after every print, but it only holds the
+                # queue where the gate applies: the app setting, or the
+                # printer's own (#2860). Elsewhere nobody has to clear anything.
+                setting = setting_is_true(await get_setting(db, "require_plate_clear"))
+                if not plate_clear.applies(printer_id, setting):
+                    return
                 await notification_service.on_plate_clear_required(printer_id, printer.name, db)
         except Exception as e:
             logger.warning("Failed to send plate-clear notification for printer %d: %s", printer_id, e)
@@ -650,14 +679,23 @@ class PrinterManager:
             logger.warning("Failed to persist awaiting_plate_clear for printer %d: %s", printer_id, e)
 
     async def load_awaiting_plate_clear_from_db(self):
-        """Rehydrate the awaiting-plate-clear set from the printers table on startup."""
+        """Rehydrate the awaiting-plate-clear set from the printers table on startup.
+
+        Also loads each printer's own "Require plate-clear confirmation" (#2860),
+        which decides whether that flag holds its queue.
+        """
         from backend.app.core.database import async_session
+        from backend.app.services import plate_clear
 
         try:
             async with async_session() as db:
                 result = await db.execute(select(Printer.id).where(Printer.awaiting_plate_clear.is_(True)))
                 ids = {row[0] for row in result.all()}
                 self._awaiting_plate_clear = ids
+                result = await db.execute(
+                    select(Printer.id, Printer.require_plate_clear).where(Printer.require_plate_clear.is_not(None))
+                )
+                plate_clear.load_overrides(dict(result.tuples().all()))
                 if ids:
                     logger.info("Loaded %d printer(s) awaiting plate-clear acknowledgment: %s", len(ids), sorted(ids))
         except Exception as e:
@@ -1887,6 +1925,9 @@ def printer_state_to_dict(
         # so surface it here — without this, WebSocket merges drop the flag and the
         # "Clear Plate" button only appears when the 30 s REST fallback poll runs.
         "awaiting_plate_clear": printer_manager.is_awaiting_plate_clear(printer_id) if printer_id else False,
+        # Panda Breath bound to this printer (#1466). Always present, None when
+        # there is none, so a WebSocket merge drops a device that went away.
+        "panda_breath": panda_breath_service.state_for_printer(printer_id),
     }
     # Add cover URL if there's an active print and printer_id is provided
     # Include PAUSE state so skip objects modal can show cover
@@ -1952,4 +1993,4 @@ def printer_tray_layout(printer_id: int | None, manager: PrinterManager | None =
     if printer_id is None:
         return TrayLayout()
     manager = manager or printer_manager
-    return TrayLayout.from_state(manager.get_status(printer_id), has_ams3h(manager.get_model(printer_id)))
+    return TrayLayout.from_state(manager.get_status(printer_id), model_rack_ams(manager.get_model(printer_id)))

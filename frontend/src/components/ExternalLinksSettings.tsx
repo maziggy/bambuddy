@@ -222,7 +222,7 @@ export function ExternalLinksSettings() {
               </Button>
               <Button size="sm" onClick={() => setShowAddModal(true)} className="whitespace-nowrap">
                 <Plus className="w-4 h-4" />
-                Add Link
+                {t('externalLinks.addLink')}
               </Button>
             </div>
           </div>
@@ -363,10 +363,10 @@ export function ExternalLinksSettings() {
 
       {deletingLink && (
         <ConfirmModal
-          title="Delete Link"
-          message={`Are you sure you want to delete "${deletingLink.name}"? This action cannot be undone.`}
-          confirmText="Delete"
-          cancelText="Cancel"
+          title={t('externalLinks.deleteLink')}
+          message={t('externalLinks.deleteConfirm', { name: deletingLink.name })}
+          confirmText={t('common.delete')}
+          cancelText={t('common.cancel')}
           variant="danger"
           onConfirm={confirmDelete}
           onCancel={() => setDeletingLink(null)}

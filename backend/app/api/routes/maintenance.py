@@ -1,15 +1,19 @@
 """Maintenance tracking API routes."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from typing import cast
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy import delete, func, select
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.core.auth import (
+    ApiKeyActor,
+    RequestActor,
     RequestPrinterScope,
     RequirePermissionIfAuthEnabled,
     RequirePrinterPermissionIfAuthEnabled,
@@ -17,11 +21,18 @@ from backend.app.core.auth import (
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.core.printer_scope import PrinterScope
-from backend.app.models.maintenance import MaintenanceHistory, MaintenanceType, PrinterMaintenance
+from backend.app.models.maintenance import (
+    MaintenanceHistory,
+    MaintenanceLogEntry,
+    MaintenanceType,
+    PrinterMaintenance,
+)
 from backend.app.models.printer import Printer
 from backend.app.models.user import User
 from backend.app.schemas.maintenance import (
     MaintenanceHistoryResponse,
+    MaintenanceLogEntryResponse,
+    MaintenanceLogPage,
     MaintenanceStatus,
     MaintenanceTypeCreate,
     MaintenanceTypeResponse,
@@ -31,7 +42,10 @@ from backend.app.schemas.maintenance import (
     PrinterMaintenanceResponse,
     PrinterMaintenanceUpdate,
 )
+from backend.app.services.export import ExportService
 from backend.app.services.notification_service import notification_service
+from backend.app.utils.http import build_content_disposition
+from backend.app.utils.local_time import utcnow_naive
 from backend.app.utils.printer_models import get_rod_type, normalize_printer_model_id
 
 logger = logging.getLogger(__name__)
@@ -820,8 +834,9 @@ async def perform_maintenance(
     db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
-    """Mark maintenance as performed (reset the counter)."""
+    """Mark maintenance as performed (reset the counter) and log it."""
     result = await db.execute(
         select(PrinterMaintenance)
         .where(PrinterMaintenance.id == item_id)
@@ -838,16 +853,39 @@ async def perform_maintenance(
     # Get current hours
     current_hours = await get_printer_total_hours(db, item.printer_id)
 
+    now_utc = datetime.now(timezone.utc)
+    # Stored naive, as UTC, like every other time in the database.
+    now = now_utc.replace(tzinfo=None)
+
     # Create history entry
     history = MaintenanceHistory(
         printer_maintenance_id=item.id,
+        performed_at=now,
         hours_at_maintenance=current_hours,
         notes=data.notes,
     )
     db.add(history)
+    await db.flush()
+
+    # The audit log entry, which outlives the printer, the task and the user.
+    performed_by_id, performed_by_username = _actor_identity(actor)
+    db.add(
+        MaintenanceLogEntry(
+            printer_id=printer.id,
+            printer_name=printer.name,
+            maintenance_type_id=item.maintenance_type_id,
+            maintenance_type_name=item.maintenance_type.name,
+            hours_at_maintenance=current_hours,
+            notes=data.notes,
+            performed_by_id=performed_by_id,
+            performed_by_username=performed_by_username,
+            performed_at=now,
+            history_id=history.id,
+        )
+    )
 
     # Update item
-    item.last_performed_at = datetime.now(timezone.utc)
+    item.last_performed_at = now_utc
     item.last_performed_hours = current_hours
 
     await db.commit()
@@ -913,6 +951,185 @@ async def get_maintenance_history(
         .order_by(MaintenanceHistory.performed_at.desc())
     )
     return result.scalars().all()
+
+
+# ============== Maintenance Log ==============
+
+
+def _actor_identity(actor: User | ApiKeyActor | None) -> tuple[int | None, str | None]:
+    """Who to log a reset as: the user, an API key's owner, or a legacy key by its name.
+
+    Nobody (None, None) when authentication is off. An ``ApiKeyActor`` has its
+    owner's id and username, both None for a key without an owner.
+    """
+    if actor is None:
+        return None, None
+    if isinstance(actor, ApiKeyActor) and actor.username is None:
+        return None, f"API key: {actor.api_key.name}"[:100]
+    return actor.id, actor.username
+
+
+_NEWEST_FIRST = (MaintenanceLogEntry.performed_at.desc(), MaintenanceLogEntry.id.desc())
+
+
+async def _ensure_printer(db: AsyncSession, printer_id: int) -> Printer:
+    printer = await db.get(Printer, printer_id)
+    if printer is None:
+        raise HTTPException(status_code=404, detail="Printer not found")
+    return printer
+
+
+@router.get("/printers/{printer_id}/log", response_model=MaintenanceLogPage)
+async def get_printer_maintenance_log(
+    printer_id: int,
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.MAINTENANCE_READ),
+):
+    """A printer's maintenance log, newest first."""
+    await _ensure_printer(db, printer_id)
+    where = MaintenanceLogEntry.printer_id == printer_id
+    total = await db.scalar(select(func.count()).select_from(MaintenanceLogEntry).where(where)) or 0
+    result = await db.execute(
+        select(MaintenanceLogEntry).where(where).order_by(*_NEWEST_FIRST).limit(limit).offset(offset)
+    )
+    items = [MaintenanceLogEntryResponse.model_validate(entry) for entry in result.scalars().all()]
+    return MaintenanceLogPage(items=items, total=total)
+
+
+def _csv_response(file_bytes: bytes, filename: str) -> Response:
+    return Response(
+        content=file_bytes,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": build_content_disposition(filename)},
+    )
+
+
+@router.get("/printers/{printer_id}/log/export")
+async def export_printer_maintenance_log(
+    printer_id: int,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.MAINTENANCE_READ),
+):
+    """A printer's maintenance log as CSV."""
+    printer = await _ensure_printer(db, printer_id)
+    result = await db.execute(
+        select(MaintenanceLogEntry).where(MaintenanceLogEntry.printer_id == printer_id).order_by(*_NEWEST_FIRST)
+    )
+    file_bytes, filename = ExportService.export_maintenance_log(result.scalars().all(), printer.name)
+    return _csv_response(file_bytes, filename)
+
+
+@router.get("/log/export")
+async def export_maintenance_log(
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
+):
+    """The maintenance log of every printer the caller may see, as CSV.
+
+    Entries of deleted printers are in it only for callers who see every
+    printer: a printer-scoped caller can't tell whose they were.
+    """
+    query = select(MaintenanceLogEntry).order_by(*_NEWEST_FIRST)
+    if (in_scope := printer_scope.where_strict(MaintenanceLogEntry.printer_id)) is not None:
+        query = query.where(in_scope)
+    result = await db.execute(query)
+    file_bytes, filename = ExportService.export_maintenance_log(result.scalars().all(), "all")
+    return _csv_response(file_bytes, filename)
+
+
+# A cleanup keeps at least the last day: no age can empty the log by accident.
+_OLDER_THAN_DAYS = Query(ge=1, le=36500, description="Delete the entries older than this many days")
+
+
+def _older_than(days: int):
+    # performed_at is naive UTC, like every timestamp the app writes.
+    return MaintenanceLogEntry.performed_at < utcnow_naive() - timedelta(days=days)
+
+
+async def _delete_log_entries(db: AsyncSession, *conditions) -> int:
+    """Delete the log entries matching ``conditions``, and the history rows of the same resets.
+
+    Each reset is written to maintenance_history too, comment included; left
+    there, a deleted entry would still be in the database and its backups.
+    """
+    # Read first: on SQLite the history delete clears the entries' history_id
+    # before it runs (sqlite_fk), and a subquery would then find nothing.
+    copied_from = list(
+        await db.scalars(
+            select(MaintenanceLogEntry.history_id).where(*conditions, MaintenanceLogEntry.history_id.is_not(None))
+        )
+    )
+    # In chunks: a fleet cleanup may match more ids than one statement can bind.
+    for start in range(0, len(copied_from), 500):
+        chunk = copied_from[start : start + 500]
+        await db.execute(delete(MaintenanceHistory).where(MaintenanceHistory.id.in_(chunk)))
+    result = cast(CursorResult, await db.execute(delete(MaintenanceLogEntry).where(*conditions)))
+    await db.commit()
+    return result.rowcount
+
+
+@router.delete("/printers/{printer_id}/log")
+async def clean_up_printer_maintenance_log(
+    printer_id: int,
+    older_than_days: int = _OLDER_THAN_DAYS,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.MAINTENANCE_DELETE),
+):
+    """Delete a printer's maintenance log entries older than ``older_than_days``."""
+    await _ensure_printer(db, printer_id)
+    deleted = await _delete_log_entries(db, MaintenanceLogEntry.printer_id == printer_id, _older_than(older_than_days))
+    logger.info(
+        "Deleted %d maintenance log entries of printer %d older than %d days", deleted, printer_id, older_than_days
+    )
+    return {"deleted": deleted}
+
+
+@router.delete("/log")
+async def clean_up_maintenance_log(
+    older_than_days: int = _OLDER_THAN_DAYS,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_DELETE),
+    printer_scope: PrinterScope = RequestPrinterScope,
+):
+    """Delete the maintenance log entries older than ``older_than_days`` of every
+    printer the caller may see.
+
+    Entries of deleted printers go too, but only for callers who see every
+    printer, as in the export.
+    """
+    conditions = [_older_than(older_than_days)]
+    if (in_scope := printer_scope.where_strict(MaintenanceLogEntry.printer_id)) is not None:
+        conditions.append(in_scope)
+    deleted = await _delete_log_entries(db, *conditions)
+    logger.info("Deleted %d maintenance log entries older than %d days", deleted, older_than_days)
+    return {"deleted": deleted}
+
+
+@router.delete("/log/{entry_id}")
+async def delete_maintenance_log_entry(
+    entry_id: int,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_DELETE),
+    printer_scope: PrinterScope = RequestPrinterScope,
+):
+    """Delete one maintenance log entry, e.g. of a task reset by mistake.
+
+    The task's last reset stays as it is: deleting the entry does not undo it.
+    """
+    entry = await db.get(MaintenanceLogEntry, entry_id)
+    # An entry of a deleted printer is reachable only by a caller who sees
+    # every printer; ``allows`` alone lets any caller at rows with no printer.
+    out_of_scope = entry is not None and (
+        not printer_scope.allows(entry.printer_id) or (entry.printer_id is None and not printer_scope.is_unrestricted)
+    )
+    if entry is None or out_of_scope:
+        raise HTTPException(status_code=404, detail="Maintenance log entry not found")
+    await _delete_log_entries(db, MaintenanceLogEntry.id == entry_id)
+    logger.info("Maintenance log entry %d deleted", entry_id)
+    return {"status": "deleted", "id": entry_id}
 
 
 @router.get("/summary")

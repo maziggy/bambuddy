@@ -15,6 +15,7 @@ import { http, HttpResponse } from 'msw';
 import { render } from '../utils';
 import { server } from '../mocks/server';
 import { FilamentMapping } from '../../components/PrintModal/FilamentMapping';
+import { setAuthToken } from '../../api/client';
 import type { PrinterStatus } from '../../api/client';
 
 /**
@@ -99,6 +100,7 @@ describe('FilamentMapping — FTS routing', () => {
     render(
       <FilamentMapping
         printerId={1}
+        blockedFilaments={[]}
         filamentReqs={mockFilamentReqs}
         manualMappings={{}}
         onManualMappingChange={() => {}}
@@ -141,6 +143,7 @@ describe('FilamentMapping — FTS routing', () => {
     render(
       <FilamentMapping
         printerId={1}
+        blockedFilaments={[]}
         filamentReqs={mockFilamentReqs}
         manualMappings={{}}
         onManualMappingChange={() => {}}
@@ -175,6 +178,7 @@ describe('FilamentMapping — FTS routing', () => {
     render(
       <FilamentMapping
         printerId={1}
+        blockedFilaments={[]}
         filamentReqs={mockFilamentReqs}
         manualMappings={{}}
         onManualMappingChange={() => {}}
@@ -217,6 +221,7 @@ describe('FilamentMapping — FTS routing', () => {
     render(
       <FilamentMapping
         printerId={1}
+        blockedFilaments={[]}
         filamentReqs={mockFilamentReqs}
         manualMappings={{}}
         onManualMappingChange={() => {}}
@@ -261,6 +266,7 @@ describe('FilamentMapping — FTS routing', () => {
     render(
       <FilamentMapping
         printerId={1}
+        blockedFilaments={[]}
         filamentReqs={mockFilamentReqs}
         manualMappings={{}}
         onManualMappingChange={() => {}}
@@ -318,6 +324,7 @@ describe('FilamentMapping — FTS routing', () => {
     render(
       <FilamentMapping
         printerId={1}
+        blockedFilaments={[]}
         filamentReqs={charcoalReqs}
         manualMappings={{}}
         onManualMappingChange={() => {}}
@@ -356,6 +363,7 @@ describe('FilamentMapping — FTS routing', () => {
     render(
       <FilamentMapping
         printerId={1}
+        blockedFilaments={[]}
         filamentReqs={{
           filaments: [
             { slot_id: 1, type: 'PLA', color: '#000000', used_grams: 25, used_meters: 8.5, nozzle_id: 1, tray_info_idx: 'GFA01' },
@@ -417,6 +425,7 @@ describe('FilamentMapping — FTS same-inlet advisory', () => {
     render(
       <FilamentMapping
         printerId={1}
+        blockedFilaments={[]}
         filamentReqs={twoFilamentReqs}
         manualMappings={{}}
         onManualMappingChange={() => {}}
@@ -449,5 +458,105 @@ describe('FilamentMapping — FTS same-inlet advisory', () => {
       expect(screen.getAllByText(/Bambu PETG/).length).toBeGreaterThan(0);
     });
     expect(screen.queryByText(/same inlet is slower/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('FilamentMapping — filament rules of the user\'s group (#3522)', () => {
+  // Slot 0 and slot 1 hold the same white PETG; only the slicer preset id
+  // tells them apart, and the group blocks GFG03.
+  const status = createStatus({
+    ams: [
+      {
+        id: 0,
+        tray: [
+          { id: 0, tray_type: 'PETG', tray_color: 'FFFFFFFF', tray_info_idx: 'GFG03', tray_sub_brands: 'PETG Matte' },
+          { id: 1, tray_type: 'PETG', tray_color: 'FFFFFFFF', tray_info_idx: 'GFG99', tray_sub_brands: 'PETG Other' },
+        ],
+      },
+    ],
+  } as Partial<PrinterStatus>);
+  const blockedSlotText = "Your group can't use PETG (GFG03)";
+
+  beforeEach(() => {
+    setAuthToken('test-token', 'session');
+    server.use(
+      http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+      http.get('*/api/v1/auth/me', () =>
+        HttpResponse.json({
+          id: 2,
+          username: 'student',
+          is_admin: false,
+          permissions: [],
+          filament_policies: [
+            { group: 'Students', mode: 'block', rules: [{ match: 'filament_id', value: 'GFG03' }] },
+          ],
+        }),
+      ),
+      http.get('/api/v1/printers/:id/spool-assignments', () => HttpResponse.json([])),
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json(status)),
+    );
+  });
+
+  afterEach(() => {
+    setAuthToken(null);
+  });
+
+  const renderMapping = (
+    filaments: Array<{ slot_id: number; type: string; color: string; used_grams: number; used_meters: number; tray_info_idx?: string }>,
+    props: Partial<React.ComponentProps<typeof FilamentMapping>> = {},
+  ) =>
+    render(
+      <FilamentMapping
+        printerId={1}
+        blockedFilaments={[]}
+        filamentReqs={{ filaments }}
+        manualMappings={{}}
+        onManualMappingChange={() => {}}
+        currencySymbol="$"
+        defaultCostPerKg={0}
+        defaultExpanded
+        {...props}
+      />,
+    );
+
+  it('auto-maps to the allowed slot and greys out the blocked one', async () => {
+    renderMapping([{ slot_id: 1, type: 'PETG', color: '#FFFFFF', used_grams: 10, used_meters: 3 }]);
+
+    // The policies arrive with /auth/me, after the first render; once they
+    // have, the auto-match moves off the blocked slot.
+    const trigger = await screen.findByRole('combobox');
+    await waitFor(() => expect(trigger).toHaveTextContent(/PETG Other/));
+
+    fireEvent.click(trigger);
+    const listbox = await screen.findByRole('listbox');
+    const blocked = within(listbox).getByRole('option', { name: /PETG Matte/ });
+    expect(blocked).toHaveAttribute('aria-disabled', 'true');
+    expect(blocked).toHaveAttribute('title', blockedSlotText);
+    expect(within(listbox).getByRole('option', { name: /PETG Other/ })).not.toHaveAttribute('aria-disabled');
+  });
+
+  it('warns, even collapsed, when the file itself needs a blocked filament', async () => {
+    renderMapping(
+      [{ slot_id: 1, type: 'PETG', color: '#FFFFFF', used_grams: 10, used_meters: 3, tray_info_idx: 'GFG03' }],
+      // The dialog judges the file and hands the panel the list.
+      { defaultExpanded: false, blockedFilaments: ['PETG (GFG03)'] },
+    );
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent("This file uses a filament your group can't print with: PETG (GFG03)");
+    // The header must not read "Ready" while Print is disabled for this.
+    expect(screen.getByText('(Blocked)')).toBeInTheDocument();
+    expect(screen.queryByText('(Ready)')).not.toBeInTheDocument();
+  });
+
+  it('flags a blocked tray that is still the chosen one', async () => {
+    // A manual pick (an older queue job, the archive's saved mapping) can name
+    // a blocked tray. The server re-picks it, but the row must say so.
+    renderMapping([{ slot_id: 1, type: 'PETG', color: '#FFFFFF', used_grams: 10, used_meters: 3 }], {
+      manualMappings: { 1: 0 },
+    });
+
+    const warning = await screen.findByRole('img', { name: blockedSlotText });
+    expect(warning).toHaveAttribute('title', blockedSlotText);
   });
 });

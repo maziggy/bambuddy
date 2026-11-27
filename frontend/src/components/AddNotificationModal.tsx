@@ -3,10 +3,11 @@ import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, Save, Loader2, Send, CheckCircle, XCircle } from 'lucide-react';
 import { api } from '../api/client';
-import type { NotificationProvider, NotificationProviderCreate, NotificationProviderUpdate, ProviderType, TelegramVerdictMode } from '../api/client';
+import type { NotificationPhotoEvent, NotificationProvider, NotificationProviderCreate, NotificationProviderUpdate, ProviderType, TelegramVerdictMode } from '../api/client';
 import { Button } from './Button';
 import { Toggle } from './Toggle';
 import { isNotifyPushOnlyTarget, isNotifyPhotoUnsupported } from '../utils/notify';
+import { enabledPhotoEvents } from '../utils/notificationPhotoEvents';
 import { SECRET_PLACEHOLDER, selectPlaceholderOnFocus } from '../utils/secrets';
 
 interface ConfigField {
@@ -45,6 +46,8 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
       ? false
       : provider?.attach_photo ?? true
   );
+  // Events sent without the snapshot although Attach Photo is on (#2877).
+  const [photoSkipEvents, setPhotoSkipEvents] = useState<NotificationPhotoEvent[]>(provider?.photo_skip_events ?? []);
   const [quietHoursEnabled, setQuietHoursEnabled] = useState(provider?.quiet_hours_enabled || false);
   const [quietHoursStart, setQuietHoursStart] = useState(provider?.quiet_hours_start || '22:00');
   const [quietHoursEnd, setQuietHoursEnd] = useState(provider?.quiet_hours_end || '07:00');
@@ -68,9 +71,11 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
   const [onStockReorderAlert, setOnStockReorderAlert] = useState(provider?.on_stock_reorder_alert ?? false);
   const [onStockBreakAlert, setOnStockBreakAlert] = useState(provider?.on_stock_break_alert ?? false);
   const [onPlateClearRequired, setOnPlateClearRequired] = useState(provider?.on_plate_clear_required ?? false);
+  const [onPlateChangerEmpty, setOnPlateChangerEmpty] = useState(provider?.on_plate_changer_empty ?? true);
   // Post-print outcome confirmation (#1898). Defaults ON — it only fires for
   // prints that opted in per-job, so the toggle exists to mute a channel.
   const [onPrintConfirmRequest, setOnPrintConfirmRequest] = useState(provider?.on_print_confirm_request ?? true);
+  const [onFilamentOutOfStock, setOnFilamentOutOfStock] = useState(provider?.on_filament_out_of_stock ?? false);
   // Telegram only (#3046): inline link buttons, a thumbs reaction, or both.
   const [telegramVerdictMode, setTelegramVerdictMode] = useState<TelegramVerdictMode>(
     provider?.telegram_verdict_mode ?? 'buttons'
@@ -83,6 +88,21 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
   const [onFirstLayerComplete, setOnFirstLayerComplete] = useState(provider?.on_first_layer_complete ?? false);
   const [onPrintPauseUpcoming, setOnPrintPauseUpcoming] = useState(provider?.on_print_pause_upcoming ?? false);
   const [onAppMessage, setOnAppMessage] = useState(provider?.on_app_message ?? false);
+  // Only the photo events this provider sends; skipped ones that are hidden
+  // keep their choice for when the event is switched back on.
+  const photoEvents = enabledPhotoEvents({
+    on_print_start: onPrintStart,
+    on_print_complete: onPrintComplete,
+    on_print_failed: onPrintFailed,
+    on_print_stopped: onPrintStopped,
+    on_print_progress: onPrintProgress,
+    on_first_layer_complete: onFirstLayerComplete,
+    on_printer_error: onPrinterError,
+    on_ai_failure_detection: onAiFailureDetection,
+    // No toggle in this dialog; it is set on the card.
+    on_plate_not_empty: provider?.on_plate_not_empty ?? true,
+    on_print_confirm_request: onPrintConfirmRequest,
+  });
 
   const [notifyLiveActivities, setNotifyLiveActivities] = useState(
     provider?.config?.live_activities === true && !isNotifyPushOnlyTarget(String(provider?.config?.device_id || ''))
@@ -244,6 +264,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
       config: finalConfig,
       printer_id: printerId,
       attach_photo: attachPhoto && !notifyPhotosUnsupported,
+      photo_skip_events: photoSkipEvents,
       quiet_hours_enabled: quietHoursEnabled,
       quiet_hours_start: quietHoursEnabled ? quietHoursStart : null,
       quiet_hours_end: quietHoursEnabled ? quietHoursEnd : null,
@@ -265,7 +286,9 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
       on_stock_reorder_alert: onStockReorderAlert,
       on_stock_break_alert: onStockBreakAlert,
       on_plate_clear_required: onPlateClearRequired,
+      on_plate_changer_empty: onPlateChangerEmpty,
       on_print_confirm_request: onPrintConfirmRequest,
+      on_filament_out_of_stock: onFilamentOutOfStock,
       telegram_verdict_mode: providerType === 'telegram' ? telegramVerdictMode : 'buttons',
       on_bed_cooled: onBedCooled,
       on_ha_sensor_alert: onHaSensorAlert,
@@ -755,6 +778,28 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
               onChange={setAttachPhoto}
             />
           </div>
+          {attachPhoto && !notifyPhotosUnsupported && photoEvents.length > 0 && (
+            <fieldset className="pl-4 border-l-2 border-bambu-dark-tertiary">
+              <legend className="text-xs text-bambu-gray mb-2">{t('notifications.attachPhotoEvents')}</legend>
+              <div className="flex flex-wrap gap-x-4 gap-y-2">
+                {photoEvents.map(({ event, labelKey }) => (
+                  <label key={event} className="flex items-center gap-1 text-sm text-white">
+                    <input
+                      type="checkbox"
+                      checked={!photoSkipEvents.includes(event)}
+                      onChange={(e) =>
+                        setPhotoSkipEvents(e.target.checked
+                          ? photoSkipEvents.filter((skipped) => skipped !== event)
+                          : [...photoSkipEvents, event])
+                      }
+                      className="accent-bambu-green"
+                    />
+                    {t(labelKey)}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          )}
 
           {/* Quiet Hours */}
           <div className="space-y-2">
@@ -864,6 +909,13 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
                 </div>
                 <div className="flex items-center justify-between col-span-2">
                   <div>
+                    <span className="text-sm text-white">{t('notifications.plateChangerEmpty')}</span>
+                    <span className="text-xs text-bambu-gray ml-1">{t('notifications.plateChangerEmptyDescription')}</span>
+                  </div>
+                  <Toggle checked={onPlateChangerEmpty} onChange={setOnPlateChangerEmpty} />
+                </div>
+                <div className="flex items-center justify-between col-span-2">
+                  <div>
                     <span className="text-sm text-white">{t('notifications.printConfirmRequest')}</span>
                     <span className="text-xs text-bambu-gray ml-1">{t('notifications.printConfirmRequestDescription')}</span>
                   </div>
@@ -927,6 +979,15 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
                   <span className="text-sm text-white">{t('notifications.lowFilament')}</span>
                   <Toggle checked={onFilamentLow} onChange={setOnFilamentLow} />
                 </div>
+                <div className="flex items-center justify-between col-span-2">
+                  <div>
+                    <span className="text-sm text-white">{t('notifications.filamentOutOfStock')}</span>
+                    <span className="text-xs text-bambu-gray ml-1">{t('notifications.filamentOutOfStockDescription')}</span>
+                    {/* Sent by the scheduler only while the inventory-colours setting is on (#3590). */}
+                    <p className="text-xs text-bambu-gray">{t('notifications.filamentOutOfStockNeedsSetting')}</p>
+                  </div>
+                  <Toggle checked={onFilamentOutOfStock} onChange={setOnFilamentOutOfStock} />
+                </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-white">{t('notifications.maintenance')}</span>
                   <Toggle checked={onMaintenanceDue} onChange={setOnMaintenanceDue} />
@@ -977,7 +1038,9 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
               if (onPrintProgress) enabledEvents.push({ key: 'on_print_progress', label: t('notifications.progress') });
               if (onBillingChargeFailed) enabledEvents.push({ key: 'on_billing_charge_failed', label: t('notifications.billingChargeFailedLabel') });
               if (onPlateClearRequired) enabledEvents.push({ key: 'on_plate_clear_required', label: t('notifications.plateClearRequired') });
+              if (onPlateChangerEmpty) enabledEvents.push({ key: 'on_plate_changer_empty', label: t('notifications.plateChangerEmpty') });
               if (onPrintConfirmRequest) enabledEvents.push({ key: 'on_print_confirm_request', label: t('notifications.printConfirmRequest') });
+              if (onFilamentOutOfStock) enabledEvents.push({ key: 'on_filament_out_of_stock', label: t('notifications.filamentOutOfStock') });
               if (onBedCooled) enabledEvents.push({ key: 'on_bed_cooled', label: t('notifications.bedCooled') });
               if (onFirstLayerComplete) enabledEvents.push({ key: 'on_first_layer_complete', label: t('notifications.firstLayerCompleteLabel') });
               if (onPrintPauseUpcoming) enabledEvents.push({ key: 'on_print_pause_upcoming', label: t('notifications.pauseUpcomingLabel') });

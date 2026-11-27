@@ -1,7 +1,11 @@
+import asyncio
+import contextlib
 import io
 import json
 import logging
 import os
+import shutil
+import tempfile
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes._label_printer_helpers import deliver_job_http, load_label_printer_config
 from backend.app.core.auth import (
     RequestPrinterScope,
     RequireAdminIfAuthEnabled,
@@ -28,8 +33,16 @@ from backend.app.core.permissions import Permission
 from backend.app.core.printer_scope import PrinterScope
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
-from backend.app.schemas.settings import ADMIN_ONLY_SETTING_KEYS, AppSettings, AppSettingsUpdate
+from backend.app.schemas.settings import (
+    ADMIN_ONLY_SETTING_KEYS,
+    QUEUE_MAX_WAIT_HOURS_MAX,
+    QUEUE_MAX_WAIT_HOURS_MIN,
+    AppSettings,
+    AppSettingsUpdate,
+    LabelPrinterTestRequest,
+)
 from backend.app.services import camera_light
+from backend.app.services.label_printers.base import get_driver
 from backend.app.services.secret_fields import SETTINGS_SECRETS, SecretConfigError, mask_fields, merge_partial
 
 logger = logging.getLogger(__name__)
@@ -193,16 +206,21 @@ _BOOL_SETTING_KEYS = frozenset(
         "ftp_retry_enabled",
         "mqtt_enabled",
         "mqtt_use_tls",
+        "mqtt_ha_discovery_enabled",
+        "panda_breath_enabled",
         "ha_enabled",
         "per_printer_mapping_expanded",
         "prometheus_enabled",
         "user_notifications_enabled",
+        "notification_submitter_email_enabled",
         "queue_drying_enabled",
         "queue_drying_block",
         "ambient_drying_enabled",
         "print_drying_enabled",
         "require_plate_clear",
         "queue_shortest_first",
+        "queue_loaded_filament_first",
+        "filament_override_inventory",
         # default_bed_levelling / default_flow_cali / default_nozzle_offset_cali
         # are tri-state strings (off/on/auto) — parsed via the raw-string else
         # branch; the TriState validator coerces legacy "true"/"false" rows.
@@ -214,6 +232,10 @@ _BOOL_SETTING_KEYS = frozenset(
         "confirm_default_good_on_plate_clear",
         "billing_enabled",
         "printer_kill_switch_enabled",
+        "billing_completed_energy",
+        "billing_completed_wear",
+        "billing_failed_energy",
+        "billing_failed_wear",
         "ldap_enabled",
         "ldap_auto_provision",
         "local_login_enabled",
@@ -239,7 +261,14 @@ _FLOAT_SETTING_KEYS = frozenset(
 # String settings limited to a fixed set of values, which a stored "None"
 # would break when the settings response is built.
 _ENUM_SETTING_KEYS = frozenset(
-    {"energy_price_source", "obico_sensitivity", "obico_action", "octoeverywhere_confidence", "octoeverywhere_action"}
+    {
+        "energy_price_source",
+        "obico_sensitivity",
+        "obico_action",
+        "octoeverywhere_confidence",
+        "octoeverywhere_action",
+        "billing_failed_filament",
+    }
 )
 
 _INT_SETTING_KEYS = frozenset(
@@ -307,6 +336,22 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False, m
                 settings_dict[setting.key] = None
         elif setting.key == "default_printer_id":
             settings_dict[setting.key] = int(setting.value) if setting.value and setting.value != "None" else None
+        elif setting.key == "queue_max_wait_hours":
+            # Nullable int: null (stored as the literal "None") means no limit (#3587).
+            # Read like the scheduler reads it: blanks stripped, a value outside
+            # the accepted range falls back to the default (already in the dict).
+            raw_hours = (setting.value or "").strip()
+            if raw_hours in ("", "None"):
+                settings_dict[setting.key] = None
+            else:
+                try:
+                    hours = int(raw_hours)
+                except ValueError:
+                    hours = None
+                if hours is not None and QUEUE_MAX_WAIT_HOURS_MIN <= hours <= QUEUE_MAX_WAIT_HOURS_MAX:
+                    settings_dict[setting.key] = hours
+                else:
+                    logger.warning("Setting %s has an unusable value; using the default", setting.key)
         elif setting.key == "open_in_slicer":
             # None means "inherit from preferred_slicer" (#1329). The PUT path
             # serializes None as the literal string "None"; strip it back so
@@ -317,6 +362,14 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False, m
 
     ha_settings = await get_homeassistant_settings(db)
     settings_dict.update(ha_settings)
+
+    # An empty saved model or tape shows the default (the select would be blank otherwise).
+    settings_dict["label_printer_model"] = settings_dict["label_printer_model"].strip() or "QL-820NWB"
+    settings_dict["label_printer_tape"] = settings_dict["label_printer_tape"].strip() or "50"
+    # Derived (#3612): type and host set. Not stored, not writable.
+    settings_dict["label_printer_configured"] = bool(
+        settings_dict["label_printer_type"].strip() and settings_dict["label_printer_host"].strip()
+    )
 
     # ldap_bind_password is never returned to any caller (mask=False is
     # server-side only)
@@ -477,8 +530,45 @@ async def update_settings(
         "mqtt_password",
         "mqtt_topic_prefix",
         "mqtt_use_tls",
+        "mqtt_ha_discovery_enabled",
+        "mqtt_ha_discovery_prefix",
+        # The link on the Home Assistant device.
+        "external_url",
+        "panda_breath_enabled",
     }
     mqtt_updated = bool(mqtt_keys & set(update_data.keys()))
+
+    # Home Assistant discovery (#3724). Checked against what will be stored,
+    # whichever of these this save changes: the page sends every field on each save.
+    discovery_keys = {"mqtt_enabled", "mqtt_topic_prefix", "mqtt_ha_discovery_enabled", "mqtt_ha_discovery_prefix"}
+    if discovery_keys & set(update_data.keys()):
+        from backend.app.services.mqtt_ha_discovery import DEFAULT_DISCOVERY_PREFIX, normalize_prefix
+
+        async def _effective(key: str) -> str:
+            if key in update_data:
+                value = update_data[key]
+                return ("true" if value else "false") if isinstance(value, bool) else str(value)
+            return await get_setting(db, key) or ""
+
+        discovery_prefix = normalize_prefix(await _effective("mqtt_ha_discovery_prefix"), DEFAULT_DISCOVERY_PREFIX)
+        # MQTT wildcards: the relay could neither publish under it nor subscribe to it.
+        if "+" in discovery_prefix or "#" in discovery_prefix:
+            raise HTTPException(
+                status_code=400,
+                detail="The Home Assistant discovery prefix cannot contain + or #.",
+            )
+        # Printer status under Home Assistant's own discovery topics would be read
+        # as broken discovery messages. Only while discovery will be on: an install
+        # whose topic prefix is already "homeassistant" must still save its settings.
+        discovery_on = (
+            await _effective("mqtt_enabled") == "true" and await _effective("mqtt_ha_discovery_enabled") == "true"
+        )
+        topic_prefix = normalize_prefix(await _effective("mqtt_topic_prefix"), "bambuddy")
+        if discovery_on and topic_prefix == discovery_prefix:
+            raise HTTPException(
+                status_code=400,
+                detail="The MQTT topic prefix must differ from the Home Assistant discovery prefix.",
+            )
 
     # The page saves every field it shows on each change, so compare against
     # what is stored: only a real change of price source is worth a read.
@@ -535,6 +625,10 @@ async def update_settings(
                 "mqtt_password": await get_setting(db, "mqtt_password") or "",
                 "mqtt_topic_prefix": await get_setting(db, "mqtt_topic_prefix") or "bambuddy",
                 "mqtt_use_tls": (await get_setting(db, "mqtt_use_tls") or "false") == "true",
+                "mqtt_ha_discovery_enabled": (await get_setting(db, "mqtt_ha_discovery_enabled") or "false") == "true",
+                "mqtt_ha_discovery_prefix": await get_setting(db, "mqtt_ha_discovery_prefix") or "homeassistant",
+                "external_url": await get_setting(db, "external_url") or "",
+                "panda_breath_enabled": (await get_setting(db, "panda_breath_enabled") or "false") == "true",
             }
             await mqtt_relay.configure(mqtt_settings)
         except Exception:
@@ -542,6 +636,31 @@ async def update_settings(
 
     # Return updated settings, secrets as the placeholder
     return await _build_settings_response(db, is_api_key=False)
+
+
+@router.post("/label-printer/test")
+async def test_label_printer(
+    body: LabelPrinterTestRequest | None = None,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+):
+    """Print a small test label (#3612), with the given values or the saved ones.
+
+    Returns the status the printer answered with, if it answered, so the page
+    can say what tape it found.
+    """
+    overrides = body.model_dump() if body is not None else None
+    config = await load_label_printer_config(db, overrides)
+    if config is None:
+        raise HTTPException(400, "No label printer is set up")
+    driver = get_driver(config.type)
+    job = await asyncio.to_thread(driver.test_job, config)
+    # One small label, so a short bound without any cooling allowance. The test is
+    # for whoever may change the address, so errors may name it.
+    status = await deliver_job_http(
+        driver, job, config, bound=driver.timeout_s(job), reveal_address=True, lock_timeout=0
+    )
+    return {"status": status.to_dict() if status is not None else None}
 
 
 @router.patch("/", response_model=AppSettings)
@@ -704,6 +823,7 @@ _UI_FLAG_FIELDS: tuple[str, ...] = (
     # all to their defaults (with billing on, the print dialog hid the cost
     # centre picker and the print was then refused for lacking one).
     "queue_shortest_first",
+    "filament_override_inventory",
     "use_slicer_api",
     "open_in_slicer",
     "preferred_slicer",
@@ -768,6 +888,11 @@ async def get_ui_flags(
         flags["default_printer_id"] = None
     # Whether G-code snippets are set up, not the snippets themselves.
     flags["has_gcode_snippets"] = bool(dumped.get("gcode_snippets"))
+    # Whether a label printer is set up (the Print button and the add-spool
+    # checkbox), not where it is: the address stays behind settings:read (#3612).
+    flags["label_printer_configured"] = bool(dumped.get("label_printer_configured"))
+    # The tape id is not secret: the label dialog needs it to enable Print.
+    flags["label_printer_tape"] = dumped.get("label_printer_tape", "") if flags["label_printer_configured"] else ""
     return flags
 
 
@@ -913,23 +1038,338 @@ async def get_homeassistant_settings(db: AsyncSession) -> dict:
     }
 
 
-async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]:
+# The file steps of a backup and a restore run in a worker thread. On the
+# event loop they froze the whole server for as long as they took -- no page,
+# no websocket, no printer message -- and with a large archive folder that was
+# over half a minute, long enough for the loop watchdog to dump every thread.
+
+
+def _copy_sqlite_database(src: Path, dest: Path) -> None:
+    """Copy the live SQLite database through SQLite's backup API.
+
+    Runs in a worker thread, so the app keeps writing while it copies. A plain
+    file copy could then catch the main file in the middle of a checkpoint; the
+    backup API copies one consistent snapshot instead.
+
+    The source opens read-only: a plain connect creates an empty database at a
+    path that doesn't exist, and the backup would carry that instead of failing.
+    as_uri() escapes the path, where a ? in it would swallow mode=ro.
+    """
+    import sqlite3
+
+    source = sqlite3.connect(f"{src.absolute().as_uri()}?mode=ro", uri=True)
+    try:
+        target = sqlite3.connect(dest)
+        try:
+            source.backup(target)
+        finally:
+            target.close()
+    finally:
+        source.close()
+
+
+# Folders inside the backed-up directories that only hold files of the moment:
+# archive/temp has print-start downloads and the 3MFs behind the printer card,
+# fetched and deleted while a backup runs. Copied, a deleted one would turn a
+# good backup into a warning and one still being written would go in truncated,
+# and a restore has no use for either.
+_BACKUP_SKIP = {"archive": {"temp"}}
+
+
+def _copy_backup_file(source: str, destination: str) -> str:
+    try:
+        return shutil.copy2(source, destination)
+    except OSError:
+        # A failed copy may already have written part of the file. Discard
+        # it before copytree applies the source folder's (possibly read-only) mode.
+        Path(destination).unlink(missing_ok=True)
+        raise
+
+
+def _copy_backup_dirs(dirs_to_backup: list[tuple[str, Path]], temp_path: Path) -> tuple[list[str], list[str]]:
+    """Stage the data directories. Return the directories captured in full and any missing paths."""
+    captured_dirs: list[str] = []
+    copy_warnings: list[str] = []
+    for name, src_dir in dirs_to_backup:
+        skip = _BACKUP_SKIP.get(name, set())
+
+        def ignore(directory: str, entries: list[str], src_dir: Path = src_dir, skip: set[str] = skip) -> set[str]:
+            # Only directly below the backed-up directory: a folder named
+            # "temp" deeper down is user data like any other.
+            return skip.intersection(entries) if Path(directory) == src_dir else set()
+
+        try:
+            shutil.copytree(
+                src_dir, temp_path / name, ignore=ignore, copy_function=_copy_backup_file
+            )  # SEC-PATH-OK: name iterates the dirs_to_backup tuple of constant strings ("archive", "virtual_printer", ...)
+        except FileNotFoundError:
+            continue
+        except PermissionError as e:
+            logger.warning("Permission denied copying %s: %s", name, e)
+            copy_warnings.append(f"{name}/")
+            continue
+        except shutil.Error as e:
+            # copytree collects errors below the root. Only a file the app
+            # actually removed during the copy can be absent from a complete snapshot.
+            missing = []
+            for source, _dest, _why in e.args[0]:
+                try:
+                    Path(source).lstat()
+                except FileNotFoundError:
+                    continue
+                except OSError:
+                    pass  # A path we cannot inspect still counts as missing from the backup.
+                missing.append(f"{name}/{Path(source).relative_to(src_dir).as_posix()}")
+            if missing:
+                logger.warning("Some files in %s could not be copied: %s", name, e)
+                copy_warnings.extend(missing)
+                continue
+            logger.debug("Files in %s were deleted during the backup copy: %s", name, e)
+        captured_dirs.append(name)
+    return captured_dirs, copy_warnings
+
+
+def _export_rows(dst, insert_sql: str, rows) -> None:
+    """Write one table's rows into the portable SQLite export (worker thread)."""
+    dst.executemany(
+        insert_sql, (tuple(json.dumps(v) if isinstance(v, (list, dict)) else v for v in row) for row in rows)
+    )
+
+
+def _write_backup_zip(temp_path: Path, zip_file: Path) -> None:
+    """Deflate the staging folder into the backup ZIP (worker thread)."""
+
+    def raise_walk_error(error: OSError) -> None:
+        # A silently skipped staging folder would look like a captured empty folder on restore.
+        raise error
+
+    with zipfile.ZipFile(zip_file, "w", zipfile.ZIP_DEFLATED) as zf:
+        for directory, _subdirs, filenames in os.walk(temp_path, onerror=raise_walk_error):
+            for filename in filenames:
+                file_path = Path(directory) / filename  # SEC-PATH-OK: os.walk lists this private staging tree.
+                zf.write(file_path, file_path.relative_to(temp_path))
+
+
+def _extract_backup_zip(content: bytes, temp_path: Path) -> None:
+    """Extract a backup ZIP into temp_path, refusing any entry that escapes it.
+
+    Raises HTTPException(400) for an unsafe path or a file that is not a ZIP.
+    """
+    from fastapi import HTTPException
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(content), "r") as zf:
+            for name in zf.namelist():
+                # Reject path-traversal payloads: any entry whose resolved
+                # path escapes temp_path would allow writing arbitrary files
+                # on the host (ZipSlip / CVE-2006-5456).
+                dest = (
+                    temp_path / name
+                ).resolve()  # SEC-PATH-OK: is_relative_to containment check below before extractall
+                # is_relative_to (Python 3.9+) covers both relative
+                # path-traversal (../etc/passwd) and absolute-path overrides
+                # (/etc/passwd) — str.startswith was vulnerable to
+                # prefix-collision attacks (e.g. /tmp/abc_evil/file passing
+                # a /tmp/abc prefix check).
+                if not dest.is_relative_to(temp_path.resolve()):
+                    raise HTTPException(400, f"Invalid backup: unsafe path in ZIP: {name!r}")
+            zf.extractall(temp_path)
+    except zipfile.BadZipFile:
+        raise HTTPException(400, "Invalid backup file: not a valid ZIP")
+
+
+def _restore_partial_dir(src: Path, dest: Path) -> None:
+    """Restore readable files without deleting destination-only files or following destination links."""
+    dest.mkdir(parents=True, exist_ok=True)
+    for item in src.iterdir():
+        target = dest / item.name
+        try:
+            if target.is_symlink():
+                continue
+            if item.is_dir():
+                _restore_partial_dir(item, target)
+            elif not target.exists() or target.is_file():
+                # Publish only a finished copy, without writing through hard links.
+                with tempfile.TemporaryDirectory(dir=dest) as staging:
+                    staged = Path(staging) / "file"
+                    shutil.copy2(item, staged)
+                    staged.replace(target)
+        except OSError as e:
+            logger.warning("Could not restore %s from the incomplete backup: %s", target, e)
+
+
+def _restore_data_dirs(
+    dirs_to_restore: list[tuple[str, Path]], temp_path: Path, captured_dirs: list[str] | None
+) -> list[str]:
+    """Replace captured directories in place and merge files from partially captured directories.
+
+    Clears the contents, not the directory itself, which may be a Docker
+    mount. Returns the names of the directories that could not be restored.
+    """
+    skipped_dirs = []
+    for name, dest_dir in dirs_to_restore:
+        src_dir = (
+            temp_path / name
+        )  # SEC-PATH-OK: name iterates the dirs_to_restore tuple of constant strings ("archive", "virtual_printer", ...)
+        if captured_dirs is not None and name not in captured_dirs:
+            if src_dir.is_dir():
+                # Some files made it into this ZIP, but an incomplete tree
+                # cannot tell us which destination files to delete.
+                skipped_dirs.append(name)
+                try:
+                    _restore_partial_dir(src_dir, dest_dir)
+                except OSError as e:
+                    logger.warning("Could not restore files from incomplete %s directory: %s", name, e)
+            continue
+        if not src_dir.exists() and captured_dirs is not None:
+            # The ZIP only stores files. Recreate the empty staging directory
+            # so the normal replacement also clears a mounted destination.
+            src_dir.mkdir()
+        if src_dir.is_dir():
+            logger.info("Restoring %s directory...", name)
+            try:
+                if dest_dir.exists():
+                    for item in dest_dir.iterdir():
+                        try:
+                            if item.is_dir() and (captured_dirs is None or not item.is_symlink()):
+                                shutil.rmtree(item)
+                            else:
+                                item.unlink()
+                        except OSError as e:
+                            logger.warning("Could not delete %s: %s", item, e)
+                            if captured_dirs is not None and name not in skipped_dirs:
+                                skipped_dirs.append(name)
+                else:
+                    dest_dir.mkdir(parents=True, exist_ok=True)
+                # Copy contents from backup
+                for item in src_dir.iterdir():
+                    dest_item = dest_dir / item.name
+                    if item.is_dir():
+                        shutil.copytree(item, dest_item)
+                    else:
+                        shutil.copy2(item, dest_item)
+            except OSError as e:
+                logger.warning("Could not restore %s directory: %s", name, e)
+                if name not in skipped_dirs:
+                    skipped_dirs.append(name)
+    return skipped_dirs
+
+
+def _restore_sqlite_db(backup_db: Path, db_path: Path) -> None:
+    """Copy the backup into the live SQLite database with the online backup API."""
+    import sqlite3
+
+    src_conn = sqlite3.connect(str(backup_db))
+    try:
+        dst_conn = sqlite3.connect(str(db_path))
+        try:
+            src_conn.backup(dst_conn)
+        finally:
+            dst_conn.close()
+    finally:
+        src_conn.close()
+
+
+async def _wait_for_worker(worker: asyncio.Future | None) -> None:
+    """Wait until a backup step's worker thread has finished.
+
+    Cancelling the await does not stop the thread. The clean-up after a cancel
+    must not delete the staging folder while a copy still writes into it, so it
+    waits here first, through any further cancel. The step's own result or error
+    no longer matters to a cancelled backup.
+    """
+    while worker is not None and not worker.done():
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await asyncio.shield(worker)
+
+
+class BackupAlreadyRunning(Exception):
+    """Another backup, or a restore, is running right now."""
+
+    def __init__(self, restore: bool = False):
+        super().__init__("A restore is running" if restore else "A backup is already running")
+        self.restore = restore
+
+
+def _busy_detail(restore: bool, message: str) -> dict[str, str]:
+    """The 409 body while a backup or a restore holds the lock. The code lets
+    the frontend say which one, translated, instead of the English text."""
+    return {"code": "restore_running" if restore else "backup_running", "message": message}
+
+
+# One backup or restore at a time, whoever starts it: each backup stages its own
+# copy of the archive, so two at once would double the temp disk use on exactly
+# the installs where a backup takes minutes; and a restore replaces the database
+# and the data folders a backup would be copying.
+_backup_lock = asyncio.Lock()
+# The running backup or restore plus the backups waiting for it.
+# _backup_lock.locked() alone reads False for a moment while the lock passes to
+# a waiting backup, and a download that checked it then would queue up behind it.
+_backup_claims = 0
+# Whether the lock is held by a restore, so a refused download can say which.
+_restore_running = False
+
+
+async def create_backup_zip(output_path: Path | None = None, *, wait: bool = True) -> tuple[Path, str, list[str]]:
     """Create a complete backup ZIP (database + all data directories).
 
     If output_path is given, the ZIP is written there.
     Otherwise a temporary file is created (caller must clean up).
-    Returns (zip_path, filename).
+    Returns (zip_path, filename, copy_warnings), the last being what could not
+    be copied into it (see _copy_backup_dirs).
+
+    Only one backup runs at a time. A caller that waits (the scheduled local
+    backup, "Run backup now") starts once the running one has finished; with
+    wait=False (the download) a running backup raises BackupAlreadyRunning
+    right away instead.
     """
-    import shutil
-    import tempfile
+    global _backup_claims
+
+    if not wait and _backup_claims:
+        raise BackupAlreadyRunning(restore=_restore_running)
+    _backup_claims += 1
+    try:
+        async with _backup_lock:
+            return await _build_backup_zip(output_path)
+    finally:
+        _backup_claims -= 1
+
+
+async def _build_backup_zip(output_path: Path | None) -> tuple[Path, str, list[str]]:
+    """The work of create_backup_zip, which holds the backup lock around it.
+
+    Copying the archive and deflating the ZIP can take minutes on a large
+    install, so that file work runs in worker threads. On the event loop it
+    stalled the whole app for as long: no printer status, no queue, no API.
+    """
 
     from backend.app.core.db_dialect import is_sqlite
 
     base_dir = app_settings.base_dir
     filename = f"bambuddy-backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}.zip"
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_path = Path(temp_dir)
+    # The step now running in a worker thread: the executor's own future, done
+    # when the thread is. Not a Task, which asyncio.run cancels with all the
+    # others at shutdown and which then reads as done with its thread still
+    # copying. It is awaited through a shield, so a cancel ends only the await,
+    # and the clean-up below waits on it.
+    loop = asyncio.get_running_loop()
+    worker: asyncio.Future | None = None
+
+    async def in_thread(func, *args):
+        nonlocal worker
+        worker = loop.run_in_executor(None, func, *args)
+        return await asyncio.shield(worker)
+
+    # Not a `with` block: its exit would delete the staged copy of the archive
+    # on the event loop again.
+    temp_dir = tempfile.TemporaryDirectory()
+    # The finished ZIP, once it is this run's own: the temp file it made, or the
+    # name it renamed its .part onto. Two backups in the same second share that
+    # name, so a ZIP that is merely there may be another run's complete backup.
+    own_zip: Path | None = None
+    try:
+        temp_path = Path(temp_dir.name)
 
         if is_sqlite():
             from sqlalchemy import text
@@ -943,11 +1383,10 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
                 await conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
 
             # Copy database file
-            shutil.copy2(db_path, temp_path / "bambuddy.db")
+            await in_thread(_copy_sqlite_database, db_path, temp_path / "bambuddy.db")
         else:
             # PostgreSQL: export to a portable SQLite file via SQLAlchemy.
             # This makes backups restorable on both SQLite and Postgres installs.
-            import json
             import sqlite3
 
             from sqlalchemy import create_engine as create_sync_engine
@@ -970,31 +1409,34 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
             # renders as BLOB, so OIDC icon bytes survive the round trip.
             schema_engine = create_sync_engine(f"sqlite:///{backup_db_path}")
             try:
-                metadata.create_all(schema_engine)
+                await in_thread(metadata.create_all, schema_engine)
             finally:
+                await _wait_for_worker(worker)
                 schema_engine.dispose()
 
-            dst = sqlite3.connect(str(backup_db_path))
+            # The inserts and the commit run in worker threads, one at a time,
+            # so the connection must not be tied to the thread that opened it.
+            dst = sqlite3.connect(str(backup_db_path), check_same_thread=False)
+            try:
+                # Export data from Postgres to SQLite
+                async with engine.connect() as conn:
+                    for table in metadata.sorted_tables:
+                        result = await conn.execute(table.select())
+                        rows = result.fetchall()
+                        if not rows:
+                            continue
+                        columns = list(result.keys())
+                        placeholders = ", ".join(["?"] * len(columns))
+                        col_list = ", ".join(columns)
+                        insert_sql = f"INSERT INTO {table.name} ({col_list}) VALUES ({placeholders})"  # noqa: S608  # nosec B608  # table/column names from ORM metadata, not user input
 
-            # Export data from Postgres to SQLite
-            async with engine.connect() as conn:
-                for table in metadata.sorted_tables:
-                    result = await conn.execute(table.select())
-                    rows = result.fetchall()
-                    if not rows:
-                        continue
-                    columns = list(result.keys())
-                    placeholders = ", ".join(["?"] * len(columns))
-                    col_list = ", ".join(columns)
-                    insert_sql = f"INSERT INTO {table.name} ({col_list}) VALUES ({placeholders})"  # noqa: S608  # nosec B608 — table/column names from ORM metadata, not user input
+                        await in_thread(_export_rows, dst, insert_sql, rows)
 
-                    def _serialize_row(row):
-                        return tuple(json.dumps(v) if isinstance(v, (list, dict)) else v for v in row)
-
-                    dst.executemany(insert_sql, [_serialize_row(row) for row in rows])
-
-            dst.commit()
-            dst.close()
+                await in_thread(dst.commit)
+            finally:
+                # After a cancel an insert may still be running on this connection.
+                await _wait_for_worker(worker)
+                await in_thread(dst.close)
             logger.info("PostgreSQL backup exported to portable SQLite format")
 
         # Copy data directories (if they exist)
@@ -1007,16 +1449,7 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
             ("overlay-branding", base_dir / "overlay-branding"),
         ]
 
-        for name, src_dir in dirs_to_backup:
-            if src_dir.exists() and any(src_dir.iterdir()):
-                try:
-                    shutil.copytree(
-                        src_dir, temp_path / name
-                    )  # SEC-PATH-OK: name iterates the dirs_to_backup tuple of constant strings ("archive", "virtual_printer", ...)
-                except shutil.Error as e:
-                    logger.warning("Some files in %s could not be copied: %s", name, e)
-                except PermissionError as e:
-                    logger.warning("Permission denied copying %s: %s", name, e)
+        captured_dirs, copy_warnings = await in_thread(_copy_backup_dirs, dirs_to_backup, temp_path)
 
         # Say which version made this, so a restore that cannot import it can
         # name the versions rather than a list of columns. Backups from before
@@ -1026,6 +1459,7 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
 
         manifest = {
             "format": 1,
+            "captured_dirs": captured_dirs,
             "app_version": APP_VERSION,
             "created_at": datetime.now().isoformat(timespec="seconds"),
             "database": "sqlite" if is_sqlite() else "postgresql",
@@ -1055,18 +1489,50 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
             zip_file = (
                 output_path / filename
             )  # SEC-PATH-OK: filename = f"bambuddy-backup-{datetime.now()...}.zip" generated in create_backup_zip itself
+            # The backup list, Download, Restore and Delete all run while this
+            # is being written, so it only gets a name they match once it's whole.
+            part_file = (
+                output_path / f".{filename}.part"
+            )  # SEC-PATH-OK: filename = f"bambuddy-backup-{datetime.now()...}.zip" generated in create_backup_zip itself
         else:
             fd, tmp = tempfile.mkstemp(suffix=".zip")
             os.close(fd)
-            zip_file = Path(tmp)
+            zip_file = part_file = own_zip = Path(tmp)
 
-        with zipfile.ZipFile(zip_file, "w", zipfile.ZIP_DEFLATED) as zf:
-            for file_path in temp_path.rglob("*"):
-                if file_path.is_file():
-                    arcname = file_path.relative_to(temp_path)
-                    zf.write(file_path, arcname)
+        rename: asyncio.Future | None = None
+        try:
+            await in_thread(_write_backup_zip, temp_path, part_file)
+            if part_file != zip_file:
+                # Started here rather than through in_thread, so that a cancel
+                # landing before the await still leaves the future to look at.
+                rename = worker = loop.run_in_executor(None, os.replace, part_file, zip_file)
+                await asyncio.shield(rename)
+                own_zip = zip_file
+        except BaseException:
+            # The caller never gets this ZIP, and nothing else would ever
+            # delete a temp file or a .part. A cancel can land after the rename,
+            # so whether the ZIP is this run's own is read off the rename itself.
+            await _wait_for_worker(worker)
+            if rename is not None and not rename.cancelled() and rename.exception() is None:
+                own_zip = zip_file
+            part_file.unlink(missing_ok=True)
+            if own_zip is not None:
+                own_zip.unlink(missing_ok=True)
+            raise
+    finally:
+        # After a cancel the step's thread is still running; the clean-up waits
+        # for it rather than delete the folder under a copy that writes into it.
+        await _wait_for_worker(worker)
+        try:
+            await asyncio.to_thread(temp_dir.cleanup)
+        except BaseException:
+            # A cancel here (shutdown) skips the return: the caller never gets
+            # the finished ZIP, and a download's temp file would stay forever.
+            if own_zip is not None:
+                own_zip.unlink(missing_ok=True)
+            raise
 
-    return zip_file, filename
+    return zip_file, filename, copy_warnings
 
 
 @router.get("/backup")
@@ -1079,13 +1545,19 @@ async def create_backup(
     from starlette.background import BackgroundTask
 
     try:
-        zip_file, filename = await create_backup_zip()
+        zip_file, filename, copy_warnings = await create_backup_zip(wait=False)
         return FileResponse(
             path=zip_file,
             filename=filename,
             media_type="application/zip",
+            # The body is the ZIP, so a backup that misses files says so here.
+            headers={"X-Backup-Missing-Files": str(len(copy_warnings))} if copy_warnings else None,
             background=BackgroundTask(lambda: zip_file.unlink(missing_ok=True)),
         )
+    except BackupAlreadyRunning as busy:
+        # Say so now rather than hold the request open for the minutes the
+        # running backup can take.
+        raise HTTPException(status_code=409, detail=_busy_detail(busy.restore, str(busy)))
     except Exception as e:
         logger.error("Backup failed: %s", e, exc_info=True)
         return JSONResponse(
@@ -1172,7 +1644,7 @@ def check_backup_schema_compatible(sqlite_path: Path, backup_version: str | None
                 continue
             # An empty table inserts nothing, so a column it cannot supply
             # cannot fail. Refusing a restore over one would be a false alarm.
-            if src.execute(f'SELECT 1 FROM "{name}" LIMIT 1').fetchone() is None:  # noqa: S608  # nosec B608 — name comes from ORM metadata
+            if src.execute(f'SELECT 1 FROM "{name}" LIMIT 1').fetchone() is None:  # noqa: S608  # nosec B608  # name comes from ORM metadata
                 continue
             src_columns = {row[1] for row in src.execute(f'PRAGMA table_info("{name}")')}
             _, _, unfillable = _missing_required_columns(pg_table, src_columns)
@@ -1518,9 +1990,33 @@ async def restore_backup(
 
     Replaces the database and all data directories from the backup ZIP.
     Requires a restart after restore.
+
+    Holds the backup lock: a restore replacing the database and the data folders
+    while a backup copies them would leave both broken. With a backup running
+    (or waiting) the restore answers 409 at once; a backup that starts during a
+    restore waits for it (the download answers 409).
     """
-    import shutil
-    import tempfile
+    global _backup_claims, _restore_running
+
+    if _backup_claims:
+        raise HTTPException(
+            status_code=409,
+            detail=_busy_detail(
+                _restore_running, "A restore is running" if _restore_running else "A backup is running"
+            ),
+        )
+    _backup_claims += 1
+    _restore_running = True
+    try:
+        async with _backup_lock:
+            return await _restore_backup_zip(file, db)
+    finally:
+        _restore_running = False
+        _backup_claims -= 1
+
+
+async def _restore_backup_zip(file: UploadFile, db: AsyncSession):
+    """The work of restore_backup, which holds the backup lock around it."""
 
     from fastapi import HTTPException
 
@@ -1540,25 +2036,7 @@ async def restore_backup(
         if not file.filename or not file.filename.endswith(".zip"):
             raise HTTPException(400, "Invalid backup file: must be a .zip file")
 
-        try:
-            with zipfile.ZipFile(io.BytesIO(content), "r") as zf:
-                for name in zf.namelist():
-                    # Reject path-traversal payloads: any entry whose resolved
-                    # path escapes temp_path would allow writing arbitrary files
-                    # on the host (ZipSlip / CVE-2006-5456).
-                    dest = (
-                        temp_path / name
-                    ).resolve()  # SEC-PATH-OK: is_relative_to containment check below before extractall
-                    # is_relative_to (Python 3.9+) covers both relative
-                    # path-traversal (../etc/passwd) and absolute-path overrides
-                    # (/etc/passwd) — str.startswith was vulnerable to
-                    # prefix-collision attacks (e.g. /tmp/abc_evil/file passing
-                    # a /tmp/abc prefix check).
-                    if not dest.is_relative_to(temp_path.resolve()):
-                        raise HTTPException(400, f"Invalid backup: unsafe path in ZIP: {name!r}")
-                zf.extractall(temp_path)
-        except zipfile.BadZipFile:
-            raise HTTPException(400, "Invalid backup file: not a valid ZIP")
+        await asyncio.to_thread(_extract_backup_zip, content, temp_path)
 
         # 2. Validate backup
         backup_db = temp_path / "bambuddy.db"
@@ -1577,6 +2055,11 @@ async def restore_backup(
         import sqlite3
 
         manifest = _read_backup_manifest(temp_path)
+        captured_dirs = manifest.get("captured_dirs")
+        if "captured_dirs" in manifest and not (
+            isinstance(captured_dirs, list) and all(isinstance(name, str) for name in captured_dirs)
+        ):
+            raise HTTPException(400, "Invalid backup: captured_dirs must be a list of directory names")
         backup_version = manifest.get("app_version")
         if backup_version:
             logger.info("Backup was created by Bambuddy %s; this install runs %s", backup_version, APP_VERSION)
@@ -1590,8 +2073,6 @@ async def restore_backup(
                 raise HTTPException(400, f"Invalid backup: bambuddy.db is not readable ({exc})") from exc
 
         try:
-            import asyncio
-
             # 3. Stop the virtual printers if running (releases file locks).
             # stop_all, not the legacy configure(): that ignores its arguments
             # and re-syncs from the database not yet replaced, so their FTP,
@@ -1710,17 +2191,7 @@ async def restore_backup(
                 # own WAL — so concurrent open sessions see their own
                 # snapshot until they close (transaction isolation) but
                 # can't corrupt the restored state.
-                import sqlite3
-
-                src_conn = sqlite3.connect(str(backup_db))
-                try:
-                    dst_conn = sqlite3.connect(str(db_path))
-                    try:
-                        src_conn.backup(dst_conn)
-                    finally:
-                        dst_conn.close()
-                finally:
-                    src_conn.close()
+                await asyncio.to_thread(_restore_sqlite_db, backup_db, db_path)
             else:
                 # Import SQLite backup into PostgreSQL
                 logger.info("Importing SQLite backup into PostgreSQL...")
@@ -1737,36 +2208,7 @@ async def restore_backup(
                 ("overlay-branding", base_dir / "overlay-branding"),
             ]
 
-            skipped_dirs = []
-            for name, dest_dir in dirs_to_restore:
-                src_dir = (
-                    temp_path / name
-                )  # SEC-PATH-OK: name iterates the dirs_to_restore tuple of constant strings ("archive", "virtual_printer", ...)
-                if src_dir.exists():
-                    logger.info("Restoring %s directory...", name)
-                    try:
-                        # Clear destination contents (not the dir itself - may be Docker mount)
-                        if dest_dir.exists():
-                            for item in dest_dir.iterdir():
-                                try:
-                                    if item.is_dir():
-                                        shutil.rmtree(item)
-                                    else:
-                                        item.unlink()
-                                except OSError as e:
-                                    logger.warning("Could not delete %s: %s", item, e)
-                        else:
-                            dest_dir.mkdir(parents=True, exist_ok=True)
-                        # Copy contents from backup
-                        for item in src_dir.iterdir():
-                            dest_item = dest_dir / item.name
-                            if item.is_dir():
-                                shutil.copytree(item, dest_item)
-                            else:
-                                shutil.copy2(item, dest_item)
-                    except OSError as e:
-                        logger.warning("Could not restore %s directory: %s", name, e)
-                        skipped_dirs.append(name)
+            skipped_dirs = await asyncio.to_thread(_restore_data_dirs, dirs_to_restore, temp_path, captured_dirs)
 
             # 7. Reset the encryption singleton so the migration that runs
             # inside init_db() picks up the restored key file (if a new one
@@ -1827,7 +2269,10 @@ async def restore_backup(
             logger.info("Restore complete - restart required")
             message = "Backup restored successfully. Please restart Bambuddy for changes to take effect."
             if skipped_dirs:
-                message += f" Note: Some directories could not be restored ({', '.join(skipped_dirs)})."
+                if captured_dirs is None:
+                    message += f" Note: Some directories could not be restored ({', '.join(skipped_dirs)})."
+                else:
+                    message += f" Note: Some directories could not be fully restored ({', '.join(skipped_dirs)})."
             return {
                 "success": True,
                 "message": message,
@@ -1999,3 +2444,26 @@ async def get_mqtt_status(
     from backend.app.services.mqtt_relay import mqtt_relay
 
     return mqtt_relay.get_status()
+
+
+@router.get("/panda-breath/status")
+async def get_panda_breath_status(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
+    db: AsyncSession = Depends(get_db, scope="function"),
+):
+    """Panda Breath heaters heard on the MQTT broker and their printers (#1466).
+
+    A heater bound to a printer outside the caller's scope is listed without
+    naming the printer.
+    """
+    from backend.app.models.printer import Printer
+    from backend.app.services.panda_breath import panda_breath_service
+
+    query = select(Printer.id, Printer.name, Printer.serial_number)
+    in_scope = printer_scope.where_strict(Printer.id)
+    if in_scope is not None:
+        query = query.where(in_scope)
+    rows = await db.execute(query)
+    printers = {(serial or "").strip().upper(): (pid, name) for pid, name, serial in rows.all() if serial}
+    return panda_breath_service.get_status(printers)

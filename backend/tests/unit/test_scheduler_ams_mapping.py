@@ -414,6 +414,55 @@ class TestMatchFilamentsToSlots:
         # Both have same color, so first is used
         assert result == [-1, 3]
 
+    def test_unique_tray_info_idx_of_another_colour_loses_to_the_colour(self, scheduler):
+        """#3733: black Matte + white Basic sliced, black Basic + white Matte loaded.
+
+        tray_info_idx names the variant, not the spool, so the unique idx match
+        swapped both colours. The colour now wins over the variant.
+        """
+        required = [
+            {"slot_id": 1, "type": "PLA", "color": "#000000", "tray_info_idx": "GFA01"},
+            {"slot_id": 2, "type": "PLA", "color": "#FFFFFF", "tray_info_idx": "GFA00"},
+        ]
+        loaded = [
+            {"type": "PLA", "color": "#000000", "global_tray_id": 0, "tray_info_idx": "GFA00"},
+            {"type": "PLA", "color": "#FFFFFF", "global_tray_id": 1, "tray_info_idx": "GFA01"},
+        ]
+
+        assert scheduler._match_filaments_to_slots(required, loaded) == [0, 1]
+
+    def test_unique_tray_info_idx_of_another_colour_beats_type_only(self, scheduler):
+        """#3733: with no tray of the colour, the right variant still beats another one."""
+        required = [{"slot_id": 1, "type": "PLA", "color": "#000000", "tray_info_idx": "GFA01"}]
+        loaded = [
+            {"type": "PLA", "color": "#FF0000", "global_tray_id": 0, "tray_info_idx": "GFA00"},
+            {"type": "PLA", "color": "#FFFFFF", "global_tray_id": 1, "tray_info_idx": "GFA01"},
+        ]
+
+        assert scheduler._match_filaments_to_slots(required, loaded) == [1]
+
+    def test_non_unique_tray_info_idx_of_another_colour_loses_to_the_colour(self, scheduler):
+        """#3733: two white Matte trays must not keep a black Basic tray from a black Matte slot."""
+        required = [{"slot_id": 1, "type": "PLA", "color": "#000000", "tray_info_idx": "GFA01"}]
+        loaded = [
+            {"type": "PLA", "color": "#FFFFFF", "global_tray_id": 0, "tray_info_idx": "GFA01"},
+            {"type": "PLA", "color": "#FFFFFF", "global_tray_id": 1, "tray_info_idx": "GFA01"},
+            {"type": "PLA", "color": "#000000", "global_tray_id": 2, "tray_info_idx": "GFA00"},
+        ]
+
+        assert scheduler._match_filaments_to_slots(required, loaded) == [2]
+
+    def test_non_unique_tray_info_idx_of_another_colour_beats_type_only(self, scheduler):
+        """#3733: no tray of the colour -> a tray of the right variant, not the first of the type."""
+        required = [{"slot_id": 1, "type": "PLA", "color": "#000000", "tray_info_idx": "GFA01"}]
+        loaded = [
+            {"type": "PLA", "color": "#FF0000", "global_tray_id": 0, "tray_info_idx": "GFA00"},
+            {"type": "PLA", "color": "#FFFFFF", "global_tray_id": 1, "tray_info_idx": "GFA01"},
+            {"type": "PLA", "color": "#FFFFFF", "global_tray_id": 2, "tray_info_idx": "GFA01"},
+        ]
+
+        assert scheduler._match_filaments_to_slots(required, loaded) == [1]
+
 
 class TestPreferLowestFilament:
     """Test prefer_lowest_filament sorting in _match_filaments_to_slots."""

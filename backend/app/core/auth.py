@@ -238,6 +238,9 @@ _APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str | tuple[str, ...]] = {
     # owner" doesn't need a second toggle for Orca. Splitting later requires
     # a new column + migration — easy to add if the trust dimensions diverge.
     Permission.ORCA_CLOUD_AUTH: "can_access_cloud",
+    # 3D Filament Profiles (#2981): the same trust dimension again, a
+    # third-party account the key may use on its owner's behalf.
+    Permission.THREEDFP_AUTH: "can_access_cloud",
 }
 
 # Retained for documentation, drift-detection, and the prior "administrative
@@ -2368,6 +2371,21 @@ async def get_request_actor(
 RequestActor = Depends(get_request_actor)
 
 
+def require_clear_plate_permission(actor: User | ApiKeyActor | None) -> None:
+    """Refuse switching ``clears_plate`` on without printers:clear_plate (#3576).
+
+    A file or job that clears its own plate skips the plate-clear confirmation,
+    so marking one takes the permission that confirms a cleared plate. ``actor``
+    is the route's ``RequestActor``: None is auth off, and an API key answers
+    with what its scope flags and its owner allow.
+    """
+    if actor is not None and not actor.has_permission(Permission.PRINTERS_CLEAR_PLATE.value):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Setting clears_plate requires {Permission.PRINTERS_CLEAR_PLATE.value}",
+        )
+
+
 async def actor_still_exists(db: AsyncSession, actor: User | ApiKeyActor | None) -> bool:
     """Whether the user a request started as still exists.
 
@@ -2695,7 +2713,9 @@ def require_camera_stream_token_if_auth_enabled():
 
     Used for camera stream/snapshot endpoints that are loaded via <img> tags
     which cannot send Authorization headers. The frontend obtains a token from
-    POST /printers/camera/stream-token and appends it as ?token=xxx.
+    POST /printers/camera/stream-token and appends it as ?token=xxx. A server
+    can send headers instead, so without a token an API key is accepted too
+    (#3707), which keeps the credential out of reverse-proxy access logs.
 
     Camera routes only. Non-camera media (thumbnails, plate previews,
     timelapses, cover images, icons) takes ``require_media_token_*``: minting a
@@ -2704,10 +2724,27 @@ def require_camera_stream_token_if_auth_enabled():
     tell one user's rows from another's (#3025).
     """
 
-    async def checker(printer_id: int, token: str | None = None) -> StreamOpener:
+    async def checker(
+        printer_id: int,
+        token: str | None = None,
+        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
+        x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+    ) -> StreamOpener:
         async with async_session() as db:
             if not await is_auth_enabled(db):
                 return StreamOpener(auth_on=False)  # Auth disabled, allow access
+        if not token:
+            api_key = await validated_api_key_from_request(credentials, x_api_key)
+            if api_key is not None:
+                async with async_session() as db:
+                    if not await principal_holds(db, None, api_key.id, Permission.CAMERA_VIEW):
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="API key lacks camera access",
+                        )
+                    (await api_key_printer_scope(db, api_key)).ensure(printer_id)
+                    prefix = await usable_api_key_prefix(db, api_key.id)
+                return StreamOpener(auth_on=True, api_key_id=api_key.id, api_key_prefix=prefix)
         access = await camera_stream_access(token) if token else None
         if access is None:
             raise HTTPException(

@@ -103,6 +103,14 @@ export const ALL_COLORS: ColorPreset[] = [...QUICK_COLORS, ...EXTENDED_COLORS];
 
 // Local storage keys
 export const RECENT_COLORS_KEY = 'bambuddy-recent-colors';
+
+// Order of the catalog colours in the spool form: 'name' (default) or 'color' (#3633).
+export const CATALOG_COLOR_ORDER_KEY = 'bambuddy-catalog-color-order';
+
+// Last created spool, used to start the next create with the same values (#3619).
+// Separate keys: the two inventories have different catalogues and ids.
+export const LAST_SPOOL_KEY = 'bambuddy-last-spool';
+export const LAST_SPOOL_SPOOLMAN_KEY = 'bambuddy-last-spool-spoolman';
 export const MAX_RECENT_COLORS = 8;
 
 /**

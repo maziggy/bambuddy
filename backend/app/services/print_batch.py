@@ -78,6 +78,7 @@ CLONED_SETTING_COLUMNS = (
     "use_ams",
     "nozzle_offset_cali",
     "confirm_outcome",
+    "clears_plate",
     "preheat_override",
     "preheat_chamber_target_override",
     "skip_filament_check",
@@ -97,6 +98,7 @@ CLONED_VARIANT_COLUMNS = (
     "filament_overrides",
     "required_filament_types",
     "print_time_seconds",
+    "clears_plate",  # #3576
 )
 
 
@@ -538,6 +540,25 @@ def _clone_queue_item(source: PrintQueueItem, *, position: int, created_by_id: i
     return clone
 
 
+async def add_queue_item_clone(
+    db: AsyncSession, source: PrintQueueItem, *, position: int, created_by_id: int | None
+) -> PrintQueueItem:
+    """Add a clone of *source* (see ``_clone_queue_item``) with its cross-model
+    candidates (#671), and return it flushed, with an id.
+
+    *source* must have its ``variants`` loaded.
+    """
+    clone = _clone_queue_item(source, position=position, created_by_id=created_by_id)
+    db.add(clone)
+    await db.flush()
+    for variant in source.variants:
+        cloned_variant = PrintQueueVariant(queue_item_id=clone.id)
+        for column in CLONED_VARIANT_COLUMNS:
+            setattr(cloned_variant, column, getattr(variant, column))
+        db.add(cloned_variant)
+    return clone
+
+
 def _plate_label(plate: PlateProgress) -> str:
     """How a plate is named in an error the user reads.
 
@@ -612,16 +633,8 @@ async def dispatch_remaining(
         position = await next_queue_position(db)
 
         for _ in range(wanted):
-            clone = _clone_queue_item(source, position=position, created_by_id=created_by_id)
+            created.append(await add_queue_item_clone(db, source, position=position, created_by_id=created_by_id))
             position += 1
-            db.add(clone)
-            await db.flush()
-            for variant in source.variants:
-                cloned_variant = PrintQueueVariant(queue_item_id=clone.id)
-                for column in CLONED_VARIANT_COLUMNS:
-                    setattr(cloned_variant, column, getattr(variant, column))
-                db.add(cloned_variant)
-            created.append(clone)
 
     if not created and stranded:
         names = ", ".join(_plate_label(p) for p in stranded)

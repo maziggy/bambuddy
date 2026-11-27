@@ -9,6 +9,7 @@ import httpx
 
 from backend.app.core.tasks import spawn_background_task
 from backend.app.schemas.printer import WLEDConfig
+from backend.app.services import plate_clear
 from backend.app.services.bambu_mqtt import PrinterState
 from backend.app.services.hms_errors import hms_fault_counts
 
@@ -128,7 +129,10 @@ class WLEDManager:
             (
                 candidate
                 for candidate in _applicable_wled_statuses(
-                    state, awaiting_plate_clear=awaiting_plate_clear, require_plate_clear=self.require_plate_clear
+                    state,
+                    awaiting_plate_clear=awaiting_plate_clear,
+                    # The printer's own setting, or the app's (#2860)
+                    require_plate_clear=plate_clear.applies(printer_id, self.require_plate_clear),
                 )
                 if getattr(config.presets, candidate) is not None
             ),

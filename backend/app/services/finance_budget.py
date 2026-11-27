@@ -171,7 +171,9 @@ async def validate_print_budget(
     if cost_center_id is None:
         raise HTTPException(status_code=400, detail="Cost center is required when billing is enabled")
 
-    if estimated_cost is None or estimated_cost <= 0:
+    # 0 is an estimate: a reprint mapped only to spools priced 0 costs
+    # nothing and is charged nothing (#3580). No estimate is None.
+    if estimated_cost is None or estimated_cost < 0:
         raise HTTPException(status_code=400, detail="Estimated cost is required for cost center prints")
 
     center = await db.scalar(select(CostCenter).where(CostCenter.id == cost_center_id).with_for_update())

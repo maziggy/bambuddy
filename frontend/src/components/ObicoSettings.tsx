@@ -440,7 +440,7 @@ export function ObicoSettings() {
                               : 'text-green-700 dark:text-green-400';
                         return (
                           <div key={pid} className="flex justify-between">
-                            <span className="text-white">{printer?.name ?? `Printer ${pid}`}</span>
+                            <span className="text-white">{printer?.name ?? t('failureDetection.printerFallback', { id: pid })}</span>
                             <span className={`font-mono ${colorClass}`}>
                               {info.class} ({info.score.toFixed(3)}, {info.frame_count}f)
                             </span>

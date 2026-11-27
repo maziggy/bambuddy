@@ -192,6 +192,36 @@ describe('filterCompatibleQueueItems — force-color PLA variant (#2650)', () =>
   });
 });
 
+describe('filterCompatibleQueueItems — a colour no eye tells apart (#3763)', () => {
+  const makeItem = (tray_info_idx?: string): PrintQueueItem =>
+    ({
+      id: 1,
+      filament_overrides: [{ slot_id: 1, type: 'PLA', color: '#55B687', tray_info_idx, force_color_match: true }],
+    }) as unknown as PrintQueueItem;
+  const types = new Set(['PLA']);
+
+  it('accepts the spool of the report, one shade off', () => {
+    expect(filterCompatibleQueueItems([makeItem()], types, new Set(['PLA:55b688']))).toHaveLength(1);
+    expect(
+      filterCompatibleQueueItems([makeItem('GFL96')], types, new Set(['PLA:55b688']), new Set(['PLA:55b688:'])),
+    ).toHaveLength(1);
+  });
+
+  it('rejects a shade an eye can tell apart', () => {
+    expect(filterCompatibleQueueItems([makeItem()], types, new Set(['PLA:55b68c']))).toHaveLength(0);
+    expect(
+      filterCompatibleQueueItems([makeItem('GFL96')], types, new Set(['PLA:55b68c']), new Set(['PLA:55b68c:'])),
+    ).toHaveLength(0);
+  });
+
+  it('still needs the variant and the type', () => {
+    expect(
+      filterCompatibleQueueItems([makeItem('GFL96')], types, new Set(['PLA:55b688']), new Set(['PLA:55b688:GFA00'])),
+    ).toHaveLength(0);
+    expect(filterCompatibleQueueItems([makeItem()], types, new Set(['PETG:55b687']))).toHaveLength(0);
+  });
+});
+
 describe('filterCompatibleQueueItems — printer-targeted jobs (#3133)', () => {
   // A job moved from "Any P2S" to one P2S keeps its override. The printer is
   // already chosen, so a colour it has not loaded must not hide the job from

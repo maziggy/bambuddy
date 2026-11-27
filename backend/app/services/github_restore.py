@@ -103,6 +103,10 @@ _MQTT_SETTING_KEYS = {
     "mqtt_password",
     "mqtt_topic_prefix",
     "mqtt_use_tls",
+    "mqtt_ha_discovery_enabled",
+    "mqtt_ha_discovery_prefix",
+    "external_url",
+    "panda_breath_enabled",
 }
 
 # Keys that decide *who can reach the instance* rather than how it behaves. The
@@ -277,7 +281,7 @@ _MANYFOLD_CLIENT_ID_KEY = "manyfold_client_id"
 
 # The settings whose saved null (the text "None") the settings reader reads as
 # null. Anywhere else it is refused, as the editor refuses a null.
-_READS_A_SAVED_NULL = frozenset({"ams_temp_alarm", "default_printer_id", "open_in_slicer"})
+_READS_A_SAVED_NULL = frozenset({"ams_temp_alarm", "default_printer_id", "open_in_slicer", "queue_max_wait_hours"})
 
 # Settings that no longer exist. Older backups still hold them; a restore drops
 # them without listing them as skipped.
@@ -2426,6 +2430,10 @@ class GitHubRestoreService:
                     "mqtt_password": stored.get("mqtt_password") or "",
                     "mqtt_topic_prefix": stored.get("mqtt_topic_prefix") or "bambuddy",
                     "mqtt_use_tls": (stored.get("mqtt_use_tls") or "false") == "true",
+                    "mqtt_ha_discovery_enabled": (stored.get("mqtt_ha_discovery_enabled") or "false") == "true",
+                    "mqtt_ha_discovery_prefix": stored.get("mqtt_ha_discovery_prefix") or "homeassistant",
+                    "external_url": stored.get("external_url") or "",
+                    "panda_breath_enabled": (stored.get("panda_breath_enabled") or "false") == "true",
                 }
             )
         except Exception:

@@ -201,10 +201,11 @@ export function GitHubRestoreModal({ onClose }: GitHubRestoreModalProps) {
 
   // A settings restore rewrites rows the whole app reads, and not all of them
   // through a query this modal can invalidate. The interface language is applied
-  // by i18n.changeLanguage, called only from the SettingsPage dropdown and the
-  // appliance-locale bootstrap; the auth state comes from AuthProvider's
-  // mount-time getAuthStatus, not from ['settings'] at all. So every exit path
-  // after a settings restore reloads rather than just closing.
+  // by i18n.changeLanguage, called from the SettingsPage dropdown, the per-browser
+  // language picker (#3623) and the appliance-locale bootstrap; the auth state
+  // comes from AuthProvider's mount-time getAuthStatus, not from ['settings']
+  // at all. So every exit path after a settings restore reloads rather than
+  // just closing.
   const settingsRestored = Boolean(result && 'settings' in result.results);
   const closeModal = useCallback(() => {
     if (settingsRestored) {

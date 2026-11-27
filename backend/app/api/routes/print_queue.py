@@ -1,5 +1,6 @@
 """API routes for print queue management."""
 
+import asyncio
 import json
 import logging
 import re
@@ -25,10 +26,16 @@ from backend.app.core.auth import (
     RequirePermissionIfAuthEnabled,
     RequirePrinterPermissionIfAuthEnabled,
     may_start_queue_item,
+    require_clear_plate_permission,
     require_ownership_permission,
 )
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
+from backend.app.core.filament_scope import (
+    ensure_requirements_allowed,
+    judged_requirements,
+    resolve_user_id_filament_scope,
+)
 from backend.app.core.permissions import Permission
 from backend.app.core.printer_scope import PrinterScope, ensure_model_target_allowed
 from backend.app.core.websocket import ws_manager
@@ -50,21 +57,31 @@ from backend.app.schemas.print_queue import (
     PrintBatchUpdate,
     PrintQueueBulkUpdate,
     PrintQueueBulkUpdateResponse,
+    PrintQueueDuplicateRequest,
+    PrintQueueDuplicateResponse,
     PrintQueueHistoryClearResponse,
     PrintQueueHistoryResponse,
     PrintQueueItemCreate,
     PrintQueueItemResponse,
     PrintQueueItemUpdate,
     PrintQueueReorder,
+    QueueTodoResponse,
     QueueVariantCreate,
     QueueVariantSummary,
 )
-from backend.app.services import slicer_ams_pick
+from backend.app.services import plate_clear, slicer_ams_pick
+from backend.app.services.archive_cost_estimate import SpoolmanOnce
 from backend.app.services.filament_deficit import compute_deficit_for_queue_item
 from backend.app.services.filament_requirements import overrides_for_plate
-from backend.app.services.finance_budget import release_budget_reservation, validate_print_budget
+from backend.app.services.finance_budget import (
+    is_billing_enabled,
+    release_budget_reservation,
+    validate_print_budget,
+)
+from backend.app.services.ha_sensor_manager import ha_sensor_manager
 from backend.app.services.print_batch import (
     BatchDispatchError,
+    add_queue_item_clone,
     dispatch_remaining,
     load_progress,
     refresh_batch_status,
@@ -72,11 +89,14 @@ from backend.app.services.print_batch import (
     refresh_batches_after,
 )
 from backend.app.services.print_cost_estimate import estimate_queue_source_cost
+from backend.app.services.printer_manager import printer_manager
 from backend.app.services.queue_announcements import announce_queue_jobs_added
 from backend.app.services.queue_item_printer import PRINTER_RESOLVED_DEFAULTS, drop_printer_resolved
-from backend.app.services.queue_position import lock_queue_positions, max_queue_position
+from backend.app.services.queue_position import lock_queue_positions, max_queue_position, next_queue_position
+from backend.app.services.queue_todo import TodoJob, build_todo
 from backend.app.utils.printer_models import (
     is_gcode_compatible,
+    normalize_printer_model,
 )
 from backend.app.utils.threemf_tools import (
     extract_plate_metadata_from_3mf,
@@ -108,6 +128,7 @@ def _variant_summaries(item: PrintQueueItem) -> list[QueueVariantSummary]:
             filename=v.library_file.filename if v.library_file else "",
             target_model=v.target_model,
             position=v.position,
+            clears_plate=bool(v.clears_plate),
         )
         for v in item.variants
     ]
@@ -393,9 +414,18 @@ async def _trusted_item_estimated_cost(
     printer_id: int | None,
     plate_id: int | None,
     ams_mapping: list[int] | str | None,
+    spoolman_once: SpoolmanOnce | None = None,
 ) -> float | None:
-    """Recompute an existing queue item's cost from its persisted source."""
+    """Recompute an existing queue item's cost from its persisted source.
 
+    None with billing off: the estimate is what the budget check reads and
+    the dispatch reserves, and pricing it can mean asking Spoolman (#3580).
+    A caller pricing more than one item passes them one ``spoolman_once``.
+    """
+
+    if not await is_billing_enabled(db):
+        return None
+    spoolman_once = spoolman_once or SpoolmanOnce()
     if item.archive_id:
         archive = await db.scalar(select(PrintArchive).where(PrintArchive.id == item.archive_id))
         return await estimate_queue_source_cost(
@@ -404,6 +434,7 @@ async def _trusted_item_estimated_cost(
             plate_id=plate_id,
             ams_mapping=ams_mapping,
             printer_id=printer_id,
+            spoolman_once=spoolman_once,
         )
     if item.library_file_id:
         library_file = await db.scalar(LibraryFile.active().where(LibraryFile.id == item.library_file_id))
@@ -413,6 +444,7 @@ async def _trusted_item_estimated_cost(
             plate_id=plate_id,
             ams_mapping=ams_mapping,
             printer_id=printer_id,
+            spoolman_once=spoolman_once,
         )
 
     result = await db.execute(
@@ -427,12 +459,93 @@ async def _trusted_item_estimated_cost(
             plate_id=variant.plate_id,
             ams_mapping=variant.ams_mapping,
             printer_id=printer_id,
+            spoolman_once=spoolman_once,
         )
         for variant, library_file in result.all()
     ]
     if not estimates or any(cost is None for cost in estimates):
         return None
     return max(cost for cost in estimates if cost is not None)
+
+
+def _archive_display_name(archive: PrintArchive) -> str:
+    """What the queue row calls an archive's job: its print name, else its file."""
+    return archive.print_name or archive.filename
+
+
+def _library_display_name(library_file: LibraryFile) -> str:
+    """What the queue row calls a library file's job: its print name, else its file."""
+    metadata = library_file.file_metadata
+    return (metadata.get("print_name") if metadata else None) or library_file.filename
+
+
+def _queue_item_display_name(item: PrintQueueItem) -> str:
+    """The job's name as the queue row shows it, for the "To do" list (#3615).
+
+    The row is named in the frontend (``queueItemDisplayName``) from the fields
+    ``_enrich_response`` fills; this reads the same values in the same order:
+    the archive's name unless it is deleted, the library file's, the first
+    cross-model candidate's filename with "+N more" (#671), then "File #<id>"
+    of the archive or library file. A job with nothing left to point at, which
+    the row calls "File #null", is "#<item id>" here.
+    """
+    if item.archive is not None and item.archive.deleted_at is None and (name := _archive_display_name(item.archive)):
+        return name
+    if item.library_file is not None and (name := _library_display_name(item.library_file)):
+        return name
+    if variants := _variant_summaries(item):
+        others = len(variants) - 1
+        return f"{variants[0].filename} +{others} more" if others > 0 else variants[0].filename
+    file_id = item.archive_id if item.archive_id is not None else item.library_file_id
+    return f"File #{file_id}" if file_id is not None else f"#{item.id}"
+
+
+def _effective_clears_plate(item: PrintQueueItem) -> bool:
+    """What a pending job's plate clearing reads as (#3576).
+
+    A job with printer alternatives carries the flag per alternative; the item
+    column only holds whatever the last resolve (even a merely tried candidate)
+    folded onto the row, so it is not a reliable value until the job runs. A
+    pending job therefore reports "all alternatives clear" -- the strict reading
+    the create path stores. Printing / finished jobs keep the column, which holds
+    the winner's value.
+    """
+    if item.status == "pending" and "variants" not in inspect(item).unloaded and item.variants:
+        return all(bool(v.clears_plate) for v in item.variants)
+    return bool(item.clears_plate)
+
+
+def _switches_clears_plate_on(item: PrintQueueItem, update_data: dict) -> bool:
+    """Whether an edit turns a job's plate clearing on (#3576).
+
+    Only that needs printers:clear_plate. The value the job already has, sent
+    again by an edit that changes something else, grants nothing new; a job
+    with alternatives has it when every alternative does, as
+    ``_apply_clears_plate_update`` reads it.
+    """
+    if update_data.get("clears_plate") is not True:
+        return False
+    if item.variants:
+        return not all(bool(v.clears_plate) for v in item.variants)
+    return not item.clears_plate
+
+
+def _apply_clears_plate_update(item: PrintQueueItem, update_data: dict) -> None:
+    """Take ``clears_plate`` out of ``update_data``; set every alternative unless all already match.
+
+    A value every alternative already has is a no-op, so nothing is rewritten.
+    Any other explicit value (including "off" on a mixed job) is applied to the
+    item column and to every alternative. Without alternatives the field stays
+    in ``update_data`` and is written as usual.
+    """
+    if not item.variants or "clears_plate" not in update_data:
+        return
+    sent = update_data.pop("clears_plate")
+    if sent is None or all(bool(v.clears_plate) == bool(sent) for v in item.variants):
+        return
+    item.clears_plate = bool(sent)
+    for variant in item.variants:
+        variant.clears_plate = bool(sent)
 
 
 def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
@@ -529,6 +642,7 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         "use_ams": item.use_ams,
         "nozzle_offset_cali": item.nozzle_offset_cali,
         "confirm_outcome": item.confirm_outcome,
+        "clears_plate": _effective_clears_plate(item),
         "preheat_override": item.preheat_override,
         "preheat_chamber_target_override": item.preheat_chamber_target_override,
         "status": item.status,
@@ -571,7 +685,7 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         if item.archive.deleted_at is not None:
             response.archive_deleted = True
         else:
-            response.archive_name = item.archive.print_name or item.archive.filename
+            response.archive_name = _archive_display_name(item.archive)
             response.archive_thumbnail = item.archive.thumbnail_path
             response.print_time_seconds = item.archive.print_time_seconds
             response.filament_used_grams = item.archive.filament_used_grams
@@ -618,11 +732,7 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         response.slicer_ams_mapping = pick[0]
         response.archive_has_slicer_ams_mapping = True
     if item.library_file:
-        response.library_file_name = (
-            item.library_file.file_metadata.get("print_name") if item.library_file.file_metadata else None
-        )
-        if not response.library_file_name:
-            response.library_file_name = item.library_file.filename
+        response.library_file_name = _library_display_name(item.library_file)
         response.library_file_thumbnail = item.library_file.thumbnail_path
         # Get metadata from library file if no archive
         if not item.archive and item.library_file.file_metadata:
@@ -817,6 +927,168 @@ async def list_queue(
     result = await db.execute(query)
     items = result.scalars().all()
     return [_enrich_response(item) for item in items]
+
+
+def _may_start_item(
+    actor: User | ApiKeyActor | None, item: PrintQueueItem, can_update_all: bool, printer_scope: PrinterScope
+) -> bool:
+    """Whether the start endpoint would let ``actor`` start ``item`` (#3615).
+
+    The same rules as ``start_queue_item``: ownership for those without
+    queue:update_all, the awaiting-review rule, and the model-target limit.
+    """
+    if actor is not None and not can_update_all:
+        # A key without an owner owns nothing, so it needs update_all.
+        if getattr(actor, "id", None) is None or not actor.has_permission(Permission.QUEUE_UPDATE_OWN.value):
+            return False
+    if not can_update_all and actor is not None:
+        if item.created_by_id is not None and item.created_by_id != actor.id:
+            return False
+    if not may_start_queue_item(actor, can_update_all, item.created_by_id):
+        return False
+    if item.printer_id is None and item.target_model:
+        try:
+            ensure_model_target_allowed(actor, printer_scope)
+        except HTTPException:
+            return False
+    return True
+
+
+@router.get("/todo", response_model=QueueTodoResponse)
+async def queue_todo(
+    db: AsyncSession = Depends(get_db, scope="function"),
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.QUEUE_READ_ALL,
+            Permission.QUEUE_READ_OWN,
+        )
+    ),
+    printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
+):
+    """What the waiting queue needs a person for, grouped by printer (#3615)."""
+    from backend.app.api.routes.settings import get_setting, setting_is_true
+    from backend.app.services.print_scheduler import (
+        _could_take_printer,
+        plate_changer_reads_empty,
+        scheduler as _scheduler,
+    )
+
+    user, can_read_all = auth_result
+    query = (
+        select(PrintQueueItem)
+        .options(
+            selectinload(PrintQueueItem.archive).load_only(
+                PrintArchive.id, PrintArchive.deleted_at, PrintArchive.print_name, PrintArchive.filename
+            ),
+            selectinload(PrintQueueItem.library_file).load_only(
+                LibraryFile.id, LibraryFile.filename, LibraryFile.file_metadata
+            ),
+            selectinload(PrintQueueItem.variants).selectinload(PrintQueueVariant.library_file),
+        )
+        .where(PrintQueueItem.status == "pending")
+        .order_by(PrintQueueItem.position, PrintQueueItem.id)
+    )
+    if user is not None and not can_read_all:
+        query = query.where(PrintQueueItem.created_by_id == user.id)
+    if (clause := printer_scope.where(PrintQueueItem.printer_id)) is not None:
+        query = query.where(clause)
+    items = list((await db.execute(query)).scalars().all())
+
+    # Printers the caller may see, read once.
+    printer_query = select(
+        Printer.id,
+        Printer.name,
+        Printer.model,
+        Printer.location,
+        Printer.is_active,
+        Printer.plate_capacity,
+        Printer.plates_remaining,
+    )
+    if (clause := printer_scope.where_strict(Printer.id)) is not None:
+        printer_query = printer_query.where(clause)
+    printer_rows = (await db.execute(printer_query)).all()
+    printer_names = {row.id: row.name or "" for row in printer_rows}
+
+    # Whether the caller may start staged jobs at all, as the start endpoint reads it.
+    can_update_all = actor is None or actor.has_permission(Permission.QUEUE_UPDATE_ALL.value)
+
+    def model_key(model: str | None) -> str | None:
+        return (normalize_printer_model(model) or model or "").lower() or None
+
+    # The scheduler sends a model job only to the printers its creator may use
+    # (#1727), so its printer entries are limited to those; read once per creator.
+    creator_scopes: dict[int | None, PrinterScope] = {}
+
+    jobs: list[TodoJob] = []
+    for item in items:
+        if item.printer_id is not None:
+            if item.printer_id not in printer_names:
+                continue
+            ids = frozenset({item.printer_id})
+            key = label = None
+        else:
+            if item.created_by_id not in creator_scopes:
+                creator_scopes[item.created_by_id] = await _scheduler._creator_printer_scope(db, item.created_by_id)
+            creator_scope = creator_scopes[item.created_by_id]
+            ids = frozenset(
+                row.id
+                for row in printer_rows
+                if row.is_active
+                and creator_scope.allows(row.id)
+                and _could_take_printer(item, row.id, row.model)
+                and (not item.target_location or row.location == item.target_location)
+            )
+            key = model_key(item.target_model)
+            label = item.target_model
+        can_start = bool(item.manual_start) and _may_start_item(actor, item, can_update_all, printer_scope)
+        jobs.append(
+            TodoJob(
+                item.id,
+                _queue_item_display_name(item),
+                ids,
+                item.printer_id,
+                key,
+                label,
+                bool(item.manual_start),
+                can_start,
+            )
+        )
+
+    require_plate_clear = setting_is_true(await get_setting(db, "require_plate_clear"))
+    # A switched-off printer keeps the flag, so it is read for those too.
+    plate_ids = [
+        pid
+        for pid in printer_names
+        if plate_clear.applies(pid, require_plate_clear) and printer_manager.is_awaiting_plate_clear(pid)
+    ]
+    # Plate changers with no plate left (#3575), by capacity: a refill resets the count to it.
+    plate_changer_empty = {
+        row.id: row.plate_capacity
+        for row in printer_rows
+        if row.plate_capacity is not None and plate_changer_reads_empty(row.id, row.plates_remaining)
+    }
+    try:
+        interlock = {
+            pid: reason
+            for pid, reason in (await ha_sensor_manager.blocked_printers(db)).items()
+            if pid in printer_names
+        }
+    except Exception:
+        # An interlock lookup that fails shows no interlock, as for the scheduler.
+        interlock = {}
+    power_failed = [pid for pid in _scheduler.power_on_failed_printers() if pid in printer_names]
+
+    return build_todo(
+        jobs,
+        printer_names,
+        _scheduler.filament_holds_snapshot(),
+        plate_ids,
+        interlock,
+        power_failed,
+        plate_changer_empty,
+        {row.id: row.model for row in printer_rows},
+    )
 
 
 HISTORY_STATUSES = ("completed", "failed", "skipped", "cancelled")
@@ -1179,8 +1451,14 @@ def _variant_values(
                     existing = set(json.loads(required_types)) if required_types else set()
                     required_types = json.dumps(sorted(existing | set(override_types)))
 
+    # Whether this printer's slice clears its own plate (#3576): an explicit
+    # per-candidate value wins, else the candidate file's flag. A push-off that
+    # one model has and another lacks makes it differ between alternatives.
+    clears_plate = spec.clears_plate if spec.clears_plate is not None else bool(library_file.clears_plate)
+
     return {
         "position": position,
+        "clears_plate": clears_plate,
         "library_file_id": library_file.id,
         "target_model": model,
         "plate_id": spec.plate_id,
@@ -1295,6 +1573,22 @@ async def add_to_queue(
         except InvalidFilenameError as e:
             raise HTTPException(400, str(e)) from e
 
+    # Switching plate clearing on takes printers:clear_plate (#3576). A value
+    # the job would inherit anyway (its file's, its archive's) does not: the
+    # print dialog sends each alternative's own flag back as it is.
+    if variant_specs:
+        switches_clears_plate_on = any(
+            (data.clears_plate if data.clears_plate is not None else spec.clears_plate)
+            and not variant_file.clears_plate
+            for spec, variant_file, _model in variant_specs
+        )
+    elif library_file:
+        switches_clears_plate_on = bool(data.clears_plate) and not library_file.clears_plate
+    else:
+        switches_clears_plate_on = bool(data.clears_plate) and not (archive is not None and archive.clears_plate)
+    if switches_clears_plate_on:
+        require_clear_plate_permission(actor)
+
     # Cross-model safety gate (#2578): a G-code 3MF sliced for one model must
     # not be queued for dispatch to an incompatible model. The UI can no longer
     # produce such rows, but API-created rows must be rejected here too — the
@@ -1324,6 +1618,29 @@ async def add_to_queue(
     elif archive is not None:
         ensure_sliced(file_path, archive.filename)
     plate_id = data.plate_id or printed_plate_of_multi_plate_file(file_path)
+
+    # Filament permissions (#3522): refuse now, naming the filament, rather than
+    # queue a job the scheduler would only hold. Read before any lock or write,
+    # and for each file of a cross-model job, with the overrides that job keeps
+    # applied as the scheduler applies them (`judged_requirements`), so both
+    # answer alike. The scheduler checks again at dispatch, which also covers
+    # every other way a job is created; a file that is missing or unreadable
+    # here is left to it too.
+    filament_scope = await resolve_user_id_filament_scope(db, actor.id if actor else None)
+    if not filament_scope.is_unrestricted:
+        from backend.app.services.filament_requirements import extract_filament_requirements
+
+        kept_overrides = data.filament_overrides if target_model_norm or data.printer_id is not None else None
+        sources = [(file_path, plate_id, kept_overrides)] if file_path is not None else []
+        sources += [
+            (library_file_disk_path(variant_file), spec.plate_id, spec.filament_overrides)
+            for spec, variant_file, _ in variant_specs
+        ]
+        for source_path, source_plate, overrides in sources:
+            if source_path.exists():
+                requirements = await asyncio.to_thread(extract_filament_requirements, source_path, source_plate)
+                ensure_requirements_allowed(filament_scope, judged_requirements(requirements, overrides))
+
     if target_model_norm:
         if file_path and file_path.exists():
             filament_types = _extract_filament_types_from_3mf(file_path, plate_id)
@@ -1443,43 +1760,6 @@ async def add_to_queue(
         if not project_result.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Project not found")
 
-    # Security boundary: the browser's estimated_cost is only a display hint.
-    # Budget enforcement and the persisted reservation value must be derived
-    # from the server-owned archive/library metadata and spool assignments.
-    if variant_specs:
-        variant_costs = [
-            await estimate_queue_source_cost(
-                db,
-                library_file=variant_file,
-                plate_id=spec.plate_id,
-                ams_mapping=spec.ams_mapping,
-                printer_id=data.printer_id,
-            )
-            for spec, variant_file, _model in variant_specs
-        ]
-        trusted_estimated_cost = (
-            max(cost for cost in variant_costs if cost is not None)
-            if variant_costs and all(cost is not None for cost in variant_costs)
-            else None
-        )
-    else:
-        trusted_estimated_cost = await estimate_queue_source_cost(
-            db,
-            archive=archive,
-            library_file=library_file,
-            plate_id=plate_id,
-            ams_mapping=data.ams_mapping,
-            printer_id=data.printer_id,
-        )
-
-    await validate_print_budget(
-        db,
-        cost_center_id=data.cost_center_id,
-        estimated_cost=trusted_estimated_cost,
-        current_user=actor,
-        quantity=quantity,
-    )
-
     ams_mapping_json = json.dumps(data.ams_mapping) if data.ams_mapping else None
     # Same Text-as-JSON convention for the rack-position pick (#1784).
     nozzle_rack_choice_json = json.dumps(data.nozzle_rack_choice) if data.nozzle_rack_choice else None
@@ -1515,6 +1795,71 @@ async def add_to_queue(
     )
     if ams_mapping_json is None and not wants_live_color_match:
         ams_mapping_json = saved_slicer_ams_mapping(archive, data.printer_id)
+
+    # Whether the job clears its own plate (#3576): an explicit value wins, else
+    # the library file's flag, else (cross-model) all the alternatives', else
+    # the archive's — so a reprint inherits what the original print had.
+    clears_plate = data.clears_plate
+    if clears_plate is None:
+        if library_file:
+            clears_plate = bool(library_file.clears_plate)
+        elif variant_specs:
+            # Display only: each alternative carries its own value, and the one
+            # that wins the printer decides at dispatch (_resolve_variant).
+            clears_plate = all(
+                spec.clears_plate if spec.clears_plate is not None else bool(variant_file.clears_plate)
+                for spec, variant_file, _model in variant_specs
+            )
+        elif archive:
+            clears_plate = bool(archive.clears_plate)
+        else:
+            clears_plate = False
+
+    # Security boundary: the browser's estimated_cost is only a display hint.
+    # Budget enforcement and the persisted reservation value must be derived
+    # from the server-owned archive/library metadata and spool assignments.
+    # Priced with the mapping the item is stored with, the slicer's saved one
+    # included (#3580): that is the one its print is charged at. Not priced
+    # with billing off, when nothing reads it.
+    spoolman_once = SpoolmanOnce()
+    if not await is_billing_enabled(db):
+        trusted_estimated_cost = None
+    elif variant_specs:
+        variant_costs = [
+            await estimate_queue_source_cost(
+                db,
+                library_file=variant_file,
+                plate_id=spec.plate_id,
+                ams_mapping=spec.ams_mapping,
+                printer_id=data.printer_id,
+                spoolman_once=spoolman_once,
+            )
+            for spec, variant_file, _model in variant_specs
+        ]
+        trusted_estimated_cost = (
+            max(cost for cost in variant_costs if cost is not None)
+            if variant_costs and all(cost is not None for cost in variant_costs)
+            else None
+        )
+    else:
+        trusted_estimated_cost = await estimate_queue_source_cost(
+            db,
+            archive=archive,
+            library_file=library_file,
+            plate_id=plate_id,
+            ams_mapping=ams_mapping_json,
+            printer_id=data.printer_id,
+            spoolman_once=spoolman_once,
+        )
+
+    await validate_print_budget(
+        db,
+        cost_center_id=data.cost_center_id,
+        estimated_cost=trusted_estimated_cost,
+        current_user=actor,
+        quantity=quantity,
+    )
+
     items = []
     for i in range(quantity):
         item = PrintQueueItem(
@@ -1545,6 +1890,7 @@ async def add_to_queue(
             use_ams=data.use_ams,
             nozzle_offset_cali=data.nozzle_offset_cali,
             confirm_outcome=data.confirm_outcome,
+            clears_plate=clears_plate,
             preheat_override=data.preheat_override,
             preheat_chamber_target_override=data.preheat_chamber_target_override,
             gcode_injection=data.gcode_injection,
@@ -1564,6 +1910,10 @@ async def add_to_queue(
             _variant_values(spec, library_file, model, position)
             for position, (spec, library_file, model) in enumerate(variant_specs)
         ]
+        if data.clears_plate is not None:
+            # An explicit job-level value applies to every alternative (#3576).
+            for values in variant_values:
+                values["clears_plate"] = data.clears_plate
         # SJF orders pending items before any printer is known, so the row carries
         # the shortest candidate's estimate. Resolution replaces it with the one
         # that actually runs.
@@ -1649,9 +1999,21 @@ async def bulk_update_queue_items(
     )
     items = [item for item in result.scalars().all() if printer_scope.allows(item.printer_id)]
 
+    # Switching plate clearing on takes printers:clear_plate (#3576). Checked
+    # for the whole request before any row changes, on the rows it may change.
+    if any(
+        item.status == "pending"
+        and item.dispatching_at is None
+        and (can_modify_all or (user is not None and item.created_by_id == user.id))
+        and _switches_clears_plate_on(item, update_data)
+        for item in items
+    ):
+        require_clear_plate_permission(actor)
+
     updated_count = 0
     skipped_count = 0
     validates_billing_fields = "cost_center_id" in update_data or "estimated_cost" in update_data
+    spoolman_once = SpoolmanOnce()  # one spool list for every item priced below
 
     for item in items:
         # Skip non-pending rows and rows a dispatch worker has claimed (#2615) —
@@ -1691,12 +2053,16 @@ async def bulk_update_queue_items(
             skipped_count += 1
             continue
         if validates_billing_fields:
+            # Priced as it is stored below: on another printer without the
+            # mapping resolved against the one it leaves, as the single edit
+            # prices it. Its tray numbers name other spools there (#3580).
             trusted_estimated_cost = await _trusted_item_estimated_cost(
                 db,
                 item,
                 printer_id=item_update_data.get("printer_id", item.printer_id),
                 plate_id=item.plate_id,
-                ams_mapping=item.ams_mapping,
+                ams_mapping=PRINTER_RESOLVED_DEFAULTS["ams_mapping"] if rebinds else item.ams_mapping,
+                spoolman_once=spoolman_once,
             )
             item_update_data["estimated_cost"] = trusted_estimated_cost
             await validate_print_budget(
@@ -1726,6 +2092,7 @@ async def bulk_update_queue_items(
             item.target_model = None
             item.target_location = None
             drop_printer_resolved(item)
+        _apply_clears_plate_update(item, item_update_data)
         for field, value in item_update_data.items():
             setattr(item, field, value)
         updated_count += 1
@@ -1824,6 +2191,113 @@ async def _ensure_batch_in_scope(db: AsyncSession, batch_id: int, printer_scope:
     result = await db.execute(select(PrintQueueItem.printer_id).where(PrintQueueItem.batch_id == batch_id))
     if not all(printer_scope.allows(pid) for (pid,) in result.all()):
         raise HTTPException(404, "Batch not found")
+
+
+# Jobs a copy can be made of: queued, or printing now. A copy of a finished job
+# is a re-queue from History, with the print dialog.
+_DUPLICABLE_STATUSES = ("pending", "printing")
+
+
+@router.post("/duplicate", response_model=PrintQueueDuplicateResponse)
+async def duplicate_queue_items(
+    data: PrintQueueDuplicateRequest,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
+    review_required: bool = QueueReviewRequired,
+    actor: User | ApiKeyActor | None = RequestActor,
+):
+    """Queue another copy of each job in ``item_ids``, at the end of the queue (#3441).
+
+    Each copy is cloned the way an order's remaining runs are
+    (``add_queue_item_clone``): same file, plate, target, cross-model
+    candidates, project, mappings and print options, but a new run. On an
+    "any printer of a model" job the printer the scheduler picked, and what
+    was worked out for it (tray mapping, "Print Anyway", nozzle choice), stay
+    with the original. Not copied either: the scheduled time, the batch (the
+    copy is an extra job, not one of the order's runs) and a ``manual_start``
+    the scheduler set (``held_by_scheduler``).
+
+    Gated like ``POST /queue/``: the caller must be able to see the job and to
+    queue its files, and the copy's target has to be in their printer scope.
+    A job that fails any of that, is not queued or printing, or is a
+    printer-card upload whose file goes when the original dispatches (#2819),
+    gets no copy and counts as skipped.
+    """
+    from backend.app.services.print_scheduler import held_by_scheduler
+
+    item_ids = list(dict.fromkeys(data.item_ids))
+    result = await db.execute(
+        select(PrintQueueItem).where(PrintQueueItem.id.in_(item_ids)).options(selectinload(PrintQueueItem.variants))
+    )
+    by_id = {item.id: item for item in result.scalars().all()}
+    can_read_all = actor is None or actor.has_permission(Permission.QUEUE_READ_ALL.value)
+    can_read_own = actor is None or actor.has_permission(Permission.QUEUE_READ_OWN.value)
+
+    async def _may_copy(item: PrintQueueItem) -> bool:
+        if not printer_scope.allows(item.printer_id):
+            return False
+        if not can_read_all and not (can_read_own and actor is not None and item.created_by_id == actor.id):
+            return False
+        if item.status not in _DUPLICABLE_STATUSES:
+            return False
+        if item.cleanup_library_after_dispatch and item.archive_id is None:
+            return False
+        try:
+            if item.archive_id is not None:
+                archive = await db.get(PrintArchive, item.archive_id)
+                if archive is None:
+                    return False
+                await _assert_can_queue_archive(archive, actor, printer_scope)
+            for library_file_id in [item.library_file_id, *(v.library_file_id for v in item.variants)]:
+                if library_file_id is None:
+                    continue
+                library_file = (
+                    await db.execute(LibraryFile.active().where(LibraryFile.id == library_file_id))
+                ).scalar_one_or_none()
+                if library_file is None:
+                    return False
+                _assert_can_queue_library_file(library_file, actor)
+            # The copy keeps a user-chosen printer, and waits for any printer
+            # of the model when the original's was the scheduler's pick.
+            if item.printer_id is not None and not (item.target_model or item.variants):
+                printer_scope.ensure(item.printer_id)
+            else:
+                ensure_model_target_allowed(current_user, printer_scope)
+        except HTTPException:
+            return False
+        return True
+
+    sources = [by_id[item_id] for item_id in item_ids if item_id in by_id]
+    sources = [item for item in sources if await _may_copy(item)]
+
+    created: list[PrintQueueItem] = []
+    if sources:
+        await lock_queue_positions(db)
+        position = await next_queue_position(db)
+        for source in sources:
+            clone = await add_queue_item_clone(db, source, position=position, created_by_id=actor.id if actor else None)
+            clone.batch_id = None
+            if held_by_scheduler(source):
+                clone.manual_start = False
+            # The dispatcher's own jobs wait for review (#1620), as an order's
+            # remaining runs do.
+            if review_required:
+                clone.manual_start = True
+            created.append(clone)
+            position += 1
+        try:
+            await _validate_copies_budget(db, created, actor)
+        except HTTPException:
+            await db.rollback()
+            raise
+        await db.commit()
+        await announce_queue_jobs_added(db, [item.id for item in created])
+
+    logger.info("Duplicated %d queue item(s), skipped %d", len(created), len(item_ids) - len(created))
+    return PrintQueueDuplicateResponse(
+        created_ids=[item.id for item in created], skipped_count=len(item_ids) - len(created)
+    )
 
 
 @router.post("/batches", response_model=PrintBatchResponse)
@@ -1972,11 +2446,11 @@ async def update_batch(
         if not data.name.strip():
             raise HTTPException(400, "Batch name is required")
         batch.name = data.name.strip()[:255]
-    if data.project_id is not None:
+    if "project_id" in data.model_fields_set:
         batch.project_id = data.project_id
-    if data.due_date is not None:
+    if "due_date" in data.model_fields_set:
         batch.due_date = data.due_date
-    if data.notes is not None:
+    if "notes" in data.model_fields_set:
         batch.notes = data.notes
     if data.status is not None:
         batch.status = data.status
@@ -2027,10 +2501,16 @@ async def _validate_copies_budget(
     by_center: dict[int | None, list[PrintQueueItem]] = {}
     for copy in copies:
         by_center.setdefault(copy.cost_center_id, []).append(copy)
+    spoolman_once = SpoolmanOnce()  # one spool list for every copy
     for cost_center_id, center_copies in by_center.items():
         estimates = [
             await _trusted_item_estimated_cost(
-                db, copy, printer_id=copy.printer_id, plate_id=copy.plate_id, ams_mapping=copy.ams_mapping
+                db,
+                copy,
+                printer_id=copy.printer_id,
+                plate_id=copy.plate_id,
+                ams_mapping=copy.ams_mapping,
+                spoolman_once=spoolman_once,
             )
             for copy in center_copies
         ]
@@ -2464,6 +2944,9 @@ async def update_queue_item(
         raise HTTPException(403, _AWAITING_REVIEW)
     if _releases_model_job(item, update_data):
         ensure_model_target_allowed(user, printer_scope)
+    # Switching plate clearing on takes printers:clear_plate (#3576)
+    if _switches_clears_plate_on(item, update_data):
+        require_clear_plate_permission(actor)
 
     # Normalize target_model if being updated (see add_to_queue for why the
     # code map has to run first).
@@ -2606,6 +3089,7 @@ async def update_queue_item(
     if claimed is not None:
         raise HTTPException(409, "Item is being dispatched — cancel it first to make changes")
 
+    _apply_clears_plate_update(item, update_data)
     for field, value in update_data.items():
         setattr(item, field, value)
 
@@ -3142,13 +3626,24 @@ async def start_queue_item(
     # spool swap between scheduler flagging and the user clicking ▶ clears
     # the block automatically.
     if not skip_filament_check:
-        deficit = await compute_deficit_for_queue_item(db, item)
-        if deficit:
+        from backend.app.services.print_scheduler import scheduler as _scheduler
+
+        deficit_rows = [d.to_dict() for d in await compute_deficit_for_queue_item(db, item)]
+        if not deficit_rows and item.printer_id is None:
+            # An "any model" job that waits because the spools on its printers
+            # are short (Loaded filament first, #3587) has no printer for the
+            # check above; its printers are named one by one (#3659). As with
+            # the check below, a failure must not break Start.
+            try:
+                deficit_rows = await _scheduler.model_job_filament_deficit(db, item)
+            except Exception:
+                logger.exception("Queue item %s: filament check before start failed", item_id)
+        if deficit_rows:
             raise HTTPException(
                 status_code=409,
                 detail={
                     "code": "insufficient_filament",
-                    "deficit": [d.to_dict() for d in deficit],
+                    "deficit": deficit_rows,
                 },
             )
 
@@ -3156,8 +3651,6 @@ async def start_queue_item(
         # Start on an item the scheduler held for exactly that would release it
         # only for the next pass to hold it again, and nothing would ever offer
         # "Print Anyway".
-        from backend.app.services.print_scheduler import scheduler as _scheduler
-
         # A convenience, not a gate: the scheduler holds the item again if the
         # filament is still missing, so a failure here must not break Start.
         try:

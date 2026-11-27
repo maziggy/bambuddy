@@ -5,6 +5,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '../utils';
+import { act } from '@testing-library/react';
 import { FilamentHoverCard, EmptySlotHoverCard } from '../../components/FilamentHoverCard';
 import { setColorCatalog, __resetColorCatalogForTests } from '../../utils/colors';
 
@@ -72,6 +73,35 @@ describe('FilamentHoverCard', () => {
       await waitFor(() => {
         expect(screen.getByText('0%')).toBeInTheDocument();
       });
+    });
+  });
+
+  describe('remaining grams (#3738)', () => {
+    const spoolAt = (grams: number) => ({
+      id: 7, material: 'PLA', subtype: null, brand: 'eSun', color_name: 'Black', remainingWeightGrams: grams,
+    });
+
+    it('shows the spool record grams next to its own fill', async () => {
+      renderWithHover(
+        <FilamentHoverCard data={{ ...baseFilamentData, fillLevel: 40, fillSource: 'inventory' }} inventory={{ assignedSpool: spoolAt(400) }}>
+          <div>trigger</div>
+        </FilamentHoverCard>
+      );
+      vi.advanceTimersByTime(100);
+
+      await waitFor(() => expect(screen.getByText('• 400g')).toBeInTheDocument());
+    });
+
+    it('leaves them out next to an AMS reading they contradict', async () => {
+      renderWithHover(
+        <FilamentHoverCard data={{ ...baseFilamentData, fillLevel: 100, fillSource: 'ams' }} inventory={{ assignedSpool: spoolAt(0) }}>
+          <div>trigger</div>
+        </FilamentHoverCard>
+      );
+      vi.advanceTimersByTime(100);
+
+      await waitFor(() => expect(screen.getByText('100%')).toBeInTheDocument());
+      expect(screen.queryByText('• 0g')).not.toBeInTheDocument();
     });
   });
 
@@ -880,5 +910,220 @@ describe('FilamentHoverCard — assigned spool swatch (#2967)', () => {
     vi.advanceTimersByTime(100);
     await waitFor(() => expect(screen.getByText('Mist')).toBeInTheDocument());
     expect(header().style.backgroundImage).toBe('');
+  });
+});
+
+// A phone has no hover: the tile is a button that opens its card on a tap
+// (#3577). jsdom has no PointerEvent, so the press carries its device by hand.
+function press(el: Element, pointerType: 'touch' | 'mouse' | 'pen') {
+  const ev = new Event('pointerdown', { bubbles: true, cancelable: true });
+  Object.defineProperty(ev, 'pointerType', { value: pointerType });
+  el.dispatchEvent(ev);
+}
+
+function tap(el: Element, pointerType: 'touch' | 'mouse' | 'pen' = 'touch') {
+  press(el, pointerType);
+  fireEvent.click(el);
+}
+
+describe('slot cards on a touch screen (#3577)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+
+  function renderSlot(props: Partial<React.ComponentProps<typeof FilamentHoverCard>> = {}) {
+    render(
+      <FilamentHoverCard data={baseFilamentData} configureSlot={{ enabled: true, onConfigure: vi.fn() }} {...props}>
+        <div>PLA</div>
+      </FilamentHoverCard>,
+    );
+    return screen.getByTestId('filament-slot');
+  }
+
+  it('is a button for the whole tile, closed at first', () => {
+    const tile = renderSlot();
+    expect(tile).toHaveAttribute('role', 'button');
+    expect(tile).toHaveAttribute('tabindex', '0');
+    expect(tile).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('opens on a tap on the material text and closes on a second tap', async () => {
+    const tile = renderSlot();
+
+    tap(screen.getByText('PLA'));
+    expect(screen.getByText('PLA Basic')).toBeInTheDocument();
+    expect(tile).toHaveAttribute('aria-expanded', 'true');
+
+    tap(screen.getByText('PLA'));
+    expect(screen.queryByText('PLA Basic')).not.toBeInTheDocument();
+  });
+
+  it("is not reopened by the mouseenter a browser emulates for the tap", async () => {
+    const tile = renderSlot();
+
+    fireEvent.mouseEnter(tile);
+    tap(tile);
+    vi.advanceTimersByTime(200);
+    expect(screen.getByText('PLA Basic')).toBeInTheDocument();
+
+    tap(tile);
+    vi.advanceTimersByTime(200);
+    expect(screen.queryByText('PLA Basic')).not.toBeInTheDocument();
+  });
+
+  it('toggles on a pen too', () => {
+    const tile = renderSlot();
+    tap(tile, 'pen');
+    expect(screen.getByText('PLA Basic')).toBeInTheDocument();
+    tap(tile, 'pen');
+    expect(screen.queryByText('PLA Basic')).not.toBeInTheDocument();
+  });
+
+  it('stays open for a mouse click on a card its hover opened', async () => {
+    const tile = renderSlot();
+    fireEvent.mouseEnter(tile);
+    vi.advanceTimersByTime(100);
+    await waitFor(() => expect(screen.getByText('PLA Basic')).toBeInTheDocument());
+
+    tap(tile, 'mouse');
+    expect(screen.getByText('PLA Basic')).toBeInTheDocument();
+  });
+
+  it('closes on a tap outside, not on a tap inside the card', async () => {
+    renderSlot();
+    tap(screen.getByText('PLA'));
+
+    press(screen.getByText('PLA Basic'), 'touch');
+    // The close would land asynchronously, from a document listener.
+    await act(async () => {
+      vi.advanceTimersByTime(50);
+    });
+    expect(screen.getByText('PLA Basic')).toBeInTheDocument();
+
+    press(document.body, 'touch');
+    await waitFor(() => expect(screen.queryByText('PLA Basic')).not.toBeInTheDocument());
+  });
+
+  it('keeps one card open at a time', () => {
+    render(
+      <>
+        <FilamentHoverCard data={baseFilamentData}>
+          <div>first</div>
+        </FilamentHoverCard>
+        <FilamentHoverCard data={{ ...baseFilamentData, profile: 'PETG HF' }}>
+          <div>second</div>
+        </FilamentHoverCard>
+      </>,
+    );
+    tap(screen.getByText('first'));
+    tap(screen.getByText('second'));
+
+    expect(screen.queryByText('PLA Basic')).not.toBeInTheDocument();
+    expect(screen.getByText('PETG HF')).toBeInTheDocument();
+  });
+
+  it('opens with Enter, moves into the card, and Escape returns to the tile', async () => {
+    const tile = renderSlot();
+    tile.focus();
+
+    fireEvent.keyDown(tile, { key: 'Enter' });
+    expect(screen.getByText('PLA Basic')).toBeInTheDocument();
+    vi.advanceTimersByTime(50);
+    await waitFor(() => expect(document.activeElement?.closest('.fixed')).not.toBeNull());
+
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    expect(screen.queryByText('PLA Basic')).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(tile);
+  });
+
+  it('closes with Space', () => {
+    const tile = renderSlot();
+    fireEvent.keyDown(tile, { key: ' ' });
+    expect(screen.getByText('PLA Basic')).toBeInTheDocument();
+    fireEvent.keyDown(tile, { key: ' ' });
+    expect(screen.queryByText('PLA Basic')).not.toBeInTheDocument();
+  });
+
+  it('is no button when disabled, and a tap opens nothing', () => {
+    const tile = renderSlot({ disabled: true });
+    expect(tile).not.toHaveAttribute('role');
+    tap(tile);
+    fireEvent.keyDown(tile, { key: 'Enter' });
+    expect(screen.queryByText('PLA Basic')).not.toBeInTheDocument();
+  });
+
+  it('opens an empty slot on a tap too, and closes it on a tap outside', async () => {
+    render(
+      <EmptySlotHoverCard configureSlot={{ enabled: true, onConfigure: vi.fn() }}>
+        <div>Empty</div>
+      </EmptySlotHoverCard>,
+    );
+    const tile = screen.getByTestId('empty-slot');
+    expect(tile).toHaveAttribute('role', 'button');
+
+    tap(screen.getByText('Empty'));
+    expect(screen.getByText(/configure/i)).toBeInTheDocument();
+
+    press(document.body, 'touch');
+    await waitFor(() => expect(screen.queryByText(/configure/i)).not.toBeInTheDocument());
+  });
+});
+
+describe('FilamentHoverCard RFID tag actions (#3658)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+
+  it('offers to link an unassigned RFID slot instead of the disabled Assign button', async () => {
+    const onLink = vi.fn();
+    renderWithHover(
+      <FilamentHoverCard
+        data={baseFilamentData}
+        inventory={{ assignedSpool: null, onAssignSpool: vi.fn(), isAssigned: true, onLinkExistingSpool: onLink }}
+      >
+        <div>trigger</div>
+      </FilamentHoverCard>
+    );
+    vi.advanceTimersByTime(100);
+
+    const button = await screen.findByRole('button', { name: 'Link to existing spool…' });
+    expect(screen.queryByText('Assign Spool')).not.toBeInTheDocument();
+    fireEvent.click(button);
+    expect(onLink).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers to move the tag of an automatically linked spool', async () => {
+    const onMove = vi.fn();
+    renderWithHover(
+      <FilamentHoverCard
+        data={baseFilamentData}
+        inventory={{
+          assignedSpool: { id: 61, material: 'PETG', subtype: 'HF', brand: 'Bambu Lab', color_name: 'Teal' },
+          onMoveTag: onMove,
+        }}
+      >
+        <div>trigger</div>
+      </FilamentHoverCard>
+    );
+    vi.advanceTimersByTime(100);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Wrong spool? Move tag…' }));
+    expect(onMove).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows neither action without the handlers', async () => {
+    renderWithHover(
+      <FilamentHoverCard
+        data={baseFilamentData}
+        inventory={{ assignedSpool: { id: 61, material: 'PETG', subtype: null, brand: null, color_name: null } }}
+      >
+        <div>trigger</div>
+      </FilamentHoverCard>
+    );
+    vi.advanceTimersByTime(100);
+
+    await screen.findByText('#61');
+    expect(screen.queryByText(/move tag/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/link to existing/i)).not.toBeInTheDocument();
   });
 });

@@ -288,14 +288,6 @@
                     "endColumn": 27,
                     "lineCount": 1
                 }
-            },
-            {
-                "code": "reportUnusedExcept",
-                "range": {
-                    "startColumn": 19,
-                    "endColumn": 31,
-                    "lineCount": 1
-                }
             }
         ],
         "./backend/app/api/routes/cloud.py": [
@@ -1908,16 +1900,6 @@
                 }
             }
         ],
-        "./backend/app/services/archive_cost_estimate.py": [
-            {
-                "code": "reportArgumentType",
-                "range": {
-                    "startColumn": 25,
-                    "endColumn": 41,
-                    "lineCount": 1
-                }
-            }
-        ],
         "./backend/app/services/bambu_ftp.py": [
             {
                 "code": "reportAttributeAccessIssue",
@@ -2198,14 +2180,6 @@
             {
                 "code": "reportOptionalMemberAccess",
                 "range": {
-                    "startColumn": 19,
-                    "endColumn": 23,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportOptionalMemberAccess",
-                "range": {
                     "startColumn": 15,
                     "endColumn": 32,
                     "lineCount": 1
@@ -2224,14 +2198,6 @@
                 "range": {
                     "startColumn": 11,
                     "endColumn": 16,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportOptionalMemberAccess",
-                "range": {
-                    "startColumn": 26,
-                    "endColumn": 30,
                     "lineCount": 1
                 }
             }
@@ -2534,14 +2500,6 @@
                 "range": {
                     "startColumn": 18,
                     "endColumn": 24,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportArgumentType",
-                "range": {
-                    "startColumn": 46,
-                    "endColumn": 54,
                     "lineCount": 1
                 }
             }
@@ -4120,14 +4078,6 @@
                 "range": {
                     "startColumn": 60,
                     "endColumn": 75,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportArgumentType",
-                "range": {
-                    "startColumn": 69,
-                    "endColumn": 84,
                     "lineCount": 1
                 }
             }

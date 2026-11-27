@@ -16,7 +16,7 @@ import {
 } from '../../hooks/useFilamentMapping';
 import { effectivePreferLowest } from '../../utils/amsHelpers';
 import { getColorName, setColorCatalog, __resetColorCatalogForTests } from '../../utils/colors';
-import type { PrinterStatus } from '../../api/client';
+import type { FilamentPolicy, PrinterStatus } from '../../api/client';
 
 // Helper to create a minimal printer status with AMS data
 function createPrinterStatus(ams: PrinterStatus['ams'], vt_tray: PrinterStatus['vt_tray'] = []): PrinterStatus {
@@ -389,6 +389,80 @@ describe('computeAmsMapping', () => {
     const result = computeAmsMapping(reqs, status);
 
     expect(result).toEqual([0, 2]);  // Each slot gets its specific tray
+  });
+
+  // #3733: tray_info_idx names the variant, not the spool.
+  it('lets the colour win over a unique tray_info_idx of another colour', () => {
+    const reqs = {
+      filaments: [
+        { slot_id: 1, type: 'PLA', color: '#000000', used_grams: 10, tray_info_idx: 'GFA01' },
+        { slot_id: 2, type: 'PLA', color: '#FFFFFF', used_grams: 10, tray_info_idx: 'GFA00' },
+      ],
+    };
+    const status = createPrinterStatus([
+      {
+        id: 0,
+        tray: [
+          { id: 0, tray_type: 'PLA', tray_color: '000000', tray_info_idx: 'GFA00' },
+          { id: 1, tray_type: 'PLA', tray_color: 'FFFFFF', tray_info_idx: 'GFA01' },
+        ],
+      },
+    ]);
+
+    expect(computeAmsMapping(reqs, status)).toEqual([0, 1]);
+  });
+
+  it('still prefers a unique tray_info_idx of another colour over another variant', () => {
+    const reqs = {
+      filaments: [{ slot_id: 1, type: 'PLA', color: '#000000', used_grams: 10, tray_info_idx: 'GFA01' }],
+    };
+    const status = createPrinterStatus([
+      {
+        id: 0,
+        tray: [
+          { id: 0, tray_type: 'PLA', tray_color: 'FF0000', tray_info_idx: 'GFA00' },
+          { id: 1, tray_type: 'PLA', tray_color: 'FFFFFF', tray_info_idx: 'GFA01' },
+        ],
+      },
+    ]);
+
+    expect(computeAmsMapping(reqs, status)).toEqual([1]);
+  });
+
+  it('lets the colour win over several tray_info_idx matches of another colour', () => {
+    const reqs = {
+      filaments: [{ slot_id: 1, type: 'PLA', color: '#000000', used_grams: 10, tray_info_idx: 'GFA01' }],
+    };
+    const status = createPrinterStatus([
+      {
+        id: 0,
+        tray: [
+          { id: 0, tray_type: 'PLA', tray_color: 'FFFFFF', tray_info_idx: 'GFA01' },
+          { id: 1, tray_type: 'PLA', tray_color: 'FFFFFF', tray_info_idx: 'GFA01' },
+          { id: 2, tray_type: 'PLA', tray_color: '000000', tray_info_idx: 'GFA00' },
+        ],
+      },
+    ]);
+
+    expect(computeAmsMapping(reqs, status)).toEqual([2]);
+  });
+
+  it('prefers one of several tray_info_idx matches of another colour over another variant', () => {
+    const reqs = {
+      filaments: [{ slot_id: 1, type: 'PLA', color: '#000000', used_grams: 10, tray_info_idx: 'GFA01' }],
+    };
+    const status = createPrinterStatus([
+      {
+        id: 0,
+        tray: [
+          { id: 0, tray_type: 'PLA', tray_color: 'FF0000', tray_info_idx: 'GFA00' },
+          { id: 1, tray_type: 'PLA', tray_color: 'FFFFFF', tray_info_idx: 'GFA01' },
+          { id: 2, tray_type: 'PLA', tray_color: 'FFFFFF', tray_info_idx: 'GFA01' },
+        ],
+      },
+    ]);
+
+    expect(computeAmsMapping(reqs, status)).toEqual([1]);
   });
 
   it('handles external spool matching', () => {
@@ -1692,5 +1766,68 @@ describe('buildLoadedFilaments - H3C rack printer', () => {
   it('maps a filament to its AMS 3H slot', () => {
     const reqs = { filaments: [{ slot_id: 1, type: 'PETG', color: '#F7D959', used_grams: 5 }] };
     expect(computeAmsMapping(reqs, h3cStatus())).toEqual([34]);
+  });
+});
+
+// #3522: a user whose groups block a filament must never have it auto-picked.
+describe('filament rules (#3522)', () => {
+  const blockMatte: FilamentPolicy[] = [
+    { group: 'friends', mode: 'block', rules: [{ match: 'filament_id', value: 'GFG03' }] },
+  ];
+  // Two white PETG spools: the blocked one sits in the first slot, where every
+  // tie-break would otherwise land.
+  const twoWhitePetg = () =>
+    createPrinterStatus([
+      {
+        id: 0,
+        tray: [
+          { id: 0, tray_type: 'PETG', tray_color: 'FFFFFFFF', tray_info_idx: 'GFG03' },
+          { id: 1, tray_type: 'PETG', tray_color: 'FFFFFFFF', tray_info_idx: 'GFG99' },
+        ],
+      },
+    ] as PrinterStatus['ams']);
+  const whitePetg = { filaments: [{ slot_id: 1, type: 'PETG', color: '#FFFFFF', used_grams: 5 }] };
+
+  it('flags the trays the policies block', () => {
+    const loaded = buildLoadedFilaments(twoWhitePetg(), undefined, blockMatte);
+    expect(loaded.map((f) => f.blocked)).toEqual([true, undefined]);
+  });
+
+  it('flags nothing when the user is unrestricted', () => {
+    const loaded = buildLoadedFilaments(twoWhitePetg(), undefined, null);
+    expect(loaded.some((f) => 'blocked' in f)).toBe(false);
+  });
+
+  it('maps around a blocked tray', () => {
+    expect(computeAmsMapping(whitePetg, twoWhitePetg())).toEqual([0]);
+    expect(computeAmsMapping(whitePetg, twoWhitePetg(), false, undefined, blockMatte)).toEqual([1]);
+  });
+
+  it('skips a blocked tray even when it is the unique tray_info_idx match', () => {
+    const reqs = { filaments: [{ ...whitePetg.filaments[0], tray_info_idx: 'GFG03' }] };
+    const loaded = buildLoadedFilaments(twoWhitePetg(), undefined, blockMatte);
+    const [comparison] = buildFilamentComparison(reqs, loaded, {});
+    expect(comparison.loaded?.globalTrayId).toBe(1);
+  });
+
+  it('leaves no tray mapped when every candidate is blocked', () => {
+    const blockPetg: FilamentPolicy[] = [
+      { group: 'friends', mode: 'block', rules: [{ match: 'material', value: 'PETG' }] },
+    ];
+    expect(computeAmsMapping(whitePetg, twoWhitePetg(), false, undefined, blockPetg)).toEqual([-1]);
+  });
+
+  it('keeps a manual pick of a blocked tray as the user made it', () => {
+    const loaded = buildLoadedFilaments(twoWhitePetg(), undefined, blockMatte);
+    const [comparison] = buildFilamentComparison(whitePetg, loaded, { 1: 0 });
+    expect(comparison).toMatchObject({ isManual: true, loaded: { globalTrayId: 0, blocked: true } });
+  });
+
+  it('passes the policies through the hook', () => {
+    const { result } = renderHook(() =>
+      useFilamentMapping(whitePetg, twoWhitePetg(), {}, false, undefined, undefined, blockMatte),
+    );
+    expect(result.current.loadedFilaments.map((f) => !!f.blocked)).toEqual([true, false]);
+    expect(result.current.amsMapping).toEqual([1]);
   });
 });

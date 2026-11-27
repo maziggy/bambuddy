@@ -79,14 +79,9 @@ async def user_for_code(db: AsyncSession, code: str, *, mode: str, target_printe
     to this virtual printer now.
     """
     from backend.app.core.auth import is_auth_enabled
-    from backend.app.core.printer_scope import resolve_user_printer_scope
 
-    needed = MODE_PERMISSIONS.get(normalize_vp_mode(mode) or "")
-    if needed is None or len(code) != CODE_LENGTH or not code.isdigit():
+    if _needed_permissions(mode, target_printer_id) is None or len(code) != CODE_LENGTH or not code.isdigit():
         return None
-    if target_printer_id is not None:
-        # The slicer then shows that printer's live state through the VP.
-        needed = (*needed, Permission.PRINTERS_READ.value)
     if not await is_auth_enabled(db):
         return None
     user = (
@@ -96,16 +91,41 @@ async def user_for_code(db: AsyncSession, code: str, *, mode: str, target_printe
     ).scalar_one_or_none()
     if user is None:
         return None
-    if not user.is_active:
-        logger.info("Virtual printer sign-in refused for user %s: account disabled", user.id)
-        return None
-    if not user.has_all_permissions(*needed):
-        logger.info("Virtual printer sign-in refused for user %s: needs %s", user.id, ", ".join(needed))
-        return None
-    if target_printer_id is not None and not (await resolve_user_printer_scope(db, user)).allows(target_printer_id):
-        logger.info("Virtual printer sign-in refused for user %s: printer %s not theirs", user.id, target_printer_id)
+    reason = await refusal(db, user, mode=mode, target_printer_id=target_printer_id)
+    if reason is not None:
+        logger.info("Virtual printer sign-in refused for user %s: %s", user.id, reason)
         return None
     return user
+
+
+def _needed_permissions(mode: str, target_printer_id: int | None) -> tuple[str, ...] | None:
+    """What sending to a virtual printer in ``mode`` takes; None where a personal code never works."""
+    needed = MODE_PERMISSIONS.get(normalize_vp_mode(mode) or "")
+    if needed is not None and target_printer_id is not None:
+        # The slicer then shows that printer's live state through the VP.
+        needed = (*needed, Permission.PRINTERS_READ.value)
+    return needed
+
+
+async def refusal(db: AsyncSession, user: User, *, mode: str, target_printer_id: int | None) -> str | None:
+    """Why ``user`` may not sign in to a virtual printer with their code now, or None if they may.
+
+    The one rule for the sign-in and for the Connect slicer page (#3602), so
+    the page never lists a virtual printer the sign-in would refuse. ``user``
+    needs its groups loaded.
+    """
+    from backend.app.core.printer_scope import resolve_user_printer_scope
+
+    needed = _needed_permissions(mode, target_printer_id)
+    if needed is None:
+        return f"no personal codes in {mode} mode"
+    if not user.is_active:
+        return "account disabled"
+    if not user.has_all_permissions(*needed):
+        return f"needs {', '.join(needed)}"
+    if target_printer_id is not None and not (await resolve_user_printer_scope(db, user)).allows(target_printer_id):
+        return f"printer {target_printer_id} not theirs"
+    return None
 
 
 async def may_control_printer(db: AsyncSession, user_id: int, printer_id: int) -> bool:

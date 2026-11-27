@@ -330,3 +330,100 @@ class TestTagFieldsAreImported:
         )
 
         assert [r["status"] for r in response.json()["rows"]] == ["valid", "valid", "valid"]
+
+
+@pytest.mark.asyncio
+class TestWeightLockIsImported:
+    """A stated weight_locked is kept; without one an entered used weight locks."""
+
+    async def _import(self, async_client: AsyncClient, csv_text: str):
+        return await async_client.post(
+            "/api/v1/inventory/spools/import", files={"file": ("x.csv", csv_text.encode(), "text/csv")}
+        )
+
+    @pytest.mark.parametrize(("cell", "locked"), [("False", False), ("True", True), ("no", False), ("1", True)])
+    async def test_a_stated_lock_is_kept(self, async_client: AsyncClient, db_session: AsyncSession, cell, locked):
+        response = await self._import(async_client, f"material,weight_used,weight_locked\nPLA,300,{cell}\n")
+
+        assert response.json()["created"] == 1, response.text
+        assert (await db_session.execute(select(Spool.weight_locked))).scalar_one() is locked
+
+    @pytest.mark.parametrize(
+        "csv_text", ["material,weight_used\nPLA,300\n", "material,weight_used,weight_locked\nPLA,300,\n"]
+    )
+    async def test_without_a_stated_lock_a_used_weight_locks(
+        self, async_client: AsyncClient, db_session: AsyncSession, csv_text
+    ):
+        response = await self._import(async_client, csv_text)
+
+        assert response.json()["created"] == 1, response.text
+        assert (await db_session.execute(select(Spool.weight_locked))).scalar_one() is True
+
+    async def test_an_unlocked_spool_round_trips_unlocked(self, async_client: AsyncClient, db_session: AsyncSession):
+        db_session.add(Spool(material="PLA", weight_used=300, weight_locked=False))
+        await db_session.commit()
+        exported = (await async_client.get("/api/v1/inventory/spools/export")).content
+
+        response = await async_client.post(
+            "/api/v1/inventory/spools/import", files={"file": ("x.csv", exported, "text/csv")}
+        )
+
+        assert response.json()["created"] == 1, response.text
+        assert (await db_session.execute(select(Spool.weight_locked).order_by(Spool.id))).scalars().all() == [
+            False,
+            False,
+        ]
+
+    async def test_a_bad_lock_value_is_a_row_error(self, async_client: AsyncClient):
+        response = await async_client.post(
+            "/api/v1/inventory/spools/import?dry_run=true",
+            files={"file": ("x.csv", b"material,weight_locked\nPLA,maybe\n", "text/csv")},
+        )
+
+        row = response.json()["rows"][0]
+        assert (row["status"], row["reason"]) == ("error", "weight_locked must be true or false (got 'maybe')")
+
+
+@pytest.mark.asyncio
+class TestAnImportedTagLeavesArchivedSpools:
+    """Like link-tag's tag recycling: an archived spool gives up a tag that is imported."""
+
+    TAG = "04A1B2C3D4E5F6"
+    UUID = "0123456789ABCDEF0123456789ABCDEF"
+
+    async def _archived(self, db_session: AsyncSession, **tags) -> Spool:
+        from datetime import datetime, timezone
+
+        spool = Spool(material="PLA", archived_at=datetime.now(timezone.utc), **tags)
+        db_session.add(spool)
+        await db_session.commit()
+        return spool
+
+    @pytest.mark.parametrize("field", ["tag_uid", "tray_uuid"])
+    async def test_the_archived_spool_loses_the_tag(self, async_client: AsyncClient, db_session: AsyncSession, field):
+        value = self.TAG if field == "tag_uid" else self.UUID
+        old = await self._archived(db_session, tag_uid=self.TAG.lower(), tray_uuid=self.UUID.lower())
+
+        response = await async_client.post(
+            "/api/v1/inventory/spools/import",
+            files={"file": ("x.csv", f"material,{field}\nPETG,{value}\n".encode(), "text/csv")},
+        )
+
+        assert response.json()["created"] == 1, response.text
+        await db_session.refresh(old)
+        other = "tray_uuid" if field == "tag_uid" else "tag_uid"
+        assert getattr(old, field) is None
+        assert getattr(old, other) is not None
+        holders = (await db_session.execute(select(Spool.id).where(getattr(Spool, field) == value))).scalars().all()
+        assert len(holders) == 1 and holders[0] != old.id
+
+    async def test_a_dry_run_leaves_the_archived_spool_alone(self, async_client: AsyncClient, db_session: AsyncSession):
+        old = await self._archived(db_session, tag_uid=self.TAG)
+
+        await async_client.post(
+            "/api/v1/inventory/spools/import?dry_run=true",
+            files={"file": ("x.csv", f"material,tag_uid\nPETG,{self.TAG}\n".encode(), "text/csv")},
+        )
+
+        await db_session.refresh(old)
+        assert old.tag_uid == self.TAG

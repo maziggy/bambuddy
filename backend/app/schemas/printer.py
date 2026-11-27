@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
@@ -184,15 +185,33 @@ class PrinterUpdate(IgnoresNullForRequiredColumns):
     # Place in the pick order of "Any model" jobs when the order setting is "priority"
     # (#2915); lowest first, null last.
     dispatch_priority: int | None = Field(default=None, ge=0, le=100000)
+    # Overrides the app setting require_plate_clear (#2860); null follows it.
+    require_plate_clear: bool | None = None
     external_camera_url: str | None = None
     external_camera_type: str | None = None
     external_camera_enabled: bool | None = None
     external_camera_snapshot_url: str | None = None  # #1177
     camera_rotation: int | None = None  # 0, 90, 180, 270 degrees
     camera_light_auto: bool | None = None  # #1655
+    # Plate changer capacity (#3575); null capacity turns counting off. The count
+    # is normally reset through POST /printers/{id}/refill-plates.
+    plate_capacity: int | None = Field(default=None, ge=1, le=999)
+    plates_remaining: int | None = Field(default=None, ge=0, le=999)
+    plate_changer_show_count: bool | None = None  # #3575
     plate_detection_enabled: bool | None = None
     plate_detection_roi: PlateDetectionROI | None = None
     wled_config: WLEDConfig | None = None
+
+    @model_validator(mode="after")
+    def _remaining_within_capacity(self):
+        """Plates left can't exceed the capacity sent with it (#3575)."""
+        if (
+            self.plate_capacity is not None
+            and self.plates_remaining is not None
+            and self.plates_remaining > self.plate_capacity
+        ):
+            raise ValueError("plates_remaining cannot exceed plate_capacity")
+        return self
 
 
 class PrinterResponse(PrinterBase):
@@ -208,6 +227,7 @@ class PrinterResponse(PrinterBase):
     print_hours_offset: float = 0.0
     wear_cost_per_hour: float | None = None  # #694
     dispatch_priority: int | None = None  # #2915
+    require_plate_clear: bool | None = None  # #2860, null follows the app setting
     external_camera_url: str | None = None
     external_camera_type: str | None = None
     external_camera_enabled: bool = False
@@ -216,6 +236,9 @@ class PrinterResponse(PrinterBase):
     camera_light_auto: bool = False  # #1655
     plate_detection_enabled: bool = False
     plate_detection_roi: PlateDetectionROI | None = None
+    plate_capacity: int | None = None  # #3575
+    plates_remaining: int | None = None  # #3575
+    plate_changer_show_count: bool = True  # #3575
     created_at: datetime
     updated_at: datetime
 
@@ -450,6 +473,28 @@ class NextPause(BaseModel):
     minutes: int | None = None
 
 
+class PandaBreathState(BaseModel):
+    """What a Panda Breath reports, as the printer card shows it (#1466)."""
+
+    device_id: str
+    online: bool | None = None
+    chamber_temp: float | None = None
+    target_temp: float | None = None
+    work_on: bool | None = None
+    mode: str | None = None
+    filament_drying_mode: str | None = None
+    drying_running: bool | None = None
+    drying_remaining_min: float | None = None
+
+
+class PandaBreathCommand(BaseModel):
+    """One change for a printer's Panda Breath: exactly one field set."""
+
+    work_on: bool | None = None
+    mode: Literal["auto mode", "power on", "filament drying"] | None = None
+    target_temp: int | None = Field(default=None, ge=0, le=60)
+
+
 class PrinterStatus(BaseModel):
     id: int
     name: str
@@ -581,6 +626,8 @@ class PrinterStatus(BaseModel):
     # Set for every active print regardless of plate count; the frontend decides
     # whether to render it based on current_archive_id's is_multi_plate flag.
     current_plate_id: int | None = None
+    # BIQU Panda Breath bound to this printer (#1466), None without one.
+    panda_breath: PandaBreathState | None = None
 
 
 class DiagnosticCheck(BaseModel):

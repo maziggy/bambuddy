@@ -1,5 +1,6 @@
 import { Component, Suspense, type ReactNode, type ErrorInfo } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Layout } from './components/Layout';
 import { useWebSocket } from './hooks/useWebSocket';
@@ -22,6 +23,7 @@ const ArchivesPage = lazyPage(() => import('./pages/ArchivesPage'), 'ArchivesPag
 const QueuePage = lazyPage(() => import('./pages/QueuePage'), 'QueuePage');
 const StatsPage = lazyPage(() => import('./pages/StatsPage'), 'StatsPage');
 const SettingsPage = lazyPage(() => import('./pages/SettingsPage'), 'SettingsPage');
+const ConnectSlicerPage = lazyPage(() => import('./pages/ConnectSlicerPage'), 'ConnectSlicerPage');
 const FinancePage = lazyPage(() => import('./pages/FinancePage'), 'FinancePage');
 const ProfilesPage = lazyPage(() => import('./pages/ProfilesPage'), 'ProfilesPage');
 const MaintenancePage = lazyPage(() => import('./pages/MaintenancePage'), 'MaintenancePage');
@@ -49,6 +51,12 @@ const SpoolBuddySettingsPage = lazyPage(() => import('./pages/spoolbuddy/SpoolBu
 const SpoolBuddyWriteTagPage = lazyPage(() => import('./pages/spoolbuddy/SpoolBuddyWriteTagPage'), 'SpoolBuddyWriteTagPage');
 const SpoolBuddyInventoryPage = lazyPage(() => import('./pages/spoolbuddy/SpoolBuddyInventoryPage'), 'SpoolBuddyInventoryPage');
 
+// The error boundary is a class component and cannot call useTranslation.
+function CrashText({ textKey }: { textKey: string }) {
+  const { t } = useTranslation();
+  return <>{t(textKey)}</>;
+}
+
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null; errorInfo: ErrorInfo | null }> {
   state = { error: null as Error | null, errorInfo: null as ErrorInfo | null };
 
@@ -65,7 +73,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
     if (this.state.error) {
       return (
         <div style={{ padding: 24, color: '#ef4444', backgroundColor: '#18181b', minHeight: '100vh', fontFamily: 'monospace' }}>
-          <h1 style={{ fontSize: 20, marginBottom: 12 }}>UI Crash</h1>
+          <h1 style={{ fontSize: 20, marginBottom: 12 }}><CrashText textKey="app.uiCrash" /></h1>
           <pre style={{ whiteSpace: 'pre-wrap', fontSize: 14 }}>{this.state.error.message}</pre>
           <pre style={{ whiteSpace: 'pre-wrap', fontSize: 12, color: '#a1a1aa', marginTop: 12 }}>
             {this.state.error.stack}
@@ -74,7 +82,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
             onClick={() => { this.setState({ error: null, errorInfo: null }); }}
             style={{ marginTop: 16, padding: '8px 16px', backgroundColor: '#3b82f6', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer' }}
           >
-            Retry
+            <CrashText textKey="common.retry" />
           </button>
         </div>
       );
@@ -105,10 +113,11 @@ function WebSocketProvider({ children }: { children: React.ReactNode }) {
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { authEnabled, loading, user, authUnconfirmed } = useAuth();
+  const { t } = useTranslation();
   const location = useLocation();
 
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+    return <div className="min-h-screen flex items-center justify-center">{t('common.loading')}</div>;
   }
 
   // A stored sign-in the server couldn't check yet: wait here, so a kiosk
@@ -131,10 +140,11 @@ export function PermissionRoute({ permission, children }: { permission: string |
   // (e.g. settings:read grants read-only access to Settings; specific tabs
   // require their own permissions like users:read, groups:update, etc.).
   const { authEnabled, loading, user, hasPermission, authUnconfirmed } = useAuth();
+  const { t } = useTranslation();
   const location = useLocation();
 
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+    return <div className="min-h-screen flex items-center justify-center">{t('common.loading')}</div>;
   }
 
   if (authUnconfirmed) {
@@ -161,9 +171,10 @@ export function PermissionRoute({ permission, children }: { permission: string |
 
 function SetupRoute({ children }: { children: React.ReactNode }) {
   const { authEnabled, loading } = useAuth();
+  const { t } = useTranslation();
 
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+    return <div className="min-h-screen flex items-center justify-center">{t('common.loading')}</div>;
   }
 
   // If auth is already enabled, redirect to login
@@ -259,6 +270,8 @@ function App() {
                   <Route path="users" element={<Navigate to="/settings?tab=users" replace />} />
                   <Route path="groups" element={<Navigate to="/settings?tab=users" replace />} />
                   <Route path="system" element={<SystemInfoPage />} />
+                  {/* Any signed-in user: what to enter in the slicer, without Settings access (#3602). */}
+                  <Route path="connect-slicer" element={<ConnectSlicerPage />} />
                   <Route path="notifications" element={<NotificationsPage />} />
                   <Route path="gcode-viewer" element={<GCodeViewerPage />} />
                   <Route path="external/:id" element={<ExternalLinkPage />} />

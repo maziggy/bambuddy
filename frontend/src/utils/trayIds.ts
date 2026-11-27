@@ -6,12 +6,12 @@
  *   AMS / AMS Lite / AMS 2 Pro   ams_id * 4 + slot
  *   A2L AMS Lite                 24 + slot
  *   AMS 3H (rack AMS, type 6)    28 + slot   (28-36)
- *   AMS-B (rack AMS, type 7)     37 + slot
+ *   AMS 3P (rack AMS, type 7)    37 + slot   (37-43)
  *   AMS-HT (units 128-135)       ams_id
  *   external input               254 / 255, and 247-255 on a rack printer
  *
- * A rack printer (the H3C) has one external input per hotend: input v feeds
- * hotend 255 - v. Bambuddy stores a slot as (ams_id, tray_id), external inputs
+ * A rack printer (the H3C, the P3C) has one external input per hotend: input
+ * v feeds hotend 255 - v (the P3C's seven are 249-255). Bambuddy stores a slot as (ams_id, tray_id), external inputs
  * under ams_id 255 (tray_id 0 = 254, 1 = 255, 2-8 = 247-253).
  */
 
@@ -23,17 +23,27 @@ export const AmsType = {
   N3S: 4, // AMS-HT
   AMS_LITE_MIXED: 5, // the A2L's AMS Lite
   ZMULTI_A: 6, // AMS 3H
-  ZMULTI_B: 7, // AMS-B
+  ZMULTI_B: 7, // AMS 3P
 } as const;
 
 const RACK_TRAY_BASE: Record<number, number> = { [AmsType.ZMULTI_A]: 28, [AmsType.ZMULTI_B]: 37 };
 const AMS_LITE_MIXED_TRAY_BASE = 24;
-/** One rack AMS slot per hotend of the rack, nine on the H3C. */
+/** One rack AMS slot per hotend of the rack: nine on the H3C's AMS 3H, seven on the P3C's AMS 3P. */
+const RACK_SLOT_COUNTS: Record<number, number> = { [AmsType.ZMULTI_A]: 9, [AmsType.ZMULTI_B]: 7 };
+/** The most slots any rack AMS has (the AMS 3H's nine): the size of a rack printer's nozzle rack card by default. */
 export const RACK_SLOT_COUNT = 9;
-// The H3C reports its AMS 3H as unit 32; read only when a unit's type or the AMS data is missing.
+// The H3C reports its AMS 3H as unit 32, the P3C its AMS 3P as unit 33; read
+// only when a unit's type or the AMS data is missing.
 const AMS3H_UNIT_ID = 32;
-// For callers with no live status only (see trayLayoutOf).
-const RACK_PRINTER_MODELS = new Set(['H3C', 'N10']);
+const AMS3P_UNIT_ID = 33;
+const RACK_UNIT_IDS: Record<number, number> = { [AmsType.ZMULTI_A]: AMS3H_UNIT_ID, [AmsType.ZMULTI_B]: AMS3P_UNIT_ID };
+// For callers with no live status only (see trayLayoutOf): each rack printer's rack AMS.
+const RACK_PRINTER_MODELS: Record<string, number> = {
+  H3C: AmsType.ZMULTI_A,
+  N10: AmsType.ZMULTI_A,
+  P3C: AmsType.ZMULTI_B,
+  N11: AmsType.ZMULTI_B,
+};
 
 export const EXTERNAL_AMS_ID = 255;
 const EXTERNAL_MAIN_ID = 255;
@@ -44,16 +54,22 @@ export function isRackAms(amsType: number | null | undefined): boolean {
   return amsType === AmsType.ZMULTI_A || amsType === AmsType.ZMULTI_B;
 }
 
+/** How many slots a rack AMS of `amsType` has (9 for the AMS 3H, 7 for the AMS 3P), else 0. */
+export function rackSlotCount(amsType: number | null | undefined): number {
+  return typeof amsType === 'number' ? RACK_SLOT_COUNTS[amsType] ?? 0 : 0;
+}
+
 export function isAmsHtId(amsId: number): boolean {
   return amsId >= 128 && amsId <= 135;
 }
 
-/** Unit `amsId`'s AMS type: its `ams_type` when set, else from the id (128+ AMS-HT, 32 AMS 3H, else AMS). */
+/** Unit `amsId`'s AMS type: its `ams_type` when set, else from the id (128+ AMS-HT, 32 AMS 3H, 33 AMS 3P, else AMS). */
 export function unitAmsType(amsId: number, explicit?: number | null): number {
   if (isAmsHtId(amsId)) return AmsType.N3S;
   if (typeof explicit === 'number' && explicit > AmsType.EXT_SPOOL && explicit <= AmsType.ZMULTI_B) return explicit;
   if (amsId >= 128) return AmsType.N3S;
   if (amsId === AMS3H_UNIT_ID) return AmsType.ZMULTI_A;
+  if (amsId === AMS3P_UNIT_ID) return AmsType.ZMULTI_B;
   return AmsType.AMS;
 }
 
@@ -99,7 +115,7 @@ export interface TrayLayout {
  * is a rack printer: it has a rack AMS (by `ams_type`, unit 32 when that is
  * missing) or reports an external input 247-253. `model` is a last resort for
  * callers without live status (a stored assignment): with no AMS units listed,
- * an H3C gets its AMS 3H, like the backend's TrayLayout.from_state.
+ * an H3C gets its AMS 3H and a P3C its AMS 3P, like the backend's TrayLayout.from_state.
  */
 export function trayLayoutOf(
   units: ReadonlyArray<{ id: number; ams_type?: number | null }> | null | undefined,
@@ -110,8 +126,9 @@ export function trayLayoutOf(
   for (const unit of units ?? []) {
     if (!typed.some((known) => known.id === unit.id)) typed.push({ id: unit.id, type: unitAmsType(unit.id, unit.ams_type) });
   }
-  if (typed.length === 0 && model && RACK_PRINTER_MODELS.has(model.toUpperCase())) {
-    return { units: [{ id: AMS3H_UNIT_ID, type: AmsType.ZMULTI_A }], rack: true };
+  const modelRack = model ? RACK_PRINTER_MODELS[model.toUpperCase()] : undefined;
+  if (typed.length === 0 && modelRack !== undefined) {
+    return { units: [{ id: RACK_UNIT_IDS[modelRack], type: modelRack }], rack: true };
   }
   const rack = typed.some((unit) => isRackAms(unit.type))
     || (vtTrays ?? []).some((vt) => typeof vt.id === 'number' && vt.id >= RACK_EXTERNAL_FIRST && vt.id < EXTERNAL_DEPUTY_ID);
@@ -126,7 +143,8 @@ export function layoutAmsType(layout: TrayLayout | null | undefined, amsId: numb
 /**
  * [ams_id, slot] of an AMS slot's global tray id, as the backend's slot_key
  * stores it; null for an external input (247-255) or no tray. Unless a rack
- * AMS or a unit 7 is listed, 28-36 are the AMS 3H's, as in Bambu Studio.
+ * AMS is listed, 28-36 are the AMS 3H's (not with a unit 7 listed) and 37-43
+ * the AMS 3P's, as in Bambu Studio.
  */
 export function locateTray(layout: TrayLayout | null | undefined, trayId: number): [number, number] | null {
   if (!Number.isInteger(trayId) || trayId < 0 || isExternalTray(trayId, true)) return null;
@@ -135,11 +153,15 @@ export function locateTray(layout: TrayLayout | null | undefined, trayId: number
   const rackUnits = units.filter((unit) => isRackAms(unit.type));
   for (const unit of rackUnits) {
     const base = RACK_TRAY_BASE[unit.type];
-    if (trayId >= base && trayId < base + RACK_SLOT_COUNT) return [unit.id, trayId - base];
+    if (trayId >= base && trayId < base + rackSlotCount(unit.type)) return [unit.id, trayId - base];
   }
   const ams3hBase = RACK_TRAY_BASE[AmsType.ZMULTI_A];
-  if (rackUnits.length === 0 && !units.some((unit) => unit.id === 7) && trayId >= ams3hBase && trayId < ams3hBase + RACK_SLOT_COUNT) {
+  if (rackUnits.length === 0 && !units.some((unit) => unit.id === 7) && trayId >= ams3hBase && trayId < ams3hBase + rackSlotCount(AmsType.ZMULTI_A)) {
     return [AMS3H_UNIT_ID, trayId - ams3hBase];
+  }
+  const ams3pBase = RACK_TRAY_BASE[AmsType.ZMULTI_B];
+  if (rackUnits.length === 0 && trayId >= ams3pBase && trayId < ams3pBase + rackSlotCount(AmsType.ZMULTI_B)) {
+    return [AMS3P_UNIT_ID, trayId - ams3pBase];
   }
   return [Math.floor(trayId / 4), trayId % 4];
 }

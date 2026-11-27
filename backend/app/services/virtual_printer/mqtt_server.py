@@ -86,6 +86,7 @@ MODEL_PRODUCT_NAMES = {
     "O1C2": "H2C",
     "O1S": "H2S",
     "N10": "H3C",
+    "N11": "P3C",
 }
 
 
@@ -254,13 +255,13 @@ class SimpleMQTTServer:
 
         except OSError as e:
             if e.errno == 98:  # Address already in use
-                logger.error("MQTT port %s is already in use", self.port)
+                logger.error("[%s] MQTT port %s is already in use", self.vp_name, self.port)
             else:
-                logger.error("MQTT server error: %s", e)
+                logger.error("[%s] MQTT server error: %s", self.vp_name, e)
         except asyncio.CancelledError:
             logger.debug("MQTT server task cancelled")
         except Exception as e:
-            logger.error("MQTT server error: %s", e)
+            logger.error("[%s] MQTT server error: %s", self.vp_name, e)
         finally:
             await self.stop()
 

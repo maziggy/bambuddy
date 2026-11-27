@@ -6,7 +6,7 @@ import { api, type InventorySpool, type PrinterStatus, type AMSTray } from '../.
 import { ConfirmModal } from '../ConfirmModal';
 import { AmsUnitCard, NozzleBadge } from './AmsUnitCard';
 import type { AmsThresholds } from './AmsUnitCard';
-import { getFillBarColor, isAms3hUnit, isAmsHtUnit, rackExternalLabel, spoolBuddyAmsName } from '../../utils/amsHelpers';
+import { getFillBarColor, inventoryFillOverAms, isAms3hUnit, isAms3pUnit, isAmsHtUnit, rackExternalLabel, spoolBuddyAmsName } from '../../utils/amsHelpers';
 import { EXTERNAL_AMS_ID, externalSlotIndex, externalTrayId, isRackAms, layoutAmsType, trayLayoutOf } from '../../utils/trayIds';
 import { getSwatchStyle, resolveSpoolColorName } from '../../utils/colors';
 import { spoolSwatchStyle } from './spoolPaint';
@@ -289,7 +289,7 @@ export function AssignToAmsModal({
   // from the immediate-apply path so we can adjust the success toast.
   const configureMutation = useMutation({
     mutationFn: async ({ amsId, trayId }: { amsId: number; trayId: number }) => {
-      if (!targetPrinterId) throw new Error('No printer selected');
+      if (!targetPrinterId) throw new Error(t('spoolbuddy.ams.noPrinter'));
 
       if (spoolmanMode) {
         return await api.assignSpoolmanSlot({
@@ -448,7 +448,8 @@ export function AssignToAmsModal({
       };
       const invFill = fillOverrides[`${unit.id}-0`] ?? null;
       const amsFill = tray.remain != null && tray.remain >= 0 ? tray.remain : null;
-      const resolvedInvFill = (invFill === 0 && amsFill !== null && amsFill > 0) ? null : invFill;
+      // An RFID spool the AMS still reads filament on wins over an inventory at 0% (#676, #3738)
+      const resolvedInvFill = inventoryFillOverAms(invFill, tray);
       items.push({
         key: `ht-${unit.id}`, label: spoolBuddyAmsName(unit.id),
         amsId: unit.id, trayId: 0, tray, isEmpty: isTrayEmpty(tray),
@@ -462,7 +463,7 @@ export function AssignToAmsModal({
       const extSlotTrayId = externalSlotIndex(extTrayId);
       const extInvFill = fillOverrides[`255-${extSlotTrayId}`] ?? null;
       const extAmsFill = extTray.remain != null && extTray.remain >= 0 ? extTray.remain : null;
-      const extResolvedInvFill = (extInvFill === 0 && extAmsFill !== null && extAmsFill > 0) ? null : extInvFill;
+      const extResolvedInvFill = inventoryFillOverAms(extInvFill, extTray);
       items.push({
         key: `ext-${extTrayId}`,
         label: rackExternals
@@ -632,8 +633,8 @@ export function AssignToAmsModal({
               {regularAms.length > 0 && (
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
                   {regularAms.map((unit) => (
-                    // The AMS 3H takes the full width for its nine slots.
-                    <div key={unit.id} className={isAms3hUnit(unit) ? 'xl:col-span-2' : 'contents'}>
+                    // A rack AMS takes the full width: the AMS 3H's nine slots, the AMS 3P's seven.
+                    <div key={unit.id} className={isAms3hUnit(unit) || isAms3pUnit(unit) ? 'xl:col-span-2' : 'contents'}>
                     <AmsUnitCard
                       unit={unit}
                       activeSlot={

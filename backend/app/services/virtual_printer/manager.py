@@ -31,7 +31,7 @@ from backend.app.services.virtual_printer.mqtt_bridge import MQTTBridge
 from backend.app.services.virtual_printer.mqtt_server import SimpleMQTTServer
 from backend.app.services.virtual_printer.ssdp_server import SSDPProxy, VirtualPrinterSSDPServer
 from backend.app.services.virtual_printer.tcp_proxy import SlicerProxyManager
-from backend.app.utils.printer_models import has_ams3h, is_nozzle_rack_model
+from backend.app.utils.printer_models import is_nozzle_rack_model, model_rack_ams
 from backend.app.utils.tray_ids import TrayLayout
 
 if TYPE_CHECKING:
@@ -70,6 +70,8 @@ VIRTUAL_PRINTER_MODELS = {
     "O1S": "H2S",  # H2S
     # H3 Series
     "N10": "H3C",  # H3C
+    # P3 Series
+    "N11": "P3C",  # P3C
 }
 
 # Serial number prefixes for each model (based on Bambu Lab serial number format)
@@ -111,6 +113,9 @@ MODEL_SERIAL_PREFIXES = {
     # H3C: first 6 characters of a real H3C serial (#3442); Bambu Studio knows
     # an H3C by "32X" (sn_prefix in resources/printers/N10.json).
     "N10": "32X99B",
+    # P3C: first 5 characters of a real P3C serial (#3737), then the revision
+    # letter as for the A2L; Bambu Studio knows a P3C by "331" (N11.json).
+    "N11": "33189A",
 }
 
 # Reverse mapping: display name → SSDP model code (for auto-inheriting from printer model)
@@ -233,7 +238,7 @@ def _extract_slicer_ams_mapping_json(
     as unmapped and the printer stopped with 0700-8012 (#3237).
     ``is_dual_nozzle`` is the target printer's, since that decides which
     global tray an external spool is. So is ``layout``: on a rack printer
-    (H3C) each hotend has its own external input, 247-255.
+    (H3C, P3C) each hotend has its own external input, 247-255.
 
     Returns ``None`` when the field is absent, unparsable, or the classic
     "all -1" unresolved-race sentinel (#2589) — never worth trusting over a
@@ -380,6 +385,9 @@ class VirtualPrinterInstance:
         self._ssdp: VirtualPrinterSSDPServer | None = None
         self._ssdp_proxy: SSDPProxy | None = None
         self._tasks: list[asyncio.Task] = []
+        # The services the slicer cannot reach the VP without, by name. When
+        # one of their tasks has ended, the manager restarts the VP (#3687).
+        self._core_tasks: dict[str, asyncio.Task] = {}
 
         # Pending timer that re-fires gcode_state=FINISH after a project_file
         # ack. See ``_schedule_finish_release`` for the #1658 rationale.
@@ -405,6 +413,25 @@ class VirtualPrinterInstance:
     @property
     def is_running(self) -> bool:
         return len(self._tasks) > 0 and all(not t.done() for t in self._tasks)
+
+    def ended_services(self) -> list[str]:
+        """The core services whose task has ended, by name.
+
+        They return when they cannot bind (an address not assigned yet, a port
+        taken), and the VP is then unreachable for the slicer. The camera
+        bridge is not one of them: the VP works without it, and restarting the
+        whole VP would not free a port another program holds.
+        """
+        return [name for name, task in self._core_tasks.items() if task.done()]
+
+    async def restart(self) -> None:
+        """Stop this VP's services and start them again with the same settings."""
+        if self.is_proxy:
+            await self.stop_proxy()
+            await self.start_proxy()
+        else:
+            await self.stop_server()
+            await self.start_server()
 
     def generate_certificates(self) -> tuple[Path, Path]:
         """Generate certificates for this instance."""
@@ -580,7 +607,8 @@ class VirtualPrinterInstance:
             from backend.app.services.printer_manager import printer_tray_layout
 
             return printer_tray_layout(self.target_printer_id, self._printer_manager)
-        return TrayLayout.ams3h() if has_ams3h(self.model) else TrayLayout()
+        rack_ams = model_rack_ams(self.model)
+        return TrayLayout.rack_printer(rack_ams) if rack_ams is not None else TrayLayout()
 
     async def on_print_command(self, filename: str, data: dict) -> None:
         """Handle print command from MQTT.
@@ -1548,8 +1576,11 @@ class VirtualPrinterInstance:
         advertise = self.remote_interface_ip or self.bind_ip or ""
         return cert_path, key_path, advertise
 
-    async def start_server(self) -> None:
-        """Start server-mode services (FTP, MQTT, SSDP, Bind) on this VP's bind_ip."""
+    async def start_server(self) -> bool:
+        """Start server-mode services (FTP, MQTT, SSDP, Bind) on this VP's bind_ip.
+
+        False when one of them could not bind; the manager tries again.
+        """
         logger.info("[VP %s] Starting server-mode services on %s", self.name, self.bind_ip)
 
         cert_path, key_path, advertise_addr = self._resolve_cert_and_advertise()
@@ -1581,12 +1612,11 @@ class VirtualPrinterInstance:
             passive_port_max=passive_port_max,
             authenticate_user=self.authenticate_user_code,
         )
-        self._tasks.append(
-            asyncio.create_task(
-                run_with_logging(self._ftp.start(), "FTP"),
-                name=f"vp_{self.id}_ftp",
-            )
+        self._core_tasks["FTP"] = asyncio.create_task(
+            run_with_logging(self._ftp.start(), "FTP"),
+            name=f"vp_{self.id}_ftp",
         )
+        self._tasks.append(self._core_tasks["FTP"])
 
         # MQTT server
         self._mqtt = SimpleMQTTServer(
@@ -1601,12 +1631,11 @@ class VirtualPrinterInstance:
             authenticate_user=self.authenticate_user_code,
             authorize_control=self.user_may_control_target,
         )
-        self._tasks.append(
-            asyncio.create_task(
-                run_with_logging(self._mqtt.start(), "MQTT"),
-                name=f"vp_{self.id}_mqtt",
-            )
+        self._core_tasks["MQTT"] = asyncio.create_task(
+            run_with_logging(self._mqtt.start(), "MQTT"),
+            name=f"vp_{self.id}_mqtt",
         )
+        self._tasks.append(self._core_tasks["MQTT"])
 
         # MQTT bridge — fans out the target printer's pushes to slicers connected
         # to this VP and forwards their commands back to the printer. Only meaningful
@@ -1673,12 +1702,11 @@ class VirtualPrinterInstance:
             cert_path=cert_path,
             key_path=key_path,
         )
-        self._tasks.append(
-            asyncio.create_task(
-                run_with_logging(self._bind.start(), "Bind"),
-                name=f"vp_{self.id}_bind",
-            )
+        self._core_tasks["Bind"] = asyncio.create_task(
+            run_with_logging(self._bind.start(), "Bind"),
+            name=f"vp_{self.id}_bind",
         )
+        self._tasks.append(self._core_tasks["Bind"])
 
         # SSDP server — advertise_addr is the remote_interface_ip (Tailscale
         # IP, when chosen from the bind_ip dropdown) or the bind_ip. SSDP
@@ -1692,40 +1720,59 @@ class VirtualPrinterInstance:
             advertise_ip=advertise_addr,
             bind_ip=bind_addr,
         )
-        self._tasks.append(
-            asyncio.create_task(
-                run_with_logging(self._ssdp.start(), "SSDP"),
-                name=f"vp_{self.id}_ssdp",
-            )
+        self._core_tasks["SSDP"] = asyncio.create_task(
+            run_with_logging(self._ssdp.start(), "SSDP"),
+            name=f"vp_{self.id}_ssdp",
         )
+        self._tasks.append(self._core_tasks["SSDP"])
 
         # Wait briefly for every child service to actually finish binding its
         # socket so ``is_running`` doesn't lie. Without this barrier a caller
         # racing the start (e.g. the diagnostic route) would see is_running=True
         # while ports were still in the gap between task creation and the
-        # ``asyncio.start_server`` returning. Bounded timeout — if a child
-        # hangs we log it and move on; the existing task tracking still
-        # catches the failure on the next iteration.
-        ready_targets = [
-            ("FTP", self._ftp.ready),
-            ("MQTT", self._mqtt.ready),
-            ("Bind", self._bind.ready),
-            ("SSDP", self._ssdp.ready),
-        ]
+        # ``asyncio.start_server`` returning. A service that cannot bind ends
+        # its task instead, which settles its wait at once. Bounded timeout —
+        # a child still binding after it is logged and left to finish.
+        ready_events = {
+            "FTP": self._ftp.ready,
+            "MQTT": self._mqtt.ready,
+            "Bind": self._bind.ready,
+            "SSDP": self._ssdp.ready,
+        }
+
+        async def bound_or_ended(name: str) -> None:
+            waiter = asyncio.ensure_future(ready_events[name].wait())
+            try:
+                await asyncio.wait({waiter, self._core_tasks[name]}, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                waiter.cancel()
+
         try:
-            await asyncio.wait_for(
-                asyncio.gather(*(e.wait() for _, e in ready_targets)),
-                timeout=5.0,
-            )
+            await asyncio.wait_for(asyncio.gather(*(bound_or_ended(name) for name in ready_events)), timeout=5.0)
         except TimeoutError:
-            not_ready = [name for name, e in ready_targets if not e.is_set()]
+            pass
+
+        failed = self.ended_services()
+        if failed:
+            # The manager restarts it (#3687): the bind address may simply not
+            # be assigned yet, e.g. a DHCP interface still waiting for its lease.
+            logger.warning(
+                "[VP %s] Not started on %s: %s could not start; trying again shortly",
+                self.name,
+                bind_addr,
+                ", ".join(failed),
+            )
+            return False
+        not_ready = [name for name, event in ready_events.items() if not event.is_set()]
+        if not_ready:
             logger.warning(
                 "[VP %s] Sub-service(s) didn't bind within 5s: %s — continuing anyway",
                 self.name,
-                ", ".join(not_ready) or "(none)",
+                ", ".join(not_ready),
             )
 
         logger.info("[VP %s] Server-mode services started on %s", self.name, bind_addr)
+        return True
 
     async def stop_server(self) -> None:
         """Stop server-mode services."""
@@ -1801,23 +1848,22 @@ class VirtualPrinterInstance:
                     target_printer_ip=self.target_printer_ip,
                     name=self.name,
                 )
-                self._tasks.append(
-                    asyncio.create_task(
-                        run_with_logging(self._ssdp_proxy.start(), "SSDP Proxy"),
-                        name=f"vp_{self.id}_ssdp_proxy",
-                    )
+                self._core_tasks["SSDP Proxy"] = asyncio.create_task(
+                    run_with_logging(self._ssdp_proxy.start(), "SSDP Proxy"),
+                    name=f"vp_{self.id}_ssdp_proxy",
                 )
+                self._tasks.append(self._core_tasks["SSDP Proxy"])
             else:
                 self._start_fallback_ssdp(proxy_serial, run_with_logging)
         else:
             self._start_fallback_ssdp(proxy_serial, run_with_logging)
 
-        self._tasks.append(
-            asyncio.create_task(
-                run_with_logging(self._proxy.start(), "Proxy"),
-                name=f"vp_{self.id}_proxy",
-            )
+        # The proxy's task ends once every one of its listeners has.
+        self._core_tasks["Proxy"] = asyncio.create_task(
+            run_with_logging(self._proxy.start(), "Proxy"),
+            name=f"vp_{self.id}_proxy",
         )
+        self._tasks.append(self._core_tasks["Proxy"])
 
     def _start_fallback_ssdp(self, proxy_serial: str, run_with_logging) -> None:
         """Start single-interface SSDP server as fallback for proxy mode."""
@@ -1828,12 +1874,11 @@ class VirtualPrinterInstance:
             advertise_ip=self.bind_ip or "",
             bind_ip=self.bind_ip or "",
         )
-        self._tasks.append(
-            asyncio.create_task(
-                run_with_logging(self._ssdp.start(), "SSDP"),
-                name=f"vp_{self.id}_ssdp",
-            )
+        self._core_tasks["SSDP"] = asyncio.create_task(
+            run_with_logging(self._ssdp.start(), "SSDP"),
+            name=f"vp_{self.id}_ssdp",
         )
+        self._tasks.append(self._core_tasks["SSDP"])
 
     async def stop_proxy(self) -> None:
         """Stop proxy mode services for this instance."""
@@ -1858,6 +1903,7 @@ class VirtualPrinterInstance:
             except TimeoutError:
                 pass
         self._tasks = []
+        self._core_tasks = {}
 
     def get_status(self) -> dict:
         """Get status for this instance."""
@@ -1876,6 +1922,12 @@ class VirtualPrinterManager:
     Every VP runs its own independent services on a dedicated bind IP.
     """
 
+    # How often the supervisor looks for a VP whose services have ended, and
+    # how long it waits between restarts of one that keeps failing (#3687).
+    SUPERVISE_INTERVAL = 10.0
+    RESTART_BACKOFF_MIN = 10.0
+    RESTART_BACKOFF_MAX = 300.0
+
     def __init__(self):
         self._session_factory: Callable | None = None
         self._printer_manager: PrinterManager | None = None
@@ -1887,6 +1939,10 @@ class VirtualPrinterManager:
         # user holds the lock with a long-running start they intended
         # to anyway.
         self._sync_lock = asyncio.Lock()
+        self._supervisor_task: asyncio.Task | None = None
+        # vp_id -> (delay before the next restart, loop time it is due at),
+        # for a VP that is down. Cleared when it runs again or is removed.
+        self._restart_backoff: dict[int, tuple[float, float]] = {}
 
         # Directories
         self._base_dir = app_settings.base_dir / "virtual_printer"
@@ -2032,7 +2088,8 @@ class VirtualPrinterManager:
                 )
                 await self.remove_instance(vp.id)
 
-        # Start instances for all enabled VPs (skip already running)
+        # Start instances for all enabled VPs. One already there is left
+        # alone: if its services have ended, the supervisor restarts it.
         for vp in enabled_vps:
             if vp.id in self._instances:
                 continue
@@ -2088,11 +2145,70 @@ class VirtualPrinterManager:
                     printer_manager=self._printer_manager,
                 )
                 self._instances[vp.id] = instance
-                await instance.start_server()
-                logger.info("Started server-mode VP: %s on %s", instance.name, vp.bind_ip)
+                if await instance.start_server():
+                    logger.info("Started server-mode VP: %s on %s", instance.name, vp.bind_ip)
+
+    def start_supervisor(self) -> None:
+        """Restart, from now on, any VP whose services end (#3687).
+
+        A VP whose bind address is not assigned yet when Bambuddy starts (a
+        DHCP interface still waiting for its lease) cannot bind, and its
+        services end at once. Nothing else would try again until the VP was
+        turned off and on.
+        """
+        if self._supervisor_task is None or self._supervisor_task.done():
+            self._supervisor_task = asyncio.create_task(self._supervise(), name="vp_supervisor")
+
+    async def _supervise(self) -> None:
+        loop = asyncio.get_running_loop()
+        while True:
+            await asyncio.sleep(self.SUPERVISE_INTERVAL)
+            try:
+                async with self._sync_lock:
+                    await self._restart_ended_locked(loop.time())
+            except Exception:
+                logger.exception("Virtual printer supervisor check failed")
+
+    async def _restart_ended_locked(self, now: float) -> None:
+        """Restart each VP whose core services have ended, with a backoff.
+
+        Caller holds ``self._sync_lock``, so a restart never races a sync.
+        Logs once when a VP goes down and once when it runs again; the
+        attempts in between log only what the services themselves report.
+        """
+        for vp_id in list(self._restart_backoff):
+            if vp_id not in self._instances:
+                del self._restart_backoff[vp_id]
+
+        for vp_id, instance in list(self._instances.items()):
+            ended = instance.ended_services()
+            backoff = self._restart_backoff.get(vp_id)
+            if not ended:
+                if backoff is not None:
+                    del self._restart_backoff[vp_id]
+                    logger.info("[VP %s] Running again", instance.name)
+                continue
+            if backoff is None:
+                logger.warning(
+                    "[VP %s] %s stopped, the VP is unreachable; restarting it until it starts",
+                    instance.name,
+                    ", ".join(ended),
+                )
+                delay = self.RESTART_BACKOFF_MIN
+            else:
+                delay, due = backoff
+                if now < due:
+                    continue
+                delay = min(delay * 2, self.RESTART_BACKOFF_MAX)
+            self._restart_backoff[vp_id] = (delay, now + delay)
+            try:
+                await instance.restart()
+            except Exception:
+                logger.exception("[VP %s] Restart failed", instance.name)
 
     async def remove_instance(self, vp_id: int) -> None:
         """Stop and remove a single VP instance."""
+        self._restart_backoff.pop(vp_id, None)
         instance = self._instances.pop(vp_id, None)
         if instance:
             if instance.is_proxy:
@@ -2104,6 +2220,14 @@ class VirtualPrinterManager:
     async def stop_all(self) -> None:
         """Shutdown all virtual printer services."""
         logger.info("Stopping all virtual printer services...")
+
+        if self._supervisor_task is not None:
+            self._supervisor_task.cancel()
+            try:
+                await self._supervisor_task
+            except asyncio.CancelledError:
+                pass
+            self._supervisor_task = None
 
         for vp_id in list(self._instances.keys()):
             await self.remove_instance(vp_id)

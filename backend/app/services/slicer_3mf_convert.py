@@ -254,7 +254,115 @@ def _with_own_colour(anchor_json: str, own_json: str) -> str:
     return json.dumps({**anchor, "filament_colour": own["filament_colour"]})
 
 
-def substitute_unused_plate_filaments(source_3mf_bytes: bytes, plate_id: int | None, items: list[str]) -> list[str]:
+_PLATE_MAP_KEYS = re.compile(r'(<metadata\s+key="(filament_map_mode|filament_maps)"\s+value=")[^"]*(")')
+_PLATE_MAP_MODE = re.compile(r'<metadata\s+key="filament_map_mode"\s+value="([^"]*)"')
+
+
+def with_plate_filament_map(source_3mf_bytes: bytes, filament_map: list[int]) -> bytes:
+    """*source_3mf_bytes* with every plate's own filament map set to *filament_map*.
+
+    A 3MF saved by Bambu Studio 2.x gives each plate its own
+    ``filament_map_mode`` and ``filament_maps`` in ``model_settings.config``.
+    The Bambu Studio CLI lets those win over ``--filament-map`` and
+    ``--filament-map-mode Manual``, so a map sent only as flags left such a
+    project on one nozzle. The plate values are set to ``Manual`` and the map
+    here, which Bambu Studio follows on its own and OrcaSlicer, which reads
+    the flags, does not mind. Plates without those keys, a 3MF without
+    ``model_settings.config`` and anything that is not a readable zip come
+    back unchanged.
+    """
+    try:
+        with zipfile.ZipFile(BytesIO(source_3mf_bytes), "r") as zf:
+            if _MODEL_SETTINGS_PATH not in zf.namelist():
+                return source_3mf_bytes
+            settings = zf.read(_MODEL_SETTINGS_PATH).decode("utf-8")
+            values = {"filament_map_mode": "Manual", "filament_maps": " ".join(str(e) for e in filament_map)}
+            updated = _PLATE_MAP_KEYS.sub(lambda m: f"{m.group(1)}{values[m.group(2)]}{m.group(3)}", settings)
+            if updated == settings:
+                return source_3mf_bytes
+            out_buf = BytesIO()
+            with zipfile.ZipFile(out_buf, "w", zipfile.ZIP_DEFLATED) as out_zf:
+                for item in zf.infolist():
+                    payload = (
+                        updated.encode("utf-8") if item.filename == _MODEL_SETTINGS_PATH else zf.read(item.filename)
+                    )
+                    out_zf.writestr(item, payload)
+    except (zipfile.BadZipFile, OSError, UnicodeDecodeError) as exc:
+        logger.warning("Could not write the filament map into the plate settings (%s); sending the 3MF as is", exc)
+        return source_3mf_bytes
+    return out_buf.getvalue()
+
+
+def has_manual_plate_filament_map(source_3mf_bytes: bytes) -> bool:
+    """True when a plate of the 3MF already carries a map the user set by hand.
+
+    Bambu Studio 2.x stores ``filament_map_mode="Manual"`` with the user's
+    ``filament_maps`` per plate. A planned map moves at most one filament, so
+    writing it over such a plate (``with_plate_filament_map``) would undo the
+    user's choice; the slice keeps theirs instead. Anything unreadable is not
+    a manual map.
+    """
+    try:
+        with zipfile.ZipFile(BytesIO(source_3mf_bytes), "r") as zf:
+            if _MODEL_SETTINGS_PATH not in zf.namelist():
+                return False
+            settings = zf.read(_MODEL_SETTINGS_PATH).decode("utf-8")
+    except (zipfile.BadZipFile, OSError, UnicodeDecodeError):
+        return False
+    return any(mode.strip().lower() == "manual" for mode in _PLATE_MAP_MODE.findall(settings))
+
+
+def plate_used_slots(
+    source_3mf_bytes: bytes, plate_id: int | None, support_slots: set[int] | None = None
+) -> set[int] | None:
+    """The 1-indexed filament slots ``plate_id`` prints with, or ``None`` when unknown.
+
+    ``support_slots`` are the support / support-interface slots of the process
+    settings the slice runs with. A caller that knows them passes them: a slot
+    picked in the slice dialog is in no file, and a support slot the dialog
+    switched off is still in the file (#3736). ``None`` reads them from the
+    3MF's own ``project_settings.config``.
+
+    ``None`` means "treat every slot as used": ``plate_id`` is not a real
+    plate (``None``, or ``0`` for slice-all, see below), the source is not a
+    readable 3MF, or it carries no plate-extruder metadata. The last case
+    usually means a single-filament unsliced project, and reading "no info"
+    as "every slot is used" matches the SliceModal's fail-open default.
+    Callers that rewrite or move slots must leave the user's picks alone on
+    ``None``.
+    """
+    if plate_id is None or plate_id < 1:
+        return None
+    # Local import keeps the bytes->ZipFile boundary in this module and
+    # avoids dragging zipfile into every caller.
+    from backend.app.utils.threemf_tools import (
+        extract_plate_extruder_set_from_3mf,
+        extract_support_filament_slots_from_3mf,
+    )
+
+    try:
+        with zipfile.ZipFile(BytesIO(source_3mf_bytes), "r") as zf:
+            # Geometry-derived slots (per-object metadata + paint_color)
+            # plus process-derived support-filament slots. Supports aren't
+            # attached to object geometry so the geometry pass alone
+            # misses PVA-in-support-slot setups (#1881).
+            used = extract_plate_extruder_set_from_3mf(zf, plate_id)
+            if support_slots is None:
+                support_slots = extract_support_filament_slots_from_3mf(zf)
+    except (zipfile.BadZipFile, OSError) as exc:
+        logger.warning("Plate-filament parse failed (%s); leaving filament list unchanged", exc)
+        return None
+    # No geometry means "every slot is used". The support slots must not turn
+    # that into "only the support slot is used", which would rewrite the
+    # model's own filament to the support material.
+    if not used:
+        return None
+    return used | support_slots
+
+
+def substitute_unused_plate_filaments(
+    source_3mf_bytes: bytes, plate_id: int | None, items: list[str], support_slots: set[int] | None = None
+) -> list[str]:
     """Replace any filament-list entry whose 1-indexed slot isn't used by
     ``plate_id`` with the entry from the plate's lowest *used* slot.
 
@@ -303,32 +411,10 @@ def substitute_unused_plate_filaments(source_3mf_bytes: bytes, plate_id: int | N
     that one slot, anchor on it, and rewrite every colour in the project
     to the support material (#2711).
     """
-    if plate_id is None or plate_id < 1 or len(items) < 2:
+    if len(items) < 2:
         return items
-    # Local import keeps the bytes->ZipFile boundary in this module and
-    # avoids dragging zipfile into every caller.
-    from backend.app.utils.threemf_tools import (
-        extract_plate_extruder_set_from_3mf,
-        extract_support_filament_slots_from_3mf,
-    )
-
-    try:
-        with zipfile.ZipFile(BytesIO(source_3mf_bytes), "r") as zf:
-            # Geometry-derived slots (per-object metadata + paint_color)
-            # plus process-derived support-filament slots. Supports aren't
-            # attached to object geometry so the geometry pass alone
-            # misses PVA-in-support-slot setups (#1881).
-            used = extract_plate_extruder_set_from_3mf(zf, plate_id)
-            used |= extract_support_filament_slots_from_3mf(zf)
-    except (zipfile.BadZipFile, OSError) as exc:
-        logger.warning("Plate-filament parse failed (%s); leaving filament list unchanged", exc)
-        return items
-    if not used:
-        # Empty result usually means the source 3MF has no per-object
-        # extruder metadata (single-filament unsliced project). Treating
-        # "no info" as "every slot is used" matches the SliceModal's
-        # fail-open default — better to send the user's picks through
-        # than to silently rewrite them.
+    used = plate_used_slots(source_3mf_bytes, plate_id, support_slots)
+    if used is None:
         return items
     out = list(items)
     # Anchor on the lowest used slot that actually exists in the list. A

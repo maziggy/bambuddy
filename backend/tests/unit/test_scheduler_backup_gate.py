@@ -34,7 +34,7 @@ async def _run_with_backup(scheduler, backup_state, prefer_lowest_setting):
     """Drive ``_compute_ams_mapping_for_printer`` past the gate point and
     return whatever ``prefer_lowest`` value gets handed to the matcher."""
     db = MagicMock()
-    item = SimpleNamespace(filament_overrides=None)
+    item = SimpleNamespace(filament_overrides=None, created_by_id=None)
     filament_reqs = [{"slot_id": 1, "type": "PLA", "color": "#000000", "tray_info_idx": ""}]
     loaded = [
         {

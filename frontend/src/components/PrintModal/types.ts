@@ -100,6 +100,8 @@ export interface PrintOptions {
   nozzle_offset_cali: CalibrationMode;
   // Ask for a post-print outcome verdict when this job completes (#1898)
   confirm_outcome: boolean;
+  // The file clears its own plate (plate changer or push-off): no plate confirmation after a successful print (#3576)
+  clears_plate: boolean;
   // Per-item preheat / heat-soak override (#1468). 'inherit' uses the global
   // Settings → Workflow toggle; 'on' / 'off' force the per-print decision.
   // chamber_target_override is non-null to bypass the per-filament-type
@@ -119,6 +121,7 @@ export const DEFAULT_PRINT_OPTIONS: PrintOptions = {
   timelapse: false,
   nozzle_offset_cali: 'auto',
   confirm_outcome: false,
+  clears_plate: false,
   preheat_override: 'inherit',
   preheat_chamber_target_override: null,
 };
@@ -296,6 +299,10 @@ export interface FilamentMappingProps {
   printerId: number;
   /** Pre-fetched filament requirements data */
   filamentReqs: FilamentReqsData | undefined;
+  /** Filaments the file needs that the user's group may not use, as the
+   *  dialog's submit check sees them (#3522). `filamentReqs` can carry a
+   *  colour override in their place, so the banner must not judge those. */
+  blockedFilaments: string[];
   manualMappings: Record<number, number>;
   onManualMappingChange: (mappings: Record<number, number>) => void;
   onEstimatedCostChange?: (estimatedCost: number | null) => void;

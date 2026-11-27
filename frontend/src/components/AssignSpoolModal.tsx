@@ -542,8 +542,11 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
                     spool and the toggle is the right escape hatch. */}
                 {spools && (
                   <p className="text-[10px] mt-2 opacity-60">
-                    {spools.length} fetched · {spools.filter(s => s.archived_at).length} archived ·{' '}
-                    {spools.filter(s => assignedSpoolIds.has(s.id)).length} assigned to other slots
+                    {t('inventory.pickerDiagCounts', {
+                      fetched: spools.length,
+                      archived: spools.filter(s => s.archived_at).length,
+                      assigned: spools.filter(s => assignedSpoolIds.has(s.id)).length,
+                    })}
                   </p>
                 )}
               </div>
@@ -552,7 +555,10 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
                 <p>{t('inventory.noSpoolsMatch')}</p>
                 {availableSpools && (
                   <p className="text-[10px] mt-2 opacity-60">
-                    {availableSpools.length} unassigned spools — {(availableSpools.length) - (filteredSpools?.length ?? 0)} filtered by tray match. Try "Show all spools".
+                    {t('inventory.pickerDiagFiltered', {
+                      unassigned: availableSpools.length,
+                      filtered: (availableSpools.length) - (filteredSpools?.length ?? 0),
+                    })}
                   </p>
                 )}
               </div>

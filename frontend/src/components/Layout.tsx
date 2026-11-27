@@ -8,6 +8,8 @@ import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
 import { InstallAppButton } from './InstallAppButton';
 import { SwitchbarPopover } from './SwitchbarPopover';
 import { CameraLauncher } from './CameraLauncher';
+import { QueueTodoLauncher } from './QueueTodoLauncher';
+import { useQueueTodoAutoRefresh } from '../hooks/useQueueTodo';
 import { useQuery, useQueries } from '@tanstack/react-query';
 import { api, supportApi, pendingUploadsApi, type Permission } from '../api/client';
 import { getIconByName } from './IconPicker';
@@ -24,6 +26,8 @@ import { parseUTCDate } from '../utils/date';
 import { Button } from './Button';
 import { BugReportBubble } from './BugReportBubble';
 import { AnnouncementsPanel } from './AnnouncementsPanel';
+import { AccountMenu } from './AccountMenu';
+import { LanguageMenu } from './LanguageMenu';
 import { AnnouncementBanner } from './AnnouncementBanner';
 import { useAnnouncements } from '../hooks/useAnnouncements';
 import { plateCheckFailureText } from '../utils/plateCheck';
@@ -35,6 +39,7 @@ import {
   saveSidebarOrder,
   SIDEBAR_LAYOUT_CHANGED_EVENT,
 } from '../utils/sidebarLayout';
+import { ScrollableModalOverlay } from './ScrollableModalOverlay';
 
 
 interface NavItem {
@@ -286,6 +291,7 @@ export function Layout() {
     refetchOnWindowFocus: true,
   });
   const pendingQueueCount = queueItems?.length ?? 0;
+  useQueueTodoAutoRefresh(); // #3615: the to-do list follows the queue poll
 
   // Fetch pending uploads count for archive badge (virtual printer review items)
   const { data: pendingUploadsData } = useQuery({
@@ -622,7 +628,7 @@ export function Layout() {
           <button
             onClick={() => setMobileDrawerOpen(true)}
             className="p-2 -ml-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors"
-            aria-label="Open menu"
+            aria-label={t('layout.openMenu')}
           >
             <Menu className="w-6 h-6 text-white" />
           </button>
@@ -632,7 +638,9 @@ export function Layout() {
             className="h-8 ml-3"
           />
           {/* A camera from any page (#2737), beside the bug report. */}
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center">
+            {/* What the queue waits on (#3615) */}
+            <QueueTodoLauncher />
             <CameraLauncher placement="down" open={cameraListOpen} onOpenChange={setCameraListOpen} />
           </div>
           {/* Bug report — the compact-layout home of the floating bubble. */}
@@ -831,9 +839,10 @@ export function Layout() {
         <div className="flex-shrink-0 p-2 border-t border-bambu-dark-tertiary">
           {isSidebarCompact || sidebarExpanded ? (
             <div className="flex flex-col gap-2">
-              {/* Top row: icons. 32px each with no gap so seven fit the 239px
-                  of an expanded sidebar -- announcements, System, GitHub,
-                  shortcuts, theme, password, logout -- without wrapping. */}
+              {/* Top row: icons, 32px each with no gap. Up to eight (to do,
+                  announcements, System, GitHub, shortcuts, theme, account,
+                  logout) can exceed the 239px of an expanded sidebar; the row
+                  wraps onto a second line then. */}
               <div className="flex items-center justify-center flex-wrap [&>a]:p-1.5 [&>button]:p-1.5 [&>span]:p-1.5 [&>div>button]:p-1.5">
                 {hasSwitchbarPlugs && (
                   <div className="relative">
@@ -851,6 +860,7 @@ export function Layout() {
                     )}
                   </div>
                 )}
+                {!isSidebarCompact && <QueueTodoLauncher sidebarExpanded />}
                 {announcementsVisible && (
                   <button
                     onClick={() => openAnnouncements()}
@@ -885,7 +895,7 @@ export function Layout() {
                 ) : (
                   <span
                     className="p-2 rounded-lg text-bambu-gray/50 cursor-not-allowed"
-                    title="You do not have permission to view system information"
+                    title={t('layout.noPermissionSystemInfo')}
                   >
                     <Info className="w-5 h-5" />
                   </span>
@@ -914,15 +924,11 @@ export function Layout() {
                 >
                   <ThemeIcon className="w-5 h-5" />
                 </button>
+                {/* Auth off: no account menu, so the language gets its own button (#3623). */}
+                {!authEnabled && <LanguageMenu />}
                 {authEnabled && user && (
                   <>
-                    <button
-                      onClick={() => setShowChangePasswordModal(true)}
-                      className="p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"
-                      title={t('changePassword.title')}
-                    >
-                      <Key className="w-5 h-5" />
-                    </button>
+                    <AccountMenu username={user.username} onChangePassword={() => setShowChangePasswordModal(true)} />
                     <button
                       onClick={logout}
                       className="p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"
@@ -975,6 +981,7 @@ export function Layout() {
                   )}
                 </div>
               )}
+              <QueueTodoLauncher sidebarExpanded={sidebarExpanded} />
               {announcementsVisible && (
                 <button
                   onClick={() => openAnnouncements()}
@@ -1007,7 +1014,7 @@ export function Layout() {
               ) : (
                 <span
                   className="p-2 rounded-lg text-bambu-gray/50 cursor-not-allowed"
-                  title="You do not have permission to view system information"
+                  title={t('layout.noPermissionSystemInfo')}
                 >
                   <Info className="w-5 h-5" />
                 </span>
@@ -1036,15 +1043,11 @@ export function Layout() {
               >
                 <ThemeIcon className="w-5 h-5" />
               </button>
+              {/* Auth off: no account menu, so the language gets its own button (#3623). */}
+              {!authEnabled && <LanguageMenu />}
               {authEnabled && user && (
                 <>
-                  <button
-                    onClick={() => setShowChangePasswordModal(true)}
-                    className="p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"
-                    title={t('changePassword.title')}
-                  >
-                    <Key className="w-5 h-5" />
-                  </button>
+                  <AccountMenu username={user.username} onChangePassword={() => setShowChangePasswordModal(true)} />
                   <button
                     onClick={logout}
                     className="p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"
@@ -1159,7 +1162,11 @@ export function Layout() {
       <UnknownSpoolModal
         prompt={unknownSpool.prompt}
         isPending={unknownSpool.isPending}
+        canLink={unknownSpool.canLink}
+        canAdd={unknownSpool.canAdd}
+        adding={unknownSpool.adding}
         onConfirm={unknownSpool.confirm}
+        onLink={unknownSpool.link}
         onCancel={unknownSpool.cancel}
       />
 
@@ -1226,8 +1233,8 @@ export function Layout() {
 
       {/* Change Password Modal */}
       {showChangePasswordModal && (
-        <div
-          className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+        <ScrollableModalOverlay
+          className="bg-black/70"
           onClick={() => {
             setShowChangePasswordModal(false);
             setChangePasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
@@ -1366,7 +1373,7 @@ export function Layout() {
               </div>
             </CardContent>
           </Card>
-        </div>
+        </ScrollableModalOverlay>
       )}
       {/* The panel always mounts here, at the Layout root. It must not move
           into the header alongside its compact-layout trigger: the header is

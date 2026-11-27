@@ -22,7 +22,7 @@ from backend.app.models.local_preset import LocalPreset
 from backend.app.models.location import Location
 from backend.app.models.location_ha_sensor import LocationHASensor
 from backend.app.models.long_lived_token import LongLivedToken
-from backend.app.models.maintenance import MaintenanceHistory, MaintenanceType, PrinterMaintenance
+from backend.app.models.maintenance import MaintenanceHistory, MaintenanceLogEntry, MaintenanceType, PrinterMaintenance
 from backend.app.models.notification import NotificationLog
 from backend.app.models.notification_live_activity import NotificationLiveActivity
 from backend.app.models.notification_lock_screen_widget import NotificationLockScreenWidget
@@ -51,6 +51,7 @@ from backend.app.models.spool_k_profile import SpoolKProfile
 from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.models.spoolbuddy_device import SpoolBuddyDevice
 from backend.app.models.supplier import SpoolmanSpoolSupplier, SpoolSupplier, Supplier
+from backend.app.models.threedfp_spool_link import ThreeDfpSpoolLink
 from backend.app.models.user import User
 from backend.app.models.user_email_pref import UserEmailPreference
 from backend.app.models.user_otp_code import UserOTPCode
@@ -69,6 +70,7 @@ __all__ = [
     "MaintenanceType",
     "PrinterMaintenance",
     "MaintenanceHistory",
+    "MaintenanceLogEntry",
     "KProfileNote",
     "NotificationTemplate",
     "NotificationLog",
@@ -117,6 +119,7 @@ __all__ = [
     "Supplier",
     "SpoolSupplier",
     "SpoolmanSpoolSupplier",
+    "ThreeDfpSpoolLink",
     "ColorCatalogEntry",
     "SpoolBuddyDevice",
     "SponsorToastState",

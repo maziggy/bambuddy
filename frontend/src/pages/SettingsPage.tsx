@@ -1,5 +1,5 @@
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Pencil, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog, QrCode, Heart, Briefcase, Workflow, UploadCloud, MonitorPlay, Info, Lightbulb } from 'lucide-react';
+import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Pencil, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Receipt, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog, QrCode, Heart, Briefcase, Workflow, UploadCloud, MonitorPlay, Info, Lightbulb } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -43,8 +43,10 @@ import { CreateUserAdvancedAuthModal } from '../components/CreateUserAdvancedAut
 import { LdapUserPicker } from '../components/LdapUserPicker';
 import { SpoolmanSettings } from '../components/SpoolmanSettings';
 import { SpoolCatalogSettings } from '../components/SpoolCatalogSettings';
+import { ThreeDfpSettings } from '../components/ThreeDfpSettings';
 import { ColorCatalogSettings } from '../components/ColorCatalogSettings';
 import { ProfileDefaultsSettings } from '../components/ProfileDefaultsSettings';
+import { LabelPrinterSettings } from '../components/LabelPrinterSettings';
 import { ExternalLinksSettings } from '../components/ExternalLinksSettings';
 import { VirtualPrinterList } from '../components/VirtualPrinterList';
 import { SpoolBuddySettings } from '../components/SpoolBuddySettings';
@@ -62,7 +64,7 @@ import { SecurityStatusCard } from '../components/SecurityStatusCard';
 import { APIBrowser } from '../components/APIBrowser';
 import { virtualPrinterApi, spoolbuddyApi } from '../api/client';
 import { defaultNavItems, getDefaultView, setDefaultView } from '../components/Layout';
-import { availableLanguages } from '../i18n';
+import { availableLanguages } from '../i18n/languages';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, type ThemeStyle, type DarkBackground, type LightBackground, type ThemeAccent } from '../contexts/ThemeContext';
 import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } from 'react';
@@ -73,6 +75,7 @@ import { availableEngines, hasEngineChoice, resolveEngine, type SliceEngineId } 
 import { NumberInput } from '../components/NumberInput';
 import { PrinterSearchPicker } from '../components/PrinterSearchPicker';
 import { UsbCameraDevicePicker } from '../components/UsbCameraDevicePicker';
+import { ScrollableModalOverlay } from '../components/ScrollableModalOverlay';
 
 const validTabs = ['general', 'plugs', 'sensors', 'notifications', 'queue', 'filament', 'camera', 'network', 'wled', 'apikeys', 'virtual-printer', 'spoolbuddy', 'failure-detection', 'users', 'backup'] as const;
 type TabType = typeof validTabs[number];
@@ -99,14 +102,17 @@ registerSettingsSearch({ labelKey: 'settings.tempFanPresetsTitle', labelFallback
 registerSettingsSearch({ labelKey: 'settings.staggeredStart', labelFallback: 'Staggered Start', tab: 'queue', keywords: 'staggered batch delay start queue group', anchor: 'card-staggered' });
 registerSettingsSearch({ labelKey: 'settings.plateClear', labelFallback: 'Plate-Clear Confirmation', tab: 'queue', keywords: 'plate clear confirm auto queue', anchor: 'card-plate' });
 registerSettingsSearch({ labelKey: 'settings.dispatchOrderTitle', labelFallback: 'Printer Order for Any-Model Jobs', tab: 'queue', keywords: 'printer order any model dispatch pick wear hours least recently used idle priority farm balance', anchor: 'card-dispatch-order' });
+registerSettingsSearch({ labelKey: 'settings.inventoryColoursTitle', labelFallback: 'Inventory Colours in the Filament Override', tab: 'queue', keywords: 'inventory colours colors filament override stock spool print dialog out of stock', anchor: 'card-inventory-colours' }); // (#3590)
 registerSettingsSearch({ labelKey: 'settings.concurrentUploadsTitle', labelFallback: 'Concurrent Uploads', tab: 'queue', keywords: 'concurrent parallel upload transfer ftp queue slow farm simultaneous', anchor: 'card-concurrent-uploads' });
 registerSettingsSearch({ labelKey: 'settings.gcodeInjection', labelFallback: 'G-code Injection', tab: 'queue', keywords: 'gcode injection start end autoprint farmloop swapmod autoclear printflow', anchor: 'card-gcode' });
 registerSettingsSearch({ labelKey: 'settings.slicerCard', labelFallback: 'Slicer', tab: 'queue', keywords: 'slicer orcaslicer bambustudio orca bambu api sidecar url docker preferred', anchor: 'card-slicer' });
+registerSettingsSearch({ labelKey: 'settings.loadedFilamentFirstTitle', labelFallback: 'Loaded Filament First', tab: 'queue', keywords: 'loaded filament first skip wait priority spool reserve starvation queue', anchor: 'card-loaded-filament' });
 registerSettingsSearch({ labelKey: 'settings.queueDrying', tab: 'queue', keywords: 'drying presets temperature time humidity ams', anchor: 'card-drying' });
 registerSettingsSearch({ labelKey: 'settings.filamentChecks', tab: 'filament', keywords: 'filament check warning runout remaining', anchor: 'card-filamentchecks' });
 registerSettingsSearch({ labelKey: 'settings.printModal', tab: 'filament', keywords: 'print modal custom mapping', anchor: 'card-printmodal' });
 registerSettingsSearch({ labelKey: 'settings.amsDisplayThresholds', tab: 'filament', keywords: 'ams humidity temperature threshold history retention', anchor: 'card-amsthresholds' });
 registerSettingsSearch({ labelKey: 'inventory.profileDefaults.title', tab: 'filament', keywords: 'profile default k-profile k factor pressure advance slicer preset new spool', anchor: 'card-profiledefaults' });
+registerSettingsSearch({ labelKey: 'settings.labelPrinter.title', labelFallback: 'Label printer', tab: 'filament', keywords: 'label printer brother ql direct print spool labels tape network', anchor: 'card-label-printer' });
 registerSettingsSearch({ labelKey: 'settings.externalUrl', tab: 'network', keywords: 'external url reverse proxy public notification link', anchor: 'card-externalurl' });
 registerSettingsSearch({ labelKey: 'settings.ftpRetry', tab: 'network', keywords: 'ftp retry upload retries backoff', anchor: 'card-ftpretry' });
 registerSettingsSearch({ labelKey: 'settings.homeAssistant', tab: 'network', keywords: 'home assistant ha hass mqtt integration', anchor: 'card-ha' });
@@ -119,6 +125,7 @@ registerSettingsSearch({ labelKey: 'connectedApps.title', tab: 'apikeys', keywor
 registerSettingsSearch({ labelKey: 'cameraTokens.title', tab: 'camera', keywords: 'camera token long-lived home assistant frigate kiosk stream cam wall', anchor: 'card-camera-tokens' });
 registerSettingsSearch({ labelKey: 'streamOverlay.builder.title', labelFallback: 'Streaming Overlay', tab: 'camera', keywords: 'streaming overlay obs browser source stream url token', anchor: 'card-stream-overlay' });
 registerSettingsSearch({ labelKey: 'settings.tabs.virtualPrinter', tab: 'virtual-printer', keywords: 'virtual printer proxy archive slicer bambustudio orcaslicer ip bind', anchor: 'card-vp' });
+registerSettingsSearch({ labelKey: 'connectSlicer.title', tab: 'virtual-printer', keywords: 'connect slicer instructions access code users vpn markdown', anchor: 'card-connect-slicer' });
 registerSettingsSearch({ labelKey: 'settings.tabs.spoolbuddy', tab: 'spoolbuddy', keywords: 'spoolbuddy device scale nfc rfid kiosk unregister', anchor: 'card-spoolbuddy' });
 registerSettingsSearch({ labelKey: 'settings.currentUser', tab: 'users', subTab: 'users', keywords: 'current user profile password change', anchor: 'card-currentuser' });
 registerSettingsSearch({ labelKey: 'settings.users', tab: 'users', subTab: 'users', keywords: 'users accounts list', anchor: 'card-users' });
@@ -132,6 +139,7 @@ registerSettingsSearch({ labelKey: 'settings.tabs.backup', tab: 'backup', keywor
 registerSettingsSearch({ labelKey: 'externalLinks.sidebarLayout', labelFallback: 'Sidebar', tab: 'general', keywords: 'sidebar layout links pages hide show external custom navigation url add', anchor: 'card-sidebar-links' });
 // Filament tab — integrations
 registerSettingsSearch({ labelKey: 'settings.filamentTracking', tab: 'filament', keywords: 'spoolman filament tracking inventory sync remote integration', anchor: 'card-spoolman' });
+registerSettingsSearch({ labelKey: 'settings.threedfp.title', tab: 'filament', keywords: '3d filament profiles 3dfp barcode lookup price reorder connect account', anchor: 'card-threedfp' });
 registerSettingsSearch({ labelKey: 'settings.catalog.spoolCatalog', labelFallback: 'Spool Catalog', tab: 'filament', keywords: 'spool catalog entries brand material reset import export', anchor: 'card-spool-catalog' });
 registerSettingsSearch({ labelKey: 'settings.colorCatalog.title', labelFallback: 'Color Catalog', tab: 'filament', keywords: 'color catalog hex swatch palette sync reset', anchor: 'card-color-catalog' });
 // Failure detection sub-cards
@@ -287,6 +295,9 @@ export function SettingsPage() {
   // an intermediate value ("", "2" on the way to "25") is not rewritten by the
   // clamp mid-keystroke. Empty/non-numeric on blur reverts to the saved value.
   const [sustainedDraft, setSustainedDraft] = useState<string | null>(null);
+  // Raw text of the max-wait field while it holds something the backend would
+  // refuse (0, negative, > 8760, decimals); null when it mirrors saved settings.
+  const [maxWaitDraft, setMaxWaitDraft] = useState<string | null>(null);
   const [showPlugModal, setShowPlugModal] = useState(false);
   const [editingPlug, setEditingPlug] = useState<SmartPlug | null>(null);
   const [showHASensorModal, setShowHASensorModal] = useState(false);
@@ -501,7 +512,7 @@ export function SettingsPage() {
       const data = await api.getStorageUsage({ refresh: true });
       queryClient.setQueryData(['storage-usage'], data);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to refresh storage usage';
+      const message = error instanceof Error ? error.message : t('settings.toast.storageRefreshFailed');
       showToast(message, 'error');
     } finally {
       setStorageUsageRefreshing(false);
@@ -589,7 +600,7 @@ export function SettingsPage() {
       showToast(t('settings.toast.apiKeyCreated'));
     },
     onError: (error: Error) => {
-      showToast(`Failed to create API key: ${error.message}`, 'error');
+      showToast(t('settings.toast.apiKeyCreateFailed', { message: error.message }), 'error');
     },
   });
 
@@ -602,7 +613,7 @@ export function SettingsPage() {
       showToast(t('settings.toast.apiKeyDeleted'));
     },
     onError: (error: Error) => {
-      showToast(`Failed to delete API key: ${error.message}`, 'error');
+      showToast(t('settings.toast.apiKeyDeleteFailed', { message: error.message }), 'error');
     },
   });
 
@@ -832,6 +843,24 @@ export function SettingsPage() {
     refetchInterval: activeTab === 'network' ? 5000 : false, // Poll every 5s when on Network tab
   });
 
+  // Discovery prefixes the backend refuses (#3724), to say why next to the field.
+  const trimMqttPrefix = (value: string | undefined, fallback: string) =>
+    (value ?? '').trim().replace(/^\/+|\/+$/g, '') || fallback;
+  const mqttDiscoveryPrefix = trimMqttPrefix(localSettings?.mqtt_ha_discovery_prefix, 'homeassistant');
+  const mqttPrefixConflict = trimMqttPrefix(localSettings?.mqtt_topic_prefix, 'bambuddy') === mqttDiscoveryPrefix;
+  const mqttPrefixWildcard = /[+#]/.test(mqttDiscoveryPrefix);
+  // What the backend would refuse to save: a wildcard always, equal prefixes only with discovery on.
+  const mqttDiscoveryInvalid =
+    mqttPrefixWildcard ||
+    (localSettings?.mqtt_enabled === true && localSettings?.mqtt_ha_discovery_enabled === true && mqttPrefixConflict);
+  const pandaBreathOn = activeTab === 'network' && settings?.mqtt_enabled === true && settings?.panda_breath_enabled === true;
+  const { data: pandaBreathStatus } = useQuery({
+    queryKey: ['panda-breath-status'],
+    queryFn: api.getPandaBreathStatus,
+    enabled: pandaBreathOn,
+    refetchInterval: pandaBreathOn ? 5000 : false,
+  });
+
   // GitHub backup status for Backup tab indicator
   const { data: githubBackupStatus } = useQuery<GitHubBackupStatus>({
     queryKey: ['github-backup-status'],
@@ -970,7 +999,7 @@ export function SettingsPage() {
 
     // Email is required when advanced auth is enabled
     if (advancedAuthEnabled && !userFormData.email) {
-      showToast('Email is required when advanced authentication is enabled', 'error');
+      showToast(t('settings.toast.emailRequiredAdvancedAuth'), 'error');
       return;
     }
 
@@ -1094,13 +1123,13 @@ export function SettingsPage() {
       setTestAllResult(data);
       queryClient.invalidateQueries({ queryKey: ['notification-providers'] });
       if (data.failed === 0) {
-        showToast(`All ${data.tested} providers tested successfully!`, 'success');
+        showToast(t('settings.toast.allProvidersTested', { tested: data.tested }), 'success');
       } else {
-        showToast(`${data.success}/${data.tested} providers succeeded`, data.failed > 0 ? 'error' : 'success');
+        showToast(t('settings.toast.providersSucceeded', { success: data.success, tested: data.tested }), data.failed > 0 ? 'error' : 'success');
       }
     },
     onError: (error: Error) => {
-      showToast(`Failed to test providers: ${error.message}`, 'error');
+      showToast(t('settings.toast.testProvidersFailed', { message: error.message }), 'error');
     },
   });
 
@@ -1128,13 +1157,13 @@ export function SettingsPage() {
       queryClient.invalidateQueries({ queryKey: ['smart-plugs'] });
       queryClient.invalidateQueries({ queryKey: ['smart-plugs-energy'] });
       if (data.failed === 0) {
-        showToast(`All ${data.success} plugs turned ${action}`, 'success');
+        showToast(t(action === 'on' ? 'settings.toast.allPlugsTurnedOn' : 'settings.toast.allPlugsTurnedOff', { success: data.success }), 'success');
       } else {
-        showToast(`${data.success} plugs turned ${action}, ${data.failed} failed`, 'error');
+        showToast(t(action === 'on' ? 'settings.toast.plugsTurnedOnPartial' : 'settings.toast.plugsTurnedOffPartial', { success: data.success, failed: data.failed }), 'error');
       }
     },
     onError: (error: Error) => {
-      showToast(`Failed: ${error.message}`, 'error');
+      showToast(t('settings.toast.failedWithMessage', { message: error.message }), 'error');
     },
   });
 
@@ -1227,7 +1256,7 @@ export function SettingsPage() {
       showToast(t('settings.toast.settingsSaved'), 'success');
     },
     onError: (error: Error) => {
-      showToast(`Failed to save: ${error.message}`, 'error');
+      showToast(t('settings.toast.saveFailedWithMessage', { message: error.message }), 'error');
       // No localSettings rollback here — the existing comment above (see
       // onSuccess) already flags that overwriting localSettings would discard
       // in-progress user input (e.g. typing a hostname). The no-permission
@@ -1250,7 +1279,7 @@ export function SettingsPage() {
       showToast(t('settings.toast.cameraSettingsSaved'), 'success');
     },
     onError: (error: Error) => {
-      showToast(`Failed to update printer: ${error.message}`, 'error');
+      showToast(t('settings.toast.updatePrinterFailed', { message: error.message }), 'error');
     },
   });
 
@@ -1329,6 +1358,9 @@ export function SettingsPage() {
       baseline.mqtt_password !== localSettings.mqtt_password ||
       baseline.mqtt_topic_prefix !== localSettings.mqtt_topic_prefix ||
       baseline.mqtt_use_tls !== localSettings.mqtt_use_tls ||
+      baseline.mqtt_ha_discovery_enabled !== localSettings.mqtt_ha_discovery_enabled ||
+      baseline.mqtt_ha_discovery_prefix !== localSettings.mqtt_ha_discovery_prefix ||
+      baseline.panda_breath_enabled !== localSettings.panda_breath_enabled ||
       baseline.external_url !== localSettings.external_url ||
       baseline.ha_enabled !== localSettings.ha_enabled ||
       baseline.ha_url !== localSettings.ha_url ||
@@ -1346,6 +1378,7 @@ export function SettingsPage() {
       baseline.prometheus_enabled !== localSettings.prometheus_enabled ||
       baseline.prometheus_token !== localSettings.prometheus_token ||
       (baseline.user_notifications_enabled ?? true) !== (localSettings.user_notifications_enabled ?? true) ||
+      (baseline.notification_submitter_email_enabled ?? false) !== (localSettings.notification_submitter_email_enabled ?? false) ||
       (baseline.default_bed_levelling ?? 'auto') !== (localSettings.default_bed_levelling ?? 'auto') ||
       (baseline.default_flow_cali ?? 'auto') !== (localSettings.default_flow_cali ?? 'auto') ||
       (baseline.default_vibration_cali ?? true) !== (localSettings.default_vibration_cali ?? true) ||
@@ -1359,7 +1392,10 @@ export function SettingsPage() {
       (baseline.stagger_interval_minutes ?? 5) !== (localSettings.stagger_interval_minutes ?? 5) ||
       (baseline.require_plate_clear ?? false) !== (localSettings.require_plate_clear ?? false) ||
       (baseline.queue_max_concurrent_uploads ?? 4) !== (localSettings.queue_max_concurrent_uploads ?? 4) ||
+      (baseline.queue_loaded_filament_first ?? false) !== (localSettings.queue_loaded_filament_first ?? false) ||
+      (baseline.queue_max_wait_hours ?? null) !== (localSettings.queue_max_wait_hours ?? null) ||
       (baseline.model_dispatch_order ?? 'fewest_hours') !== (localSettings.model_dispatch_order ?? 'fewest_hours') ||
+      (baseline.filament_override_inventory ?? false) !== (localSettings.filament_override_inventory ?? false) ||
       (baseline.preheat_enabled ?? false) !== (localSettings.preheat_enabled ?? false) ||
       (baseline.preheat_filament_targets ?? '') !== (localSettings.preheat_filament_targets ?? '') ||
       (baseline.preheat_max_wait_seconds ?? 900) !== (localSettings.preheat_max_wait_seconds ?? 900) ||
@@ -1374,10 +1410,22 @@ export function SettingsPage() {
       (baseline.session_max_hours ?? 24) !== (localSettings.session_max_hours ?? 24) ||
       (baseline.billing_enabled ?? false) !== (localSettings.billing_enabled ?? false) ||
       (baseline.printer_kill_switch_enabled ?? false) !== (localSettings.printer_kill_switch_enabled ?? false) ||
+      (baseline.billing_completed_energy ?? false) !== (localSettings.billing_completed_energy ?? false) ||
+      (baseline.billing_completed_wear ?? false) !== (localSettings.billing_completed_wear ?? false) ||
+      (baseline.billing_failed_filament ?? 'proportional') !== (localSettings.billing_failed_filament ?? 'proportional') ||
+      (baseline.billing_failed_energy ?? false) !== (localSettings.billing_failed_energy ?? false) ||
+      (baseline.billing_failed_wear ?? false) !== (localSettings.billing_failed_wear ?? false) ||
       (baseline.finance_budget_reset_day ?? 1) !== (localSettings.finance_budget_reset_day ?? 1) ||
       (baseline.finance_budget_reset_timezone ?? 'UTC') !== (localSettings.finance_budget_reset_timezone ?? 'UTC');
 
     if (!hasChanges) {
+      return;
+    }
+
+    // The backend refuses these (#3724), and the page sends every field: one
+    // save refused would take the user's other edits down with it. The hint
+    // under the discovery prefix says what to fix; saving resumes once it is.
+    if (mqttDiscoveryInvalid) {
       return;
     }
 
@@ -1459,6 +1507,9 @@ export function SettingsPage() {
         mqtt_password: localSettings.mqtt_password,
         mqtt_topic_prefix: localSettings.mqtt_topic_prefix,
         mqtt_use_tls: localSettings.mqtt_use_tls,
+        mqtt_ha_discovery_enabled: localSettings.mqtt_ha_discovery_enabled,
+        mqtt_ha_discovery_prefix: localSettings.mqtt_ha_discovery_prefix,
+        panda_breath_enabled: localSettings.panda_breath_enabled,
         external_url: localSettings.external_url,
         ha_enabled: localSettings.ha_enabled,
         ha_url: localSettings.ha_url,
@@ -1476,6 +1527,7 @@ export function SettingsPage() {
         prometheus_enabled: localSettings.prometheus_enabled,
         prometheus_token: localSettings.prometheus_token,
         user_notifications_enabled: localSettings.user_notifications_enabled,
+        notification_submitter_email_enabled: localSettings.notification_submitter_email_enabled,
         default_bed_levelling: localSettings.default_bed_levelling,
         default_flow_cali: localSettings.default_flow_cali,
         default_vibration_cali: localSettings.default_vibration_cali,
@@ -1489,7 +1541,11 @@ export function SettingsPage() {
         stagger_interval_minutes: localSettings.stagger_interval_minutes,
         require_plate_clear: localSettings.require_plate_clear,
         queue_max_concurrent_uploads: localSettings.queue_max_concurrent_uploads,
+        queue_loaded_filament_first: localSettings.queue_loaded_filament_first ?? false,
+        // null = no limit; never default to 48 here or clearing the field would not stick (#3587)
+        queue_max_wait_hours: localSettings.queue_max_wait_hours ?? null,
         model_dispatch_order: localSettings.model_dispatch_order,
+        filament_override_inventory: localSettings.filament_override_inventory,
         preheat_enabled: localSettings.preheat_enabled,
         preheat_filament_targets: localSettings.preheat_filament_targets,
         preheat_max_wait_seconds: localSettings.preheat_max_wait_seconds,
@@ -1504,6 +1560,11 @@ export function SettingsPage() {
         session_max_hours: localSettings.session_max_hours,
         billing_enabled: localSettings.billing_enabled,
         printer_kill_switch_enabled: localSettings.printer_kill_switch_enabled,
+        billing_completed_energy: localSettings.billing_completed_energy,
+        billing_completed_wear: localSettings.billing_completed_wear,
+        billing_failed_filament: localSettings.billing_failed_filament,
+        billing_failed_energy: localSettings.billing_failed_energy,
+        billing_failed_wear: localSettings.billing_failed_wear,
         finance_budget_reset_day: localSettings.finance_budget_reset_day,
         finance_budget_reset_timezone: localSettings.finance_budget_reset_timezone,
       };
@@ -1516,7 +1577,7 @@ export function SettingsPage() {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [localSettings, settings, updateMutation, authEnabled, hasPermission, showToast, t]);
+  }, [localSettings, settings, updateMutation, authEnabled, hasPermission, showToast, t, mqttDiscoveryInvalid]);
 
   const secretsPendingReentry =
     settings && localSettings ? secretsToReenter(settings, localSettings, settingsSecretDestinations(settings)) : [];
@@ -1643,7 +1704,12 @@ export function SettingsPage() {
 
   // Cross-tab search is powered by the module-level registry in lib/settingsSearch.
   // Resolve i18n labels here so language changes take effect without re-registering.
-  const searchIndex = getSettingsSearchEntries().filter(e => e.tab !== 'wled' || canManageWled).map(e => ({
+  // The inventory-colours card is not rendered in Spoolman mode (#3590), so its
+  // entry must not lead there either.
+  const searchIndex = getSettingsSearchEntries()
+    .filter(e => e.tab !== 'wled' || canManageWled)
+    .filter(e => e.anchor !== 'card-inventory-colours' || !localSettings?.spoolman_enabled)
+    .map(e => ({
     ...e,
     label: t(e.labelKey, e.labelFallback ?? e.labelKey),
   }));
@@ -1749,7 +1815,7 @@ export function SettingsPage() {
             <button
               onClick={() => setSettingsSearch('')}
               className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-bambu-gray hover:text-white"
-              aria-label="Clear"
+              aria-label={t('common.clear')}
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -1856,7 +1922,7 @@ export function SettingsPage() {
                 </label>
                 <div className="relative">
                   <select
-                    value={i18n.language}
+                    value={settings?.language ?? i18n.language}
                     onChange={(e) => {
                       const newLang = e.target.value;
                       // Block server persist if the user lacks settings:update —
@@ -2451,6 +2517,104 @@ export function SettingsPage() {
                   <div className="mt-4 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark p-4">
                     <div className="mb-3">
                       <h4 className="text-base font-medium text-white flex items-center gap-2">
+                        <Receipt className="w-4 h-4 text-bambu-green" />
+                        {t('settings.billingChargePolicy')}
+                      </h4>
+                      <p className="text-xs text-bambu-gray mt-1">{t('settings.billingChargePolicyDescription')}</p>
+                    </div>
+                    <div className="space-y-3">
+                      <p className="text-xs font-medium text-bambu-gray uppercase tracking-wider">{t('settings.billingChargeCompleted')}</p>
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex-1">
+                          <p className="text-white">{t('stats.energyCost')}</p>
+                          <p className="text-xs text-bambu-gray">{t('settings.billingChargeEnergyDescription')}</p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            aria-label={`${t('settings.billingChargeCompleted')}: ${t('stats.energyCost')}`}
+                            checked={localSettings.billing_completed_energy ?? false}
+                            onChange={(e) => updateSetting('billing_completed_energy', e.target.checked)}
+                            className="peer sr-only"
+                          />
+                          <div className="w-11 h-6 bg-bambu-dark-tertiary rounded-full peer-checked:bg-bambu-green peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all" />
+                        </label>
+                      </div>
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex-1">
+                          <p className="text-white">{t('stats.wearCost')}</p>
+                          <p className="text-xs text-bambu-gray">{t('settings.billingChargeWearDescription')}</p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            aria-label={`${t('settings.billingChargeCompleted')}: ${t('stats.wearCost')}`}
+                            checked={localSettings.billing_completed_wear ?? false}
+                            onChange={(e) => updateSetting('billing_completed_wear', e.target.checked)}
+                            className="peer sr-only"
+                          />
+                          <div className="w-11 h-6 bg-bambu-dark-tertiary rounded-full peer-checked:bg-bambu-green peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all" />
+                        </label>
+                      </div>
+                    </div>
+                    <div className="border-t border-bambu-dark-tertiary pt-3 mt-3 space-y-3">
+                      <p className="text-xs font-medium text-bambu-gray uppercase tracking-wider">{t('settings.billingChargeFailed')}</p>
+                      <div>
+                        <label htmlFor="billing-failed-filament" className="block text-xs text-bambu-gray mb-1">
+                          {t('settings.billingFailedFilament')}
+                        </label>
+                        <select
+                          id="billing-failed-filament"
+                          value={localSettings.billing_failed_filament ?? 'proportional'}
+                          onChange={(e) =>
+                            updateSetting('billing_failed_filament', e.target.value as 'proportional' | 'full' | 'none')
+                          }
+                          className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green"
+                        >
+                          <option value="proportional">{t('settings.billingFailedFilamentProportional')}</option>
+                          <option value="full">{t('settings.billingFailedFilamentFull')}</option>
+                          <option value="none">{t('settings.billingFailedFilamentNone')}</option>
+                        </select>
+                      </div>
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex-1">
+                          <p className="text-white">{t('stats.energyCost')}</p>
+                          <p className="text-xs text-bambu-gray">{t('settings.billingChargeEnergyDescription')}</p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            aria-label={`${t('settings.billingChargeFailed')}: ${t('stats.energyCost')}`}
+                            checked={localSettings.billing_failed_energy ?? false}
+                            onChange={(e) => updateSetting('billing_failed_energy', e.target.checked)}
+                            className="peer sr-only"
+                          />
+                          <div className="w-11 h-6 bg-bambu-dark-tertiary rounded-full peer-checked:bg-bambu-green peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all" />
+                        </label>
+                      </div>
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex-1">
+                          <p className="text-white">{t('stats.wearCost')}</p>
+                          <p className="text-xs text-bambu-gray">{t('settings.billingChargeWearDescription')}</p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            aria-label={`${t('settings.billingChargeFailed')}: ${t('stats.wearCost')}`}
+                            checked={localSettings.billing_failed_wear ?? false}
+                            onChange={(e) => updateSetting('billing_failed_wear', e.target.checked)}
+                            className="peer sr-only"
+                          />
+                          <div className="w-11 h-6 bg-bambu-dark-tertiary rounded-full peer-checked:bg-bambu-green peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all" />
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {localSettings.billing_enabled && (
+                  <div className="mt-4 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark p-4">
+                    <div className="mb-3">
+                      <h4 className="text-base font-medium text-white flex items-center gap-2">
                         <Calendar className="w-4 h-4 text-bambu-green" />
                         {t('settings.financeBudgetReset', 'Finance Monthly Budget Reset')}
                       </h4>
@@ -2542,7 +2706,7 @@ export function SettingsPage() {
                             showToast(t('settings.rebuildLedgerStarted', 'Ledger rebuild started'), 'success');
                             setShowRebuildConfirm(false);
                           } catch (err) {
-                            showToast((err as Error).message || 'Failed to start ledger rebuild', 'error');
+                            showToast((err as Error).message || t('settings.rebuildLedgerFailed'), 'error');
                           } finally {
                             setIsRebuildLoading(false);
                           }
@@ -2896,7 +3060,7 @@ export function SettingsPage() {
                     <div className="flex items-start justify-between">
                       <div>
                         <p className="text-bambu-green font-medium">
-                          Update available: v{updateCheck.latest_version}
+                          {t('settings.updateAvailableVersion', { version: updateCheck.latest_version })}
                         </p>
                         {updateCheck.release_name && updateCheck.release_name !== updateCheck.latest_version && (
                           <p className="text-sm text-bambu-gray mt-1">{updateCheck.release_name}</p>
@@ -3415,7 +3579,7 @@ export function SettingsPage() {
                       type="text"
                       value={localSettings.mqtt_broker ?? ''}
                       onChange={(e) => updateSetting('mqtt_broker', e.target.value)}
-                      placeholder="mqtt.example.com or 192.168.1.100"
+                      placeholder={t('settings.mqttBrokerPlaceholder')}
                       className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                     />
                   </div>
@@ -3502,6 +3666,48 @@ export function SettingsPage() {
                     </p>
                   </div>
 
+                  {/* Home Assistant MQTT discovery (#3724) */}
+                  <div className="pt-3 mt-3 border-t border-bambu-dark-tertiary space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-white text-sm">{t('settings.haDiscovery.title')}</p>
+                        <p className="text-xs text-bambu-gray">{t('settings.haDiscovery.hint')}</p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input
+                          type="checkbox"
+                          aria-label={t('settings.haDiscovery.title')}
+                          checked={localSettings.mqtt_ha_discovery_enabled ?? false}
+                          onChange={(e) => updateSetting('mqtt_ha_discovery_enabled', e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                      </label>
+                    </div>
+                    {localSettings.mqtt_ha_discovery_enabled && (
+                      <div>
+                        <label htmlFor="mqtt-ha-discovery-prefix" className="block text-sm text-bambu-gray mb-1">
+                          {t('settings.haDiscovery.prefix')}
+                        </label>
+                        <input
+                          id="mqtt-ha-discovery-prefix"
+                          type="text"
+                          value={localSettings.mqtt_ha_discovery_prefix ?? 'homeassistant'}
+                          onChange={(e) => updateSetting('mqtt_ha_discovery_prefix', e.target.value)}
+                          placeholder="homeassistant"
+                          className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                        />
+                        {mqttPrefixWildcard || mqttPrefixConflict ? (
+                          <p role="alert" className="text-xs text-red-400 mt-1">
+                            {t(mqttPrefixWildcard ? 'settings.haDiscovery.prefixWildcard' : 'settings.haDiscovery.prefixConflict')}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-bambu-gray mt-1">{t('settings.haDiscovery.prefixHint')}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
                   {/* Connection Info */}
                   {mqttStatus && (
                     <div className="pt-3 mt-3 border-t border-bambu-dark-tertiary">
@@ -3517,6 +3723,47 @@ export function SettingsPage() {
                       </div>
                     </div>
                   )}
+
+                  {/* BIQU Panda Breath heaters on this broker (#1466) */}
+                  <div className="pt-3 mt-3 border-t border-bambu-dark-tertiary space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-white text-sm">BIQU Panda Breath</p>
+                        <p className="text-xs text-bambu-gray">{t('settings.pandaBreath.hint')}</p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input
+                          type="checkbox"
+                          aria-label="BIQU Panda Breath"
+                          checked={localSettings.panda_breath_enabled ?? false}
+                          onChange={(e) => updateSetting('panda_breath_enabled', e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                      </label>
+                    </div>
+                    {pandaBreathOn && pandaBreathStatus && (
+                      pandaBreathStatus.devices.length === 0 ? (
+                        <p className="text-xs text-bambu-gray">{t('settings.pandaBreath.noDevices')}</p>
+                      ) : (
+                        <ul className="space-y-1">
+                          {pandaBreathStatus.devices.map((device) => (
+                            <li key={device.device_id} className="flex items-center gap-2 text-xs">
+                              <span className={`w-2 h-2 rounded-full shrink-0 ${device.online === false ? 'bg-red-400' : 'bg-green-400'}`} />
+                              <span className="text-white font-mono">{device.device_id}</span>
+                              <span className="text-bambu-gray truncate">
+                                {device.printer_name
+                                  ? t('settings.pandaBreath.boundTo', { printer: device.printer_name })
+                                  : device.bound
+                                    ? t('settings.pandaBreath.unknownPrinter')
+                                    : t('settings.pandaBreath.notBound')}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )
+                    )}
+                  </div>
                 </div>
               )}
             </CardContent>
@@ -4200,6 +4447,34 @@ export function SettingsPage() {
               </CardContent>
             </Card>
 
+            {/* Submitter email in print notifications (admin-only) */}
+            <Card className="mb-4">
+              <CardContent className="py-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-white text-sm font-medium">{t('settings.notificationSubmitterEmail')}</p>
+                    <p className="text-xs text-bambu-gray">{t('settings.notificationSubmitterEmailDescription')}</p>
+                    {!isAdmin && (
+                      <p id="submitter-email-admin-only" className="text-xs text-bambu-gray mt-1">
+                        {t('settings.adminOnlySetting')}
+                      </p>
+                    )}
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={localSettings.notification_submitter_email_enabled ?? false}
+                      disabled={!isAdmin}
+                      aria-describedby={!isAdmin ? 'submitter-email-admin-only' : undefined}
+                      onChange={(e) => updateSetting('notification_submitter_email_enabled', e.target.checked)}
+                    />
+                    <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green peer-disabled:cursor-not-allowed"></div>
+                  </label>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Test All Results */}
             {testAllResult && (
               <Card className="mb-4">
@@ -4302,7 +4577,7 @@ export function SettingsPage() {
                 <button
                   onClick={() => setTemplateFilter('')}
                   className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-bambu-gray hover:text-white"
-                  aria-label="Clear filter"
+                  aria-label={t('settings.clearFilter')}
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -5551,7 +5826,7 @@ export function SettingsPage() {
                     {t('settings.keepBedWarm', 'Keep bed warm between prints')}
                   </p>
                   <p className="text-xs text-bambu-gray mt-0.5">
-                    {t('settings.keepBedWarmDesc', 'While awaiting plate-clear, hold the bed at the keep-warm temperature below so the chamber stays hot — or at the next print\'s own bed temperature when that is higher. Only applies when the next print needs chamber heating (ASA, ABS, PA, PC etc.). Requires plate-clear confirmation to be enabled.')}
+                    {t('settings.keepBedWarmDesc', 'While awaiting plate-clear, hold the bed at the keep-warm temperature below so the chamber stays hot — or at the next print\'s own bed temperature when that is higher. Only applies when the next print needs chamber heating (ASA, ABS, PA, PC etc.). Applies to printers that wait for plate-clear confirmation, from the setting or the printer\'s own value.')}
                   </p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
@@ -5560,7 +5835,7 @@ export function SettingsPage() {
                     checked={localSettings.queue_keep_bed_warm ?? false}
                     onChange={(e) => updateSetting('queue_keep_bed_warm', e.target.checked)}
                     className="sr-only peer"
-                    disabled={!(localSettings.preheat_enabled ?? false) || !(localSettings.require_plate_clear ?? false)}
+                    disabled={!(localSettings.preheat_enabled ?? false)}
                   />
                   <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
                 </label>
@@ -5594,7 +5869,7 @@ export function SettingsPage() {
                     onChange={(v) => updateSetting('queue_keep_warm_max_minutes', v)}
                     fallback={120}
                     className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green disabled:opacity-50"
-                    disabled={!(localSettings.queue_keep_bed_warm ?? false) || !(localSettings.preheat_enabled ?? false) || !(localSettings.require_plate_clear ?? false)}
+                    disabled={!(localSettings.queue_keep_bed_warm ?? false) || !(localSettings.preheat_enabled ?? false)}
                   />
                   <p className="text-xs text-bambu-gray mt-1">
                     {t('settings.keepWarmMaxMinutesHelp', 'If the plate is not cleared within this time, the heaters are switched off rather than held indefinitely.')}
@@ -6343,6 +6618,113 @@ export function SettingsPage() {
             </CardContent>
           </Card>
 
+          {/* Loaded filament first with a maximum wait (#3587) */}
+          <Card id="card-loaded-filament">
+            <CardHeader>
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <Layers className="w-4 h-4 text-bambu-green" />
+                {t('settings.loadedFilamentFirstTitle', 'Loaded Filament First')}
+              </h3>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex-1 mr-4">
+                  <p className="text-sm text-white">
+                    {t('settings.loadedFilamentFirst', 'Run jobs whose filament is loaded first')}
+                  </p>
+                  <p className="text-xs text-bambu-gray mt-1">
+                    {t('settings.loadedFilamentFirstDescription', 'A job whose filament is not on its printer is skipped instead of held and starts by itself once the spool is loaded; jobs behind it that fit run first. The queue order is never changed.')}
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.queue_loaded_filament_first ?? false}
+                    onChange={(e) => updateSetting('queue_loaded_filament_first', e.target.checked)}
+                    className="sr-only peer"
+                    aria-label={t('settings.loadedFilamentFirst', 'Run jobs whose filament is loaded first')}
+                  />
+                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                </label>
+              </div>
+              <div className="w-full sm:w-1/2">
+                <label htmlFor="queue_max_wait_hours" className="block text-xs text-bambu-gray mb-1">
+                  {t('settings.maxWaitHours', 'Maximum wait (hours)')}
+                </label>
+                <input
+                  id="queue_max_wait_hours"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  disabled={!(localSettings.queue_loaded_filament_first ?? false)}
+                  value={maxWaitDraft ?? (localSettings.queue_max_wait_hours === undefined ? 48 : (localSettings.queue_max_wait_hours ?? ''))}
+                  placeholder={t('settings.maxWaitHoursPlaceholder', 'No limit')}
+                  onChange={(e) => {
+                    const raw = e.target.value.trim();
+                    if (raw === '') {
+                      setMaxWaitDraft(null);
+                      updateSetting('queue_max_wait_hours', null);
+                      return;
+                    }
+                    // Only whole numbers in range reach the full-page PUT; anything
+                    // else stays a draft (a 422 would also block every later save).
+                    if (/^\d+$/.test(raw) && Number(raw) >= 1 && Number(raw) <= 8760) {
+                      setMaxWaitDraft(null);
+                      updateSetting('queue_max_wait_hours', Number(raw));
+                    } else {
+                      setMaxWaitDraft(e.target.value);
+                    }
+                  }}
+                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+                {maxWaitDraft !== null && (
+                  <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                    {t('settings.maxWaitHoursInvalid', 'Enter a whole number of hours from 1 to 8760, or leave it empty for no limit.')}
+                  </p>
+                )}
+                <p className="text-xs text-bambu-gray mt-1">
+                  {t('settings.maxWaitHoursHelp', 'Once a job has been in the queue this long (counted from when it was queued or its scheduled start), it gets priority: the next printer it could use is kept free for it until its filament is loaded, and you get one notification. Leave empty for no limit; you are then notified once when a job starts waiting.')}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Inventory colours in the print dialog's filament override (#3590).
+              The print dialog has the same switch; this card is the other way in.
+              Not offered in Spoolman mode: the built-in inventory is not used there. */}
+          {!localSettings.spoolman_enabled && (
+          <Card id="card-inventory-colours">
+            <CardHeader>
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <Palette className="w-4 h-4 text-bambu-green" />
+                {t('settings.inventoryColoursTitle', 'Inventory Colours in the Filament Override')}
+              </h3>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex-1 mr-4">
+                  <p className="text-sm text-white">
+                    {t('settings.inventoryColours', 'Show inventory colours')}
+                  </p>
+                  <p className="text-xs text-bambu-gray mt-1">
+                    {t('settings.inventoryColoursDescription', 'Offers colours from the built-in inventory that no printer has loaded, with their stock. A job waiting for such a colour says when none is left, and the "Filament Out of Stock" notification can be sent.')}
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.filament_override_inventory ?? false}
+                    onChange={(e) => updateSetting('filament_override_inventory', e.target.checked)}
+                    aria-label={t('settings.inventoryColours', 'Show inventory colours')}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                </label>
+              </div>
+            </CardContent>
+          </Card>
+          )}
+
           {/* Concurrent queue uploads (#2555) */}
           <Card id="card-concurrent-uploads">
             <CardHeader>
@@ -6385,6 +6767,7 @@ export function SettingsPage() {
           {/* Left Column (1/3) - Mode Selector + AMS Thresholds */}
           <div className="lg:w-1/3 space-y-3">
             <SpoolmanSettings />
+            <ThreeDfpSettings />
 
             <Card id="card-filamentchecks">
               <CardHeader>
@@ -6665,6 +7048,7 @@ export function SettingsPage() {
 
           {/* Right Column (2/3) - Spool Catalog + Color Catalog */}
           <div className="lg:w-2/3 space-y-3">
+            <LabelPrinterSettings />
             <ProfileDefaultsSettings />
             <SpoolCatalogSettings />
             <ColorCatalogSettings />
@@ -6806,9 +7190,9 @@ export function SettingsPage() {
       {/* Confirm Modal: Bulk Plug Action */}
       {showBulkPlugConfirm && (
         <ConfirmModal
-          title={`Turn All Plugs ${showBulkPlugConfirm === 'on' ? 'On' : 'Off'}`}
-          message={`This will turn ${showBulkPlugConfirm === 'on' ? 'ON' : 'OFF'} all ${smartPlugs?.filter(p => p.enabled).length || 0} enabled smart plugs. ${showBulkPlugConfirm === 'off' ? 'Any running printers may be affected!' : ''}`}
-          confirmText={`Turn All ${showBulkPlugConfirm === 'on' ? 'On' : 'Off'}`}
+          title={showBulkPlugConfirm === 'on' ? t('settings.bulkPlugTitleOn') : t('settings.bulkPlugTitleOff')}
+          message={t(showBulkPlugConfirm === 'on' ? 'settings.bulkPlugMessageOn' : 'settings.bulkPlugMessageOff', { total: smartPlugs?.filter(p => p.enabled).length || 0 })}
+          confirmText={showBulkPlugConfirm === 'on' ? t('settings.bulkPlugConfirmOn') : t('settings.bulkPlugConfirmOff')}
           variant={showBulkPlugConfirm === 'off' ? 'danger' : 'warning'}
           onConfirm={() => {
             const action = showBulkPlugConfirm;
@@ -6829,7 +7213,7 @@ export function SettingsPage() {
             <CardHeader className="flex flex-row items-center justify-between shrink-0">
               <div>
                 <h2 className="text-lg font-semibold text-white">
-                  Release Notes - v{updateCheck.latest_version}
+                  {t('settings.releaseNotesTitle', { version: updateCheck.latest_version })}
                 </h2>
                 {updateCheck.release_name && updateCheck.release_name !== updateCheck.latest_version && (
                   <p className="text-sm text-bambu-gray">{updateCheck.release_name}</p>
@@ -6857,7 +7241,7 @@ export function SettingsPage() {
                 >
                   <Button variant="secondary" className="w-full">
                     <ExternalLink className="w-4 h-4" />
-                    View on GitHub
+                    {t('nav.viewOnGithub')}
                   </Button>
                 </a>
               )}
@@ -6865,7 +7249,7 @@ export function SettingsPage() {
                 onClick={() => setShowReleaseNotes(false)}
                 className="flex-1"
               >
-                Close
+                {t('common.close')}
               </Button>
             </div>
           </Card>
@@ -7417,8 +7801,8 @@ export function SettingsPage() {
 
       {/* Create User Modal */}
       {showCreateUserModal && !advancedAuthStatus?.advanced_auth_enabled && (
-        <div
-          className="fixed inset-0 bg-black flex items-center justify-center z-50 p-4"
+        <ScrollableModalOverlay
+          className="bg-black"
           onClick={() => {
             setShowCreateUserModal(false);
             setUserFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
@@ -7608,7 +7992,7 @@ export function SettingsPage() {
               )}
             </CardContent>
           </Card>
-        </div>
+        </ScrollableModalOverlay>
       )}
 
       {/* Create User Modal - Advanced Authentication */}
@@ -7635,8 +8019,8 @@ export function SettingsPage() {
 
       {/* Edit User Modal */}
       {showEditUserModal && editingUserId !== null && (
-        <div
-          className="fixed inset-0 bg-black flex items-center justify-center z-50 p-4"
+        <ScrollableModalOverlay
+          className="bg-black"
           onClick={() => {
             setShowEditUserModal(false);
             setEditingUserId(null);
@@ -7833,7 +8217,7 @@ export function SettingsPage() {
               </div>
             </CardContent>
           </Card>
-        </div>
+        </ScrollableModalOverlay>
       )}
 
       {/* Delete User Confirmation Modal */}
@@ -7865,13 +8249,13 @@ export function SettingsPage() {
                   <p className="text-white">{t('settings.userHasCreated')}</p>
                   <ul className="list-disc list-inside text-bambu-gray space-y-1">
                     {deleteUserItemCounts.archives > 0 && (
-                      <li>{deleteUserItemCounts.archives} archive{deleteUserItemCounts.archives !== 1 ? 's' : ''}</li>
+                      <li>{t('settings.userItemArchives', { count: deleteUserItemCounts.archives })}</li>
                     )}
                     {deleteUserItemCounts.queue_items > 0 && (
-                      <li>{deleteUserItemCounts.queue_items} queue item{deleteUserItemCounts.queue_items !== 1 ? 's' : ''}</li>
+                      <li>{t('settings.userItemQueueItems', { count: deleteUserItemCounts.queue_items })}</li>
                     )}
                     {deleteUserItemCounts.library_files > 0 && (
-                      <li>{deleteUserItemCounts.library_files} library file{deleteUserItemCounts.library_files !== 1 ? 's' : ''}</li>
+                      <li>{t('settings.userItemLibraryFiles', { count: deleteUserItemCounts.library_files })}</li>
                     )}
                   </ul>
                   <p className="text-bambu-gray text-sm">{t('settings.userItemsQuestion')}</p>
@@ -7993,8 +8377,8 @@ export function SettingsPage() {
 
       {/* Change Password Modal */}
       {showChangePasswordModal && (
-        <div
-          className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+        <ScrollableModalOverlay
+          className="bg-black/70"
           onClick={() => {
             setShowChangePasswordModal(false);
             setChangePasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
@@ -8026,7 +8410,7 @@ export function SettingsPage() {
               <div className="space-y-3">
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
-                    Current Password
+                    {t('changePassword.currentPassword')}
                   </label>
                   <input
                     type="password"
@@ -8039,7 +8423,7 @@ export function SettingsPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
-                    New Password
+                    {t('changePassword.newPassword')}
                   </label>
                   <input
                     type="password"
@@ -8053,7 +8437,7 @@ export function SettingsPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
-                    Confirm New Password
+                    {t('changePassword.confirmPassword')}
                   </label>
                   <input
                     type="password"
@@ -8100,7 +8484,7 @@ export function SettingsPage() {
                       setShowChangePasswordModal(false);
                       setChangePasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
                     } catch (error: unknown) {
-                      const message = error instanceof Error ? error.message : 'Failed to change password';
+                      const message = error instanceof Error ? error.message : t('changePassword.failed');
                       showToast(message, 'error');
                     } finally {
                       setChangePasswordLoading(false);
@@ -8123,7 +8507,7 @@ export function SettingsPage() {
               </div>
             </CardContent>
           </Card>
-        </div>
+        </ScrollableModalOverlay>
       )}
       </div>
       </div>

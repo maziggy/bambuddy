@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from backend.app.api.routes.library import slice_and_persist_as_archive
+from backend.app.core.printer_scope import ALL_PRINTERS
 from backend.app.schemas.slicer import SliceRequest
 from backend.app.services.slicer_api import SliceResult
 
@@ -46,6 +47,7 @@ async def _slice(db_session, source_archive, model_filename):
             request=SliceRequest(printer_preset_id=1, process_preset_id=2, filament_preset_id=3),
             source_archive=source_archive,
             current_user_id=None,
+            printer_scope=ALL_PRINTERS,
         )
 
 
@@ -161,6 +163,7 @@ async def test_the_new_archive_can_be_someone_other_than_the_cloud_user(
             request=SliceRequest(printer_preset_id=1, process_preset_id=2, filament_preset_id=3),
             source_archive=source,
             current_user_id=None,
+            printer_scope=ALL_PRINTERS,
             owner_id=owner.id,
         )
 

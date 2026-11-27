@@ -2468,6 +2468,88 @@ describe('PrintModal — per-plate filament override in model mode (#2552)', () 
     ]);
   });
 
+  // #3733: a plate or model change cleared every tick without a word, and the
+  // job was queued without force_color_match and printed in any colour.
+  describe('keeps a "Force color match" tick (#3733)', () => {
+    type Queued = {
+      plate_id: number;
+      filament_overrides?: Array<{ slot_id: number; force_color_match: boolean }> | null;
+    };
+    const captureQueue = () => {
+      const queued: Queued[] = [];
+      server.use(
+        http.post('/api/v1/queue/', async ({ request }) => {
+          queued.push((await request.json()) as Queued);
+          return HttpResponse.json({ id: queued.length, status: 'pending' });
+        }),
+      );
+      return queued;
+    };
+    const pickModel = async (user: ReturnType<typeof userEvent.setup>, model: string) => {
+      const modelSelect = await waitFor(() => {
+        const select = screen
+          .getAllByRole('combobox')
+          .find((el) => (el as HTMLSelectElement).options[0]?.value === '' && (el as HTMLSelectElement).options[0]?.text === 'Select a model...');
+        if (!select) throw new Error('target model select not rendered');
+        return select as HTMLSelectElement;
+      });
+      await user.selectOptions(modelSelect, model);
+    };
+    const tickSlot1 = async (user: ReturnType<typeof userEvent.setup>) => {
+      const box = await waitFor(() => {
+        const boxes = screen.getAllByRole('checkbox', { name: /force color match/i });
+        expect(boxes).toHaveLength(1);
+        return boxes[0];
+      });
+      await user.click(box);
+      expect(box).toBeChecked();
+    };
+
+    it('across a plate change', async () => {
+      const queued = captureQueue();
+      const user = userEvent.setup();
+      renderWithCache(
+        <PrintModal mode="create" archiveId={1} archiveName="Two.gcode.3mf" onClose={mockOnClose} />,
+        (qc) => qc.setQueryData(['archive-plates', 1], PLATES),
+      );
+      await waitFor(() => expect(screen.getByText('Plate 2')).toBeInTheDocument());
+      await user.click(screen.getByRole('button', { name: /any model/i }));
+      await pickModel(user, 'X1C');
+      await tickSlot1(user); // plate 1 is auto-selected and prints slot 1
+
+      await user.click(screen.getByText('Plate 2'));
+      await waitFor(() => expect(screen.getByText(/Filament Override — Plate 2/)).toBeInTheDocument());
+      await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+
+      await waitFor(() => expect(queued.length).toBe(2));
+      expect(queued.find((q) => q.plate_id === 1)?.filament_overrides).toEqual([
+        expect.objectContaining({ slot_id: 1, force_color_match: true }),
+      ]);
+    });
+
+    it('across a target model change', async () => {
+      const queued = captureQueue();
+      const user = userEvent.setup();
+      renderWithCache(
+        <PrintModal mode="create" archiveId={1} archiveName="Two.gcode.3mf" onClose={mockOnClose} />,
+        (qc) => qc.setQueryData(['archive-plates', 1], PLATES),
+      );
+      await waitFor(() => expect(screen.getByText('Plate 2')).toBeInTheDocument());
+      await user.click(screen.getByRole('button', { name: /any model/i }));
+      await pickModel(user, 'X1C');
+      await tickSlot1(user);
+
+      await pickModel(user, 'P1S');
+      expect(screen.getByRole('checkbox', { name: /force color match/i })).toBeChecked();
+      await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+
+      await waitFor(() => expect(queued.length).toBe(1));
+      expect(queued[0].filament_overrides).toEqual([
+        expect.objectContaining({ slot_id: 1, force_color_match: true }),
+      ]);
+    });
+  });
+
   // The queue page shows the stored colour name. The same blue is "Marine
   // Blue" in PLA Matte; the plain type "PLA" only reaches the generic name (SN-C9).
   it("stores a forced slot's colour name within its sliced product line", async () => {
@@ -3167,7 +3249,11 @@ describe('PrintModal edit: moving a job to another printer', () => {
     // The dialog adds printers; moving the job is deselecting one, selecting the other.
     await user.click(await screen.findByText('Printer 01'));
     await user.click(screen.getByText('Printer 02'));
-    await user.click(screen.getByRole('button', { name: /save/i }));
+    // Save waits for Printer 02's status (the AMS mapping needs it); a click
+    // before that lands on a disabled button and sends nothing (#3715).
+    const save = screen.getByRole('button', { name: /save/i });
+    await waitFor(() => expect(save).toBeEnabled());
+    await user.click(save);
 
     await waitFor(() => expect(patched).toHaveLength(1));
     expect(patched[0].printer_id).toBe(2);
@@ -3429,6 +3515,60 @@ describe('PrintModal — "Force color match" on a specific printer is saved (#34
     for (const job of [...patched, ...posted]) expect(job.filament_overrides ?? null).toBeNull();
   });
 
+  // #3711: a VP with "Force color match" queues the sliced colour forced. Sent to
+  // several printers with a spool picked on each, every job kept white forced
+  // next to its pick, and the scheduler dropped the pick to wait for white.
+  describe('a forced job sent to several printers (#3711)', () => {
+    const WHITE_FORCED = { slot_id: 1, type: 'PLA', color: '#CBC6B8', tray_info_idx: 'GFA01', force_color_match: true };
+
+    const openForcedJobOnTwoPrinters = async (user: ReturnType<typeof userEvent.setup>) => {
+      render(
+        <PrintModal
+          mode="edit-queue-item"
+          archiveId={1}
+          archiveName="Job"
+          queueItem={printer01Item({ ams_mapping: null, filament_overrides: [WHITE_FORCED] } as Partial<PrintQueueItem>)}
+          onClose={mockOnClose}
+        />,
+      );
+      await user.click(await screen.findByText('Printer 02'));
+      const custom = await screen.findAllByRole('checkbox', { name: /custom mapping/i });
+      expect(custom).toHaveLength(2);
+      for (const box of custom) await user.click(box);
+      await waitFor(() => expect(document.querySelectorAll('select')).toHaveLength(2));
+      return Array.from(document.querySelectorAll('select'));
+    };
+
+    it("saves each printer's picked spool as its forced filament", async () => {
+      const user = userEvent.setup();
+      const [first, second] = await openForcedJobOnTwoPrinters(user);
+      await user.selectOptions(first, '1'); // black on printer 01
+      await user.selectOptions(second, '0'); // green on printer 02
+      await submit(user);
+
+      await waitFor(() => expect(patched.length + posted.length).toBe(2));
+      const byPrinter = new Map([...patched, ...posted].map((job) => [job.printer_id, job]));
+      expect(byPrinter.get(1)?.ams_mapping).toEqual([1]);
+      expect(byPrinter.get(1)?.filament_overrides).toEqual([expect.objectContaining(BLACK_FORCED)]);
+      expect(byPrinter.get(2)?.ams_mapping).toEqual([0]);
+      expect(byPrinter.get(2)?.filament_overrides).toEqual([
+        expect.objectContaining({ slot_id: 1, color: '#68724D', force_color_match: true }),
+      ]);
+    });
+
+    it('keeps the sliced colour on a printer whose tray was only auto-filled', async () => {
+      const user = userEvent.setup();
+      const [first] = await openForcedJobOnTwoPrinters(user);
+      await user.selectOptions(first, '1'); // printer 02 left as auto-configure filled it
+      await submit(user);
+
+      await waitFor(() => expect(patched.length + posted.length).toBe(2));
+      const byPrinter = new Map([...patched, ...posted].map((job) => [job.printer_id, job]));
+      expect(byPrinter.get(1)?.filament_overrides).toEqual([expect.objectContaining(BLACK_FORCED)]);
+      expect(byPrinter.get(2)?.filament_overrides).toEqual([expect.objectContaining(WHITE_FORCED)]);
+    });
+  });
+
   it('waits for the sliced colour when the box is ticked on a tray the dialog matched itself', async () => {
     const user = userEvent.setup();
     render(
@@ -3475,5 +3615,157 @@ describe('PrintModal — "Force color match" on a specific printer is saved (#34
     expect(posted[0].printer_id).toBe(1);
     expect(posted[0].ams_mapping).toEqual([1]);
     expect(posted[0].filament_overrides).toEqual([expect.objectContaining(BLACK_FORCED)]);
+  });
+});
+
+describe('PrintModal — filament rules of the user\'s group (#3522)', () => {
+  const mockOnClose = vi.fn();
+  const PRINTERS = [{ id: 1, name: 'Printer 01', model: 'P1S', ip_address: '192.168.1.101', enabled: true, is_active: true }];
+  // Same white PETG twice; only the slicer preset id differs, and GFG03 is blocked.
+  const STATUS = {
+    connected: true,
+    state: 'IDLE',
+    ams: [
+      {
+        id: 0,
+        tray: [
+          { id: 0, tray_type: 'PETG', tray_color: 'FFFFFFFF', tray_info_idx: 'GFG03', tray_sub_brands: 'PETG Matte' },
+          { id: 1, tray_type: 'PETG', tray_color: 'FFFFFFFF', tray_info_idx: 'GFG99', tray_sub_brands: 'PETG Other' },
+        ],
+      },
+    ],
+    vt_tray: [],
+  };
+  const PETG_ANY = { slot_id: 1, type: 'PETG', color: '#FFFFFF', used_grams: 10, used_meters: 3 };
+  const PETG_BLOCKED = { ...PETG_ANY, tray_info_idx: 'GFG03' };
+  const BANNER = "This file uses a filament your group can't print with: PETG (GFG03)";
+  let posted: Array<{ ams_mapping?: number[] | null }>;
+
+  const useRequirements = (filaments: unknown[]) =>
+    server.use(http.get('/api/v1/archives/:id/filament-requirements', () => HttpResponse.json({ filaments })));
+  const submitButton = () => document.querySelector('button[type="submit"]') as HTMLButtonElement;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    posted = [];
+    setAuthToken('test-token', 'session');
+    server.use(
+      http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+      http.get('*/api/v1/auth/me', () =>
+        HttpResponse.json({
+          id: 7,
+          username: 'student',
+          is_admin: false,
+          permissions: ['printers:read', 'queue:create'],
+          filament_policies: [
+            { group: 'Students', mode: 'block', rules: [{ match: 'filament_id', value: 'GFG03' }] },
+          ],
+        }),
+      ),
+      http.get('/api/v1/printers/', () => HttpResponse.json(PRINTERS)),
+      http.get('/api/v1/archives/:id/plates', () => HttpResponse.json({ is_multi_plate: false, plates: [] })),
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json(STATUS)),
+      http.get('/api/v1/printers/:id/assignments', () => HttpResponse.json([])),
+      http.get('/api/v1/printers/available-filaments', () => HttpResponse.json([])),
+      http.post('/api/v1/queue/', async ({ request }) => {
+        posted.push((await request.json()) as { ams_mapping?: number[] | null });
+        return HttpResponse.json({ id: 1, status: 'pending' });
+      }),
+    );
+  });
+
+  afterEach(() => {
+    setAuthToken(null);
+  });
+
+  it('greys out the blocked slot and sends the allowed one', async () => {
+    useRequirements([PETG_ANY]);
+    const user = userEvent.setup();
+    render(<PrintModal mode="create" archiveId={1} archiveName="Job" initialSelectedPrinterIds={[1]} onClose={mockOnClose} />);
+
+    const trigger = await screen.findByRole('combobox', { name: /printer slot for/i });
+    await waitFor(() => expect(trigger).toHaveTextContent(/PETG Other/));
+    await user.click(trigger);
+    const listbox = await screen.findByRole('listbox');
+    expect(within(listbox).getByRole('option', { name: /PETG Matte/ })).toHaveAttribute('aria-disabled', 'true');
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await waitFor(() => expect(submitButton()).toBeEnabled());
+    await user.click(submitButton());
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0].ams_mapping).toEqual([1]);
+  });
+
+  it('names the blocked filament and keeps submit disabled', async () => {
+    useRequirements([PETG_BLOCKED]);
+    render(<PrintModal mode="create" archiveId={1} archiveName="Job" initialSelectedPrinterIds={[1]} onClose={mockOnClose} />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(BANNER);
+    expect(submitButton()).toBeDisabled();
+  });
+
+  it('names the blocked filament after a model-mode job is moved to a printer (#3133)', async () => {
+    // The mapping panel takes over the banner, so a disabled Print still says why.
+    useRequirements([PETG_BLOCKED]);
+    const user = userEvent.setup();
+    render(
+      <PrintModal
+        mode="edit-queue-item"
+        archiveId={1}
+        archiveName="Job"
+        queueItem={createMockQueueItem({ printer_id: null, target_model: 'P1S' } as Partial<PrintQueueItem>)}
+        onClose={mockOnClose}
+      />,
+    );
+
+    await user.click(await screen.findByRole('button', { name: /specific printer/i }));
+    await user.click(await screen.findByText('Printer 01'));
+    await screen.findByText(/filament mapping/i);
+
+    await waitFor(() => expect(submitButton()).toBeDisabled());
+    expect(await screen.findByRole('alert')).toHaveTextContent(BANNER);
+    // The panel's banner, not the dialog's as well.
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+  });
+
+  it('lets a slot swapped to another filament through, as the server does', async () => {
+    // The file was sliced with blocked GFG03; the job asks for PLA in that
+    // slot. The swap clears the preset id, so the tray it lands on is what
+    // the rules judge, here as on the server.
+    useRequirements([PETG_BLOCKED]);
+    render(
+      <PrintModal
+        mode="edit-queue-item"
+        archiveId={1}
+        archiveName="Job"
+        queueItem={createMockQueueItem({
+          printer_id: null,
+          target_model: 'P1S',
+          filament_overrides: [{ slot_id: 1, type: 'PLA', color: '#000000', force_color_match: false }],
+        } as Partial<PrintQueueItem>)}
+        onClose={mockOnClose}
+      />,
+    );
+
+    await waitFor(() => expect(submitButton()).toBeEnabled());
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('still names it in model mode, which has no mapping panel', async () => {
+    useRequirements([PETG_BLOCKED]);
+    render(
+      <PrintModal
+        mode="edit-queue-item"
+        archiveId={1}
+        archiveName="Job"
+        queueItem={createMockQueueItem({ printer_id: null, target_model: 'P1S' } as Partial<PrintQueueItem>)}
+        onClose={mockOnClose}
+      />,
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(BANNER);
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(submitButton()).toBeDisabled();
   });
 });

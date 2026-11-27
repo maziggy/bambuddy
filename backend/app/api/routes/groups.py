@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 
 from backend.app.core.auth import RequireAdminIfAuthEnabled, RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
+from backend.app.core.filament_scope import clean_rules
 from backend.app.core.permissions import (
     ALL_PERMISSIONS,
     PERMISSION_CATEGORIES,
@@ -39,6 +40,8 @@ _PERMISSION_LABEL_OVERRIDES: dict[Permission, str] = {
     Permission.USERS_READ_SLIM: "List User Names (id + username only)",
     # "Start Unreviewed Queue" says nothing about what happens without it (#1620)
     Permission.QUEUE_START_UNREVIEWED: "Print Without Review (else jobs wait for someone to start them)",
+    # "Auth Threedfp" would say nothing to anyone (#2981)
+    Permission.THREEDFP_AUTH: "Connect 3D Filament Profiles and look up filaments",
 }
 
 
@@ -142,6 +145,40 @@ async def _apply_printer_scope(
     return changed
 
 
+def _apply_filament_scope(
+    group: Group,
+    restrict_filaments: bool | None,
+    filament_rule_mode: str | None,
+    filament_rules: list | None,
+) -> None:
+    """Store a group's filament scope (#3522).
+
+    The Administrators group can't be restricted: admins may use every
+    filament regardless, so the setting would only mislead.
+    """
+    if restrict_filaments is not None and restrict_filaments != bool(group.restrict_filaments):
+        if restrict_filaments and group.name == ADMIN_GROUP_NAME:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Administrators can always use every filament",
+            )
+        group.restrict_filaments = restrict_filaments
+    if filament_rule_mode is not None and filament_rule_mode != (group.filament_rule_mode or "block"):
+        group.filament_rule_mode = filament_rule_mode
+    if filament_rules is not None:
+        cleaned = clean_rules(filament_rules)
+        if cleaned != (group.filament_rules or []):
+            group.filament_rules = cleaned
+
+
+def _filament_fields(group: Group) -> dict:
+    return {
+        "restrict_filaments": bool(group.restrict_filaments),
+        "filament_rule_mode": group.filament_rule_mode or "block",
+        "filament_rules": clean_rules(group.filament_rules),
+    }
+
+
 def _group_response(group: Group, printer_ids: list[int], locations: list[str], user_count: int) -> GroupResponse:
     return GroupResponse(
         id=group.id,
@@ -152,6 +189,7 @@ def _group_response(group: Group, printer_ids: list[int], locations: list[str], 
         restrict_printers=bool(group.restrict_printers),
         printer_ids=printer_ids,
         locations=locations,
+        **_filament_fields(group),
         user_count=user_count,
         created_at=group.created_at,
         updated_at=group.updated_at,
@@ -227,10 +265,15 @@ async def create_group(
         permissions=group_data.permissions,
         is_system=False,  # User-created groups are not system groups
         restrict_printers=False,
+        restrict_filaments=False,
+        filament_rule_mode="block",
     )
     db.add(group)
     await db.flush()
     await _apply_printer_scope(db, group, group_data.restrict_printers, group_data.printer_ids, group_data.locations)
+    _apply_filament_scope(
+        group, group_data.restrict_filaments, group_data.filament_rule_mode, group_data.filament_rules
+    )
     await db.commit()
     await db.refresh(group)
 
@@ -262,6 +305,7 @@ async def get_group(
         restrict_printers=bool(group.restrict_printers),
         printer_ids=await group_printer_ids(db, group.id),
         locations=await group_location_names(db, group.id),
+        **_filament_fields(group),
         user_count=len(group.users),
         created_at=group.created_at,
         updated_at=group.updated_at,
@@ -327,6 +371,9 @@ async def update_group(
 
     scope_changed = await _apply_printer_scope(
         db, group, group_data.restrict_printers, group_data.printer_ids, group_data.locations
+    )
+    _apply_filament_scope(
+        group, group_data.restrict_filaments, group_data.filament_rule_mode, group_data.filament_rules
     )
 
     await db.commit()

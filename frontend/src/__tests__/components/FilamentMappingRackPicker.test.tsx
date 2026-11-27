@@ -88,6 +88,7 @@ function mount(props: Record<string, unknown> = {}, rack = fullRack) {
   return render(
     <FilamentMapping
       printerId={1}
+      blockedFilaments={[]}
       filamentReqs={benchyReqs}
       manualMappings={{}}
       onManualMappingChange={() => {}}

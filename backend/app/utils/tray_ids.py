@@ -8,13 +8,14 @@ by. Studio derives it from the unit's AMS type, bits 0-3 of its hex ``info``
     AMS / AMS Lite / AMS 2 Pro (1, 2, 3)   ams_id * 4 + slot
     A2L AMS Lite (5)                       24 + slot
     AMS 3H (6, ZMULTI_A)                   28 + slot
-    AMS-B (7, ZMULTI_B)                    37 + slot
+    AMS 3P (7, ZMULTI_B)                   37 + slot
     AMS-HT (4, N3S, units 128-135)         ams_id
     external input                         its vir_slot id, 254 / 255
 
-On a printer with a direct-connected nozzle rack (the H3C) each hotend has its
-own external input, vir_slot 247-255, and input ``v`` feeds hotend ``255 - v``
-(``DevAmsTray::get_nozzle_addr_id``); rack AMS slot ``k`` feeds hotend ``k``.
+On a printer with a direct-connected nozzle rack (the H3C, the P3C) each hotend
+has its own external input, vir_slot 247-255 (the P3C's seven 249-255), and
+input ``v`` feeds hotend ``255 - v`` (``DevAmsTray::get_nozzle_addr_id``);
+rack AMS slot ``k`` feeds hotend ``k``.
 
 A slot is stored as ``(ams_id, tray_id)``, every external input under ams_id
 255 (tray_id 0 = 254, 1 = 255, 2-8 = 247-253). The A2L's AMS Lite is stored as
@@ -38,16 +39,27 @@ class AmsType(IntEnum):
     N3S = 4  # AMS-HT
     AMS_LITE_MIXED = 5  # the A2L's AMS Lite
     ZMULTI_A = 6  # AMS 3H (H3C)
-    ZMULTI_B = 7  # AMS-B
+    ZMULTI_B = 7  # AMS 3P (P3C)
 
 
 RACK_AMS_TYPES = frozenset({AmsType.ZMULTI_A, AmsType.ZMULTI_B})
 RACK_TRAY_BASE: Mapping[AmsType, int] = {AmsType.ZMULTI_A: 28, AmsType.ZMULTI_B: 37}
-RACK_SLOT_COUNT = 9  # one slot per hotend of the H3C's rack
+# One slot per hotend of the rack: the H3C's AMS 3H has nine, the P3C's AMS 3P
+# seven (Studio's default_nozzle_count in printers/N10.json, N11.json).
+RACK_SLOT_COUNTS: Mapping[int, int] = {AmsType.ZMULTI_A: 9, AmsType.ZMULTI_B: 7}
+RACK_SLOT_COUNT = max(RACK_SLOT_COUNTS.values())  # the most any rack AMS has
 AMS_LITE_MIXED_TRAY_BASE = 24
-# The H3C reports its AMS 3H as unit 32; tells the type when ``info`` is missing.
+# The H3C reports its AMS 3H as unit 32, the P3C its AMS 3P as unit 33; they
+# tell the type when ``info`` is missing.
 AMS3H_UNIT_ID = 32
-_AMS3H_TRAY_IDS = range(RACK_TRAY_BASE[AmsType.ZMULTI_A], RACK_TRAY_BASE[AmsType.ZMULTI_A] + RACK_SLOT_COUNT)
+AMS3P_UNIT_ID = 33
+RACK_UNIT_IDS: Mapping[AmsType, int] = {AmsType.ZMULTI_A: AMS3H_UNIT_ID, AmsType.ZMULTI_B: AMS3P_UNIT_ID}
+_AMS3H_TRAY_IDS = range(
+    RACK_TRAY_BASE[AmsType.ZMULTI_A], RACK_TRAY_BASE[AmsType.ZMULTI_A] + RACK_SLOT_COUNTS[AmsType.ZMULTI_A]
+)
+_AMS3P_TRAY_IDS = range(
+    RACK_TRAY_BASE[AmsType.ZMULTI_B], RACK_TRAY_BASE[AmsType.ZMULTI_B] + RACK_SLOT_COUNTS[AmsType.ZMULTI_B]
+)
 
 AMS_HT_IDS = range(128, 136)
 _REGULAR_WIRE_AMS_IDS = range(4)  # the regular units (ams_id << 8) | slot names
@@ -94,8 +106,13 @@ def ams_type_from_info(info: object) -> AmsType | None:
 
 
 def is_rack_ams(ams_type: object) -> bool:
-    """Whether ``ams_type`` is a rack AMS (AMS 3H / AMS-B): one slot per hotend."""
+    """Whether ``ams_type`` is a rack AMS (AMS 3H / AMS 3P): one slot per hotend."""
     return ams_type in RACK_AMS_TYPES
+
+
+def rack_slot_count(ams_type: object) -> int:
+    """How many slots a rack AMS of ``ams_type`` has (9 for the AMS 3H, 7 for the AMS 3P), else 0."""
+    return RACK_SLOT_COUNTS.get(ams_type, 0) if isinstance(ams_type, int) else 0
 
 
 def is_ams_ht_id(ams_id: object) -> bool:
@@ -104,7 +121,7 @@ def is_ams_ht_id(ams_id: object) -> bool:
 
 
 def unit_ams_type(ams_id: int, info: object = None) -> AmsType:
-    """The AMS type of unit ``ams_id``: from ``info``, else the id (128-135 AMS-HT, 32 AMS 3H, else AMS)."""
+    """The AMS type of unit ``ams_id``: from ``info``, else the id (128-135 AMS-HT, 32 AMS 3H, 33 AMS 3P, else AMS)."""
     if is_ams_ht_id(ams_id):
         return AmsType.N3S
     from_info = ams_type_from_info(info)
@@ -114,6 +131,8 @@ def unit_ams_type(ams_id: int, info: object = None) -> AmsType:
         return AmsType.N3S
     if ams_id == AMS3H_UNIT_ID:
         return AmsType.ZMULTI_A
+    if ams_id == AMS3P_UNIT_ID:
+        return AmsType.ZMULTI_B
     return AmsType.AMS
 
 
@@ -139,14 +158,14 @@ def legacy_tray_index(ams_id: int, slot: int) -> int:
 
 
 def unit_label(ams_id: int, ams_type: AmsType | int | None = None) -> str:
-    """Short name of AMS unit ``ams_id`` for alerts and logs: "AMS-A", "HT-A", "AMS 3H"."""
+    """Short name of AMS unit ``ams_id`` for alerts and logs: "AMS-A", "HT-A", "AMS 3H", "AMS 3P"."""
     kind = unit_ams_type(ams_id) if ams_type is None else ams_type
     if kind == AmsType.N3S:
         return f"HT-{chr(65 + (ams_id - 128))}"
     if kind == AmsType.ZMULTI_A:
         return "AMS 3H"
     if kind == AmsType.ZMULTI_B:
-        return f"AMS {ams_id}"
+        return "AMS 3P"
     return f"AMS-{chr(65 + ams_id)}"
 
 
@@ -245,11 +264,16 @@ class TrayLayout:
     @classmethod
     def ams3h(cls) -> TrayLayout:
         """An H3C's layout (its AMS 3H as unit 32), for when its own AMS data is not at hand."""
-        return cls(units=((AMS3H_UNIT_ID, AmsType.ZMULTI_A),), rack=True)
+        return cls.rack_printer(AmsType.ZMULTI_A)
 
     @classmethod
-    def from_state(cls, state: object, ams3h_model: bool = False) -> TrayLayout:
-        """Layout of a printer's live state; with no AMS data, ``ams3h_model`` (``printer_models.has_ams3h``) gives ``ams3h()``."""
+    def rack_printer(cls, rack_ams: AmsType) -> TrayLayout:
+        """A rack printer's layout from its model's rack AMS (unit 32 / 33), for when its own AMS data is not at hand."""
+        return cls(units=((RACK_UNIT_IDS[rack_ams], rack_ams),), rack=True)
+
+    @classmethod
+    def from_state(cls, state: object, rack_ams: AmsType | None = None) -> TrayLayout:
+        """Layout of a printer's live state; with no AMS data, ``rack_ams`` (``printer_models.model_rack_ams``) gives ``rack_printer()``."""
         raw = getattr(state, "raw_data", None) if state is not None else None
         layout = cls()
         if isinstance(raw, Mapping):
@@ -262,8 +286,8 @@ class TrayLayout:
             layout = cls.from_units(
                 units if isinstance(units, list) else None, vt_trays if isinstance(vt_trays, list) else None
             )
-        if ams3h_model and not layout.units:
-            return cls.ams3h()
+        if rack_ams is not None and not layout.units:
+            return cls.rack_printer(rack_ams)
         return layout
 
     def ams_type(self, ams_id: int) -> AmsType:
@@ -301,16 +325,17 @@ class TrayLayout:
         """``(ams_id, slot)`` of a listed rack AMS's slot, else None."""
         for uid, kind in self.rack_units:
             base = RACK_TRAY_BASE[kind]
-            if base <= tray_id < base + RACK_SLOT_COUNT:
+            if base <= tray_id < base + rack_slot_count(kind):
                 return uid, tray_id - base
         return None
 
     def slot_key(self, tray_id: int) -> tuple[int, int]:
         """The ``(ams_id, tray_id)`` global tray ``tray_id`` is stored under.
 
-        247-255 are only ever external inputs. 28-36 are the AMS 3H's, as in
-        Studio, unless the printer lists a rack AMS or a regular unit 7, so a
-        stored AMS 3H slot keeps its key without live data.
+        247-255 are only ever external inputs. 28-36 are the AMS 3H's and
+        37-43 the AMS 3P's, as in Studio, unless the printer lists a rack AMS
+        (or, for the AMS 3H's, a regular unit 7), so a stored rack slot keeps
+        its key without live data.
         """
         if tray_id in RACK_EXTERNAL_IDS:
             return EXTERNAL_AMS_ID, external_slot_index(tray_id)
@@ -321,6 +346,8 @@ class TrayLayout:
             return rack
         if tray_id in _AMS3H_TRAY_IDS and not self.rack_units and not any(uid == 7 for uid, _ in self.units):
             return AMS3H_UNIT_ID, tray_id - _AMS3H_TRAY_IDS.start
+        if tray_id in _AMS3P_TRAY_IDS and not self.rack_units:
+            return AMS3P_UNIT_ID, tray_id - _AMS3P_TRAY_IDS.start
         return tray_id // 4, tray_id % 4
 
     def tray_from_slot_key(self, ams_id: int, tray_id: int) -> int:
@@ -332,14 +359,16 @@ class TrayLayout:
         return self.global_tray_id(ams_id, tray_id)
 
     def raw_slot_to_global(self, raw: int) -> int | None:
-        """A rack printer's ``tray_now`` / ``tray_tar`` / ``tray_pre`` (the H3C reports the raw slot 0-8).
+        """A rack printer's ``tray_now`` / ``tray_tar`` / ``tray_pre`` (the H3C reports the raw slot 0-8, the P3C 0-6).
 
         None unless the printer has exactly one rack AMS and ``raw`` is one of its slots.
         """
         racks = self.rack_units
-        if len(racks) != 1 or not 0 <= raw < RACK_SLOT_COUNT:
+        if len(racks) != 1:
             return None
         uid, kind = racks[0]
+        if not 0 <= raw < rack_slot_count(kind):
+            return None
         return global_tray_id(uid, raw, kind)
 
 
@@ -369,7 +398,7 @@ def decode_wire_slot(value: object, layout: TrayLayout | None = None) -> int | N
     if ams_id in _REGULAR_WIRE_AMS_IDS:
         return layout.global_tray_id(ams_id, slot & 0x03)
     kind = layout.ams_type(ams_id)
-    if is_rack_ams(kind) and slot < RACK_SLOT_COUNT:
+    if is_rack_ams(kind) and slot < rack_slot_count(kind):
         return global_tray_id(ams_id, slot, kind)
     return None
 
@@ -388,3 +417,46 @@ def mapped_trays_with_slot(mapping_raw: object, local_slot: int) -> dict[int, in
         if slot == local_slot and (ams_id in _REGULAR_WIRE_AMS_IDS or is_ams_ht_id(ams_id)):
             found[tray] = ams_id
     return found
+
+
+def reconcile_use_ams(
+    ams_mapping: Iterable[int | str | None],
+    use_ams: bool,
+    layout: TrayLayout = _NO_LAYOUT,
+    *,
+    plate_uses_only_external: bool = False,
+) -> bool:
+    """The ``use_ams`` a single-nozzle printer is sent for ``ams_mapping``: the mapping decides the feed.
+
+    The MQTT command builder applies this (see ``start_print``), and the
+    scheduler judges a job's filament permissions (#3522) on the same answer,
+    so the two can't drift apart. Two corrections:
+
+    * A real tray (0-253, not an external input) turns the AMS on, even if the
+      job arrived with it off (#2595), unless the caller worked out from the
+      plate's own filament list that it prints only from the spool holder and
+      the real tray belongs to another plate (#3087).
+    * Only explicit external selections turn it off. An unresolved slot (-1)
+      does neither (#2589).
+
+    Entries must read as integers; anything else raises, as it would when sent.
+    """
+    entries = list(ams_mapping)
+    if not entries:
+        return use_ams
+    has_real_tray = any(t is not None and 0 <= int(t) <= 253 and not layout.is_external(int(t)) for t in entries)
+    all_external = all(t is None or int(t) >= 254 or layout.is_external(int(t)) for t in entries)
+    if has_real_tray and not use_ams and not plate_uses_only_external:
+        return True
+    if use_ams and all_external:
+        return False
+    return use_ams
+
+
+def reports_no_ams(raw_data: object) -> bool:
+    """Whether a printer's raw state positively reports no AMS attached (#3356).
+
+    An empty ``ams`` list is that report; a missing key means no AMS push has
+    been handled yet (a reconnect), which says nothing.
+    """
+    return isinstance(raw_data, Mapping) and raw_data.get("ams") == []

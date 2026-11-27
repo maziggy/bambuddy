@@ -127,14 +127,16 @@ class BindServer:
                     )
                 except OSError as e:
                     if e.errno == 98:
-                        logger.warning("Bind server port %s already in use, skipping", port)
+                        logger.warning("[%s] Bind server port %s already in use, skipping", self.name, port)
                     elif e.errno == 13:
-                        logger.warning("Bind server: cannot bind to port %s (permission denied), skipping", port)
+                        logger.warning(
+                            "[%s] Bind server: cannot bind to port %s (permission denied), skipping", self.name, port
+                        )
                     else:
-                        logger.warning("Bind server: failed to bind port %s: %s", port, e)
+                        logger.warning("[%s] Bind server: failed to bind port %s: %s", self.name, port, e)
 
             if not self._servers:
-                logger.error("Bind server: could not bind to any port")
+                logger.error("[%s] Bind server: could not bind to any port", self.name)
                 return
             self.ready.set()
 

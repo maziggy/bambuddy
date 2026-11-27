@@ -1,7 +1,9 @@
 import csv
 import io
-from datetime import datetime
-from typing import Any
+import re
+from collections.abc import Sequence
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +12,36 @@ from sqlalchemy.orm import selectinload
 from backend.app.core.printer_scope import PrinterScope
 from backend.app.models.archive import PrintArchive
 from backend.app.models.print_log import INCLUDE_OPEN_RUNS, PrintLogEntry
+
+if TYPE_CHECKING:
+    from backend.app.models.maintenance import MaintenanceLogEntry
+
+# A cell starting with one of these is read as a formula by spreadsheet apps,
+# including the full-width forms (＝ ＋ － ＠) some normalise to ASCII.
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "＝", "＋", "－", "＠")
+
+
+def _spreadsheet_text(value: Any) -> Any:
+    """A CSV cell as typed: text that starts like a formula gets a leading quote, so it stays text.
+
+    Leading whitespace is looked past (spreadsheets trim it on import), and a
+    value starting with a tab or line break is quoted too. Anything that isn't
+    text is left alone.
+    """
+    if not isinstance(value, str) or not value:
+        return value
+    if value[0] in "\t\r\n" or value.lstrip().startswith(_FORMULA_PREFIXES):
+        return f"'{value}"
+    return value
+
+
+def _xlsx_cell(ws: Any, row: int, column: int, value: Any) -> Any:
+    """Write a worksheet cell; text that starts with "=" is stored as text, not as a formula."""
+    cell = ws.cell(row=row, column=column, value=value)
+    if isinstance(value, str) and cell.data_type == "f":
+        cell.data_type = "s"
+    return cell
+
 
 # What one print of an archive has of its own (archive redesign): in the
 # export, its run's. Everything else is the file's, the archive's.
@@ -33,6 +65,15 @@ _PER_PRINT_FIELDS = frozenset(
         "completed_at",
     }
 )
+
+
+def _utc_iso(value: datetime | None) -> str:
+    """A stored (naive UTC) time as ISO 8601 with its zone."""
+    if value is None:
+        return ""
+    if value.tzinfo is not None:
+        value = value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value.replace(microsecond=0).isoformat() + "Z"
 
 
 class ExportService:
@@ -363,19 +404,50 @@ class ExportService:
             row.append(value)
         return row
 
+    MAINTENANCE_LOG_HEADERS = ["Performed at (UTC)", "Printer", "Task", "Performed by", "Print hours", "Comment"]
+
+    @classmethod
+    def export_maintenance_log(cls, entries: Sequence["MaintenanceLogEntry"], scope_label: str) -> tuple[bytes, str]:
+        """The maintenance log as CSV, and its file name.
+
+        ``scope_label`` names what the file holds (a printer's name, or
+        "all") in the file name. Text that people typed is written so that a
+        spreadsheet shows it as text, never runs it as a formula; the BOM makes
+        Excel read the file as UTF-8.
+        """
+        rows = [
+            [
+                _utc_iso(entry.performed_at),
+                _spreadsheet_text(entry.printer_name),
+                _spreadsheet_text(entry.maintenance_type_name),
+                _spreadsheet_text(entry.performed_by_username),
+                round(entry.hours_at_maintenance or 0.0, 1),
+                _spreadsheet_text(entry.notes),
+            ]
+            for entry in entries
+        ]
+        output = io.StringIO()
+        output.write("\ufeff")
+        writer = csv.writer(output)
+        writer.writerow(cls.MAINTENANCE_LOG_HEADERS)
+        writer.writerows(rows)
+        slug = re.sub(r"[^\w-]+", "_", scope_label, flags=re.UNICODE).strip("_") or "printer"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        return output.getvalue().encode("utf-8"), f"maintenance_log_{slug}_{timestamp}.csv"
+
     def _generate_csv(self, headers: list[str], rows: list[list]) -> bytes:
         """Generate CSV file content."""
         output = io.StringIO()
         writer = csv.writer(output)
         writer.writerow(headers)
-        writer.writerows(rows)
+        writer.writerows([[_spreadsheet_text(value) for value in row] for row in rows])
         return output.getvalue().encode("utf-8")
 
     def _generate_csv_simple(self, rows: list[list]) -> bytes:
         """Generate CSV file content from simple rows (no separate headers)."""
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerows(rows)
+        writer.writerows([[_spreadsheet_text(value) for value in row] for row in rows])
         return output.getvalue().encode("utf-8")
 
     def _generate_xlsx(self, headers: list[str], rows: list[list], fields: list[str]) -> bytes:
@@ -406,7 +478,7 @@ class ExportService:
         # Write data
         for row_idx, row in enumerate(rows, 2):
             for col_idx, value in enumerate(row, 1):
-                ws.cell(row=row_idx, column=col_idx, value=value)
+                _xlsx_cell(ws, row_idx, col_idx, value)
 
         # Auto-adjust column widths
         for col_idx, _field in enumerate(fields, 1):
@@ -441,7 +513,7 @@ class ExportService:
 
         for row_idx, row in enumerate(rows, 1):
             for col_idx, value in enumerate(row, 1):
-                cell = ws.cell(row=row_idx, column=col_idx, value=value)
+                cell = _xlsx_cell(ws, row_idx, col_idx, value)
                 # Bold section headers
                 if col_idx == 1 and value and isinstance(value, str) and value.endswith(":"):
                     cell.font = bold_font

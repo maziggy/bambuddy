@@ -160,3 +160,47 @@ describe('buildFilamentOptions', () => {
     expect(options.map(o => o.name)).toEqual(['Alpha PLA', 'Zebra PLA']);
   });
 });
+
+describe('imported presets carry their compatible printers (#3731)', () => {
+  it('parses the stored list onto the option, and leaves it off when there is none', () => {
+    const result = buildFilamentOptions(
+      [],
+      new Set(),
+      [
+        localPreset({ id: 1, name: 'Elegoo PLA Matte', compatible_printers: '["Bambu Lab A1 0.2 nozzle"]' }),
+        localPreset({ id: 2, name: 'Plain PLA', compatible_printers: null }),
+      ],
+    );
+    expect(result.find(o => o.code === '1')?.compatiblePrinters).toEqual(['Bambu Lab A1 0.2 nozzle']);
+    expect(result.find(o => o.code === '2')).not.toHaveProperty('compatiblePrinters');
+  });
+});
+
+describe('the fallback list when every source is empty (#3559)', () => {
+  // Each entry must carry the filament id Bambu gives its name. A wrong id is
+  // what the slot gets configured with: "Bambu PLA-CF" used to be GFS00, which
+  // is Support W, and the backend now turns a GFS00 slot into PLA-S.
+  const BAMBU_IDS: Record<string, string> = {
+    'Bambu PLA Basic': 'GFA00',
+    'Bambu PLA Matte': 'GFA01',
+    'Generic PLA': 'GFL99',
+    'Bambu PETG Basic': 'GFG00',
+    'Generic PETG': 'GFG99',
+    'Bambu ABS': 'GFB00',
+    'Generic ABS': 'GFB99',
+    'Bambu ASA': 'GFB01',
+    'Bambu TPU 95A': 'GFU01',
+    'Generic TPU': 'GFU99',
+    'Bambu PC': 'GFC00',
+    'Generic PA': 'GFN99',
+    'Bambu PLA-CF': 'GFA50',
+    'Bambu PETG-CF': 'GFG50',
+    'Bambu PA-CF': 'GFN03',
+    'Bambu PVA': 'GFS04',
+  };
+
+  it('files every preset under its own Bambu filament id', () => {
+    const options = buildFilamentOptions([], new Set());
+    expect(Object.fromEntries(options.map((o) => [o.name, o.code]))).toEqual(BAMBU_IDS);
+  });
+});

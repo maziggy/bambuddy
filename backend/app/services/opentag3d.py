@@ -1,7 +1,8 @@
-"""OpenTag3D NDEF encoder for NTAG tags.
+"""OpenTag3D NDEF encoder and decoder for NTAG tags.
 
 Encodes spool data as an OpenTag3D NDEF message ready to write to NTAG
-starting at page 4, the first page of the data area.
+starting at page 4, the first page of the data area, and decodes the payload
+of one read back (``decode_opentag3d``, #3657), in either layout.
 
 The Capability Container is not part of it: on NTAG21x it is page 3, set at
 the factory. A copy written from page 4 lands in the data area, where a Type 2
@@ -17,16 +18,57 @@ NDEF structure:
 """
 
 import logging
+import re
 import struct
 
 from backend.app.api.routes._spoolman_helpers import MappedSpoolFields
 from backend.app.models.spool import Spool
+from backend.app.services import tag_values
+from backend.app.utils.filament_types import is_printer_filament_type, printer_filament_type
 
 logger = logging.getLogger(__name__)
 
 OPENTAG3D_MIME_TYPE = b"application/opentag3d"
 PAYLOAD_SIZE = 102
 TAG_VERSION = 1000  # v1.000
+
+# Base Material and Material Modifiers are 5 bytes each, in both layouts.
+_FIELD_BYTES = 5
+# Where a material name splits into its base and its suffix: "PETG-HS", "TPU 95A".
+_MATERIAL_SEPARATOR = re.compile(r"[-\s]+")
+
+
+def _fits(text: str) -> bool:
+    return len(text.encode("utf-8")) <= _FIELD_BYTES
+
+
+def _material_fields(material: str | None, subtype: str | None) -> tuple[str, str]:
+    """What goes in Base Material and Material Modifiers (#3754).
+
+    Both fields are 5 bytes. The spec's base is the material "excluding any
+    modifiers", so a material that does not fit is split at its first "-" or
+    space: PETG-HS is written as PETG / HS, TPU 95A as TPU / 95A, PLA Matte as
+    PLA / Matte. Cutting it instead wrote "PETG-", which read back as a
+    material nothing knows, and PETG-HS and PETG-CF as the same one.
+
+    The suffix then takes the modifier field from the subtype: HS or CF says
+    which material it is, Matte does not, and the field holds one of them.
+    ``decode_opentag3d`` joins the two again where the result is a known type.
+
+    A name that fits is written as before, so tags that read fine stay as they
+    are. One with no usable split falls back to the printer type it names
+    ("PolyTerra PLA" -> PLA), and is cut only when there is none.
+    """
+    text = (material or "").strip()
+    if _fits(text):
+        return text, subtype or ""
+    parts = _MATERIAL_SEPARATOR.split(text, maxsplit=1)
+    if len(parts) == 2 and parts[0] and parts[1] and _fits(parts[0]):
+        return parts[0], parts[1]
+    reduced = printer_filament_type(text)
+    if reduced != text and _fits(reduced):
+        return reduced, subtype or ""
+    return text, subtype or ""
 
 
 def _build_payload_from_dict(data: dict) -> bytes:
@@ -41,13 +83,10 @@ def _build_payload_from_dict(data: dict) -> bytes:
     # 0x00: Tag Version (2 bytes, big-endian)
     struct.pack_into(">H", buf, 0x00, TAG_VERSION)
 
-    # 0x02: Base Material (5 bytes, UTF-8, space-padded)
-    material = (data.get("material") or "")[:5].ljust(5)
-    buf[0x02:0x07] = material.encode("utf-8")[:5]
-
-    # 0x07: Material Modifiers (5 bytes, UTF-8, space-padded)
-    modifiers = (data.get("subtype") or "")[:5].ljust(5)
-    buf[0x07:0x0C] = modifiers.encode("utf-8")[:5]
+    # 0x02: Base Material, 0x07: Material Modifiers (5 bytes each, UTF-8, space-padded)
+    base, modifiers = _material_fields(data.get("material"), data.get("subtype"))
+    _put_text(buf, 0x02, _FIELD_BYTES, base)
+    _put_text(buf, 0x07, _FIELD_BYTES, modifiers)
 
     # 0x0C: Reserved (15 bytes, zero-fill) — already zero
 
@@ -149,8 +188,9 @@ def _build_v2_payload_from_dict(data: dict) -> bytes:
     """
     buf = bytearray(V2_PAYLOAD_SIZE)
     struct.pack_into(">H", buf, 0x00, V2_TAG_VERSION)
-    _put_text(buf, 0x02, 5, data.get("material"))
-    _put_text(buf, 0x07, 5, data.get("subtype"))
+    base, modifiers = _material_fields(data.get("material"), data.get("subtype"))
+    _put_text(buf, 0x02, _FIELD_BYTES, base)
+    _put_text(buf, 0x07, _FIELD_BYTES, modifiers)
     _put_text(buf, 0x0C, 16, data.get("brand"))
     _put_text(buf, 0x1C, 32, data.get("color_name"))
     buf[0x3C:0x40] = _rgba_bytes(data.get("rgba") or "00000000")
@@ -228,3 +268,115 @@ def encode_opentag3d_from_mapped(mapped: MappedSpoolFields) -> bytes:
     NTAG starting at page 4.
     """
     return _encode_ndef(_build_payload_from_dict(mapped))
+
+
+# --- Decoding (#3657) -----------------------------------------------------------
+
+# Where each field sits, per layout: (offset, size) for text and colours, the
+# offset for numbers. v1 is the layout _build_payload_from_dict writes; v2 the
+# 2.x one _build_v2_payload_from_dict writes (2.000 moved every field).
+_V1_LAYOUT = {
+    "material": (0x02, 5),
+    "subtype": (0x07, 5),
+    "brand": (0x1B, 16),
+    "color_name": (0x2B, 32),
+    "rgba": (0x4B, 4),
+    "extra_colors": (0x4F, 12),
+    "diameter": 0x5C,
+    "label_weight": 0x5E,
+    "print_temp": 0x60,
+}
+_V2_LAYOUT = {
+    "material": (0x02, 5),
+    "subtype": (0x07, 5),
+    "brand": (0x0C, 16),
+    "color_name": (0x1C, 32),
+    "rgba": (0x3C, 4),
+    "extra_colors": (0x40, 12),
+    "diameter": 0x8C,
+    "label_weight": 0x9E,
+    "print_temp": 0x90,  # target; 0x91 minimum, 0x92 maximum
+}
+# Beyond every field read here, in either layout
+_DECODE_SIZE = 0xA2
+
+
+def decode_opentag3d(payload: bytes) -> dict:
+    """The spool fields an OpenTag3D payload holds, None where the tag leaves one out.
+
+    Fields: material, subtype, brand, color_name, rgba, extra_colors,
+    label_weight, core_weight, nozzle_temp_min, nozzle_temp_max, diameter,
+    drying_temp, drying_time. Raises TagDecodeError for a version this reader
+    must not parse, or a tag without a material.
+    """
+    if len(payload) < 2:
+        raise tag_values.TagDecodeError(f"OpenTag3D payload of {len(payload)} bytes")
+    version = struct.unpack_from(">H", payload, 0)[0]
+    if 1000 <= version < 2000:
+        layout = _V1_LAYOUT
+    elif 2000 <= version < 3000:
+        layout = _V2_LAYOUT
+    else:
+        # The spec: a reader must not parse a newer major version. Below 1.000
+        # there is no layout at all.
+        raise tag_values.TagDecodeError(f"OpenTag3D version {version // 1000}.{version % 1000:03d} not supported")
+    # Bytes past the written length read as 0 (spec 2.001); the v2 encoder
+    # stops at the empty spool weight.
+    buf = payload.ljust(_DECODE_SIZE, b"\x00")
+
+    def text(key: str, limit: int) -> str | None:
+        offset, size = layout[key]
+        return tag_values.text(buf[offset : offset + size].decode("utf-8", errors="ignore"), limit)
+
+    def u16(offset: int) -> int:
+        return struct.unpack_from(">H", buf, offset)[0]
+
+    # A tag written before #3754 can hold a name cut after its hyphen ("PETG-"
+    # of PETG-HS): the base before it is still the material.
+    material = (text("material", tag_values.MAX_MATERIAL) or "").rstrip("-").strip()
+    if not material:
+        raise tag_values.TagDecodeError("OpenTag3D tag without a material")
+    subtype = text("subtype", tag_values.MAX_SUBTYPE)
+    # A modifier that completes a known type is part of the material: PETG +
+    # CF is PETG-CF, PLA + AERO is PLA-AERO, the way the encoder splits a name
+    # too long for the field (#3754). Anything else (HF, HS, Matte, Silk) stays
+    # the subtype, since HF and CF are subtypes users pick on purpose (#1345).
+    if subtype and is_printer_filament_type(f"{material}-{subtype}"):
+        material, subtype = f"{material}-{subtype}".upper(), None
+
+    offset, _ = layout["rgba"]
+    rgba = tag_values.rgba_from_bytes(buf[offset : offset + 4])
+    offset, size = layout["extra_colors"]
+    extra = tag_values.extra_colors(
+        [tag_values.rgba_from_bytes(buf[o : o + 4]) for o in range(offset, offset + size, 4)]
+    )
+
+    # Temperatures are stored in steps of 5 degrees. A tag with only the
+    # target print temperature (all of v1, and v2 without the optional range)
+    # gives it as the minimum and no maximum, rather than a made-up range.
+    target = buf[layout["print_temp"]] * 5
+    if layout is _V2_LAYOUT:
+        temp_min = buf[0x91] * 5 or target
+        temp_max = buf[0x92] * 5
+        core_weight = tag_values.weight(u16(0xA0))
+        drying_temp = tag_values.temperature(buf[0x9A] * 5)  # maximum drying temperature
+        drying_time = buf[0x9B] or None  # hours, as on a Bambu tag
+    else:
+        temp_min, temp_max = target, 0
+        core_weight = drying_temp = drying_time = None
+
+    return {
+        "material": material,
+        "subtype": subtype,
+        "brand": text("brand", tag_values.MAX_BRAND),
+        "color_name": text("color_name", tag_values.MAX_COLOR_NAME),
+        "rgba": rgba,
+        "extra_colors": extra,
+        "label_weight": tag_values.weight(u16(layout["label_weight"])),
+        "core_weight": core_weight,
+        "nozzle_temp_min": tag_values.temperature(temp_min),
+        "nozzle_temp_max": tag_values.temperature(temp_max),
+        "diameter": tag_values.diameter(u16(layout["diameter"]) / 1000),  # micrometres
+        "drying_temp": drying_temp,
+        "drying_time": drying_time,
+    }

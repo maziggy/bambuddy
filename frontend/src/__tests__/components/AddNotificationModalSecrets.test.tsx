@@ -43,6 +43,8 @@ function provider(overrides: Partial<NotificationProvider>): NotificationProvide
     on_ams_ht_temperature_high: false,
     on_plate_not_empty: true,
     on_plate_clear_required: false,
+    on_plate_changer_empty: true,
+    on_filament_out_of_stock: false,
     on_bed_cooled: false,
     on_first_layer_complete: false,
     on_queue_job_added: false,

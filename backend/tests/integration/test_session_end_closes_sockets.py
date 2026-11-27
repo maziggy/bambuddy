@@ -117,7 +117,7 @@ async def test_a_backup_restore_closes_the_signed_in_sockets(async_client: Async
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setattr(app_settings, "base_dir", tmp_path)
     monkeypatch.setattr(app_settings, "database_url", f"sqlite+aiosqlite:///{db_path}")
-    zip_path, _ = await create_backup_zip(output_path=tmp_path)
+    zip_path, *_ = await create_backup_zip(output_path=tmp_path)
     user, key, anonymous = _socket(user_id=5), _socket(key_id=3), _socket()
     ws_manager.active_connections.extend([user, key, anonymous])
 
@@ -168,7 +168,7 @@ async def test_a_restore_that_turns_authentication_on_closes_the_anonymous_socke
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setattr(app_settings, "base_dir", tmp_path)
     monkeypatch.setattr(app_settings, "database_url", f"sqlite+aiosqlite:///{db_path}")
-    zip_path, _ = await create_backup_zip(output_path=tmp_path)
+    zip_path, *_ = await create_backup_zip(output_path=tmp_path)
     anonymous = _socket()
     ws_manager.active_connections.append(anonymous)
 
@@ -501,7 +501,7 @@ async def test_a_restore_reads_the_restored_auth_setting_not_the_cached_one(
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setattr(app_settings, "base_dir", tmp_path)
     monkeypatch.setattr(app_settings, "database_url", f"sqlite+aiosqlite:///{db_path}")
-    zip_path, _ = await create_backup_zip(output_path=tmp_path)
+    zip_path, *_ = await create_backup_zip(output_path=tmp_path)
     calls = []
     real = auth.invalidate_auth_enabled_cache
     monkeypatch.setattr(auth, "invalidate_auth_enabled_cache", lambda: (calls.append(1), real())[1])

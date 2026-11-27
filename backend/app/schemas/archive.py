@@ -151,6 +151,8 @@ class ArchiveResponse(BaseModel):
     user_verdict_source: str | None = _per_print(None)
     user_verdict_at: datetime | None = _per_print(None)
     confirm_requested: bool = False
+    # The print clears its own plate (#3576); a reprint inherits it
+    clears_plate: bool = False
     # The run (print log entry) whose outcome this response shows, when it
     # shows one run of the archive rather than its latest (#1898).
     run_id: int | None = None
@@ -180,6 +182,13 @@ class ArchiveResponse(BaseModel):
     total_filament_actual_grams: float | None = None
     successful_run_count: int = 0
     failed_run_count: int = 0
+    # What all its runs cost, summed as Statistics does (#3609). The archive's
+    # own cost / energy_cost stay the file's and the first run's (#1378,
+    # #2614). None where no run has the figure.
+    total_cost: float | None = None
+    total_energy_kwh: float | None = None
+    total_energy_cost: float | None = None
+    total_wear_cost: float | None = None
 
     @model_validator(mode="after")
     def compute_object_count(self) -> "ArchiveResponse":

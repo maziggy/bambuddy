@@ -8825,6 +8825,8 @@ export default {
       waiting: '等待 SpoolBuddy...',
       writeSuccess: '標籤寫入成功！',
       writeFailed: '寫入失敗',
+      writeExpired: '未在時間內放上標籤。請再試一次。',
+      writeReplaced: '傳給此 SpoolBuddy 的另一個指令結束了寫入。請再試一次。',
       linkFailedSpoolmanNotConfigured: '標籤已寫入，但 Spoolman 未設定，因此未關聯到料卷',
       linkFailedSpoolman: '標籤已寫入，但在 Spoolman 中關聯料卷失敗',
       linkFailedSpoolNotFound: '標籤已寫入，但料卷已不存在',

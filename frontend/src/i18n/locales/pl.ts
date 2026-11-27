@@ -8893,6 +8893,8 @@ export default {
       waiting: 'Oczekiwanie na SpoolBuddy...',
       writeSuccess: 'Tag zapisany pomyślnie!',
       writeFailed: 'Zapis nieudany',
+      writeExpired: 'Nie położono tagu na czas. Spróbuj ponownie.',
+      writeReplaced: 'Inne polecenie dla tego SpoolBuddy zakończyło zapis. Spróbuj ponownie.',
       linkFailedSpoolmanNotConfigured: 'Tag został zapisany, ale Spoolman nie jest skonfigurowany, więc tag nie jest powiązany ze szpulą',
       linkFailedSpoolman: 'Tag został zapisany, ale nie udało się powiązać go ze szpulą w Spoolman',
       linkFailedSpoolNotFound: 'Tag został zapisany, ale szpula już nie istnieje',

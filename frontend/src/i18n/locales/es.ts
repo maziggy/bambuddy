@@ -8848,6 +8848,8 @@ export default {
       waiting: 'Esperando a SpoolBuddy...',
       writeSuccess: '¡Etiqueta escrita correctamente!',
       writeFailed: 'Error al escribir',
+      writeExpired: 'No se colocó ninguna etiqueta a tiempo. Inténtalo de nuevo.',
+      writeReplaced: 'Otro comando para este SpoolBuddy terminó la escritura. Inténtalo de nuevo.',
       linkFailedSpoolmanNotConfigured: 'La etiqueta se escribió, pero Spoolman no está configurado, así que no está vinculada a la bobina',
       linkFailedSpoolman: 'La etiqueta se escribió, pero no se pudo vincular a la bobina en Spoolman',
       linkFailedSpoolNotFound: 'La etiqueta se escribió, pero la bobina ya no existe',

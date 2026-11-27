@@ -307,6 +307,61 @@ async def unregister_device(
     return {"status": "deleted", "device_id": device_id}
 
 
+# How long a queued tag write waits for a tag (#3503). A write nobody is
+# waiting on any more would write the next NTAG placed on the reader.
+WRITE_TAG_TTL = timedelta(seconds=60)
+
+
+def _queued_write(device: SpoolBuddyDevice) -> dict | None:
+    """The device's queued tag write, or None when no write is queued."""
+    if device.pending_command != "write_tag":
+        return None
+    try:
+        payload = json.loads(device.pending_write_payload or "{}")
+    except (json.JSONDecodeError, TypeError):
+        payload = {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _write_expired(write: dict) -> bool:
+    """True once a queued write is older than WRITE_TAG_TTL. A write queued
+    before writes carried their time (an older Bambuddy) counts as expired."""
+    try:
+        queued_at = datetime.fromisoformat(write["queued_at"])
+    except (KeyError, TypeError, ValueError):
+        return True
+    return datetime.now(timezone.utc) - queued_at > WRITE_TAG_TTL
+
+
+def _end_queued_write(device: SpoolBuddyDevice) -> dict | None:
+    """Drop the device's queued tag write; the write it was, or None."""
+    write = _queued_write(device)
+    if write is not None:
+        device.pending_command = None
+        device.pending_write_payload = None
+    return write
+
+
+async def _broadcast_write_ended(device_id: str, write: dict | None, reason: str, message: str) -> None:
+    """Tell the Write page a queued write ended without a result (#3503)."""
+    if write is None:
+        return
+    logger.info("Write tag for spool %s on device %s ended: %s", write.get("spool_id"), device_id, reason)
+    await ws_manager.broadcast(
+        {
+            "type": "spoolbuddy_tag_write_failed",
+            "device_id": device_id,
+            "spool_id": write.get("spool_id"),
+            "message": message,
+            "reason": reason,
+        }
+    )
+
+
+async def _broadcast_write_replaced(device_id: str, write: dict | None) -> None:
+    await _broadcast_write_ended(device_id, write, "replaced", "Another command replaced the tag write")
+
+
 @router.post("/devices/{device_id}/heartbeat", response_model=HeartbeatResponse)
 async def device_heartbeat(
     device_id: str,
@@ -340,6 +395,11 @@ async def device_heartbeat(
     if req.system_stats is not None:
         device.system_stats = json.dumps(req.system_stats)
 
+    # A write nobody placed a tag for in time ends here, before it reaches
+    # the device: one that comes back after a while must not write it (#3503).
+    queued = _queued_write(device)
+    expired = _end_queued_write(device) if queued is not None and _write_expired(queued) else None
+
     # Return and clear pending command
     pending = device.pending_command
     pending_write = None
@@ -364,6 +424,7 @@ async def device_heartbeat(
         device.pending_command = None
 
     await db.commit()
+    await _broadcast_write_ended(device_id, expired, "expired", "No tag was placed in time")
 
     # Emit online presence on offline->online transitions immediately, and
     # periodically while online so newly connected UIs can bootstrap state.
@@ -972,6 +1033,8 @@ async def nfc_write_tag(
             # daemon picks by the tag's size (#3500).
             "ndef_v2_hex": ndef_v2.hex(),
             "data_origin": data_origin,
+            # When it was queued; it expires after WRITE_TAG_TTL (#3503).
+            "queued_at": datetime.now(timezone.utc).isoformat(),
         }
     )
     device.pending_command = "write_tag"
@@ -984,7 +1047,7 @@ async def nfc_write_tag(
         data_origin,
         len(ndef_data),
     )
-    result: dict = {"status": "queued"}
+    result: dict = {"status": "queued", "expires_in": int(WRITE_TAG_TTL.total_seconds())}
     if nfc_warnings:
         result["warnings"] = nfc_warnings
     return result
@@ -1003,12 +1066,18 @@ async def nfc_write_result(
     if not device:
         raise HTTPException(status_code=404, detail="Device not registered")
 
-    # Capture data_origin before clearing the payload
-    try:
-        payload_dict = json.loads(device.pending_write_payload or "{}")
-    except (json.JSONDecodeError, TypeError):
-        payload_dict = {}
-        logger.warning("Malformed pending_write_payload for device %s — treating as local", req.device_id)
+    # Only the result of the write that is queued counts. One that was
+    # cancelled, replaced or expired has no payload left to say which
+    # inventory its spool id belongs to, and nobody is waiting on it: linking
+    # it would put the tag on whatever spool has that id (#3503).
+    payload_dict = _queued_write(device)
+    if payload_dict is None or payload_dict.get("spool_id") != req.spool_id:
+        logger.warning(
+            "Write result for spool %d from device %s ignored: no such write is queued (cancelled or ended)",
+            req.spool_id,
+            req.device_id,
+        )
+        return {"status": "ignored", "linked": False}
     data_origin = payload_dict.get("data_origin", "local")
 
     device.pending_command = None
@@ -1348,8 +1417,10 @@ async def tare_scale(
     if not device:
         raise HTTPException(status_code=404, detail="Device not registered")
 
+    replaced = _end_queued_write(device)
     device.pending_command = "tare"
     await db.commit()
+    await _broadcast_write_replaced(device_id, replaced)
     return {"status": "ok", "message": "Tare command queued"}
 
 
@@ -1510,9 +1581,11 @@ async def queue_system_config_update(
     if req.api_key is not None and req.api_key.strip():
         payload["api_key"] = req.api_key.strip()
 
+    replaced = _end_queued_write(device)
     device.pending_system_payload = json.dumps(payload)
     device.pending_command = "apply_system_config"
     await db.commit()
+    await _broadcast_write_replaced(device_id, replaced)
 
     logger.info("Queued system config update for device %s", device_id)
     return {"status": "queued", "message": "System config update queued"}
@@ -1550,8 +1623,10 @@ async def queue_system_command(
     if not _is_online(device):
         raise HTTPException(status_code=409, detail="Device is offline")
 
+    replaced = _end_queued_write(device)
     device.pending_command = req.command
     await db.commit()
+    await _broadcast_write_replaced(device_id, replaced)
 
     logger.info("System command queued for device %s: %s", device_id, req.command)
     return {"status": "queued", "command": req.command}
@@ -1622,9 +1697,11 @@ async def queue_diagnostic(
     if not device:
         raise HTTPException(status_code=404, detail="Device not registered")
 
+    replaced = _end_queued_write(device)
     device.pending_command = f"run_{diagnostic}_diag"
     _diagnostic_results.pop((device_id, diagnostic), None)
     await db.commit()
+    await _broadcast_write_replaced(device_id, replaced)
 
     logger.info("Diagnostic queued for device %s: %s", device_id, diagnostic)
     return {"status": "queued", "diagnostic": diagnostic, "message": f"Diagnostic '{diagnostic}' queued for device"}

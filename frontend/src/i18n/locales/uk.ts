@@ -8881,6 +8881,8 @@ export default {
       waiting: "Очікування SpoolBuddy...",
       writeSuccess: "Тег успішно записано!",
       writeFailed: "Помилка запису",
+      writeExpired: "Мітку не було прикладено вчасно. Спробуйте ще раз.",
+      writeReplaced: "Інша команда для цього SpoolBuddy перервала запис. Спробуйте ще раз.",
       linkFailedSpoolmanNotConfigured: "Мітку записано, але Spoolman не налаштовано, тому її не пов'язано з котушкою",
       linkFailedSpoolman: "Мітку записано, але пов'язати її з котушкою в Spoolman не вдалося",
       linkFailedSpoolNotFound: "Мітку записано, але котушки більше не існує",

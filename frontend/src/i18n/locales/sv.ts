@@ -8922,6 +8922,8 @@ errors: {
       waiting: 'Väntar på SpoolBuddy...',
       writeSuccess: 'Tagg skriven!',
       writeFailed: 'Kunde inte skriva tagg',
+      writeExpired: 'Ingen tagg lades på i tid. Försök igen.',
+      writeReplaced: 'Ett annat kommando till denna SpoolBuddy avslutade skrivningen. Försök igen.',
       linkFailedSpoolmanNotConfigured: 'Taggen skrevs, men Spoolman är inte konfigurerat, så den är inte kopplad till spolen',
       linkFailedSpoolman: 'Taggen skrevs, men kopplingen till spolen i Spoolman misslyckades',
       linkFailedSpoolNotFound: 'Taggen skrevs, men spolen finns inte längre',

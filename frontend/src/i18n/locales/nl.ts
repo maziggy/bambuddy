@@ -8891,6 +8891,8 @@ export default {
       waiting: 'Wachten op SpoolBuddy...',
       writeSuccess: 'Tag succesvol geschreven!',
       writeFailed: 'Schrijven mislukt',
+      writeExpired: 'Er is niet op tijd een tag neergelegd. Probeer het opnieuw.',
+      writeReplaced: 'Een ander commando voor deze SpoolBuddy heeft het schrijven beëindigd. Probeer het opnieuw.',
       linkFailedSpoolmanNotConfigured: 'De tag is geschreven, maar Spoolman is niet ingesteld, dus hij is niet aan de spoel gekoppeld',
       linkFailedSpoolman: 'De tag is geschreven, maar koppelen aan de spoel in Spoolman is mislukt',
       linkFailedSpoolNotFound: 'De tag is geschreven, maar de spoel bestaat niet meer',

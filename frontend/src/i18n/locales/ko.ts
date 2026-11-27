@@ -8483,6 +8483,8 @@ export default {
       waiting: 'SpoolBuddy 대기 중...',
       writeSuccess: '태그 성공적으로 쓰여짐!',
       writeFailed: '쓰기 실패',
+      writeExpired: '제시간에 태그가 놓이지 않았습니다. 다시 시도하세요.',
+      writeReplaced: '이 SpoolBuddy에 대한 다른 명령으로 쓰기가 종료되었습니다. 다시 시도하세요.',
       linkFailedSpoolmanNotConfigured: '태그는 기록되었지만 Spoolman이 설정되지 않아 스풀에 연결되지 않았습니다',
       linkFailedSpoolman: '태그는 기록되었지만 Spoolman에서 스풀에 연결하지 못했습니다',
       linkFailedSpoolNotFound: '태그는 기록되었지만 스풀이 더 이상 존재하지 않습니다',

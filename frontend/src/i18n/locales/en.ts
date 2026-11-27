@@ -8893,6 +8893,8 @@ export default {
       waiting: 'Waiting for SpoolBuddy...',
       writeSuccess: 'Tag written successfully!',
       writeFailed: 'Write failed',
+      writeExpired: 'No tag was placed in time. Try again.',
+      writeReplaced: 'Another command for this SpoolBuddy ended the write. Try again.',
       linkFailedSpoolmanNotConfigured: 'The tag was written, but Spoolman is not set up, so it is not linked to the spool',
       linkFailedSpoolman: 'The tag was written, but linking it to the spool in Spoolman failed',
       linkFailedSpoolNotFound: 'The tag was written, but the spool no longer exists',

@@ -8827,6 +8827,8 @@ export default {
       waiting: 'In attesa di SpoolBuddy...',
       writeSuccess: 'Tag scritto con successo!',
       writeFailed: 'Scrittura fallita',
+      writeExpired: 'Nessun tag è stato appoggiato in tempo. Riprova.',
+      writeReplaced: 'Un altro comando per questo SpoolBuddy ha interrotto la scrittura. Riprova.',
       linkFailedSpoolmanNotConfigured: 'Il tag è stato scritto, ma Spoolman non è configurato, quindi non è collegato alla bobina',
       linkFailedSpoolman: 'Il tag è stato scritto, ma il collegamento alla bobina in Spoolman non è riuscito',
       linkFailedSpoolNotFound: 'Il tag è stato scritto, ma la bobina non esiste più',

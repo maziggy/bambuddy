@@ -8779,6 +8779,8 @@ export default {
       waiting: 'SpoolBuddy bekleniyor...',
       writeSuccess: 'Etiket başarıyla yazıldı!',
       writeFailed: 'Yazma başarısız',
+      writeExpired: 'Zamanında etiket yerleştirilmedi. Tekrar deneyin.',
+      writeReplaced: 'Bu SpoolBuddy için başka bir komut yazmayı sonlandırdı. Tekrar deneyin.',
       linkFailedSpoolmanNotConfigured: 'Etiket yazıldı, ancak Spoolman ayarlanmadığı için makaraya bağlanmadı',
       linkFailedSpoolman: 'Etiket yazıldı, ancak Spoolman\'da makaraya bağlanamadı',
       linkFailedSpoolNotFound: 'Etiket yazıldı, ancak makara artık mevcut değil',

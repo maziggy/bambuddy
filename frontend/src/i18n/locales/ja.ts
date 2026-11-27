@@ -8841,6 +8841,8 @@ export default {
       waiting: 'SpoolBuddyを待機中...',
       writeSuccess: 'タグの書込みが完了しました！',
       writeFailed: '書込み失敗',
+      writeExpired: '時間内にタグが置かれませんでした。もう一度お試しください。',
+      writeReplaced: 'この SpoolBuddy への別のコマンドで書込みが終了しました。もう一度お試しください。',
       linkFailedSpoolmanNotConfigured: 'タグは書き込まれましたが、Spoolman が設定されていないためスプールにリンクされていません',
       linkFailedSpoolman: 'タグは書き込まれましたが、Spoolman でスプールへのリンクに失敗しました',
       linkFailedSpoolNotFound: 'タグは書き込まれましたが、スプールはもう存在しません',

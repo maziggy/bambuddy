@@ -8471,6 +8471,8 @@ export default {
       waiting: "Ожидание SpoolBuddy...",
       writeSuccess: "Метка успешно записана!",
       writeFailed: "Ошибка записи",
+      writeExpired: "Метка не была приложена вовремя. Попробуйте ещё раз.",
+      writeReplaced: "Другая команда для этого SpoolBuddy прервала запись. Попробуйте ещё раз.",
       linkFailedSpoolmanNotConfigured: "Метка записана, но Spoolman не настроен, поэтому она не связана с катушкой",
       linkFailedSpoolman: "Метка записана, но связать её с катушкой в Spoolman не удалось",
       linkFailedSpoolNotFound: "Метка записана, но катушка больше не существует",

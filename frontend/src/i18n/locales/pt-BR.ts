@@ -8827,6 +8827,8 @@ export default {
       waiting: 'Aguardando SpoolBuddy...',
       writeSuccess: 'Tag gravado com sucesso!',
       writeFailed: 'Falha na gravação',
+      writeExpired: 'Nenhuma tag foi colocada a tempo. Tente novamente.',
+      writeReplaced: 'Outro comando para este SpoolBuddy encerrou a gravação. Tente novamente.',
       linkFailedSpoolmanNotConfigured: 'A etiqueta foi gravada, mas o Spoolman não está configurado, então ela não está vinculada ao carretel',
       linkFailedSpoolman: 'A etiqueta foi gravada, mas a vinculação ao carretel no Spoolman falhou',
       linkFailedSpoolNotFound: 'A etiqueta foi gravada, mas o carretel não existe mais',

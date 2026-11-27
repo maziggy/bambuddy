@@ -12854,6 +12854,10 @@ async def lifespan(app: FastAPI):
     printer_manager.set_finish_photo_moment_callback(on_finish_photo_moment)
     printer_manager.set_ams_change_callback(on_ams_change)
     printer_manager.set_fts_inlet_change_callback(on_fts_inlet_change)
+    # A SpoolBuddy pending load waits for a slot to be loaded (#3756).
+    from backend.app.services.pending_load import pending_loads
+
+    printer_manager.set_ams_presence_change_callback(pending_loads.on_presence_change)
 
     # Rehydrate persisted awaiting-plate-clear gate (#961) so prompts survive restarts
     await printer_manager.load_awaiting_plate_clear_from_db()

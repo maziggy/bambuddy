@@ -6,6 +6,10 @@ from pydantic import BaseModel, Field, field_validator
 # --- Device schemas ---
 
 
+# Features a device can rely on; see DeviceResponse.features.
+SPOOLBUDDY_FEATURES = ("pending_load",)
+
+
 class DeviceRegisterRequest(BaseModel):
     device_id: str = Field(..., min_length=1, max_length=50)
     hostname: str = Field(..., min_length=1, max_length=100)
@@ -48,6 +52,9 @@ class DeviceResponse(BaseModel):
     system_stats: dict | None = None
     online: bool = False
     ssh_public_key: str | None = None
+    # What this Bambuddy offers a device beyond the base protocol, so a client
+    # can stop doing it itself ("pending_load": #3756).
+    features: list[str] = Field(default_factory=lambda: list(SPOOLBUDDY_FEATURES))
     created_at: datetime
     updated_at: datetime
 
@@ -83,6 +90,35 @@ class HeartbeatResponse(BaseModel):
     display_brightness: int = 100
     display_blank_timeout: int = 0
     ssh_public_key: str | None = None
+    features: list[str] = Field(default_factory=lambda: list(SPOOLBUDDY_FEATURES))
+
+
+# --- Pending load (#3756) ---
+
+
+class PendingLoadRequest(BaseModel):
+    """This device holds ``spool_id``; assign it to the slot of ``printer_id`` loaded within ``timeout_s``."""
+
+    spool_id: int
+    printer_id: int
+    timeout_s: int = Field(60, ge=10, le=600)
+
+
+class PendingLoadResponse(BaseModel):
+    device_id: str
+    # pending, assigned, expired, cancelled or failed
+    state: str
+    spool_id: int | None = None
+    printer_id: int | None = None
+    expires_in_s: int | None = None
+    ams_id: int | None = None
+    tray_id: int | None = None
+    # When assigned: whether the slot's settings reached the printer, and
+    # whether they are sent once the printer is back (as the assign routes).
+    configured: bool | None = None
+    printer_offline: bool | None = None
+    # Why a failed or cancelled pending load ended.
+    reason: str | None = None
 
 
 # --- NFC schemas ---

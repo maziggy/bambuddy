@@ -110,7 +110,7 @@ from backend.app.services.spool_assignment_notifications import (
 from backend.app.utils.ams_drying import is_countdown_parked
 from backend.app.utils.ams_humidity import ams_humidity_percent
 from backend.app.utils.archive_paths import archive_photos_dir
-from backend.app.utils.color_utils import color6_key, perceptual_color_distance
+from backend.app.utils.color_utils import color6_key, forced_colors_match, perceptual_color_distance
 from backend.app.utils.filament_types import canonical_filament_type
 from backend.app.utils.filename import InvalidFilenameError, derive_remote_filename, validate_print_filename
 from backend.app.utils.library_paths import move_library_photos
@@ -4853,7 +4853,8 @@ class PrintScheduler:
 
         Each entry in ``force_overrides`` must have ``type`` and ``color`` fields and is expected
         to carry ``force_color_match: True``.  The printer must have **every** such slot loaded
-        with an exact type+color match.
+        with the same type and colour; colours no eye tells apart count as the same
+        (``forced_colors_match``, #3763).
 
         When both the override and a candidate tray carry a ``tray_info_idx``, they must also
         match on it: Bambu reports every PLA variant as ``tray_type == "PLA"``, so the
@@ -4904,7 +4905,7 @@ class PrintScheduler:
                 for i, (t_type, t_color, t_idx) in enumerate(loaded)
                 if i not in taken
                 and t_type == o_type
-                and t_color == o_color
+                and forced_colors_match(t_color, o_color)
                 and (not o_idx or not t_idx or o_idx == t_idx)
             ]
             pick = next((i for i in fits if o_idx and loaded[i][2] == o_idx), fits[0] if fits else None)
@@ -5962,9 +5963,9 @@ class PrintScheduler:
             if req.get("force_color_match"):
                 want_idx = req.get("tray_info_idx") or ""
                 have_idx = loaded_tray.get("tray_info_idx") or ""
-                if self._normalize_color_for_compare(req.get("color")) != self._normalize_color_for_compare(
-                    loaded_tray.get("color")
-                ) or (want_idx and have_idx and want_idx != have_idx):
+                if not forced_colors_match(req.get("color"), loaded_tray.get("color")) or (
+                    want_idx and have_idx and want_idx != have_idx
+                ):
                     return (
                         f"slot {slot_id} is forced to {req.get('type')} {req.get('color')} "
                         f"but tray {tray} holds {loaded_tray.get('type')} {loaded_tray.get('color')}"
@@ -6716,7 +6717,8 @@ class PrintScheduler:
                 )
 
             # A forced slot takes only what `_get_missing_force_color_slots`
-            # accepts: same type, exact colour, and the same variant when both
+            # accepts: same type, the same colour (``forced_colors_match``: no eye
+            # tells it apart, #3763), and the same variant when both
             # sides name one -- preferring the tray that does. Nothing looser:
             # the model-based path holds a job the printer cannot satisfy this
             # way, and a printer-pinned job fell through to type_only and
@@ -6724,18 +6726,21 @@ class PrintScheduler:
             forced = bool(req.get("force_color_match"))
             if forced:
                 want_type = canonical_filament_type(req_type)
-                want_color = self._normalize_color_for_compare(req_color)
                 candidates = [
                     f
                     for f in available
                     if canonical_filament_type((f.get("type") or "").upper()) == want_type
-                    and self._normalize_color_for_compare(f.get("color", "")) == want_color
+                    and forced_colors_match(f.get("color", ""), req_color)
                     and (
                         not req_tray_info_idx
                         or not f.get("tray_info_idx")
                         or f.get("tray_info_idx") == req_tray_info_idx
                     )
                 ]
+                # The very same hex before one no eye tells apart; stable, so the
+                # caller's order decides among equals.
+                want_key = self._normalize_color_for_compare(req_color)
+                candidates.sort(key=lambda f: self._normalize_color_for_compare(f.get("color", "")) != want_key)
                 exact_match = next(
                     (f for f in candidates if req_tray_info_idx and f.get("tray_info_idx") == req_tray_info_idx),
                     candidates[0] if candidates else None,

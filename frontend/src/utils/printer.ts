@@ -64,6 +64,7 @@ export function getWifiStrength(rssi: number): { labelKey: string; color: string
 }
 
 import type { PrinterStatus, PrintQueueItem } from '../api/client';
+import { forcedColorsMatch } from './amsHelpers';
 
 /** Gcode states with no print loaded. */
 export const IDLE_PRINTER_STATES = ['IDLE', 'FINISH', 'FAILED'];
@@ -134,16 +135,25 @@ export function filterCompatibleQueueItems(
       // override carries a tray_info_idx, the same variant too (a loaded tray with a
       // blank idx still satisfies it, matching the backend's type+colour fallback).
       if (forceOverrides.length > 0) {
+        // A colour no eye tells apart counts as the same colour (#3763), as in the scheduler.
+        const holds = (keys: Iterable<string>, oType: string, oColor: string, idx?: (key: string) => boolean) =>
+          Array.from(keys).some(key => {
+            const [type, color] = key.split(':');
+            return type === oType && forcedColorsMatch(color, oColor) && (!idx || idx(key));
+          });
         const allForceMatch = forceOverrides.every(o => {
           const oType = (o.type || '').toUpperCase();
           const oColor = (o.color || '').replace('#', '').toLowerCase().slice(0, 6);
           const oIdx = o.tray_info_idx || '';
           // No variant on the override, or no variant data supplied → type+colour only.
           if (!oIdx || loadedVariants === undefined) {
-            return loadedFilaments.has(`${oType}:${oColor}`);
+            return holds(loadedFilaments, oType, oColor);
           }
           // Variant-specific: same idx, or a same-colour tray that reports no idx.
-          return loadedVariants.has(`${oType}:${oColor}:${oIdx}`) || loadedVariants.has(`${oType}:${oColor}:`);
+          return holds(loadedVariants, oType, oColor, key => {
+            const keyIdx = key.split(':')[2] ?? '';
+            return keyIdx === oIdx || keyIdx === '';
+          });
         });
         if (!allForceMatch) return false;
       }

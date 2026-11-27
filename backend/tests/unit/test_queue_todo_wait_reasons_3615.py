@@ -337,6 +337,62 @@ class TestShortSpoolInTheList:
         assert todo["count"] == 2
 
 
+class TestShortSpoolsKeepTheirTrays:
+    """Equality of a ``TodoFilament`` ignores the short fields; the list must not."""
+
+    A2 = replace(SHORT_PLA, short_trays=(ShortTray(0, 1, 12.0),), required_grams=30.0)
+    A3 = replace(SHORT_PLA, short_trays=(ShortTray(0, 2, 20.0),), required_grams=50.0)
+
+    def test_two_jobs_short_in_different_trays_are_two_entries(self):
+        holds = {1: [FilamentHold(1, 7, None, (self.A2,))], 2: [FilamentHold(2, 7, None, (self.A3,))]}
+        todo = build_todo([_job(1, {7}, 7), _job(2, {7}, 7)], {7: "A"}, holds, [], {}, [])
+
+        named = [
+            (e["jobs"][0]["id"], e["filaments"][0]["short_trays"][0]["tray_id"], e["filaments"][0]["required_grams"])
+            for e in _entries(todo)
+        ]
+        assert named == [(1, 1, 30.0), (2, 2, 50.0)]
+
+    def test_two_model_jobs_short_in_different_trays_of_one_printer_are_two_entries(self):
+        holds = {1: [FilamentHold(1, 7, "X1C", (self.A2,))], 2: [FilamentHold(2, 7, "X1C", (self.A3,))]}
+        todo = build_todo([_job(1, {7}, None), _job(2, {7}, None)], {7: "A"}, holds, [], {}, [])
+
+        assert [e["filaments"][0]["short_trays"][0]["tray_id"] for e in _entries(todo)] == [1, 2]
+
+    def test_a_carried_hold_keeps_both_short_trays_and_a_missing_filament(self):
+        scheduler = PrintScheduler()
+        missing = TodoFilament("PLA", "")
+        scheduler._filament_holds = {1: [FilamentHold(1, 7, None, (self.A2, self.A3, missing))]}
+        scheduler._pass_holds = {}
+
+        assert scheduler._carry_filament_hold(MagicMock(id=1, printer_id=7, target_model=None))
+        (hold,) = scheduler._pass_holds[1]
+        assert [(f.short, f.short_trays) for f in hold.filaments] == [
+            (True, self.A2.short_trays),
+            (True, self.A3.short_trays),
+            (False, ()),
+        ]
+
+
+class TestOutOfStockHasItsOwnEntry:
+    def test_a_filament_to_buy_and_the_same_one_to_load_are_two_entries(self):
+        none_left = replace(RED, no_stock=True)
+        for first, second in ((RED, none_left), (none_left, RED)):
+            holds = {1: [FilamentHold(1, 7, None, (first,))], 2: [FilamentHold(2, 7, None, (second,))]}
+            todo = build_todo([_job(1, {7}, 7), _job(2, {7}, 7)], {7: "A"}, holds, [], {}, [])
+
+            marks = [(e["jobs"][0]["id"], e["filaments"][0]["no_stock"]) for e in _entries(todo)]
+            assert marks == [(1, first.no_stock), (2, second.no_stock)]
+
+
+class TestThePrinterModelNamesTheSlots:
+    def test_a_printer_group_carries_its_model_and_a_model_group_its_target(self):
+        holds = {1: [FilamentHold(1, 7, None, (SHORT_PLA,))], 2: [FilamentHold(2, 7, "X1C", (SHORT_PLA,))]}
+        todo = build_todo([_job(1, {7}, 7), _job(2, {7}, None)], {7: "A"}, holds, [], {}, [], None, {7: "H2C"})
+
+        assert [(g["printer_id"], g["printer_model"]) for g in todo["groups"]] == [(7, "H2C"), (None, "X1C")]
+
+
 class TestPlateChangerEmptyInTheScheduler:
     """An empty plate changer makes the job wait without a filament hold (#3575)."""
 

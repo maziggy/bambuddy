@@ -1087,6 +1087,7 @@ async def queue_todo(
         interlock,
         power_failed,
         plate_changer_empty,
+        {row.id: row.model for row in printer_rows},
     )
 
 

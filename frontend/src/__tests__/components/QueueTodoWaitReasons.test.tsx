@@ -107,6 +107,18 @@ describe('a spool that holds too little', () => {
     expect(ext).toHaveTextContent('Not enough PETG Red: Ext has 7 g, the job needs 300 g');
   });
 
+  it('names an external input of a rack printer by the PrintTool it feeds', () => {
+    const todo = onPrinter(
+      entry({
+        kind: 'load_filament',
+        filaments: [short({ short_trays: [{ ams_id: 255, tray_id: 4, remaining_grams: 7 }] })],
+      }),
+    );
+    todo.groups[0].printer_model = 'H3C';
+    render(<QueueTodoList todo={todo} />);
+    expect(screen.getByTestId('todo-short')).toHaveTextContent('Not enough PLA Red: Ext-7 has 7 g');
+  });
+
   it('leaves out what is not known', () => {
     const todo = onPrinter(
       entry({

@@ -3054,6 +3054,8 @@ export interface QueueTodoGroup {
   printer_id: number | null;
   printer_name: string;
   target_model: string | null;
+  // The printer's model (a model group's target model), for naming its slots.
+  printer_model?: string | null;
   entries: QueueTodoEntry[];
 }
 export interface QueueTodo { count: number; groups: QueueTodoGroup[] }

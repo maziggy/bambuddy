@@ -657,6 +657,8 @@ class QueueTodoGroup(BaseModel):
     printer_id: int | None = None
     printer_name: str
     target_model: str | None = None
+    # The printer's model (a model group's target model), for naming its slots.
+    printer_model: str | None = None
     entries: list[QueueTodoEntry]
 
 

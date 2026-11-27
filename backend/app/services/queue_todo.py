@@ -139,9 +139,32 @@ def _sorted(filaments: Iterable[TodoFilament]) -> tuple[TodoFilament, ...]:
     return tuple(sorted(filaments, key=lambda f: (f.type, f.color, f.color_name, -1 if f.nozzle is None else f.nozzle)))
 
 
-def _fil_key(filaments: Iterable[TodoFilament]) -> tuple:
-    # A short spool and a missing one of the same filament are two things to do.
-    return tuple((f.type, f.color, f.nozzle, f.short) for f in _sorted(filaments))
+def filament_identity(f: TodoFilament) -> tuple:
+    """Everything that makes two filaments two things to do.
+
+    ``TodoFilament`` equality leaves out the short fields; a short spool and a
+    missing one of the same filament, or short spools in two trays, are still
+    different entries.
+    """
+    return (f, f.short, tuple((t.ams_id, t.tray_id) for t in f.short_trays))
+
+
+def _fil_key(filaments: Iterable[TodoFilament], trays: bool = True) -> tuple:
+    # A short spool and a missing one of the same filament are two things to
+    # do, and so are a filament to load and one to buy (#3590). Short spools in
+    # different trays are too, except where the trays are dropped anyway (a
+    # model job's printers, which ``_without_trays`` lists without a slot).
+    return tuple(
+        (
+            f.type,
+            f.color,
+            f.nozzle,
+            f.short,
+            f.no_stock,
+            tuple((t.ams_id, t.tray_id) for t in f.short_trays) if trays else (),
+        )
+        for f in _sorted(filaments)
+    )
 
 
 def _most_needed(base: tuple[TodoFilament, ...], more: tuple[TodoFilament, ...]) -> tuple[TodoFilament, ...]:
@@ -169,6 +192,7 @@ def build_todo(
     interlock: Mapping[int, str],
     power_failed_ids: Iterable[int],
     plate_changer_empty: Mapping[int, int | None] | None = None,
+    printer_models: Mapping[int, str | None] | None = None,
 ) -> dict:
     """The response of GET /queue/todo.
 
@@ -176,6 +200,9 @@ def build_todo(
     visible printer ids to their names. Printer entries need a waiting job
     that could go to that printer. ``plate_changer_empty`` maps the printers
     whose plate changer has no plate left to their capacity (#3575).
+    ``printer_models`` maps printer ids to their model, which names the slot
+    of a short spool as the printer card does (the external inputs of a rack
+    printer).
     """
     groups: dict[tuple, _Group] = {}
     index_of = {job.id: i for i, job in enumerate(jobs)}
@@ -246,17 +273,20 @@ def build_todo(
                 by_set: dict[tuple, tuple[tuple[TodoFilament, ...], set[int]]] = {}
                 for hold in visible:
                     if len(hold.filaments) == fewest:
-                        sets = by_set.setdefault(_fil_key(hold.filaments), (_sorted(hold.filaments), set()))
+                        sets = by_set.setdefault(
+                            _fil_key(hold.filaments, trays=False), (_sorted(hold.filaments), set())
+                        )
                         assert hold.printer_id is not None
                         sets[1].add(hold.printer_id)
-                for key, (fils, ids) in by_set.items():
+                for fils, ids in by_set.values():
+                    # The tray of a short spool is named for one printer only.
+                    fils = fils if len(ids) == 1 else _without_trays(fils)
                     add(
                         group_for(None, job.model_key, job.model_label, index),
                         KIND_LOAD_FILAMENT,
-                        (key, tuple(sorted(ids))),
+                        (_fil_key(fils), tuple(sorted(ids))),
                         job,
-                        # The tray of a short spool is named for one printer only.
-                        _filaments=fils if len(ids) == 1 else _without_trays(fils),
+                        _filaments=fils,
                         printers=[{"id": pid, "name": printers[pid]} for pid in sorted(ids)],
                     )
             else:
@@ -307,6 +337,9 @@ def build_todo(
                 "printer_id": group.printer_id,
                 "printer_name": group.printer_name,
                 "target_model": group.target_model,
+                "printer_model": (printer_models or {}).get(group.printer_id)
+                if group.printer_id is not None
+                else group.target_model,
                 "entries": entries,
             }
         )

@@ -12,7 +12,7 @@ import { ConfirmModal } from './ConfirmModal';
 import { PlateClearedIcon } from './icons/PlateClearedIcon';
 import { QUEUE_TODO_KEY } from '../hooks/useQueueTodo';
 import { useStartQueueItem } from '../hooks/useStartQueueItem';
-import { formatSlotLabel } from '../utils/amsHelpers';
+import { formatAssignmentSlotLabel } from '../utils/amsHelpers';
 
 const KIND_ICON: Record<QueueTodoKind, React.ComponentType<{ className?: string }>> = {
   plate_clear: PlateClearedIcon,
@@ -34,15 +34,13 @@ const KIND_TEXT_KEY: Record<QueueTodoKind, string> = {
 
 // "Not enough PLA Red: A2 has 12 g, the job needs 30 g" for a spool that holds
 // too little (#3137). The tray and the amounts are left out when not known.
-function shortText(t: TFunction, f: QueueTodoFilament): string {
+function shortText(t: TFunction, f: QueueTodoFilament, printerModel?: string | null): string {
   const filament = [f.type, f.color_name].filter(Boolean).join(' ');
   const trays = f.short_trays ?? [];
   if (trays.length === 0) return t('queueTodo.short.plain', { filament });
+  // As the printer card names the slot, the external inputs of a rack printer included.
   const slots = trays
-    .map((tray) => {
-      const isExternal = tray.ams_id >= 254;
-      return formatSlotLabel(tray.ams_id, tray.tray_id, !isExternal && tray.ams_id >= 128, isExternal);
-    })
+    .map((tray) => formatAssignmentSlotLabel({ ams_id: tray.ams_id, tray_id: tray.tray_id, printer_model: printerModel }))
     .join(' + ');
   const [tray] = trays;
   if (trays.length > 1 || typeof tray.remaining_grams !== 'number') {
@@ -242,7 +240,7 @@ function EntryRow({ group, entry, onNavigate, onOpenQueue, onStart, startPending
                   />
                 )}
                 {f.short ? (
-                  <span data-testid="todo-short" className="min-w-0 break-words">{shortText(t, f)}</span>
+                  <span data-testid="todo-short" className="min-w-0 break-words">{shortText(t, f, group.printer_model)}</span>
                 ) : (
                   <span>{[f.type, f.color_name].filter(Boolean).join(' ')}</span>
                 )}

@@ -94,7 +94,13 @@ from backend.app.services.printer_manager import (
     supports_drying_while_printing,
 )
 from backend.app.services.queue_item_printer import drop_printer_resolved
-from backend.app.services.queue_todo import FilamentHold, ShortTray, TodoFilament, todo_filament_from_requirement
+from backend.app.services.queue_todo import (
+    FilamentHold,
+    ShortTray,
+    TodoFilament,
+    filament_identity,
+    todo_filament_from_requirement,
+)
 from backend.app.services.slot_nozzle import reports_two_nozzles
 from backend.app.services.smart_plug_manager import is_monitor_only, publish_plug_state, smart_plug_manager
 from backend.app.services.spool_assignment_notifications import (
@@ -2080,8 +2086,14 @@ class PrintScheduler:
         if self._pass_holds is None or not (previous := self._filament_holds.get(item.id)):
             return False
         filaments: list[TodoFilament] = []
+        seen: set[tuple] = set()
         for hold in previous:
-            filaments.extend(f for f in hold.filaments if f not in filaments)
+            for f in hold.filaments:
+                # Not ``f not in filaments``: equality ignores a short spool's
+                # tray, so a second short tray of the same filament was dropped.
+                if (identity := filament_identity(f)) not in seen:
+                    seen.add(identity)
+                    filaments.append(f)
         self._pass_holds[item.id] = [FilamentHold(item.id, item.printer_id, item.target_model, tuple(filaments))]
         return True
 

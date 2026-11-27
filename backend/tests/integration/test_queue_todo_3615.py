@@ -85,12 +85,14 @@ class TestTodoEntries:
         assert body == {"count": 0, "groups": []}
 
     async def test_start_staged_is_grouped_per_printer(self, async_client, printer_factory, make_item):
-        a = await printer_factory(name="A")
+        a = await printer_factory(name="A", model="H2C")
         item = await make_item(a.id, name="Benchy", manual_start=True)
         body = (await async_client.get(URL)).json()
         assert body["count"] == 1
         group = body["groups"][0]
         assert (group["printer_id"], group["printer_name"], group["target_model"]) == (a.id, "A", None)
+        # The model names its slots, as on the printer card.
+        assert group["printer_model"] == "H2C"
         assert group["entries"] == [
             {
                 "kind": "start_staged",

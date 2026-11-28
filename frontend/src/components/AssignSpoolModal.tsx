@@ -193,7 +193,7 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
         tray_id: trayId,
         ...(move && { move }),
       }),
-    onSuccess: (_data, { move }) => {
+    onSuccess: (data, { move }) => {
       queryClient.invalidateQueries({ queryKey: ['spoolman-inventory-spools'] });
       // Prefix match: also the all-printers list this dialog filters
       // "assigned elsewhere" by.
@@ -201,7 +201,7 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
       // A move clears the fallback tag linking the spool to its old slot.
       if (move) queryClient.invalidateQueries({ queryKey: ['linked-spools'] });
       nudgePrinterRepublish();
-      showToast(t('inventory.assignSuccess'), 'success');
+      showToast(t(data?.printer_offline ? 'inventory.assignPendingOnline' : 'inventory.assignSuccess'), 'success');
       onClose();
     },
     onError: (error: Error) => {

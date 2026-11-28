@@ -561,6 +561,32 @@ describe('AssignSpoolModal — Spoolman enabled (T-Gap 7)', () => {
     await waitFor(() => expect(slotsCall.mock.calls.length).toBeGreaterThan(before));
   });
 
+  it('Spoolman: says the slot is configured once an offline printer is back (#3771)', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    (api.assignSpoolmanSlot as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 200, configured: false, pending_config: true, printer_offline: true,
+    });
+    render(
+      <AssignSpoolModal
+        {...defaultProps}
+        spoolmanEnabled
+        trayInfo={{ type: 'PETG', material: 'PETG', profile: 'PETG HF', color: '0000FF', location: 'AMS 1 - Slot 1' }}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText(/Bambu Lab/)).toBeInTheDocument());
+    await user.click(screen.getByText(/Bambu Lab/));
+    await user.click(screen.getByRole('button', { name: /assign spool/i }));
+
+    await waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith(
+        'Assigned. The slot will be configured when the printer is back online.',
+        'success',
+      );
+    });
+  });
+
   it('hides archived Spoolman spools', async () => {
     const archivedSpool = { ...spoolmanSpool, id: 201, brand: 'Prusa', archived_at: '2025-01-01T00:00:00Z' };
     (api.getSpoolmanInventorySpools as ReturnType<typeof vi.fn>).mockResolvedValue([spoolmanSpool, archivedSpool]);

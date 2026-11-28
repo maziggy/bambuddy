@@ -8159,8 +8159,10 @@ export const api = {
       body: JSON.stringify({ weight_grams: weightGrams }),
     }),
   // move: as assignSpool's (#1574).
+  // The spool, plus whether its slot was configured; an offline printer's is
+  // configured once it is back (#3771).
   assignSpoolmanSlot: (data: { spoolman_spool_id: number; printer_id: number; ams_id: number; tray_id: number; move?: boolean }) =>
-    request<InventorySpool>('/spoolman/inventory/slot-assignments', {
+    request<InventorySpool & { configured?: boolean; pending_config?: boolean; printer_offline?: boolean }>('/spoolman/inventory/slot-assignments', {
       method: 'POST',
       body: JSON.stringify(data),
     }),

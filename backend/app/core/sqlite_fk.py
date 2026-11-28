@@ -154,6 +154,7 @@ APPLIED: frozenset[tuple[str, str]] = frozenset(
         # A new user given the id would have their cloud sign-in used for the
         # slot's preset (#3519).
         ("spool_assignment", "assigned_by_user_id"),
+        ("spoolman_slot_assignments", "assigned_by_user_id"),
         ("sponsor_toast_state", "user_id"),
         ("user_email_preferences", "user_id"),
         ("user_groups", "user_id"),

@@ -182,8 +182,8 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false }: Q
         // out of its other slot(s) in the same transaction as the assign, so a
         // failure leaves it where it was rather than in no slot.
         if (spoolmanMode) {
-          await api.assignSpoolmanSlot({ spoolman_spool_id: spoolId, printer_id: tg.printerId, ams_id: tg.amsId, tray_id: tg.trayId, move: true });
-          return { pendingConfig: false };
+          const slot = await api.assignSpoolmanSlot({ spoolman_spool_id: spoolId, printer_id: tg.printerId, ams_id: tg.amsId, tray_id: tg.trayId, move: true });
+          return { pendingConfig: !!slot?.pending_config, printerOffline: !!slot?.printer_offline };
         }
         const assignment = await api.assignSpool({ spool_id: spoolId, printer_id: tg.printerId, ams_id: tg.amsId, tray_id: tg.trayId, move: true });
         return { pendingConfig: !!assignment.pending_config, printerOffline: !!assignment.printer_offline };

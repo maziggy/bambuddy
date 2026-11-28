@@ -308,8 +308,8 @@ export function AssignToAmsModal({
     },
     onSuccess: (assignment) => {
       setStatusType('success');
-      // pending_config only exists on SpoolAssignment (the local-inventory path);
-      // the Spoolman path returns InventorySpool which always implies immediate apply.
+      // Both inventory modes answer pending_config and printer_offline; the
+      // Spoolman one only for an offline printer (#3771).
       const pendingConfig = assignment && 'pending_config' in assignment && assignment.pending_config;
       const printerOffline = assignment && 'printer_offline' in assignment && assignment.printer_offline;
       if (printerOffline) {

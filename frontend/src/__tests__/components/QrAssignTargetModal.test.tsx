@@ -309,6 +309,21 @@ describe('QrAssignTargetModal', () => {
       expect(body).toEqual({ spoolman_spool_id: 5, printer_id: 1, ams_id: 0, tray_id: 0, move: true });
     });
 
+    it('Spoolman: a slot on an offline printer says it is configured once the printer is back (#3771)', async () => {
+      server.use(
+        http.post('/api/v1/spoolman/inventory/slot-assignments', () =>
+          HttpResponse.json({ id: 5, pending_config: true, printer_offline: true }),
+        ),
+      );
+      stubPhotoDecoder('https://spoolman.local/spool/show/5');
+      render(<QrAssignTargetModal isOpen onClose={noop} spoolmanMode />);
+
+      await openScanStepForSlotA1();
+      pickPhoto();
+
+      expect(await screen.findByText('Assigned. The slot will be configured when the printer is back online.')).toBeInTheDocument();
+    });
+
     it('a failed move keeps the scan step open', async () => {
       let posts = 0;
       server.use(

@@ -1,0 +1,139 @@
+/**
+ * The spool form keeps a spool's nozzle temperature range (#3768).
+ *
+ * The dialog has no field for it, but every save sent nozzle_temp_min/max as
+ * null, so an edit wiped the range a Bambu tag, the API or an import had set,
+ * and a copy dropped the source spool's.
+ */
+
+import React from 'react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { screen, waitFor, fireEvent } from '@testing-library/react';
+import { render } from '../utils';
+import { SpoolFormModal } from '../../components/SpoolFormModal';
+import type { InventorySpool } from '../../api/client';
+
+vi.mock('../../api/client', () => ({
+  api: {
+    getSettings: vi.fn().mockResolvedValue({}),
+    getAuthStatus: vi.fn().mockResolvedValue({ auth_enabled: false }),
+    getCloudStatus: vi.fn().mockResolvedValue({ is_authenticated: false }),
+    orcaCloudStatus: vi.fn().mockResolvedValue({ connected: false }),
+    orcaCloudListProfiles: vi.fn().mockResolvedValue({ filament: [] }),
+    getFilamentPresets: vi.fn().mockResolvedValue([]),
+    getSpoolCatalog: vi.fn().mockResolvedValue([]),
+    getLocations: vi.fn().mockResolvedValue([]),
+    // Elegoo is only known for PLA here — the pairing that used to hide it
+    // from the brand list as soon as ASA was selected.
+    getColorCatalog: vi.fn().mockResolvedValue([
+      { manufacturer: 'Elegoo', color_name: 'Red', hex_color: 'FF0000', material: 'PLA' },
+      { manufacturer: 'Polymaker', color_name: 'Blue', hex_color: '0000FF', material: 'ASA' },
+    ]),
+    getLocalPresets: vi.fn().mockResolvedValue({ filament: [] }),
+    getBuiltinFilaments: vi.fn().mockResolvedValue([
+      { filament_id: 'GFA05', name: 'Generic ASA' },
+    ]),
+    getPrinters: vi.fn().mockResolvedValue([]),
+    getPrinterStatus: vi.fn().mockResolvedValue(null),
+    getSpoolUsageHistory: vi.fn().mockResolvedValue([]),
+    createSpool: vi.fn().mockResolvedValue({ id: 99 }),
+    updateSpool: vi.fn().mockResolvedValue({ id: 7 }),
+    saveSpoolKProfiles: vi.fn().mockResolvedValue([]),
+    getSpoolFilamentPresets: vi.fn().mockResolvedValue([]),
+    // 3D Filament Profiles (#2981): the form loads the spool's link, and
+    // its lookup section asks whether the user is connected.
+    getThreedfpSpoolLink: vi.fn().mockResolvedValue({ filament_id: null }),
+    setThreedfpSpoolLink: vi.fn().mockResolvedValue({ filament_id: null }),
+    threedfpStatus: vi.fn().mockResolvedValue({ connected: false, email: null }),
+    threedfpLookup: vi.fn().mockResolvedValue({ results: [] }),
+    threedfpGetFilament: vi.fn(),
+    saveSpoolFilamentPresets: vi.fn().mockResolvedValue([]),
+    getSpoolmanFilamentPresets: vi.fn().mockResolvedValue([]),
+    saveSpoolmanFilamentPresets: vi.fn().mockResolvedValue([]),
+    getSpoolmanInventoryFilaments: vi.fn().mockResolvedValue([]),
+    getAssignments: vi.fn().mockResolvedValue([]),
+    unassignSpool: vi.fn().mockResolvedValue({}),
+  },
+  ApiError: class ApiError extends Error {
+    status: number;
+    constructor(message: string, status: number) {
+      super(message);
+      this.status = status;
+    }
+  },
+}));
+
+const mockShowToast = vi.fn();
+vi.mock('../../contexts/ToastContext', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../contexts/ToastContext')>();
+  return {
+    ...actual,
+    useToast: () => ({ showToast: mockShowToast }),
+  };
+});
+
+import { api } from '../../api/client';
+
+const taggedSpool: InventorySpool = {
+  id: 7,
+  material: 'ASA',
+  subtype: null,
+  brand: null,
+  color_name: null,
+  rgba: '808080FF',
+  extra_colors: null,
+  effect_type: null,
+  label_weight: 1000,
+  core_weight: 250,
+  core_weight_catalog_id: null,
+  weight_used: 0,
+  slicer_filament: 'GFA05',
+  slicer_filament_name: 'Generic ASA',
+  nozzle_temp_min: 240,
+  nozzle_temp_max: 270,
+  note: null,
+  added_full: null,
+  last_used: null,
+  encode_time: null,
+  tag_uid: null,
+  tray_uuid: null,
+  data_origin: null,
+  tag_type: null,
+  archived_at: null,
+  created_at: '2025-01-01T00:00:00Z',
+  updated_at: '2025-01-01T00:00:00Z',
+  k_profiles: [],
+} as unknown as InventorySpool;
+
+async function save(mode: 'edit' | 'copy') {
+  render(
+    <SpoolFormModal isOpen={true} onClose={vi.fn()} spool={taggedSpool} mode={mode} currencySymbol="$" />,
+  );
+  const submit = mode === 'copy' ? 'Copy Spool' : /save/i;
+  await waitFor(() => expect(screen.getAllByRole('heading').length).toBeGreaterThan(0));
+  fireEvent.click(screen.getByRole('button', { name: submit }));
+}
+
+describe('SpoolFormModal nozzle temperature range (#3768)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('an edit leaves the range out, so the stored one is kept', async () => {
+    await save('edit');
+
+    await waitFor(() => expect(api.updateSpool).toHaveBeenCalled());
+    const payload = vi.mocked(api.updateSpool).mock.calls[0][1] as Record<string, unknown>;
+    expect(payload).not.toHaveProperty('nozzle_temp_min');
+    expect(payload).not.toHaveProperty('nozzle_temp_max');
+  });
+
+  it('a copy takes the source spool\'s range', async () => {
+    await save('copy');
+
+    await waitFor(() => expect(api.createSpool).toHaveBeenCalled());
+    const payload = vi.mocked(api.createSpool).mock.calls[0][0] as Record<string, unknown>;
+    expect(payload.nozzle_temp_min).toBe(240);
+    expect(payload.nozzle_temp_max).toBe(270);
+  });
+});

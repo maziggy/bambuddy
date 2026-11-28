@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, UniqueConstraint, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, UniqueConstraint, false, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
@@ -29,6 +29,13 @@ class SpoolmanSlotAssignment(Base):
     tray_id: Mapped[int] = mapped_column(Integer)
     spoolman_spool_id: Mapped[int] = mapped_column(Integer)
     assigned_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    # Nothing reached the printer at assign time (it was offline): the slot is
+    # configured on its first AMS report once it is back (#3771). Cleared when
+    # that is sent, and by anything that puts another spool in the slot.
+    pending_config: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Whose cloud sign-in resolves the spool's custom preset when the slot is
+    # configured later, as for the built-in assignment (#3519).
+    assigned_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     printer: Mapped["Printer"] = relationship()
 

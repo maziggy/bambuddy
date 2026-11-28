@@ -121,12 +121,14 @@ export function isAms3pUnit(unit: { id: number; ams_type?: number | null } | nul
   return !!unit && unitAmsType(unit.id, unit.ams_type) === AmsType.ZMULTI_B;
 }
 
-/** Tray state of an AMS 3H slot whose filament is in its hotend (26: held at the inlet, #3531). */
-export const AMS3H_TRAY_IN_HOTEND = 27;
-
-/** Whether any slot of an AMS 3H has its filament in its hotend, i.e. Unload all has work to do. */
-export function ams3hHasLoadedSlot(unit: { tray?: { state?: number | null }[] | null }): boolean {
-  return (unit.tray ?? []).some((tray) => tray.state === AMS3H_TRAY_IN_HOTEND);
+/**
+ * Whether any slot of a rack AMS (AMS 3H, AMS 3P) has its filament in its
+ * hotend, i.e. Unload all has work to do. The backend decides per slot
+ * (`in_hotend`): the AMS 3H from its tray state (#3531), the AMS 3P from its
+ * hotends, as it reports the same state for every slot (#3737).
+ */
+export function rackHasLoadedSlot(unit: { tray?: { in_hotend?: boolean | null }[] | null }): boolean {
+  return (unit.tray ?? []).some((tray) => tray.in_hotend === true);
 }
 
 /** How many slots a unit's card draws: a rack AMS's own (AMS 3H nine, AMS 3P seven), one for an AMS-HT, else four. */

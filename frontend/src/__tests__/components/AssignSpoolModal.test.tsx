@@ -406,6 +406,41 @@ describe('AssignSpoolModal', () => {
     );
   });
 
+  // #3771: nothing reached an offline printer either, but the spool is in the
+  // slot, so "when you insert the spool" would be the wrong thing to say.
+  it('says the slot is configured once an offline printer is back (#3771)', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+
+    (api.getSpools as ReturnType<typeof vi.fn>).mockResolvedValue([manualSpool]);
+    (api.assignSpool as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 1, spool_id: 1, printer_id: 7, ams_id: 0, tray_id: 0,
+      configured: false, pending_config: true, printer_offline: true,
+    });
+
+    render(
+      <AssignSpoolModal
+        {...defaultProps}
+        printerId={7}
+        trayInfo={{ type: 'PLA', material: 'PLA', profile: 'PLA', color: 'FF0000', location: 'AMS 1 - Slot 1' }}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Polymaker/)).toBeInTheDocument();
+    });
+    await user.click(screen.getByText(/Polymaker/));
+    await user.click(screen.getByRole('button', { name: /assign spool/i }));
+
+    await waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith(
+        'Assigned. The slot will be configured when the printer is back online.',
+        'success',
+      );
+    });
+    expect(mockShowToast).not.toHaveBeenCalledWith(expect.stringContaining('insert the spool'), 'success');
+  });
+
   // Counterpart guard: when the backend did configure the slot
   // (pending_config=false or absent), the existing success toast still
   // fires. Without this regression test, the #1680 fix could silently
@@ -524,6 +559,32 @@ describe('AssignSpoolModal — Spoolman enabled (T-Gap 7)', () => {
 
     await waitFor(() => expect(api.assignSpoolmanSlot).toHaveBeenCalled());
     await waitFor(() => expect(slotsCall.mock.calls.length).toBeGreaterThan(before));
+  });
+
+  it('Spoolman: says the slot is configured once an offline printer is back (#3771)', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    (api.assignSpoolmanSlot as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 200, configured: false, pending_config: true, printer_offline: true,
+    });
+    render(
+      <AssignSpoolModal
+        {...defaultProps}
+        spoolmanEnabled
+        trayInfo={{ type: 'PETG', material: 'PETG', profile: 'PETG HF', color: '0000FF', location: 'AMS 1 - Slot 1' }}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText(/Bambu Lab/)).toBeInTheDocument());
+    await user.click(screen.getByText(/Bambu Lab/));
+    await user.click(screen.getByRole('button', { name: /assign spool/i }));
+
+    await waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith(
+        'Assigned. The slot will be configured when the printer is back online.',
+        'success',
+      );
+    });
   });
 
   it('hides archived Spoolman spools', async () => {

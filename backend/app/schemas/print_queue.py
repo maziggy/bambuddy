@@ -1,7 +1,8 @@
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import AfterValidator, BaseModel, BeforeValidator, Field, PlainSerializer, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
 from backend.app.utils.local_time import to_naive_utc
@@ -500,11 +501,13 @@ class PrintBatchUpdate(IgnoresNullForRequiredColumns):
     __orm_table__ = "print_batches"
 
     name: str | None = None
-    status: Literal["active", "cancelled"] | None = None
     plates: list[PrintBatchPlateTarget] | None = None
     project_id: int | None = None
     due_date: datetime | None = None
     notes: str | None = None
+
+    # Use a non-column field name so the null-filtering mixin preserves an explicit status: null.
+    requested_status: SkipJsonSchema[Any] = Field(default=None, validation_alias="status", exclude=True)
 
 
 class PrintBatchDispatchRequest(BaseModel):

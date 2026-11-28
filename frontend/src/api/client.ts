@@ -3323,7 +3323,6 @@ export interface PrintBatchCreate {
 
 export interface PrintBatchUpdate {
   name?: string;
-  status?: 'active' | 'cancelled';
   /** Replaces the full target set — a plate omitted here is removed. */
   plates?: PrintBatchPlateTarget[];
   project_id?: number | null;

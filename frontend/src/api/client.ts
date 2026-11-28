@@ -569,6 +569,7 @@ export interface AMSTray {
   drying_time: number | null;      // RFID-recommended drying time (hours)
   state: number | null;            // AMS tray state: 9=empty, 10=spool present not loaded, 11=loaded
   exists?: boolean | null;         // Firmware tray_exist_bits: spool physically present (non-RFID → "?" not "Empty", #2527)
+  in_hotend?: boolean | null;      // Rack AMS (AMS 3H/3P): this slot's filament is in its hotend; null elsewhere (#3737)
 }
 
 export interface AMSUnit {
@@ -638,6 +639,7 @@ export interface NozzleRackSlot {
   filament_id: string;
   filament_type: string;  // Material type (e.g. "PLA", "PETG")
   addr_id?: number | null;  // H3C: home rack position 0-8 (the mounted hotend reports id 0)
+  snow?: number | null;  // The slot whose filament it holds, (ams_id << 8) | slot (#3737)
 }
 
 export interface PrintOptions {

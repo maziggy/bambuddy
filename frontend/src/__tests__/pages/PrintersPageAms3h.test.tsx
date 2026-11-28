@@ -46,6 +46,7 @@ const tray = (id: number, color: string) => ({
   drying_time: null,
   state: 27,
   exists: true,
+  in_hotend: true,
 });
 
 const ams3h = {
@@ -162,13 +163,63 @@ describe('PrintersPage - H3C AMS 3H', () => {
   });
 
   it('offers no Unload all while no slot has its filament in its hotend', async () => {
-    const atInlet = { ...ams3h, tray: ams3h.tray.map((slot) => ({ ...slot, state: 26 })) };
+    const atInlet = { ...ams3h, tray: ams3h.tray.map((slot) => ({ ...slot, state: 26, in_hotend: false })) };
     server.use(http.get('/api/v1/printers/:id/status', () => HttpResponse.json({ ...h3cStatus, ams: [atInlet] })));
 
     render(<PrintersPage />);
 
     await waitFor(() => {
       expect(screen.getAllByTestId('filament-slot')).toHaveLength(8);
+    });
+    expect(screen.queryByRole('button', { name: 'Unload all' })).not.toBeInTheDocument();
+  });
+
+  it('offers Unload all on the P3C AMS 3P, named after it, by the hotends the backend reports (#3737)', async () => {
+    const user = userEvent.setup();
+    let calls = 0;
+    // The AMS 3P reports state 27 for every slot; only in_hotend tells them apart.
+    const ams3p = {
+      ...ams3h,
+      id: 33,
+      ams_type: 7,
+      module_type: 'n11a',
+      dryer_slots: [],
+      tray: [0, 1, 2, 3, 4, 5, 6].map((id) => ({ ...tray(id, 'DE4343FF'), in_hotend: id < 3 })),
+    };
+    server.use(
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json({ ...h3cStatus, ams: [ams3p] })),
+      http.post('/api/v1/printers/:id/ams/unload-all', () => {
+        calls += 1;
+        return HttpResponse.json({ success: true, message: 'Unloading 3 AMS 3P slots', count: 3 });
+      }),
+    );
+
+    render(<PrintersPage />);
+
+    await user.click(await screen.findByRole('button', { name: 'Unload all' }));
+    expect(screen.getByText(/every loaded AMS 3P slot/)).toBeInTheDocument();
+    await user.click(screen.getAllByRole('button', { name: 'Unload all' }).at(-1)!);
+    await waitFor(() => {
+      expect(calls).toBe(1);
+    });
+    expect(await screen.findByText(/out of the AMS 3P by hand/)).toBeInTheDocument();
+  });
+
+  it('offers no Unload all on an AMS 3P whose slots all say state 27 but no hotend holds them (#3737)', async () => {
+    const ams3p = {
+      ...ams3h,
+      id: 33,
+      ams_type: 7,
+      module_type: 'n11a',
+      dryer_slots: [],
+      tray: [0, 1, 2, 3, 4, 5, 6].map((id) => ({ ...tray(id, 'DE4343FF'), in_hotend: false })),
+    };
+    server.use(http.get('/api/v1/printers/:id/status', () => HttpResponse.json({ ...h3cStatus, ams: [ams3p] })));
+
+    render(<PrintersPage />);
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('filament-slot').length).toBeGreaterThan(0);
     });
     expect(screen.queryByRole('button', { name: 'Unload all' })).not.toBeInTheDocument();
   });

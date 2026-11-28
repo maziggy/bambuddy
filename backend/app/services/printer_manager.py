@@ -30,6 +30,7 @@ from backend.app.utils.tray_ids import (
     is_ams_ht_id,
     is_external_tray,
     mapped_trays_with_slot,
+    rack_slot_in_hotend,
     unit_ams_type,
 )
 
@@ -1500,6 +1501,7 @@ def ams_units_to_dicts(
     ams_list: list,
     resolve_slot_k: Callable,
     drying_targets: dict[int, dict] | None = None,
+    nozzle_rack: list | None = None,
 ) -> list[dict]:
     """The AMS units of a printer's ``raw_data["ams"]``, as the printer card reads them.
 
@@ -1515,6 +1517,7 @@ def ams_units_to_dicts(
         if not isinstance(ams_data, dict):
             continue
         ams_id = int(ams_data.get("id", 0))
+        unit_kind = unit_ams_type(ams_id, ams_data.get("info"))
         trays = []
         for tray in ams_data.get("tray", []):
             tag_uid = tray.get("tag_uid")
@@ -1566,6 +1569,10 @@ def ams_units_to_dicts(
                     # falls back to the firmware-variant state 9/10 heuristic,
                     # wrong for AMS-HT in both directions (#2670).
                     "exists": tray.get("exists"),
+                    # A rack AMS slot whose filament is in its hotend; None on
+                    # any other unit. The P3C reports the same tray state for
+                    # every AMS 3P slot, so its hotends decide (#3737).
+                    "in_hotend": rack_slot_in_hotend(unit_kind, ams_id, int(tray.get("id", 0)), state_val, nozzle_rack),
                 }
             )
         # Percentage only — the 1-5 index is inverted and must never stand
@@ -1632,7 +1639,7 @@ def ams_units_to_dicts(
                 "dry_filament": dry_filament,
                 # Module type: "ams", "n3f", "n3s", "n10a" (from get_version)
                 "module_type": str(ams_data.get("module_type") or ""),
-                "ams_type": int(unit_ams_type(ams_id, ams_data.get("info"))),
+                "ams_type": int(unit_kind),
                 **_dryer_fields(ams_data),
             }
         )
@@ -1719,7 +1726,7 @@ def printer_state_to_dict(
     resolve_slot_k = build_slot_k_resolver(state)
 
     if "ams" in raw_data and isinstance(raw_data["ams"], list):
-        ams_units = ams_units_to_dicts(raw_data["ams"], resolve_slot_k, drying_targets)
+        ams_units = ams_units_to_dicts(raw_data["ams"], resolve_slot_k, drying_targets, state.nozzle_rack)
 
     # Parse virtual tray (external spool) — now a list
     if "vt_tray" in raw_data:
@@ -1908,6 +1915,8 @@ def printer_state_to_dict(
                 # material label on every push (PSF-3).
                 "filament_type": n.get("filament_type", ""),
                 "addr_id": n.get("addr_id"),
+                # Same as the REST status (#3737).
+                "snow": n.get("snow"),
             }
             for n in (state.nozzle_rack or [])
         ],

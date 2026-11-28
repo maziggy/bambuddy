@@ -15,9 +15,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.spoolman_inventory import _clear_stale_tag_links
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.auth import ApiKeyActor, RequestActor, RequestPrinterScope, RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.printer_scope import PrinterScope
 from backend.app.core.websocket import ws_manager
 from backend.app.models.spool import Spool
 from backend.app.models.spoolbuddy_device import SpoolBuddyDevice
@@ -30,6 +31,8 @@ from backend.app.schemas.spoolbuddy import (
     DisplaySettingsRequest,
     HeartbeatRequest,
     HeartbeatResponse,
+    PendingLoadRequest,
+    PendingLoadResponse,
     ScaleReadingRequest,
     SetCalibrationFactorRequest,
     SetTareRequest,
@@ -1299,6 +1302,126 @@ async def cancel_write(
 
 
 # --- Scale endpoints ---
+
+
+# ── Pending load (#3756) ─────────────────────────────────────────────────────
+
+
+async def _registered_device(db: AsyncSession, device_id: str) -> SpoolBuddyDevice:
+    result = await db.execute(select(SpoolBuddyDevice).where(SpoolBuddyDevice.device_id == device_id))
+    device = result.scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not registered")
+    return device
+
+
+def _pending_load_response(device_id: str, load, printer_scope: PrinterScope) -> PendingLoadResponse:
+    from backend.app.services.pending_load import EXPIRED, pending_loads  # noqa: PLC0415
+
+    # Gone, never made, or lost with a restart: all read as expired. So does
+    # one on a printer the caller can't see.
+    if load is None or not printer_scope.allows(load.printer_id):
+        return PendingLoadResponse(device_id=device_id, state=EXPIRED)
+    return PendingLoadResponse(**load.as_dict(pending_loads.clock()))
+
+
+@router.post("/devices/{device_id}/pending-load", response_model=PendingLoadResponse)
+async def create_pending_load(
+    device_id: str,
+    req: PendingLoadRequest,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
+):
+    """Assign the spool this device holds to the slot of the printer that is loaded next.
+
+    Within ``timeout_s``, the one slot of ``printer_id`` that goes from empty
+    to loaded gets the spool, as ``POST /inventory/assignments`` with ``move``
+    would assign it. No slot, or more than one, and nothing is assigned. One
+    pending load per device (a new one replaces it) and per printer (another
+    device's gets 409). See services/pending_load.py.
+    """
+    from backend.app.models.printer import Printer  # noqa: PLC0415
+    from backend.app.services.pending_load import PendingLoadConflict, pending_loads  # noqa: PLC0415
+    from backend.app.services.printer_manager import printer_manager  # noqa: PLC0415
+
+    await _registered_device(db, device_id)
+    printer_scope.ensure(req.printer_id)
+    if (await db.execute(select(Printer.id).where(Printer.id == req.printer_id))).first() is None:
+        raise HTTPException(status_code=404, detail="Printer not found")
+
+    spoolman = await _spoolman_mode(db)
+    if spoolman:
+        from backend.app.api.routes.spoolman_inventory import _get_client, _translate_spoolman_errors  # noqa: PLC0415
+
+        client = await _get_client(db)
+        async with _translate_spoolman_errors():
+            sm_spool = await client.get_spool(req.spool_id)
+        archived = bool(sm_spool.get("archived"))
+    else:
+        spool = (await db.execute(select(Spool).where(Spool.id == req.spool_id))).scalar_one_or_none()
+        if spool is None:
+            raise HTTPException(status_code=404, detail="Spool not found")
+        archived = spool.archived_at is not None
+    if archived:
+        raise HTTPException(status_code=400, detail="Cannot assign an archived spool")
+
+    # The assignment happens later, in a callback with no request: keep whose
+    # cloud sign-in resolves the spool's preset, as POST /inventory/assignments
+    # takes it (#3519), and the caller's printer scope.
+    preset_user_id = current_user.id if current_user is not None else None
+    if preset_user_id is None and isinstance(actor, ApiKeyActor):
+        preset_user_id = actor.id
+
+    status = printer_manager.get_status(req.printer_id)
+    try:
+        load = pending_loads.create(
+            device_id=device_id,
+            printer_id=req.printer_id,
+            spool_id=req.spool_id,
+            spoolman=spoolman,
+            timeout_s=req.timeout_s,
+            printer_scope=printer_scope,
+            preset_user_id=preset_user_id,
+            raw_data=getattr(status, "raw_data", None),
+        )
+    except PendingLoadConflict as exc:
+        raise HTTPException(
+            status_code=409, detail=f"Device {exc.device_id} already has a pending load on this printer"
+        ) from exc
+    return _pending_load_response(device_id, load, printer_scope)
+
+
+@router.get("/devices/{device_id}/pending-load", response_model=PendingLoadResponse)
+async def get_pending_load(
+    device_id: str,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
+):
+    """The device's pending load: pending, or how it ended (kept for a few minutes)."""
+    from backend.app.services.pending_load import pending_loads  # noqa: PLC0415
+
+    await _registered_device(db, device_id)
+    return _pending_load_response(device_id, pending_loads.get(device_id), printer_scope)
+
+
+@router.delete("/devices/{device_id}/pending-load", response_model=PendingLoadResponse)
+async def cancel_pending_load(
+    device_id: str,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
+):
+    """Cancel the device's pending load."""
+    from backend.app.services.pending_load import pending_loads  # noqa: PLC0415
+
+    await _registered_device(db, device_id)
+    load = pending_loads.get(device_id)
+    if load is not None and printer_scope.allows(load.printer_id):
+        load = pending_loads.cancel(device_id)
+    return _pending_load_response(device_id, load, printer_scope)
 
 
 @router.post("/scale/reading")

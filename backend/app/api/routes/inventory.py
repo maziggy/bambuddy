@@ -73,9 +73,8 @@ from backend.app.schemas.supplier import (
     SupplierStats,
     SupplierUpdate,
 )
-from backend.app.services import filament_profile_default as profile_defaults, slot_unlink_grace, spool_swaps
-from backend.app.services.ams_assignment_lock import get_ams_assignment_lock, get_spool_move_lock
-from backend.app.services.ams_slot_presence import spool_present
+from backend.app.services import filament_profile_default as profile_defaults
+from backend.app.services.ams_assignment_lock import get_ams_assignment_lock
 from backend.app.services.location_service import (
     DUPLICATE_LOCATION_NAME,
     assign_location_name,
@@ -88,6 +87,7 @@ from backend.app.services.location_service import (
 )
 from backend.app.services.material_number import apply_material_number_inheritance
 from backend.app.services.slicer_filament_resolver import resolve_slicer_filament, reusable_slot_filament_id
+from backend.app.services.slot_assignment import assign_local_spool
 from backend.app.services.slot_nozzle import resolve_slot_nozzle
 from backend.app.services.spool_csv import (
     MAX_CSV_IMPORT_BYTES,
@@ -112,7 +112,6 @@ from backend.app.utils.filament_types import nozzle_temp_range
 from backend.app.utils.local_time import day_zone, local_date_end, local_date_start
 from backend.app.utils.natural_sort import natural_sort_key
 from backend.app.utils.tag_normalization import normalize_hex, normalize_tag_uid, normalize_tray_uuid
-from backend.app.utils.tray_ids import external_tray_id
 
 logger = logging.getLogger(__name__)
 
@@ -2519,14 +2518,7 @@ async def assign_spool(
     actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Assign a spool to an AMS slot and auto-configure via MQTT."""
-    from backend.app.services.printer_manager import printer_manager
-
     printer_scope.ensure(data.printer_id)
-    # The scope check passes any id for an unrestricted caller, and SQLite
-    # does not enforce the foreign key, so a missing printer stored the row
-    # (#3770). The Spoolman route answers the same 404.
-    if await db.get(Printer, data.printer_id) is None:
-        raise HTTPException(404, "Printer not found")
 
     # An API key (a SpoolBuddy client) has no signed-in user, so its owner's
     # cloud sign-in resolves a custom preset; without it the slot got Generic
@@ -2535,285 +2527,22 @@ async def assign_spool(
     if preset_user is None and isinstance(actor, ApiKeyActor):
         preset_user = await load_preset_lookup_user(db, actor.id)
 
-    # 1. Validate spool exists and is not archived
-    result = await db.execute(select(Spool).options(*spool_response_loads()).where(Spool.id == data.spool_id))
-    spool = result.scalar_one_or_none()
-    if not spool:
-        raise HTTPException(404, "Spool not found")
-    if spool.archived_at:
-        raise HTTPException(400, "Cannot assign an archived spool")
-
-    # 2. Get current AMS tray state for fingerprint + existing filament ID.
-    # tray_state: Bambu firmware reports 11=loaded, 9=empty, 10=spool present
-    # but filament not in feeder. Captured here so the empty-slot heuristic
-    # below can prefer it over tray_type — a manual "Reset slot" clears
-    # tray_type to "" while leaving state at 11 (filament still physically
-    # present), which would otherwise mislead the heuristic into the
-    # pending-config branch and skip MQTT forever (#1228 follow-up).
-    fingerprint_color = None
-    fingerprint_type = None
-    current_tray_info_idx = ""
-    current_tray_sub_brands = ""
-    tray_state: int | None = None
-    # Firmware's tray_exist_bits answer for this slot, when the payload carries
-    # one. Outranks tray_state below — see services/ams_slot_presence.py.
-    tray_has_spool: bool | None = None
-    state = printer_manager.get_status(data.printer_id)
-    if state and state.raw_data:
-        if data.ams_id == 255:
-            # External slot: look up tray from vt_tray by global ID
-            vt_tray = state.raw_data.get("vt_tray") or []
-            ext_id = external_tray_id(data.tray_id)  # 0→254, 1→255, rack 2-8→247-253
-            for vt in vt_tray:
-                if isinstance(vt, dict) and int(vt.get("id", 254)) == ext_id:
-                    fingerprint_color = vt.get("tray_color", "")
-                    fingerprint_type = vt.get("tray_type", "")
-                    current_tray_info_idx = vt.get("tray_info_idx", "")
-                    current_tray_sub_brands = vt.get("tray_sub_brands", "")
-                    raw_state = vt.get("state")
-                    if isinstance(raw_state, int):
-                        tray_state = raw_state
-                    tray_has_spool = spool_present(vt)
-                    break
-        else:
-            ams_data = state.raw_data.get("ams", {})
-            ams_list = (
-                ams_data.get("ams", [])
-                if isinstance(ams_data, dict)
-                else ams_data
-                if isinstance(ams_data, list)
-                else []
-            )
-            tray = _find_tray_in_ams_data(
-                ams_list,
-                data.ams_id,
-                data.tray_id,
-            )
-            if tray:
-                fingerprint_color = tray.get("tray_color", "")
-                fingerprint_type = tray.get("tray_type", "")
-                current_tray_info_idx = tray.get("tray_info_idx", "")
-                current_tray_sub_brands = tray.get("tray_sub_brands", "")
-                raw_state = tray.get("state")
-                if isinstance(raw_state, int):
-                    tray_state = raw_state
-                tray_has_spool = spool_present(tray)
-
-    # 3. Upsert assignment (replace if same printer+ams+tray), under the lock
-    # the AMS change handler writes the printer's slots with.
-    #
-    # A move (#1574) also takes the spool out of every other slot it holds, in
-    # the same commit, so a failed move leaves it where it was instead of in no
-    # slot. Moves of one spool take turns (get_spool_move_lock): two at once
-    # would each read where the spool is before the other committed, and both
-    # assign it. The slots' printers are locked as well, in id order so two
-    # moves can't take the same two locks the other way round. Which printers
-    # those are is read again once the locks are held: a move served first, a
-    # plain assign or an AMS change may have put the spool on one more, and
-    # then this one lets go and locks the larger set. A slot on a printer
-    # outside the caller's scope stays assigned, as unassigning leaves it
-    # (#1727).
-    locked_printer_ids = {data.printer_id}
-    if data.move:
-        locked_printer_ids |= await _printers_holding_spool(db, data.spool_id, printer_scope)
-    vacated: list[tuple[int, int, int]] = []
-    while True:
-        async with AsyncExitStack() as locks:
-            if data.move:
-                await locks.enter_async_context(get_spool_move_lock("inventory", data.spool_id))
-            for pid in sorted(locked_printer_ids):
-                await locks.enter_async_context(get_ams_assignment_lock(pid))
-            if data.move:
-                holding = await _printers_holding_spool(db, data.spool_id, printer_scope)
-                if not holding <= locked_printer_ids:
-                    locked_printer_ids |= holding
-                    continue
-                others = await db.execute(
-                    select(SpoolAssignment).where(
-                        SpoolAssignment.spool_id == data.spool_id,
-                        SpoolAssignment.printer_id.in_(locked_printer_ids),
-                    )
-                )
-                for row in others.scalars().all():
-                    if (row.printer_id, row.ams_id, row.tray_id) != (data.printer_id, data.ams_id, data.tray_id):
-                        vacated.append((row.printer_id, row.ams_id, row.tray_id))
-                        await db.delete(row)
-            existing = await db.execute(
-                select(SpoolAssignment).where(
-                    SpoolAssignment.printer_id == data.printer_id,
-                    SpoolAssignment.ams_id == data.ams_id,
-                    SpoolAssignment.tray_id == data.tray_id,
-                )
-            )
-            old = existing.scalar_one_or_none()
-            if old:
-                await db.delete(old)
-                await db.flush()
-
-            assignment = SpoolAssignment(
-                spool_id=data.spool_id,
-                printer_id=data.printer_id,
-                ams_id=data.ams_id,
-                tray_id=data.tray_id,
-                fingerprint_color=fingerprint_color,
-                fingerprint_type=fingerprint_type,
-                assigned_by_user_id=preset_user.id if preset_user is not None else None,
-            )
-            db.add(assignment)
-            await spool_swaps.record_assignment(
-                db, data.printer_id, data.ams_id, data.tray_id, data.spool_id, spool_swaps.INVENTORY
-            )
-            await db.commit()
-        break
-    await db.refresh(assignment)
-    slot_unlink_grace.forget_slot(data.printer_id, data.ams_id, data.tray_id)
-    if vacated:
-        logger.info(
-            "Moved spool %d to printer %d AMS%d-T%d from %s",
-            spool.id,
-            data.printer_id,
-            data.ams_id,
-            data.tray_id,
-            ", ".join(f"printer {p} AMS{a}-T{t}" for p, a, t in vacated),
-        )
-
-    # 4. Auto-configure AMS slot via MQTT.
-    #
-    # Only suppress the publish when the firmware's *explicit* empty signal
-    # (state ∈ {9, 10}) is set — "no spool" / "spool present but no feed".
-    # Every other state, including state=3 (the default idle on A1 Mini BMCU /
-    # P1S Standard AMS for both loaded and unconfigured slots) and missing
-    # state (older firmwares), is treated as the user's assertion that a
-    # spool is in the slot and we attempt the MQTT push.
-    #
-    # The pre-existing "skip when slot looks empty" guard read state=3 +
-    # tray_type="" as "empty" and skipped MQTT. On these firmwares that
-    # combination is the post-"Reset Slot" state with the spool still
-    # physically inserted — there is NO AMS signal that distinguishes it
-    # from a truly-empty slot, so the guard created a deadlock: MQTT never
-    # fired, the AMS never reported any change (because nothing changed
-    # physically), and on_ams_change replay therefore never re-fired the
-    # config either. Reporter (#1322 follow-up by @RosdasHH) verified
-    # empirically that removing the guard makes the slot configure
-    # correctly because Bambu firmware DOES accept the push for a
-    # physically-loaded slot, even when tray_type is "" and state is 3.
-    #
-    # Trade-off for the truly-empty slot case: firmware drops the push
-    # silently (per Bambu's documented behavior), the SpoolAssignment row
-    # still has empty fingerprint_type because nothing in the assign path
-    # updates that column, and on_ams_change at main.py:1031-1054 still
-    # fires the deferred config when a spool eventually appears. So the
-    # SpoolBuddy weigh-then-assign-before-insert workflow continues to
-    # work — just without the optimization of skipping a no-op MQTT call.
-    #
-    # state ∈ {9, 10} stays as an explicit short-circuit so we don't churn
-    # a doomed MQTT push when the firmware has positively confirmed "no
-    # spool" — and to keep the on_ams_change replay path as the single
-    # source of truth for those slots.
-    #
-    # ...except that `state` cannot carry that meaning. Two independent ways
-    # a loaded slot reads 9 here:
-    #
-    #   - an AMS-HT reports its LOADED tray as 9, not 11, because it does not
-    #     feed into a shared buffer the way a 4-slot AMS does (#2594, and the
-    #     merge above skips its own state heuristic for HT units for exactly
-    #     this reason). So this branch called every HT slot empty on sight.
-    #   - apply_tray_exist_bits stamps state=9 on any slot whose tray_exist_bits
-    #     bit is 0 and never takes it back when the bit returns, so a slot that
-    #     was briefly emptied keeps the 9 until something configures it.
-    #
-    # Either way the slot sits at exists=True, state=9, this branch took the
-    # pending path, nothing was published, and the printer kept showing "?"
-    # (#3084 — reported against an H2C's AMS-HT, where both apply). Firmware's
-    # presence bit is what actually answers "is a spool in this slot", and the
-    # printer card has read it ahead of `state` since #2527.
-    #
-    # It is allowed to overrule the 9 and nothing else. A bit reading *empty*
-    # deliberately does NOT start suppressing pushes that go out today: the
-    # cost of being wrong there is a slot that silently stops configuring, on
-    # whichever AMS variant we compute the bit position wrong for, against a
-    # saving of one MQTT message the firmware would have dropped anyway.
-    slot_is_definitely_empty = tray_has_spool is not True and (tray_state == 9 or tray_state == 10)
-    configured = False
-    printer_offline = False
-    if not slot_is_definitely_empty:
-        try:
-            configured = await apply_spool_to_slot_via_mqtt(
-                db=db,
-                current_user=preset_user,
-                spool=spool,
-                printer_id=data.printer_id,
-                ams_id=data.ams_id,
-                tray_id=data.tray_id,
-                current_tray_info_idx=current_tray_info_idx,
-                current_tray_type=fingerprint_type or "",
-                current_tray_sub_brands=current_tray_sub_brands,
-            )
-        except Exception as e:
-            logger.warning("MQTT auto-configure failed for spool %d: %s", spool.id, e)
-        else:
-            # Not raised and not sent: no client, or a printer not connected.
-            printer_offline = not configured
-            # Nudge a fresh pushall so the read-back verification registered in
-            # apply_spool_to_slot_via_mqtt (#2582) has current tray telemetry to
-            # compare against within its window, instead of waiting for the next
-            # idle push. Best-effort — the periodic push is the fallback.
-            if configured:
-                try:
-                    client = printer_manager.get_client(data.printer_id)
-                    if client:
-                        client.request_status_update()
-                except Exception:
-                    pass
-    # pending_config is the "config not landed yet" UI marker. True when the
-    # firmware said empty, OR when MQTT couldn't actually publish (printer
-    # offline, no client, transient failure). on_ams_change replay re-fires
-    # the config in either case once the AMS reports a loaded slot.
-    pending_config = slot_is_definitely_empty or not configured
-    # Nothing reached a printer that is offline. The fingerprint was read from
-    # its last known state; left in place it reads as "configured" to the
-    # on_ams_change replay, which only picks up assignments without one, so the
-    # slot never got its settings once the printer was back (#3771).
-    if printer_offline and (assignment.fingerprint_color is not None or assignment.fingerprint_type is not None):
-        assignment.fingerprint_color = None
-        assignment.fingerprint_type = None
-        await db.commit()
-
-    # Return assignment with spool data
-    result = await db.execute(
-        select(SpoolAssignment)
-        .options(
-            selectinload(SpoolAssignment.spool).options(*spool_response_loads()),
-            selectinload(SpoolAssignment.printer),
-        )
-        .where(SpoolAssignment.id == assignment.id)
+    outcome = await assign_local_spool(
+        db,
+        spool_id=data.spool_id,
+        printer_id=data.printer_id,
+        ams_id=data.ams_id,
+        tray_id=data.tray_id,
+        move=data.move,
+        printer_scope=printer_scope,
+        preset_user=preset_user,
+        ws_manager=ws_manager,
+        apply_mqtt=apply_spool_to_slot_via_mqtt,
     )
-    resp = result.scalar_one()
-    response = SpoolAssignmentResponse.model_validate(resp)
-    response.configured = configured
-    response.pending_config = pending_config
-    response.printer_offline = printer_offline
-
-    if pending_config:
-        logger.info(
-            "Pre-configured assignment: spool %d → printer %d AMS%d-T%d (%s)",
-            spool.id,
-            data.printer_id,
-            data.ams_id,
-            data.tray_id,
-            "printer offline, will configure when it is back" if printer_offline else "will configure on insert",
-        )
-
-    for printer_id, ams_id, tray_id in [*vacated, (data.printer_id, data.ams_id, data.tray_id)]:
-        await ws_manager.broadcast(
-            {
-                "type": "spool_assignment_changed",
-                "printer_id": printer_id,
-                "ams_id": ams_id,
-                "tray_id": tray_id,
-            }
-        )
-
+    response = SpoolAssignmentResponse.model_validate(outcome.assignment)
+    response.configured = outcome.configured
+    response.pending_config = outcome.pending_config
+    response.printer_offline = outcome.printer_offline
     return response
 
 

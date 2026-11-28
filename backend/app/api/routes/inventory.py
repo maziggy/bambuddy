@@ -2510,6 +2510,11 @@ async def assign_spool(
     from backend.app.services.printer_manager import printer_manager
 
     printer_scope.ensure(data.printer_id)
+    # The scope check passes any id for an unrestricted caller, and SQLite
+    # does not enforce the foreign key, so a missing printer stored the row
+    # (#3770). The Spoolman route answers the same 404.
+    if await db.get(Printer, data.printer_id) is None:
+        raise HTTPException(404, "Printer not found")
 
     # An API key (a SpoolBuddy client) has no signed-in user, so its owner's
     # cloud sign-in resolves a custom preset; without it the slot got Generic

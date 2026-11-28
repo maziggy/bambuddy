@@ -67,6 +67,15 @@ class TestMakerWorldProviderDescriptor:
         ref = makerworld_provider.parse_url("https://makerworld.com/models/999")
         assert makerworld_provider.canonical_url(ref) == "https://makerworld.com/models/999"
 
+    def test_model_id_from_source_url(self):
+        from backend.app.services.model_providers.makerworld.url import model_id_from_source_url
+
+        assert model_id_from_source_url("https://makerworld.com/models/1400373") == 1400373
+        assert model_id_from_source_url("https://makerworld.com/models/1400373#profileId-9") == 1400373
+        assert model_id_from_source_url(None) is None
+        assert model_id_from_source_url("") is None
+        assert model_id_from_source_url("manyfold:cube01/f1") is None
+
     def test_source_url_filter_matches_model_and_any_plate(self):
         """The already-imported predicate must cover the whole-model key and
         every per-plate key — MakerWorld's canonical shape appends

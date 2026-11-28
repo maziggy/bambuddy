@@ -26,7 +26,7 @@ from urllib.parse import unquote
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import Response
 from fastapi.security import HTTPAuthorizationCredentials
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.cloud import resolve_api_key_cloud_owner
@@ -48,6 +48,7 @@ from backend.app.models.user import User
 from backend.app.schemas.makerworld import (
     MakerWorldImportRequest,
     MakerWorldImportResponse,
+    MakerWorldLibraryStatusRequest,
     MakerWorldRecentImport,
     MakerWorldResolvedModel,
     MakerWorldResolveRequest,
@@ -66,11 +67,34 @@ from backend.app.services.model_providers.base import (
     ProviderUnavailableError,
     ProviderUrlError,
 )
+from backend.app.services.model_providers.makerworld import url as mw_url
 from backend.app.services.model_providers.makerworld.service import MakerWorldService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/makerworld", tags=["makerworld"])
+
+
+def _library_status_for_model_ids(
+    model_ids: list[int],
+    rows: list[tuple[int, str | None]],
+) -> dict[str, list[int]]:
+    """Group ``(library_file_id, source_url)`` rows under each requested model id.
+
+    Every requested id appears in the result (empty list when nothing matches).
+    Duplicate request ids collapse to one key. Matching uses the same canonical
+    URL shapes ``resolve`` already uses via ``source_url_filter``.
+    """
+    by_model: dict[str, list[int]] = {str(mid): [] for mid in dict.fromkeys(model_ids)}
+    wanted = set(by_model)
+    for file_id, source_url in rows:
+        mid = mw_url.model_id_from_source_url(source_url)
+        if mid is None:
+            continue
+        key = str(mid)
+        if key in wanted:
+            by_model[key].append(file_id)
+    return by_model
 
 
 def _provider_for_url(url: str) -> ModelProvider:
@@ -462,6 +486,56 @@ async def import_instance(
         profile_id=resolved_profile_id,
         was_existing=was_existing,
     )
+
+
+@router.post(
+    "/library-status",
+    response_model=dict[str, list[int]],
+    summary="Local MakerWorld library membership (no cloud I/O)",
+)
+async def library_status(
+    body: MakerWorldLibraryStatusRequest,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    # MakerWorld-only route: pin Permission.MAKERWORLD_VIEW (not
+    # provider.view_permission) so the dependency type is Permission, not
+    # Permission | None from the ModelProvider base class.
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.MAKERWORLD_VIEW),
+    actor: User | ApiKeyActor | None = RequestActor,
+):
+    """Report which of the given MakerWorld model IDs already have library files.
+
+    DB-only: queries local ``LibraryFile`` provenance with the same
+    :meth:`ModelProvider.source_url_filter` rules ``/resolve`` uses for
+    ``already_imported_library_ids``. Does **not** call MakerWorld or Bambu
+    cloud — safe for bulk collection/grid scans that would 429 on resolve.
+
+    Response keys are decimal strings of each distinct requested ``model_id``;
+    values are LibraryFile IDs the caller may open (empty list when none).
+    Soft-deleted rows are excluded.
+    """
+    _ = current_user  # permission gate only
+    # Preserve request order while collapsing duplicates — JSON object keys
+    # cannot repeat, and clients rarely care about duplicate lookups.
+    unique_ids = list(dict.fromkeys(body.model_ids))
+    empty = _library_status_for_model_ids(unique_ids, [])
+    if not unique_ids:
+        return empty
+
+    readable = owned_row_clauses(LibraryFile, actor, Permission.LIBRARY_READ_ALL, Permission.LIBRARY_READ_OWN)
+    if readable is None:
+        return empty
+
+    # One OR of the provider's per-model filters — same predicate resolve uses
+    # per URL, batched so a 200-id scan is one round-trip, not 200.
+    membership = or_(*(makerworld_provider.source_url_filter(LibraryFile.source_url, str(mid)) for mid in unique_ids))
+    existing_q = await db.execute(
+        select(LibraryFile.id, LibraryFile.source_url).where(
+            membership,
+            LibraryFile.deleted_at.is_(None),
+            *readable,
+        )
+    )
+    return _library_status_for_model_ids(unique_ids, list(existing_q.all()))
 
 
 @router.get("/recent-imports", response_model=list[MakerWorldRecentImport])

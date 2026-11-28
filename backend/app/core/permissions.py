@@ -169,7 +169,7 @@ class Permission(StrEnum):
     THREEDFP_AUTH = "threedfp:auth"
 
     # MakerWorld Integration
-    MAKERWORLD_VIEW = "makerworld:view"  # Resolve MakerWorld URLs and view model metadata
+    MAKERWORLD_VIEW = "makerworld:view"  # Resolve / library-status / recent-imports / status
     MAKERWORLD_IMPORT = "makerworld:import"  # Download 3MFs from MakerWorld into the library
 
     # Manyfold Integration (#1471)

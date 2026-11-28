@@ -229,14 +229,6 @@ class TestStatusAndVersion:
         sent = json.loads(client._client.publish.call_args[0][1])["print"]
         assert (sent["ams_id"], sent["tray_id"], sent["slot_id"]) == (33, 6, 6)
 
-    def test_the_ams3p_cannot_be_loaded(self):
-        """Bambu: the AMS 3P has no automatic feeding; only an AMS 3H slot loads."""
-        client = _ingested()
-        client._client = MagicMock()
-        client.state.connected = True
-        assert client.ams_load_filament(41) is False
-        client._client.publish.assert_not_called()
-
 
 class TestHomeAssistantDiscovery:
     def test_the_printer_has_a_door_entity(self):

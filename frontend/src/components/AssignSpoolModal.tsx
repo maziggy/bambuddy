@@ -167,9 +167,13 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
       // configured on the printer yet — saying "AMS slot configured" reads
       // as a lie in that state. Mirror of `spoolbuddy/AssignToAmsModal.tsx`,
       // which has handled this since the SpoolBuddy assign flow shipped.
-      const toastKey = newAssignment.pending_config
-        ? 'inventory.assignPendingInsert'
-        : 'inventory.assignSuccess';
+      // An offline printer got nothing either; it is configured once it is
+      // back online (#3771).
+      const toastKey = newAssignment.printer_offline
+        ? 'inventory.assignPendingOnline'
+        : newAssignment.pending_config
+          ? 'inventory.assignPendingInsert'
+          : 'inventory.assignSuccess';
       showToast(t(toastKey), 'success');
       setMismatch(null);
       onClose();
@@ -189,7 +193,7 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
         tray_id: trayId,
         ...(move && { move }),
       }),
-    onSuccess: (_data, { move }) => {
+    onSuccess: (data, { move }) => {
       queryClient.invalidateQueries({ queryKey: ['spoolman-inventory-spools'] });
       // Prefix match: also the all-printers list this dialog filters
       // "assigned elsewhere" by.
@@ -197,7 +201,7 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
       // A move clears the fallback tag linking the spool to its old slot.
       if (move) queryClient.invalidateQueries({ queryKey: ['linked-spools'] });
       nudgePrinterRepublish();
-      showToast(t('inventory.assignSuccess'), 'success');
+      showToast(t(data?.printer_offline ? 'inventory.assignPendingOnline' : 'inventory.assignSuccess'), 'success');
       onClose();
     },
     onError: (error: Error) => {

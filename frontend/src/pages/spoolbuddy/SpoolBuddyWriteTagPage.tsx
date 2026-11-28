@@ -61,6 +61,11 @@ import { useKioskDevice } from '../../hooks/useKioskDevice';
 
 type Tab = 'existing' | 'new' | 'replace';
 type WriteStatus = 'idle' | 'selected' | 'writing' | 'success' | 'error';
+
+// The backend ends a queued write after `expires_in` seconds and says so at
+// the device's next heartbeat (#3503). A device that went offline sends no
+// heartbeat, so the page gives up itself a little after that.
+const WRITE_EXPIRY_GRACE_S = 15;
 const SIMPLE_COMMON_MATERIALS = ['PLA', 'PETG', 'ABS', 'ASA', 'TPU', 'PA', 'PC', 'PVA', 'HIPS'];
 
 export function SpoolBuddyWriteTagPage() {
@@ -75,6 +80,7 @@ export function SpoolBuddyWriteTagPage() {
   const [selectedSpool, setSelectedSpool] = useState<InventorySpool | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [writeStatus, setWriteStatus] = useState<WriteStatus>('idle');
+  const writeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [writeMessage, setWriteMessage] = useState('');
   const [untagging, setUntagging] = useState(false);
   const [tagOnReader, setTagOnReader] = useState(false);
@@ -212,9 +218,28 @@ export function SpoolBuddyWriteTagPage() {
     const detail = (e as CustomEvent).detail;
     if (detail.spool_id === selectedSpool?.id) {
       setWriteStatus('error');
-      setWriteMessage(detail.message ?? t('spoolbuddy.writeTag.writeFailed', 'Write failed'));
+      // A write that ended without a result (#3503).
+      setWriteMessage(
+        detail.reason === 'expired'
+          ? t('spoolbuddy.writeTag.writeExpired')
+          : detail.reason === 'replaced'
+            ? t('spoolbuddy.writeTag.writeReplaced')
+            : detail.message ?? t('spoolbuddy.writeTag.writeFailed', 'Write failed'),
+      );
     }
   }, [selectedSpool, t]);
+
+  // The fallback timer only runs while the page waits on a write.
+  useEffect(() => {
+    if (writeStatus === 'writing') return;
+    if (writeTimerRef.current) {
+      clearTimeout(writeTimerRef.current);
+      writeTimerRef.current = null;
+    }
+  }, [writeStatus]);
+  useEffect(() => () => {
+    if (writeTimerRef.current) clearTimeout(writeTimerRef.current);
+  }, []);
 
   const handleLinkFailed = useCallback((e: Event) => {
     const detail = (e as CustomEvent).detail;
@@ -262,7 +287,14 @@ export function SpoolBuddyWriteTagPage() {
     setWriteStatus('writing');
     setWriteMessage(t('spoolbuddy.writeTag.waiting', 'Waiting for SpoolBuddy...'));
     try {
-      const resp = await spoolbuddyApi.writeTag(device.device_id, selectedSpool.id);
+      const deviceId = device.device_id;
+      const resp = await spoolbuddyApi.writeTag(deviceId, selectedSpool.id);
+      writeTimerRef.current = setTimeout(() => {
+        writeTimerRef.current = null;
+        void spoolbuddyApi.cancelWrite(deviceId).catch(() => {});
+        setWriteStatus('error');
+        setWriteMessage(t('spoolbuddy.writeTag.writeExpired'));
+      }, ((resp?.expires_in ?? 60) + WRITE_EXPIRY_GRACE_S) * 1000);
       if (resp?.warnings?.length) {
         for (const w of resp.warnings) {
           showToast(w, 'warning');
@@ -1045,6 +1077,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
               suggestedMaterials={suggestedMaterials}
               quickAdd={quickAdd}
               detailsRequired={!quickAdd}
+              showQuantity={quickAdd}
               quantity={quantity}
               onQuantityChange={setQuantity}
               errors={errors}

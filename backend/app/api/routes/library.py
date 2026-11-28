@@ -5391,11 +5391,11 @@ async def slice_and_persist(
     # row's display falls back to its ".gcode.3mf" filename instead of the
     # source file's project title, which would make the two indistinguishable.
     metadata: dict = dict(_without_print_name(parsed_metadata) or {})
-    # Some slicer-sidecar builds leave the X-Filament-Used-* response headers
-    # unset, so result.filament_used_g/_mm arrive as 0 even for a real
-    # multi-hour print. Fall back to the totals ThreeMFParser read from the
-    # produced 3MF's own G-code header.
-    filament_g = result.filament_used_g or parsed_metadata.get("filament_used_grams") or 0.0
+    # Grams come from the produced 3MF's slice_info first: sidecar images
+    # before #3764 put only the first filament's grams in X-Filament-Used-G
+    # on a multi-colour print. Some builds leave the X-Filament-Used-*
+    # headers unset, so the length falls back to the 3MF's G-code header.
+    filament_g = parsed_metadata.get("filament_used_grams") or result.filament_used_g or 0.0
     filament_mm = result.filament_used_mm or parsed_metadata.get("filament_used_mm") or 0.0
     metadata.update(
         {
@@ -5566,10 +5566,10 @@ async def slice_and_persist_as_archive(
 
     metadata = dict(source_archive.extra_data) if source_archive.extra_data else {}
     metadata.update(parsed_metadata)
-    # Fall back to the produced 3MF's G-code-header totals when the sidecar
-    # leaves the X-Filament-Used-* headers unset (result.filament_used_g == 0
-    # even for a real multi-hour print).
-    filament_g = result.filament_used_g or parsed_metadata.get("filament_used_grams") or 0.0
+    # Grams from the produced 3MF's slice_info first (#3764, see above); the
+    # length falls back to the 3MF's G-code header when the sidecar leaves
+    # the X-Filament-Used-* headers unset.
+    filament_g = parsed_metadata.get("filament_used_grams") or result.filament_used_g or 0.0
     filament_mm = result.filament_used_mm or parsed_metadata.get("filament_used_mm") or 0.0
     metadata.update(
         {

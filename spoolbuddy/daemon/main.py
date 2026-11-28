@@ -318,6 +318,12 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
                 _deploy_ssh_key(ssh_key)
 
             cmd = result.get("pending_command")
+            dropped = shared.pop("pending_write", None) if cmd != "write_tag" else None
+            if dropped:
+                # The backend no longer has the write: it was cancelled,
+                # expired or replaced by another command. Kept armed, it would
+                # write the next NTAG placed on the reader (#3503).
+                logger.info("Write tag for spool %d dropped: no longer requested", dropped["spool_id"])
             if cmd == "tare":
                 scale = shared.get("scale")
                 if scale and scale.ok:

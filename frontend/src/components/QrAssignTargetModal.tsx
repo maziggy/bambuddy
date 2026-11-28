@@ -176,7 +176,7 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false }: Q
   }, [status, t]);
 
   const assignMutation = useMutation({
-    mutationFn: async ({ spoolId, tg }: { spoolId: number; tg: AssignTarget }): Promise<{ pendingConfig: boolean }> => {
+    mutationFn: async ({ spoolId, tg }: { spoolId: number; tg: AssignTarget }): Promise<{ pendingConfig: boolean; printerOffline?: boolean }> => {
       if (tg.kind === 'ams') {
         // A spool lives in one slot at a time. `move` has the backend take it
         // out of its other slot(s) in the same transaction as the assign, so a
@@ -186,7 +186,7 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false }: Q
           return { pendingConfig: false };
         }
         const assignment = await api.assignSpool({ spool_id: spoolId, printer_id: tg.printerId, ams_id: tg.amsId, tray_id: tg.trayId, move: true });
-        return { pendingConfig: !!assignment.pending_config };
+        return { pendingConfig: !!assignment.pending_config, printerOffline: !!assignment.printer_offline };
       }
       if (spoolmanMode) {
         await api.updateSpoolmanInventorySpool(spoolId, { location_id: tg.locationId });
@@ -195,7 +195,7 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false }: Q
       }
       return { pendingConfig: false };
     },
-    onSuccess: ({ pendingConfig }, { tg }) => {
+    onSuccess: ({ pendingConfig, printerOffline }, { tg }) => {
       // Intentionally do NOT clear inFlightRef here: the modal closes right
       // after, and leaving it set blocks any stale in-flight live-scan decode
       // from firing a second assignment in the brief window before unmount.
@@ -203,8 +203,11 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false }: Q
       //
       // A slot that read empty at assign time is configured when the spool goes
       // in (#1680); "Assigned" would read as if the slot were set up already.
+      // An offline printer is configured once it is back online (#3771).
       showToast(
-        pendingConfig
+        printerOffline
+          ? t('inventory.assignPendingOnline')
+          : pendingConfig
           ? t('inventory.assignPendingInsert')
           : t(tg.kind === 'ams' ? 'inventory.qrAssign.assignSuccess' : 'inventory.qrAssign.storageSuccess', { location: targetLocationLabel(tg) }),
         'success',

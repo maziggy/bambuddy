@@ -2196,6 +2196,10 @@ class BambuMQTTClient:
             self._state_before_power_off = None
             # Reset per-connection warning state so warnings fire once per (re)connection
             self._ams_version_warned = set()
+            # The first AMS push after a reconnect fires on_ams_change even when
+            # nothing in the AMS changed, as on startup, so a spool assigned
+            # while the printer was offline gets its slot configured (#3771).
+            self._previous_ams_hash = None
             # Preserve cached developer_mode across auto-reconnects to avoid
             # re-probing on every reconnect.  The probe (ams_filament_setting to
             # ext slot) can destabilize some firmware MQTT brokers, causing a

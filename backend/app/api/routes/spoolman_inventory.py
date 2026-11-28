@@ -2238,7 +2238,7 @@ async def assign_spoolman_slot(
                     "printer" if printer_kp else "stored",
                 )
 
-            mqtt_client.ams_set_filament_setting(
+            sent = mqtt_client.ams_set_filament_setting(
                 ams_id=body.ams_id,
                 tray_id=body.tray_id,
                 tray_info_idx=effective_tray_info_idx,
@@ -2249,81 +2249,91 @@ async def assign_spoolman_slot(
                 nozzle_temp_max=temp_max,
                 setting_id=effective_setting_id,
             )
-
-            if matching_kp and matching_kp.cali_idx is not None:
-                # Use printer-reported filament_id when available, otherwise
-                # fall back to the realigned tray_info_idx so both commands
-                # reference the same filament context.
-                cali_filament_id = (
-                    printer_kp.filament_id if printer_kp and printer_kp.filament_id else None
-                ) or effective_tray_info_idx
-                mqtt_client.extrusion_cali_sel(
-                    ams_id=body.ams_id,
-                    tray_id=body.tray_id,
-                    cali_idx=matching_kp.cali_idx,
-                    filament_id=cali_filament_id,
-                    nozzle_diameter=nozzle_diameter,
-                )
-                logger.info(
-                    "Spoolman assign: applied K-profile cali_idx=%d "
-                    "(kp_id=%d, filament_id=%s) for spool %d on printer %d AMS%d-T%d",
-                    matching_kp.cali_idx,
-                    matching_kp.id,
-                    cali_filament_id,
-                    body.spoolman_spool_id,
-                    body.printer_id,
+            # A printer that is switched off refuses the publish; nothing
+            # after it would land either (#3771, as the built-in assign).
+            if not sent:
+                logger.warning(
+                    "AMS slot ams=%d tray=%d not configured for Spoolman spool %d: printer %d not connected",
                     body.ams_id,
                     body.tray_id,
+                    body.spoolman_spool_id,
+                    body.printer_id,
                 )
             else:
-                # No stored K-profile for this spool — always reset the slot to
-                # Default K (cali_idx=-1). The live cali_idx belongs to whatever
-                # filament was there before, so preserving it would apply the
-                # wrong filament's calibration to the new spool.
-                mqtt_client.extrusion_cali_sel(
-                    ams_id=body.ams_id,
-                    tray_id=body.tray_id,
-                    cali_idx=-1,
-                    filament_id=effective_tray_info_idx,
-                    nozzle_diameter=nozzle_diameter,
-                )
+                if matching_kp and matching_kp.cali_idx is not None:
+                    # Use printer-reported filament_id when available, otherwise
+                    # fall back to the realigned tray_info_idx so both commands
+                    # reference the same filament context.
+                    cali_filament_id = (
+                        printer_kp.filament_id if printer_kp and printer_kp.filament_id else None
+                    ) or effective_tray_info_idx
+                    mqtt_client.extrusion_cali_sel(
+                        ams_id=body.ams_id,
+                        tray_id=body.tray_id,
+                        cali_idx=matching_kp.cali_idx,
+                        filament_id=cali_filament_id,
+                        nozzle_diameter=nozzle_diameter,
+                    )
+                    logger.info(
+                        "Spoolman assign: applied K-profile cali_idx=%d "
+                        "(kp_id=%d, filament_id=%s) for spool %d on printer %d AMS%d-T%d",
+                        matching_kp.cali_idx,
+                        matching_kp.id,
+                        cali_filament_id,
+                        body.spoolman_spool_id,
+                        body.printer_id,
+                        body.ams_id,
+                        body.tray_id,
+                    )
+                else:
+                    # No stored K-profile for this spool — always reset the slot to
+                    # Default K (cali_idx=-1). The live cali_idx belongs to whatever
+                    # filament was there before, so preserving it would apply the
+                    # wrong filament's calibration to the new spool.
+                    mqtt_client.extrusion_cali_sel(
+                        ams_id=body.ams_id,
+                        tray_id=body.tray_id,
+                        cali_idx=-1,
+                        filament_id=effective_tray_info_idx,
+                        nozzle_diameter=nozzle_diameter,
+                    )
+                    logger.info(
+                        "No stored K-profile for Spoolman spool %d — reset slot to Default K (cali_idx=-1)",
+                        body.spoolman_spool_id,
+                    )
+
+                # Read-back verification, as the built-in assign registers it (#2582):
+                # the AMS pushes that follow confirm the tray took what was sent.
+                # Not for a slot the firmware calls empty, which echoes nothing
+                # back until a spool goes in (the built-in check, inventory.py).
+                from backend.app.api.routes.inventory import _find_tray_in_ams_data  # noqa: PLC0415
+                from backend.app.services.ams_slot_presence import spool_present  # noqa: PLC0415
+
+                live_tray = None
+                if state and state.raw_data:
+                    ams_raw = state.raw_data.get("ams", [])
+                    if isinstance(ams_raw, dict):
+                        ams_raw = ams_raw.get("ams", [])
+                    live_tray = _find_tray_in_ams_data(ams_raw, body.ams_id, body.tray_id)
+                tray_state = (live_tray or {}).get("state")
+                if not (spool_present(live_tray) is not True and tray_state in (9, 10)):
+                    mqtt_client.register_assignment_verification(
+                        ams_id=body.ams_id,
+                        tray_id=body.tray_id,
+                        tray_info_idx=effective_tray_info_idx,
+                        tray_color=tray_color,
+                        cali_idx=matching_kp.cali_idx if matching_kp and matching_kp.cali_idx is not None else -1,
+                    )
+                    # Fresh telemetry for the check to compare against.
+                    mqtt_client.request_status_update()
+
                 logger.info(
-                    "No stored K-profile for Spoolman spool %d — reset slot to Default K (cali_idx=-1)",
+                    "Auto-configured AMS slot ams=%d tray=%d for Spoolman spool %d on printer %d",
+                    body.ams_id,
+                    body.tray_id,
                     body.spoolman_spool_id,
+                    body.printer_id,
                 )
-
-            # Read-back verification, as the built-in assign registers it (#2582):
-            # the AMS pushes that follow confirm the tray took what was sent.
-            # Not for a slot the firmware calls empty, which echoes nothing
-            # back until a spool goes in (the built-in check, inventory.py).
-            from backend.app.api.routes.inventory import _find_tray_in_ams_data  # noqa: PLC0415
-            from backend.app.services.ams_slot_presence import spool_present  # noqa: PLC0415
-
-            live_tray = None
-            if state and state.raw_data:
-                ams_raw = state.raw_data.get("ams", [])
-                if isinstance(ams_raw, dict):
-                    ams_raw = ams_raw.get("ams", [])
-                live_tray = _find_tray_in_ams_data(ams_raw, body.ams_id, body.tray_id)
-            tray_state = (live_tray or {}).get("state")
-            if not (spool_present(live_tray) is not True and tray_state in (9, 10)):
-                mqtt_client.register_assignment_verification(
-                    ams_id=body.ams_id,
-                    tray_id=body.tray_id,
-                    tray_info_idx=effective_tray_info_idx,
-                    tray_color=tray_color,
-                    cali_idx=matching_kp.cali_idx if matching_kp and matching_kp.cali_idx is not None else -1,
-                )
-                # Fresh telemetry for the check to compare against.
-                mqtt_client.request_status_update()
-
-            logger.info(
-                "Auto-configured AMS slot ams=%d tray=%d for Spoolman spool %d on printer %d",
-                body.ams_id,
-                body.tray_id,
-                body.spoolman_spool_id,
-                body.printer_id,
-            )
     except Exception:
         logger.exception(
             "Failed to auto-configure AMS slot for Spoolman spool %d (printer=%d, ams=%d, tray=%d)",

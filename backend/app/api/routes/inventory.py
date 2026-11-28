@@ -175,7 +175,7 @@ async def apply_spool_to_slot_via_mqtt(
     Shared by `assign_spool` (initial assign for a loaded slot) and
     `on_ams_change` (re-fire when a SpoolBuddy-pre-assigned slot transitions
     empty → loaded). Returns True when MQTT commands were published, False if
-    no client was available or setup failed mid-way.
+    no client was available or the printer is not connected (#3771).
 
     `current_tray_info_idx` / `current_tray_type` describe the live tray state
     used as fallback hints when the spool's slicer_filament can't be resolved.
@@ -346,7 +346,7 @@ async def apply_spool_to_slot_via_mqtt(
             "printer" if printer_kp else "stored",
         )
 
-    client.ams_set_filament_setting(
+    sent = client.ams_set_filament_setting(
         ams_id=ams_id,
         tray_id=tray_id,
         tray_info_idx=effective_tray_info_idx,
@@ -357,6 +357,18 @@ async def apply_spool_to_slot_via_mqtt(
         nozzle_temp_max=temp_max,
         setting_id=effective_setting_id,
     )
+    # A client exists for a printer that is switched off too, and refuses the
+    # publish. Reporting that as configured told the caller the slot was set
+    # and kept the replay from trying again on reconnect (#3771).
+    if not sent:
+        logger.warning(
+            "AMS slot ams=%d tray=%d not configured for spool %d: printer %d refused the publish (not connected)",
+            ams_id,
+            tray_id,
+            spool.id,
+            printer_id,
+        )
+        return False
 
     if matching_kp and matching_kp.cali_idx is not None:
         # filament_id for cali_sel must match the preset under which the kp
@@ -2723,6 +2735,7 @@ async def assign_spool(
     # saving of one MQTT message the firmware would have dropped anyway.
     slot_is_definitely_empty = tray_has_spool is not True and (tray_state == 9 or tray_state == 10)
     configured = False
+    printer_offline = False
     if not slot_is_definitely_empty:
         try:
             configured = await apply_spool_to_slot_via_mqtt(
@@ -2739,6 +2752,8 @@ async def assign_spool(
         except Exception as e:
             logger.warning("MQTT auto-configure failed for spool %d: %s", spool.id, e)
         else:
+            # Not raised and not sent: no client, or a printer not connected.
+            printer_offline = not configured
             # Nudge a fresh pushall so the read-back verification registered in
             # apply_spool_to_slot_via_mqtt (#2582) has current tray telemetry to
             # compare against within its window, instead of waiting for the next
@@ -2753,8 +2768,16 @@ async def assign_spool(
     # pending_config is the "config not landed yet" UI marker. True when the
     # firmware said empty, OR when MQTT couldn't actually publish (printer
     # offline, no client, transient failure). on_ams_change replay re-fires
-    # the config in either case once the AMS reports a non-empty fingerprint.
+    # the config in either case once the AMS reports a loaded slot.
     pending_config = slot_is_definitely_empty or not configured
+    # Nothing reached a printer that is offline. The fingerprint was read from
+    # its last known state; left in place it reads as "configured" to the
+    # on_ams_change replay, which only picks up assignments without one, so the
+    # slot never got its settings once the printer was back (#3771).
+    if printer_offline and (assignment.fingerprint_color is not None or assignment.fingerprint_type is not None):
+        assignment.fingerprint_color = None
+        assignment.fingerprint_type = None
+        await db.commit()
 
     # Return assignment with spool data
     result = await db.execute(
@@ -2769,14 +2792,16 @@ async def assign_spool(
     response = SpoolAssignmentResponse.model_validate(resp)
     response.configured = configured
     response.pending_config = pending_config
+    response.printer_offline = printer_offline
 
     if pending_config:
         logger.info(
-            "Pre-configured assignment: spool %d → printer %d AMS%d-T%d (slot empty, will configure on insert)",
+            "Pre-configured assignment: spool %d → printer %d AMS%d-T%d (%s)",
             spool.id,
             data.printer_id,
             data.ams_id,
             data.tray_id,
+            "printer offline, will configure when it is back" if printer_offline else "will configure on insert",
         )
 
     for printer_id, ams_id, tray_id in [*vacated, (data.printer_id, data.ams_id, data.tray_id)]:

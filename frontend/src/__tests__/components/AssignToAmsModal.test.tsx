@@ -422,6 +422,23 @@ describe('AssignToAmsModal', () => {
     });
   });
 
+  it('says the slot is configured once an offline printer is back (#3771)', async () => {
+    vi.mocked(api.assignSpool).mockResolvedValue({ configured: false, pending_config: true, printer_offline: true } as never);
+    const user = userEvent.setup();
+    render(
+      <AssignToAmsModal isOpen={true} onClose={vi.fn()} spool={SPOOL as never} printerId={1} spoolmanMode={false} />
+    );
+
+    await waitFor(() => {
+      expect(screen.queryAllByTestId('ams-slot').length).toBeGreaterThan(0);
+    });
+    await user.click(screen.queryAllByTestId('ams-slot')[0]);
+
+    expect(
+      await screen.findByText('Assigned. The slot will be configured when the printer is back online.'),
+    ).toBeInTheDocument();
+  });
+
   describe('query invalidation after successful assign', () => {
     it('calls assignSpoolmanSlot successfully — invalidation fires on success', async () => {
       const user = userEvent.setup();

@@ -3102,7 +3102,7 @@ async def _unlink_stale_assignments(printer_id: int, ams_data: list, printing_no
                         continue
                     if not fp_type.strip() and loaded and assignment.spool:
                         # The fingerprint ends this replay. Not recorded when nothing
-                        # could be sent (no MQTT client while the printer reconnects),
+                        # could be sent (no MQTT client, or a printer not connected),
                         # so the next AMS change tries again. An attempt that raised is
                         # recorded as before: it may have sent part of the commands and
                         # would raise again on every change, remain% steps included.
@@ -3144,7 +3144,7 @@ async def _unlink_stale_assignments(printer_id: int, ams_data: list, printing_no
                             configured = None
                         if configured is False:
                             logger.warning(
-                                "Pre-config not sent for spool %d on printer %d AMS%d-T%d (no MQTT client); "
+                                "Pre-config not sent for spool %d on printer %d AMS%d-T%d (printer not connected); "
                                 "retrying on the next AMS change",
                                 assignment.spool_id,
                                 printer_id,

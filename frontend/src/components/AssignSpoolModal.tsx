@@ -167,9 +167,13 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
       // configured on the printer yet — saying "AMS slot configured" reads
       // as a lie in that state. Mirror of `spoolbuddy/AssignToAmsModal.tsx`,
       // which has handled this since the SpoolBuddy assign flow shipped.
-      const toastKey = newAssignment.pending_config
-        ? 'inventory.assignPendingInsert'
-        : 'inventory.assignSuccess';
+      // An offline printer got nothing either; it is configured once it is
+      // back online (#3771).
+      const toastKey = newAssignment.printer_offline
+        ? 'inventory.assignPendingOnline'
+        : newAssignment.pending_config
+          ? 'inventory.assignPendingInsert'
+          : 'inventory.assignSuccess';
       showToast(t(toastKey), 'success');
       setMismatch(null);
       onClose();

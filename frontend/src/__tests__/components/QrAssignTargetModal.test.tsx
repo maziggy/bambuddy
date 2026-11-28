@@ -470,6 +470,21 @@ describe('QrAssignTargetModal', () => {
       expect(await screen.findByText('Assigned. Slot will configure when you insert the spool.')).toBeInTheDocument();
     });
 
+    it('built-in: a slot on an offline printer says it is configured once the printer is back (#3771)', async () => {
+      server.use(
+        http.post('/api/v1/inventory/assignments', () =>
+          HttpResponse.json({ id: 1, spool_id: 42, printer_id: 1, ams_id: 0, tray_id: 0, pending_config: true, printer_offline: true }),
+        ),
+      );
+      stubPhotoDecoder('https://bambuddy.local/inventory?spool=42');
+      render(<QrAssignTargetModal isOpen onClose={noop} spoolmanMode={false} />);
+
+      await openScanStepForSlotA1();
+      pickPhoto();
+
+      expect(await screen.findByText('Assigned. The slot will be configured when the printer is back online.')).toBeInTheDocument();
+    });
+
     it.each([
       ['archived', () => HttpResponse.json(inventorySpool(42, { archived_at: '2026-01-01T00:00:00Z' })), /Spool #42 is archived/],
       ['missing', () => HttpResponse.json({ detail: 'Spool not found' }, { status: 404 }), /There is no spool #42/],

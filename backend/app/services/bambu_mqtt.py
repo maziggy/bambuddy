@@ -434,6 +434,39 @@ def unit_reported_absent(ams_id, ams_list: list, ams_exist_bits) -> bool:
     return 0 <= unit <= 3 and not bits >> unit & 1
 
 
+def slot_presence_changes(
+    previous: dict[tuple[int, int], bool], merged_ams: list
+) -> tuple[dict[tuple[int, int], bool], list[tuple[int, int, bool]]]:
+    """Which AMS slots' presence bits flipped since the last push (#3756).
+
+    Reads the ``exists`` annotation ``apply_tray_exist_bits`` puts on each
+    tray, keyed by (ams_id, tray_id). Returns every slot's bit now, and
+    ``(ams_id, tray_id, present)`` for each slot whose bit differs from
+    ``previous``. A slot seen for the first time, or with no bit, is not a
+    change: there is nothing to compare it with. A push the printer sends
+    while shutting down leaves the bits as they were (see
+    ``apply_tray_exist_bits``), so it reports nothing.
+    """
+    current: dict[tuple[int, int], bool] = {}
+    for unit in merged_ams:
+        if not isinstance(unit, dict):
+            continue
+        for tray in unit.get("tray") or []:
+            if not isinstance(tray, dict) or not isinstance(tray.get("exists"), bool):
+                continue
+            try:
+                slot = (int(unit["id"]), int(tray["id"]))
+            except (KeyError, TypeError, ValueError):
+                continue
+            current[slot] = tray["exists"]
+    changes = [
+        (ams_id, tray_id, present)
+        for (ams_id, tray_id), present in current.items()
+        if (ams_id, tray_id) in previous and previous[(ams_id, tray_id)] != present
+    ]
+    return current, changes
+
+
 def apply_tray_exist_bits(
     units: list,
     tray_exist_bits_str: str | int | None,
@@ -1596,6 +1629,7 @@ class BambuMQTTClient:
         on_assignment_verified: Callable[[int, int, bool, dict], None] | None = None,
         on_tray_change: Callable[[int, int], None] | None = None,
         on_fts_inlet_change: Callable[[int, str], None] | None = None,
+        on_ams_presence_change: Callable[[int, int, bool], None] | None = None,
     ):
         self.ip_address = ip_address
         self.serial_number = serial_number
@@ -1610,6 +1644,9 @@ class BambuMQTTClient:
         # Fired when an AMS is moved to the switch's other inlet, which changes
         # the nozzle it feeds and so invalidates its slots' K-profile bindings.
         self.on_fts_inlet_change = on_fts_inlet_change
+        # Fired when an AMS slot's presence bit flips: a spool went in (True)
+        # or came out (False). See slot_presence_changes() (#3756).
+        self.on_ams_presence_change = on_ams_presence_change
         self.on_layer_change = on_layer_change
         # #2547: fired when `mc_percent` advances during a running print.
         # `on_layer_change` stops firing the instant the final layer starts, so
@@ -1780,6 +1817,8 @@ class BambuMQTTClient:
         self._raw_message_handlers: list[Callable[[str, bytes], None]] = []
         self._disconnection_event: threading.Event | None = None
         self._previous_ams_hash: str | None = None  # Track AMS changes
+        # Each AMS slot's last presence bit, for on_ams_presence_change (#3756).
+        self._slot_presence: dict[tuple[int, int], bool] = {}
         # Track external-spool (vt_tray) identity changes separately: the AMS
         # hash above covers only AMS units, so an external-spool-only filament
         # swap would never re-trigger inventory reconciliation (#2575).
@@ -4502,6 +4541,17 @@ class BambuMQTTClient:
                 # Pass merged AMS data (not raw ams_list) — partial MQTT updates
                 # may lack fields like 'remain' that the merged state preserves
                 self.on_ams_change(merged_ams)
+
+        # A spool going into or out of a slot, from the presence bit alone: an
+        # untagged spool can leave the hash above unchanged, or change it only
+        # once the bay has fed it, about 20 s later (#3756).
+        self._slot_presence, presence_changes = slot_presence_changes(self._slot_presence, merged_ams)
+        for ams_id, tray_id, present in presence_changes:
+            logger.debug(
+                "[%s] AMS %d slot %d: spool %s", self.serial_number, ams_id, tray_id, "in" if present else "out"
+            )
+            if self.on_ams_presence_change:
+                self.on_ams_presence_change(ams_id, tray_id, present)
 
         # #2582: read-back check runs on EVERY AMS push, not just hash changes.
         # The change hash keys on tray_type/tag_uid/remain — NOT tray_info_idx

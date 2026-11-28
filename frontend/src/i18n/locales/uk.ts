@@ -6504,6 +6504,7 @@ export default {
     schedule: "За розкладом",
     dateTime: "Дата й час",
     invalidDateTime: "Введіть дійсну дату й час",
+    scheduleInPast: 'Виберіть дату й час у майбутньому',
     openCalendar: "Відкрити календар",
     requireManualStart: "Потрібен ручний запуск",
     awaitingReviewNote: "Ваш друк очікує перевірки: він почнеться, коли його запустить той, хто керує чергою.",

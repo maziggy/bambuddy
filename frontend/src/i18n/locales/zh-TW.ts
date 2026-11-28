@@ -6450,6 +6450,7 @@ export default {
     schedule: '排程',
     dateTime: '日期和時間',
     invalidDateTime: '請輸入有效的日期和時間',
+    scheduleInPast: '請選擇未來的日期和時間',
     openCalendar: '開啟日曆',
     requireManualStart: '要求手動開始',
     awaitingReviewNote: '你的列印正在等待審核：管理佇列的人啟動後才會開始。',

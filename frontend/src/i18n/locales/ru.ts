@@ -6223,6 +6223,7 @@ export default {
     schedule: "По расписанию",
     dateTime: "Дата и время",
     invalidDateTime: "Введите корректные дату и время",
+    scheduleInPast: 'Выберите дату и время в будущем',
     openCalendar: "Открыть календарь",
     requireManualStart: "Требовать ручного запуска",
     awaitingReviewNote: "Ваша печать ожидает проверки: она начнётся, когда её запустит тот, кто управляет очередью.",

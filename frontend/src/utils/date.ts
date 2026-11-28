@@ -95,7 +95,7 @@ function splitDateParts(value: string): string[] | null {
   return null;
 }
 
-function detectSystemDateFormat(): 'us' | 'eu' | 'iso' {
+export function detectSystemDateFormat(): 'us' | 'eu' | 'iso' {
   const formatted = new Date(2000, 11, 31).toLocaleDateString();
   if (formatted.startsWith('12')) return 'us';
   if (formatted.startsWith('31')) return 'eu';
@@ -114,32 +114,19 @@ export function parseDateInput(value: string, dateFormat: DateFormat = 'system')
   if (!parts) return null;
 
   const resolved = dateFormat === 'system' ? detectSystemDateFormat() : dateFormat;
-  let day: number, month: number, year: number;
+  const [first, second, third] = parts;
+  const yearPart = resolved === 'iso' ? first : third;
+  const monthPart = resolved === 'us' ? first : second;
+  const dayPart = resolved === 'iso' ? third : resolved === 'us' ? second : first;
+  if (!/^\d{4}$/.test(yearPart) || !/^\d{1,2}$/.test(monthPart) || !/^\d{1,2}$/.test(dayPart)) return null;
 
-  switch (resolved) {
-    case 'us':
-      month = parseInt(parts[0], 10);
-      day = parseInt(parts[1], 10);
-      year = parseInt(parts[2], 10);
-      break;
-    case 'eu':
-      day = parseInt(parts[0], 10);
-      month = parseInt(parts[1], 10);
-      year = parseInt(parts[2], 10);
-      break;
-    case 'iso':
-      year = parseInt(parts[0], 10);
-      month = parseInt(parts[1], 10);
-      day = parseInt(parts[2], 10);
-      break;
-  }
-
-  if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
+  const year = Number(yearPart), month = Number(monthPart), day = Number(dayPart);
   if (month < 1 || month > 12) return null;
   if (day < 1 || day > 31) return null;
   if (year < 1900 || year > 2100) return null;
 
-  return new Date(year, month - 1, day);
+  const date = new Date(year, month - 1, day);
+  return date.getMonth() === month - 1 && date.getDate() === day ? date : null;
 }
 
 /**
@@ -158,6 +145,7 @@ export function parseTimeInput(value: string): { hours: number; minutes: number 
   const minutes = parseInt(match[2], 10);
   const ampm = match[3]?.toUpperCase();
 
+  if (ampm && (hours < 1 || hours > 12)) return null;
   if (ampm === 'PM' && hours < 12) hours += 12;
   if (ampm === 'AM' && hours === 12) hours = 0;
 

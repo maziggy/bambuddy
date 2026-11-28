@@ -6450,6 +6450,7 @@ export default {
     schedule: 'Agendar',
     dateTime: 'Data e hora',
     invalidDateTime: 'Digite uma data e hora válidas',
+    scheduleInPast: 'Escolha uma data e um horário no futuro',
     openCalendar: 'Abrir calendário',
     requireManualStart: 'Exigir início manual',
     awaitingReviewNote: 'Sua impressão aguarda revisão: ela começa quando alguém que gerencia a fila a iniciar.',

@@ -6540,6 +6540,7 @@ errors: {
     schedule: 'Schemalägg',
     dateTime: 'Datum & tid',
     invalidDateTime: 'Ange ett giltigt datum och tid',
+    scheduleInPast: 'Välj ett datum och klockslag i framtiden',
     openCalendar: 'Öppna kalender',
     requireManualStart: 'Kräv manuell start',
     awaitingReviewNote: 'Din utskrift väntar på granskning: den börjar när någon som hanterar kön startar den.',

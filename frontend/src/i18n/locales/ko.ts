@@ -6234,6 +6234,7 @@ export default {
     schedule: '예약',
     dateTime: '날짜 및 시간',
     invalidDateTime: '유효한 날짜와 시간을 입력하세요',
+    scheduleInPast: '현재보다 나중인 날짜와 시간을 선택하세요',
     openCalendar: '달력 열기',
     requireManualStart: '수동 시작 필요',
     awaitingReviewNote: '이 출력은 검토를 기다립니다. 대기열을 관리하는 사람이 시작하면 출력이 시작됩니다.',

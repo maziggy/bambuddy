@@ -6451,6 +6451,7 @@ export default {
     schedule: 'Planifier',
     dateTime: 'Date et heure',
     invalidDateTime: 'Veuillez saisir une date et une heure valides',
+    scheduleInPast: 'Choisissez une date et une heure dans le futur',
     openCalendar: 'Ouvrir calendrier',
     requireManualStart: 'Démarrage manuel requis',
     awaitingReviewNote: 'Votre impression attend une validation : elle démarre quand une personne qui gère la file la lance.',

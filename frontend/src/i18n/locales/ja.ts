@@ -6464,6 +6464,7 @@ export default {
     schedule: 'スケジュール',
     dateTime: '日時',
     invalidDateTime: '有効な日時を入力してください',
+    scheduleInPast: '未来の日時を指定してください',
     openCalendar: 'カレンダーを開く',
     requireManualStart: '手動開始を要求',
     awaitingReviewNote: 'この印刷はレビュー待ちです。キューを管理する人が開始すると印刷が始まります。',

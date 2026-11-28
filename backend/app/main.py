@@ -3102,7 +3102,7 @@ async def _unlink_stale_assignments(printer_id: int, ams_data: list, printing_no
                         continue
                     if not fp_type.strip() and loaded and assignment.spool:
                         # The fingerprint ends this replay. Not recorded when nothing
-                        # could be sent (no MQTT client while the printer reconnects),
+                        # could be sent (no MQTT client, or a printer not connected),
                         # so the next AMS change tries again. An attempt that raised is
                         # recorded as before: it may have sent part of the commands and
                         # would raise again on every change, remain% steps included.
@@ -3144,7 +3144,7 @@ async def _unlink_stale_assignments(printer_id: int, ams_data: list, printing_no
                             configured = None
                         if configured is False:
                             logger.warning(
-                                "Pre-config not sent for spool %d on printer %d AMS%d-T%d (no MQTT client); "
+                                "Pre-config not sent for spool %d on printer %d AMS%d-T%d (printer not connected); "
                                 "retrying on the next AMS change",
                                 assignment.spool_id,
                                 printer_id,
@@ -3421,6 +3421,126 @@ async def _expire_spoolman_empty_slots(printer_id: int, ams_data: list, printing
         logger.warning("Spoolman slot re-check failed for printer %s: %s", printer_id, e, exc_info=True)
 
 
+async def _replay_spoolman_pending_configs(printer_id: int, ams_data: list, printing_now: bool) -> None:
+    """Configure the Spoolman slots whose configuration did not reach the printer.
+
+    The Spoolman half of the built-in replay in ``_unlink_stale_assignments``:
+    a spool assigned while the printer was offline is marked ``pending_config``
+    (#3771), and the first AMS report with the slot loaded sends what the
+    assign could not. Not into the slot feeding a running print, which the
+    printer refuses (#3434). Still pending when nothing could be sent again;
+    an attempt that raised ends it, as the built-in replay does.
+    """
+    logger = logging.getLogger(__name__)
+    try:
+        async with async_session() as db:
+            from backend.app.api.routes.settings import get_setting
+            from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+
+            enabled = await get_setting(db, "spoolman_enabled")
+            if not enabled or enabled.lower() != "true":
+                return
+            rows = (
+                (
+                    await db.execute(
+                        select(SpoolmanSlotAssignment).where(
+                            SpoolmanSlotAssignment.printer_id == printer_id,
+                            SpoolmanSlotAssignment.pending_config.is_(True),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            status = printer_manager.get_status(printer_id)
+            if not rows or status is None or not status.connected:
+                return
+
+            from backend.app.api.routes.inventory import _find_tray_in_ams_data, load_preset_lookup_user
+            from backend.app.api.routes.spoolman_inventory import (
+                _get_client,
+                _map_spoolman_spool,
+                apply_spoolman_spool_to_slot,
+            )
+            from backend.app.core.auth import is_auth_enabled
+            from backend.app.services.ams_slot_presence import spool_present
+
+            auth_enabled = await is_auth_enabled(db)
+            client = None
+            for row in rows:
+                if row.ams_id == 255:
+                    ext_id = external_tray_id(row.tray_id)
+                    tray = next(
+                        (
+                            vt
+                            for vt in (status.raw_data or {}).get("vt_tray") or []
+                            if isinstance(vt, dict) and int(vt.get("id", 254)) == ext_id
+                        ),
+                        None,
+                    )
+                else:
+                    tray = _find_tray_in_ams_data(ams_data, row.ams_id, row.tray_id)
+                if not tray:
+                    continue
+                # "Loaded" as the built-in replay reads it.
+                tray_state = tray.get("state")
+                loaded = spool_present(tray) is True or (
+                    tray_state == 11 or (tray_state not in (9, 10) and (tray.get("tray_type") or "").strip())
+                )
+                if not loaded or (printing_now and _slot_feeds_print(printer_id, row.ams_id, row.tray_id)):
+                    continue
+                if client is None:
+                    client = await _get_client(db)
+                user = None
+                if row.assigned_by_user_id is not None and auth_enabled:
+                    user = await load_preset_lookup_user(db, row.assigned_by_user_id)
+                configured: bool | None
+                try:
+                    spool = await client.get_spool(row.spoolman_spool_id)
+                    configured = await apply_spoolman_spool_to_slot(
+                        db,
+                        current_user=user,
+                        mapped=_map_spoolman_spool(spool),
+                        spoolman_spool_id=row.spoolman_spool_id,
+                        printer_id=printer_id,
+                        ams_id=row.ams_id,
+                        tray_id=row.tray_id,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Pending config failed for Spoolman spool %d on printer %d AMS%d-T%d",
+                        row.spoolman_spool_id,
+                        printer_id,
+                        row.ams_id,
+                        row.tray_id,
+                    )
+                    configured = None
+                if configured is False:
+                    continue
+                if configured:
+                    logger.info(
+                        "Pending config sent: Spoolman spool %d → printer %d AMS%d-T%d",
+                        row.spoolman_spool_id,
+                        printer_id,
+                        row.ams_id,
+                        row.tray_id,
+                    )
+                # Only while the slot still holds that spool: an assign made
+                # meanwhile has its own pending state.
+                await db.execute(
+                    update(SpoolmanSlotAssignment)
+                    .where(
+                        SpoolmanSlotAssignment.id == row.id,
+                        SpoolmanSlotAssignment.spoolman_spool_id == row.spoolman_spool_id,
+                    )
+                    .values(pending_config=False)
+                    .execution_options(synchronize_session=False)
+                )
+                await db.commit()
+    except Exception as e:
+        logger.warning("Spoolman pending-config replay failed for printer %s: %s", printer_id, e)
+
+
 async def _recheck_held_unlinks(printer_id: int) -> None:
     """Re-run just the slot cleanup against the printer's current AMS state.
 
@@ -3494,6 +3614,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
         logger.warning("Failed to broadcast AMS change for printer %s: %s", printer_id, e)
 
     await _unlink_stale_assignments(printer_id, ams_data, printing_now)
+    await _replay_spoolman_pending_configs(printer_id, ams_data, printing_now)
 
     # Spools whose tag this pass assigned to a slot; their other slots are
     # released below, once this printer's lock is let go (#3427).

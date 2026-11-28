@@ -1961,6 +1961,78 @@ class TestAMSLoadUnloadAPI:
         assert response.status_code == 400
         client.ams_unload_all.assert_not_called()
 
+    @staticmethod
+    def _p3c_client() -> MagicMock:
+        from backend.app.utils.tray_ids import TrayLayout
+
+        client = MagicMock()
+        client.tray_layout = TrayLayout.from_units([{"id": 33, "ams_type": 7}])
+        client.rack_tray_has_filament.return_value = True
+        client.ams_load_filament.return_value = True
+        client.ams_unload_filament.return_value = True
+        client.rack_loaded_slots.return_value = [(33, 0), (33, 1)]
+        client.ams_unload_all.return_value = 2
+        return client
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("action", ["load", "unload"])
+    async def test_an_ams3p_slot_is_accepted(self, async_client: AsyncClient, printer_factory, action):
+        """P3C (#3737): its AMS 3P slots are trays 37-43; they were refused with a 400."""
+        printer = await printer_factory(name="P3C")
+        client = self._p3c_client()
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/{action}?tray_id=41")
+
+        assert response.status_code == 200, response.text
+        if action == "load":
+            client.ams_load_filament.assert_called_once_with(41, extruder_id=None)
+            assert response.json()["message"] == "Loading filament from AMS 3P slot 5"
+        else:
+            client.ams_unload_filament.assert_called_once_with(41)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_an_ams3p_slot_without_filament_says_so(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P3C")
+        client = self._p3c_client()
+        client.rack_tray_has_filament.return_value = False
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/load?tray_id=43")
+
+        assert response.status_code == 409
+        assert response.json()["detail"].startswith("AMS 3P slot 7 has no filament. Put a spool in the slot")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_an_ams3p_slot_names_nothing_on_an_h3c(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="H3C")
+        client = self._h3c_client([])
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/unload?tray_id=41")
+
+        assert response.status_code == 400
+        client.ams_unload_filament.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unload_all_on_the_ams3p(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P3C")
+        client = self._p3c_client()
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/unload-all")
+
+        assert response.status_code == 200, response.text
+        assert response.json()["message"] == "Unloading 2 AMS 3P slots"
+
 
 class TestConfigureAMSSlotAPI:
     """Integration tests for AMS slot configure endpoint — tray_info_idx resolution."""

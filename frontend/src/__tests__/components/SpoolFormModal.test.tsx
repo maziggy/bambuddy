@@ -505,10 +505,7 @@ describe('SpoolFormModal weightTouched', () => {
     });
 
     // Enable Quick Add mode so the quantity field appears
-    const quickAddRow = screen.getByText('Quick Add (Stock)').closest('div[class*="justify-between"]');
-    const toggleButton = quickAddRow?.querySelector('button[type="button"]');
-    expect(toggleButton).toBeTruthy();
-    fireEvent.click(toggleButton!);
+    fireEvent.click(screen.getByRole('switch', { name: /Quick Add/ }));
 
     // Set quantity to 3 (triggers bulkCreateMutation instead of createMutation)
     const quantityContainer = screen.getByText('Quantity').closest('div');
@@ -559,10 +556,7 @@ describe('SpoolFormModal weightTouched', () => {
     });
 
     // Enable Quick Add mode so the quantity field appears
-    const quickAddRow = screen.getByText('Quick Add (Stock)').closest('div[class*="justify-between"]');
-    const toggleButton = quickAddRow?.querySelector('button[type="button"]');
-    expect(toggleButton).toBeTruthy();
-    fireEvent.click(toggleButton!);
+    fireEvent.click(screen.getByRole('switch', { name: /Quick Add/ }));
 
     // Set quantity to 3
     const quantityContainer = screen.getByText('Quantity').closest('div');

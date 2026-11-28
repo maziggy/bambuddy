@@ -39,6 +39,7 @@ export function FilamentSection({
   splitPresetProductLine = false,
   quickAdd,
   detailsRequired,
+  showQuantity,
   quantity,
   onQuantityChange,
   errors,
@@ -557,8 +558,8 @@ export function FilamentSection({
         </div>
       </div>
 
-      {/* Quantity — only in quick-add mode */}
-      {quickAdd && (
+      {/* Quantity — quick-add mode and copy mode */}
+      {showQuantity && (
         <div>
           <label className="block text-sm font-medium text-bambu-gray mb-1">{t('inventory.quantity')}</label>
           <NumberInput

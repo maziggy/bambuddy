@@ -5857,6 +5857,7 @@ export default {
     labelPrintFailed: '스풀은 저장되었지만 라벨을 인쇄하지 못했습니다: {{msg}}',
     labelPrintFailedPartial: '스풀은 저장되었지만 라벨 인쇄가 {{total}}개 중 {{printed}}개 후에 중단되었습니다: {{msg}}',
     spoolsCreated: '{{count}}개 스풀 생성됨',
+    createCopies: '{{count}}개 복사본 만들기',
     spoolsPartiallyCreated: '{{total}}개 중 {{created}}개 스풀 생성됨 (일부 실패)',
     spoolCreated: '스풀 생성됨',
     spoolUpdated: '스풀 업데이트됨',

@@ -6058,6 +6058,7 @@ export default {
     labelPrintFailed: 'Carretel salvo, mas não foi possível imprimir a etiqueta: {{msg}}',
     labelPrintFailedPartial: 'Carretel salvo, mas a impressão parou após {{printed}} de {{total}} etiquetas: {{msg}}',
     spoolsCreated: '{{count}} carretéis criados',
+    createCopies: 'Criar {{count}} cópias',
     spoolsPartiallyCreated: '{{created}} de {{total}} carretéis criados (alguns falharam)',
     spoolCreated: 'Carretel criado',
     spoolUpdated: 'Carretel atualizado',

@@ -6059,6 +6059,7 @@ export default {
     labelPrintFailed: 'Makara kaydedildi ancak etiket yazdırılamadı: {{msg}}',
     labelPrintFailedPartial: 'Makara kaydedildi ancak yazdırma {{total}} etiketten {{printed}} tanesinden sonra durdu: {{msg}}',
     spoolsCreated: '{{count}} makara oluşturuldu',
+    createCopies: '{{count}} kopya oluştur',
     spoolsPartiallyCreated: '{{total}} makaradan {{created}} tanesi oluşturuldu (bazıları başarısız)',
     spoolCreated: 'Makara oluşturuldu',
     spoolUpdated: 'Makara güncellendi',

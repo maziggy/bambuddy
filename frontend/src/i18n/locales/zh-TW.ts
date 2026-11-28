@@ -6064,6 +6064,7 @@ export default {
     labelPrintFailed: '線軸已儲存，但無法列印標籤：{{msg}}',
     labelPrintFailedPartial: '線軸已儲存，但列印在 {{printed}} / {{total}} 張標籤後中斷：{{msg}}',
     spoolsCreated: '已建立 {{count}} 個耗材',
+    createCopies: '建立 {{count}} 個副本',
     spoolsPartiallyCreated: '已建立 {{created}} / {{total}} 個耗材（部分失敗）',
     spoolCreated: '耗材已建立',
     spoolUpdated: '耗材已更新',

@@ -6116,6 +6116,7 @@ export default {
     labelPrintFailed: 'Szpula zapisana, ale nie udało się wydrukować etykiety: {{msg}}',
     labelPrintFailedPartial: 'Szpula zapisana, ale drukowanie zatrzymało się po {{printed}} z {{total}} etykiet: {{msg}}',
     spoolsCreated: 'Utworzone szpule: {{count}}',
+    createCopies: 'Utwórz kopie: {{count}}',
     spoolsPartiallyCreated: 'Utworzono szpule: {{created}} z {{total}} (część się nie powiodła)',
     spoolCreated: 'Utworzono szpulę',
     spoolUpdated: 'Zaktualizowano szpulę',

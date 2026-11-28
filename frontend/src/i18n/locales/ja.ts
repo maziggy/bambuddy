@@ -6072,6 +6072,7 @@ export default {
     labelPrintFailed: 'スプールは保存されましたが、ラベルを印刷できませんでした: {{msg}}',
     labelPrintFailedPartial: 'スプールは保存されましたが、ラベルの印刷は{{total}}枚中{{printed}}枚で止まりました: {{msg}}',
     spoolsCreated: '{{count}}本のスプールを作成しました',
+    createCopies: '{{count}}個のコピーを作成',
     spoolsPartiallyCreated: '{{total}}本中{{created}}本のスプールを作成しました（一部失敗）',
     spoolCreated: 'スプールを作成しました',
     spoolUpdated: 'スプールを更新しました',

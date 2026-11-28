@@ -6064,6 +6064,7 @@ export default {
     labelPrintFailed: '料盘已保存，但无法打印标签：{{msg}}',
     labelPrintFailedPartial: '料盘已保存，但打印在 {{printed}} / {{total}} 张标签后中断：{{msg}}',
     spoolsCreated: '已创建 {{count}} 个耗材',
+    createCopies: '创建 {{count}} 个副本',
     spoolsPartiallyCreated: '已创建 {{created}} / {{total}} 个耗材（部分失败）',
     spoolCreated: '耗材已创建',
     spoolUpdated: '耗材已更新',

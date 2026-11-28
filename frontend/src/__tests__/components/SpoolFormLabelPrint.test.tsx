@@ -155,10 +155,8 @@ describe('"Print label after saving" in the Add spool dialog (#3612)', () => {
     store.set('bambuddy.autoPrintLabel', '1');
     openCreate();
     await screen.findByTestId('auto-print-label');
-    const quickAddToggle = screen
-      .getAllByRole('button')
-      .find((btn) => btn.className.includes('rounded-full') && btn.closest('div')?.textContent?.includes('Quick Add'));
-    fireEvent.click(quickAddToggle!);
+    const quickAddToggle = screen.getByRole('switch', { name: /Quick Add/ });
+    fireEvent.click(quickAddToggle);
     const quantity = (await screen.findByText('Quantity')).parentElement!.querySelector('input') as HTMLInputElement;
     fireEvent.change(quantity, { target: { value: '2' } });
     fireEvent.click(screen.getByRole('button', { name: /^Add Spool$/ }));
@@ -188,10 +186,8 @@ describe('"Print label after saving" in the Add spool dialog (#3612)', () => {
     acceptJob(2);
     openCreate();
     await screen.findByTestId('auto-print-label');
-    const quickAddToggle = screen
-      .getAllByRole('button')
-      .find((btn) => btn.className.includes('rounded-full') && btn.closest('div')?.textContent?.includes('Quick Add'));
-    fireEvent.click(quickAddToggle!);
+    const quickAddToggle = screen.getByRole('switch', { name: /Quick Add/ });
+    fireEvent.click(quickAddToggle);
     const quantity = (await screen.findByText('Quantity')).parentElement!.querySelector('input') as HTMLInputElement;
     fireEvent.change(quantity, { target: { value: '2' } });
     fireEvent.click(screen.getByRole('button', { name: /^Add Spool$/ }));
@@ -213,10 +209,8 @@ describe('"Print label after saving" in the Add spool dialog (#3612)', () => {
     }));
     openCreate();
     await screen.findByTestId('auto-print-label');
-    const quickAddToggle = screen
-      .getAllByRole('button')
-      .find((btn) => btn.className.includes('rounded-full') && btn.closest('div')?.textContent?.includes('Quick Add'));
-    fireEvent.click(quickAddToggle!);
+    const quickAddToggle = screen.getByRole('switch', { name: /Quick Add/ });
+    fireEvent.click(quickAddToggle);
     const quantity = (await screen.findByText('Quantity')).parentElement!.querySelector('input') as HTMLInputElement;
     fireEvent.change(quantity, { target: { value: '45' } });
     fireEvent.click(screen.getByRole('button', { name: /^Add Spool$/ }));

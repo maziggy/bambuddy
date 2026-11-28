@@ -6073,6 +6073,7 @@ export default {
     labelPrintFailed: 'Spule gespeichert, aber das Etikett konnte nicht gedruckt werden: {{msg}}',
     labelPrintFailedPartial: 'Spule gespeichert, aber der Etikettendruck wurde nach {{printed}} von {{total}} Etiketten abgebrochen: {{msg}}',
     spoolsCreated: '{{count}} Spulen erstellt',
+    createCopies: '{{count}} Kopien erstellen',
     spoolsPartiallyCreated: '{{created}} von {{total}} Spulen erstellt (einige fehlgeschlagen)',
     spoolCreated: 'Spule erstellt',
     spoolUpdated: 'Spule aktualisiert',

@@ -115,6 +115,8 @@ export function SpoolFormModal({
   const threedfpTouchedRef = useRef(false);
   const [quickAdd, setQuickAdd] = useState(false);
   const [quantity, setQuantity] = useState(1);
+  // Quantity is offered in quick-add mode and when copying a spool.
+  const showQuantity = quickAdd || isCopying;
   const [showAssignModal, setShowAssignModal] = useState(false);
   // "Print label after saving" (#3612): remembered per device, offered only
   // with a label printer set up and with inventory:update, which printing
@@ -1118,19 +1120,27 @@ export function SpoolFormModal({
       // when the user left the Printers tab alone (savePrinterProfiles), so a
       // plain bulk add neither fires two writes per spool nor clears the
       // profile default the backend gave every copy (#1326).
+      // A failed write keeps the modal open, as on a single create: a copy
+      // always writes all of these, so a silent failure would leave one copy
+      // without the profiles or suppliers the user saw on screen.
+      let allSaved = true;
       for (const s of createdSpools) {
-        await savePrinterProfiles(s.id);
+        if (!(await savePrinterProfiles(s.id))) allSaved = false;
       }
       // Every copy of a bulk add shares the same supplier assignments (#2988).
       const saveLinks = shouldSaveSupplierLinks(createdSpools[0]);
       if (saveLinks) {
         for (const s of createdSpools) {
-          await saveSupplierLinks(s.id, true);
+          if (!(await saveSupplierLinks(s.id, true))) allSaved = false;
         }
       }
       // Every copy is the same product, so every copy gets the 3DFP link.
       for (const s of createdSpools) {
-        await saveThreedfpLink(s.id);
+        if (!(await saveThreedfpLink(s.id))) allSaved = false;
+      }
+      if (!allSaved) {
+        await refreshSpoolQueries();
+        return;
       }
       await saveProfileDefault();
       await refreshSpoolQueries();
@@ -1549,7 +1559,9 @@ export function SpoolFormModal({
 
     if (isEditing) {
       updateMutation.mutate(data);
-    } else if (quantity > 1) {
+    } else if (showQuantity && quantity > 1) {
+      // Only a Quantity the user can see counts: turning Quick Add back off
+      // hides the field, and must not leave a hidden N behind "Add Spool".
       bulkCreateMutation.mutate({ data, qty: quantity });
     } else {
       createMutation.mutate(data);
@@ -1588,23 +1600,28 @@ export function SpoolFormModal({
           </button>
         </div>
 
-        {/* Quick Add toggle — only in create mode (not edit, not copy).
-            In copy mode the modal title is the singular "Copy Spool", so the
-            quantity-driven bulkCreateMutation path would silently produce N
-            copies under a misleading title — keep this toggle out of that
-            mode entirely. */}
+        {/* Quick Add toggle — only in create mode (not edit, not copy). Copy
+            has its own Quantity field instead, and names the count on the
+            submit button so N copies are never hidden behind the singular
+            "Copy Spool" title. The whole row is the switch: the label is far
+            from the knob on a wide dialog, and clicking it should work. */}
         {mode === 'create' && (
-          <div className="flex items-center justify-between px-4 py-2 border-b border-bambu-dark-tertiary flex-shrink-0">
-            <div className="flex items-center gap-2">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={quickAdd}
+            onClick={() => {
+              setQuickAdd(!quickAdd);
+              if (!quickAdd) setActiveTab('filament');
+            }}
+            className="flex w-full items-center justify-between px-4 py-2 border-b border-bambu-dark-tertiary flex-shrink-0 text-left hover:bg-bambu-dark-tertiary/40 transition-colors"
+          >
+            <span className="flex items-center gap-2">
               <Zap className="w-4 h-4 text-amber-600 dark:text-amber-400" />
               <span className="text-sm text-white">{t('inventory.quickAdd')}</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setQuickAdd(!quickAdd);
-                if (!quickAdd) setActiveTab('filament');
-              }}
+            </span>
+            <span
+              aria-hidden="true"
               className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
                 quickAdd ? 'bg-bambu-green' : 'bg-bambu-dark-tertiary'
               }`}
@@ -1614,8 +1631,8 @@ export function SpoolFormModal({
                   quickAdd ? 'translate-x-4' : 'translate-x-0.5'
                 }`}
               />
-            </button>
-          </div>
+            </span>
+          </button>
         )}
 
         {/* Print a label per new spool (#3612); only with a label printer set up
@@ -1743,6 +1760,7 @@ export function SpoolFormModal({
                   splitPresetProductLine={isCreating}
                   quickAdd={quickAdd}
                   detailsRequired={!quickAdd && !spoolmanMode && mode === 'create'}
+                  showQuantity={showQuantity}
                   quantity={quantity}
                   onQuantityChange={setQuantity}
                   errors={errors}
@@ -1918,7 +1936,11 @@ export function SpoolFormModal({
             ) : (
               <>
                 <Save className="w-4 h-4" />
-                {isEditing ? t('common.save') : isCopying ? t('inventory.copySpool') : t('inventory.addSpool')}
+                {isEditing
+                  ? t('common.save')
+                  : isCopying
+                    ? (showQuantity && quantity > 1 ? t('inventory.createCopies', { count: quantity }) : t('inventory.copySpool'))
+                    : t('inventory.addSpool')}
               </>
             )}
           </Button>

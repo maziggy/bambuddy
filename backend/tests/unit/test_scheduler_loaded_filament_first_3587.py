@@ -869,7 +869,9 @@ class TestModeOff:
         assert item.waiting_reason is None
         assert _dispatched(result) == []
         assert result.waiting.await_count == 1
-        assert result.waiting.await_args.kwargs["waiting_reason"] == "filament_short"
+        assert result.waiting.await_args.kwargs["waiting_reason"] == (
+            "Not enough filament on X1C-1: PLA in A1 (40 g left, needs 120 g)"
+        )
 
     @pytest.mark.asyncio
     async def test_model_short_fallback_stages_on_the_first_short_printer(self, ctx, stored):

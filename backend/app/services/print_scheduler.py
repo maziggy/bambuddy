@@ -866,15 +866,37 @@ def _describe_unmatched(unmatched: list[dict]) -> str:
     return ", ".join(_describe_filament(r, "nozzle_id") for r in unmatched)
 
 
+def _deficit_amounts(d: FilamentDeficit) -> str:
+    """One short spool's grams: "(20 g left, needs 300 g)", or "(needs 300 g)" when the spool is unreadable."""
+    if d.remaining_grams is None:
+        return f"(needs {d.required_grams:.0f} g)"
+    return f"({d.remaining_grams:.0f} g left, needs {d.required_grams:.0f} g)"
+
+
 def _describe_deficit(deficits: list[FilamentDeficit]) -> str:
     """The short spools as the queue row names them ("PLA (20 g left, needs 300 g)")."""
+    return ", ".join(f"{d.filament_type} {_deficit_amounts(d)}" for d in deficits)
+
+
+def _describe_deficit_for_notification(
+    deficits: list[FilamentDeficit],
+    printer_name: str | None = None,
+    layout: TrayLayout | None = None,
+) -> str:
+    """The filament-short wait as a sentence for the notification (#3642).
+
+    "Not enough filament on Workshop: PLA in A2 (12 g left, needs 40 g)". The
+    slot is named the way the other alerts name it (A2, HT-A, Ext-L), and a
+    deficit with no known slot is just the material.
+    """
     parts = []
     for d in deficits:
-        if d.remaining_grams is None:
-            parts.append(f"{d.filament_type} (needs {d.required_grams:.0f} g)")
-        else:
-            parts.append(f"{d.filament_type} ({d.remaining_grams:.0f} g left, needs {d.required_grams:.0f} g)")
-    return ", ".join(parts)
+        where = ""
+        if d.ams_id is not None and d.tray_id is not None:
+            where = f" in {_ams_slot_label(d.ams_id, d.tray_id, layout)}"
+        parts.append(f"{d.filament_type or 'Filament'}{where} {_deficit_amounts(d)}")
+    on = f" on {printer_name}" if printer_name else ""
+    return f"Not enough filament{on}: {', '.join(parts)}"
 
 
 def _filament_wait_suffix(item: PrintQueueItem, now: datetime, max_wait_hours: int | None) -> tuple[str, bool]:
@@ -10576,7 +10598,11 @@ class PrintScheduler:
                 await notification_service.on_queue_job_waiting(
                     job_name=job_name,
                     target_model=(printer.model if printer else "") or "",
-                    waiting_reason="filament_short",
+                    waiting_reason=_describe_deficit_for_notification(
+                        deficit,
+                        printer.name if printer else None,
+                        printer_tray_layout(item.printer_id, printer_manager) if item.printer_id else None,
+                    ),
                     db=db,
                     printer_id=item.printer_id,
                 )

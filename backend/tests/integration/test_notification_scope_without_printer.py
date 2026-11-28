@@ -114,7 +114,7 @@ async def test_a_job_waiting_on_its_printer_reaches_that_printers_channel(
         await service.on_queue_job_waiting(
             job_name="Bracket",
             target_model="X1C",
-            waiting_reason="filament_short",
+            waiting_reason="Not enough filament: PLA in A1 (needs 40 g)",
             db=db_session,
             printer_id=printer.id if printer_bound else None,
         )

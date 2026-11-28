@@ -5945,6 +5945,13 @@ export default {
     storageLocationNone: '未设置位置',
     lowStockThresholdOverride: '低库存阈值（此料盘）',
     lowStockThresholdOverrideHelp: '留空以使用全局阈值（{{global}}%）。',
+    nozzleTemp: '喷嘴温度',
+    nozzleTempMin: '最低',
+    nozzleTempMax: '最高',
+    nozzleTempFromPreset: '来自预设',
+    nozzleTempHelp: '可选。会打印在标签上，并在耗材盘分配到 AMS 槽位时发送给打印机。',
+    nozzleTempIncomplete: '请同时填写最低和最高温度，或将两者都留空。',
+    nozzleTempInvalid: '请输入 1 到 500 之间的整数，最低温度不能高于最高温度。',
     // Internal material / article number (#2870)
     materialNumber: '物料号',
     materialNumberPlaceholder: '例如 15',

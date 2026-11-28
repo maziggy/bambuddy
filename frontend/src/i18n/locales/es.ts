@@ -5961,6 +5961,13 @@ export default {
     storageLocationNone: 'Sin ubicación establecida',
     lowStockThresholdOverride: 'Umbral de existencias bajas (esta bobina)',
     lowStockThresholdOverrideHelp: 'Déjelo en blanco para usar el umbral global ({{global}}%).',
+    nozzleTemp: 'Temperatura de la boquilla',
+    nozzleTempMin: 'Mín.',
+    nozzleTempMax: 'Máx.',
+    nozzleTempFromPreset: 'del preajuste',
+    nozzleTempHelp: 'Opcional. Se imprime en las etiquetas y se envía a la impresora cuando la bobina se asigna a una ranura del AMS.',
+    nozzleTempIncomplete: 'Introduzca el mínimo y el máximo, o deje ambos vacíos.',
+    nozzleTempInvalid: 'Introduzca grados enteros de 1 a 500; el mínimo no puede superar el máximo.',
     // Internal material / article number (#2870)
     materialNumber: 'N.º de material',
     materialNumberPlaceholder: 'p. ej. 15',

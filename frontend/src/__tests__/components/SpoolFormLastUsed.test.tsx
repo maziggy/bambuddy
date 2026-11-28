@@ -33,6 +33,7 @@ vi.mock('../../api/client', () => ({
     saveSpoolKProfiles: vi.fn().mockResolvedValue([]),
     saveSpoolFilamentPresets: vi.fn().mockResolvedValue([]),
     getSpoolFilamentPresets: vi.fn().mockResolvedValue([]),
+    getPresetNozzleRange: vi.fn().mockResolvedValue({ nozzle_temp_min: null, nozzle_temp_max: null, source: null }),
     getThreedfpSpoolLink: vi.fn().mockResolvedValue({ filament_id: null }),
     setThreedfpSpoolLink: vi.fn().mockResolvedValue({ filament_id: null }),
     threedfpStatus: vi.fn().mockResolvedValue({ connected: false, email: null }),

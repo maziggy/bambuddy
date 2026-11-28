@@ -5958,6 +5958,13 @@ export default {
     storageLocationNone: 'Kein Lagerort',
     lowStockThresholdOverride: 'Niedrigbestandsschwelle (diese Spule)',
     lowStockThresholdOverrideHelp: 'Leer lassen, um den globalen Schwellenwert ({{global}}%) zu verwenden.',
+    nozzleTemp: 'Düsentemperatur',
+    nozzleTempMin: 'Min.',
+    nozzleTempMax: 'Max.',
+    nozzleTempFromPreset: 'aus Preset',
+    nozzleTempHelp: 'Optional. Wird auf Etiketten gedruckt und an den Drucker gesendet, wenn die Spule einem AMS-Slot zugewiesen wird.',
+    nozzleTempIncomplete: 'Gib Minimum und Maximum an oder lass beide Felder leer.',
+    nozzleTempInvalid: 'Gib ganze Grad von 1 bis 500 an, das Minimum darf das Maximum nicht überschreiten.',
     // Internal material / article number (#2870)
     materialNumber: 'Material-Nr.',
     materialNumberPlaceholder: 'z. B. 15',

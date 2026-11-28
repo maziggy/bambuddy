@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -347,6 +348,19 @@ class MaterialNumberStats(BaseModel):
     remaining_g: float
     consumed_g: float
     cost: float
+
+
+class PresetNozzleRangeResponse(BaseModel):
+    """The nozzle temperature range a spool's slicer preset carries (#3769).
+
+    All three are ``None`` when the preset could not be resolved or states no
+    range. ``source`` says where it came from: a local preset, the caller's
+    Bambu Cloud preset, or Bambu's own (system) filament profile.
+    """
+
+    nozzle_temp_min: int | None = None
+    nozzle_temp_max: int | None = None
+    source: Literal["local", "cloud", "system"] | None = None
 
 
 class SpoolAssignmentCreate(BaseModel):

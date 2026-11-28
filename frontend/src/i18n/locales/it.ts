@@ -5945,6 +5945,13 @@ export default {
     storageLocationNone: 'Nessuna posizione impostata',
     lowStockThresholdOverride: 'Soglia scorte basse (questa bobina)',
     lowStockThresholdOverrideHelp: 'Lascia vuoto per usare la soglia globale ({{global}}%).',
+    nozzleTemp: 'Temperatura ugello',
+    nozzleTempMin: 'Min.',
+    nozzleTempMax: 'Max.',
+    nozzleTempFromPreset: 'dal preset',
+    nozzleTempHelp: 'Facoltativa. Stampata sulle etichette e inviata alla stampante quando la bobina viene assegnata a uno slot AMS.',
+    nozzleTempIncomplete: 'Inserisci sia il minimo sia il massimo, oppure lascia vuoti entrambi i campi.',
+    nozzleTempInvalid: 'Inserisci gradi interi da 1 a 500, con il minimo non superiore al massimo.',
     // Internal material / article number (#2870)
     materialNumber: 'N. materiale',
     materialNumberPlaceholder: 'es. 15',

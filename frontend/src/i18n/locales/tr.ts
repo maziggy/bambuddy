@@ -5946,6 +5946,13 @@ export default {
     storageLocationNone: 'Konum ayarlanmamış',
     lowStockThresholdOverride: 'Düşük stok eşiği (bu makara)',
     lowStockThresholdOverrideHelp: 'Global eşiği kullanmak için boş bırakın (%{{global}}).',
+    nozzleTemp: 'Nozul sıcaklığı',
+    nozzleTempMin: 'Min.',
+    nozzleTempMax: 'Maks.',
+    nozzleTempFromPreset: 'ön ayardan',
+    nozzleTempHelp: 'İsteğe bağlı. Etiketlere basılır ve makara bir AMS yuvasına atandığında yazıcıya gönderilir.',
+    nozzleTempIncomplete: 'Hem en düşük hem de en yüksek değeri girin veya ikisini de boş bırakın.',
+    nozzleTempInvalid: '1 ile 500 arasında tam derece girin; en düşük değer en yüksek değerden büyük olamaz.',
     // Internal material / article number (#2870)
     materialNumber: 'Malzeme No.',
     materialNumberPlaceholder: 'örn. 15',

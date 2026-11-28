@@ -9,13 +9,14 @@ import { useToast } from '../contexts/ToastContext';
 import type {
   CalibrationProfile,
   ColorPreset,
+  NozzleTemps,
   PresetChoice,
   PrinterWithCalibrations,
   SpoolFormData,
   SpoolFormMode,
 } from './spool-form/types';
-import { defaultFormData, validateForm, SPOOLMAN_LINKED_FIELDS } from './spool-form/types';
-import { buildFilamentOptions, extractBrandsFromPresets, fetchPrinterCalibrations, findPresetOption, loadLastSpool, loadRecentColors, pairedOptions, parsePresetKey, parsePresetName, presetKey, saveLastSpool, saveRecentColor, selectionFromKProfiles, withCurrentValue } from './spool-form/utils';
+import { defaultFormData, emptyNozzleTemps, validateForm, SPOOLMAN_LINKED_FIELDS } from './spool-form/types';
+import { buildFilamentOptions, extractBrandsFromPresets, fetchPrinterCalibrations, findPresetOption, loadLastSpool, loadRecentColors, nozzleTempsPayload, pairedOptions, parsePresetKey, parsePresetName, presetKey, saveLastSpool, saveRecentColor, readNozzleTemps, selectionFromKProfiles, withCurrentValue } from './spool-form/utils';
 import type { LastSpool } from './spool-form/utils';
 import { MATERIALS } from './spool-form/constants';
 import { FilamentSection } from './spool-form/FilamentSection';
@@ -101,6 +102,16 @@ export function SpoolFormModal({
   // Sent only when changed, so saving an unrelated edit cannot put back a
   // drying date that an AMS run stamped while the form was open (#2863).
   const [lastDriedTouched, setLastDriedTouched] = useState(false);
+  // Optional nozzle range (#3769). Not part of SpoolFormData: where it came
+  // from decides whether it is sent. See NozzleTemps.
+  const [nozzleTemps, setNozzleTemps] = useState<NozzleTemps>(emptyNozzleTemps);
+  const [nozzleTempsError, setNozzleTempsError] = useState<'nozzleTempIncomplete' | 'nozzleTempInvalid' | null>(null);
+  // The preset the range was last looked up for, so the form's own load of a
+  // spool's preset does not count as picking one. `rangeSeed` holds what an
+  // open is waiting for the form to load: the preset it will show, and whether
+  // that preset (a new spool's remembered one) still gets its range looked up.
+  const presetRangeFor = useRef('');
+  const rangeSeed = useRef<{ expected: string; lookup: boolean } | null>(null);
   // Supplier assignments (#2988). Held outside SpoolFormData — they are
   // relational and saved through their own replace-all endpoint. An untouched
   // create does not send them, so it keeps the backend's inherited
@@ -558,6 +569,11 @@ export function SpoolFormModal({
           spoolman_filament_id: null,
         });
         setPresetInputValue(spool.slicer_filament_name || spool.slicer_filament || '');
+        const ownMin = spool.nozzle_temp_min != null ? String(spool.nozzle_temp_min) : '';
+        const ownMax = spool.nozzle_temp_max != null ? String(spool.nozzle_temp_max) : '';
+        setNozzleTemps(ownMin || ownMax ? { min: ownMin, max: ownMax, source: 'own' } : emptyNozzleTemps);
+        // An edited or copied spool's preset is not a pick: its range is its own.
+        rangeSeed.current = { expected: spool.slicer_filament || '', lookup: false };
 
         // Load K-profiles for this spool.
         setSelectedProfiles(selectionFromKProfiles(spool.k_profiles ?? []));
@@ -589,6 +605,9 @@ export function SpoolFormModal({
           category: last.category ?? '',
         } : defaultFormData);
         setPresetInputValue(last ? last.slicer_filament_name || last.slicer_filament || '' : '');
+        // A new spool starts with no range; its preset, remembered or not, fills it in.
+        setNozzleTemps(emptyNozzleTemps);
+        rangeSeed.current = { expected: last?.slicer_filament ?? '', lookup: true };
         setSelectedProfiles(new Map());
         setSupplierLinks([]);
         const name = last ? [last.brand, last.material, last.subtype].filter(Boolean).join(' ') : '';
@@ -624,6 +643,7 @@ export function SpoolFormModal({
       setModelPresets(new Map());
       setWeightTouched(false);
       setLastDriedTouched(false);
+      setNozzleTempsError(null);
       // A copy of a Spoolman spool with its own tare carries that tare, as it
       // would any other field shown in the form; one that inherits keeps
       // inheriting. Only Spoolman spools report the flag (#2908).
@@ -652,6 +672,44 @@ export function SpoolFormModal({
       tareFromMemory.current = false;
     }
   }, [isOpen, spool, mode, isCopying, isEditing, isCreating, spoolmanMode]);
+
+  // Prefill the nozzle range from the chosen preset (#3769). Only for a preset
+  // picked in this dialog, or a new spool's remembered or default one: the
+  // range of an existing spool that is merely opened stays as it is. It fills
+  // only what nobody has set, so a range the user typed or the spool already
+  // had is never replaced; and it is not saved unless it is still there on
+  // save (see nozzleTempsPayload).
+  const presetForRange = formData.slicer_filament;
+  useEffect(() => {
+    if (!isOpen || spoolmanMode) return;
+    const seed = rangeSeed.current;
+    if (seed) {
+      // The form still shows the previous spool until its own load has rendered.
+      if (presetForRange !== seed.expected) return;
+      rangeSeed.current = null;
+      presetRangeFor.current = seed.lookup ? '' : seed.expected;
+    }
+    if (presetForRange === presetRangeFor.current) return;
+    presetRangeFor.current = presetForRange;
+    if (!presetForRange) {
+      setNozzleTemps((prev) => (prev.source === 'preset' ? emptyNozzleTemps : prev));
+      return;
+    }
+    let cancelled = false;
+    api.getPresetNozzleRange(presetForRange).then((range) => {
+      if (cancelled) return;
+      setNozzleTemps((prev) => {
+        if (prev.source !== 'none' && prev.source !== 'preset') return prev;
+        if (range.nozzle_temp_min == null || range.nozzle_temp_max == null) {
+          return prev.source === 'preset' ? emptyNozzleTemps : prev;
+        }
+        return { min: String(range.nozzle_temp_min), max: String(range.nozzle_temp_max), source: 'preset' };
+      });
+    }).catch(() => {
+      // No range is not an error: the field stays as it is.
+    });
+    return () => { cancelled = true; };
+  }, [isOpen, spoolmanMode, presetForRange]);
 
   // Suppliers are only needed to validate a remembered assignment (#3619).
   // Always a fresh fetch: a cached list could still hold a deleted supplier.
@@ -1500,6 +1558,18 @@ export function SpoolFormModal({
       return;
     }
 
+    // A range the user typed or picked a preset for has to be a range (#3769).
+    // One that was only loaded with the spool is handed on as stored.
+    if (!spoolmanMode && (nozzleTemps.source === 'typed' || nozzleTemps.source === 'preset')) {
+      const { error } = readNozzleTemps(nozzleTemps);
+      if (error) {
+        setNozzleTempsError(error);
+        // The field is on the Filament Info tab.
+        setActiveTab('filament');
+        return;
+      }
+    }
+
     // The chosen preset's name; none without a preset (#3596).
     const presetName = formData.slicer_filament
       ? selectedPresetOption?.displayName || presetInputValue || null
@@ -1526,13 +1596,12 @@ export function SpoolFormModal({
         : { core_weight: formData.core_weight, core_weight_catalog_id: formData.core_weight_catalog_id }),
       slicer_filament: formData.slicer_filament || null,
       slicer_filament_name: presetName,
-      // The dialog has no field for the nozzle range, and an update sending
-      // null wiped the one a tag, the API or an import had set (#3768). An
-      // edit leaves it out and keeps it; a copy takes the source spool's.
-      // Spoolman keeps it on the filament, which a copy shares anyway.
-      ...(isCopying && spool && !spoolmanMode
-        ? { nozzle_temp_min: spool.nozzle_temp_min, nozzle_temp_max: spool.nozzle_temp_max }
-        : {}),
+      // The nozzle range goes out only when the user typed it or picked a preset
+      // that filled it in (#3769). An update that sent it as null wiped the one
+      // a tag, the API or an import had set (#3768): an untouched edit leaves it
+      // out and keeps it, a copy takes the source spool's. Spoolman keeps it on
+      // the filament, which a copy shares anyway.
+      ...nozzleTempsPayload(nozzleTemps, { isCopying, spoolmanMode }),
       note: formData.note || null,
       cost_per_kg: formData.cost_per_kg,
       category: formData.category.trim() || null,
@@ -1764,6 +1833,12 @@ export function SpoolFormModal({
                   quantity={quantity}
                   onQuantityChange={setQuantity}
                   errors={errors}
+                  nozzleTemps={spoolmanMode ? undefined : nozzleTemps}
+                  nozzleTempsError={nozzleTempsError}
+                  onNozzleTempsChange={(min, max) => {
+                    setNozzleTemps({ min, max, source: 'typed' });
+                    setNozzleTempsError(null);
+                  }}
                 />
               </div>
 

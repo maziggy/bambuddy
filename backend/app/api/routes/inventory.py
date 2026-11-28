@@ -51,6 +51,7 @@ from backend.app.schemas.location import LocationCreate, LocationResponse, Locat
 from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
 from backend.app.schemas.spool import (
     MaterialNumberStats,
+    PresetNozzleRangeResponse,
     SpoolAssignmentCreate,
     SpoolAssignmentResponse,
     SpoolBulkCreate,
@@ -87,6 +88,7 @@ from backend.app.services.location_service import (
     rename_location as rename_location_record,
 )
 from backend.app.services.material_number import apply_material_number_inheritance
+from backend.app.services.preset_nozzle_range import resolve_preset_nozzle_range
 from backend.app.services.slicer_filament_resolver import resolve_slicer_filament, reusable_slot_filament_id
 from backend.app.services.slot_nozzle import resolve_slot_nozzle
 from backend.app.services.spool_csv import (
@@ -1680,6 +1682,33 @@ async def get_spool(
     if not spool:
         raise HTTPException(404, "Spool not found")
     return spool
+
+
+@router.get("/preset-nozzle-range", response_model=PresetNozzleRangeResponse)
+async def get_preset_nozzle_range(
+    slicer_filament: str = Query(..., min_length=1, max_length=200),
+    db: AsyncSession = Depends(get_db, scope="function"),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+    actor: User | ApiKeyActor | None = RequestActor,
+):
+    """The nozzle temperature range the preset ``slicer_filament`` names carries (#3769).
+
+    Resolved for the caller, with their own Bambu Cloud sign-in for a custom
+    cloud preset, and nothing is stored: the spool dialog prefills its optional
+    range from this and saves the numbers only when the user touches the field.
+    A preset that is unknown, has no range or cannot be looked up answers with
+    empty values, never an error.
+    """
+    # An API key has no signed-in user; its owner's cloud sign-in is the one to
+    # use, as when it assigns a spool (#3519).
+    preset_user = current_user
+    if preset_user is None and isinstance(actor, ApiKeyActor):
+        preset_user = await load_preset_lookup_user(db, actor.id)
+
+    found = await resolve_preset_nozzle_range(db=db, user=preset_user, slicer_filament=slicer_filament)
+    if found is None:
+        return PresetNozzleRangeResponse()
+    return PresetNozzleRangeResponse(nozzle_temp_min=found.min, nozzle_temp_max=found.max, source=found.source)
 
 
 async def _release_tags_from_archived_spools(db: AsyncSession, tag_uid: str | None, tray_uuid: str | None) -> None:

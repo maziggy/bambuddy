@@ -1,6 +1,7 @@
 """Color comparison utilities for RFID/firmware color matching."""
 
 import math
+import re
 
 # Alpha byte that means "fully opaque". Bambu's firmware reports every opaque
 # spool as RRGGBBFF, so this is the overwhelmingly common value.
@@ -225,6 +226,166 @@ def perceptual_color_distance(color1: str | None, color2: str | None) -> float |
     if lab1 is None or lab2 is None:
         return None
     return _ciede2000(lab1, lab2)
+
+
+# --- Colour families (#3641) -------------------------------------------------
+#
+# A port of ``colorFamily`` / ``hexToHsl`` in ``frontend/src/utils/colors.ts``, the
+# rules the Inventory page sorts and names spools by, so a notification calls a
+# spool the same colour the page does. ``frontend/src/__tests__/utils/
+# colorFamilyVectors.json`` holds hex -> family pairs that both sides test against;
+# change a rule in one place and the other test fails until it is changed too.
+
+_HEX_PREFIX = re.compile(r"[+-]?[0-9a-fA-F]+")
+
+
+def _parse_int16(chunk: str) -> int | None:
+    """``parseInt(chunk, 16)``: leading whitespace skipped, then an optional sign and the leading hex digits.
+
+    None (NaN) when there are none, which includes a bare "0x" prefix: JS drops
+    the prefix and finds nothing after it, where "0" alone would read as 0.
+    """
+    chunk = chunk.lstrip()
+    unsigned = chunk.lstrip("+-") if chunk[:1] in ("+", "-") else chunk
+    if unsigned[:2] in ("0x", "0X"):
+        match = _HEX_PREFIX.match(unsigned[2:])
+        if not match:
+            return None
+        value = int(match.group(), 16)
+        return -value if chunk[0] == "-" else value
+    match = _HEX_PREFIX.match(chunk)
+    return int(match.group(), 16) if match else None
+
+
+def _hex_to_hsl(hex_value: str | None) -> tuple[float, float, float] | None:
+    """(hue in degrees, saturation, lightness) of an RRGGBB(AA) value, or None if unparseable."""
+    if not hex_value or len(hex_value) < 6:
+        return None
+    clean = hex_value.replace("#", "", 1)
+    r = _parse_int16(clean[0:2])
+    g = _parse_int16(clean[2:4])
+    b = _parse_int16(clean[4:6])
+    if r is None or g is None or b is None:
+        return None
+    r_n, g_n, b_n = r / 255, g / 255, b / 255
+    high = max(r_n, g_n, b_n)
+    low = min(r_n, g_n, b_n)
+    lightness = (high + low) / 2
+    hue = 0.0
+    saturation = 0.0
+    if high != low:
+        span = high - low
+        saturation = span / (2 - high - low) if lightness > 0.5 else span / (high + low)
+        if high == r_n:
+            hue = ((g_n - b_n) / span + (6 if g_n < b_n else 0)) / 6
+        elif high == g_n:
+            hue = ((b_n - r_n) / span + 2) / 6
+        else:
+            hue = ((r_n - g_n) / span + 4) / 6
+    return hue * 360, saturation, lightness
+
+
+def _alpha_byte(hex_value: str) -> str | None:
+    """The two alpha characters of an eight-character value (leading ``#`` allowed), else None."""
+    clean = hex_value.replace("#", "", 1)
+    return clean[6:8].upper() if len(clean) == 8 else None
+
+
+def color_family(hex_value: str | None) -> str | None:
+    """Name the colour family of an RRGGBB(AA) value, or None when it can't be read.
+
+    The same families, in the same words, as ``colorFamily`` in
+    ``frontend/src/utils/colors.ts``.
+    """
+    if not hex_value or len(hex_value) < 6:
+        return None
+    # Alpha 00 is fully transparent: Bambu's clear code 00000000 must not come out as black (#1545).
+    if _alpha_byte(hex_value) == "00":
+        return "Clear"
+    # JS strips "#" here and again inside hexToHsl, so "##AABBCC" still reads as AABBCC.
+    hsl = _hex_to_hsl(hex_value.replace("#", "", 1))
+    if hsl is None:
+        return None
+    h, s, lightness = hsl
+    if lightness < 0.15:
+        return "Black"
+    if lightness > 0.85:
+        return "White"
+    if s < 0.15:
+        if lightness < 0.4:
+            return "Dark Gray"
+        if lightness > 0.6:
+            return "Light Gray"
+        return "Gray"
+    # Brown is an orange or yellow hue at a lower lightness.
+    if 15 <= h < 45 and lightness < 0.45:
+        return "Brown"
+    if 45 <= h < 70 and lightness < 0.40:
+        return "Brown"
+    if h < 15 or h >= 345:
+        return "Red"
+    if h < 45:
+        return "Orange"
+    if h < 70:
+        return "Yellow"
+    if h < 150:
+        return "Green"
+    if h < 200:
+        return "Cyan"
+    if h < 260:
+        return "Blue"
+    if h < 290:
+        return "Purple"
+    return "Pink"
+
+
+_FAMILY_EMOJI = {
+    "Red": "\U0001f534",  # red circle
+    "Orange": "\U0001f7e0",  # orange circle
+    "Yellow": "\U0001f7e1",  # yellow circle
+    "Green": "\U0001f7e2",  # green circle
+    "Cyan": "\U0001f535",  # blue circle
+    "Blue": "\U0001f535",  # blue circle
+    "Purple": "\U0001f7e3",  # purple circle
+    "Pink": "\U0001fa77",  # pink heart: Unicode has no pink circle
+    "Brown": "\U0001f7e4",  # brown circle
+    "White": "⚪",  # white circle
+    "Light Gray": "⚪",
+    "Dark Gray": "⚫",  # black circle
+    "Black": "⚫",
+    "Clear": "⚪",
+}
+_MULTICOLOR_EMOJI = "\U0001f308"  # rainbow
+
+
+def color_emoji(hex_value: str | None, extra_colors: str | None = None) -> str:
+    """The coloured dot for a spool colour, or "" when there is nothing to show.
+
+    Several colours (``extra_colors`` holds the other stops of a gradient or
+    multi-colour spool) get a rainbow. Clear is a white dot; a translucent colour
+    is shown by its RGB. An unreadable value gets no dot rather than a wrong one.
+    """
+    if extra_colors and extra_colors.replace(",", "").strip():
+        return _MULTICOLOR_EMOJI
+    family = color_family(hex_value)
+    if family is None:
+        return ""
+    if family == "Gray":
+        hsl = _hex_to_hsl(hex_value)
+        return "⚪" if hsl is not None and hsl[2] >= 0.5 else "⚫"
+    return _FAMILY_EMOJI[family]
+
+
+def color_note(hex_value: str | None) -> str:
+    """ "clear" for a fully transparent colour, "translucent" for a partly transparent one, else ""."""
+    if not hex_value or len(hex_value) < 6:
+        return ""
+    alpha = _alpha_byte(hex_value)
+    if alpha is None or alpha == "FF":
+        return ""
+    if alpha == "00":
+        return "clear"
+    return "translucent" if _parse_int16(alpha) is not None else ""
 
 
 # Below a just-noticeable difference (CIEDE2000 ~1.0): no eye tells the two apart (#3763).

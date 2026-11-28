@@ -1,6 +1,7 @@
 """Print scheduler service - processes the print queue."""
 
 import asyncio
+import dataclasses
 import json
 import logging
 import math
@@ -9,7 +10,7 @@ import time
 import uuid
 import zipfile
 from collections import deque
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -81,6 +82,7 @@ from backend.app.services.finance_budget import (
 from backend.app.services.ha_sensor_manager import ha_sensor_manager
 from backend.app.services.inventory_stock import StockEntry, inventory_stock, stock_in
 from backend.app.services.mqtt_relay import mqtt_relay
+from backend.app.services.notification_content import NotificationFilament
 from backend.app.services.notification_service import notification_service
 from backend.app.services.plate_changer import is_count_pending, is_count_unknown
 from backend.app.services.print_cost_estimate import estimate_queue_source_cost
@@ -179,6 +181,9 @@ def _ams_slot_label(ams_id: int, tray_id: int, layout: TrayLayout | None = None)
     """
     return _slot_label_from_global_tray(_global_tray_from_assignment(ams_id, tray_id, layout), layout)
 
+
+# (printer_id, ams_id, tray_id, spool_id) -> (remaining %, threshold %, colour name, the spool as a filament)
+_FilamentLowSlots = dict[tuple[int, int, int, int], tuple[float, float, str | None, NotificationFilament | None]]
 
 # Minimum seconds between low-filament checks. Matches the scheduler's idle
 # interval: the fast path runs every 3 s while an upload is in flight, and a
@@ -875,6 +880,27 @@ def _describe_deficit(deficits: list[FilamentDeficit]) -> str:
         else:
             parts.append(f"{d.filament_type} ({d.remaining_grams:.0f} g left, needs {d.required_grams:.0f} g)")
     return ", ".join(parts)
+
+
+def _override_filaments(overrides: list[dict]) -> list[NotificationFilament]:
+    """A job's filament requirements (override or unmatched dicts) as notification filaments, once each (#3641).
+
+    In slot order: the matcher walks the slots in its own order, which is no order to read them in.
+    """
+    found: dict[tuple, NotificationFilament] = {}
+
+    def slot_order(o: dict) -> int:
+        slot_id = o.get("slot_id")
+        return slot_id if isinstance(slot_id, int) else 0
+
+    for o in sorted(overrides, key=slot_order):
+        filament = NotificationFilament(
+            type=o.get("type") or None,
+            color_hex=o.get("color") or None,
+            color_name=o.get("color_name") or None,
+        )
+        found.setdefault((filament.type, filament.color_hex, filament.color_name), filament)
+    return list(found.values())
 
 
 def _filament_wait_suffix(item: PrintQueueItem, now: datetime, max_wait_hours: int | None) -> tuple[str, bool]:
@@ -2945,7 +2971,7 @@ class PrintScheduler:
                         # as the gates below, but the job is skipped instead
                         # of staged, so it starts by itself once the spool is
                         # loaded and the printer stays free for jobs behind it.
-                        wanted = await self._filament_wait_wanted(db, item)
+                        wanted, wanted_filaments = await self._filament_wait_wanted(db, item)
                         if wanted:
                             suffix, has_priority = filament_wait_suffix(item)
                             reason = f"{_FILAMENT_WAIT_PREFIX}{wanted}{suffix}"
@@ -2960,6 +2986,7 @@ class PrintScheduler:
                                 reason,
                                 item.printer_id,
                                 pinned_printers.get(item.printer_id, ("", ""))[1],
+                                filaments=wanted_filaments,
                             )
                             skip_reasons["filament_wait"] = skip_reasons.get("filament_wait", 0) + 1
                             continue
@@ -3059,6 +3086,8 @@ class PrintScheduler:
                     printer_id = None
                     chosen: _ModelCandidate | None = None
                     per_model_reasons: list[tuple[str | None, str]] = []
+                    # What the matcher found missing, as data for the notification (#3641).
+                    missing_for_notice: list[dict] = []
                     # Forced filaments the inventory has none left of (#3590).
                     out_of_stock: list[str] = []
                     # Candidates that cleared the cross-model gate below. The
@@ -3166,6 +3195,7 @@ class PrintScheduler:
                                     self._unmatched_key(item, pid), []
                                 ),
                                 short_is_missing=filament_first,
+                                missing_overrides=missing_for_notice,
                                 short_filaments=short_filaments,
                                 out_of_stock=out_of_stock,
                             )
@@ -3295,6 +3325,7 @@ class PrintScheduler:
                                 waiting_reason,
                                 None,
                                 _candidate_model_label(candidates) or item.target_model or "",
+                                filaments=_override_filaments(missing_for_notice),
                             )
                         elif (
                             waiting_reason
@@ -3307,6 +3338,9 @@ class PrintScheduler:
                                 target_model=_candidate_model_label(candidates) or item.target_model,
                                 waiting_reason=waiting_reason,
                                 db=db,
+                                filaments=(
+                                    _override_filaments(missing_for_notice) if _is_filament_wait(waiting_reason) else ()
+                                ),
                             )
                         # Once per job, when the reason first names a filament
                         # the inventory has none left of (#3590).
@@ -3423,7 +3457,7 @@ class PrintScheduler:
                         if filament_first:
                             # Race fallback of the matcher's own filament check
                             # (#3587): release the printer and wait, as above.
-                            wanted = await self._filament_wait_wanted(db, item)
+                            wanted, wanted_filaments = await self._filament_wait_wanted(db, item)
                             if wanted:
                                 suffix, has_priority = filament_wait_suffix(item)
                                 waiting_reason = f"{_FILAMENT_WAIT_PREFIX}{wanted}{suffix}"
@@ -3444,6 +3478,7 @@ class PrintScheduler:
                                     waiting_reason,
                                     None,
                                     _candidate_model_label(candidates) or item.target_model or "",
+                                    filaments=wanted_filaments,
                                 )
                                 skip_reasons["filament_wait"] = skip_reasons.get("filament_wait", 0) + 1
                                 continue
@@ -4363,6 +4398,7 @@ class PrintScheduler:
         holds_out: dict[int, list[TodoFilament]] | None = None,
         unmatched_todo: Callable[[int], list[TodoFilament]] | None = None,
         short_is_missing: bool = False,
+        missing_overrides: list[dict] | None = None,
         short_filaments: Callable[[int], Awaitable[list[TodoFilament]]] | None = None,
         out_of_stock: list[str] | None = None,
     ) -> tuple[int | None, str | None]:
@@ -4407,6 +4443,9 @@ class PrintScheduler:
                               is treated like one missing the filament: named in the
                               reason and never returned as the fallback, so the job
                               waits for a refill instead of being staged there.
+            missing_overrides: A list the caller owns. The requirements a printer lacks
+                               are appended to it as override-shaped dicts, the data
+                               behind the colour names in the reason (#3641).
             short_filaments: The structured form of what ``is_short`` finds short on a
                              printer, read only for a printer that is (#3587, #3615).
             out_of_stock: Out parameter (#3590). Receives the bare text of each forced
@@ -4463,6 +4502,9 @@ class PrintScheduler:
             pairs = self._missing_force_color_pairs(printer_id, force_overrides)
             for text, override in pairs:
                 note_entry(text, override)
+            # The same overrides, as data for the notification (#3641).
+            if missing_overrides is not None:
+                missing_overrides.extend(override for _, override in pairs)
             # The structured form comes from the overrides behind the texts, not from parsing them (#3615).
             return [text for text, _ in pairs], [todo_filament_from_requirement(o) for _, o in pairs]
 
@@ -4551,6 +4593,9 @@ class PrintScheduler:
             if required_filament_types:
                 missing = self._get_missing_filament_types(printer.id, required_filament_types)
                 if missing:
+                    if missing_overrides is not None:
+                        by_type = {(o.get("type") or "").upper(): o for o in force_overrides}
+                        missing_overrides.extend(by_type.get(t.upper(), {"type": t}) for t in missing)
                     # When force_overrides are present, enrich missing entries with color info
                     # so the "Waiting on" message includes "TYPE (color)" instead of just "TYPE"
                     if force_overrides:
@@ -4608,6 +4653,8 @@ class PrintScheduler:
                 else:
                     override_colors = [f"{o.get('type', '?')} ({o.get('color', '?')})" for o in pref_overrides]
                     printers_missing_filament.append((printer.name, override_colors))
+                    if missing_overrides is not None:
+                        missing_overrides.extend(pref_overrides)
                     missing_todo[printer.id] = [todo_filament_from_requirement(o) for o in pref_overrides]
                     logger.debug("Skipping printer %s (%s) - no matching override colors", printer.id, printer.name)
                     continue
@@ -4894,7 +4941,7 @@ class PrintScheduler:
         # for the same filament need two spools of it (#3280). Slots naming a
         # variant go first and take that variant before a spool naming none, so
         # a slot open to any variant cannot use up the one a later slot needs.
-        missing = []
+        missing: list[tuple[str, dict]] = []
         taken: set[int] = set()
         for o in sorted(force_overrides, key=lambda o: not o.get("tray_info_idx")):
             o_type = canonical_filament_type(o.get("type") or "")
@@ -4915,6 +4962,13 @@ class PrintScheduler:
                 color_label = o.get("color_name") or o.get("color", "?")
                 missing.append((f"{o_type} ({color_label})", o))
         return missing
+
+    def _missing_force_color_overrides(
+        self, printer_id: int, force_overrides: list[dict], raw_data: dict | None = None
+    ) -> list[dict]:
+        """The overrides of ``_missing_force_color_pairs``: what
+        ``_get_missing_force_color_slots`` words, as the override dicts (#3641)."""
+        return [override for _, override in self._missing_force_color_pairs(printer_id, force_overrides, raw_data)]
 
     def _get_missing_filament_types(
         self, printer_id: int, required_types: list[str], raw_data: dict | None = None
@@ -7330,8 +7384,8 @@ class PrintScheduler:
             global_threshold = await self._get_low_stock_threshold(db)
             spoolman_on = await self._get_bool_setting(db, "spoolman_enabled")
 
-            # (printer_id, ams_id, tray_id, spool_id) -> (remaining_pct, threshold, colour name)
-            slots: dict[tuple[int, int, int, int], tuple[float, float, str | None]] = {}
+            # (printer_id, ams_id, tray_id, spool_id) -> (remaining_pct, threshold, colour name, the spool)
+            slots: _FilamentLowSlots = {}
 
             if spoolman_on:
                 slots = await self._filament_low_slots_spoolman(db, global_threshold)
@@ -7357,6 +7411,12 @@ class PrintScheduler:
                         pct,
                         threshold,
                         spool.color_name,
+                        NotificationFilament(
+                            type=spool.material or None,
+                            color_hex=spool.rgba,
+                            color_name=spool.color_name,
+                            extra_colors=spool.extra_colors,
+                        ),
                     )
 
             if not slots:
@@ -7380,9 +7440,7 @@ class PrintScheduler:
             return 20.0
         return value if 0 < value <= 100 else 20.0
 
-    async def _filament_low_slots_spoolman(
-        self, db: AsyncSession, global_threshold: float
-    ) -> dict[tuple[int, int, int, int], tuple[float, float, str | None]]:
+    async def _filament_low_slots_spoolman(self, db: AsyncSession, global_threshold: float) -> _FilamentLowSlots:
         """Resolve Spoolman-mode slots to (remaining %, threshold, colour name).
 
         Spoolman spools carry no per-spool override -- ``low_stock_threshold_pct``
@@ -7424,7 +7482,7 @@ class PrintScheduler:
             if isinstance(raw_id, int):
                 by_id[raw_id] = raw
 
-        slots: dict[tuple[int, int, int, int], tuple[float, float, str | None]] = {}
+        slots: _FilamentLowSlots = {}
         for assignment in assignments:
             raw = by_id.get(assignment.spoolman_spool_id)
             if raw is None:
@@ -7437,20 +7495,30 @@ class PrintScheduler:
             if pct is None:
                 continue
             key = (assignment.printer_id, assignment.ams_id, assignment.tray_id, assignment.spoolman_spool_id)
-            slots[key] = (pct, global_threshold, mapped.get("color_name"))
+            slots[key] = (
+                pct,
+                global_threshold,
+                mapped.get("color_name"),
+                NotificationFilament(
+                    type=mapped.get("material") or None,
+                    color_hex=mapped.get("rgba"),
+                    color_name=mapped.get("color_name"),
+                    extra_colors=mapped.get("extra_colors"),
+                ),
+            )
         return slots
 
     async def _emit_filament_low(
         self,
         db: AsyncSession,
-        slots: dict[tuple[int, int, int, int], tuple[float, float, str | None]],
+        slots: _FilamentLowSlots,
         *,
         notify: bool = True,
         relay: bool = False,
     ) -> None:
         """Send one notification and/or MQTT relay event per slot that has newly crossed its threshold."""
         printers: dict[int, Printer] = {}
-        for key, (pct, threshold, color) in slots.items():
+        for key, (pct, threshold, color, spool_filament) in slots.items():
             printer_id, ams_id, tray_id, spool_id = key
             if pct >= threshold:
                 # Back above the line: re-arm rather than expire on a timer, so a
@@ -7496,6 +7564,7 @@ class PrintScheduler:
                         int(pct),
                         db,
                         color=color,
+                        filament=dataclasses.replace(spool_filament, slot=slot) if spool_filament else None,
                     )
                 except Exception as e:
                     logger.warning("Low-filament notification failed for slot %s: %s", key, e)
@@ -10272,6 +10341,7 @@ class PrintScheduler:
         new_reason: str,
         printer_id: int | None,
         target_model: str = "",
+        filaments: Sequence[NotificationFilament] = (),
     ) -> None:
         """Say once that a job skipped for filament needs a spool (#3587).
 
@@ -10304,6 +10374,7 @@ class PrintScheduler:
                 waiting_reason=new_reason,
                 db=db,
                 printer_id=printer_id,
+                filaments=filaments,
             )
         except Exception as e:
             logger.debug("Filament wait notification failed for item %s: %s", item.id, e)
@@ -10523,11 +10594,13 @@ class PrintScheduler:
             self._record_hold(item.id, item.printer_id, item.target_model, [todo for _, todo in entries])
         return ", ".join(shortfall) if shortfall else None
 
-    async def _filament_wait_wanted(self, db: AsyncSession, item: PrintQueueItem) -> str | None:
-        """What ``item`` waits for on its printer, worded for the queue row (#3587).
+    async def _filament_wait_wanted(
+        self, db: AsyncSession, item: PrintQueueItem
+    ) -> tuple[str | None, list[NotificationFilament]]:
+        """What ``item`` waits for on its printer: worded for the queue row, and as data (#3587, #3641).
 
         The short spools if there are any, else the requirements without a
-        tray; None when it lacks nothing.
+        tray; ``(None, [])`` when it lacks nothing.
         """
         deficit = await self._filament_deficit(db, item)
         if deficit:
@@ -10535,12 +10608,39 @@ class PrintScheduler:
             self._record_hold(
                 item.id, item.printer_id, item.target_model, await self._deficit_todo_filaments(db, item, deficit)
             )
-            return _describe_deficit(deficit)
+            return _describe_deficit(deficit), self._deficit_filaments(item.printer_id, deficit)
         unmatched = await self._unmatched_filament(db, item)
         self._record_hold(
             item.id, item.printer_id, item.target_model, [todo_filament_from_requirement(r) for r in unmatched]
         )
-        return _describe_unmatched(unmatched) if unmatched else None
+        if unmatched:
+            return _describe_unmatched(unmatched), _override_filaments(unmatched)
+        return None, []
+
+    def _deficit_filaments(self, printer_id: int | None, deficits: list[FilamentDeficit]) -> list[NotificationFilament]:
+        """The short slots as notification filaments: type, slot label, and the colour of the spool in it.
+
+        A deficit has no colour of its own; the loaded tray it names has one when
+        the printer reports it.
+        """
+        loaded: dict[tuple[int, int], dict] = {}
+        layout = None
+        if printer_id is not None:
+            layout = printer_tray_layout(printer_id, printer_manager)
+            status = printer_manager.get_status(printer_id)
+            if status is not None:
+                loaded = {(f["ams_id"], f["tray_id"]): f for f in self._build_loaded_filaments(status)}
+        filaments = []
+        for d in deficits:
+            slot = None
+            color = None
+            if d.ams_id is not None and d.tray_id is not None:
+                slot = _ams_slot_label(d.ams_id, d.tray_id, layout)
+                tray = loaded.get((d.ams_id, d.tray_id))
+                if tray and tray.get("color_known"):
+                    color = tray.get("color")
+            filaments.append(NotificationFilament(type=d.filament_type or None, color_hex=color, slot=slot))
+        return filaments
 
     async def _block_on_filament_deficit(
         self,
@@ -10579,6 +10679,7 @@ class PrintScheduler:
                     waiting_reason="filament_short",
                     db=db,
                     printer_id=item.printer_id,
+                    filaments=self._deficit_filaments(item.printer_id, deficit),
                 )
             except Exception as e:
                 logger.debug("filament_short notification failed for item %s: %s", item.id, e)
@@ -10880,6 +10981,7 @@ class PrintScheduler:
                 db=db,
                 # Released to the pool: no printer holds it any more.
                 printer_id=None if release_assignment else held_by,
+                filaments=_override_filaments(unmatched),
             )
         except Exception as e:
             logger.debug("filament_missing notification failed for item %s: %s", item.id, e)

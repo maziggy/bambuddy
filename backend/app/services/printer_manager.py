@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.models.archive import PrintArchive
 from backend.app.models.printer import Printer
 from backend.app.services.bambu_mqtt import (
     STAGE_NAMES,
@@ -606,9 +607,47 @@ class PrinterManager:
                 setting = setting_is_true(await get_setting(db, "require_plate_clear"))
                 if not plate_clear.applies(printer_id, setting):
                     return
-                await notification_service.on_plate_clear_required(printer_id, printer.name, db)
+                job_name = await self._finished_job_name(db, printer_id, state)
+                await notification_service.on_plate_clear_required(printer_id, printer.name, db, job_name=job_name)
         except Exception as e:
             logger.warning("Failed to send plate-clear notification for printer %d: %s", printer_id, e)
+
+    async def _finished_job_name(self, db: AsyncSession, printer_id: int, state: PrinterState | None) -> str | None:
+        """The job that just ended on a printer, for the plate-clear notification (#3641).
+
+        Named as Bambuddy has it, the way the queue and the other notifications
+        do: the printer's newest archive, else the queue item that last ran
+        there. Only without either, the printer's own subtask name, which can
+        differ (a ``.P1s_gcode`` suffix, underscores). Left for the notification
+        to tidy (extension, folder). None when nothing is known.
+        """
+        try:
+            filename = await db.scalar(
+                select(PrintArchive.filename)
+                .where(PrintArchive.printer_id == printer_id)
+                .order_by(PrintArchive.id.desc())
+                .limit(1)
+            )
+            if isinstance(filename, str) and filename.strip():
+                return filename
+            from backend.app.models.library import LibraryFile
+            from backend.app.models.print_queue import PrintQueueItem
+
+            filename = await db.scalar(
+                select(LibraryFile.filename)
+                .join(PrintQueueItem, PrintQueueItem.library_file_id == LibraryFile.id)
+                .where(PrintQueueItem.printer_id == printer_id, PrintQueueItem.completed_at.isnot(None))
+                .order_by(PrintQueueItem.completed_at.desc(), PrintQueueItem.id.desc())
+                .limit(1)
+            )
+            if isinstance(filename, str) and filename.strip():
+                return filename
+        except Exception as e:
+            logger.debug("Could not look up the last job of printer %d: %s", printer_id, e)
+        subtask = getattr(state, "subtask_name", None)
+        if isinstance(subtask, str) and subtask.strip():
+            return subtask.strip()
+        return None
 
     async def _printer_info_from_db(self, printer_id: int) -> PrinterInfo | None:
         """Name and serial for a printer with no registered client."""

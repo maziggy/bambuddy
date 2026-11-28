@@ -1,0 +1,189 @@
+{
+ "comment": "hex -> colour family. Read by backend/tests/unit/test_color_family.py and frontend/src/__tests__/utils/colorFamily.test.ts so the two implementations of the rules cannot drift (#3641).",
+ "cases": [
+  {
+   "hex": "FF0000",
+   "family": "Red"
+  },
+  {
+   "hex": "#FF0000",
+   "family": "Red"
+  },
+  {
+   "hex": "ff0000",
+   "family": "Red"
+  },
+  {
+   "hex": "FF0000FF",
+   "family": "Red"
+  },
+  {
+   "hex": "FF000080",
+   "family": "Red"
+  },
+  {
+   "hex": "FF0033",
+   "family": "Red"
+  },
+  {
+   "hex": "FF0066",
+   "family": "Pink"
+  },
+  {
+   "hex": "FF00FF",
+   "family": "Pink"
+  },
+  {
+   "hex": "FF69B4",
+   "family": "Pink"
+  },
+  {
+   "hex": "00000000",
+   "family": "Clear"
+  },
+  {
+   "hex": "ff000000",
+   "family": "Clear"
+  },
+  {
+   "hex": "FFFFFF00",
+   "family": "Clear"
+  },
+  {
+   "hex": "#00000000",
+   "family": "Clear"
+  },
+  {
+   "hex": "000000",
+   "family": "Black"
+  },
+  {
+   "hex": "000000FF",
+   "family": "Black"
+  },
+  {
+   "hex": "262626",
+   "family": "Black"
+  },
+  {
+   "hex": "272727",
+   "family": "Dark Gray"
+  },
+  {
+   "hex": "333333",
+   "family": "Dark Gray"
+  },
+  {
+   "hex": "FFFFFF",
+   "family": "White"
+  },
+  {
+   "hex": "D9D9D9",
+   "family": "White"
+  },
+  {
+   "hex": "D8D8D8",
+   "family": "Light Gray"
+  },
+  {
+   "hex": "CCCCCC",
+   "family": "Light Gray"
+  },
+  {
+   "hex": "808080",
+   "family": "Gray"
+  },
+  {
+   "hex": "5F6367",
+   "family": "Dark Gray"
+  },
+  {
+   "hex": "FF8000",
+   "family": "Orange"
+  },
+  {
+   "hex": "8B4513",
+   "family": "Brown"
+  },
+  {
+   "hex": "FFFF00",
+   "family": "Yellow"
+  },
+  {
+   "hex": "808000",
+   "family": "Brown"
+  },
+  {
+   "hex": "A06000",
+   "family": "Brown"
+  },
+  {
+   "hex": "00FF00",
+   "family": "Green"
+  },
+  {
+   "hex": "00FFFF",
+   "family": "Cyan"
+  },
+  {
+   "hex": "0000FF",
+   "family": "Blue"
+  },
+  {
+   "hex": "8000FF",
+   "family": "Purple"
+  },
+  {
+   "hex": "B39DDB",
+   "family": "Purple"
+  },
+  {
+   "hex": "",
+   "family": null
+  },
+  {
+   "hex": "abc",
+   "family": null
+  },
+  {
+   "hex": "12345",
+   "family": null
+  },
+  {
+   "hex": "zzzzzz",
+   "family": null
+  },
+  {
+   "hex": null,
+   "family": null
+  },
+  {
+   "hex": "0x1234",
+   "family": null
+  },
+  {
+   "hex": "0x12345678",
+   "family": null
+  },
+  {
+   "hex": "##AABBCC",
+   "family": "Blue"
+  },
+  {
+   "hex": " FAABB",
+   "family": "Cyan"
+  },
+  {
+   "hex": "+F0000",
+   "family": "Black"
+  },
+  {
+   "hex": "-F0000",
+   "family": "Black"
+  },
+  {
+   "hex": "  FF000",
+   "family": null
+  }
+ ]
+}

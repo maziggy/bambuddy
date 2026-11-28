@@ -6,7 +6,7 @@ import json
 import logging
 import re
 import smtplib
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta, timezone
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
@@ -27,7 +27,18 @@ from backend.app.models.notification import (
     TelegramPendingVerdict,
 )
 from backend.app.models.notification_template import NotificationTemplate
+from backend.app.models.printer import Printer
 from backend.app.services.email_service import add_required_headers
+from backend.app.services.notification_content import (
+    DEFAULT_EMBED_COLOR,
+    DISCORD_MAX_EMBED_TOTAL,
+    NotificationFilament,
+    NotificationPresentation,
+    discord_fields,
+    embed_color,
+    filament_variables,
+    is_unmodified_template,
+)
 from backend.app.services.notify_client import NotifyClient, NotifyError, notify_credentials, notify_supports_photos
 from backend.app.services.print_confirmation import one_tap_url
 from backend.app.utils.notification_photos import save_notification_photo
@@ -296,6 +307,13 @@ class NotificationService:
             self._template_cache[event_type] = template
 
         return template
+
+    async def _template_is_unmodified(self, db: AsyncSession, event_type: str) -> bool:
+        """Whether the event's template still has the shipped title and body."""
+        template = await self._get_template(db, event_type)
+        return template is not None and is_unmodified_template(
+            event_type, template.title_template, template.body_template
+        )
 
     def _render_template(self, template_str: str, variables: dict[str, Any]) -> str:
         """Render a template string with variables. Missing variables become empty."""
@@ -1132,9 +1150,19 @@ class NotificationService:
             return False, f"Email error: {str(e)}"
 
     async def _send_discord(
-        self, config: dict, title: str, message: str, image_data: bytes | None = None
+        self,
+        config: dict,
+        title: str,
+        message: str,
+        image_data: bytes | None = None,
+        fields: tuple[tuple[str, str], ...] | None = None,
+        color: int | None = None,
     ) -> tuple[bool, str]:
-        """Send notification via Discord webhook."""
+        """Send notification via Discord webhook.
+
+        *fields* and *color* come from a :class:`NotificationPresentation`; without
+        them the embed is the plain title and description in Bambu green.
+        """
         webhook_url = config.get("webhook_url", "").strip()
 
         if not webhook_url:
@@ -1150,8 +1178,12 @@ class NotificationService:
         embed = {
             "title": title,
             "description": message,
-            "color": 0x00AE42,  # Bambu green
+            "color": DEFAULT_EMBED_COLOR if color is None else color,
         }
+        if fields:
+            embed_fields = discord_fields(fields, DISCORD_MAX_EMBED_TOTAL - len(title) - len(message))
+            if embed_fields:
+                embed["fields"] = embed_fields
 
         client = await self._get_client()
 
@@ -1446,6 +1478,7 @@ class NotificationService:
         photo_cache: dict | None = None,
         printer_id: int | None = None,
         bypass_quiet_hours: bool = False,
+        presentation: NotificationPresentation | None = None,
     ) -> tuple[bool, str]:
         """Send notification to a specific provider.
 
@@ -1562,7 +1595,14 @@ class NotificationService:
                     config, title, message, image_data=image_data, finish_photo_url=finish_photo_url
                 )
             elif provider.provider_type == "discord":
-                return await self._send_discord(config, title, message, image_data=image_data)
+                return await self._send_discord(
+                    config,
+                    title,
+                    message,
+                    image_data=image_data,
+                    fields=presentation.fields if presentation else None,
+                    color=presentation.color if presentation else None,
+                )
             elif provider.provider_type == "webhook":
                 # Only Slack format needs a URL — generic format gets the
                 # base64 image field instead.
@@ -1728,12 +1768,18 @@ class NotificationService:
         printer_name: str | None = None,
         image_data: bytes | None = None,
         variables: dict | None = None,
+        presentation: NotificationPresentation | None = None,
     ):
         """Send notification to multiple providers and log the results.
 
         All notifications are always sent immediately. If digest mode is enabled,
         the notification is ALSO queued for the daily digest summary.
+
+        *presentation* is used only while the event's template is the shipped one
+        (see ``is_unmodified_template``).
         """
+        if presentation is not None and not await self._template_is_unmodified(db, event_type):
+            presentation = None
         photo_cache: dict = {}
         for provider in providers:
             try:
@@ -1748,6 +1794,7 @@ class NotificationService:
                     variables=variables,
                     photo_cache=photo_cache,
                     printer_id=printer_id,
+                    presentation=presentation,
                 )
 
                 # Also queue for digest if enabled (digest is a summary, not a queue)
@@ -2351,6 +2398,7 @@ class NotificationService:
         printer_id: int,
         printer_name: str,
         db: AsyncSession,
+        job_name: str | None = None,
     ):
         """Handle plate-clear-required event — a print ended and the queue is gated (#2525).
 
@@ -2360,12 +2408,20 @@ class NotificationService:
         and the next queued job can't dispatch until someone confirms the bed is
         free. Off by default on every provider: it lands at the same moment as the
         print-complete notification, so opting in is a deliberate choice.
+
+        ``job_name`` is the print that ended, as its archive or queue item names it;
+        shown without extension or folder, otherwise as it is (#3641).
         """
         providers = await self._get_providers_for_event(db, "on_plate_clear_required", printer_id)
         if not providers:
             return
 
-        variables = {"printer": printer_name}
+        job = self._clean_filename(job_name) if job_name else ""
+        variables = {"printer": printer_name, "job_name": job}
+
+        fields = [("Printer", printer_name)]
+        if job:
+            fields.append(("Finished", job))
 
         title, message = await self._build_message_from_template(db, "plate_clear_required", variables)
         await self._send_to_providers(
@@ -2377,6 +2433,7 @@ class NotificationService:
             printer_id,
             printer_name,
             variables=variables,
+            presentation=NotificationPresentation(fields=tuple(fields)),
         )
 
     async def on_plate_changer_empty(
@@ -2426,22 +2483,44 @@ class NotificationService:
         remaining_percent: int,
         db: AsyncSession,
         color: str | None = None,
+        filament: NotificationFilament | None = None,
     ):
-        """Handle low filament event."""
+        """Handle low filament event.
+
+        ``filament`` is the spool in the slot, for its colour dot and hex (#3641);
+        ``color`` stays its colour name as before.
+        """
         providers = await self._get_providers_for_event(db, "on_filament_low", printer_id)
         if not providers:
             return
 
+        filaments = [filament] if filament is not None else []
         variables = {
+            # Telegram Markdown v1: only "_" is escaped (telegram_markdown_escape), as for every variable (pre-existing).
+            **filament_variables(filaments),
             "printer": printer_name,
             "slot": slot,
             "remaining_percent": str(remaining_percent),
             "color": color or "",
         }
 
+        fields = [("Printer", printer_name), ("Slot", slot)]
+        if filaments and filaments[0].line:
+            fields.append(("Filament", filaments[0].line))
+        fields.append(("Remaining", f"{remaining_percent}%"))
+        presentation = NotificationPresentation(fields=tuple(fields), color=embed_color(filaments))
+
         title, message = await self._build_message_from_template(db, "filament_low", variables)
         await self._send_to_providers(
-            providers, title, message, db, "filament_low", printer_id, printer_name, variables=variables
+            providers,
+            title,
+            message,
+            db,
+            "filament_low",
+            printer_id,
+            printer_name,
+            variables=variables,
+            presentation=presentation,
         )
 
     async def on_maintenance_due(
@@ -3042,24 +3121,52 @@ class NotificationService:
         waiting_reason: str,
         db: AsyncSession,
         printer_id: int | None = None,
+        filaments: Sequence[NotificationFilament] = (),
     ):
         """Handle job waiting for filament event.
 
         ``printer_id`` is the printer a pinned job waits on; None for a job for
-        "Any <model>" that no printer holds.
+        "Any <model>" that no printer holds. ``filaments`` are the filaments the
+        job waits for, as data; ``waiting_reason`` stays the sentence it always was.
         """
         providers = await self._get_providers_for_event(db, "on_queue_job_waiting", printer_id)
         if not providers:
             return
 
+        printer_label = await self._queue_printer_label(db, printer_id, target_model)
         variables = {
             "job_name": job_name,
             "target_model": target_model,
             "waiting_reason": waiting_reason,
+            "printer": printer_label,
+            # Telegram Markdown v1: only "_" is escaped (telegram_markdown_escape), as for every variable (pre-existing).
+            **filament_variables(filaments),
         }
 
+        fields = [("Printer", printer_label), ("Job", job_name)]
+        if filaments:
+            fields.append(("Waiting for", "\n".join(f.line for f in filaments if f.line)))
+        presentation = NotificationPresentation(fields=tuple(fields), color=embed_color(filaments))
+
         title, message = await self._build_message_from_template(db, "queue_job_waiting", variables)
-        await self._send_to_providers(providers, title, message, db, "queue_job_waiting", variables=variables)
+        await self._send_to_providers(
+            providers, title, message, db, "queue_job_waiting", variables=variables, presentation=presentation
+        )
+
+    @staticmethod
+    async def _queue_printer_label(db: AsyncSession, printer_id: int | None, target_model: str) -> str:
+        """The printer's name for a pinned job, "Any <model>" for one no printer holds yet."""
+        if printer_id is not None:
+            try:
+                name = await db.scalar(select(Printer.name).where(Printer.id == printer_id))
+            except Exception as e:
+                logger.debug("Could not look up printer %s for a notification: %s", printer_id, e)
+                name = None
+            if name:
+                return name
+        if printer_id is not None:
+            return ""
+        return f"Any {target_model}" if target_model else ""
 
     async def on_queue_job_skipped(
         self,

@@ -225,3 +225,52 @@ async def test_a_key_of_a_whole_library_reader_still_sees_only_its_owners_archiv
     assert by_archive.json() == []
     assert bulk.json() == {str(theirs): []}
     assert relinked.status_code == 404
+
+
+async def _linked_file(db_session, project: int) -> int:
+    """A file in a folder linked to the project, named like the shared fixture's archives."""
+    from backend.app.models.library import LibraryFile, LibraryFolder
+
+    folder = LibraryFolder(name="Parts", project_id=project)
+    db_session.add(folder)
+    await db_session.commit()
+    lib_file = LibraryFile(
+        folder_id=folder.id,
+        filename="test_print.gcode.3mf",
+        file_path="library/test_print.gcode.3mf",
+        file_size=1024,
+        file_type="3mf",
+    )
+    db_session.add(lib_file)
+    await db_session.commit()
+    return lib_file.id
+
+
+async def _file_progress(client: AsyncClient, headers: dict, project: int) -> dict[int, dict]:
+    response = await client.get(f"/api/v1/projects/{project}/file-progress", headers=headers)
+    assert response.status_code == 200, response.text
+    return {row.pop("file_id"): row for row in response.json()}
+
+
+async def test_file_progress_counts_only_the_queue_the_caller_sees(async_client: AsyncClient, shared, db_session):
+    """Queued counts follow the project queue's visibility; completed runs,
+    like the project stats, are counted for everyone."""
+    file_id = await _linked_file(db_session, shared["project"])
+
+    first = await _file_progress(async_client, shared["first"], shared["project"])
+    admin = await _file_progress(async_client, shared["admin"], shared["project"])
+
+    assert first[file_id]["queued_count"] == 1
+    assert admin[file_id]["queued_count"] == 3
+    assert first[file_id]["completed_count"] == admin[file_id]["completed_count"] == 3
+
+
+async def test_file_progress_without_queue_rights_keeps_runs(
+    async_client: AsyncClient, admin_and_editor, shared, db_session
+):
+    headers, project = admin_and_editor
+    file_id = await _linked_file(db_session, project)
+
+    assert await _file_progress(async_client, headers, project) == {
+        file_id: {"completed_count": 3, "queued_count": 0, "printing_count": 0, "failed_count": 0, "rejected_count": 0}
+    }

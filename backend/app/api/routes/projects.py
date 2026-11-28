@@ -85,6 +85,8 @@ _FAILURE_STATUSES = ("failed", "aborted", "cancelled", "stopped")
 # as good, matching behaviour before the feature existed.
 _NOT_REJECTED = or_(PrintLogEntry.user_verdict.is_(None), PrintLogEntry.user_verdict != "reject")
 COMPLETED_PARTS_RUN = and_(PrintLogEntry.status == "completed", _NOT_REJECTED)
+# The other half of the completed runs: finished on the machine, rejected by the user.
+REJECTED_RUN = and_(PrintLogEntry.status == "completed", PrintLogEntry.user_verdict == "reject")
 
 # Soft-deleted archives (#1343) keep their row — and therefore their
 # ``project_id`` — after their files have been removed from disk, so that global
@@ -1042,28 +1044,48 @@ async def get_project_file_progress(
     project_id: int,
     db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
-    """Completed-run counts per library file inside a project (#1897).
+    """Per-file print status inside a project (#1897).
 
-    Counts completed ``PrintLogEntry`` rows (same source as the aggregate
-    project stats) of archives attributed to this project, and maps each run to
-    one of the project's library files — the files living in folders linked to
-    the project, the same set the project detail page renders.
+    For each of the project's library files — the files living in folders
+    linked to the project, the same set the project detail page renders —
+    reports:
 
-    A run is attributed to exactly one file, by the strongest available match:
-    1. ``archive.library_file_id`` (stamped at queue dispatch since #1897),
+    - ``completed_count`` / ``failed_count`` / ``rejected_count``:
+      ``PrintLogEntry`` runs (same source as the aggregate project stats) of
+      archives attributed to this project. Completed excludes runs the user
+      rejected (#1898), which are counted on their own: a rejected run finished
+      on the machine, so it is not a failure. Failed counts
+      ``_FAILURE_STATUSES``, as the project's ``failed_prints`` does. Not
+      scoped to the caller, like the project stats.
+    - ``queued_count`` / ``printing_count``: ``pending`` / ``printing`` queue
+      items that belong to the project or print one of its files, limited to
+      the items the caller may see in the project queue. Every queue item is
+      one print, like every run: a multi-plate 3MF queued plate by plate counts
+      once per plate.
+
+    A run or queue item is attributed to exactly one file, by the strongest
+    available match:
+    1. ``library_file_id`` (the queue item's own, then its archive's — stamped
+       at queue dispatch since #1897),
     2. content hash (covers historical rows),
     3. filename (covers hash drift, e.g. re-sliced uploads of the same name).
-    Files with no completed runs are omitted — the frontend treats absence as 0.
+    Files with every counter at zero are omitted — the frontend treats absence
+    as 0.
     """
     result = await db.execute(select(Project.id).where(Project.id == project_id))
     if result.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    files_result = await db.execute(
-        select(LibraryFile.id, LibraryFile.file_hash, LibraryFile.filename)
+    project_files = (
+        select(LibraryFile.id)
         .join(LibraryFolder, LibraryFile.folder_id == LibraryFolder.id)
         .where(LibraryFolder.project_id == project_id, LibraryFile.deleted_at.is_(None))
+    )
+    files_result = await db.execute(
+        select(LibraryFile.id, LibraryFile.file_hash, LibraryFile.filename).where(LibraryFile.id.in_(project_files))
     )
     file_rows = files_result.all()
     if not file_rows:
@@ -1074,42 +1096,112 @@ async def get_project_file_progress(
     by_id = {fid for fid, _, _ in file_rows}
     by_hash: dict[str, int] = {}
     by_name: dict[str, int] = {}
-    for fid, fhash, fname in file_rows:
+    for fid, fhash, fname in sorted(file_rows):
         if fhash and fhash not in by_hash:
             by_hash[fhash] = fid
         if fname not in by_name:
             by_name[fname] = fid
+
+    def resolve(file_ids: Sequence[int | None], hashes: Sequence[str | None], filename: str | None) -> int | None:
+        for candidate in file_ids:
+            if candidate in by_id:
+                return candidate
+        for content_hash in hashes:
+            if content_hash and content_hash in by_hash:
+                return by_hash[content_hash]
+        if filename in by_name:
+            return by_name[filename]
+        return None
+
+    counts: dict[int, dict[str, int]] = {}
+
+    def add(fid: int | None, **deltas: int) -> None:
+        if fid is None:
+            return
+        entry = counts.setdefault(
+            fid,
+            {"completed_count": 0, "failed_count": 0, "rejected_count": 0, "queued_count": 0, "printing_count": 0},
+        )
+        for key, value in deltas.items():
+            entry[key] += value
 
     runs_result = await db.execute(
         select(
             PrintArchive.library_file_id,
             PrintArchive.content_hash,
             PrintArchive.filename,
-            func.count(PrintLogEntry.id),
+            func.coalesce(func.sum(case((COMPLETED_PARTS_RUN, 1), else_=0)), 0),
+            func.coalesce(func.sum(case((PrintLogEntry.status.in_(_FAILURE_STATUSES), 1), else_=0)), 0),
+            func.coalesce(func.sum(case((REJECTED_RUN, 1), else_=0)), 0),
         )
         .join(PrintArchive, PrintArchive.id == PrintLogEntry.archive_id)
         .where(
             PrintArchive.project_id == project_id,
-            PrintLogEntry.status == "completed",
-            _NOT_REJECTED,
+            or_(PrintLogEntry.status == "completed", PrintLogEntry.status.in_(_FAILURE_STATUSES)),
             _LIVE_ARCHIVE,
         )
         .group_by(PrintArchive.library_file_id, PrintArchive.content_hash, PrintArchive.filename)
     )
+    for lib_file_id, content_hash, filename, completed, failed, rejected in runs_result.all():
+        add(
+            resolve([lib_file_id], [content_hash], filename),
+            completed_count=int(completed),
+            failed_count=int(failed),
+            rejected_count=int(rejected),
+        )
 
-    counts: dict[int, int] = {}
-    for lib_file_id, content_hash, filename, run_count in runs_result.all():
-        if lib_file_id in by_id:
-            fid = lib_file_id
-        elif content_hash and content_hash in by_hash:
-            fid = by_hash[content_hash]
-        elif filename in by_name:
-            fid = by_name[filename]
-        else:
-            continue
-        counts[fid] = counts.get(fid, 0) + run_count
+    # The project's queue as list_project_queue shows it to the caller, plus
+    # jobs of the project's files queued without the project.
+    visible = visible_row_clauses(
+        PrintQueueItem, printer_scope, actor, Permission.QUEUE_READ_ALL, Permission.QUEUE_READ_OWN
+    )
+    if visible is not None:
+        queue_result = await db.execute(
+            select(
+                PrintQueueItem.library_file_id,
+                LibraryFile.file_hash,
+                LibraryFile.filename,
+                PrintArchive.library_file_id,
+                PrintArchive.content_hash,
+                PrintArchive.filename,
+                func.coalesce(func.sum(case((PrintQueueItem.status == "pending", 1), else_=0)), 0),
+                func.coalesce(func.sum(case((PrintQueueItem.status == "printing", 1), else_=0)), 0),
+            )
+            .outerjoin(LibraryFile, LibraryFile.id == PrintQueueItem.library_file_id)
+            .outerjoin(PrintArchive, PrintArchive.id == PrintQueueItem.archive_id)
+            .where(
+                PrintQueueItem.status.in_(("pending", "printing")),
+                or_(PrintQueueItem.project_id == project_id, PrintQueueItem.library_file_id.in_(project_files)),
+                *visible,
+            )
+            .group_by(
+                PrintQueueItem.library_file_id,
+                LibraryFile.file_hash,
+                LibraryFile.filename,
+                PrintArchive.library_file_id,
+                PrintArchive.content_hash,
+                PrintArchive.filename,
+            )
+        )
+        for (
+            item_file_id,
+            item_file_hash,
+            item_filename,
+            archive_file_id,
+            archive_hash,
+            archive_filename,
+            queued,
+            printing,
+        ) in queue_result.all():
+            add(
+                resolve(
+                    [item_file_id, archive_file_id], [item_file_hash, archive_hash], item_filename or archive_filename
+                ),
+                queued_count=int(queued),
+                printing_count=int(printing),
+            )
 
-    return [ProjectFileProgress(file_id=fid, completed_count=n) for fid, n in sorted(counts.items())]
+    return [ProjectFileProgress(file_id=fid, **entry) for fid, entry in sorted(counts.items()) if any(entry.values())]
 
 
 def _editable_rows(

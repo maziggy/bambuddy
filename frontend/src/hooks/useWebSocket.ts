@@ -373,6 +373,8 @@ export function useWebSocket() {
           queryClient.invalidateQueries({ queryKey: ['printerStatus', message.printer_id] });
         }
         queryClient.invalidateQueries({ queryKey: ['queue-todo'] });
+        // A queued job started: the project page's per-file status (#1897).
+        debouncedInvalidate('project-file-progress');
         break;
 
       case 'missing_spool_assignment': {
@@ -414,6 +416,8 @@ export function useWebSocket() {
         debouncedInvalidate('archive');
         debouncedInvalidate('archive-runs');
         debouncedInvalidate('calendar-runs');
+        // A run ended: completed / failed / printing per project file (#1897).
+        debouncedInvalidate('project-file-progress');
         break;
 
       case 'print_confirm_request': {
@@ -693,6 +697,12 @@ export function useWebSocket() {
           queryClient.invalidateQueries({ queryKey: ['queue-todo'] });
         }
         window.dispatchEvent(new CustomEvent('bambuddy:dispatch-toast', { detail: message }));
+        // A job left the queue for the printer, or failed to: the project
+        // page's per-file queued / printing counts (#1897). Not while it
+        // uploads, and progress fires many times a second.
+        if (message.type === 'queue_item_acked' || message.type === 'queue_item_failed') {
+          debouncedInvalidate('project-file-progress');
+        }
         break;
       // Slicer Pipeline runs (#1425 PR C). State transitions on the run
       // refresh both the dashboard list AND the per-pipeline "Last run"

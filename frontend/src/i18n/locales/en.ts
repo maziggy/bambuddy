@@ -6000,6 +6000,14 @@ export default {
     storageLocationNone: 'No location set',
     lowStockThresholdOverride: 'Low-stock threshold (this spool)',
     lowStockThresholdOverrideHelp: 'Leave blank to use the global threshold ({{global}}%).',
+    // Optional nozzle temperature range, filled in from the slicer preset (#3769)
+    nozzleTemp: 'Nozzle temperature',
+    nozzleTempMin: 'Min',
+    nozzleTempMax: 'Max',
+    nozzleTempFromPreset: 'from preset',
+    nozzleTempHelp: 'Optional. Printed on labels and sent to the printer when the spool is assigned to an AMS slot.',
+    nozzleTempIncomplete: 'Enter both the minimum and the maximum, or leave both empty.',
+    nozzleTempInvalid: 'Enter whole degrees from 1 to 500, with the minimum not above the maximum.',
     // Internal material / article number (#2870)
     materialNumber: 'Material No.',
     materialNumberPlaceholder: 'e.g. 15',

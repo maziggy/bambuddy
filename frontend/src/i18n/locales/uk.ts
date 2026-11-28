@@ -5994,6 +5994,13 @@ export default {
     storageLocationNone: "Місцезнаходження не встановлено",
     lowStockThresholdOverride: "Поріг низького запасу (ця котушка)",
     lowStockThresholdOverrideHelp: "Залиште поле порожнім, щоб використовувати глобальне порогове значення ({{global}}%).",
+    nozzleTemp: "Температура сопла",
+    nozzleTempMin: "Мін.",
+    nozzleTempMax: "Макс.",
+    nozzleTempFromPreset: "з пресету",
+    nozzleTempHelp: "Необов'язково. Друкується на етикетках і надсилається на принтер, коли котушку призначають у слот AMS.",
+    nozzleTempIncomplete: "Вкажіть і мінімум, і максимум або залиште обидва поля порожніми.",
+    nozzleTempInvalid: "Вкажіть цілі градуси від 1 до 500; мінімум не повинен перевищувати максимум.",
     // Internal material / article number (#2870)
     materialNumber: 'Мат. №',
     materialNumberPlaceholder: 'напр. 15',

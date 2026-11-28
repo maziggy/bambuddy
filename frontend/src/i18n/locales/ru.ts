@@ -5735,6 +5735,13 @@ export default {
     storageLocationNone: "Место не указано",
     lowStockThresholdOverride: "Порог малого остатка (эта катушка)",
     lowStockThresholdOverrideHelp: "Оставьте пустым, чтобы использовать общий порог ({{global}}%).",
+    nozzleTemp: "Температура сопла",
+    nozzleTempMin: "Мин.",
+    nozzleTempMax: "Макс.",
+    nozzleTempFromPreset: "из пресета",
+    nozzleTempHelp: "Необязательно. Печатается на этикетках и отправляется на принтер при назначении катушки в слот AMS.",
+    nozzleTempIncomplete: "Укажите и минимум, и максимум или оставьте оба поля пустыми.",
+    nozzleTempInvalid: "Укажите целые градусы от 1 до 500; минимум не должен превышать максимум.",
     // Internal material / article number (#2870)
     materialNumber: 'Артикул',
     materialNumberPlaceholder: 'напр. 15',

@@ -5958,6 +5958,13 @@ export default {
     storageLocationNone: '保管場所未設定',
     lowStockThresholdOverride: '在庫低下のしきい値（このスプール）',
     lowStockThresholdOverrideHelp: '空欄の場合、グローバル設定（{{global}}%）を使用します。',
+    nozzleTemp: 'ノズル温度',
+    nozzleTempMin: '最小',
+    nozzleTempMax: '最大',
+    nozzleTempFromPreset: 'プリセットから',
+    nozzleTempHelp: '任意。ラベルに印刷され、スプールをAMSスロットに割り当てるとプリンターに送信されます。',
+    nozzleTempIncomplete: '最小値と最大値の両方を入力するか、両方を空欄にしてください。',
+    nozzleTempInvalid: '1〜500の整数で入力してください。最小値は最大値以下にする必要があります。',
     // Internal material / article number (#2870)
     materialNumber: '資材番号',
     materialNumberPlaceholder: '例：15',

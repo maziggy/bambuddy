@@ -5998,6 +5998,13 @@ export default {
     storageLocationNone: 'Geen locatie ingesteld',
     lowStockThresholdOverride: 'Drempel lage voorraad (deze spoel)',
     lowStockThresholdOverrideHelp: 'Laat leeg om de globale drempel ({{global}}%) te gebruiken.',
+    nozzleTemp: 'Nozzletemperatuur',
+    nozzleTempMin: 'Min.',
+    nozzleTempMax: 'Max.',
+    nozzleTempFromPreset: 'uit preset',
+    nozzleTempHelp: 'Optioneel. Wordt op labels gedrukt en naar de printer gestuurd wanneer de spoel aan een AMS-slot wordt toegewezen.',
+    nozzleTempIncomplete: 'Vul zowel het minimum als het maximum in, of laat beide leeg.',
+    nozzleTempInvalid: 'Vul hele graden in van 1 tot 500, waarbij het minimum niet hoger is dan het maximum.',
     // Internal material / article number (#2870)
     materialNumber: 'Materiaalnr.',
     materialNumberPlaceholder: 'bijv. 15',

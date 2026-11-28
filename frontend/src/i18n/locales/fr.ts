@@ -5946,6 +5946,13 @@ export default {
     storageLocationNone: 'Aucun emplacement défini',
     lowStockThresholdOverride: 'Seuil bas (cette bobine)',
     lowStockThresholdOverrideHelp: 'Laisser vide pour utiliser le seuil global ({{global}} %).',
+    nozzleTemp: 'Température de la buse',
+    nozzleTempMin: 'Min.',
+    nozzleTempMax: 'Max.',
+    nozzleTempFromPreset: 'du preset',
+    nozzleTempHelp: 'Facultatif. Imprimée sur les étiquettes et envoyée à l\'imprimante lorsque la bobine est affectée à un emplacement AMS.',
+    nozzleTempIncomplete: 'Saisissez le minimum et le maximum, ou laissez les deux champs vides.',
+    nozzleTempInvalid: 'Saisissez des degrés entiers de 1 à 500, le minimum ne devant pas dépasser le maximum.',
     // Internal material / article number (#2870)
     materialNumber: 'N° matière',
     materialNumberPlaceholder: 'ex. 15',

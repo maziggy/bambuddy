@@ -6000,6 +6000,13 @@ export default {
     storageLocationNone: 'Brak lokalizacji',
     lowStockThresholdOverride: 'Próg niskiego stanu (ta szpula)',
     lowStockThresholdOverrideHelp: 'Pozostaw puste, aby użyć progu globalnego ({{global}}%).',
+    nozzleTemp: 'Temperatura dyszy',
+    nozzleTempMin: 'Min.',
+    nozzleTempMax: 'Maks.',
+    nozzleTempFromPreset: 'z profilu',
+    nozzleTempHelp: 'Opcjonalne. Drukowana na etykietach i wysyłana do drukarki po przypisaniu szpuli do slotu AMS.',
+    nozzleTempIncomplete: 'Podaj minimum i maksimum albo zostaw oba pola puste.',
+    nozzleTempInvalid: 'Podaj pełne stopnie od 1 do 500; minimum nie może być wyższe niż maksimum.',
     // Internal material / article number (#2870)
     materialNumber: 'Nr materiału',
     materialNumberPlaceholder: 'np. 15',

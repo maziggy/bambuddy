@@ -4659,6 +4659,13 @@ export interface SpoolFilamentPresetInput {
   slicer_filament_name: string | null;
 }
 
+// The nozzle range a spool's slicer preset carries (#3769).
+export interface PresetNozzleRange {
+  nozzle_temp_min: number | null;
+  nozzle_temp_max: number | null;
+  source: 'local' | 'cloud' | 'system' | null;
+}
+
 export interface SpoolFilamentPreset extends SpoolFilamentPresetInput {
   id: number;
   spool_id: number;
@@ -7859,6 +7866,13 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(presets),
     }),
+  /**
+   * The nozzle temperature range the slicer preset `slicerFilament` names carries (#3769),
+   * resolved for the signed-in user. All fields are null when the preset is unknown, has no
+   * range or cannot be looked up; nothing is stored.
+   */
+  getPresetNozzleRange: (slicerFilament: string) =>
+    request<PresetNozzleRange>(`/inventory/preset-nozzle-range?${new URLSearchParams({ slicer_filament: slicerFilament })}`),
   getProfileDefaults: () => request<ProfileDefault[]>('/inventory/profile-defaults'),
   resolveProfileDefault: (key: ProfileDefaultKey) => {
     const params = new URLSearchParams({

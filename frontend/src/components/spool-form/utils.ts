@@ -4,7 +4,7 @@ import { installedNozzleDiameters } from '../../utils/amsHelpers';
 import { filamentIdToSettingId, settingIdToFilamentId } from '../../utils/filamentIds';
 import { parseCompatiblePrinters } from '../../utils/slicerPrinterMatch';
 import type { CatalogColorOrder } from './catalogColors';
-import type { CalibrationProfile, ColorPreset, FilamentOption } from './types';
+import type { CalibrationProfile, ColorPreset, FilamentOption, NozzleTemps } from './types';
 import { KNOWN_VARIANTS, DEFAULT_BRANDS, RECENT_COLORS_KEY, LAST_SPOOL_KEY, LAST_SPOOL_SPOOLMAN_KEY, CATALOG_COLOR_ORDER_KEY, MAX_RECENT_COLORS, STANDARD_NOZZLE_DIAMETERS } from './constants';
 
 /**
@@ -745,4 +745,55 @@ export function saveCatalogColorOrder(order: CatalogColorOrder): void {
   } catch {
     // Ignore errors
   }
+}
+
+// Nozzle temperature range (#3769) ---------------------------------------------
+
+// What a nozzle can be set to, with room above the hottest filaments (PEEK, PEI).
+const NOZZLE_TEMP_MAX_C = 500;
+
+export interface ReadNozzleTemps {
+  min: number | null;
+  max: number | null;
+  // An i18n key under `inventory.`, or null when the range can be saved.
+  error: 'nozzleTempIncomplete' | 'nozzleTempInvalid' | null;
+}
+
+/**
+ * The range as numbers, or why it cannot be saved. Both empty is no range; one
+ * alone is not a range, and neither is a pair that does not ascend.
+ */
+export function readNozzleTemps(temps: NozzleTemps): ReadNozzleTemps {
+  const rawMin = temps.min.trim();
+  const rawMax = temps.max.trim();
+  if (!rawMin && !rawMax) return { min: null, max: null, error: null };
+  if (!rawMin || !rawMax) return { min: null, max: null, error: 'nozzleTempIncomplete' };
+  const min = Number(rawMin);
+  const max = Number(rawMax);
+  const whole = (n: number) => Number.isInteger(n) && n > 0 && n <= NOZZLE_TEMP_MAX_C;
+  if (!whole(min) || !whole(max) || min > max) return { min: null, max: null, error: 'nozzleTempInvalid' };
+  return { min, max, error: null };
+}
+
+/**
+ * The nozzle range a save carries. A range the user typed, or filled in by
+ * picking a preset, is sent (empty included: it clears the stored one). Without
+ * that an edit sends nothing, so it keeps what a tag, the API or an import set
+ * (#3768); a copy takes the source spool's. Spoolman keeps the range on the
+ * filament and has no field for it here.
+ */
+export function nozzleTempsPayload(
+  temps: NozzleTemps,
+  { isCopying, spoolmanMode }: { isCopying: boolean; spoolmanMode: boolean },
+): { nozzle_temp_min?: number | null; nozzle_temp_max?: number | null } {
+  if (spoolmanMode) return {};
+  if (temps.source === 'own') {
+    // Handed on exactly as stored, whatever it holds: the user did not enter it.
+    if (!isCopying) return {};
+    const stored = (raw: string) => (raw.trim() ? Number(raw) : null);
+    return { nozzle_temp_min: stored(temps.min), nozzle_temp_max: stored(temps.max) };
+  }
+  if (temps.source === 'none') return {};
+  const { min, max } = readNozzleTemps(temps);
+  return { nozzle_temp_min: min, nozzle_temp_max: max };
 }

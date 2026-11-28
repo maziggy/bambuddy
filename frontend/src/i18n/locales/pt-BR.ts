@@ -5945,6 +5945,13 @@ export default {
     storageLocationNone: 'Sem local definido',
     lowStockThresholdOverride: 'Limite de estoque baixo (este carretel)',
     lowStockThresholdOverrideHelp: 'Deixe em branco para usar o limite global ({{global}}%).',
+    nozzleTemp: 'Temperatura do bico',
+    nozzleTempMin: 'Mín.',
+    nozzleTempMax: 'Máx.',
+    nozzleTempFromPreset: 'do predefinido',
+    nozzleTempHelp: 'Opcional. Impressa nas etiquetas e enviada à impressora quando o carretel é atribuído a um slot do AMS.',
+    nozzleTempIncomplete: 'Informe o mínimo e o máximo, ou deixe ambos em branco.',
+    nozzleTempInvalid: 'Informe graus inteiros de 1 a 500, com o mínimo não superior ao máximo.',
     // Internal material / article number (#2870)
     materialNumber: 'Nº do Material',
     materialNumberPlaceholder: 'ex. 15',

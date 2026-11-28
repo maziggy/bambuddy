@@ -5744,6 +5744,13 @@ export default {
     categoryNone: '미분류',
     lowStockThresholdOverride: '재고 부족 임계값 (이 스풀)',
     lowStockThresholdOverrideHelp: '전역 임계값({{global}}%)을 사용하려면 비워두세요.',
+    nozzleTemp: '노즐 온도',
+    nozzleTempMin: '최소',
+    nozzleTempMax: '최대',
+    nozzleTempFromPreset: '프리셋에서',
+    nozzleTempHelp: '선택 사항입니다. 라벨에 인쇄되며, 스풀을 AMS 슬롯에 지정할 때 프린터로 전송됩니다.',
+    nozzleTempIncomplete: '최소값과 최대값을 모두 입력하거나 둘 다 비워 두세요.',
+    nozzleTempInvalid: '1~500 사이의 정수를 입력하세요. 최소값은 최대값보다 클 수 없습니다.',
     // Internal material / article number (#2870)
     materialNumber: '자재 번호',
     materialNumberPlaceholder: '예: 15',

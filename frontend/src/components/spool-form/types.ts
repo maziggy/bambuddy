@@ -79,6 +79,25 @@ export const defaultFormData: SpoolFormData = {
   spoolman_filament_id: null,
 };
 
+// The optional nozzle temperature range of a spool (#3769). Kept apart from
+// SpoolFormData: what it holds matters less than where it came from, because
+// only a range the user typed or picked a preset for is sent on save. One the
+// dialog merely loaded from the spool is left out of an edit (#3768).
+//   none   -- empty, nothing to send
+//   own    -- loaded from the spool being edited or copied
+//   typed  -- the user changed it
+//   preset -- filled in from the chosen slicer preset ("from preset")
+export type NozzleTempSource = 'none' | 'own' | 'typed' | 'preset';
+
+export interface NozzleTemps {
+  // Input text, so a half-typed number is not rounded away.
+  min: string;
+  max: string;
+  source: NozzleTempSource;
+}
+
+export const emptyNozzleTemps: NozzleTemps = { min: '', max: '', source: 'none' };
+
 // Printer with calibrations type
 export interface PrinterWithCalibrations {
   printer: Printer & { connected?: boolean };
@@ -201,6 +220,12 @@ export interface FilamentSectionProps extends SectionProps {
   quantity: number;
   onQuantityChange: (value: number) => void;
   errors?: Partial<Record<keyof SpoolFormData, string>>;
+  // Optional nozzle temperature range (#3769). Left out in Spoolman mode, where
+  // the range is a single temperature on the filament.
+  nozzleTemps?: NozzleTemps;
+  onNozzleTempsChange?: (min: string, max: string) => void;
+  // Why the range cannot be saved (see readNozzleTemps); shown under the field.
+  nozzleTempsError?: 'nozzleTempIncomplete' | 'nozzleTempInvalid' | null;
 }
 
 // Color section props

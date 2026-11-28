@@ -43,6 +43,9 @@ export function FilamentSection({
   quantity,
   onQuantityChange,
   errors,
+  nozzleTemps,
+  onNozzleTempsChange,
+  nozzleTempsError,
 }: FilamentSectionProps) {
   const { t } = useTranslation();
   const [presetDropdownOpen, setPresetDropdownOpen] = useState(false);
@@ -557,6 +560,66 @@ export function FilamentSection({
           <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-bambu-gray">g</span>
         </div>
       </div>
+
+      {/* Nozzle temperature range (#3769). Optional; filled in from the chosen
+          preset ("from preset") and saved only once the user has typed in it or
+          picked that preset. Not offered in Quick Add, which has no preset, nor
+          in Spoolman mode, where the temperature is one value on the filament
+          that this dialog does not edit (the modal passes no range there). */}
+      {!quickAdd && nozzleTemps && onNozzleTempsChange && (
+        <div>
+          <label className="block text-sm font-medium text-bambu-gray mb-1" htmlFor="spool-nozzle-temp-min">
+            <span className="flex items-center gap-2">
+              {t('inventory.nozzleTemp')}
+              {nozzleTemps.source === 'preset' && (
+                <span className="text-xs font-normal text-bambu-green">{t('inventory.nozzleTempFromPreset')}</span>
+              )}
+            </span>
+          </label>
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <input
+                id="spool-nozzle-temp-min"
+                type="number"
+                inputMode="numeric"
+                aria-label={t('inventory.nozzleTempMin')}
+                aria-invalid={!!nozzleTempsError}
+                className="w-full px-3 py-2 pr-8 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder:text-bambu-gray/50 focus:outline-none focus:border-bambu-green"
+                placeholder={t('inventory.nozzleTempMin')}
+                value={nozzleTemps.min}
+                min={1}
+                max={500}
+                step={1}
+                onChange={(e) => onNozzleTempsChange(e.target.value, nozzleTemps.max)}
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-bambu-gray pointer-events-none">°C</span>
+            </div>
+            <span className="text-bambu-gray" aria-hidden="true">–</span>
+            <div className="relative flex-1">
+              <input
+                id="spool-nozzle-temp-max"
+                type="number"
+                inputMode="numeric"
+                aria-label={t('inventory.nozzleTempMax')}
+                aria-invalid={!!nozzleTempsError}
+                className="w-full px-3 py-2 pr-8 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder:text-bambu-gray/50 focus:outline-none focus:border-bambu-green"
+                placeholder={t('inventory.nozzleTempMax')}
+                value={nozzleTemps.max}
+                min={1}
+                max={500}
+                step={1}
+                onChange={(e) => onNozzleTempsChange(nozzleTemps.min, e.target.value)}
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-bambu-gray pointer-events-none">°C</span>
+            </div>
+          </div>
+          {nozzleTempsError ? (
+            <p className="text-xs text-red-400 mt-1" role="alert">{nozzleTempsError === 'nozzleTempIncomplete' ? t('inventory.nozzleTempIncomplete') : t('inventory.nozzleTempInvalid')}</p>
+          ) : (
+            <p className="text-xs text-bambu-gray mt-1">{t('inventory.nozzleTempHelp')}</p>
+          )}
+        </div>
+      )}
 
       {/* Quantity — quick-add mode and copy mode */}
       {showQuantity && (

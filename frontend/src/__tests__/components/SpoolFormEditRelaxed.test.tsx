@@ -49,6 +49,7 @@ vi.mock('../../api/client', () => ({
     saveSpoolKProfiles: vi.fn().mockResolvedValue([]),
     saveSpoolmanKProfiles: vi.fn().mockResolvedValue([]),
     getSpoolFilamentPresets: vi.fn().mockResolvedValue([]),
+    getPresetNozzleRange: vi.fn().mockResolvedValue({ nozzle_temp_min: null, nozzle_temp_max: null, source: null }),
     // 3D Filament Profiles (#2981): the form loads the spool's link, and
     // its lookup section asks whether the user is connected.
     getThreedfpSpoolLink: vi.fn().mockResolvedValue({ filament_id: null }),

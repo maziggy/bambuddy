@@ -6030,6 +6030,13 @@ errors: {
     storageLocationNone: 'Ingen lagringsplats inställd',
     lowStockThresholdOverride: 'Lågt lagertröskelvärde (denna rulle)',
     lowStockThresholdOverrideHelp: 'Lämna tomt för att använda det globala tröskelvärdet ({{global}}%).',
+    nozzleTemp: 'Munstyckstemperatur',
+    nozzleTempMin: 'Min.',
+    nozzleTempMax: 'Max.',
+    nozzleTempFromPreset: 'från förinställning',
+    nozzleTempHelp: 'Valfritt. Skrivs ut på etiketter och skickas till skrivaren när spolen tilldelas en AMS-plats.',
+    nozzleTempIncomplete: 'Ange både minimum och maximum, eller lämna båda tomma.',
+    nozzleTempInvalid: 'Ange hela grader från 1 till 500, där minimum inte får vara högre än maximum.',
     // Internal material / article number (#2870)
     materialNumber: 'Materialnr',
     materialNumberPlaceholder: 't.ex. 15',

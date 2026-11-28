@@ -337,6 +337,9 @@ class AMSTray(BaseModel):
     # True for a non-RFID spool the firmware can't identify — the UI shows "?" rather
     # than "Empty" (#2527). None when the bitmask was unavailable (→ state-based fallback).
     exists: bool | None = None
+    # A rack AMS slot (AMS 3H, AMS 3P) whose filament is in its hotend; None on
+    # any other unit (#3737).
+    in_hotend: bool | None = None
 
 
 class AMSUnit(BaseModel):
@@ -385,6 +388,7 @@ class NozzleRackSlot(BaseModel):
     filament_id: str = ""  # Bambu filament ID
     filament_type: str = ""  # Material type (e.g. "PLA", "PETG")
     addr_id: int | None = None  # H3C: home rack position 0-8 (the mounted hotend reports id 0)
+    snow: int | None = None  # The slot whose filament it holds, (ams_id << 8) | slot (#3737)
 
 
 class AmsLabelBody(BaseModel):

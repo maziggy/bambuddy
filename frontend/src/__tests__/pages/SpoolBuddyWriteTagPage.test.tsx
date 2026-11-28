@@ -256,6 +256,87 @@ describe('SpoolBuddyWriteTagPage', () => {
     mockOutletContext.sbState.deviceOnline = false; // reset
   });
 
+  // #3503: a queued write that ends without a result says why.
+  async function startWrite(queued: Record<string, unknown> = { status: 'queued' }) {
+    vi.mocked(mockedApi.getSpools).mockResolvedValue([
+      { id: 99, material: 'PLA', label_weight: 1000, weight_used: 0, tag_uid: null, tray_uuid: null, archived_at: null, rgba: 'FF0000FF' } as never,
+    ]);
+    vi.mocked(mockedSpoolbuddyApi.getDevices).mockResolvedValue([
+      { device_id: 'sb-test', hostname: 'sb-test.local' } as never,
+    ]);
+    vi.mocked(mockedSpoolbuddyApi.writeTag).mockResolvedValueOnce(queued as never);
+    mockOutletContext.sbState.deviceOnline = true;
+    renderPage();
+    await waitFor(() => expect(screen.getByText('PLA')).toBeDefined());
+    fireEvent.click(screen.getByText('PLA'));
+    await waitFor(() => expect((screen.getByText('Write Tag') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByText('Write Tag'));
+    await waitFor(() => expect(screen.getByText('Writing tag...')).toBeDefined());
+  }
+
+  it.each([
+    ['expired', 'spoolbuddy.writeTag.writeExpired'],
+    ['replaced', 'spoolbuddy.writeTag.writeReplaced'],
+  ])('says why a write that %s ended (#3503)', async (reason, text) => {
+    await startWrite();
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent('spoolbuddy-tag-write-failed', {
+          detail: { type: 'spoolbuddy_tag_write_failed', spool_id: 99, reason, message: 'English text' },
+        }),
+      );
+    });
+
+    await waitFor(() => expect(screen.getByText(text)).toBeDefined());
+    expect(screen.queryByText('Writing tag...')).toBeNull();
+    mockOutletContext.sbState.deviceOnline = false; // reset
+  });
+
+  it('gives up on a write the device never answers, and cancels it (#3503)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await startWrite({ status: 'queued', expires_in: 60 });
+      vi.mocked(mockedSpoolbuddyApi.cancelWrite).mockClear();
+
+      act(() => {
+        vi.advanceTimersByTime(74_000);
+      });
+      expect(screen.getByText('Writing tag...')).toBeDefined();
+      expect(mockedSpoolbuddyApi.cancelWrite).not.toHaveBeenCalled();
+
+      act(() => {
+        vi.advanceTimersByTime(1_000);
+      });
+      await waitFor(() => expect(screen.getByText('spoolbuddy.writeTag.writeExpired')).toBeDefined());
+      expect(mockedSpoolbuddyApi.cancelWrite).toHaveBeenCalledWith('sb-test');
+    } finally {
+      vi.useRealTimers();
+      mockOutletContext.sbState.deviceOnline = false; // reset
+    }
+  });
+
+  it('does not give up on a write that already ended (#3503)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await startWrite({ status: 'queued', expires_in: 60 });
+      act(() => {
+        window.dispatchEvent(
+          new CustomEvent('spoolbuddy-tag-written', { detail: { type: 'spoolbuddy_tag_written', spool_id: 99 } }),
+        );
+      });
+      await waitFor(() => expect(screen.getByText('Tag written successfully!')).toBeDefined());
+      vi.mocked(mockedSpoolbuddyApi.cancelWrite).mockClear();
+
+      act(() => {
+        vi.advanceTimersByTime(80_000);
+      });
+      expect(mockedSpoolbuddyApi.cancelWrite).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      mockOutletContext.sbState.deviceOnline = false; // reset
+    }
+  });
+
   it('says Spoolman is unavailable when the server refuses the write for that reason', async () => {
     const spool = {
       id: 99,

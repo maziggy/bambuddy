@@ -1893,13 +1893,19 @@ async def _track_from_3mf(
             except Exception:
                 pass  # Fall back to linear splitting
 
-            from backend.app.utils.tray_split import compute_tray_split_grams
+            from backend.app.utils.tray_split import compute_tray_split_grams, whole_print_gcode_grams
 
             # The split prices segments in the G-code's grams and gives the last
             # the rest, so it is run on the G-code's total and scaled to the
             # slicer's after (#3317); a slicer total would leave the backup
-            # spool short, or with nothing.
-            split_total = layer_gcode_grams.get(slot_id) or total_weight
+            # spool short, or with nothing. A finished print takes the G-code's
+            # total over the whole print (#3322).
+            split_total = layer_gcode_grams.get(slot_id)
+            if not split_total and status == "completed":
+                split_total = whole_print_gcode_grams(
+                    split_layer_usage, slot_id, split_props.get("density", 1.24), split_props.get("diameter", 1.75)
+                )
+            split_total = split_total or total_weight
             # Without per-layer G-code the split is linear over ``total_layers``.
             # A print that didn't finish has grams for the layers printed only,
             # so it is split up to the layer it stopped at -- the same layer

@@ -1526,8 +1526,13 @@ export function SpoolFormModal({
         : { core_weight: formData.core_weight, core_weight_catalog_id: formData.core_weight_catalog_id }),
       slicer_filament: formData.slicer_filament || null,
       slicer_filament_name: presetName,
-      nozzle_temp_min: null,
-      nozzle_temp_max: null,
+      // The dialog has no field for the nozzle range, and an update sending
+      // null wiped the one a tag, the API or an import had set (#3768). An
+      // edit leaves it out and keeps it; a copy takes the source spool's.
+      // Spoolman keeps it on the filament, which a copy shares anyway.
+      ...(isCopying && spool && !spoolmanMode
+        ? { nozzle_temp_min: spool.nozzle_temp_min, nozzle_temp_max: spool.nozzle_temp_max }
+        : {}),
       note: formData.note || null,
       cost_per_kg: formData.cost_per_kg,
       category: formData.category.trim() || null,

@@ -6209,6 +6209,18 @@ async def _run_migrations(conn):
         "ALTER TABLE spool_assignment ADD COLUMN assigned_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL",
     )
 
+    # Migration: a Spoolman slot whose configuration did not reach the printer
+    # (#3771), and who assigned it, whose cloud sign-in resolves the preset
+    # when it is sent later. False and NULL keep every existing row as it was.
+    await _safe_execute(
+        conn, "ALTER TABLE spoolman_slot_assignments ADD COLUMN pending_config BOOLEAN DEFAULT FALSE NOT NULL"
+    )
+    await _safe_execute(
+        conn,
+        "ALTER TABLE spoolman_slot_assignments ADD COLUMN assigned_by_user_id INTEGER "
+        "REFERENCES users(id) ON DELETE SET NULL",
+    )
+
     # Migration: what a smart plug's temperature-based auto-off waits for
     # (#3464), and the bed's own threshold. NOT NULL with the model's server
     # defaults, identical DDL on SQLite and Postgres; existing plugs keep

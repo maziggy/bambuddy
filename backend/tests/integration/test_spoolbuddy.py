@@ -1,5 +1,6 @@
 """Integration tests for SpoolBuddy API endpoints."""
 
+import json
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -930,9 +931,12 @@ class TestWriteTagEndpoints:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_write_result_success_links_tag(self, async_client: AsyncClient, device_factory, spool_factory):
+    async def test_write_result_success_links_tag(
+        self, async_client: AsyncClient, db_session: AsyncSession, device_factory, spool_factory
+    ):
         device = await device_factory(device_id="sb-wr", pending_command="write_tag")
         spool = await spool_factory(material="PLA", tag_uid=None)
+        await self._queue(db_session, device, spool.id)
 
         with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
             mock_ws.broadcast = AsyncMock()
@@ -960,6 +964,15 @@ class TestWriteTagEndpoints:
         assert spool_data["data_origin"] == "opentag3d"
         assert spool_data["encode_time"] is not None
 
+    @staticmethod
+    async def _queue(db_session: AsyncSession, device, spool_id: int):
+        """Queue a write for ``spool_id``: only its result links a tag (#3503)."""
+        device.pending_command = "write_tag"
+        device.pending_write_payload = json.dumps(
+            {"spool_id": spool_id, "data_origin": "local", "queued_at": datetime.now(timezone.utc).isoformat()}
+        )
+        await db_session.commit()
+
     async def _write_result(self, async_client: AsyncClient, device_id: str, spool_id: int, tag_uid: str):
         with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
             mock_ws.broadcast = AsyncMock()
@@ -979,6 +992,7 @@ class TestWriteTagEndpoints:
         device = await device_factory(device_id="sb-move", pending_command="write_tag")
         spool_a = await spool_factory(tag_uid="04AABB11223344", tag_type="ntag")
         spool_b = await spool_factory(tag_uid=None)
+        await self._queue(db_session, device, spool_b.id)
 
         # The daemon reports the UID in any case; the stored one is upper case.
         await self._write_result(async_client, device.device_id, spool_b.id, "04aabb11223344")
@@ -1000,6 +1014,7 @@ class TestWriteTagEndpoints:
         device = await device_factory(device_id="sb-move-arch", pending_command="write_tag")
         archived = await spool_factory(tag_uid="04AABB11223355", archived_at=datetime.now(timezone.utc))
         spool = await spool_factory(tag_uid=None)
+        await self._queue(db_session, device, spool.id)
 
         await self._write_result(async_client, device.device_id, spool.id, "04AABB11223355")
 
@@ -1013,6 +1028,7 @@ class TestWriteTagEndpoints:
     ):
         device = await device_factory(device_id="sb-rewrite", pending_command="write_tag")
         spool = await spool_factory(tag_uid="04AABB11223366", tag_type="ntag")
+        await self._queue(db_session, device, spool.id)
 
         with caplog.at_level("INFO", logger="backend.app.api.routes.spoolbuddy"):
             await self._write_result(async_client, device.device_id, spool.id, "04AABB11223366")
@@ -1025,10 +1041,11 @@ class TestWriteTagEndpoints:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_write_result_failure_broadcasts_error(
-        self, async_client: AsyncClient, device_factory, spool_factory
+        self, async_client: AsyncClient, db_session: AsyncSession, device_factory, spool_factory
     ):
         device = await device_factory(device_id="sb-wr-fail", pending_command="write_tag")
         spool = await spool_factory(material="PLA", tag_uid=None)
+        await self._queue(db_session, device, spool.id)
 
         with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
             mock_ws.broadcast = AsyncMock()
@@ -2681,10 +2698,10 @@ class TestNfcWriteResultInputValidation:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_malformed_pending_payload_falls_back_to_local(
+    async def test_malformed_pending_payload_links_nothing(
         self, async_client: AsyncClient, device_factory, spool_factory, db_session
     ):
-        """Corrupted pending_write_payload JSON falls back to local mode gracefully."""
+        """Corrupted pending_write_payload JSON names no write, so nothing is linked (#3503)."""
         spool = await spool_factory()
         await device_factory(
             device_id="sb-corrupt-json",
@@ -2706,9 +2723,9 @@ class TestNfcWriteResultInputValidation:
 
         # Must return 200, not 500
         assert resp.status_code == 200
-        # Falls back to local mode — tag written to DB
+        assert resp.json()["status"] == "ignored"
         await db_session.refresh(spool)
-        assert spool.tag_uid == "DEADBEEF12345678"
+        assert spool.tag_uid is None
 
 
 # ============================================================================
@@ -2903,3 +2920,165 @@ class TestSpoolmanClientOrNoneGraceful:
         assert resp.status_code == 200
         data = resp.json()
         assert data["matched"] is False
+
+
+class TestWriteTagLifecycle3503:
+    """A queued write ends when cancelled, replaced or after WRITE_TAG_TTL, and
+    only the result of the write still queued links a tag (#3503)."""
+
+    @staticmethod
+    async def _queue(db_session: AsyncSession, device, spool_id: int, age_s: float = 0, queued_at: bool = True):
+        payload = {"spool_id": spool_id, "data_origin": "local", "ndef_data_hex": "E110"}
+        if queued_at:
+            payload["queued_at"] = (datetime.now(timezone.utc) - timedelta(seconds=age_s)).isoformat()
+        device.pending_command = "write_tag"
+        device.pending_write_payload = json.dumps(payload)
+        await db_session.commit()
+
+    @staticmethod
+    async def _post(async_client: AsyncClient, url: str, **kwargs):
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            resp = await async_client.post(url, **kwargs)
+        failed = [
+            c.args[0] for c in mock_ws.broadcast.await_args_list if c.args[0]["type"] == "spoolbuddy_tag_write_failed"
+        ]
+        return resp, failed
+
+    async def _result(self, async_client: AsyncClient, device_id: str, spool_id: int):
+        return await self._post(
+            async_client,
+            f"{API}/nfc/write-result",
+            json={"device_id": device_id, "spool_id": spool_id, "tag_uid": "04AABB11223377", "success": True},
+        )
+
+    async def _heartbeat(self, async_client: AsyncClient, device_id: str):
+        return await self._post(
+            async_client,
+            f"{API}/devices/{device_id}/heartbeat",
+            json={"nfc_ok": True, "scale_ok": True, "uptime_s": 10},
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_the_result_of_a_cancelled_write_links_nothing(
+        self, async_client: AsyncClient, db_session: AsyncSession, device_factory, spool_factory
+    ):
+        device = await device_factory(device_id="sb-3503-cancel")
+        spool = await spool_factory(tag_uid=None)
+        await self._queue(db_session, device, spool.id)
+        await async_client.post(f"{API}/devices/{device.device_id}/cancel-write", json={})
+
+        resp, failed = await self._result(async_client, device.device_id, spool.id)
+
+        assert resp.json() == {"status": "ignored", "linked": False}
+        await db_session.refresh(spool)
+        assert spool.tag_uid is None
+        assert failed == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_the_result_for_another_spool_leaves_the_queued_write(
+        self, async_client: AsyncClient, db_session: AsyncSession, device_factory, spool_factory
+    ):
+        device = await device_factory(device_id="sb-3503-other")
+        old = await spool_factory(tag_uid=None)
+        queued = await spool_factory(tag_uid=None)
+        await self._queue(db_session, device, queued.id)
+
+        resp, _ = await self._result(async_client, device.device_id, old.id)
+
+        assert resp.json()["status"] == "ignored"
+        await db_session.refresh(old)
+        await db_session.refresh(device)
+        assert old.tag_uid is None
+        assert device.pending_command == "write_tag"
+        assert json.loads(device.pending_write_payload)["spool_id"] == queued.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_queued_write_carries_its_time_and_expiry(
+        self, async_client: AsyncClient, db_session: AsyncSession, device_factory, spool_factory
+    ):
+        device = await device_factory(device_id="sb-3503-queue")
+        spool = await spool_factory(tag_uid=None)
+
+        resp = await async_client.post(
+            f"{API}/nfc/write-tag", json={"device_id": device.device_id, "spool_id": spool.id}
+        )
+
+        assert resp.json()["expires_in"] == 60
+        await db_session.refresh(device)
+        queued_at = datetime.fromisoformat(json.loads(device.pending_write_payload)["queued_at"])
+        assert abs((datetime.now(timezone.utc) - queued_at).total_seconds()) < 10
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_write_within_its_time_reaches_the_device(
+        self, async_client: AsyncClient, db_session: AsyncSession, device_factory, spool_factory
+    ):
+        device = await device_factory(device_id="sb-3503-fresh")
+        spool = await spool_factory(tag_uid=None)
+        await self._queue(db_session, device, spool.id, age_s=50)
+
+        resp, failed = await self._heartbeat(async_client, device.device_id)
+
+        assert resp.json()["pending_command"] == "write_tag"
+        assert failed == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(("age_s", "queued_at"), [(61, True), (0, False)], ids=["too-old", "no-time"])
+    async def test_an_expired_write_ends_at_the_heartbeat(
+        self, async_client: AsyncClient, db_session: AsyncSession, device_factory, spool_factory, age_s, queued_at
+    ):
+        device = await device_factory(device_id=f"sb-3503-exp-{age_s}")
+        spool = await spool_factory(tag_uid=None)
+        await self._queue(db_session, device, spool.id, age_s=age_s, queued_at=queued_at)
+
+        resp, failed = await self._heartbeat(async_client, device.device_id)
+
+        assert resp.json()["pending_command"] is None
+        assert resp.json()["pending_write_payload"] is None
+        await db_session.refresh(device)
+        assert (device.pending_command, device.pending_write_payload) == (None, None)
+        assert [(f["spool_id"], f["reason"]) for f in failed] == [(spool.id, "expired")]
+        # Its late result links nothing.
+        result, _ = await self._result(async_client, device.device_id, spool.id)
+        assert result.json()["status"] == "ignored"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        ("path", "body", "command"),
+        [
+            ("/devices/{id}/calibration/tare", {}, "tare"),
+            ("/devices/{id}/system/config", {"backend_url": "http://bambuddy.local:8000"}, "apply_system_config"),
+            ("/devices/{id}/system/command", {"command": "reboot"}, "reboot"),
+            ("/diagnostics/{id}/run?diagnostic=scale", {}, "run_scale_diag"),
+        ],
+        ids=["tare", "config", "system", "diagnostic"],
+    )
+    async def test_another_command_replaces_the_write_and_says_so(
+        self, async_client: AsyncClient, db_session: AsyncSession, device_factory, spool_factory, path, body, command
+    ):
+        device = await device_factory(device_id=f"sb-3503-{command}")
+        spool = await spool_factory(tag_uid=None)
+        await self._queue(db_session, device, spool.id)
+
+        resp, failed = await self._post(async_client, API + path.format(id=device.device_id), json=body)
+
+        assert resp.status_code == 200, resp.text
+        await db_session.refresh(device)
+        assert device.pending_command == command
+        assert device.pending_write_payload is None
+        assert [(f["spool_id"], f["reason"]) for f in failed] == [(spool.id, "replaced")]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_command_without_a_queued_write_says_nothing(self, async_client: AsyncClient, device_factory):
+        device = await device_factory(device_id="sb-3503-none")
+
+        _, failed = await self._post(async_client, f"{API}/devices/{device.device_id}/calibration/tare", json={})
+
+        assert failed == []

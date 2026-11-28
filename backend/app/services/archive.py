@@ -212,6 +212,22 @@ def read_3dmodel_without_meshes(zf: zipfile.ZipFile, model_path: str = "3D/3dmod
 _GCODE_SCAN_BYTES = 64 * 1024
 
 
+def _header_total(label: str, header: str) -> float | None:
+    """The sum of a "; total filament <label> : a,b,..." header line, or
+    ``None`` when the line is missing."""
+    match = re.search(
+        r";\s*total\s+filament\s+" + label + r"[ \t]*:[ \t]*([\d.]+(?:[ \t]*,[ \t]*[\d.]+)*)",
+        header,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+    try:
+        return round(sum(float(value) for value in match.group(1).split(",")), 2)
+    except ValueError:
+        return None  # A malformed value ("1.2.3") is no total at all
+
+
 async def estimate_filament_cost(db: AsyncSession, grams: float | None, filament_type: str | None) -> float | None:
     """An archive's filament cost from its grams and type: the first type's
     cost per kg on record, else the default filament cost (25 when unset).
@@ -505,14 +521,16 @@ class ThreeMFParser:
             # a fallback — slice_info.config is more authoritative when present
             # — but it covers sliced outputs whose slice_info lacks per-filament
             # used_g, and it's the slicer's own figure regardless.
+            # A print with several filaments has one value per filament on
+            # the line ("18.40,18.33"); the print's total is their sum (#3764).
             if "filament_used_grams" not in self.metadata:
-                match = re.search(r";\s*total\s+filament\s+weight\s*\[g\]\s*:\s*([\d.]+)", header, re.IGNORECASE)
-                if match:
-                    self.metadata["filament_used_grams"] = float(match.group(1))
+                total = _header_total(r"weight\s*\[g\]", header)
+                if total is not None:
+                    self.metadata["filament_used_grams"] = total
             if "filament_used_mm" not in self.metadata:
-                match = re.search(r";\s*total\s+filament\s+length\s*\[mm\]\s*:\s*([\d.]+)", header, re.IGNORECASE)
-                if match:
-                    self.metadata["filament_used_mm"] = float(match.group(1))
+                total = _header_total(r"length\s*\[mm\]", header)
+                if total is not None:
+                    self.metadata["filament_used_mm"] = total
 
             # Look for printer_model in gcode header (fallback if not found in slice_info)
             # Format: "; printer_model = Bambu Lab X1 Carbon" or "; printer_model = X1C"

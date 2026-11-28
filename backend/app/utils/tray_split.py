@@ -24,6 +24,24 @@ from __future__ import annotations
 from backend.app.utils import threemf_tools
 
 
+def whole_print_gcode_grams(
+    layer_usage: dict[int, dict[int, float]] | None, slot_id: int, density: float, diameter: float
+) -> float:
+    """The G-code's grams of one slot over the whole print, 0 without per-layer data.
+
+    The split prices every segment but the last in the G-code's grams and
+    gives the last the rest, so a finished print is split on this total and
+    scaled to the slicer's grams after, as a stopped one is split on the
+    G-code's total up to its stop layer (#3317). Split on the slicer's grams,
+    an early segment the G-code prices higher leaves the spool loaded last
+    short, or with nothing (#3322).
+    """
+    if not layer_usage:
+        return 0.0
+    mm = threemf_tools.get_cumulative_usage_at_layer(layer_usage, max(layer_usage)).get(slot_id - 1, 0)
+    return threemf_tools.mm_to_grams(mm, diameter, density)
+
+
 def compute_tray_split_grams(
     tray_changes: list[tuple[int, int]],
     total_weight: float,
@@ -75,7 +93,9 @@ def compute_tray_split_grams(
         is_last = seg_idx + 1 >= n_segments
 
         if is_last:
-            segment_grams = total_weight - sum_previous
+            # Never below 0: an earlier segment priced above the total would
+            # otherwise give the spool loaded last negative grams (#3322).
+            segment_grams = max(0.0, total_weight - sum_previous)
         elif layer_usage:
             seg_end_layer = tray_changes[seg_idx + 1][1]
             mm_at_start = threemf_tools.get_cumulative_usage_at_layer(layer_usage, seg_start_layer).get(filament_id, 0)

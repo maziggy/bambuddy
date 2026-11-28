@@ -121,12 +121,14 @@ export function isAms3pUnit(unit: { id: number; ams_type?: number | null } | nul
   return !!unit && unitAmsType(unit.id, unit.ams_type) === AmsType.ZMULTI_B;
 }
 
-/** Tray state of an AMS 3H slot whose filament is in its hotend (26: held at the inlet, #3531). */
-export const AMS3H_TRAY_IN_HOTEND = 27;
-
-/** Whether any slot of an AMS 3H has its filament in its hotend, i.e. Unload all has work to do. */
-export function ams3hHasLoadedSlot(unit: { tray?: { state?: number | null }[] | null }): boolean {
-  return (unit.tray ?? []).some((tray) => tray.state === AMS3H_TRAY_IN_HOTEND);
+/**
+ * Whether any slot of a rack AMS (AMS 3H, AMS 3P) has its filament in its
+ * hotend, i.e. Unload all has work to do. The backend decides per slot
+ * (`in_hotend`): the AMS 3H from its tray state (#3531), the AMS 3P from its
+ * hotends, as it reports the same state for every slot (#3737).
+ */
+export function rackHasLoadedSlot(unit: { tray?: { in_hotend?: boolean | null }[] | null }): boolean {
+  return (unit.tray ?? []).some((tray) => tray.in_hotend === true);
 }
 
 /** How many slots a unit's card draws: a rack AMS's own (AMS 3H nine, AMS 3P seven), one for an AMS-HT, else four. */
@@ -379,6 +381,25 @@ export function colorDistance(
   const lab2 = hexToLab(color2);
   if (!lab1 || !lab2) return null;
   return ciede2000(lab1, lab2);
+}
+
+// Below a just-noticeable difference (CIEDE2000 ~1.0): no eye tells the two apart (#3763).
+const FORCED_COLOR_MAX_DELTA_E = 1.0;
+
+/**
+ * Whether two colours count as the same colour for a forced colour match (#3763):
+ * the same six hex digits, or a perceptual difference below a just-noticeable
+ * one. A catalog colour and a slicer preset's often differ by a shade of
+ * rounding (55B688 against 55B687). The twin of `forced_colors_match` in
+ * backend/app/utils/color_utils.py; not the looser `colorsAreSimilar`.
+ */
+export function forcedColorsMatch(color1: string | undefined, color2: string | undefined): boolean {
+  const a = (color1 ?? '').replace('#', '').toLowerCase().slice(0, 6);
+  const b = (color2 ?? '').replace('#', '').toLowerCase().slice(0, 6);
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const distance = colorDistance(a, b);
+  return distance !== null && distance < FORCED_COLOR_MAX_DELTA_E;
 }
 
 /**

@@ -229,8 +229,11 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
         remain_pct = int(remain_raw) if remain_raw is not None else 100
     except (TypeError, ValueError):
         remain_pct = 100
-    # Clamp to valid range: negative means unknown, >100 is invalid
-    if remain_pct < 0 or remain_pct > 100:
+    # Clamp to valid range: negative means unknown, >100 is invalid. 0 is also
+    # treated as unknown: the AMS reports remain=0 on insertion before it has
+    # measured the roll. The increase-only weight sync corrects it from the
+    # first real reading.
+    if remain_pct <= 0 or remain_pct > 100:
         remain_pct = 100  # Unknown → assume full
     weight_used = round(label_weight * (100 - remain_pct) / 100.0, 1)
 

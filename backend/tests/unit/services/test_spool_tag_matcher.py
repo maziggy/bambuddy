@@ -97,6 +97,14 @@ async def test_create_spool_from_tray_weight_from_remain(db_session):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("remain", [0, -1, 101])
+async def test_create_spool_from_tray_unknown_remain_assumes_full(db_session, remain):
+    """remain=0 (AMS not yet measured on insertion), negative or >100 means unknown -> full."""
+    spool = await create_spool_from_tray(db_session, {**SAMPLE_TRAY, "remain": remain})
+    assert spool.weight_used == 0.0
+
+
+@pytest.mark.asyncio
 async def test_create_spool_from_tray_inherits_material_number(db_session):
     """A scanned refill of an already-numbered product arrives costed (#2870).
 

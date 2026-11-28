@@ -569,6 +569,7 @@ export interface AMSTray {
   drying_time: number | null;      // RFID-recommended drying time (hours)
   state: number | null;            // AMS tray state: 9=empty, 10=spool present not loaded, 11=loaded
   exists?: boolean | null;         // Firmware tray_exist_bits: spool physically present (non-RFID → "?" not "Empty", #2527)
+  in_hotend?: boolean | null;      // Rack AMS (AMS 3H/3P): this slot's filament is in its hotend; null elsewhere (#3737)
 }
 
 export interface AMSUnit {
@@ -638,6 +639,7 @@ export interface NozzleRackSlot {
   filament_id: string;
   filament_type: string;  // Material type (e.g. "PLA", "PETG")
   addr_id?: number | null;  // H3C: home rack position 0-8 (the mounted hotend reports id 0)
+  snow?: number | null;  // The slot whose filament it holds, (ams_id << 8) | slot (#3737)
 }
 
 export interface PrintOptions {
@@ -4756,6 +4758,7 @@ export interface SpoolAssignment {
   spool?: InventorySpool | null;
   configured: boolean;
   pending_config?: boolean;  // Slot was empty at assign time; will configure on insert
+  printer_offline?: boolean;  // Printer not connected; the slot is configured once it is back (#3771)
   created_at: string;
   ams_label?: string | null;  // User-defined friendly name for the AMS unit
   printer_model?: string | null;  // names a rack printer's external inputs "Ext-n" (utils/trayIds)
@@ -8158,8 +8161,10 @@ export const api = {
       body: JSON.stringify({ weight_grams: weightGrams }),
     }),
   // move: as assignSpool's (#1574).
+  // The spool, plus whether its slot was configured; an offline printer's is
+  // configured once it is back (#3771).
   assignSpoolmanSlot: (data: { spoolman_spool_id: number; printer_id: number; ams_id: number; tray_id: number; move?: boolean }) =>
-    request<InventorySpool>('/spoolman/inventory/slot-assignments', {
+    request<InventorySpool & { configured?: boolean; pending_config?: boolean; printer_offline?: boolean }>('/spoolman/inventory/slot-assignments', {
       method: 'POST',
       body: JSON.stringify(data),
     }),

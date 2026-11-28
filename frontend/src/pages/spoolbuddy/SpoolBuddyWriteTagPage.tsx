@@ -1077,6 +1077,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
               suggestedMaterials={suggestedMaterials}
               quickAdd={quickAdd}
               detailsRequired={!quickAdd}
+              showQuantity={quickAdd}
               quantity={quantity}
               onQuantityChange={setQuantity}
               errors={errors}

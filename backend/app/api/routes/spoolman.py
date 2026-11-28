@@ -43,7 +43,7 @@ from backend.app.services.spoolman import (
     get_spoolman_client,
     init_spoolman_client,
 )
-from backend.app.services.spoolman_slot_sync import write_slot_results
+from backend.app.services.spoolman_slot_sync import UPSERT_SLOT_SQL, write_slot_results
 from backend.app.utils.filament_ids import (
     GENERIC_FILAMENT_IDS,
     filament_id_to_setting_id,
@@ -962,13 +962,7 @@ async def link_spool(
         p_id, a_id, t_id = printer_context
         try:
             await db.execute(
-                text(
-                    "INSERT INTO spoolman_slot_assignments"
-                    " (printer_id, ams_id, tray_id, spoolman_spool_id)"
-                    " VALUES (:printer_id, :ams_id, :tray_id, :spool_id)"
-                    " ON CONFLICT(printer_id, ams_id, tray_id)"
-                    " DO UPDATE SET spoolman_spool_id = excluded.spoolman_spool_id"
-                ),
+                text(UPSERT_SLOT_SQL),
                 {"printer_id": p_id, "ams_id": a_id, "tray_id": t_id, "spool_id": spool_id},
             )
             await spool_swaps.record_assignment(db, p_id, a_id, t_id, spool_id, spool_swaps.SPOOLMAN)
@@ -1418,13 +1412,7 @@ async def create_spool_from_slot(
     if sync_result.get("id"):
         try:
             await db.execute(
-                text(
-                    "INSERT INTO spoolman_slot_assignments"
-                    " (printer_id, ams_id, tray_id, spoolman_spool_id)"
-                    " VALUES (:printer_id, :ams_id, :tray_id, :spool_id)"
-                    " ON CONFLICT(printer_id, ams_id, tray_id)"
-                    " DO UPDATE SET spoolman_spool_id = excluded.spoolman_spool_id"
-                ),
+                text(UPSERT_SLOT_SQL),
                 {
                     "printer_id": req.printer_id,
                     "ams_id": req.ams_id,

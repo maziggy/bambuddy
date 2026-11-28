@@ -115,6 +115,33 @@ def rack_slot_count(ams_type: object) -> int:
     return RACK_SLOT_COUNTS.get(ams_type, 0) if isinstance(ams_type, int) else 0
 
 
+def is_rack_tray_id(tray_id: object) -> bool:
+    """Whether ``tray_id`` names a rack AMS slot: the AMS 3H's 28-36 or the AMS 3P's 37-43."""
+    return isinstance(tray_id, int) and (tray_id in _AMS3H_TRAY_IDS or tray_id in _AMS3P_TRAY_IDS)
+
+
+# Tray state of an AMS 3H slot whose filament is in its hotend (26: held at the inlet, #3531).
+RACK_TRAY_IN_HOTEND = 27
+
+
+def rack_slot_in_hotend(
+    ams_type: object, ams_id: int, slot: int, tray_state: object, nozzle_rack: Iterable[object] | None
+) -> bool | None:
+    """Whether rack AMS slot ``slot`` has its filament in its hotend; None for any other unit.
+
+    The AMS 3H says so in the tray's state (27). The AMS 3P reports state 27
+    for every slot, loaded, unloaded or without a hotend at all, so there the
+    hotend's own ``snow`` decides: ``(ams_id << 8) | slot`` while it holds that
+    slot's filament (#3737).
+    """
+    if ams_type == AmsType.ZMULTI_B:
+        loaded = (ams_id << 8) | slot
+        return any(isinstance(n, dict) and _as_int(n.get("snow")) == loaded for n in nozzle_rack or ())
+    if ams_type == AmsType.ZMULTI_A:
+        return _as_int(tray_state) == RACK_TRAY_IN_HOTEND
+    return None
+
+
 def is_ams_ht_id(ams_id: object) -> bool:
     """Whether ``ams_id`` is an AMS-HT unit (128-135, one tray each)."""
     return isinstance(ams_id, int) and not isinstance(ams_id, bool) and ams_id in AMS_HT_IDS

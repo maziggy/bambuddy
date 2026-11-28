@@ -27,6 +27,19 @@ logger = logging.getLogger(__name__)
 
 Slot = tuple[int, int, int]  # (printer_id, ams_id, tray_id)
 
+# Puts a spool in a slot, the row's own or a new one. Another spool ends a
+# configuration still pending for the one before (#3771); the same spool
+# written again keeps it. Shared by every writer but the assign route, which
+# sets the pending state itself.
+UPSERT_SLOT_SQL = (
+    "INSERT INTO spoolman_slot_assignments (printer_id, ams_id, tray_id, spoolman_spool_id)"
+    " VALUES (:printer_id, :ams_id, :tray_id, :spool_id)"
+    " ON CONFLICT(printer_id, ams_id, tray_id)"
+    " DO UPDATE SET spoolman_spool_id = excluded.spoolman_spool_id,"
+    " pending_config = CASE WHEN spoolman_slot_assignments.spoolman_spool_id = excluded.spoolman_spool_id"
+    " THEN spoolman_slot_assignments.pending_config ELSE FALSE END"
+)
+
 
 async def write_slot_results(
     db: AsyncSession,
@@ -70,7 +83,9 @@ async def write_slot_results(
             statement = (
                 update(SpoolmanSlotAssignment)
                 .where(*where, SpoolmanSlotAssignment.spoolman_spool_id == before)
-                .values(spoolman_spool_id=spool_id)
+                # Another spool in the slot ends a configuration still pending
+                # for the one before (#3771).
+                .values(spoolman_spool_id=spool_id, pending_config=False)
                 .execution_options(synchronize_session=False)
             )
         if cast(CursorResult, await db.execute(statement)).rowcount:
@@ -109,12 +124,7 @@ async def _write_unconditionally(
     assigned: list[Slot] = []
     for printer_id, ams_id, tray_id, spool_id in synced:
         await db.execute(
-            text(
-                "INSERT INTO spoolman_slot_assignments (printer_id, ams_id, tray_id, spoolman_spool_id)"
-                " VALUES (:printer_id, :ams_id, :tray_id, :spool_id)"
-                " ON CONFLICT(printer_id, ams_id, tray_id)"
-                " DO UPDATE SET spoolman_spool_id = excluded.spoolman_spool_id"
-            ).bindparams(printer_id=printer_id, ams_id=ams_id, tray_id=tray_id, spool_id=spool_id)
+            text(UPSERT_SLOT_SQL).bindparams(printer_id=printer_id, ams_id=ams_id, tray_id=tray_id, spool_id=spool_id)
         )
         assigned.append((printer_id, ams_id, tray_id))
         await spool_swaps.record_assignment(db, printer_id, ams_id, tray_id, spool_id, spool_swaps.SPOOLMAN)

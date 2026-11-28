@@ -40,6 +40,7 @@ from backend.app.utils.tray_ids import (
     legacy_tray_index,
     mapped_trays_with_slot,
     rack_slot_count,
+    rack_slot_in_hotend,
     reconcile_use_ams,
     reports_no_ams,
     tray_flag_bit,
@@ -271,8 +272,6 @@ AMS3H_MODULE_NAME = "n10a"  # its get_version module (no "/<unit>" suffix)
 # The get_version module of each rack AMS, as the printer names it without a
 # unit suffix: the AMS 3H's (verified) and the AMS 3P's (#3737).
 RACK_AMS_MODULE_NAMES = {AMS3H_MODULE_NAME: AmsType.ZMULTI_A, "n11a": AmsType.ZMULTI_B}
-# Tray state of an AMS 3H slot whose filament is in its hotend (26: held at the inlet).
-_RACK_TRAY_IN_HOTEND = 27
 
 
 def _mqtt_int(value: object) -> int | None:
@@ -433,6 +432,39 @@ def unit_reported_absent(ams_id, ams_list: list, ams_exist_bits) -> bool:
     if bits == 0 and not ams_list:
         return True
     return 0 <= unit <= 3 and not bits >> unit & 1
+
+
+def slot_presence_changes(
+    previous: dict[tuple[int, int], bool], merged_ams: list
+) -> tuple[dict[tuple[int, int], bool], list[tuple[int, int, bool]]]:
+    """Which AMS slots' presence bits flipped since the last push (#3756).
+
+    Reads the ``exists`` annotation ``apply_tray_exist_bits`` puts on each
+    tray, keyed by (ams_id, tray_id). Returns every slot's bit now, and
+    ``(ams_id, tray_id, present)`` for each slot whose bit differs from
+    ``previous``. A slot seen for the first time, or with no bit, is not a
+    change: there is nothing to compare it with. A push the printer sends
+    while shutting down leaves the bits as they were (see
+    ``apply_tray_exist_bits``), so it reports nothing.
+    """
+    current: dict[tuple[int, int], bool] = {}
+    for unit in merged_ams:
+        if not isinstance(unit, dict):
+            continue
+        for tray in unit.get("tray") or []:
+            if not isinstance(tray, dict) or not isinstance(tray.get("exists"), bool):
+                continue
+            try:
+                slot = (int(unit["id"]), int(tray["id"]))
+            except (KeyError, TypeError, ValueError):
+                continue
+            current[slot] = tray["exists"]
+    changes = [
+        (ams_id, tray_id, present)
+        for (ams_id, tray_id), present in current.items()
+        if (ams_id, tray_id) in previous and previous[(ams_id, tray_id)] != present
+    ]
+    return current, changes
 
 
 def apply_tray_exist_bits(
@@ -1597,6 +1629,7 @@ class BambuMQTTClient:
         on_assignment_verified: Callable[[int, int, bool, dict], None] | None = None,
         on_tray_change: Callable[[int, int], None] | None = None,
         on_fts_inlet_change: Callable[[int, str], None] | None = None,
+        on_ams_presence_change: Callable[[int, int, bool], None] | None = None,
     ):
         self.ip_address = ip_address
         self.serial_number = serial_number
@@ -1611,6 +1644,9 @@ class BambuMQTTClient:
         # Fired when an AMS is moved to the switch's other inlet, which changes
         # the nozzle it feeds and so invalidates its slots' K-profile bindings.
         self.on_fts_inlet_change = on_fts_inlet_change
+        # Fired when an AMS slot's presence bit flips: a spool went in (True)
+        # or came out (False). See slot_presence_changes() (#3756).
+        self.on_ams_presence_change = on_ams_presence_change
         self.on_layer_change = on_layer_change
         # #2547: fired when `mc_percent` advances during a running print.
         # `on_layer_change` stops firing the instant the final layer starts, so
@@ -1781,6 +1817,8 @@ class BambuMQTTClient:
         self._raw_message_handlers: list[Callable[[str, bytes], None]] = []
         self._disconnection_event: threading.Event | None = None
         self._previous_ams_hash: str | None = None  # Track AMS changes
+        # Each AMS slot's last presence bit, for on_ams_presence_change (#3756).
+        self._slot_presence: dict[tuple[int, int], bool] = {}
         # Track external-spool (vt_tray) identity changes separately: the AMS
         # hash above covers only AMS units, so an external-spool-only filament
         # swap would never re-trigger inventory reconciliation (#2575).
@@ -2196,6 +2234,10 @@ class BambuMQTTClient:
             self._state_before_power_off = None
             # Reset per-connection warning state so warnings fire once per (re)connection
             self._ams_version_warned = set()
+            # The first AMS push after a reconnect fires on_ams_change even when
+            # nothing in the AMS changed, as on startup, so a spool assigned
+            # while the printer was offline gets its slot configured (#3771).
+            self._previous_ams_hash = None
             # Preserve cached developer_mode across auto-reconnects to avoid
             # re-probing on every reconnect.  The probe (ams_filament_setting to
             # ext slot) can destabilize some firmware MQTT brokers, causing a
@@ -4500,6 +4542,17 @@ class BambuMQTTClient:
                 # may lack fields like 'remain' that the merged state preserves
                 self.on_ams_change(merged_ams)
 
+        # A spool going into or out of a slot, from the presence bit alone: an
+        # untagged spool can leave the hash above unchanged, or change it only
+        # once the bay has fed it, about 20 s later (#3756).
+        self._slot_presence, presence_changes = slot_presence_changes(self._slot_presence, merged_ams)
+        for ams_id, tray_id, present in presence_changes:
+            logger.debug(
+                "[%s] AMS %d slot %d: spool %s", self.serial_number, ams_id, tray_id, "in" if present else "out"
+            )
+            if self.on_ams_presence_change:
+                self.on_ams_presence_change(ams_id, tray_id, present)
+
         # #2582: read-back check runs on EVERY AMS push, not just hash changes.
         # The change hash keys on tray_type/tag_uid/remain — NOT tray_info_idx
         # or cali_idx — so an assignment that only swaps the filament id on an
@@ -6080,6 +6133,9 @@ class BambuMQTTClient:
                                 "filament_type": str(n.get("tray_type", "") or n.get("filament_type", "")),
                                 # H3C: home rack position 0-8 (the mounted hotend reports id 0)
                                 "addr_id": n.get("addr_id") if isinstance(n.get("addr_id"), int) else None,
+                                # The slot whose filament this hotend holds, (ams_id << 8) | slot;
+                                # the P3C's only "loaded" signal for an AMS 3P slot (#3737)
+                                "snow": _mqtt_int(n.get("snow")),
                             }
                             for i, n in enumerate(nozzle_info)
                         ],
@@ -8421,11 +8477,12 @@ class BambuMQTTClient:
         return (low + high) // 2 if low and high and low > 0 and high > 0 else -1
 
     def _rack_change_filament(self, tray_id: int, load: bool) -> bool:
-        """Load AMS 3H slot ``tray_id`` into its own hotend, or unload that hotend.
+        """Load rack AMS slot ``tray_id`` (AMS 3H or AMS 3P) into its own hotend, or unload that hotend.
 
         As Studio 02.09 sends it for a direct-connected rack (PageFilament.cpp):
         load targets 32 at slot k, unload 255 at slot 255 - k (the feeder to
-        retract). The AMS 3H can't rewind: an unload ends with a hand pull.
+        retract). Neither rack AMS can rewind: an unload ends with a hand pull,
+        and an AMS 3P load waits for a hand feed (#3737).
         """
         client = self._client
         rack = self._rack_tray(tray_id)
@@ -8448,9 +8505,10 @@ class BambuMQTTClient:
         }
         command_json = json.dumps(command)
         logger.info(
-            "[%s] Publishing ams_change_filament (%s, AMS 3H slot %d): %s",
+            "[%s] Publishing ams_change_filament (%s, %s slot %d): %s",
             self.serial_number,
             "load" if load else "unload",
+            unit_label(ams_id, self.tray_layout.ams_type(ams_id)),
             slot + 1,
             command_json,
         )
@@ -8489,14 +8547,21 @@ class BambuMQTTClient:
             logger.warning("[%s] Cannot load filament: not connected", self.serial_number)
             return False
         if self.tray_layout.rack_units:
-            # Only an AMS 3H slot can be loaded: an external input or an AMS-B
-            # can't feed itself (Studio's CanAutoFeed).
+            # Only a rack AMS slot can be loaded into its hotend, not an
+            # external input. Studio's CanAutoFeed is false for the AMS 3P,
+            # which has no feeder motor, but the P3C accepts the load and asks
+            # for the filament to be pushed in by hand (#3737).
             rack = self._rack_tray(tray_id)
-            if rack is None or self.tray_layout.ams_type(rack[0]) != AmsType.ZMULTI_A:
-                logger.warning("[%s] Load: tray %s is not an AMS 3H slot", self.serial_number, tray_id)
+            if rack is None:
+                logger.warning("[%s] Load: tray %s is not a rack AMS slot", self.serial_number, tray_id)
                 return False
             if not self.rack_tray_has_filament(tray_id):
-                logger.warning("[%s] Load: AMS 3H slot %d has no filament", self.serial_number, rack[1] + 1)
+                logger.warning(
+                    "[%s] Load: %s slot %d has no filament",
+                    self.serial_number,
+                    unit_label(rack[0], self.tray_layout.ams_type(rack[0])),
+                    rack[1] + 1,
+                )
                 return False
             return self._rack_change_filament(tray_id, load=True)
 
@@ -8580,10 +8645,10 @@ class BambuMQTTClient:
             logger.warning("[%s] Cannot unload filament: not connected", self.serial_number)
             return False
         if self.tray_layout.rack_units:
-            # The hotend of the named AMS 3H slot, else of the one on the toolhead.
+            # The hotend of the named rack AMS slot, else of the one on the toolhead.
             source = tray_id if tray_id is not None else self.state.tray_now
             if self._rack_tray(source) is None:
-                logger.warning("[%s] Unload: no AMS 3H slot to unload (tray %s)", self.serial_number, source)
+                logger.warning("[%s] Unload: no rack AMS slot to unload (tray %s)", self.serial_number, source)
                 return False
             return self._rack_change_filament(source, load=False)
 
@@ -8674,25 +8739,28 @@ class BambuMQTTClient:
     def rack_loaded_slots(self) -> list[tuple[int, int]]:
         """``(ams_id, slot)`` of every rack AMS slot whose hotend holds its filament.
 
-        The AMS 3H reports such a slot as tray state 27; a spool that is only
-        held at the inlet reports 26 (#3531).
+        See ``rack_slot_in_hotend``: the AMS 3H's tray state (#3531), the
+        AMS 3P's hotend ``snow`` (#3737).
         """
         loaded: list[tuple[int, int]] = []
-        for ams_id, _kind in self.tray_layout.rack_units:
+        for ams_id, kind in self.tray_layout.rack_units:
             unit = self._ams_unit(ams_id) or {}
             for tray in unit.get("tray") or []:
-                if not isinstance(tray, dict) or _mqtt_int(tray.get("state")) != _RACK_TRAY_IN_HOTEND:
+                if not isinstance(tray, dict):
                     continue
                 slot = _mqtt_int(tray.get("id"))
-                if slot is not None:
+                if slot is not None and rack_slot_in_hotend(
+                    kind, ams_id, slot, tray.get("state"), self.state.nozzle_rack
+                ):
                     loaded.append((ams_id, slot))
         return sorted(loaded)
 
     def ams_unload_all(self) -> int:
-        """Unload every loaded hotend of a rack printer (H3C) in one command.
+        """Unload every loaded hotend of a rack printer (H3C, P3C) in one command.
 
-        As the H3C's own Unload All sends it (#3531): one
-        ``multi_slot_ams_change_filament`` listing each loaded AMS 3H slot as
+        As the H3C's own Unload All sends it (#3531), and the P3C's Batch
+        Unload (#3737): one ``multi_slot_ams_change_filament`` listing each
+        loaded rack AMS slot as
         ``255 - k``, the same feeder id a single unload names. The printer then
         unloads them one after another and asks for the hand pull at the end.
 
@@ -8704,7 +8772,7 @@ class BambuMQTTClient:
             return 0
         slots = self.rack_loaded_slots()
         if not slots:
-            logger.info("[%s] Unload all: no AMS 3H slot is loaded", self.serial_number)
+            logger.info("[%s] Unload all: no rack AMS slot is loaded", self.serial_number)
             return 0
         self._sequence_id += 1
         command = {

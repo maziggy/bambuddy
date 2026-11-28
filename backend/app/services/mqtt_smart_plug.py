@@ -127,6 +127,18 @@ class MQTTSmartPlugService:
         import asyncio
         import ssl
 
+        # configure() calls this whenever the service isn't connected, which
+        # includes while a client from a failed attempt (broker unreachable,
+        # wrong credentials) is still auto-reconnecting on its network thread.
+        # Overwriting it left that client running: every client uses the same
+        # client ID, so once the broker was reachable they took each other's
+        # session over in an endless connect/disconnect loop (#3747). Only one
+        # client may exist, so the old one is retired first.
+        if self.client is not None:
+            retire_paho_client(self.client, "smart-plugs")
+            self.client = None
+        self.connected = False
+
         try:
             # Create client with callback API version 2
             self.client = mqtt.Client(

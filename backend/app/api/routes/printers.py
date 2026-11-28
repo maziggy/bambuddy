@@ -132,7 +132,9 @@ from backend.app.utils.tray_ids import (
     external_tray_id,
     global_tray_id as studio_global_tray_id,
     is_ams_ht_id,
+    is_rack_tray_id,
     legacy_tray_index,
+    unit_label,
 )
 
 logger = logging.getLogger(__name__)
@@ -806,7 +808,10 @@ async def _printer_status(db: AsyncSession, printer: Printer) -> PrinterStatus:
         ams_exists = True
         # Same serialiser as the WebSocket push, so the card cannot lose a
         # field between page load and the first push.
-        ams_units = [AMSUnit(**unit) for unit in ams_units_to_dicts(raw_data["ams"], _kprofile_k, drying_targets)]
+        ams_units = [
+            AMSUnit(**unit)
+            for unit in ams_units_to_dicts(raw_data["ams"], _kprofile_k, drying_targets, state.nozzle_rack)
+        ]
 
     # Virtual tray (external spool holder) - comes from vt_tray in raw_data (list)
     if "vt_tray" in raw_data:
@@ -837,6 +842,7 @@ async def _printer_status(db: AsyncSession, printer: Printer) -> PrinterStatus:
             filament_id=n.get("filament_id", ""),
             filament_type=n.get("filament_type", ""),
             addr_id=n.get("addr_id"),
+            snow=n.get("snow"),
         )
         for n in (state.nozzle_rack or [])
     ]
@@ -4832,13 +4838,13 @@ async def _apply_pa_after_refresh(printer_id: int, ams_id: int, slot_id: int):
 
 # 24-27 are the A2L AMS-Lite slots (normalised unit 6 = 6*4+slot); see
 # a2l-am-unit-16. An AMS-HT holds one tray, numbered by its unit id 128-135, as
-# the printer's tray_now reports it. 28-36 are AMS 3H slots, valid only on a
-# printer that has one. All are valid alongside the regular 0-15.
+# the printer's tray_now reports it. 28-36 are AMS 3H slots and 37-43 AMS 3P
+# slots (#3737), each valid only on a printer that has that unit. All are valid
+# alongside the regular 0-15.
 _LOAD_TRAY_ID_ERROR = (
-    "tray_id must be 0..15 (AMS slot), 24..27 (A2L AMS-Lite), 28..36 (H3C AMS 3H), 128..135 (AMS-HT), "
-    "254 (external / Ext-L), or 255 (Ext-R)"
+    "tray_id must be 0..15 (AMS slot), 24..27 (A2L AMS-Lite), 28..36 (H3C AMS 3H), 37..43 (P3C AMS 3P), "
+    "128..135 (AMS-HT), 254 (external / Ext-L), or 255 (Ext-R)"
 )
-_AMS3H_PRINTER = TrayLayout.ams3h()
 
 
 def _is_valid_load_tray_id(tray_id: int) -> bool:
@@ -4846,7 +4852,7 @@ def _is_valid_load_tray_id(tray_id: int) -> bool:
     return (
         tray_id in range(16)
         or tray_id in range(24, 28)
-        or _AMS3H_PRINTER.rack_slot(tray_id) is not None
+        or is_rack_tray_id(tray_id)
         or is_ams_ht_id(tray_id)
         or tray_id in (254, 255)
     )
@@ -4858,9 +4864,9 @@ def _client_tray_layout(client: object) -> TrayLayout:
     return layout if isinstance(layout, TrayLayout) else TrayLayout()
 
 
-def _refuse_foreign_ams3h_tray(tray_id: int | None, layout: TrayLayout) -> None:
-    """An AMS 3H slot id names nothing on a printer without that AMS 3H."""
-    if tray_id is not None and _AMS3H_PRINTER.rack_slot(tray_id) is not None and layout.rack_slot(tray_id) is None:
+def _refuse_foreign_rack_tray(tray_id: int | None, layout: TrayLayout) -> None:
+    """A rack AMS slot id (AMS 3H, AMS 3P) names nothing on a printer without that unit."""
+    if tray_id is not None and is_rack_tray_id(tray_id) and layout.rack_slot(tray_id) is None:
         raise HTTPException(400, _LOAD_TRAY_ID_ERROR)
 
 
@@ -4892,6 +4898,7 @@ async def ams_load(
     Tray ID encoding (matches Bambu firmware convention):
     - 0..15: AMS slot, computed as ams_id * 4 + slot_id
     - 28..36: the H3C's AMS 3H, 28 + slot (its slot feeds its own hotend)
+    - 37..43: the P3C's AMS 3P, 37 + slot (likewise; load and unload are by hand)
     - 128..135: AMS-HT, the unit id (one tray per unit)
     - 254: external spool (single-external printers, or Ext-L on dual-nozzle H2D)
     - 255: Ext-R on dual-nozzle H2D
@@ -4908,24 +4915,27 @@ async def ams_load(
     if not client:
         raise HTTPException(400, "Printer not connected")
 
-    # An AMS 3H slot has nothing to feed until the AMS has pulled its filament
-    # in at the inlet; Studio offers no Load before that.
+    # A rack AMS slot has nothing to feed until it reports a filament: the
+    # AMS 3H once it has pulled the filament in at the inlet, the AMS 3P once
+    # a spool is set for the slot. Studio offers no Load before that.
     layout = _client_tray_layout(client)
-    _refuse_foreign_ams3h_tray(tray_id, layout)
+    _refuse_foreign_rack_tray(tray_id, layout)
     rack_slot = layout.rack_slot(tray_id)
+    rack_name = unit_label(rack_slot[0], layout.ams_type(rack_slot[0])) if rack_slot is not None else ""
     if rack_slot is not None and not client.rack_tray_has_filament(tray_id):
-        raise HTTPException(
-            409,
-            f"AMS 3H slot {rack_slot[1] + 1} has no filament. Push the filament into the slot's inlet "
-            "until the AMS pulls it in, then load it.",
+        hint = (
+            "Push the filament into the slot's inlet until the AMS pulls it in, then load it."
+            if rack_name == "AMS 3H"
+            else "Put a spool in the slot and set its filament, then load it."
         )
+        raise HTTPException(409, f"{rack_name} slot {rack_slot[1] + 1} has no filament. {hint}")
 
     success = client.ams_load_filament(tray_id, extruder_id=extruder_id)
     if not success:
         raise HTTPException(500, "Failed to send load command")
 
     if rack_slot is not None:
-        target = f"AMS 3H slot {rack_slot[1] + 1}"
+        target = f"{rack_name} slot {rack_slot[1] + 1}"
     elif tray_id == 254:
         target = "external spool"
     elif tray_id == 255:
@@ -4966,7 +4976,7 @@ async def ams_unload(
     client = printer_manager.get_client(printer_id)
     if not client:
         raise HTTPException(400, "Printer not connected")
-    _refuse_foreign_ams3h_tray(tray_id, _client_tray_layout(client))
+    _refuse_foreign_rack_tray(tray_id, _client_tray_layout(client))
 
     success = client.ams_unload_filament(tray_id)
     if not success:
@@ -4986,7 +4996,7 @@ async def ams_unload_all(
     _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
     db: AsyncSession = Depends(get_db, scope="function"),
 ):
-    """Unload every loaded AMS 3H slot of an H3C in one go, as its touchscreen's Unload All (#3531)."""
+    """Unload every loaded rack AMS slot in one go, as the H3C's Unload All (#3531) and the P3C's Batch Unload (#3737)."""
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
     if not printer:
@@ -4995,15 +5005,17 @@ async def ams_unload_all(
     client = printer_manager.get_client(printer_id)
     if not client:
         raise HTTPException(400, "Printer not connected")
-    if not _client_tray_layout(client).rack_units:
-        raise HTTPException(400, "Unload all needs an AMS 3H")
+    rack_units = _client_tray_layout(client).rack_units
+    if not rack_units:
+        raise HTTPException(400, "Unload all needs an AMS 3H or AMS 3P")
+    rack_name = unit_label(*rack_units[0])
     if not client.rack_loaded_slots():
-        raise HTTPException(409, "No AMS 3H slot is loaded")
+        raise HTTPException(409, f"No {rack_name} slot is loaded")
 
     count = client.ams_unload_all()
     if not count:
         raise HTTPException(500, "Failed to send unload command")
-    return {"success": True, "message": f"Unloading {count} AMS 3H slots", "count": count}
+    return {"success": True, "message": f"Unloading {count} {rack_name} slots", "count": count}
 
 
 @router.post("/{printer_id}/hms/execute-action")

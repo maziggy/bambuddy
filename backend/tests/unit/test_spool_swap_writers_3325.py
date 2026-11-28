@@ -15,11 +15,14 @@ BACKEND_DIR = Path(__file__).parent.parent.parent / "app"
 
 WRITES_ASSIGNMENT = re.compile(
     r"INSERT INTO spoolman_slot_assignments|INSERT INTO spool_assignment|SpoolAssignment\(|"
-    r"update\(SpoolmanSlotAssignment\)|update\(SpoolAssignment\)"
+    r"update\(SpoolmanSlotAssignment\)|update\(SpoolAssignment\)|"
+    # The Spoolman slot upsert most writers share (#3771).
+    r"text\(UPSERT_SLOT_SQL\)"
 )
 
 EXEMPT = {
     ("core/database.py", "_migrate_widen_spoolman_slot_ams_id_range"): "startup migration copying existing rows",
+    ("main.py", "_replay_spoolman_pending_configs"): "clears pending_config only, the slot keeps its spool (#3771)",
 }
 
 

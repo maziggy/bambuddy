@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ams3hDryerGridColumns,
-  ams3hHasLoadedSlot,
+  rackHasLoadedSlot,
   ams3hSlotGridPlacement,
   amsHasLoadedTray,
   amsUnitSlotCount,
@@ -129,10 +129,10 @@ describe('AMS 3H card layout', () => {
   });
 });
 
-describe('ams3hHasLoadedSlot (#3531)', () => {
-  it('is true only for a slot whose filament is in its hotend (state 27)', () => {
-    expect(ams3hHasLoadedSlot({ tray: [{ state: 26 }, { state: 27 }] })).toBe(true);
-    expect(ams3hHasLoadedSlot({ tray: [{ state: 26 }, { state: 9 }, { state: null }] })).toBe(false);
-    expect(ams3hHasLoadedSlot({ tray: null })).toBe(false);
+describe('rackHasLoadedSlot (#3531, #3737)', () => {
+  it('is true only for a slot the backend reports in its hotend', () => {
+    expect(rackHasLoadedSlot({ tray: [{ in_hotend: false }, { in_hotend: true }] })).toBe(true);
+    expect(rackHasLoadedSlot({ tray: [{ in_hotend: false }, { in_hotend: null }, {}] })).toBe(false);
+    expect(rackHasLoadedSlot({ tray: null })).toBe(false);
   });
 });
